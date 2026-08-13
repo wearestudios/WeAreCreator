@@ -33,26 +33,26 @@ export const Navbar = () => {
 
                 <nav className="hidden items-center gap-8 md:flex">
                     <a
-                        href="#creators"
-                        data-testid="nav-creators"
-                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                    >
-                        For Creators
-                    </a>
-                    <a
-                        href="#brands"
-                        data-testid="nav-brands"
-                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                    >
-                        For Brands
-                    </a>
-                    <a
-                        href="#how"
+                        href="#how-it-works"
                         data-testid="nav-how"
                         className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
                     >
                         How it works
                     </a>
+                    <a
+                        href="#why"
+                        data-testid="nav-why"
+                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                    >
+                        Why WeAre
+                    </a>
+                    <Link
+                        to="/signup?role=brand"
+                        data-testid="nav-for-brands"
+                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                    >
+                        For brands →
+                    </Link>
                 </nav>
 
                 <div className="flex items-center gap-3">
@@ -83,9 +83,12 @@ export const Navbar = () => {
                             >
                                 Log in
                             </Link>
-                            <Link to="/signup" data-testid="nav-signup-link">
+                            <Link
+                                to="/signup?role=creator"
+                                data-testid="nav-signup-creator-link"
+                            >
                                 <Button className="rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400">
-                                    Join waitlist
+                                    Sign up as a creator
                                 </Button>
                             </Link>
                         </>
