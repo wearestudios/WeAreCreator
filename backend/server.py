@@ -871,6 +871,354 @@ async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
 api_router.include_router(brand_router)
 
 
+# --- Admin router ----------------------------------------------------------
+
+admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+COLLAB_STATE_ORDER = [
+    "applied",
+    "vetted",
+    "accepted",
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "content_submitted",
+    "in_payment",
+    "closed",
+]
+
+
+def _next_collab_state(current: str) -> Optional[str]:
+    try:
+        idx = COLLAB_STATE_ORDER.index(current)
+    except ValueError:
+        return None
+    if idx + 1 >= len(COLLAB_STATE_ORDER):
+        return None
+    return COLLAB_STATE_ORDER[idx + 1]
+
+
+class AdvanceCollabPayload(BaseModel):
+    """Payload to advance a collaboration one step forward."""
+
+    # Required only when the NEXT state is 'commercial_agreed'.
+    agreed_amount: Optional[float] = Field(default=None, ge=0)
+    # Required only when the NEXT state is 'in_payment'.
+    platform_fee: Optional[float] = Field(default=None, ge=0)
+
+
+def _serialize_admin_creator(profile: dict, user: dict) -> dict:
+    return {
+        "user_id": str(user["_id"]),
+        "profile_id": str(profile["_id"]),
+        "name": profile.get("name") or user.get("name"),
+        "email": profile.get("email") or user.get("email"),
+        "phone": user.get("phone"),
+        "instagram_handle": profile.get("instagram_handle"),
+        "instagram_profile_url": profile.get("instagram_profile_url"),
+        "address": profile.get("address"),
+        "niches": profile.get("niches") or [],
+        "base_rate": profile.get("base_rate"),
+        "follower_count": profile.get("follower_count"),
+        "vetting_status": profile.get("vetting_status", "pending"),
+        "created_at": profile["created_at"].isoformat()
+        if isinstance(profile.get("created_at"), datetime)
+        else profile.get("created_at"),
+    }
+
+
+@admin_router.get("/creators/pending")
+async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
+    profiles = (
+        await db.creator_profiles.find({"vetting_status": "pending"})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    if not profiles:
+        return []
+    user_ids = [p["user_id"] for p in profiles]
+    users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
+    users_by_id = {u["_id"]: u for u in users}
+    return [
+        _serialize_admin_creator(p, users_by_id.get(p["user_id"], {}))
+        for p in profiles
+    ]
+
+
+async def _set_creator_vetting(user_id: str, status: str) -> dict:
+    if status not in ("vetted", "rejected"):
+        raise HTTPException(status_code=422, detail="Invalid vetting status")
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    now = datetime.now(timezone.utc)
+    result = await db.creator_profiles.find_one_and_update(
+        {"user_id": oid},
+        {"$set": {"vetting_status": status, "updated_at": now}},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    # Also flip the user's active status when vetted.
+    if status == "vetted":
+        await db.users.update_one({"_id": oid}, {"$set": {"status": "active"}})
+
+    user = await db.users.find_one({"_id": oid})
+    return _serialize_admin_creator(result, user or {})
+
+
+@admin_router.post("/creators/{user_id}/approve")
+async def approve_creator(user_id: str, user: dict = Depends(require_roles("admin"))):
+    return await _set_creator_vetting(user_id, "vetted")
+
+
+@admin_router.post("/creators/{user_id}/reject")
+async def reject_creator(user_id: str, user: dict = Depends(require_roles("admin"))):
+    return await _set_creator_vetting(user_id, "rejected")
+
+
+def _serialize_admin_collab(
+    collab: dict,
+    campaign: Optional[dict],
+    brand_name: Optional[str],
+    creator_user: Optional[dict],
+    creator_profile: Optional[dict],
+    payment: Optional[dict],
+) -> dict:
+    return {
+        "id": str(collab["_id"]),
+        "state": collab.get("state"),
+        "pitch": collab.get("pitch"),
+        "quoted_rate": collab.get("quoted_rate"),
+        "agreed_amount": collab.get("agreed_amount"),
+        "content_url": collab.get("content_url"),
+        "created_at": collab["created_at"].isoformat()
+        if isinstance(collab.get("created_at"), datetime)
+        else collab.get("created_at"),
+        "updated_at": collab["updated_at"].isoformat()
+        if isinstance(collab.get("updated_at"), datetime)
+        else collab.get("updated_at"),
+        "campaign": {
+            "id": str((campaign or {}).get("_id")) if campaign else None,
+            "title": (campaign or {}).get("title"),
+            "area": (campaign or {}).get("area"),
+            "category": (campaign or {}).get("category"),
+            "budget_per_creator": (campaign or {}).get("budget_per_creator"),
+            "status": (campaign or {}).get("status"),
+        },
+        "brand_name": brand_name,
+        "creator": {
+            "id": str((creator_user or {}).get("_id")) if creator_user else None,
+            "name": (creator_profile or {}).get("name")
+            or (creator_user or {}).get("name"),
+            "email": (creator_user or {}).get("email"),
+            "instagram_handle": (creator_profile or {}).get("instagram_handle"),
+            "instagram_profile_url": (creator_profile or {}).get("instagram_profile_url"),
+            "vetting_status": (creator_profile or {}).get("vetting_status"),
+            "follower_count": (creator_profile or {}).get("follower_count"),
+        },
+        "payment": (
+            {
+                "id": str(payment["_id"]),
+                "agreed_amount": payment.get("agreed_amount"),
+                "platform_fee": payment.get("platform_fee"),
+                "creator_payout": payment.get("creator_payout"),
+                "state": payment.get("state"),
+                "paid_at": payment["paid_at"].isoformat()
+                if isinstance(payment.get("paid_at"), datetime)
+                else payment.get("paid_at"),
+            }
+            if payment
+            else None
+        ),
+    }
+
+
+@admin_router.get("/collaborations")
+async def list_all_collaborations(
+    user: dict = Depends(require_roles("admin")),
+):
+    collabs = (
+        await db.collaborations.find({}).sort("created_at", -1).to_list(length=2000)
+    )
+    if not collabs:
+        return {"by_state": {s: [] for s in COLLAB_STATE_ORDER}, "total": 0}
+
+    campaign_ids = list({c["campaign_id"] for c in collabs})
+    campaigns = await db.campaigns.find(
+        {"_id": {"$in": campaign_ids}}
+    ).to_list(length=len(campaign_ids))
+    campaign_by_id = {c["_id"]: c for c in campaigns}
+    brand_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+
+    creator_ids = list({c["creator_id"] for c in collabs})
+    creator_users = await db.users.find(
+        {"_id": {"$in": creator_ids}}
+    ).to_list(length=len(creator_ids))
+    creator_user_by_id = {u["_id"]: u for u in creator_users}
+    creator_profiles = await db.creator_profiles.find(
+        {"user_id": {"$in": creator_ids}}
+    ).to_list(length=len(creator_ids))
+    creator_profile_by_uid = {p["user_id"]: p for p in creator_profiles}
+
+    payments = await db.payments.find(
+        {"collaboration_id": {"$in": [c["_id"] for c in collabs]}}
+    ).to_list(length=len(collabs))
+    payment_by_collab = {p["collaboration_id"]: p for p in payments}
+
+    by_state: dict = {s: [] for s in COLLAB_STATE_ORDER}
+    for c in collabs:
+        camp = campaign_by_id.get(c["campaign_id"])
+        brand = brand_map.get(camp["brand_id"]) if camp else None
+        brand_name = (brand or {}).get("business_name") or (brand or {}).get("name")
+        creator_user = creator_user_by_id.get(c["creator_id"])
+        creator_profile = creator_profile_by_uid.get(c["creator_id"])
+        payment = payment_by_collab.get(c["_id"])
+        row = _serialize_admin_collab(
+            c, camp, brand_name, creator_user, creator_profile, payment
+        )
+        row["next_state"] = _next_collab_state(row["state"])
+        by_state[row["state"]].append(row)
+    return {"by_state": by_state, "total": len(collabs)}
+
+
+@admin_router.post("/collaborations/{collab_id}/advance")
+async def advance_collaboration(
+    collab_id: str,
+    payload: AdvanceCollabPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    current = collab.get("state", "applied")
+    if current == "in_payment":
+        raise HTTPException(
+            status_code=400,
+            detail="This collaboration is awaiting payment — use Mark as paid to close it.",
+        )
+    to_state = _next_collab_state(current)
+    if not to_state:
+        raise HTTPException(
+            status_code=400, detail="Collaboration is already at the final state"
+        )
+
+    now = datetime.now(timezone.utc)
+    update: dict = {"state": to_state, "updated_at": now}
+
+    if to_state == "commercial_agreed":
+        if payload.agreed_amount is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Agreed amount is required when moving to commercial_agreed",
+            )
+        update["agreed_amount"] = float(payload.agreed_amount)
+
+    if to_state == "in_payment":
+        if payload.platform_fee is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Platform fee is required when moving to in_payment",
+            )
+        agreed = collab.get("agreed_amount")
+        if agreed is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Collaboration has no agreed amount yet",
+            )
+        # Create the payment record (idempotent by unique index on collaboration_id).
+        existing_payment = await db.payments.find_one({"collaboration_id": oid})
+        if existing_payment is None:
+            await db.payments.insert_one(
+                {
+                    "collaboration_id": oid,
+                    "agreed_amount": float(agreed),
+                    "platform_fee": float(payload.platform_fee),
+                    "creator_payout": float(agreed),
+                    "state": "pending",
+                    "paid_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid}, {"$set": update}, return_document=True
+    )
+    return {
+        "id": collab_id,
+        "state": updated["state"],
+        "agreed_amount": updated.get("agreed_amount"),
+        "next_state": _next_collab_state(updated["state"]),
+    }
+
+
+@admin_router.post("/payments/{payment_id}/mark_paid")
+async def mark_payment_paid(
+    payment_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    try:
+        pid = ObjectId(payment_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    now = datetime.now(timezone.utc)
+    payment = await db.payments.find_one_and_update(
+        {"_id": pid},
+        {"$set": {"state": "paid", "paid_at": now, "updated_at": now}},
+        return_document=True,
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    # Move the linked collaboration to 'closed'.
+    await db.collaborations.update_one(
+        {"_id": payment["collaboration_id"]},
+        {"$set": {"state": "closed", "updated_at": now}},
+    )
+
+    return {
+        "id": payment_id,
+        "state": payment["state"],
+        "paid_at": payment["paid_at"].isoformat(),
+        "collaboration_id": str(payment["collaboration_id"]),
+    }
+
+
+@admin_router.get("/metrics")
+async def admin_metrics(user: dict = Depends(require_roles("admin"))):
+    open_campaigns = await db.campaigns.count_documents({"status": "open"})
+    vetted_creators = await db.creator_profiles.count_documents(
+        {"vetting_status": "vetted"}
+    )
+    agg = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {"$group": {"_id": None, "total": {"$sum": "$creator_payout"}}},
+        ]
+    ).to_list(length=1)
+    total_paid = float(agg[0]["total"]) if agg else 0.0
+    return {
+        "open_campaigns": open_campaigns,
+        "vetted_creators": vetted_creators,
+        "total_paid_out": total_paid,
+    }
+
+
+api_router.include_router(admin_router)
+
+
+
 
 # --- Campaigns router ------------------------------------------------------
 

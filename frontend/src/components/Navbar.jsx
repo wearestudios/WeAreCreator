@@ -76,6 +76,15 @@ export const Navbar = () => {
                                     Post a campaign
                                 </Link>
                             )}
+                            {user.role === "admin" && (
+                                <Link
+                                    to="/admin"
+                                    data-testid="nav-admin"
+                                    className="hidden text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400 sm:inline"
+                                >
+                                    Admin
+                                </Link>
+                            )}
                             <Link
                                 to="/dashboard"
                                 data-testid="nav-dashboard"

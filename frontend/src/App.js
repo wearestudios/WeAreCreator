@@ -12,6 +12,7 @@ import BrandOnboarding from "@/pages/BrandOnboarding";
 import PostCampaign from "@/pages/PostCampaign";
 import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
+import AdminConsole from "@/pages/AdminConsole";
 
 function App() {
     return (
@@ -67,6 +68,14 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["creator", "brand", "admin"]}>
                                     <CampaignDetail />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/admin"
+                            element={
+                                <ProtectedRoute roles={["admin"]}>
+                                    <AdminConsole />
                                 </ProtectedRoute>
                             }
                         />
