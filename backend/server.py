@@ -352,6 +352,33 @@ COLLAB_STATE_ORDER = [
 # Once a collaboration is in one of these, nothing may move it again.
 TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled")
 
+# How a creator's history reads back to an admin. Every state belongs to exactly
+# one group, so nothing can silently vanish from a creator's record.
+COLLAB_GROUP_APPLIED = ("applied", "verified")
+COLLAB_GROUP_ONGOING = (
+    "accepted",
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+)
+COLLAB_GROUP_COMPLETED = ("closed",)
+COLLAB_GROUP_ENDED = ("declined", "cancelled")
+
+# States where the next move is the admin's. Deliberately not derived from
+# _BRAND_OWNED_TRANSITIONS: `attended` and `content_submitted` are waiting on the
+# creator and the brand respectively, even though the advance endpoint would
+# technically let an admin push them.
+ADMIN_ACTION_STATES = (
+    "applied",            # needs vetting before the brand sees it
+    "accepted",           # needs the fee agreed
+    "commercial_agreed",  # needs a slot booked
+    "slot_booked",        # needs attendance marked
+    "content_approved",   # needs moving into payment
+)
+
 # A campaign in one of these states is visible on the creator feed.
 LIVE_CAMPAIGN_STATUSES = ("open", "upcoming")
 
@@ -2733,6 +2760,235 @@ async def _hydrate_creator_rows(profiles: list) -> list:
     ]
 
 
+async def _creator_activity_stats(user_ids: list) -> dict:
+    """Money and campaign counts per creator, in one round trip.
+
+    Joins payments onto collaborations inside the pipeline rather than looping
+    per creator — an admin list of 50 creators would otherwise be 50 queries.
+    Returns { creator_oid: {completed, ongoing, applied, earned, committed} }.
+    """
+    if not user_ids:
+        return {}
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"creator_id": {"$in": list(user_ids)}}},
+            {
+                "$lookup": {
+                    "from": "payments",
+                    "localField": "_id",
+                    "foreignField": "collaboration_id",
+                    "as": "payment",
+                }
+            },
+            {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+            {
+                "$group": {
+                    "_id": "$creator_id",
+                    "completed": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$state", list(COLLAB_GROUP_COMPLETED)]}, 1, 0
+                            ]
+                        }
+                    },
+                    "ongoing": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$state", list(COLLAB_GROUP_ONGOING)]}, 1, 0
+                            ]
+                        }
+                    },
+                    "applied": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$state", list(COLLAB_GROUP_APPLIED)]}, 1, 0
+                            ]
+                        }
+                    },
+                    # Only money that actually left the bank counts as earned.
+                    "earned": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$payment.state", "paid"]},
+                                {"$ifNull": ["$payment.creator_payout", 0]},
+                                0,
+                            ]
+                        }
+                    },
+                    # Agreed but not yet paid — what we owe them if everything
+                    # in flight lands.
+                    "committed": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$state", list(COLLAB_GROUP_ONGOING)]},
+                                {"$ifNull": ["$agreed_amount", 0]},
+                                0,
+                            ]
+                        }
+                    },
+                }
+            },
+        ]
+    ).to_list(length=len(user_ids) + 1)
+    return {r["_id"]: r for r in rows}
+
+
+def _empty_stats() -> dict:
+    return {"completed": 0, "ongoing": 0, "applied": 0, "earned": 0.0, "committed": 0.0}
+
+
+@admin_router.get("/creators")
+async def list_all_creators(
+    q: Optional[str] = None,
+    verification_status: Optional[str] = None,
+    niche: Optional[str] = None,
+    city: Optional[str] = None,
+    area: Optional[str] = None,  # alias for city; creators carry a city, not an area
+    onboarded_only: bool = False,
+    sort: Optional[str] = None,  # "newest" | "earned_desc" | "name"
+    page: int = 1,
+    page_size: int = 25,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Every creator, whatever their verification status.
+
+    The other creator endpoints are work queues — this is the roster, for
+    looking someone up rather than acting on them.
+    """
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 25), 100))
+    location = (city or area or "").strip()
+
+    match: dict = {}
+    if verification_status:
+        if verification_status not in ("pending", "verified", "rejected"):
+            raise HTTPException(
+                status_code=422,
+                detail="verification_status must be pending, verified or rejected.",
+            )
+        match["verification_status"] = verification_status
+    if niche:
+        match["niches"] = {"$regex": f"^{re.escape(niche.strip())}$", "$options": "i"}
+    if location:
+        match["city"] = {"$regex": f"^{re.escape(location)}$", "$options": "i"}
+    if onboarded_only:
+        match["instagram_handle"] = {"$type": "string", "$ne": ""}
+    if q:
+        # Phone lives on the user document, so the search has to run after the
+        # join below rather than as a plain find().
+        term = re.escape(q.strip()[:120])
+        match["$or"] = [
+            {"name": {"$regex": term, "$options": "i"}},
+            {"instagram_handle": {"$regex": term, "$options": "i"}},
+            {"user.phone": {"$regex": term, "$options": "i"}},
+            {"user.email": {"$regex": term, "$options": "i"}},
+        ]
+
+    sort_stage = {"created_at": -1}
+    if sort == "name":
+        sort_stage = {"name": 1}
+    elif sort == "earned_desc":
+        # Sorting by money means the stats have to be in the pipeline, so this
+        # branch joins them before paginating rather than after.
+        sort_stage = {"earned": -1, "created_at": -1}
+
+    pipeline: list = [
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "user_id",
+                "foreignField": "_id",
+                "as": "user",
+            }
+        },
+        {"$addFields": {"user": {"$arrayElemAt": ["$user", 0]}}},
+    ]
+
+    if sort == "earned_desc":
+        pipeline += [
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "let": {"uid": "$user_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$creator_id", "$$uid"]}}},
+                        {
+                            "$lookup": {
+                                "from": "payments",
+                                "localField": "_id",
+                                "foreignField": "collaboration_id",
+                                "as": "payment",
+                            }
+                        },
+                        {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+                        {"$match": {"payment.state": "paid"}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "earned": {"$sum": {"$ifNull": ["$payment.creator_payout", 0]}},
+                            }
+                        },
+                    ],
+                    "as": "_earnings",
+                }
+            },
+            {
+                "$addFields": {
+                    "earned": {
+                        "$ifNull": [{"$arrayElemAt": ["$_earnings.earned", 0]}, 0]
+                    }
+                }
+            },
+        ]
+
+    if match:
+        pipeline.append({"$match": match})
+    pipeline += [
+        {"$sort": sort_stage},
+        {
+            # One round trip for the page and the count.
+            "$facet": {
+                "rows": [{"$skip": (page - 1) * page_size}, {"$limit": page_size}],
+                "total": [{"$count": "n"}],
+            }
+        },
+    ]
+
+    result = await db.creator_profiles.aggregate(pipeline).to_list(length=1)
+    facet = result[0] if result else {}
+    docs = facet.get("rows") or []
+    total_rows = facet.get("total") or []
+    total = total_rows[0]["n"] if total_rows else 0
+
+    stats = await _creator_activity_stats([d["user_id"] for d in docs])
+
+    creators = []
+    for d in docs:
+        s = stats.get(d["user_id"]) or _empty_stats()
+        row = _serialize_admin_creator(d, d.get("user") or {"_id": d["user_id"]})
+        row.update(
+            {
+                "status": (d.get("user") or {}).get("status"),
+                "pending_review": bool(d.get("pending_review", False)),
+                "payout_ready": payout_ready(d),
+                "campaigns_completed": s["completed"],
+                "collaborations_ongoing": s["ongoing"],
+                "applications_open": s["applied"],
+                "total_earned": round(float(s["earned"]), 2),
+                "committed": round(float(s["committed"]), 2),
+            }
+        )
+        creators.append(row)
+
+    return {
+        "creators": creators,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": (total + page_size - 1) // page_size if page_size else 0,
+    }
+
+
 @admin_router.get("/creators/pending")
 async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
     """Creators actually waiting on us.
@@ -2789,6 +3045,152 @@ async def list_incomplete_creators(user: dict = Depends(require_roles("admin")))
         .to_list(length=500)
     )
     return await _hydrate_creator_rows(profiles)
+
+
+@admin_router.get("/creators/{user_id}")
+async def get_creator_detail(
+    user_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One creator, whole picture.
+
+    Declared after /creators/pending, /changed and /incomplete so those fixed
+    paths keep matching first.
+    """
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    account = await db.users.find_one({"_id": oid, "role": "creator"})
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    if not account or not profile:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    # Every collaboration with its campaign, brand and payment attached in one
+    # pipeline — the alternative is three queries per row.
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"creator_id": oid}},
+            {"$sort": {"created_at": -1}},
+            {
+                "$lookup": {
+                    "from": "campaigns",
+                    "localField": "campaign_id",
+                    "foreignField": "_id",
+                    "as": "campaign",
+                }
+            },
+            {"$addFields": {"campaign": {"$arrayElemAt": ["$campaign", 0]}}},
+            {
+                "$lookup": {
+                    "from": "brand_profiles",
+                    "localField": "campaign.brand_id",
+                    "foreignField": "user_id",
+                    "as": "brand",
+                }
+            },
+            {"$addFields": {"brand": {"$arrayElemAt": ["$brand", 0]}}},
+            {
+                "$lookup": {
+                    "from": "payments",
+                    "localField": "_id",
+                    "foreignField": "collaboration_id",
+                    "as": "payment",
+                }
+            },
+            {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+            {
+                "$project": {
+                    "state": 1,
+                    "quoted_rate": 1,
+                    "agreed_amount": 1,
+                    "scheduled_at": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "exit_reason": 1,
+                    "campaign_id": 1,
+                    "campaign_title": "$campaign.title",
+                    "campaign_status": "$campaign.status",
+                    "campaign_area": "$campaign.area",
+                    "brand_name": "$brand.business_name",
+                    "payment_state": "$payment.state",
+                    "creator_payout": "$payment.creator_payout",
+                    "paid_at": "$payment.paid_at",
+                }
+            },
+        ]
+    ).to_list(length=1000)
+
+    groups: dict = {"completed": [], "ongoing": [], "applied": [], "ended": []}
+    lifetime_earned = 0.0
+    committed = 0.0
+
+    for r in rows:
+        state = r.get("state")
+        row = {
+            "id": str(r["_id"]),
+            "campaign_id": str(r["campaign_id"]),
+            "campaign_title": r.get("campaign_title"),
+            "campaign_status": r.get("campaign_status"),
+            "area": r.get("campaign_area"),
+            "brand_name": r.get("brand_name"),
+            "state": state,
+            "quoted_rate": r.get("quoted_rate"),
+            "agreed_amount": r.get("agreed_amount"),
+            "scheduled_at": _iso(r.get("scheduled_at")),
+            "exit_reason": r.get("exit_reason"),
+            "payment_state": r.get("payment_state"),
+            "paid_at": _iso(r.get("paid_at")),
+            "created_at": _iso(r.get("created_at")),
+            "updated_at": _iso(r.get("updated_at")),
+        }
+
+        if r.get("payment_state") == "paid":
+            lifetime_earned += float(r.get("creator_payout") or 0)
+
+        if state in COLLAB_GROUP_COMPLETED:
+            groups["completed"].append(row)
+        elif state in COLLAB_GROUP_ONGOING:
+            committed += float(r.get("agreed_amount") or 0)
+            groups["ongoing"].append(row)
+        elif state in COLLAB_GROUP_APPLIED:
+            groups["applied"].append(row)
+        else:
+            # declined / cancelled — kept rather than dropped, so the record of
+            # what happened to this creator is complete.
+            groups["ended"].append(row)
+
+    detail = _serialize_admin_creator(profile, account)
+    detail.update(
+        {
+            "status": account.get("status"),
+            "pending_review": bool(profile.get("pending_review", False)),
+            "payout_ready": payout_ready(profile),
+            "payout_upi": profile.get("payout_upi"),
+            "payout_account_name": profile.get("payout_account_name"),
+            "pan": profile.get("pan"),
+            "gstin": profile.get("gstin"),
+            "verified_at": _iso(profile.get("verified_at")),
+            "verification_reason": profile.get("verification_reason"),
+            "terms_accepted_at": _iso(account.get("terms_accepted_at")),
+            "joined_at": _iso(account.get("created_at")),
+        }
+    )
+
+    return {
+        "creator": detail,
+        "collaborations": groups,
+        "totals": {
+            "lifetime_earned": round(lifetime_earned, 2),
+            # Agreed on work in flight — what we owe if it all lands.
+            "committed": round(committed, 2),
+            "campaigns_completed": len(groups["completed"]),
+            "collaborations_ongoing": len(groups["ongoing"]),
+            "applications_open": len(groups["applied"]),
+            "collaborations_ended": len(groups["ended"]),
+        },
+    }
 
 
 async def _set_creator_verification(
@@ -3498,23 +3900,69 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         ]
     ).to_list(length=1)
 
+    # Campaign counts by status, in one pass, zero-filled so a caller never has
+    # to guard for a missing key.
+    campaigns_by_status = {s: 0 for s in CampaignStatus.__args__}
+    async for row in db.campaigns.aggregate(
+        [{"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+    ):
+        if row["_id"]:
+            campaigns_by_status[row["_id"]] = row["n"]
+
+    # What is actually sitting on our desk. Counted per queue and summed, so the
+    # headline number can always be explained.
+    collab_action_counts = {s: 0 for s in ADMIN_ACTION_STATES}
+    async for row in db.collaborations.aggregate(
+        [
+            {"$match": {"state": {"$in": list(ADMIN_ACTION_STATES)}}},
+            {"$group": {"_id": "$state", "n": {"$sum": 1}}},
+        ]
+    ):
+        collab_action_counts[row["_id"]] = row["n"]
+
+    creators_pending_review = await db.creator_profiles.count_documents(
+        {"verification_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
+    )
+    creators_changed = await db.creator_profiles.count_documents(
+        {"verification_status": "verified", "pending_review": True}
+    )
+    brands_unverified = await db.brand_profiles.count_documents({"verified": False})
+    payouts_pending_count = int(pending_agg[0]["n"]) if pending_agg else 0
+
+    awaiting = {
+        "creators_to_review": creators_pending_review,
+        "creator_edits_to_review": creators_changed,
+        "brands_to_verify": brands_unverified,
+        "applicants_to_verify": collab_action_counts["applied"],
+        "fees_to_agree": collab_action_counts["accepted"],
+        "slots_to_book": collab_action_counts["commercial_agreed"],
+        "attendance_to_confirm": collab_action_counts["slot_booked"],
+        "payments_to_start": collab_action_counts["content_approved"],
+        "payouts_to_record": payouts_pending_count,
+    }
+
     return {
         "open_campaigns": open_campaigns,
         "verified_creators": verified_creators,
         "total_paid_out": total_paid,
         "platform_revenue": platform_revenue,
         "platform_fee_percent": platform_fee_percent(),
+        # Gross value transacted: what brands paid in total, which is the
+        # creators' fees plus our margin on settled collaborations.
+        "gmv": round(total_paid + platform_revenue, 2),
+        "collaborations_paid": int(agg[0]["n"]) if agg else 0,
         "payouts_pending": float(pending_agg[0]["total"]) if pending_agg else 0.0,
-        "payouts_pending_count": int(pending_agg[0]["n"]) if pending_agg else 0,
+        "payouts_pending_count": payouts_pending_count,
         "brand_receivable": float(receivable_agg[0]["total"]) if receivable_agg else 0.0,
-        # Queues that should be at zero.
-        "creators_pending_review": await db.creator_profiles.count_documents(
-            {"verification_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
-        ),
-        "brands_unverified": await db.brand_profiles.count_documents({"verified": False}),
-        "applicants_awaiting_verification": await db.collaborations.count_documents(
-            {"state": "applied"}
-        ),
+        "campaigns_by_status": campaigns_by_status,
+        "campaigns_total": sum(campaigns_by_status.values()),
+        "awaiting_admin_action": sum(awaiting.values()),
+        "awaiting_breakdown": awaiting,
+        # Kept for existing callers; the same numbers now appear in the
+        # breakdown above.
+        "creators_pending_review": creators_pending_review,
+        "brands_unverified": brands_unverified,
+        "applicants_awaiting_verification": collab_action_counts["applied"],
     }
 
 

@@ -595,3 +595,295 @@ class TestBrandVerification:
         assert anon.get(f"{BASE_URL}/admin/brands").status_code == 401
         assert cs.get(f"{BASE_URL}/admin/brands").status_code == 403
         assert bs.get(f"{BASE_URL}/admin/brands").status_code == 403
+
+
+# ---------- 9. Creator oversight ----------
+
+class TestCreatorRoster:
+    """GET /admin/creators — the roster, as opposed to the work queues."""
+
+    def test_admin_only(self, creator, brand, anon):
+        cs, _, _ = creator
+        bs, _ = brand
+        assert anon.get(f"{BASE_URL}/admin/creators").status_code == 401
+        assert cs.get(f"{BASE_URL}/admin/creators").status_code == 403
+        assert bs.get(f"{BASE_URL}/admin/creators").status_code == 403
+
+    def test_lists_creators_of_every_verification_status(self, admin, creator):
+        """The queues only show people waiting on us; this shows everyone."""
+        cs, cuid, cemail = creator
+        _complete_creator(cs)
+
+        # Still pending — present.
+        rows = admin.get(f"{BASE_URL}/admin/creators", params={"page_size": 100}).json()
+        assert "creators" in rows and "total" in rows
+        assert any(x["email"] == cemail for x in rows["creators"])
+
+        # Verified — still present, unlike /creators/pending.
+        pipeline.verify_creator(admin, cuid)
+        after = admin.get(f"{BASE_URL}/admin/creators", params={"page_size": 100}).json()
+        row = next(x for x in after["creators"] if x["email"] == cemail)
+        assert row["verification_status"] == "verified"
+        assert row["user_id"] == cuid
+
+        pending = admin.get(f"{BASE_URL}/admin/creators/pending").json()
+        assert not any(x["email"] == cemail for x in pending)
+
+    def test_row_carries_money_and_campaign_counts(self, admin, brand, creator):
+        bs, _ = brand
+        cs, cuid, cemail = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
+
+        row = next(
+            x
+            for x in admin.get(
+                f"{BASE_URL}/admin/creators", params={"q": cemail, "page_size": 100}
+            ).json()["creators"]
+            if x["user_id"] == cuid
+        )
+        # Money in flight is committed, not earned — nothing has been paid yet.
+        assert row["total_earned"] == 0
+        assert row["committed"] > 0
+        assert row["campaigns_completed"] == 0
+        assert row["collaborations_ongoing"] == 1
+
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        payment = next(
+            x["payment"] for x in board["in_payment"] if x["id"] == collab_id
+        )
+        admin.post(
+            f"{BASE_URL}/admin/payments/{payment['id']}/mark_paid",
+            json={"payment_reference": f"UTR{uuid.uuid4().hex[:10].upper()}"},
+        )
+
+        after = next(
+            x
+            for x in admin.get(
+                f"{BASE_URL}/admin/creators", params={"q": cemail, "page_size": 100}
+            ).json()["creators"]
+            if x["user_id"] == cuid
+        )
+        assert after["total_earned"] == payment["creator_payout"]
+        assert after["campaigns_completed"] == 1
+        assert after["collaborations_ongoing"] == 0
+        assert after["committed"] == 0
+
+    def test_search_matches_name_handle_and_phone(self, admin, creator):
+        cs, cuid, _ = creator
+        suffix = uuid.uuid4().hex[:6]
+        profile = pipeline.complete_creator_profile(cs, suffix=suffix)
+        me = cs.get(f"{BASE_URL}/auth/me").json()
+
+        def ids_for(term):
+            r = admin.get(
+                f"{BASE_URL}/admin/creators", params={"q": term, "page_size": 100}
+            )
+            assert r.status_code == 200, r.text
+            return {x["user_id"] for x in r.json()["creators"]}
+
+        assert cuid in ids_for(profile["name"])
+        assert cuid in ids_for(profile["instagram_handle"])
+        if me.get("phone"):
+            assert cuid in ids_for(me["phone"])
+        assert cuid not in ids_for(f"nobody-{uuid.uuid4().hex}")
+
+    def test_filters_by_status_niche_and_city(self, admin, creator):
+        cs, cuid, _ = creator
+        pipeline.complete_creator_profile(cs)  # city Bengaluru, niche cafe
+        pipeline.verify_creator(admin, cuid)
+
+        def ids(params):
+            r = admin.get(f"{BASE_URL}/admin/creators", params={**params, "page_size": 100})
+            assert r.status_code == 200, r.text
+            return {x["user_id"] for x in r.json()["creators"]}
+
+        assert cuid in ids({"verification_status": "verified"})
+        assert cuid not in ids({"verification_status": "rejected"})
+        assert cuid in ids({"niche": "cafe"})
+        assert cuid in ids({"niche": "CAFE"})  # case-insensitive
+        assert cuid not in ids({"niche": "nonexistent-niche"})
+        assert cuid in ids({"city": "Bengaluru"})
+        # `area` is accepted as an alias — creators carry a city, not an area.
+        assert cuid in ids({"area": "Bengaluru"})
+        assert cuid not in ids({"city": "Atlantis"})
+
+    def test_rejects_an_unknown_status(self, admin):
+        r = admin.get(f"{BASE_URL}/admin/creators", params={"verification_status": "vetted"})
+        assert r.status_code == 422
+
+    def test_pagination_does_not_repeat_or_drop_rows(self, admin):
+        first = admin.get(
+            f"{BASE_URL}/admin/creators", params={"page": 1, "page_size": 3}
+        ).json()
+        assert first["page"] == 1 and first["page_size"] == 3
+        assert len(first["creators"]) <= 3
+        if first["total"] > 3:
+            second = admin.get(
+                f"{BASE_URL}/admin/creators", params={"page": 2, "page_size": 3}
+            ).json()
+            ids1 = {c["user_id"] for c in first["creators"]}
+            ids2 = {c["user_id"] for c in second["creators"]}
+            assert not (ids1 & ids2), "pages overlap"
+            assert first["pages"] >= 2
+
+
+class TestCreatorDetail:
+    """GET /admin/creators/{id} — one creator's whole history."""
+
+    def test_admin_only(self, creator, brand, anon):
+        cs, cuid, _ = creator
+        bs, _ = brand
+        assert anon.get(f"{BASE_URL}/admin/creators/{cuid}").status_code == 401
+        assert cs.get(f"{BASE_URL}/admin/creators/{cuid}").status_code == 403
+        assert bs.get(f"{BASE_URL}/admin/creators/{cuid}").status_code == 403
+
+    def test_unknown_and_malformed_ids_404(self, admin):
+        assert admin.get(f"{BASE_URL}/admin/creators/not-an-id").status_code == 404
+        assert admin.get(
+            f"{BASE_URL}/admin/creators/507f1f77bcf86cd799439011"
+        ).status_code == 404
+
+    def test_a_brand_is_not_a_creator(self, admin, brand):
+        """The id is a user id, so it has to be checked against the role."""
+        bs, bemail = brand
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": "X", "category": "fnb", "areas": ["Indiranagar"],
+        })
+        row = next(
+            x for x in admin.get(f"{BASE_URL}/admin/brands").json()
+            if x["email"] == bemail
+        )
+        assert admin.get(f"{BASE_URL}/admin/creators/{row['user_id']}").status_code == 404
+
+    def test_fixed_paths_still_win_over_the_id_route(self, admin):
+        """/creators/pending must not be read as a creator id."""
+        for path in ("pending", "changed", "incomplete"):
+            r = admin.get(f"{BASE_URL}/admin/creators/{path}")
+            assert r.status_code == 200, f"/creators/{path} -> {r.status_code}"
+            assert isinstance(r.json(), list), f"/creators/{path} returned the detail shape"
+
+    def test_groups_collaborations_and_totals_the_money(self, admin, brand, creator):
+        bs, _ = brand
+        cs, cuid, _ = creator
+
+        # One paid through to closed…
+        done_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        payment = next(x["payment"] for x in board["in_payment"] if x["id"] == done_id)
+        admin.post(
+            f"{BASE_URL}/admin/payments/{payment['id']}/mark_paid",
+            json={"payment_reference": f"UTR{uuid.uuid4().hex[:10].upper()}"},
+        )
+
+        # …one mid-flight…
+        ongoing_campaign = pipeline.seed_open_campaign(bs)
+        ongoing_id = pipeline.apply_to_campaign(cs, ongoing_campaign)
+        pipeline.step(admin, bs, ongoing_id, "verified")
+        pipeline.step(admin, bs, ongoing_id, "accepted", agreed_amount=4000)
+
+        # …and one still waiting on a decision.
+        open_campaign = pipeline.seed_open_campaign(bs)
+        open_id = pipeline.apply_to_campaign(cs, open_campaign)
+
+        r = admin.get(f"{BASE_URL}/admin/creators/{cuid}")
+        assert r.status_code == 200, r.text
+        d = r.json()
+
+        assert d["creator"]["user_id"] == cuid
+        assert d["creator"]["payout_ready"] is True
+
+        groups = d["collaborations"]
+        assert {c["id"] for c in groups["completed"]} == {done_id}
+        assert {c["id"] for c in groups["ongoing"]} == {ongoing_id}
+        assert {c["id"] for c in groups["applied"]} == {open_id}
+
+        # Each row carries enough to read without another request.
+        for row in groups["completed"] + groups["ongoing"] + groups["applied"]:
+            assert row["campaign_title"], "campaign_title missing"
+            assert row["brand_name"], "brand_name missing"
+            assert "agreed_amount" in row
+            assert row["state"]
+
+        totals = d["totals"]
+        assert totals["lifetime_earned"] == payment["creator_payout"]
+        assert totals["committed"] == 4000
+        assert totals["campaigns_completed"] == 1
+        assert totals["collaborations_ongoing"] == 1
+        assert totals["applications_open"] == 1
+
+    def test_declined_collaborations_are_kept_not_dropped(self, admin, brand, creator):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "verified")
+        bs.post(
+            f"{BASE_URL}/brand/collaborations/{collab_id}/decline",
+            json={"reason": "Different audience this time"},
+        )
+
+        d = admin.get(f"{BASE_URL}/admin/creators/{cuid}").json()
+        ended = d["collaborations"]["ended"]
+        row = next(x for x in ended if x["id"] == collab_id)
+        assert row["state"] == "declined"
+        assert row["exit_reason"] == "Different audience this time"
+        # And it isn't miscounted as work.
+        assert d["totals"]["collaborations_ongoing"] == 0
+        assert d["totals"]["campaigns_completed"] == 0
+
+    def test_a_creator_with_no_history_reads_cleanly(self, admin, creator):
+        cs, cuid, _ = creator
+        _complete_creator(cs)
+        d = admin.get(f"{BASE_URL}/admin/creators/{cuid}").json()
+        assert d["collaborations"] == {
+            "completed": [], "ongoing": [], "applied": [], "ended": []
+        }
+        assert d["totals"]["lifetime_earned"] == 0
+        assert d["totals"]["committed"] == 0
+
+
+class TestMetricsOversight:
+    def test_gmv_campaign_counts_and_action_queue_present(self, admin):
+        d = admin.get(f"{BASE_URL}/admin/metrics").json()
+        for k in ["gmv", "campaigns_by_status", "campaigns_total",
+                  "awaiting_admin_action", "awaiting_breakdown"]:
+            assert k in d, f"missing {k}"
+
+        # Every campaign status is zero-filled, so a caller never has to guard.
+        for status in ["draft", "upcoming", "open", "in_progress", "completed", "closed"]:
+            assert status in d["campaigns_by_status"]
+            assert isinstance(d["campaigns_by_status"][status], int)
+        assert d["campaigns_total"] == sum(d["campaigns_by_status"].values())
+
+        # The headline number is always explainable by its parts.
+        assert d["awaiting_admin_action"] == sum(d["awaiting_breakdown"].values())
+
+    def test_gmv_is_payouts_plus_our_margin(self, admin, brand, creator):
+        before = admin.get(f"{BASE_URL}/admin/metrics").json()
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        payment = next(x["payment"] for x in board["in_payment"] if x["id"] == collab_id)
+        admin.post(
+            f"{BASE_URL}/admin/payments/{payment['id']}/mark_paid",
+            json={"payment_reference": f"UTR{uuid.uuid4().hex[:10].upper()}"},
+        )
+
+        after = admin.get(f"{BASE_URL}/admin/metrics").json()
+        expected = payment["creator_payout"] + payment["platform_fee"]
+        assert after["gmv"] == pytest.approx(before["gmv"] + expected, abs=0.01)
+        assert after["gmv"] == pytest.approx(
+            after["total_paid_out"] + after["platform_revenue"], abs=0.01
+        )
+
+    def test_action_queue_counts_a_new_applicant(self, admin, brand, creator):
+        before = admin.get(f"{BASE_URL}/admin/metrics").json()
+        bs, _ = brand
+        cs, cuid, _ = creator
+        pipeline.make_collab_in_state(admin, bs, cs, cuid, "applied")
+
+        after = admin.get(f"{BASE_URL}/admin/metrics").json()
+        assert (
+            after["awaiting_breakdown"]["applicants_to_verify"]
+            >= before["awaiting_breakdown"]["applicants_to_verify"] + 1
+        )
+        assert after["awaiting_admin_action"] > before["awaiting_admin_action"]

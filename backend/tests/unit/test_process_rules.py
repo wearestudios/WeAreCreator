@@ -108,6 +108,65 @@ class TestCollaborationStateMachine:
 # ---------------------------------------------------------------------------
 
 
+class TestCreatorHistoryGroups:
+    """Admin oversight groups a creator's collaborations. Every state has to land
+    in exactly one bucket, or a collaboration silently disappears from someone's
+    record."""
+
+    ALL_GROUPS = (
+        "COLLAB_GROUP_APPLIED",
+        "COLLAB_GROUP_ONGOING",
+        "COLLAB_GROUP_COMPLETED",
+        "COLLAB_GROUP_ENDED",
+    )
+
+    def _grouped(self):
+        out = []
+        for name in self.ALL_GROUPS:
+            out.extend(getattr(server, name))
+        return out
+
+    def test_every_state_belongs_to_a_group(self):
+        every_state = set(server.COLLAB_STATE_ORDER) | set(server.TERMINAL_COLLAB_STATES)
+        assert set(self._grouped()) == every_state
+
+    def test_no_state_is_in_two_groups(self):
+        grouped = self._grouped()
+        assert len(grouped) == len(set(grouped))
+
+    def test_applications_awaiting_a_decision_are_not_counted_as_work(self):
+        # A pitch nobody has accepted is not an ongoing collaboration.
+        assert "applied" in server.COLLAB_GROUP_APPLIED
+        assert "verified" in server.COLLAB_GROUP_APPLIED
+        for state in server.COLLAB_GROUP_APPLIED:
+            assert state not in server.COLLAB_GROUP_ONGOING
+
+    def test_only_closed_counts_as_completed(self):
+        assert server.COLLAB_GROUP_COMPLETED == ("closed",)
+        assert "declined" not in server.COLLAB_GROUP_COMPLETED
+        assert "cancelled" not in server.COLLAB_GROUP_COMPLETED
+
+
+class TestAdminActionQueue:
+    def test_only_states_the_admin_can_actually_move(self):
+        # `attended` waits on the creator and `content_submitted` on the brand,
+        # so neither belongs on the admin's desk even though the advance
+        # endpoint would technically accept them.
+        assert "attended" not in server.ADMIN_ACTION_STATES
+        assert "content_submitted" not in server.ADMIN_ACTION_STATES
+        # These two are the brand's calls.
+        for state in ("verified",):
+            assert state not in server.ADMIN_ACTION_STATES
+
+    def test_the_admin_owned_steps_are_present(self):
+        for state in ("applied", "accepted", "commercial_agreed", "slot_booked"):
+            assert state in server.ADMIN_ACTION_STATES
+
+    def test_terminal_states_need_no_action(self):
+        for state in server.TERMINAL_COLLAB_STATES:
+            assert state not in server.ADMIN_ACTION_STATES
+
+
 class TestCampaignFill:
     def test_applicants_awaiting_a_decision_do_not_occupy_a_slot(self):
         # Otherwise one campaign with ten hopefuls looks full.
