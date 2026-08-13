@@ -1,0 +1,45 @@
+{
+  "summary": "Verified new creator-driven attended → content_submitted transition end-to-end. Backend: added /app/backend/tests/test_submit_content.py — 8 focused tests (auth guards for anon/brand/admin, invalid URL scheme, wrong-state 400, non-owner 404, bad ObjectId 404, happy-path with GET-verify persistence + admin group verification + creator dashboard row includes content_url). All 8 new tests pass. Full regression: 83/84 pass (~85s); 1 pre-existing stale test in test_admin.py fails (see below). Frontend: full Playwright happy-path — seed brand+creator+campaign via API, admin advances to attended, creator logs in, clicks submit-content-btn-<id>, dialog opens WITHOUT navigating to /campaigns/<cid> (URL stays /dashboard ✓), empty submit shows 'Paste the link to your published post or reel.' ✓, 'foo.bar' shows 'URL must start with http:// or https://' ✓, valid https URL submits → dialog closes → state-pill-content_submitted appears in the same row ✓, submit-content-btn no longer visible ✓, application-content-link-<id> href matches submitted URL ✓; then admin logs in, /admin loads, admin-collabs-group-content_submitted contains admin-collab-advance-<id> labelled 'Advance to In payment' ✓.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/collaborations/{id}/advance", "issue": "Pre-existing test_admin.py::TestStateMachine::test_advance_from_in_payment_moves_to_closed_without_paying now fails: backend correctly rejects /advance from state 'in_payment' with 400 ('This collaboration is awaiting payment — use Mark as paid to close it.'), but the old test still expects the row to move to 'closed'. This is a stale test — the behaviour change was explicitly flagged as a suggested improvement in iteration_8 code-review comments. Recommend updating the test to assert 400 + the new detail message. Not related to the current review-request; left as-is."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ApplicationsSection (Dashboard.jsx)", "issue": "Invalid HTML nesting: application-content-link-<id> is an <a> rendered inside the campaign React-Router <Link> (also <a>). Triggers React dev warning 'In HTML, <a> cannot be a descendant of <a>. This will cause a hydration error.' Behaviourally the onClick=stopPropagation works, but move the content link OUTSIDE the campaign <Link> (e.g. into the action column beside submit-content-btn, or replace the outer Link with a div + programmatic navigation) to fix the nesting.", "selector": "[data-testid^='application-content-link-']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_submit_content.py",
+    "/app/test_reports/pytest/submit_content.xml",
+    "/app/test_reports/pytest/all.xml"
+  ],
+  "action_items": [
+    "Fix invalid <a>-inside-<a> nesting for application-content-link (see frontend_issues.ui_bugs). Recommend restructuring row so the campaign Link no longer wraps the meta strip containing the content link, OR move the content-link into the action column beside submit-content-btn.",
+    "Update stale test_admin.py::TestStateMachine::test_advance_from_in_payment_moves_to_closed_without_paying to expect 400 (advance from in_payment is now blocked — use mark_paid).",
+    "(Carried from iter 8) server.py is now 1790 lines; refactor into routers is overdue."
+  ],
+  "critical_code_review_comments": [
+    "server.py=1790 lines, Dashboard.jsx=864 lines — both above the 700-line split threshold. New SubmitContentDialog + ApplicationsSection refactor is a good candidate to extract into components/creator/SubmitContentDialog.jsx and components/creator/ApplicationsSection.jsx.",
+    "SubmitContentPayload uses Field(min_length=8) — an 8-char minimum is not enough to guarantee http://x (which is exactly 8 chars). Consider min_length=10 or dropping min_length and relying only on the http/https prefix check, which is the actually meaningful invariant.",
+    "Backend accepts ANY URL starting with http/https (e.g. 'https://malicious.example.com/x'); if the intent per problem-statement is 'published Instagram URL', consider validating the host is instagram.com. Not a blocker but worth confirming with product.",
+    "Frontend row now uses `<Link>` for campaign + sibling action column — but the content link (which appears once content_url is set) is nested INSIDE the Link and relies on e.stopPropagation() + being an <a target=_blank>. This yields invalid nested-<a> HTML (see frontend_issues.ui_bugs). The cleaner fix is to make the outer campaign area a non-anchor click target (Card+useNavigate) OR to move the content link out.",
+    "SubmitContentDialog resets `url` from collab.content_url on open — that means if a creator previously submitted, the field is prefilled. But the backend blocks a re-submit with 400 (state is now content_submitted), so this prefill can never be used. Either hide the button for content_url-set rows (already done via isAttended gate) or drop the prefill logic to reduce dead code.",
+    "The client-side pattern /^https?:\\/\\//i accepts a scheme-only string like 'https://'; if a user pastes only that, backend still accepts (len>=8, prefix matches) and stores an empty-post URL. Add a stricter regex like /^https?:\\/\\/.+\\..+/i.",
+    "No rate-limit or debounce on submit — a creator could double-click the button; setBusy(true) protects the same click but a fast repeat after error could race. Minor."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_submit_content.py (new — 8 tests: 3 auth + 4 validation + 1 happy-path with persistence checks)"
+  ],
+  "success_rate": {"backend": "100% for new endpoint (8/8); 83/84 overall (1 stale pre-existing test)", "frontend": "100% for review-request bullets — every data-testid + navigation-gotcha + validation error + admin group placement verified"},
+  "test_credentials": "Admin creators@wearemonk.in / WeAreMonk@2026 (seeded). Fresh test_creator-<rand>@example.com + test_brand-<rand>@example.com per run, password Password123!",
+  "seed_data_creation": "Per Playwright run: 1 fresh brand + 1 fresh creator + 1 open campaign + 1 collab advanced applied→attended and then submitted with https://instagram.com/p/abc123 → ends in content_submitted state. Backend tests create N throwaway users/campaigns/collabs (no cleanup — namespaced by uuid suffix).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New endpoint file: /app/backend/tests/test_submit_content.py. Run: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests/test_submit_content.py -v`. Full regression: `pytest /app/backend/tests -q` — expect 83/84 (1 stale in test_admin.py). Frontend gotcha: login-submit testid is `login-submit-btn` (not `-button`). Reproducing the UI flow: use page.request to seed data (register+login+brand-profile+campaign+creator-profile+apply), admin login+advance 5x to attended, LOGOUT admin session before UI login (otherwise page.request cookies leak and creator UI login may collide). Verify no-navigation on Submit Content click by asserting page.url unchanged (still /dashboard) after opening the dialog.",
+  "rca of the issue": "N/A for review-request. Stale test rca: iteration_8 code review recommended blocking /advance from in_payment (require mark_paid); main agent implemented that guard in server.py:1158 but the corresponding assertion in /app/backend/tests/test_admin.py (line 329) was not updated. Nesting bug rca: refactor moved submit-content-btn out of the campaign Link (correct fix for click bubble), but the content link was placed inside the meta-strip WHICH STILL LIVES INSIDE the Link — so the outer <a> now wraps an inner <a>."
+}

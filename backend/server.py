@@ -160,6 +160,12 @@ class ApplyPayload(BaseModel):
     quoted_rate: float = Field(ge=0)
 
 
+class SubmitContentPayload(BaseModel):
+    """Payload for a creator submitting their published content URL."""
+
+    content_url: str = Field(min_length=8, max_length=500)
+
+
 class BrandProfileUpdate(BaseModel):
     """Payload for brand onboarding / profile edits."""
 
@@ -588,6 +594,7 @@ def _serialize_collab_row(
         "category": (campaign or {}).get("category"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
+        "content_url": collab.get("content_url"),
         "state": collab.get("state", "applied"),
         "created_at": collab["created_at"].isoformat()
         if isinstance(collab.get("created_at"), datetime)
@@ -684,6 +691,53 @@ async def get_creator_dashboard(
             "upcoming": len(upcoming),
             "payments": len(payments) + len(in_payment_collabs),
         },
+    }
+
+
+
+@creator_router.post("/collaborations/{collab_id}/submit_content")
+async def submit_collab_content(
+    collab_id: str,
+    payload: SubmitContentPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    url = payload.content_url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=422, detail="Content URL must start with http:// or https://")
+
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    if collab.get("state") != "attended":
+        raise HTTPException(
+            status_code=400,
+            detail="Content can only be submitted after the collaboration is marked attended",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid},
+        {
+            "$set": {
+                "content_url": url,
+                "state": "content_submitted",
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    return {
+        "id": collab_id,
+        "state": updated["state"],
+        "content_url": updated["content_url"],
     }
 
 

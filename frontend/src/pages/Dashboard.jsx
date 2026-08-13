@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { toast } from "sonner";
 import {
     ArrowRight,
     CheckCircle2,
     Clock,
     Compass,
+    ExternalLink,
     Instagram,
+    Link as LinkIcon,
     Loader2,
+    Send,
     Sparkles,
     Users,
     Wallet,
@@ -16,8 +20,19 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import BrandDashboardView from "@/pages/BrandDashboardView";
 
 // ---------------------------------------------------------------------------
@@ -355,89 +370,248 @@ const StatsPanel = ({ profile }) => {
     );
 };
 
-const ApplicationsSection = ({ applications }) => (
-    <section
-        data-testid="applications-section"
-        className="mt-14"
-    >
-        <div className="flex items-baseline justify-between">
-            <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    My applications
-                </p>
-                <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
-                    Every brief you've pitched on.
-                </h2>
-            </div>
-            <span className="text-xs text-muted-foreground">
-                {applications.length}{" "}
-                {applications.length === 1 ? "application" : "applications"}
-            </span>
-        </div>
+function SubmitContentDialog({ open, onOpenChange, collab, onSubmitted }) {
+    const [url, setUrl] = useState("");
+    const [err, setErr] = useState("");
+    const [busy, setBusy] = useState(false);
 
-        <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card">
-            {applications.length === 0 ? (
-                <div
-                    data-testid="applications-empty"
-                    className="flex flex-col items-center gap-3 px-6 py-16 text-center"
-                >
-                    <Compass className="h-6 w-6 text-ember-500" />
-                    <p className="font-serif text-2xl">
-                        You haven't applied to anything yet.
+    useEffect(() => {
+        if (open) {
+            setUrl(collab?.content_url || "");
+            setErr("");
+        }
+    }, [open, collab]);
+
+    const submit = async (e) => {
+        e.preventDefault();
+        setErr("");
+        const trimmed = url.trim();
+        if (!trimmed) {
+            setErr("Paste the link to your published post or reel.");
+            return;
+        }
+        if (!/^https?:\/\//i.test(trimmed)) {
+            setErr("URL must start with http:// or https://");
+            return;
+        }
+        setBusy(true);
+        try {
+            await api.post(
+                `/creator/collaborations/${collab.id}/submit_content`,
+                { content_url: trimmed },
+            );
+            toast.success("Content submitted — the WeAre team will review it");
+            onOpenChange(false);
+            onSubmitted?.();
+        } catch (e) {
+            setErr(formatApiError(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent
+                data-testid="submit-content-dialog"
+                className="max-w-md rounded-md border border-white/10 bg-card"
+            >
+                <DialogHeader className="text-left">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        Submit content
                     </p>
-                    <p className="max-w-md text-sm text-muted-foreground">
-                        Browse the live campaign feed and pitch on the ones that fit you.
-                    </p>
-                    <Link
-                        to="/campaigns"
-                        data-testid="applications-browse-link"
-                        className="mt-4"
-                    >
-                        <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">
-                            Browse campaigns
-                        </Button>
-                    </Link>
-                </div>
-            ) : (
-                <ul className="divide-y divide-white/10">
-                    {applications.map((a) => (
-                        <li
-                            key={a.id}
-                            data-testid={`application-row-${a.id}`}
+                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                        {collab?.campaign_title}
+                    </DialogTitle>
+                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                        Once you submit, the WeAre team will verify your post and move the collab to payment.
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={submit} noValidate className="mt-4 space-y-4">
+                    <div>
+                        <Label
+                            htmlFor="sc-url"
+                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                         >
-                            <Link
-                                to={`/campaigns/${a.campaign_id}`}
-                                className="group flex flex-col gap-4 px-5 py-5 transition-colors duration-200 hover:bg-white/5 md:flex-row md:items-center md:gap-6 md:px-6 md:py-6"
+                            Instagram post / reel URL
+                        </Label>
+                        <div className="relative mt-2">
+                            <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                id="sc-url"
+                                data-testid="submit-content-url-input"
+                                type="url"
+                                inputMode="url"
+                                value={url}
+                                onChange={(e) => setUrl(e.target.value)}
+                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                placeholder="https://instagram.com/p/..."
+                            />
+                        </div>
+                    </div>
+                    {err && (
+                        <p
+                            data-testid="submit-content-error"
+                            className="text-sm text-destructive"
+                        >
+                            {err}
+                        </p>
+                    )}
+                    <DialogFooter className="gap-2">
+                        <DialogClose asChild>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                data-testid="submit-content-cancel"
+                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
                             >
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                        {a.brand_name || "Brand"}
-                                        {a.area ? ` · ${a.area}` : ""}
-                                        {a.category ? ` · ${CAT_LABEL[a.category] || a.category}` : ""}
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            type="submit"
+                            data-testid="submit-content-submit"
+                            disabled={busy}
+                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        >
+                            {busy ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Submitting…
+                                </>
+                            ) : (
+                                <>
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Submit content
+                                </>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+const ApplicationsSection = ({ applications, onRefresh }) => {
+    const [dialog, setDialog] = useState({ open: false, collab: null });
+    const openFor = (a) => setDialog({ open: true, collab: a });
+    return (
+        <section
+            data-testid="applications-section"
+            className="mt-14"
+        >
+            <div className="flex items-baseline justify-between">
+                <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        My applications
+                    </p>
+                    <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
+                        Every brief you've pitched on.
+                    </h2>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                    {applications.length}{" "}
+                    {applications.length === 1 ? "application" : "applications"}
+                </span>
+            </div>
+
+            <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card">
+                {applications.length === 0 ? (
+                    <div
+                        data-testid="applications-empty"
+                        className="flex flex-col items-center gap-3 px-6 py-16 text-center"
+                    >
+                        <Compass className="h-6 w-6 text-ember-500" />
+                        <p className="font-serif text-2xl">
+                            You haven't applied to anything yet.
+                        </p>
+                        <p className="max-w-md text-sm text-muted-foreground">
+                            Browse the live campaign feed and pitch on the ones that fit you.
+                        </p>
+                        <Link
+                            to="/campaigns"
+                            data-testid="applications-browse-link"
+                            className="mt-4"
+                        >
+                            <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                Browse campaigns
+                            </Button>
+                        </Link>
+                    </div>
+                ) : (
+                    <ul className="divide-y divide-white/10">
+                        {applications.map((a) => {
+                            const isAttended = a.state === "attended";
+                            return (
+                                <li
+                                    key={a.id}
+                                    data-testid={`application-row-${a.id}`}
+                                    className="flex flex-col gap-4 px-5 py-5 transition-colors duration-200 md:flex-row md:items-center md:gap-6 md:px-6 md:py-6"
+                                >
+                                    <Link
+                                        to={`/campaigns/${a.campaign_id}`}
+                                        className="group flex flex-1 min-w-0 flex-col gap-1 hover:text-ember-500"
+                                    >
+                                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                            {a.brand_name || "Brand"}
+                                            {a.area ? ` · ${a.area}` : ""}
+                                            {a.category ? ` · ${CAT_LABEL[a.category] || a.category}` : ""}
+                                        </div>
+                                        <div className="mt-0.5 truncate font-serif text-xl leading-tight text-foreground group-hover:text-ember-500">
+                                            {a.campaign_title || "Untitled campaign"}
+                                        </div>
+                                        <div className="mt-2 text-xs text-muted-foreground">
+                                            Applied {formatDate(a.created_at)}
+                                        </div>
+                                    </Link>
+
+                                    <div className="flex flex-col items-stretch gap-2 md:items-end md:min-w-[220px]">
+                                        <div className="flex items-baseline font-serif text-2xl md:justify-end">
+                                            <IndianRupee className="h-4 w-4 text-ember-500" />
+                                            {formatRupees(a.quoted_rate)}
+                                        </div>
+                                        <StatePill state={a.state} />
+                                        {isAttended && (
+                                            <Button
+                                                data-testid={`submit-content-btn-${a.id}`}
+                                                onClick={() => openFor(a)}
+                                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                            >
+                                                <Send className="mr-1.5 h-4 w-4" />
+                                                Submit content
+                                            </Button>
+                                        )}
+                                        {a.content_url && (
+                                            <a
+                                                href={a.content_url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                data-testid={`application-content-link-${a.id}`}
+                                                className="inline-flex items-center gap-1 text-xs text-ember-500 hover:text-ember-400"
+                                            >
+                                                <LinkIcon className="h-3 w-3" />
+                                                View submitted content
+                                                <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                        )}
                                     </div>
-                                    <div className="mt-1.5 truncate font-serif text-xl leading-tight text-foreground">
-                                        {a.campaign_title || "Untitled campaign"}
-                                    </div>
-                                    <div className="mt-2 text-xs text-muted-foreground">
-                                        Applied {formatDate(a.created_at)}
-                                    </div>
-                                </div>
-                                <div className="flex flex-col items-end gap-2 md:min-w-[160px]">
-                                    <div className="flex items-baseline font-serif text-2xl">
-                                        <IndianRupee className="h-4 w-4 text-ember-500" />
-                                        {formatRupees(a.quoted_rate)}
-                                    </div>
-                                    <StatePill state={a.state} />
-                                </div>
-                                <ArrowRight className="hidden h-4 w-4 flex-none text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500 md:block" />
-                            </Link>
-                        </li>
-                    ))}
-                </ul>
-            )}
-        </div>
-    </section>
-);
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+            </div>
+
+            <SubmitContentDialog
+                open={dialog.open}
+                onOpenChange={(v) => setDialog((d) => ({ ...d, open: v }))}
+                collab={dialog.collab}
+                onSubmitted={onRefresh}
+            />
+        </section>
+    );
+};
 
 const UpcomingSection = ({ upcoming }) => (
     <section data-testid="upcoming-section" className="mt-14">
@@ -615,19 +789,18 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
 
-    useEffect(() => {
-        let cancelled = false;
-        api.get("/creator/dashboard")
-            .then(({ data }) => {
-                if (!cancelled) setData(data);
-            })
-            .catch((err) => {
-                if (!cancelled) setError(err?.response?.data?.detail || "Failed to load dashboard");
-            });
-        return () => {
-            cancelled = true;
-        };
+    const load = React.useCallback(async () => {
+        try {
+            const { data } = await api.get("/creator/dashboard");
+            setData(data);
+        } catch (err) {
+            setError(err?.response?.data?.detail || "Failed to load dashboard");
+        }
     }, []);
+
+    useEffect(() => {
+        load();
+    }, [load]);
 
     return (
         <div data-testid="dashboard-page" className="min-h-screen bg-background">
@@ -651,7 +824,7 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
                         <CreatorHeader user={user} profile={data.profile} />
                         <OnboardedBanner visible={justOnboarded} />
                         <StatsPanel profile={data.profile} />
-                        <ApplicationsSection applications={data.applications} />
+                        <ApplicationsSection applications={data.applications} onRefresh={load} />
                         <UpcomingSection upcoming={data.upcoming} />
                         <PaymentsSection
                             payments={data.payments}

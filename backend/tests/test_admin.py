@@ -300,7 +300,7 @@ class TestStateMachine:
         assert r.status_code == 400
         assert "final state" in r.text.lower()
 
-    def test_advance_from_in_payment_moves_to_closed_without_paying(
+    def test_advance_from_in_payment_is_blocked_use_mark_paid(
         self, admin, brand, creator
     ):
         bs, _ = brand
@@ -324,15 +324,10 @@ class TestStateMachine:
         r = advance({"platform_fee": 500})
         assert r.json()["state"] == "in_payment"
 
-        # advance again from in_payment -> closed but payment stays pending
+        # advance from in_payment is now blocked — admin must use mark_paid.
         r = advance()
-        assert r.status_code == 200
-        assert r.json()["state"] == "closed"
-
-        all_c = admin.get(f"{BASE_URL}/admin/collaborations").json()
-        row = next(x for x in all_c["by_state"]["closed"] if x["id"] == collab_id)
-        assert row["payment"] is not None
-        assert row["payment"]["state"] == "pending"
+        assert r.status_code == 400
+        assert "mark as paid" in r.json()["detail"].lower()
 
 
 # ---------- 6. Metrics ----------
