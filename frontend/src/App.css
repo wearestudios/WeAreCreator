@@ -1,0 +1,7 @@
+/* App-level overrides. Global tokens live in index.css */
+
+.App {
+    min-height: 100vh;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+}

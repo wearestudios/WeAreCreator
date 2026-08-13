@@ -1,0 +1,147 @@
+{
+  "theme": {
+    "mode": "dark",
+    "primary_color_hex": "#F05D14",
+    "primary_color_name": "Burnt Orange"
+  },
+  "typography": {
+    "heading_font": "Instrument Serif",
+    "heading_fallback": "Cormorant Garamond, serif",
+    "body_font": "DM Sans",
+    "body_fallback": "sans-serif",
+    "rules": [
+      "CRITICAL: BANNED LIST - Do not use Inter, Roboto, Open Sans, Lato for Headings.",
+      "Headlines (Size > 32px): MUST use tight letter spacing (tracking-tighter).",
+      "Overlines / Labels: MUST be Uppercase, Tiny, and Wide Spacing (tracking-[0.2em]).",
+      "H1 (Hero/Main Heading): MAXIMUM text-6xl (clamp/fluid scaling). Do not use text-7xl, text-8xl, or text-9xl.",
+      "Line Height: Tight (leading-none) for headers, Loose (leading-relaxed) for body.",
+      "Hierarchy Gap Rule: The jump between a heading and its subheading must not exceed 2 Tailwind steps."
+    ],
+    "google_fonts_import": "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Instrument+Serif:ital@0;1&display=swap');"
+  },
+  "colors": {
+    "background": "hsl(0 0% 4%)",
+    "foreground": "hsl(0 0% 98%)",
+    "primary": "hsl(24 95% 53%)",
+    "primary_foreground": "hsl(0 0% 9%)",
+    "card": "hsl(0 0% 6%)",
+    "card_foreground": "hsl(0 0% 98%)",
+    "border": "hsl(0 0% 15%)",
+    "muted": "hsl(0 0% 12%)",
+    "muted_foreground": "hsl(0 0% 60%)",
+    "strategy": [
+      "The 'Tinted Grey' Rule: Never use pure #000000. Tint neutral greys with warm tones to complement Burnt Orange.",
+      "Avoid generic full-screen gradients (especially purple/blue). Use subtle noise/grain texture over gloss.",
+      "Primary Burnt Orange (#F05D14) should be used selectively for CTAs and critical accents, not background fills."
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": [
+      "Glassmorphism (The Crystal Variant): Use for Sticky Headers/Navs. bg-black/60, backdrop-blur-xl, border-white/10 (1px delicate inner stroke).",
+      "Neumorphism (Tactile): Use for Dashboard Cards. Flat background (bg-card), 1px subtle border (border-white/10), no shadow by default. Hover: slight lift, subtle shadow, border brightens."
+    ],
+    "decorations": [
+      "Textures: Apply subtle grain or noise overlays to break digital flatness.",
+      "Max Overlay Opacity for Hero Images: bg-black/50. If image isn't visible, overlay is too heavy. Prefer gradient overlay vs blanket flat overlay."
+    ]
+  },
+  "component_rules": {
+    "forms_and_inputs": "ALWAYS use Shadcn Input, Select, Form, Checkbox (HEAVILY CUSTOMIZE them to strip the 'Vercel-look' via Tailwind).",
+    "buttons": "Modern styles. Pill-shaped or sharp rectangular. Interaction animations and color relevant to the app style.",
+    "cards": "Go cardless or sharp edges, rectangular, dense styles. Minimize rounded corners to max 8px (rounded-lg or rounded-md).",
+    "navigation": "MUST have a visible navigation bar on desktop with Logo, 3-5 links, and CTA. DO NOT use completely transparent background in header. Always use Glassmorphism or solid dark background.",
+    "toasts": "Use 'sonner' for toasts.",
+    "calendar_dropdowns": "Use Shadcn calendar and dropdown-menu. DO NOT use raw HTML <select> or <input type='date'>."
+  },
+  "grids_and_layouts": {
+    "spacing": [
+      "Generous Spacing Philosophy: Use 2-3x more spacing. Containers with borders MUST have internal padding (p-6, p-8) to prevent collision.",
+      "Tailwind Scale: Use p-12, p-16, p-24, p-32 for section padding."
+    ],
+    "bento_grid_marketing": "MODE A (Tetris Grid): Asymmetry, Visual Tension. grid-cols-1 md:grid-cols-12, wide gaps (gap-8 to gap-12). Leave negative space.",
+    "bento_grid_dashboard": "MODE B (High Density Grid): grid-cols-1 md:grid-cols-4, tight gaps (gap-4 or gap-6).",
+    "alignment": [
+      "Never center everything by default. Use explicit alignment and hierarchy. Left-align dense content and paragraphs.",
+      "Mobile-First: Always start with grid-cols-1.",
+      "Grid items MUST be direct children of grid containers."
+    ]
+  },
+  "motion": {
+    "rules": [
+      "Hover states (all interactive elements): explicit color shifts. E.g., hover:text-white hover:bg-orange-600.",
+      "DO NOT use universal transition (transition-all). Target specific properties: transition-transform, transition-colors duration-200.",
+      "Micro-animations: hover lifts (-translate-y-1), subtle scaling."
+    ]
+  },
+  "accessibility": {
+    "contrast": [
+      "Minimum 4.5:1 contrast for normal text.",
+      "When placing text over images/gradients, use text shadow to maintain contrast."
+    ],
+    "interaction": [
+      "Focus states MUST have HIGHER contrast than default state.",
+      "ALWAYS respect prefers-reduced-motion."
+    ]
+  },
+  "media": {
+    "images": [
+      "Mobile Height Limit: Images MUST NOT exceed 80vh (max-h-[80vh] md:max-h-none).",
+      "Include subjects in scenes for authenticity. Avoid empty, artificial scenes."
+    ]
+  },
+  "image_urls": [
+    {
+      "category": "Indian Cuisine & Food Creators",
+      "url": "https://images.unsplash.com/photo-1728910156510-77488f19b152",
+      "description": "Rich dark moody Indian food spread"
+    },
+    {
+      "category": "Indian Cuisine & Food Creators",
+      "url": "https://images.unsplash.com/photo-1596797038530-2c107229654b",
+      "description": "Cooked food in dark cooking pot, dramatic lighting"
+    },
+    {
+      "category": "Premium Cafe Interiors (Bengaluru vibe)",
+      "url": "https://images.unsplash.com/photo-1709548145082-04d0cde481d4",
+      "description": "Dimly lit premium restaurant/cafe interior with tables"
+    },
+    {
+      "category": "Premium Cafe Interiors (Bengaluru vibe)",
+      "url": "https://images.unsplash.com/photo-1726835498689-b4f6dbcdbdfb",
+      "description": "Premium bar/restaurant seating in dark lighting"
+    },
+    {
+      "category": "Luxury Plating & Lifestyle",
+      "url": "https://images.unsplash.com/photo-1621494268492-d01b98eba7e4",
+      "description": "Person holding stainless steel spoon eating on dark table, premium vibe"
+    },
+    {
+      "category": "Luxury Plating & Lifestyle",
+      "url": "https://images.unsplash.com/photo-1469234496837-d0101f54be3e",
+      "description": "Wine glasses on table, upscale dinner setting"
+    }
+  ],
+  "libraries": {
+    "icons": "lucide-react (default choice)",
+    "motion": "framer-motion",
+    "scrolling": "lenis (smooth scrolling for premium feel)"
+  },
+  "instructions_to_main_agent": [
+    "1. Read this guidelines file entirely and apply the specified font families in `index.css` and `tailwind.config.js`.",
+    "2. Setup 'Instrument Serif' for all h1, h2, h3 tags and 'DM Sans' for body text. Enforce tracking and leading rules.",
+    "3. Implement the dark mode color scheme. Override Shadcn default Vercel-like styling to match this premium cinematic aesthetic.",
+    "4. Build the placeholder Landing page using pure HTML/Tailwind, incorporating the provided images with proper dark gradient overlays.",
+    "5. Build the Signup page with Creator vs Brand role selection.",
+    "6. Build the Login page.",
+    "7. Build the Dashboard placeholder shell with a Sidebar/Nav layout, leveraging the Neumorphic tactile card rules."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You MUST NOT center align the app container (.App { text-align: center; } is banned).",
+    "You MUST NOT apply universal transition (transition: all). Use specific properties.",
+    "Create depth through layered design elements with z-index hierarchy and backdrop blurs.",
+    "Every interaction needs micro-animations - hover states, transitions. Static = dead.",
+    "Never use placeholder URLs (via.placeholder.com). ONLY use the provided image URLs.",
+    "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='login-submit-button').",
+    "Do not use transparent backgrounds for dropdowns, headers, or over content."
+  ]
+}

@@ -1,0 +1,101 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Instrument+Serif:ital@0;1&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* Dark, tinted-grey base + burnt-orange accent */
+        --background: 20 8% 4%;
+        --foreground: 30 12% 96%;
+
+        --card: 24 8% 6%;
+        --card-foreground: 30 12% 96%;
+
+        --popover: 24 8% 7%;
+        --popover-foreground: 30 12% 96%;
+
+        --primary: 18 88% 51%; /* burnt orange #F05D14 */
+        --primary-foreground: 24 20% 8%;
+
+        --secondary: 24 6% 12%;
+        --secondary-foreground: 30 12% 96%;
+
+        --muted: 24 6% 12%;
+        --muted-foreground: 30 6% 62%;
+
+        --accent: 18 88% 51%;
+        --accent-foreground: 24 20% 8%;
+
+        --destructive: 0 72% 45%;
+        --destructive-foreground: 0 0% 98%;
+
+        --border: 24 6% 14%;
+        --input: 24 6% 12%;
+        --ring: 18 88% 51%;
+
+        --radius: 0.5rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    html,
+    body {
+        margin: 0;
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+        font-feature-settings: "ss01", "cv11";
+    }
+    h1,
+    h2,
+    h3,
+    h4,
+    h5 {
+        font-family: "Instrument Serif", "Cormorant Garamond", ui-serif, Georgia,
+            serif;
+        letter-spacing: -0.01em;
+        line-height: 1.05;
+    }
+    ::selection {
+        background: hsl(18 88% 51% / 0.3);
+        color: hsl(30 12% 96%);
+    }
+}
+
+/* Subtle grain / noise for premium depth */
+.grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");
+    opacity: 0.06;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+
+/* Utility: fluid H1 */
+.h-fluid {
+    font-size: clamp(2.5rem, 6vw, 4.25rem);
+    line-height: 1;
+}
+
+/* Focus ring override for premium feel */
+:focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+}
