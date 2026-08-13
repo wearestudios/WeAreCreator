@@ -138,7 +138,8 @@ export default function Dashboard() {
 
                 {/* Placeholder tiles */}
                 <div className="mt-14 grid gap-6 md:grid-cols-3">
-                    <div
+                    <Link
+                        to={isCreator ? "/campaigns" : "/dashboard"}
                         data-testid="dashboard-tile-campaigns"
                         className="group rounded-md border border-white/10 bg-card p-8 transition-colors duration-200 hover:border-ember-500/50"
                     >
@@ -148,16 +149,20 @@ export default function Dashboard() {
                             </div>
                             <Compass className="h-5 w-5 text-muted-foreground transition-colors duration-200 group-hover:text-ember-500" />
                         </div>
-                        <div className="mt-6 font-serif text-3xl">Browse</div>
+                        <div className="mt-6 font-serif text-3xl">
+                            {isCreator ? "Browse now" : "Coming soon"}
+                        </div>
                         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                             {isCreator
-                                ? "Discover live paid briefs from Bengaluru brands — coming online next."
+                                ? "Live paid briefs from Bengaluru brands — hand-picked, budgets shown upfront."
                                 : "Post a new campaign or manage the ones you already have — coming next."}
                         </p>
-                        <div className="mt-6 inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
-                            Coming next <ArrowRight className="h-3.5 w-3.5" />
-                        </div>
-                    </div>
+                        {isCreator && (
+                            <div className="mt-6 inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                                Browse campaigns <ArrowRight className="h-3.5 w-3.5" />
+                            </div>
+                        )}
+                    </Link>
                     {["Applications", "Payments"].map((t) => (
                         <div
                             key={t}

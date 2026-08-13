@@ -8,6 +8,8 @@ import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import Dashboard from "@/pages/Dashboard";
 import CreatorOnboarding from "@/pages/CreatorOnboarding";
+import Campaigns from "@/pages/Campaigns";
+import CampaignDetail from "@/pages/CampaignDetail";
 
 function App() {
     return (
@@ -31,6 +33,22 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["creator"]}>
                                     <CreatorOnboarding />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/campaigns"
+                            element={
+                                <ProtectedRoute roles={["creator", "admin"]}>
+                                    <Campaigns />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/campaigns/:id"
+                            element={
+                                <ProtectedRoute roles={["creator", "admin"]}>
+                                    <CampaignDetail />
                                 </ProtectedRoute>
                             }
                         />

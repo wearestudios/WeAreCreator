@@ -15,6 +15,7 @@ from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict
 
 # ---------------------------------------------------------------------------
@@ -542,6 +543,168 @@ async def update_creator_profile(
 api_router.include_router(creator_router)
 
 
+# --- Campaigns router ------------------------------------------------------
+
+campaigns_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+_LIVE_STATUSES = ("open", "upcoming")
+
+
+def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "brand_id": str(doc["brand_id"]),
+        "brand_name": (brand or {}).get("business_name") or (brand or {}).get("name"),
+        "title": doc.get("title"),
+        "brief": doc.get("brief"),
+        "deliverables": doc.get("deliverables"),
+        "budget_per_creator": doc.get("budget_per_creator"),
+        "category": doc.get("category"),
+        "area": doc.get("area"),
+        "creators_needed": doc.get("creators_needed"),
+        "start_date": doc["start_date"].isoformat() if isinstance(doc.get("start_date"), datetime) else doc.get("start_date"),
+        "end_date": doc["end_date"].isoformat() if isinstance(doc.get("end_date"), datetime) else doc.get("end_date"),
+        "status": doc.get("status"),
+        "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+    }
+
+
+async def _load_brand_map(brand_ids: list) -> dict:
+    """Return { brand_id (ObjectId): { business_name, name } } for the given ids."""
+    if not brand_ids:
+        return {}
+    unique_ids = list({b for b in brand_ids})
+    profiles = await db.brand_profiles.find(
+        {"user_id": {"$in": unique_ids}}
+    ).to_list(length=len(unique_ids))
+    profile_by_user = {p["user_id"]: p for p in profiles}
+
+    # Fill in the name fallback from users for anyone missing a profile.
+    missing_ids = [uid for uid in unique_ids if uid not in profile_by_user]
+    users_by_id = {}
+    if missing_ids:
+        users = await db.users.find({"_id": {"$in": missing_ids}}).to_list(length=len(missing_ids))
+        users_by_id = {u["_id"]: u for u in users}
+
+    out = {}
+    for uid in unique_ids:
+        p = profile_by_user.get(uid)
+        u = users_by_id.get(uid)
+        out[uid] = {
+            "business_name": (p or {}).get("business_name"),
+            "name": (u or {}).get("name"),
+        }
+    return out
+
+
+@campaigns_router.get("")
+async def list_campaigns(
+    area: Optional[str] = None,
+    category: Optional[str] = None,
+    user: dict = Depends(require_roles("creator", "admin")),
+):
+    query: dict = {"status": {"$in": list(_LIVE_STATUSES)}}
+    if area:
+        query["area"] = area
+    if category:
+        query["category"] = category
+
+    docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=200)
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+    return [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
+
+
+@campaigns_router.get("/filters")
+async def campaign_filters(
+    user: dict = Depends(require_roles("creator", "admin")),
+):
+    """Distinct areas + categories across currently-listable campaigns."""
+    base = {"status": {"$in": list(_LIVE_STATUSES)}}
+    areas = await db.campaigns.distinct("area", base)
+    categories = await db.campaigns.distinct("category", base)
+    return {
+        "areas": sorted([a for a in areas if a]),
+        "categories": sorted([c for c in categories if c]),
+    }
+
+
+@campaigns_router.get("/{campaign_id}")
+async def get_campaign(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator", "admin")),
+):
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    doc = await db.campaigns.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Creators can only view live/upcoming campaigns. Admins see anything.
+    if user["role"] != "admin" and doc.get("status") not in _LIVE_STATUSES:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    brand_map = await _load_brand_map([doc["brand_id"]])
+    payload = _serialize_campaign(doc, brand_map.get(doc["brand_id"]))
+
+    # Whether the current creator has already applied.
+    payload["has_applied"] = False
+    if user["role"] == "creator":
+        existing = await db.collaborations.find_one(
+            {"campaign_id": oid, "creator_id": ObjectId(user["_id"])}
+        )
+        payload["has_applied"] = existing is not None
+    return payload
+
+
+@campaigns_router.post("/{campaign_id}/apply")
+async def apply_to_campaign(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign or campaign.get("status") not in _LIVE_STATUSES:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    creator_oid = ObjectId(user["_id"])
+    now = datetime.now(timezone.utc)
+    try:
+        result = await db.collaborations.insert_one(
+            {
+                "campaign_id": oid,
+                "creator_id": creator_oid,
+                "pitch": None,
+                "quoted_rate": None,
+                "agreed_amount": None,
+                "content_url": None,
+                "state": "applied",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409, detail="You've already applied to this campaign"
+        )
+
+    return {
+        "id": str(result.inserted_id),
+        "campaign_id": campaign_id,
+        "state": "applied",
+        "created_at": now.isoformat(),
+    }
+
+
+api_router.include_router(campaigns_router)
+
+
 # --- Admin sample route ----------------------------------------------------
 
 
@@ -642,6 +805,237 @@ async def _startup():
     await db.users.update_many(
         {"status": {"$exists": False}}, {"$set": {"status": "pending"}}
     )
+
+    # Seed a handful of demo brand accounts + campaigns so the Campaigns page
+    # is not empty on a fresh install. Fully idempotent — keyed by email/title.
+    await _seed_demo_campaigns()
+
+
+# ---------------------------------------------------------------------------
+# Demo data seeding
+# ---------------------------------------------------------------------------
+
+_DEMO_BRANDS = [
+    {
+        "email": "hello+demo@bluetokai.in",
+        "name": "Blue Tokai Coffee",
+        "business_name": "Blue Tokai Coffee Roasters",
+        "category": "fnb",
+        "areas": ["Koramangala", "Indiranagar"],
+    },
+    {
+        "email": "hello+demo@toit.in",
+        "name": "Toit Brewpub",
+        "business_name": "Toit Brewpub",
+        "category": "fnb",
+        "areas": ["Indiranagar"],
+    },
+    {
+        "email": "hello+demo@thepermitroom.in",
+        "name": "The Permit Room",
+        "business_name": "The Permit Room",
+        "category": "hospitality",
+        "areas": ["MG Road"],
+    },
+    {
+        "email": "hello+demo@farmlore.in",
+        "name": "Farmlore",
+        "business_name": "Farmlore Kitchen",
+        "category": "fnb",
+        "areas": ["Whitefield"],
+    },
+]
+
+
+def _future(days: int) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=days)
+
+
+def _demo_campaign_specs() -> list[dict]:
+    return [
+        {
+            "brand_email": "hello+demo@bluetokai.in",
+            "title": "Weekend brunch reel — new menu launch",
+            "brief": (
+                "We're launching our new weekend brunch menu at the Koramangala roastery. "
+                "Looking for a food-first creator to shoot a single high-quality Instagram reel "
+                "capturing 3 signature dishes and the roastery ambience. Free brunch for two, "
+                "plus paid fee. Deliver within 10 days of the shoot."
+            ),
+            "deliverables": "1 Instagram reel (30-45s) + 3 stories, tag @bluetokaicoffee",
+            "budget_per_creator": 8000,
+            "category": "fnb",
+            "area": "Koramangala",
+            "creators_needed": 2,
+            "start_date": _future(2),
+            "end_date": _future(30),
+            "status": "open",
+        },
+        {
+            "brand_email": "hello+demo@toit.in",
+            "title": "Signature cocktail launch — 5 creators",
+            "brief": (
+                "Toit is launching a limited-run signature cocktail series this month. "
+                "We want creators known for craft F&B storytelling to visit the pub, sample the "
+                "flight of 4 cocktails and shoot content around it. Slot is fixed (weekday evening)."
+            ),
+            "deliverables": "1 reel + 3 stories + 1 static feed post",
+            "budget_per_creator": 12000,
+            "category": "fnb",
+            "area": "Indiranagar",
+            "creators_needed": 5,
+            "start_date": _future(5),
+            "end_date": _future(20),
+            "status": "open",
+        },
+        {
+            "brand_email": "hello+demo@thepermitroom.in",
+            "title": "Grand opening night — MG Road",
+            "brief": (
+                "The Permit Room is opening its first MG Road outpost. We're inviting a curated "
+                "cohort of Bengaluru lifestyle & F&B creators for the opening night to shoot cover-"
+                "worthy content of the space, the menu and the vibe. Black-tie dress code."
+            ),
+            "deliverables": "1 reel + 5 stories that night; 1 recap post within 5 days",
+            "budget_per_creator": 15000,
+            "category": "hospitality",
+            "area": "MG Road",
+            "creators_needed": 8,
+            "start_date": _future(7),
+            "end_date": _future(21),
+            "status": "upcoming",
+        },
+        {
+            "brand_email": "hello+demo@farmlore.in",
+            "title": "Chef's tasting menu — solo feature",
+            "brief": (
+                "Farmlore's 8-course seasonal tasting menu is now live. We're looking for a single "
+                "creator with a fine-dining audience for a full editorial-style coverage — writeup, "
+                "reel, and stills. Complimentary tasting for two included."
+            ),
+            "deliverables": "1 long-form reel (60-90s) + carousel post (5 stills) + writeup",
+            "budget_per_creator": 25000,
+            "category": "fnb",
+            "area": "Whitefield",
+            "creators_needed": 1,
+            "start_date": _future(1),
+            "end_date": _future(45),
+            "status": "open",
+        },
+        {
+            "brand_email": "hello+demo@bluetokai.in",
+            "title": "Home baking workshop coverage",
+            "brief": (
+                "Blue Tokai is hosting a Saturday home-baking workshop at the Indiranagar café. "
+                "Looking for a creator who can attend, shoot behind-the-scenes and produce a "
+                "warm, personal recap for their audience."
+            ),
+            "deliverables": "1 reel + 4 stories same-day, 1 carousel post within 3 days",
+            "budget_per_creator": 6000,
+            "category": "fnb",
+            "area": "Indiranagar",
+            "creators_needed": 2,
+            "start_date": _future(10),
+            "end_date": _future(25),
+            "status": "upcoming",
+        },
+        # A draft campaign — intentionally NOT visible on the creator feed.
+        {
+            "brand_email": "hello+demo@toit.in",
+            "title": "[Internal draft — should not appear]",
+            "brief": "Internal draft used to verify status filtering.",
+            "deliverables": "n/a",
+            "budget_per_creator": 5000,
+            "category": "fnb",
+            "area": "Indiranagar",
+            "creators_needed": 1,
+            "start_date": None,
+            "end_date": None,
+            "status": "draft",
+        },
+        # A closed campaign — also filtered out.
+        {
+            "brand_email": "hello+demo@farmlore.in",
+            "title": "[Closed — should not appear]",
+            "brief": "Closed campaign used to verify status filtering.",
+            "deliverables": "n/a",
+            "budget_per_creator": 5000,
+            "category": "fnb",
+            "area": "Whitefield",
+            "creators_needed": 1,
+            "start_date": _future(-30),
+            "end_date": _future(-5),
+            "status": "closed",
+        },
+    ]
+
+
+async def _seed_demo_campaigns() -> None:
+    now = datetime.now(timezone.utc)
+    # 1. Ensure demo brand users + brand_profiles exist (idempotent by email).
+    brand_id_by_email: dict[str, ObjectId] = {}
+    demo_password_hash = hash_password("DemoBrand!2026")
+    for b in _DEMO_BRANDS:
+        existing = await db.users.find_one({"email": b["email"]})
+        if existing is None:
+            result = await db.users.insert_one(
+                {
+                    "email": b["email"],
+                    "password_hash": demo_password_hash,
+                    "name": b["name"],
+                    "role": "brand",
+                    "phone": None,
+                    "status": "active",
+                    "created_at": now,
+                }
+            )
+            uid = result.inserted_id
+        else:
+            uid = existing["_id"]
+        brand_id_by_email[b["email"]] = uid
+
+        # Upsert brand profile so business_name/category/areas stay fresh.
+        await db.brand_profiles.update_one(
+            {"user_id": uid},
+            {
+                "$set": {
+                    "business_name": b["business_name"],
+                    "category": b["category"],
+                    "areas": b["areas"],
+                    "verified": True,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"user_id": uid, "created_at": now},
+            },
+            upsert=True,
+        )
+
+    # 2. Insert campaigns (idempotent by (brand_id, title)).
+    for spec in _demo_campaign_specs():
+        brand_id = brand_id_by_email.get(spec["brand_email"])
+        if brand_id is None:
+            continue
+        exists = await db.campaigns.find_one({"brand_id": brand_id, "title": spec["title"]})
+        if exists:
+            continue
+        await db.campaigns.insert_one(
+            {
+                "brand_id": brand_id,
+                "title": spec["title"],
+                "brief": spec["brief"],
+                "deliverables": spec["deliverables"],
+                "budget_per_creator": spec["budget_per_creator"],
+                "category": spec["category"],
+                "area": spec["area"],
+                "creators_needed": spec["creators_needed"],
+                "start_date": spec["start_date"],
+                "end_date": spec["end_date"],
+                "status": spec["status"],
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    logger.info("Demo campaigns ensured (%d specs)", len(_demo_campaign_specs()))
 
 
 @app.on_event("shutdown")

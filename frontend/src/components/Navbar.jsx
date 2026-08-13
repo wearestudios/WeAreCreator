@@ -58,6 +58,15 @@ export const Navbar = () => {
                 <div className="flex items-center gap-3">
                     {user && user !== false ? (
                         <>
+                            {(user.role === "creator" || user.role === "admin") && (
+                                <Link
+                                    to="/campaigns"
+                                    data-testid="nav-campaigns"
+                                    className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                >
+                                    Campaigns
+                                </Link>
+                            )}
                             <Link
                                 to="/dashboard"
                                 data-testid="nav-dashboard"
