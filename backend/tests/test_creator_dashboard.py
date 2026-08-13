@@ -6,6 +6,8 @@ import requests
 from bson import ObjectId
 from pymongo import MongoClient
 
+import pipeline  # tests/ is on sys.path (no __init__.py, pytest prepend mode)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 API = f"{BASE_URL}/api"
 
@@ -14,6 +16,17 @@ DB_NAME = os.environ["DB_NAME"]
 
 _mongo = MongoClient(MONGO_URL)
 _db = _mongo[DB_NAME]
+
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026")
+
+
+def _admin_session():
+    s = requests.Session()
+    r = s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    assert r.status_code == 200, r.text
+    return s
 
 
 def _rand(prefix):
@@ -115,6 +128,10 @@ def test_creator_onboarding_and_dashboard_flow(creator_session):
     assert prof["follower_count"] == 22400
     assert prof["base_rate"] == 7000
     assert prof["niches"] == ["cafe", "brunch"]
+
+    # Vetting gates applying, so the profile has to be approved before pitching.
+    me = creator_session.get(f"{API}/auth/me").json()
+    pipeline.vet_creator(_admin_session(), me["id"])
 
     # Fetch 2 open campaigns
     r = creator_session.get(f"{API}/campaigns")

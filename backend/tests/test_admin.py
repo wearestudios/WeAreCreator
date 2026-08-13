@@ -4,6 +4,8 @@ import uuid
 import pytest
 import requests
 
+import pipeline  # tests/ is on sys.path (no __init__.py, pytest prepend mode)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026")
@@ -56,20 +58,15 @@ def brand():
 
 
 def _complete_creator(s, handle_suffix=None):
-    suf = handle_suffix or uuid.uuid4().hex[:6]
-    me = s.get(f"{BASE_URL}/auth/me").json()
-    r = s.put(f"{BASE_URL}/creator/profile", json={
-        "name": f"Creator {suf}",
-        "instagram_handle": f"@c_{suf}",
-        "instagram_profile_url": f"https://instagram.com/c_{suf}",
-        "email": me.get("email"),
-        "address": "Bengaluru",
-        "niches": ["cafe"],
-        "follower_count": 12000,
-        "base_rate": 5000,
-    })
-    assert r.status_code == 200, r.text
-    return r.json()
+    return pipeline.complete_creator_profile(s, suffix=handle_suffix)
+
+
+def _vet(admin_session, email):
+    """Approve the creator with this email and return their user id."""
+    rows = admin_session.get(f"{BASE_URL}/admin/creators/pending").json()
+    uid = next(x["user_id"] for x in rows if x["email"] == email)
+    pipeline.vet_creator(admin_session, uid)
+    return uid
 
 
 # ---------- 1. Auth guards ----------
@@ -199,6 +196,7 @@ class TestCollabList:
         bs, _ = brand
         cs, _, cemail = creator
         _complete_creator(cs)
+        _vet(admin, cemail)
         cid, _ = _seed_open_campaign(bs)
         ar = cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
             "pitch": "hi there really keen", "quoted_rate": 5500,
@@ -210,124 +208,283 @@ class TestCollabList:
         data = r.json()
         assert "by_state" in data and "total" in data
         for st in ["applied","vetted","accepted","commercial_agreed","slot_booked",
-                   "attended","content_submitted","in_payment","closed"]:
+                   "attended","content_submitted","content_approved","in_payment",
+                   "closed","declined","cancelled"]:
             assert st in data["by_state"]
         applied = data["by_state"]["applied"]
         row = next((x for x in applied if x["creator"]["email"] == cemail), None)
         assert row is not None
         assert row["quoted_rate"] == 5500
         assert row["next_state"] == "vetted"
+        assert row["can_advance"] is True
+        assert row["next_owner"] == "admin"
         for k in ["id", "state", "campaign", "brand_name", "creator", "payment"]:
             assert k in row
         assert row["campaign"]["title"]
+
+    def test_accepting_is_flagged_as_the_brands_step(self, admin, brand, creator):
+        """The admin console must not offer an Advance button for a decision the
+        brand owns — and the API refuses it either way."""
+        bs, _ = brand
+        cs, cuid, cemail = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "vetted")
+
+        row = next(
+            x
+            for x in admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["vetted"]
+            if x["id"] == collab_id
+        )
+        assert row["next_state"] == "accepted"
+        assert row["next_owner"] == "brand"
+        assert row["can_advance"] is False
+
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "vetted"},
+        )
+        assert r.status_code == 409
+        assert "brand" in r.json()["detail"].lower()
 
 
 # ---------- 5. State machine end-to-end ----------
 
 class TestStateMachine:
-    def test_full_advance_flow(self, admin, brand, creator):
+    def test_full_pipeline_end_to_end(self, admin, brand, creator):
+        """Applied → closed, with each step taken by whoever owns it."""
         bs, _ = brand
-        cs, _, cemail = creator
+        cs, cuid, cemail = creator
         _complete_creator(cs)
+        pipeline.vet_creator(admin, cuid)
         cid, _ = _seed_open_campaign(bs)
-        cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
-            "pitch": "excellent fit for cafe cont ent", "quoted_rate": 6000,
-        })
-        rows = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["applied"]
-        collab_id = next(x["id"] for x in rows if x["creator"]["email"] == cemail)
+        collab_id = pipeline.apply_to_campaign(cs, cid, quoted_rate=6000)
 
-        def advance(body=None):
-            return admin.post(
-                f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
-                json=body or {},
-            )
+        # applied -> vetted (admin)
+        r = pipeline.step(admin, bs, collab_id, "vetted")
+        assert r["state"] == "vetted"
 
-        # applied -> vetted
-        r = advance()
-        assert r.status_code == 200, r.text
-        assert r.json()["state"] == "vetted"
-        # vetted -> accepted
-        r = advance()
-        assert r.json()["state"] == "accepted"
-        # accepted -> commercial_agreed without amount -> 422
-        r = advance()
+        # vetted -> accepted is the brand's, and the fee is recorded with it
+        r = pipeline.step(admin, bs, collab_id, "accepted", agreed_amount=8500)
+        assert r["state"] == "accepted"
+        assert r["agreed_amount"] == 8500
+
+        # accepted -> commercial_agreed needs an amount
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "accepted"},
+        )
         assert r.status_code == 422
         assert "Agreed amount is required" in r.text
-        # with amount
-        r = advance({"agreed_amount": 8500})
-        assert r.status_code == 200
-        assert r.json()["state"] == "commercial_agreed"
-        assert r.json()["agreed_amount"] == 8500
-        # -> slot_booked
-        assert advance().json()["state"] == "slot_booked"
-        # -> attended
-        assert advance().json()["state"] == "attended"
-        # -> content_submitted
-        assert advance().json()["state"] == "content_submitted"
-        # -> in_payment without fee -> 422
-        r = advance()
-        assert r.status_code == 422
-        assert "Platform fee is required" in r.text
-        # with fee
-        r = advance({"platform_fee": 1500})
-        assert r.status_code == 200
-        assert r.json()["state"] == "in_payment"
 
-        # payment doc verification via /admin/collaborations
+        r = pipeline.step(admin, bs, collab_id, "commercial_agreed", agreed_amount=8500)
+        assert r["state"] == "commercial_agreed"
+        assert r["agreed_amount"] == 8500
+
+        # slot_booked requires an actual slot
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "commercial_agreed"},
+        )
+        assert r.status_code == 422
+        assert "date and time" in r.json()["detail"].lower()
+
+        r = pipeline.step(admin, bs, collab_id, "slot_booked")
+        assert r["state"] == "slot_booked"
+        assert r["scheduled_at"], "the slot must carry a time"
+
+        assert pipeline.step(admin, bs, collab_id, "attended")["state"] == "attended"
+
+        # content_submitted is the creator's step
+        sr = pipeline.submit_content(cs, collab_id)
+        assert sr["state"] == "content_submitted"
+
+        # approval is the brand's
+        ar = pipeline.step(admin, bs, collab_id, "content_approved")
+        assert ar["state"] == "content_approved"
+
+        # in_payment: the fee comes from config, no hand-typed number needed
+        r = pipeline.step(admin, bs, collab_id, "in_payment")
+        assert r["state"] == "in_payment"
+
         all_c = admin.get(f"{BASE_URL}/admin/collaborations").json()
         row = next(x for x in all_c["by_state"]["in_payment"] if x["id"] == collab_id)
         pay = row["payment"]
         assert pay is not None
         assert pay["agreed_amount"] == 8500
-        assert pay["platform_fee"] == 1500
         assert pay["creator_payout"] == 8500
+        assert pay["platform_fee"] > 0
+        # The brand is invoiced the creator's fee plus our margin.
+        assert pay["brand_invoice_amount"] == pytest.approx(
+            8500 + pay["platform_fee"]
+        )
         assert pay["state"] == "pending"
 
-        # mark_paid
-        mr = admin.post(f"{BASE_URL}/admin/payments/{pay['id']}/mark_paid")
-        assert mr.status_code == 200
+        # Recording a payout demands a reference you can reconcile.
+        bad = admin.post(f"{BASE_URL}/admin/payments/{pay['id']}/mark_paid", json={})
+        assert bad.status_code == 422
+
+        mr = admin.post(
+            f"{BASE_URL}/admin/payments/{pay['id']}/mark_paid",
+            json={"payment_reference": "UTR402512345678"},
+        )
+        assert mr.status_code == 200, mr.text
         md = mr.json()
         assert md["state"] == "paid"
         assert md["paid_at"]
+        assert md["payment_reference"] == "UTR402512345678"
         assert md["collaboration_id"] == collab_id
 
         # collab now closed
         all_c2 = admin.get(f"{BASE_URL}/admin/collaborations").json()
         assert any(x["id"] == collab_id for x in all_c2["by_state"]["closed"])
 
-        # advancing from closed -> 400
-        r = advance()
-        assert r.status_code == 400
-        assert "final state" in r.text.lower()
+        # advancing from closed -> 409
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "closed"},
+        )
+        assert r.status_code == 409
+
+        # paying twice is refused
+        again = admin.post(
+            f"{BASE_URL}/admin/payments/{pay['id']}/mark_paid",
+            json={"payment_reference": "UTR999"},
+        )
+        assert again.status_code == 409
+        assert "already marked paid" in again.json()["detail"].lower()
+
+    def test_stale_from_state_is_refused(self, admin, brand, creator):
+        """A double-click used to skip a stage. The precondition stops it."""
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "vetted")
+
+        # The caller thinks it's still `applied`; it isn't.
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "applied"},
+        )
+        assert r.status_code == 409
+        assert "already moved" in r.json()["detail"].lower()
+        assert pipeline.current_state(admin, collab_id) == "vetted"
+
+    def test_payment_requires_creator_payout_details(self, admin, brand, creator):
+        """We must not claim to have paid someone we have no way of paying."""
+        bs, _ = brand
+        cs, cuid, _ = creator
+        # Same setup, minus the payout fields.
+        pipeline.complete_creator_profile(cs, with_payout=False)
+        pipeline.vet_creator(admin, cuid)
+        cid, _ = _seed_open_campaign(bs)
+        collab_id = pipeline.apply_to_campaign(cs, cid)
+        for state in ["vetted", "accepted", "commercial_agreed", "slot_booked", "attended"]:
+            pipeline.step(admin, bs, collab_id, state)
+        pipeline.submit_content(cs, collab_id)
+        pipeline.step(admin, bs, collab_id, "content_approved")
+
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "content_approved"},
+        )
+        assert r.status_code == 422
+        assert "payout details" in r.json()["detail"].lower()
 
     def test_advance_from_in_payment_is_blocked_use_mark_paid(
         self, admin, brand, creator
     ):
         bs, _ = brand
-        cs, _, cemail = creator
-        _complete_creator(cs)
-        cid, _ = _seed_open_campaign(bs)
-        cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
-            "pitch": "pitch text here for testing", "quoted_rate": 4000,
-        })
-        rows = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["applied"]
-        collab_id = next(x["id"] for x in rows if x["creator"]["email"] == cemail)
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
 
-        def advance(body=None):
-            return admin.post(
-                f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
-                json=body or {},
-            )
-        advance(); advance()  # -> accepted
-        advance({"agreed_amount": 3000})  # -> commercial_agreed
-        advance(); advance(); advance()  # slot_booked, attended, content_submitted
-        r = advance({"platform_fee": 500})
-        assert r.json()["state"] == "in_payment"
-
-        # advance from in_payment is now blocked — admin must use mark_paid.
-        r = advance()
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+            json={"from_state": "in_payment"},
+        )
         assert r.status_code == 400
         assert "mark as paid" in r.json()["detail"].lower()
+
+    def test_cancel_ends_a_collaboration_and_voids_its_payment(
+        self, admin, brand, creator
+    ):
+        """There was no way out of the pipeline at all before this."""
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, campaign_id = pipeline.make_collab_in_state(
+            admin, bs, cs, cuid, "slot_booked"
+        )
+
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/cancel",
+            json={"reason": "Creator couldn't make the slot"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "cancelled"
+
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        row = next(x for x in board["cancelled"] if x["id"] == collab_id)
+        assert row["exit_reason"] == "Creator couldn't make the slot"
+        assert row["can_advance"] is False
+
+        # A cancelled collaboration cannot be moved again.
+        r = admin.post(
+            f"{BASE_URL}/admin/collaborations/{collab_id}/cancel", json={"reason": "again"}
+        )
+        assert r.status_code == 409
+
+
+# ---------- 5b. Brand-owned decisions ----------
+
+class TestBrandDecisions:
+    def test_brand_declines_and_the_creator_can_apply_again(
+        self, admin, brand, creator
+    ):
+        """A decline used to be impossible, and the unique index made it permanent."""
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, campaign_id = pipeline.make_collab_in_state(
+            admin, bs, cs, cuid, "vetted"
+        )
+
+        r = bs.post(
+            f"{BASE_URL}/brand/collaborations/{collab_id}/decline",
+            json={"reason": "Looking for a different audience"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "declined"
+
+        # The slot is free again, and so is the creator.
+        again = cs.post(
+            f"{BASE_URL}/campaigns/{campaign_id}/apply",
+            json={"pitch": "second time lucky, here's a new angle", "quoted_rate": 5000},
+        )
+        assert again.status_code in (200, 201), again.text
+
+    def test_brand_sends_content_back_and_creator_resubmits(
+        self, admin, brand, creator
+    ):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(
+            admin, bs, cs, cuid, "content_submitted"
+        )
+
+        r = bs.post(
+            f"{BASE_URL}/brand/collaborations/{collab_id}/request_changes",
+            json={"reason": "Please tag the venue in the caption"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "attended"
+
+        # A change request without a note is useless to the creator.
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        row = next(x for x in board["attended"] if x["id"] == collab_id)
+        assert row["revision_note"] == "Please tag the venue in the caption"
+
+        # The creator can resubmit without an admin unpicking the state.
+        again = pipeline.submit_content(
+            cs, collab_id, ["https://instagram.com/p/fixedpost"]
+        )
+        assert again["state"] == "content_submitted"
+        assert again["content_urls"] == ["https://instagram.com/p/fixedpost"]
 
 
 # ---------- 6. Metrics ----------
@@ -337,38 +494,104 @@ class TestAdminMetrics:
         r = admin.get(f"{BASE_URL}/admin/metrics")
         assert r.status_code == 200
         d = r.json()
-        for k in ["open_campaigns", "vetted_creators", "total_paid_out"]:
-            assert k in d
+        for k in [
+            "open_campaigns",
+            "vetted_creators",
+            "total_paid_out",
+            "platform_revenue",
+            "platform_fee_percent",
+            "payouts_pending",
+            "brand_receivable",
+            "creators_pending_review",
+            "brands_unverified",
+            "applicants_awaiting_vetting",
+        ]:
+            assert k in d, f"missing metric {k}"
         assert isinstance(d["open_campaigns"], int)
         assert isinstance(d["vetted_creators"], int)
         assert isinstance(d["total_paid_out"], (int, float))
+        assert isinstance(d["platform_revenue"], (int, float))
 
     def test_metrics_react_to_mark_paid(self, admin, brand, creator):
         before = admin.get(f"{BASE_URL}/admin/metrics").json()
         bs, _ = brand
-        cs, _, cemail = creator
-        _complete_creator(cs)
-        cid, _ = _seed_open_campaign(bs)
-        cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
-            "pitch": "pitch pitch pitch for real", "quoted_rate": 1000,
-        })
-        rows = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["applied"]
-        collab_id = next(x["id"] for x in rows if x["creator"]["email"] == cemail)
+        cs, cuid, _ = creator
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
 
-        def advance(body=None):
-            return admin.post(f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
-                              json=body or {})
-        advance(); advance()
-        advance({"agreed_amount": 2500})
-        advance(); advance(); advance()
-        r = advance({"platform_fee": 300})
-        assert r.status_code == 200
-        pay_id = next(
-            x["payment"]["id"]
+        row = next(
+            x
             for x in admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["in_payment"]
             if x["id"] == collab_id
         )
-        admin.post(f"{BASE_URL}/admin/payments/{pay_id}/mark_paid")
+        payout = row["payment"]["creator_payout"]
+        fee = row["payment"]["platform_fee"]
+
+        admin.post(
+            f"{BASE_URL}/admin/payments/{row['payment']['id']}/mark_paid",
+            json={"payment_reference": f"UTR{uuid.uuid4().hex[:10].upper()}"},
+        )
         after = admin.get(f"{BASE_URL}/admin/metrics").json()
-        assert after["total_paid_out"] >= before["total_paid_out"] + 2500 - 0.01
-        assert after["vetted_creators"] >= before["vetted_creators"]  # untouched here
+        assert after["total_paid_out"] >= before["total_paid_out"] + payout - 0.01
+        # Revenue is now visible in our own console, not just payouts.
+        assert after["platform_revenue"] >= before["platform_revenue"] + fee - 0.01
+
+
+# ---------- 7. Audit trail ----------
+
+class TestAuditLog:
+    def test_every_decision_names_who_made_it(self, admin, brand, creator):
+        cs, cuid, cemail = creator
+        _complete_creator(cs)
+        pipeline.vet_creator(admin, cuid)
+
+        r = admin.get(f"{BASE_URL}/admin/audit", params={"limit": 50})
+        assert r.status_code == 200
+        rows = r.json()
+        entry = next(
+            (x for x in rows if x["action"] == "creator.vetted"), None
+        )
+        assert entry is not None, "vetting decision left no audit trail"
+        assert entry["actor_role"] == "admin"
+        assert entry["before"]["vetting_status"] == "pending"
+        assert entry["after"]["vetting_status"] == "vetted"
+        assert entry["created_at"]
+
+    def test_audit_is_admin_only(self, creator, brand, anon):
+        cs, _, _ = creator
+        bs, _ = brand
+        assert anon.get(f"{BASE_URL}/admin/audit").status_code == 401
+        assert cs.get(f"{BASE_URL}/admin/audit").status_code == 403
+        assert bs.get(f"{BASE_URL}/admin/audit").status_code == 403
+
+
+# ---------- 8. Brand verification ----------
+
+class TestBrandVerification:
+    def test_unverified_brand_can_be_verified(self, admin, brand):
+        bs, bemail = brand
+        bs.put(
+            f"{BASE_URL}/brand/profile",
+            json={
+                "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+                "category": "fnb",
+                "areas": ["Indiranagar"],
+            },
+        )
+        rows = admin.get(f"{BASE_URL}/admin/brands").json()
+        row = next((x for x in rows if x["email"] == bemail), None)
+        assert row is not None, "a new brand should be waiting for verification"
+        assert row["verified"] is False
+
+        r = admin.post(f"{BASE_URL}/admin/brands/{row['user_id']}/verify")
+        assert r.status_code == 200
+        assert r.json()["verified"] is True
+
+        rows2 = admin.get(f"{BASE_URL}/admin/brands").json()
+        assert not any(x["email"] == bemail for x in rows2)
+
+    def test_brand_endpoints_are_admin_only(self, creator, brand, anon):
+        cs, _, _ = creator
+        bs, _ = brand
+        assert anon.get(f"{BASE_URL}/admin/brands").status_code == 401
+        assert cs.get(f"{BASE_URL}/admin/brands").status_code == 403
+        assert bs.get(f"{BASE_URL}/admin/brands").status_code == 403
