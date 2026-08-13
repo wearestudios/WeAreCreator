@@ -53,7 +53,7 @@ def brand():
 
 
 def _make_collab_in_state(admin_s, brand_tuple, creator_tuple, target_state):
-    """Vetted creator applies to a live brief, then walks to target_state.
+    """Verified creator applies to a live brief, then walks to target_state.
 
     Steps are routed to whoever owns them — the brand accepts and approves, the
     creator submits — so this mirrors the real pipeline rather than an admin
@@ -64,7 +64,7 @@ def _make_collab_in_state(admin_s, brand_tuple, creator_tuple, target_state):
     pipeline.complete_creator_profile(cs)
 
     me = cs.get(f"{BASE_URL}/auth/me").json()
-    pipeline.vet_creator(admin_s, me["id"])
+    pipeline.verify_creator(admin_s, me["id"])
 
     cid = pipeline.seed_open_campaign(bs)
     collab_id = pipeline.apply_to_campaign(cs, cid)

@@ -347,7 +347,7 @@ export default function BrandDashboardView({ user }) {
                                         </p>
                                         <p className="max-w-md text-sm text-muted-foreground">
                                             Post your first paid brief and it will start
-                                            reaching vetted creators across India immediately.
+                                            reaching verified creators across India immediately.
                                         </p>
                                         <Link to="/campaigns/new" className="mt-4">
                                             <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">

@@ -50,12 +50,12 @@ const STATE_META = {
     applied: {
         label: "With WeAre",
         tone: "bg-white/5 text-muted-foreground border-white/15",
-        note: "Our team is vetting this applicant. You'll see them once they're through.",
+        note: "Our team is verifying this applicant. You'll see them once they're through.",
     },
-    vetted: {
+    verified: {
         label: "Waiting on you",
         tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
-        note: "Vetted by our team. Your call.",
+        note: "Verified by our team. Your call.",
     },
     accepted: {
         label: "Accepted",
@@ -649,7 +649,7 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
 // ---------------------------------------------------------------------------
 
 const FILTERS = [
-    { key: "awaiting_you", label: "Waiting on you", states: ["vetted"] },
+    { key: "awaiting_you", label: "Waiting on you", states: ["verified"] },
     { key: "content", label: "Content to review", states: ["content_submitted"] },
     {
         key: "in_progress",
@@ -810,7 +810,7 @@ export default function BrandCampaignApplicants() {
                         <Send className="mt-0.5 h-4 w-4 flex-none" />
                         <p>
                             {totals.awaiting_you}{" "}
-                            {totals.awaiting_you === 1 ? "creator is" : "creators are"} vetted
+                            {totals.awaiting_you === 1 ? "creator is" : "creators are"} verified
                             and waiting on your decision.
                             {campaign.spots_left > 0
                                 ? ` You have ${campaign.spots_left} ${
@@ -864,7 +864,7 @@ export default function BrandCampaignApplicants() {
                             </p>
                             <p className="max-w-md text-sm text-muted-foreground">
                                 {applicants.length === 0
-                                    ? "Vetted creators see this brief on their feed. Applications usually start within a day of publishing."
+                                    ? "Verified creators see this brief on their feed. Applications usually start within a day of publishing."
                                     : "Try another tab — there's work in one of them."}
                             </p>
                         </div>

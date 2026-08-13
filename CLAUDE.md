@@ -1,6 +1,6 @@
 # WeAre Creators
 
-Two-sided marketplace connecting vetted creators with brands running paid
+Two-sided marketplace connecting verified creators with brands running paid
 campaigns across India. Roles: `creator`, `brand`, `admin`.
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
@@ -34,14 +34,14 @@ Ownership is checked separately from role: `_own_campaign_or_404` and
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:
 
 ```
-applied → vetted → accepted → commercial_agreed → slot_booked
+applied → verified → accepted → commercial_agreed → slot_booked
         → attended → content_submitted → content_approved → in_payment → closed
 ```
 
 Plus two terminal exits that are **not** steps: `declined`, `cancelled`
 (`TERMINAL_COLLAB_STATES`). Who moves each step matters:
 
-- **Admin** — vetting, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
+- **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
   The admin `advance` endpoint refuses these with 409 by design.
 - **Creator** — `content_submitted`, and may resubmit until the brand approves.
@@ -50,11 +50,13 @@ Rules to preserve when touching this:
 
 - Every transition takes `from_state` as a write precondition and 409s on a
   mismatch — never write state with `{"_id": oid}` alone.
-- Only vetted creators can apply; `creators_needed` caps a campaign and flips it
+- Only verified creators can apply; `creators_needed` caps a campaign and flips it
   to `in_progress` when filled (`_sync_campaign_fill`).
 - `in_payment` requires creator payout details (`payout_ready`: UPI + PAN).
-- `vetting_status` is `pending | vetted | rejected`. **Never write `"approved"`** —
-  that mismatch once hid every approved creator from brands.
+- `verification_status` is `pending | verified | rejected`. This concept was
+  previously called `approved` then `vetted`; **never reintroduce either word** —
+  that mismatch once hid every approved creator from brands. Startup migrates
+  both, and a unit test fails if a stray reference reappears.
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
@@ -75,11 +77,10 @@ In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
 
 Every interactive or informational element carries a `data-testid`, kebab-case and
 shaped `<feature>-<element>[-<qualifier>]` (e.g. `brand-campaign-publish-{id}`).
-The automated test agent locates elements this way; UI without them can't be
-verified.
+The automated test agent locates elements this way; UI without them can't be checked.
 
 `frontend/src/constants/testIds/` documents the registry pattern (per-feature file,
-re-exported from `index.js`), **but nothing imports it** — all 252 usages are inline
+re-exported from `index.js`), **but nothing imports it** — all usages are inline
 string literals, and `auth.js` doesn't match the shipped OTP screens. Match the
 surrounding file's inline style unless you're migrating the whole thing.
 

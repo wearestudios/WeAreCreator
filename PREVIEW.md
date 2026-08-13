@@ -42,9 +42,11 @@ If the branch isn't offered, merge it into `main` first and import that instead.
 
 Two things happen automatically on the first boot after importing:
 
-- **A data migration.** Creator profiles carrying the old `vetting_status:
-  "approved"` are rewritten to `"vetted"`. This is what makes approved creators
-  visible to brands. It is one-way, and idempotent.
+- **A data migration.** The creator approval concept has been called three things.
+  The field `vetting_status` is renamed to `verification_status`, and the values
+  `"approved"` and `"vetted"` are both rewritten to `"verified"`. Collaborations
+  sitting in the `vetted` state move to `verified`. This is what makes approved
+  creators visible to brands. One-way, and safe to re-run.
 - **An index rebuild.** The unique index on `(campaign_id, creator_id)` is
   replaced with a partial one so a declined creator can apply again. Existing
   collaborations are backfilled with `active: true`.
@@ -85,7 +87,7 @@ npm start
 
 ## What to click, and in what order
 
-A fresh database seeds four demo brands, seven open briefs and eight vetted
+A fresh database seeds four demo brands, seven open briefs and eight verified
 creators, so most screens have something in them immediately.
 
 **1. Signed out — the shop window**
@@ -98,7 +100,7 @@ Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. You'll see:
 - six metric tiles including **platform revenue** and **owed by brands**, which
   the console never reported before;
 - a queue strip that should read zero when there's no work waiting;
-- the vetting queue split into **New / Edited since approval / Never finished** —
+- the verification queue split into **New / Edited since approval / Never finished** —
   the last tab is people who signed up and abandoned onboarding, who used to
   clutter the review list as nameless rows;
 - **Brands to verify**, which had no interface at all before;

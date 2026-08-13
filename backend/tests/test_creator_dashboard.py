@@ -99,9 +99,9 @@ def test_fresh_creator_dashboard_shape(creator_session):
         assert k in d, f"missing {k}"
     # Profile keys
     for k in ["name", "instagram_handle", "instagram_profile_url",
-              "vetting_status", "niches", "follower_count", "base_rate"]:
+              "verification_status", "niches", "follower_count", "base_rate"]:
         assert k in d["profile"], f"missing profile.{k}"
-    assert d["profile"]["vetting_status"] == "pending"
+    assert d["profile"]["verification_status"] == "pending"
     assert d["applications"] == []
     assert d["upcoming"] == []
     assert d["payments"] == []
@@ -129,9 +129,9 @@ def test_creator_onboarding_and_dashboard_flow(creator_session):
     assert prof["base_rate"] == 7000
     assert prof["niches"] == ["cafe", "brunch"]
 
-    # Vetting gates applying, so the profile has to be approved before pitching.
+    # Verification gates applying, so the profile has to be approved before pitching.
     me = creator_session.get(f"{API}/auth/me").json()
-    pipeline.vet_creator(_admin_session(), me["id"])
+    pipeline.verify_creator(_admin_session(), me["id"])
 
     # Fetch 2 open campaigns
     r = creator_session.get(f"{API}/campaigns")

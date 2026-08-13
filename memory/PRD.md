@@ -46,10 +46,10 @@ placeholder home + login/signup. GitHub sync via Emergent UI.
 Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 - `users` — id, email(unique), name, role(creator|brand|admin), phone?, status(pending|active|suspended), password_hash, created_at. Indexes: `email` unique, `role`, `status`.
-- `creator_profiles` (1:1 users where role=creator) — user_id(unique), name, instagram_handle?, instagram_profile_url?, email?, address?, niches[], base_rate?, follower_count?, vetting_status(pending|vetted|rejected). Indexes: `user_id` unique, `vetting_status`, `niches`.
+- `creator_profiles` (1:1 users where role=creator) — user_id(unique), name, instagram_handle?, instagram_profile_url?, email?, address?, niches[], base_rate?, follower_count?, verification_status(pending|verified|rejected), pending_review, payout_upi?, payout_account_name?, pan?, gstin?. Indexes: `user_id` unique, `verification_status`, `niches`.
 - `brand_profiles` (1:1 users where role=brand) — user_id(unique), business_name, category(fnb|hospitality|retail|lifestyle)?, areas[], verified. Indexes: `user_id` unique, `verified`, `category`.
 - `campaigns` — brand_id → users._id, title, brief, deliverables, budget_per_creator, category?, area?, creators_needed, start_date?, end_date?, status(draft|upcoming|open|in_progress|completed|closed). Indexes: `brand_id`, `status`, `(status, created_at desc)`, `(area, category)`.
-- `collaborations` — campaign_id → campaigns._id, creator_id → users._id, pitch?, quoted_rate?, agreed_amount?, content_url?, state(applied|vetted|accepted|commercial_agreed|slot_booked|attended|content_submitted|in_payment|closed). Indexes: `campaign_id`, `creator_id`, **unique `(campaign_id, creator_id)`** so a creator can apply only once, `state`.
+- `collaborations` — campaign_id → campaigns._id, creator_id → users._id, pitch?, quoted_rate?, agreed_amount?, content_url?, state(applied|verified|accepted|commercial_agreed|slot_booked|attended|content_submitted|content_approved|in_payment|closed) plus terminal exits (declined|cancelled), active, scheduled_at?, agreed_at?. Indexes: `campaign_id`, `creator_id`, **partial-unique `(campaign_id, creator_id)` where active=true** so a declined creator may re-apply, `state`.
 - `payments` (1:1 collaborations) — collaboration_id(unique), agreed_amount, platform_fee, creator_payout, state(pending|paid), paid_at?. Indexes: `collaboration_id` unique, `state`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
@@ -59,7 +59,7 @@ On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` 
 - New endpoint `GET /api/brand/creators/filters` — distinct cities + case-deduped niches + total count
 - New page `/brand/creators` with one-tap city chips (aria-pressed), filter bar (niche/followers/sort/search), animated cards, empty state, `Clear all`
 - Navbar: brand-only "Creators" link; Brand Dashboard header: "Browse creators" outline button
-- Idempotent seed of 8 vetted demo creators across 7 cities (Bengaluru, Mumbai, Delhi NCR, Hyderabad, Chennai, Pune, Goa) so the directory has content on fresh installs
+- Idempotent seed of 8 verified demo creators across 7 cities (Bengaluru, Mumbai, Delhi NCR, Hyderabad, Chennai, Pune, Goa) so the directory has content on fresh installs
 - Regression tests: 19 new pytest cases (`test_brand_directory.py`) + 52 previous ones — all green
 
 ## Implemented (v1.3 — All-India pivot + Landing rewrite, Feb 2026)

@@ -89,7 +89,7 @@ export function Terms() {
         <Shell
             kicker="Terms"
             title="How working with WeAre works."
-            standfirst="WeAre Creators connects vetted creators with brands running paid campaigns. These are the terms you accept when you create an account."
+            standfirst="WeAre Creators connects verified creators with brands running paid campaigns. These are the terms you accept when you create an account."
         >
             <Section title="Getting on the platform">
                 <p>

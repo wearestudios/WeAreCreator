@@ -312,13 +312,13 @@ class MarkPaidPayload(BaseModel):
 # --- Domain models (schema-only; used for validation & docs) ---------------
 
 UserStatus = Literal["pending", "active", "suspended"]
-VettingStatus = Literal["pending", "vetted", "rejected"]
+VerificationStatus = Literal["pending", "verified", "rejected"]
 CampaignStatus = Literal[
     "draft", "upcoming", "open", "in_progress", "completed", "closed"
 ]
 CollabState = Literal[
     "applied",
-    "vetted",
+    "verified",
     "accepted",
     "commercial_agreed",
     "slot_booked",
@@ -338,7 +338,7 @@ BrandInvoiceState = Literal["pending", "sent", "settled"]
 # they deliberately do not appear here.
 COLLAB_STATE_ORDER = [
     "applied",
-    "vetted",
+    "verified",
     "accepted",
     "commercial_agreed",
     "slot_booked",
@@ -371,9 +371,9 @@ class CreatorProfile(BaseModel):
     niches: list[str] = Field(default_factory=list)
     base_rate: Optional[float] = None
     follower_count: Optional[int] = None
-    vetting_status: VettingStatus = "pending"
-    # True when an already-vetted creator edits something material. They stay
-    # vetted (and visible to brands) but surface in a separate admin queue.
+    verification_status: VerificationStatus = "pending"
+    # True when an already-verified creator edits something material. They stay
+    # verified (and visible to brands) but surface in a separate admin queue.
     pending_review: bool = False
     # Payout identity — required before a collaboration can enter payment.
     payout_upi: Optional[str] = None
@@ -566,7 +566,7 @@ NOTIFY_EVENTS = {
     "content_approved": "Your content was approved",
     "payment_sent": "Your payment has been sent",
     "new_applicant": "A creator applied to your campaign",
-    "creator_vetted": "You're vetted — briefs are open to you",
+    "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
 }
 
@@ -735,7 +735,7 @@ async def register(payload: RegisterInput, response: Response):
                 "niches": [],
                 "base_rate": None,
                 "follower_count": None,
-                "vetting_status": "pending",
+                "verification_status": "pending",
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1152,7 +1152,7 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
                     "niches": [],
                     "base_rate": None,
                     "follower_count": None,
-                    "vetting_status": "pending",
+                    "verification_status": "pending",
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -1212,7 +1212,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "niches": doc.get("niches") or [],
         "base_rate": doc.get("base_rate"),
         "follower_count": doc.get("follower_count"),
-        "vetting_status": doc.get("vetting_status", "pending"),
+        "verification_status": doc.get("verification_status", "pending"),
         "pending_review": bool(doc.get("pending_review", False)),
         "payout_upi": doc.get("payout_upi"),
         "payout_account_name": doc.get("payout_account_name"),
@@ -1313,20 +1313,20 @@ async def update_creator_profile(
         **_clean_payout_fields(payload),
     }
 
-    # A vetted creator who fixes a typo should not fall out of the directory.
+    # A verified creator who fixes a typo should not fall out of the directory.
     # Only a material change (who they are, or where their audience is) needs a
     # second look, and even then they stay live while we look.
     material_fields = ("name", "instagram_handle", "city")
     changed_material = any(
         (existing.get(f) or None) != (update.get(f) or None) for f in material_fields
     )
-    if existing.get("vetting_status") == "vetted":
+    if existing.get("verification_status") == "verified":
         update["pending_review"] = changed_material or bool(
             existing.get("pending_review")
         )
     else:
         # Still pending, or previously rejected — this is a (re)submission.
-        update["vetting_status"] = "pending"
+        update["verification_status"] = "pending"
         update["pending_review"] = False
 
     result = await db.creator_profiles.find_one_and_update(
@@ -1410,7 +1410,7 @@ async def get_creator_dashboard(
         "name": (profile or {}).get("name") or user.get("name"),
         "instagram_handle": (profile or {}).get("instagram_handle"),
         "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
-        "vetting_status": (profile or {}).get("vetting_status", "pending"),
+        "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
         "niches": (profile or {}).get("niches") or [],
         "follower_count": (profile or {}).get("follower_count"),
@@ -1843,13 +1843,13 @@ def _serialize_brand_campaign(
 
 
 async def _awaiting_brand_counts(campaign_ids: list) -> dict:
-    """Applicants the WeAre team has vetted and handed to the brand to decide on."""
+    """Applicants the WeAre team has verified and handed to the brand to decide on."""
     if not campaign_ids:
         return {}
     unique = list({cid for cid in campaign_ids})
     rows = await db.collaborations.aggregate(
         [
-            {"$match": {"campaign_id": {"$in": unique}, "state": "vetted"}},
+            {"$match": {"campaign_id": {"$in": unique}, "state": "verified"}},
             {"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}},
         ]
     ).to_list(length=len(unique))
@@ -2108,7 +2108,7 @@ async def close_brand_campaign(
 
     # Anyone still waiting on a decision is owed one.
     stale = await db.collaborations.find(
-        {"campaign_id": doc["_id"], "state": {"$in": ["applied", "vetted"]}}
+        {"campaign_id": doc["_id"], "state": {"$in": ["applied", "verified"]}}
     ).to_list(length=500)
     for collab in stale:
         await db.collaborations.update_one(
@@ -2169,7 +2169,7 @@ def _serialize_applicant(
     collaboration is under way — the directory makes the same promise.
     """
     state = collab.get("state", "applied")
-    revealed = state not in ("applied", "vetted", "declined", "cancelled")
+    revealed = state not in ("applied", "verified", "declined", "cancelled")
     return {
         "id": str(collab["_id"]),
         "state": state,
@@ -2187,8 +2187,8 @@ def _serialize_applicant(
         "updated_at": _iso(collab.get("updated_at")),
         # Actions the brand can take on this row, decided server-side so the UI
         # never offers a button the API will refuse.
-        "can_accept": state == "vetted",
-        "can_decline": state in ("applied", "vetted", "accepted"),
+        "can_accept": state == "verified",
+        "can_decline": state in ("applied", "verified", "accepted"),
         "can_review_content": state == "content_submitted",
         "creator": {
             "id": str((creator_user or {}).get("_id")) if creator_user else None,
@@ -2199,7 +2199,7 @@ def _serialize_applicant(
             "niches": (profile or {}).get("niches") or [],
             "follower_count": (profile or {}).get("follower_count"),
             "base_rate": (profile or {}).get("base_rate"),
-            "vetting_status": (profile or {}).get("vetting_status"),
+            "verification_status": (profile or {}).get("verification_status"),
             # Only once they're working together.
             "email": (creator_user or {}).get("email") if revealed else None,
             "phone": (creator_user or {}).get("phone") if revealed else None,
@@ -2278,7 +2278,7 @@ async def list_campaign_applicants(
         "applicants": rows,
         "totals": {
             "all": len(rows),
-            "awaiting_you": sum(1 for r in rows if r["state"] == "vetted"),
+            "awaiting_you": sum(1 for r in rows if r["state"] == "verified"),
             "with_weare": sum(1 for r in rows if r["state"] == "applied"),
             "in_progress": sum(
                 1
@@ -2320,7 +2320,7 @@ async def brand_accept_applicant(
 ):
     """The brand picks a creator. Records who agreed to what, and when."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
-    if collab.get("state") != "vetted":
+    if collab.get("state") != "verified":
         raise HTTPException(
             status_code=409,
             detail="This applicant isn't waiting on your decision right now.",
@@ -2346,7 +2346,7 @@ async def brand_accept_applicant(
 
     now = datetime.now(timezone.utc)
     result = await db.collaborations.update_one(
-        {"_id": collab["_id"], "state": "vetted"},  # precondition, not a blind write
+        {"_id": collab["_id"], "state": "verified"},  # precondition, not a blind write
         {
             "$set": {
                 "state": "accepted",
@@ -2367,7 +2367,7 @@ async def brand_accept_applicant(
         "collaboration.accept",
         "collaboration",
         collab["_id"],
-        before={"state": "vetted"},
+        before={"state": "verified"},
         after={"state": "accepted", "agreed_amount": amount},
         note=payload.note,
     )
@@ -2393,7 +2393,7 @@ async def brand_decline_applicant(
 ):
     """Say no, out loud. Every applicant gets an answer instead of silence."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
-    if collab.get("state") not in ("applied", "vetted", "accepted"):
+    if collab.get("state") not in ("applied", "verified", "accepted"):
         raise HTTPException(
             status_code=409,
             detail="This collaboration has gone too far to decline — cancel it instead.",
@@ -2604,8 +2604,8 @@ async def brand_directory(
     sort: Optional[str] = None,  # "newest" | "followers_desc" | "rate_asc"
     user: dict = Depends(require_roles("brand", "admin")),
 ):
-    """Browse vetted creators with optional city/niche/keyword filters."""
-    query: dict = {"vetting_status": "vetted"}
+    """Browse verified creators with optional city/niche/keyword filters."""
+    query: dict = {"verification_status": "verified"}
     if city:
         query["city"] = city
     if niche:
@@ -2636,8 +2636,8 @@ async def brand_directory(
 async def brand_directory_filters(
     user: dict = Depends(require_roles("brand", "admin")),
 ):
-    """Distinct filter options across vetted creators."""
-    base = {"vetting_status": "vetted"}
+    """Distinct filter options across verified creators."""
+    base = {"verification_status": "verified"}
     cities_raw = await db.creator_profiles.distinct("city", base)
     niches_flat: list[str] = []
     async for doc in db.creator_profiles.find(base, {"niches": 1}):
@@ -2714,7 +2714,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "niches": profile.get("niches") or [],
         "base_rate": profile.get("base_rate"),
         "follower_count": profile.get("follower_count"),
-        "vetting_status": profile.get("vetting_status", "pending"),
+        "verification_status": profile.get("verification_status", "pending"),
         "created_at": profile["created_at"].isoformat()
         if isinstance(profile.get("created_at"), datetime)
         else profile.get("created_at"),
@@ -2744,7 +2744,7 @@ async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
     profiles = (
         await db.creator_profiles.find(
             {
-                "vetting_status": "pending",
+                "verification_status": "pending",
                 "instagram_handle": {"$type": "string", "$ne": ""},
             }
         )
@@ -2756,14 +2756,14 @@ async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
 
 @admin_router.get("/creators/changed")
 async def list_changed_creators(user: dict = Depends(require_roles("admin"))):
-    """Vetted creators who changed something material since we approved them.
+    """Verified creators who changed something material since we approved them.
 
     They stay live and visible to brands while they're in this queue — an edit
     is not a reason to pull someone out of the directory.
     """
     profiles = (
         await db.creator_profiles.find(
-            {"vetting_status": "vetted", "pending_review": True}
+            {"verification_status": "verified", "pending_review": True}
         )
         .sort("updated_at", -1)
         .to_list(length=500)
@@ -2777,7 +2777,7 @@ async def list_incomplete_creators(user: dict = Depends(require_roles("admin")))
     profiles = (
         await db.creator_profiles.find(
             {
-                "vetting_status": "pending",
+                "verification_status": "pending",
                 "$or": [
                     {"instagram_handle": None},
                     {"instagram_handle": {"$exists": False}},
@@ -2791,11 +2791,11 @@ async def list_incomplete_creators(user: dict = Depends(require_roles("admin")))
     return await _hydrate_creator_rows(profiles)
 
 
-async def _set_creator_vetting(
+async def _set_creator_verification(
     user_id: str, status: str, actor: dict, reason: Optional[str] = None
 ) -> dict:
-    if status not in ("vetted", "rejected"):
-        raise HTTPException(status_code=422, detail="Invalid vetting status")
+    if status not in ("verified", "rejected"):
+        raise HTTPException(status_code=422, detail="Invalid verification status")
     try:
         oid = ObjectId(user_id)
     except Exception:
@@ -2810,19 +2810,19 @@ async def _set_creator_vetting(
         {"user_id": oid},
         {
             "$set": {
-                "vetting_status": status,
+                "verification_status": status,
                 # A decision clears the re-review flag either way.
                 "pending_review": False,
-                "vetting_reason": reason,
-                "vetted_at": now,
+                "verification_reason": reason,
+                "verified_at": now,
                 "updated_at": now,
             }
         },
         return_document=True,
     )
 
-    # Also flip the user's active status when vetted.
-    if status == "vetted":
+    # Also flip the user's active status when verified.
+    if status == "verified":
         await db.users.update_one({"_id": oid}, {"$set": {"status": "active"}})
 
     await audit(
@@ -2830,16 +2830,16 @@ async def _set_creator_vetting(
         f"creator.{status}",
         "creator_profile",
         before["_id"],
-        before={"vetting_status": before.get("vetting_status")},
-        after={"vetting_status": status},
+        before={"verification_status": before.get("verification_status")},
+        after={"verification_status": status},
         note=reason,
     )
 
-    if status == "vetted":
+    if status == "verified":
         await notify(
             oid,
-            "creator_vetted",
-            title="You're vetted",
+            "creator_verified",
+            title="You're verified",
             body="Your profile is approved — live briefs are open to you now.",
             link="/campaigns",
         )
@@ -2862,8 +2862,8 @@ async def approve_creator(
     payload: DecisionPayload | None = None,
     user: dict = Depends(require_roles("admin")),
 ):
-    return await _set_creator_vetting(
-        user_id, "vetted", user, (payload.reason if payload else None)
+    return await _set_creator_verification(
+        user_id, "verified", user, (payload.reason if payload else None)
     )
 
 
@@ -2873,7 +2873,7 @@ async def reject_creator(
     payload: DecisionPayload | None = None,
     user: dict = Depends(require_roles("admin")),
 ):
-    return await _set_creator_vetting(
+    return await _set_creator_verification(
         user_id, "rejected", user, (payload.reason if payload else None)
     )
 
@@ -3025,7 +3025,7 @@ def _serialize_admin_collab(
             "email": (creator_user or {}).get("email"),
             "instagram_handle": (creator_profile or {}).get("instagram_handle"),
             "instagram_profile_url": (creator_profile or {}).get("instagram_profile_url"),
-            "vetting_status": (creator_profile or {}).get("vetting_status"),
+            "verification_status": (creator_profile or {}).get("verification_status"),
             "follower_count": (creator_profile or {}).get("follower_count"),
             "phone": (creator_user or {}).get("phone"),
             # Surfaced so an admin can see *before* clicking through to payment
@@ -3464,8 +3464,8 @@ async def set_brand_invoice_state(
 async def admin_metrics(user: dict = Depends(require_roles("admin"))):
     await _expire_stale_campaigns()
     open_campaigns = await db.campaigns.count_documents({"status": "open"})
-    vetted_creators = await db.creator_profiles.count_documents(
-        {"vetting_status": "vetted"}
+    verified_creators = await db.creator_profiles.count_documents(
+        {"verification_status": "verified"}
     )
     agg = await db.payments.aggregate(
         [
@@ -3500,7 +3500,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
 
     return {
         "open_campaigns": open_campaigns,
-        "vetted_creators": vetted_creators,
+        "verified_creators": verified_creators,
         "total_paid_out": total_paid,
         "platform_revenue": platform_revenue,
         "platform_fee_percent": platform_fee_percent(),
@@ -3509,10 +3509,10 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         "brand_receivable": float(receivable_agg[0]["total"]) if receivable_agg else 0.0,
         # Queues that should be at zero.
         "creators_pending_review": await db.creator_profiles.count_documents(
-            {"vetting_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
+            {"verification_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
         ),
         "brands_unverified": await db.brand_profiles.count_documents({"verified": False}),
-        "applicants_awaiting_vetting": await db.collaborations.count_documents(
+        "applicants_awaiting_verification": await db.collaborations.count_documents(
             {"state": "applied"}
         ),
     }
@@ -3606,7 +3606,7 @@ async def _expire_stale_campaigns() -> None:
 
 # States that occupy one of a campaign's slots.
 _FILLED_COLLAB_STATES = [
-    s for s in COLLAB_STATE_ORDER if s not in ("applied", "vetted")
+    s for s in COLLAB_STATE_ORDER if s not in ("applied", "verified")
 ]
 
 
@@ -3792,16 +3792,16 @@ async def get_campaign(
     if user["role"] == "creator":
         # Decide eligibility server-side so the button and the API agree.
         profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
-        vetting = (profile or {}).get("vetting_status", "pending")
+        verification = (profile or {}).get("verification_status", "pending")
         needed = int(doc.get("creators_needed") or 1)
         filled = (await _filled_counts_for([oid])).get(oid, 0)
 
-        if vetting == "pending":
+        if verification == "pending":
             payload["apply_blocked_reason"] = (
                 "Your profile is still with the WeAre team. You can pitch on briefs "
                 "as soon as it's approved."
             )
-        elif vetting == "rejected":
+        elif verification == "rejected":
             payload["apply_blocked_reason"] = (
                 "Your profile wasn't approved. Update it and we'll take another look."
             )
@@ -3847,16 +3847,16 @@ async def apply_to_campaign(
 
     creator_oid = ObjectId(user["_id"])
 
-    # Vetting has to gate something, or the 48-hour review is decoration.
+    # Verification has to gate something, or the 48-hour review is decoration.
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
-    vetting = (profile or {}).get("vetting_status", "pending")
-    if vetting != "vetted":
+    verification = (profile or {}).get("verification_status", "pending")
+    if verification != "verified":
         raise HTTPException(
             status_code=403,
             detail=(
                 "Your profile is still with the WeAre team — you can apply to briefs "
                 "as soon as it's approved."
-                if vetting == "pending"
+                if verification == "pending"
                 else "Your profile wasn't approved. Update it to be reviewed again."
             ),
         )
@@ -3931,7 +3931,7 @@ async def public_campaign_preview(limit: int = 6):
     limit = max(1, min(int(limit or 6), 24))
 
     # Only verified brands get the shop window. An unverified brand can still
-    # post and be seen by vetted creators in-app; it just isn't promoted to the
+    # post and be seen by verified creators in-app; it just isn't promoted to the
     # public internet under our name.
     verified = await db.brand_profiles.find(
         {"verified": True}, {"user_id": 1}
@@ -3979,15 +3979,15 @@ async def public_campaign_preview(limit: int = 6):
 async def public_stats():
     """Headline numbers for the landing page — no PII, no auth."""
     return {
-        "vetted_creators": await db.creator_profiles.count_documents(
-            {"vetting_status": "vetted"}
+        "verified_creators": await db.creator_profiles.count_documents(
+            {"verification_status": "verified"}
         ),
         "open_campaigns": await db.campaigns.count_documents({"status": "open"}),
         "cities": len(
             [
                 c
                 for c in await db.creator_profiles.distinct(
-                    "city", {"vetting_status": "vetted"}
+                    "city", {"verification_status": "verified"}
                 )
                 if c
             ]
@@ -4115,7 +4115,7 @@ async def _startup():
 
     # creator_profiles (1:1 with users)
     await db.creator_profiles.create_index("user_id", unique=True)
-    await db.creator_profiles.create_index("vetting_status")
+    await db.creator_profiles.create_index("verification_status")
     await db.creator_profiles.create_index("niches")
 
     # brand_profiles (1:1 with users)
@@ -4171,16 +4171,65 @@ async def _startup():
     await db.notifications.create_index([("user_id", 1), ("read", 1)])
 
     # --- Data migrations ---------------------------------------------------
-    # `approved` was written by the demo seed while approvals wrote `vetted`,
-    # so the brand directory could only ever see seeded creators.
-    migrated = await db.creator_profiles.update_many(
-        {"vetting_status": "approved"}, {"$set": {"vetting_status": "vetted"}}
-    )
-    if migrated.modified_count:
-        logger.info(
-            "Migrated %d creator profile(s) from vetting_status 'approved' to 'vetted'",
-            migrated.modified_count,
+    # The creator approval concept has been called three things. Normalise all
+    # of them, in order, so a database from any previous version lands correct.
+    # Every step is filtered so re-running is a no-op.
+
+    # 1. Field rename: vetting_status -> verification_status. Guarded on the new
+    #    field being absent so a partly-migrated document is never clobbered.
+    for old_field, new_field in (
+        ("vetting_status", "verification_status"),
+        ("vetted_at", "verified_at"),
+        ("vetting_reason", "verification_reason"),
+    ):
+        renamed = await db.creator_profiles.update_many(
+            {old_field: {"$exists": True}, new_field: {"$exists": False}},
+            {"$rename": {old_field: new_field}},
         )
+        if renamed.modified_count:
+            logger.info(
+                "Migrated %d creator profile(s): %s -> %s",
+                renamed.modified_count,
+                old_field,
+                new_field,
+            )
+    # Anything left holding both fields keeps the new one; drop the stale copy.
+    await db.creator_profiles.update_many(
+        {"vetting_status": {"$exists": True}},
+        {"$unset": {"vetting_status": "", "vetted_at": "", "vetting_reason": ""}},
+    )
+
+    # 2. Value rename. `approved` was written by an old demo seed while
+    #    approvals wrote `vetted`, which is what once hid every approved creator
+    #    from the brand directory.
+    for legacy in ("approved", "vetted"):
+        migrated = await db.creator_profiles.update_many(
+            {"verification_status": legacy},
+            {"$set": {"verification_status": "verified"}},
+        )
+        if migrated.modified_count:
+            logger.info(
+                "Migrated %d creator profile(s) from verification_status '%s' to 'verified'",
+                migrated.modified_count,
+                legacy,
+            )
+
+    # 3. The collaboration state carried the same word.
+    collabs_migrated = await db.collaborations.update_many(
+        {"state": "vetted"}, {"$set": {"state": "verified"}}
+    )
+    if collabs_migrated.modified_count:
+        logger.info(
+            "Migrated %d collaboration(s) from state 'vetted' to 'verified'",
+            collabs_migrated.modified_count,
+        )
+
+    # 4. Drop the index on the old field name so it stops being maintained.
+    for name in list((await db.creator_profiles.index_information()).keys()):
+        if name.startswith("vetting_status"):
+            await db.creator_profiles.drop_index(name)
+            logger.info("Dropped stale index %s on creator_profiles", name)
+
     await db.creator_profiles.update_many(
         {"pending_review": {"$exists": False}}, {"$set": {"pending_review": False}}
     )
@@ -4583,7 +4632,7 @@ _DEMO_CREATORS = [
 
 
 async def _seed_demo_creators() -> None:
-    """Idempotently seed a small directory of vetted demo creators."""
+    """Idempotently seed a small directory of verified demo creators."""
     now = datetime.now(timezone.utc)
     for c in _DEMO_CREATORS:
         existing = await db.users.find_one({"email": c["email"]})
@@ -4615,7 +4664,7 @@ async def _seed_demo_creators() -> None:
                     "niches": c["niches"],
                     "follower_count": c["follower_count"],
                     "base_rate": c["base_rate"],
-                    "vetting_status": "vetted",
+                    "verification_status": "verified",
                     "pending_review": False,
                     # Demo creators carry payout details so the full pipeline —
                     # including the payment step's payout check — is walkable

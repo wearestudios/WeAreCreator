@@ -76,7 +76,7 @@ export default function CreatorOnboarding() {
     const [payoutAccountName, setPayoutAccountName] = useState("");
     const [pan, setPan] = useState("");
     const [gstin, setGstin] = useState("");
-    const [vettingStatus, setVettingStatus] = useState("pending");
+    const [verificationStatus, setVerificationStatus] = useState("pending");
 
     // Prefill from the existing stub / previous submission.
     useEffect(() => {
@@ -106,7 +106,7 @@ export default function CreatorOnboarding() {
                 setPayoutAccountName(data.payout_account_name || "");
                 setPan(data.pan || "");
                 setGstin(data.gstin || "");
-                setVettingStatus(data.vetting_status || "pending");
+                setVerificationStatus(data.verification_status || "pending");
             } catch (e) {
                 setError(formatApiError(e));
             } finally {
@@ -176,7 +176,7 @@ export default function CreatorOnboarding() {
             });
             await refresh(); // pick up any name change
             toast.success(
-                vettingStatus === "vetted"
+                verificationStatus === "verified"
                     ? "Profile updated"
                     : "Profile submitted for review",
             );
@@ -210,8 +210,8 @@ export default function CreatorOnboarding() {
                     Tell us about you.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                    {vettingStatus === "vetted"
-                        ? "You're vetted, so you stay live while you edit. Changing your name, handle or city means we'll take another look — you won't drop off the directory in the meantime."
+                    {verificationStatus === "verified"
+                        ? "You're verified, so you stay live while you edit. Changing your name, handle or city means we'll take another look — you won't drop off the directory in the meantime."
                         : "This becomes your creator profile on WeAre. The team reviews it — usually within 48 hours — and you can pitch on briefs as soon as you're approved."}
                 </p>
 
@@ -541,7 +541,7 @@ export default function CreatorOnboarding() {
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <ShieldCheck className="h-4 w-4 text-ember-500" />
-                            {vettingStatus === "vetted"
+                            {verificationStatus === "verified"
                                 ? "You stay live while we review any changes."
                                 : "Your profile is reviewed by the WeAre team before going live."}
                         </div>
@@ -558,7 +558,7 @@ export default function CreatorOnboarding() {
                                 </>
                             ) : (
                                 <>
-                                    {vettingStatus === "vetted"
+                                    {verificationStatus === "verified"
                                         ? "Save changes"
                                         : "Submit for review"}
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

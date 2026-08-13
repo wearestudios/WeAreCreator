@@ -1,4 +1,4 @@
-"""Backend tests for /api/admin/* — vetting, collaborations, payments, metrics."""
+"""Backend tests for /api/admin/* — verification, collaborations, payments, metrics."""
 import os
 import uuid
 import pytest
@@ -65,7 +65,7 @@ def _vet(admin_session, email):
     """Approve the creator with this email and return their user id."""
     rows = admin_session.get(f"{BASE_URL}/admin/creators/pending").json()
     uid = next(x["user_id"] for x in rows if x["email"] == email)
-    pipeline.vet_creator(admin_session, uid)
+    pipeline.verify_creator(admin_session, uid)
     return uid
 
 
@@ -118,9 +118,9 @@ class TestPendingCreators:
                       "instagram_profile_url", "niches", "follower_count",
                       "base_rate", "address"]:
             assert field in row, f"missing field {field}"
-        assert row.get("vetting_status") == "pending"
+        assert row.get("verification_status") == "pending"
 
-    def test_rejected_and_vetted_not_in_pending(self, admin, creator):
+    def test_rejected_and_verified_not_in_pending(self, admin, creator):
         s, _, email = creator
         _complete_creator(s)
         # find uid
@@ -137,7 +137,7 @@ class TestPendingCreators:
 # ---------- 3. Approve / Reject ----------
 
 class TestApproveReject:
-    def test_approve_sets_vetted_and_active_and_is_idempotent(self, admin, creator):
+    def test_approve_sets_verified_and_active_and_is_idempotent(self, admin, creator):
         s, _, email = creator
         _complete_creator(s)
         rows = admin.get(f"{BASE_URL}/admin/creators/pending").json()
@@ -145,7 +145,7 @@ class TestApproveReject:
 
         r1 = admin.post(f"{BASE_URL}/admin/creators/{uid}/approve")
         assert r1.status_code == 200
-        assert r1.json()["vetting_status"] == "vetted"
+        assert r1.json()["verification_status"] == "verified"
 
         # /auth/me from creator session should now show status=active
         me = s.get(f"{BASE_URL}/auth/me")
@@ -155,7 +155,7 @@ class TestApproveReject:
         # Second call idempotent
         r2 = admin.post(f"{BASE_URL}/admin/creators/{uid}/approve")
         assert r2.status_code == 200
-        assert r2.json()["vetting_status"] == "vetted"
+        assert r2.json()["verification_status"] == "verified"
 
     def test_reject_sets_rejected(self, admin, creator):
         s, _, email = creator
@@ -164,7 +164,7 @@ class TestApproveReject:
         uid = next(x["user_id"] for x in rows if x["email"] == email)
         r = admin.post(f"{BASE_URL}/admin/creators/{uid}/reject")
         assert r.status_code == 200
-        assert r.json()["vetting_status"] == "rejected"
+        assert r.json()["verification_status"] == "rejected"
 
     def test_approve_nonexistent_404(self, admin):
         # valid-looking ObjectId that shouldn't exist
@@ -207,7 +207,7 @@ class TestCollabList:
         assert r.status_code == 200
         data = r.json()
         assert "by_state" in data and "total" in data
-        for st in ["applied","vetted","accepted","commercial_agreed","slot_booked",
+        for st in ["applied","verified","accepted","commercial_agreed","slot_booked",
                    "attended","content_submitted","content_approved","in_payment",
                    "closed","declined","cancelled"]:
             assert st in data["by_state"]
@@ -215,7 +215,7 @@ class TestCollabList:
         row = next((x for x in applied if x["creator"]["email"] == cemail), None)
         assert row is not None
         assert row["quoted_rate"] == 5500
-        assert row["next_state"] == "vetted"
+        assert row["next_state"] == "verified"
         assert row["can_advance"] is True
         assert row["next_owner"] == "admin"
         for k in ["id", "state", "campaign", "brand_name", "creator", "payment"]:
@@ -227,11 +227,11 @@ class TestCollabList:
         brand owns — and the API refuses it either way."""
         bs, _ = brand
         cs, cuid, cemail = creator
-        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "vetted")
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "verified")
 
         row = next(
             x
-            for x in admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["vetted"]
+            for x in admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["verified"]
             if x["id"] == collab_id
         )
         assert row["next_state"] == "accepted"
@@ -240,7 +240,7 @@ class TestCollabList:
 
         r = admin.post(
             f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
-            json={"from_state": "vetted"},
+            json={"from_state": "verified"},
         )
         assert r.status_code == 409
         assert "brand" in r.json()["detail"].lower()
@@ -254,15 +254,15 @@ class TestStateMachine:
         bs, _ = brand
         cs, cuid, cemail = creator
         _complete_creator(cs)
-        pipeline.vet_creator(admin, cuid)
+        pipeline.verify_creator(admin, cuid)
         cid, _ = _seed_open_campaign(bs)
         collab_id = pipeline.apply_to_campaign(cs, cid, quoted_rate=6000)
 
-        # applied -> vetted (admin)
-        r = pipeline.step(admin, bs, collab_id, "vetted")
-        assert r["state"] == "vetted"
+        # applied -> verified (admin)
+        r = pipeline.step(admin, bs, collab_id, "verified")
+        assert r["state"] == "verified"
 
-        # vetted -> accepted is the brand's, and the fee is recorded with it
+        # verified -> accepted is the brand's, and the fee is recorded with it
         r = pipeline.step(admin, bs, collab_id, "accepted", agreed_amount=8500)
         assert r["state"] == "accepted"
         assert r["agreed_amount"] == 8500
@@ -356,7 +356,7 @@ class TestStateMachine:
         """A double-click used to skip a stage. The precondition stops it."""
         bs, _ = brand
         cs, cuid, _ = creator
-        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "vetted")
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "verified")
 
         # The caller thinks it's still `applied`; it isn't.
         r = admin.post(
@@ -365,7 +365,7 @@ class TestStateMachine:
         )
         assert r.status_code == 409
         assert "already moved" in r.json()["detail"].lower()
-        assert pipeline.current_state(admin, collab_id) == "vetted"
+        assert pipeline.current_state(admin, collab_id) == "verified"
 
     def test_payment_requires_creator_payout_details(self, admin, brand, creator):
         """We must not claim to have paid someone we have no way of paying."""
@@ -373,10 +373,10 @@ class TestStateMachine:
         cs, cuid, _ = creator
         # Same setup, minus the payout fields.
         pipeline.complete_creator_profile(cs, with_payout=False)
-        pipeline.vet_creator(admin, cuid)
+        pipeline.verify_creator(admin, cuid)
         cid, _ = _seed_open_campaign(bs)
         collab_id = pipeline.apply_to_campaign(cs, cid)
-        for state in ["vetted", "accepted", "commercial_agreed", "slot_booked", "attended"]:
+        for state in ["verified", "accepted", "commercial_agreed", "slot_booked", "attended"]:
             pipeline.step(admin, bs, collab_id, state)
         pipeline.submit_content(cs, collab_id)
         pipeline.step(admin, bs, collab_id, "content_approved")
@@ -441,7 +441,7 @@ class TestBrandDecisions:
         bs, _ = brand
         cs, cuid, _ = creator
         collab_id, campaign_id = pipeline.make_collab_in_state(
-            admin, bs, cs, cuid, "vetted"
+            admin, bs, cs, cuid, "verified"
         )
 
         r = bs.post(
@@ -496,7 +496,7 @@ class TestAdminMetrics:
         d = r.json()
         for k in [
             "open_campaigns",
-            "vetted_creators",
+            "verified_creators",
             "total_paid_out",
             "platform_revenue",
             "platform_fee_percent",
@@ -504,11 +504,11 @@ class TestAdminMetrics:
             "brand_receivable",
             "creators_pending_review",
             "brands_unverified",
-            "applicants_awaiting_vetting",
+            "applicants_awaiting_verification",
         ]:
             assert k in d, f"missing metric {k}"
         assert isinstance(d["open_campaigns"], int)
-        assert isinstance(d["vetted_creators"], int)
+        assert isinstance(d["verified_creators"], int)
         assert isinstance(d["total_paid_out"], (int, float))
         assert isinstance(d["platform_revenue"], (int, float))
 
@@ -542,18 +542,18 @@ class TestAuditLog:
     def test_every_decision_names_who_made_it(self, admin, brand, creator):
         cs, cuid, cemail = creator
         _complete_creator(cs)
-        pipeline.vet_creator(admin, cuid)
+        pipeline.verify_creator(admin, cuid)
 
         r = admin.get(f"{BASE_URL}/admin/audit", params={"limit": 50})
         assert r.status_code == 200
         rows = r.json()
         entry = next(
-            (x for x in rows if x["action"] == "creator.vetted"), None
+            (x for x in rows if x["action"] == "creator.verified"), None
         )
-        assert entry is not None, "vetting decision left no audit trail"
+        assert entry is not None, "verification decision left no audit trail"
         assert entry["actor_role"] == "admin"
-        assert entry["before"]["vetting_status"] == "pending"
-        assert entry["after"]["vetting_status"] == "vetted"
+        assert entry["before"]["verification_status"] == "pending"
+        assert entry["after"]["verification_status"] == "verified"
         assert entry["created_at"]
 
     def test_audit_is_admin_only(self, creator, brand, anon):

@@ -36,31 +36,31 @@ def _admin_session():
     return s
 
 
-def _vetted_creator():
+def _verified_creator():
     """A creator who can actually apply.
 
-    Vetting gates applying now, so a bare registration is no longer enough to
+    Verification gates applying now, so a bare registration is no longer enough to
     exercise the apply endpoint.
     """
     s = requests.Session()
     email, user = _register(s, "creator")
     pipeline.complete_creator_profile(s)
-    pipeline.vet_creator(_admin_session(), user["id"])
+    pipeline.verify_creator(_admin_session(), user["id"])
     return s, email, user
 
 
 @pytest.fixture
 def creator_session():
-    return _vetted_creator()
+    return _verified_creator()
 
 
 @pytest.fixture
 def creator_session_2():
-    return _vetted_creator()
+    return _verified_creator()
 
 
 @pytest.fixture
-def unvetted_creator_session():
+def unverified_creator_session():
     s = requests.Session()
     email, user = _register(s, "creator")
     return s, email, user
@@ -274,11 +274,11 @@ def test_second_creator_can_apply_to_same_campaign(creator_session, creator_sess
     assert r.status_code == 200
 
 
-# ---------- Vetting gates applying ----------
+# ---------- Verification gates applying ----------
 
-def test_unvetted_creator_cannot_apply(unvetted_creator_session, creator_session):
+def test_unverified_creator_cannot_apply(unverified_creator_session, creator_session):
     """The 48-hour review used to be advisory — anyone could pitch on anything."""
-    s, _, _ = unvetted_creator_session
+    s, _, _ = unverified_creator_session
     live, _, _ = creator_session
     cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
     r = s.post(f"{BASE_URL}/campaigns/{cid}/apply", json=APPLY_BODY)
@@ -286,9 +286,9 @@ def test_unvetted_creator_cannot_apply(unvetted_creator_session, creator_session
     assert "approved" in r.json()["detail"].lower()
 
 
-def test_rejected_creator_is_told_why_they_cannot_apply(unvetted_creator_session,
+def test_rejected_creator_is_told_why_they_cannot_apply(unverified_creator_session,
                                                         creator_session):
-    s, _, user = unvetted_creator_session
+    s, _, user = unverified_creator_session
     pipeline.complete_creator_profile(s)
     admin = _admin_session()
     r = admin.post(f"{BASE_URL}/admin/creators/{user['id']}/reject")
@@ -301,9 +301,9 @@ def test_rejected_creator_is_told_why_they_cannot_apply(unvetted_creator_session
     assert "wasn't approved" in r.json()["detail"].lower()
 
 
-def test_detail_explains_why_apply_is_blocked(unvetted_creator_session, creator_session):
+def test_detail_explains_why_apply_is_blocked(unverified_creator_session, creator_session):
     """The button and the API must agree — the page says why, up front."""
-    s, _, _ = unvetted_creator_session
+    s, _, _ = unverified_creator_session
     live, _, _ = creator_session
     cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
 
@@ -355,5 +355,5 @@ def test_public_preview_needs_no_account():
 def test_public_stats_needs_no_account():
     r = requests.get(f"{BASE_URL}/public/stats")
     assert r.status_code == 200
-    for k in ["vetted_creators", "open_campaigns", "cities"]:
+    for k in ["verified_creators", "open_campaigns", "cities"]:
         assert isinstance(r.json()[k], int)

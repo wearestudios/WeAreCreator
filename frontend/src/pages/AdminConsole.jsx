@@ -33,7 +33,7 @@ import {
 
 const STATE_ORDER = [
     "applied",
-    "vetted",
+    "verified",
     "accepted",
     "commercial_agreed",
     "slot_booked",
@@ -48,7 +48,7 @@ const STATE_ORDER = [
 
 const STATE_META = {
     applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    vetted: { label: "Vetted", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+    verified: { label: "Verified", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     accepted: { label: "Accepted", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
     commercial_agreed: { label: "Commercial agreed", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
     slot_booked: { label: "Slot booked", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
@@ -134,12 +134,12 @@ const MetricTile = ({ label, value, prefix, Icon, testid }) => (
 );
 
 // ---------------------------------------------------------------------------
-// Section 1: Creator vetting queue
+// Section 1: Creator verification queue
 // ---------------------------------------------------------------------------
 
 // Three separate lists, because "waiting on us", "edited since approval" and
 // "never finished signing up" are three different jobs.
-const VETTING_TABS = [
+const VERIFICATION_TABS = [
     {
         key: "pending",
         label: "New",
@@ -150,7 +150,7 @@ const VETTING_TABS = [
         key: "changed",
         label: "Edited since approval",
         endpoint: "/admin/creators/changed",
-        empty: "No vetted creator has changed anything material.",
+        empty: "No verified creator has changed anything material.",
     },
     {
         key: "incomplete",
@@ -160,12 +160,12 @@ const VETTING_TABS = [
     },
 ];
 
-function VettingQueue({ onChange }) {
+function VerificationQueue({ onChange }) {
     const [rows, setRows] = useState(null);
     const [busy, setBusy] = useState({});
     const [tab, setTab] = useState("pending");
 
-    const active = VETTING_TABS.find((t) => t.key === tab) || VETTING_TABS[0];
+    const active = VERIFICATION_TABS.find((t) => t.key === tab) || VERIFICATION_TABS[0];
 
     const load = useCallback(async () => {
         setRows(null);
@@ -186,7 +186,7 @@ function VettingQueue({ onChange }) {
         setBusy((b) => ({ ...b, [uid]: true }));
         try {
             await api.post(`/admin/creators/${uid}/${verb}`);
-            toast.success(verb === "approve" ? "Creator vetted" : "Creator rejected");
+            toast.success(verb === "approve" ? "Creator verified" : "Creator rejected");
             setRows((r) => (r ? r.filter((row) => row.user_id !== uid) : r));
             onChange?.();
         } catch (e) {
@@ -197,20 +197,20 @@ function VettingQueue({ onChange }) {
     };
 
     return (
-        <section data-testid="admin-vetting-section" className="mt-14">
+        <section data-testid="admin-verification-section" className="mt-14">
             <div className="flex items-baseline justify-between">
                 <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                         Section 1
                     </p>
                     <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
-                        Creator vetting queue
+                        Creator verification queue
                     </h2>
                 </div>
                 <button
                     type="button"
                     onClick={load}
-                    data-testid="admin-vetting-refresh"
+                    data-testid="admin-verification-refresh"
                     className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                 >
                     <RotateCw className="h-3.5 w-3.5" />
@@ -219,17 +219,17 @@ function VettingQueue({ onChange }) {
             </div>
 
             <div
-                data-testid="admin-vetting-tabs"
+                data-testid="admin-verification-tabs"
                 className="mt-6 flex flex-wrap gap-2"
             >
-                {VETTING_TABS.map((t) => {
+                {VERIFICATION_TABS.map((t) => {
                     const isActive = tab === t.key;
                     return (
                         <button
                             key={t.key}
                             type="button"
                             aria-pressed={isActive}
-                            data-testid={`admin-vetting-tab-${t.key}`}
+                            data-testid={`admin-verification-tab-${t.key}`}
                             onClick={() => setTab(t.key)}
                             className={
                                 "rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
@@ -252,7 +252,7 @@ function VettingQueue({ onChange }) {
             )}
             {tab === "changed" && (
                 <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                    Already vetted and still live to brands. Approving clears the flag;
+                    Already verified and still live to brands. Approving clears the flag;
                     rejecting takes them out of the directory.
                 </p>
             )}
@@ -265,7 +265,7 @@ function VettingQueue({ onChange }) {
                 )}
                 {Array.isArray(rows) && rows.length === 0 && (
                     <div
-                        data-testid="admin-vetting-empty"
+                        data-testid="admin-verification-empty"
                         className="flex items-center gap-4 px-6 py-10 text-sm text-muted-foreground"
                     >
                         <Sparkles className="h-5 w-5 flex-none text-ember-500" />
@@ -277,7 +277,7 @@ function VettingQueue({ onChange }) {
                         {rows.map((c) => (
                             <li
                                 key={c.user_id}
-                                data-testid={`admin-vetting-row-${c.user_id}`}
+                                data-testid={`admin-verification-row-${c.user_id}`}
                                 className="flex flex-col gap-4 px-6 py-6 md:flex-row md:items-start md:gap-8"
                             >
                                 <div className="flex-1 min-w-0">
@@ -298,7 +298,7 @@ function VettingQueue({ onChange }) {
                                                     `https://instagram.com/${c.instagram_handle}`}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                data-testid={`admin-vetting-ig-${c.user_id}`}
+                                                data-testid={`admin-verification-ig-${c.user_id}`}
                                                 className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-background/60 px-3 py-1 text-xs text-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
                                             >
                                                 <Instagram className="h-3.5 w-3.5" />
@@ -345,7 +345,7 @@ function VettingQueue({ onChange }) {
                                 ) : (
                                     <div className="flex flex-row gap-2 md:flex-col md:min-w-[140px]">
                                         <Button
-                                            data-testid={`admin-vetting-approve-${c.user_id}`}
+                                            data-testid={`admin-verification-approve-${c.user_id}`}
                                             disabled={busy[c.user_id]}
                                             onClick={() => decide(c.user_id, "approve")}
                                             className="flex-1 rounded-full bg-emerald-500/90 text-black hover:bg-emerald-400"
@@ -354,7 +354,7 @@ function VettingQueue({ onChange }) {
                                             Approve
                                         </Button>
                                         <Button
-                                            data-testid={`admin-vetting-reject-${c.user_id}`}
+                                            data-testid={`admin-verification-reject-${c.user_id}`}
                                             disabled={busy[c.user_id]}
                                             variant="outline"
                                             onClick={() => decide(c.user_id, "reject")}
@@ -1255,7 +1255,7 @@ function CollaborationsBoard({ onChange, feePercent }) {
 // ---------------------------------------------------------------------------
 
 const ACTION_LABEL = {
-    "creator.vetted": "approved creator",
+    "creator.verified": "approved creator",
     "creator.rejected": "rejected creator",
     "brand.verify": "verified brand",
     "brand.unverify": "un-verified brand",
@@ -1434,10 +1434,10 @@ export default function AdminConsole() {
                         value={metrics ? metrics.open_campaigns : "—"}
                     />
                     <MetricTile
-                        testid="admin-metric-vetted-creators"
-                        label="Vetted creators"
+                        testid="admin-metric-verified-creators"
+                        label="Verified creators"
                         Icon={Users}
-                        value={metrics ? metrics.vetted_creators : "—"}
+                        value={metrics ? metrics.verified_creators : "—"}
                     />
                     <MetricTile
                         testid="admin-metric-paid-out"
@@ -1486,8 +1486,8 @@ export default function AdminConsole() {
                                 value: metrics.creators_pending_review,
                             },
                             {
-                                label: "applicants awaiting vetting",
-                                value: metrics.applicants_awaiting_vetting,
+                                label: "applicants awaiting verification",
+                                value: metrics.applicants_awaiting_verification,
                             },
                             { label: "brands unverified", value: metrics.brands_unverified },
                         ].map(({ label, value }) => (
@@ -1507,7 +1507,7 @@ export default function AdminConsole() {
                     </div>
                 )}
 
-                <VettingQueue onChange={bump} />
+                <VerificationQueue onChange={bump} />
                 <BrandQueue onChange={bump} />
                 <CollaborationsBoard
                     onChange={bump}

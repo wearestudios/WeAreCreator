@@ -162,7 +162,7 @@ const EmptyState = ({ hasFilters, onReset }) => (
         </p>
         <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
             {hasFilters
-                ? "Try widening your filters. We're vetting new creators across every city every week."
+                ? "Try widening your filters. We're verifying new creators across every city every week."
                 : "Our team is onboarding creators right now. Please check back soon."}
         </p>
         {hasFilters && (
@@ -267,7 +267,7 @@ export default function BrandCreatorDirectory() {
                             data-testid="directory-heading"
                             className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight md:text-6xl"
                         >
-                            Every vetted creator,{" "}
+                            Every verified creator,{" "}
                             <span className="italic">by city</span>.
                         </h1>
                         <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">

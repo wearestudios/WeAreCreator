@@ -256,9 +256,9 @@ class TestBrandDashboard:
 
         # A creator applies to the open campaign → applicant_count should become 1
         cs, _, cuser = creator_session
-        # The creator must be onboarded *and vetted* to apply.
+        # The creator must be onboarded *and verified* to apply.
         pipeline.complete_creator_profile(cs)
-        pipeline.vet_creator(_admin_session(), cuser["id"])
+        pipeline.verify_creator(_admin_session(), cuser["id"])
         ar = cs.post(f"{BASE_URL}/campaigns/{open_id}/apply",
                      json={"pitch": "hi there really keen", "quoted_rate": 5000})
         assert ar.status_code in (200, 201), ar.text
@@ -428,7 +428,7 @@ class TestCampaignLifecycle:
         live = self._draft(s, status="open")
 
         pipeline.complete_creator_profile(cs)
-        pipeline.vet_creator(_admin_session(), cuser["id"])
+        pipeline.verify_creator(_admin_session(), cuser["id"])
         cs.post(f"{BASE_URL}/campaigns/{live['id']}/apply",
                 json={"pitch": "keen on this one please", "quoted_rate": 3000})
 
@@ -466,7 +466,7 @@ class TestApplicantBoard:
         })
         cid = pipeline.seed_open_campaign(bs, creators_needed=creators_needed)
         pipeline.complete_creator_profile(cs)
-        pipeline.vet_creator(_admin_session(), cuser["id"])
+        pipeline.verify_creator(_admin_session(), cuser["id"])
         collab_id = pipeline.apply_to_campaign(cs, cid)
         return cid, collab_id
 
@@ -496,7 +496,7 @@ class TestApplicantBoard:
         assert row["creator"]["email"] is None
         assert row["creator"]["phone"] is None
 
-        pipeline.step(admin, bs, collab_id, "vetted")
+        pipeline.step(admin, bs, collab_id, "verified")
         pipeline.step(admin, bs, collab_id, "accepted")
 
         row2 = next(
@@ -512,14 +512,14 @@ class TestApplicantBoard:
         cid, collab_id = self._live_campaign_with_applicant(bs, cs, cuser, creators_needed=1)
         admin = _admin_session()
 
-        pipeline.step(admin, bs, collab_id, "vetted")
+        pipeline.step(admin, bs, collab_id, "verified")
         pipeline.step(admin, bs, collab_id, "accepted")
 
         # The brief is full, so it leaves the feed and refuses new pitches.
         other = requests.Session()
         _, ouser = _register(other, "creator")
         pipeline.complete_creator_profile(other)
-        pipeline.vet_creator(admin, ouser["id"])
+        pipeline.verify_creator(admin, ouser["id"])
         r = other.post(f"{BASE_URL}/campaigns/{cid}/apply",
                        json={"pitch": "any room left for me?", "quoted_rate": 4000})
         assert r.status_code in (404, 409), r.text

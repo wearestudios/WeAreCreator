@@ -238,7 +238,7 @@ export default function PostCampaign() {
                         ? existing?.status === "draft"
                             ? "This is still a draft — nobody can see it yet. Publish when you're ready."
                             : "This brief is live. Changes show up on the creator feed straight away."
-                        : "Publish it live and vetted creators from across India start applying within hours. Save as a draft if you want to polish it first."}
+                        : "Publish it live and verified creators from across India start applying within hours. Save as a draft if you want to polish it first."}
                 </p>
 
                 <form

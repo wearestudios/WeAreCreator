@@ -260,7 +260,7 @@ export default function Campaigns() {
                             Paid briefs, <span className="italic">open</span> to apply.
                         </h1>
                         <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">
-                            Every campaign here comes from a vetted brand with a fixed
+                            Every campaign here comes from a verified brand with a fixed
                             budget — across F&amp;B, retail, real estate, fashion,
                             travel and hospitality. Tap any card to see the full brief.
                         </p>

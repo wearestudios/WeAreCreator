@@ -53,7 +53,7 @@ aren't pushed to WhatsApp. The full list is in `NOTIFY_EVENTS` in `server.py`.
 mongosh mongodb://localhost:27017/test_database
 db.users.find({role: "admin"}).pretty()
 db.users.getIndexes()
-db.creator_profiles.find({vetting_status: "vetted"}).count()
+db.creator_profiles.find({verification_status: "verified"}).count()
 db.collaborations.getIndexes()   # expect the partial "one_live_application" index
 db.audit_log.find().sort({created_at: -1}).limit(5).pretty()
 ```
@@ -61,8 +61,8 @@ db.audit_log.find().sort({created_at: -1}).limit(5).pretty()
 Expect an admin document with `role: "admin"`, a `password_hash` starting with
 `$2b$`, and partial-unique indexes on `email` and `phone`.
 
-There should be **no** creator profile left with `vetting_status: "approved"` —
-startup migrates any such rows to `vetted`.
+There should be **no** creator profile left with `verification_status` of `"approved"` or `"vetted"` —
+startup migrates any such rows to `verified`.
 
 ## API tests
 
@@ -109,7 +109,7 @@ curl -b /tmp/cookies.txt -X POST "$API_URL/api/auth/logout"
 
 | Check | Expected |
 | --- | --- |
-| Un-vetted creator applies to a campaign | `403` — vetting gates applying |
+| Unverified creator applies to a campaign | `403` — verification gates applying |
 | Creator applies twice to one campaign | `409` |
 | Creator re-applies after being declined | allowed |
 | Advance a collaboration with a stale `from_state` | `409`, no state change |

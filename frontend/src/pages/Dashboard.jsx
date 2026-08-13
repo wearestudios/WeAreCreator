@@ -53,7 +53,7 @@ const STATE_META = {
         label: "Applied",
         tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
     },
-    vetted: {
+    verified: {
         label: "With the brand",
         tone: "bg-sky-500/15 text-sky-300 border-sky-500/30",
     },
@@ -232,15 +232,15 @@ const NonCreatorDashboard = ({ user }) => {
 // Creator dashboard
 // ---------------------------------------------------------------------------
 
-const VETTING_META = {
+const VERIFICATION_META = {
     pending: {
         Icon: Clock,
         label: "Under review",
         tone: "bg-amber-500/15 text-amber-300 border-amber-500/40",
     },
-    vetted: {
+    verified: {
         Icon: CheckCircle2,
-        label: "Vetted",
+        label: "Verified",
         tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
     },
     rejected: {
@@ -251,7 +251,7 @@ const VETTING_META = {
 };
 
 const CreatorHeader = ({ user, profile }) => {
-    const meta = VETTING_META[profile?.vetting_status] || VETTING_META.pending;
+    const meta = VERIFICATION_META[profile?.verification_status] || VERIFICATION_META.pending;
     const handle = profile?.instagram_handle;
     return (
         <header data-testid="creator-header" className="grid gap-6 md:grid-cols-12 md:items-end">
@@ -289,7 +289,7 @@ const CreatorHeader = ({ user, profile }) => {
                     )}
                     <span className="text-muted-foreground/60">·</span>
                     <span
-                        data-testid={`vetting-badge-${profile?.vetting_status || "pending"}`}
+                        data-testid={`verification-badge-${profile?.verification_status || "pending"}`}
                         className={
                             "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] " +
                             meta.tone
@@ -402,7 +402,10 @@ const StatsPanel = ({ profile, onRefresh }) => {
                             className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-sky-300"
                         >
                             <CheckCircle2 className="h-3 w-3" />
-                            Verified
+                            {/* Instagram's own blue check — named explicitly so it
+                                isn't read as WeAre verification, which now sits
+                                a few pixels away in the header. */}
+                            Instagram verified
                         </span>
                     )}
                     {hasHandle && (
@@ -1025,7 +1028,7 @@ const PaymentsSection = ({ payments, inPaymentCollabs }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Vetting banner (post-onboarding welcome)
+// Verification banner (post-onboarding welcome)
 // ---------------------------------------------------------------------------
 
 const OnboardedBanner = ({ visible }) => {
@@ -1045,16 +1048,16 @@ const OnboardedBanner = ({ visible }) => {
 };
 
 /**
- * The two things that block a creator from earning: not being vetted yet, and
+ * The two things that block a creator from earning: not being verified yet, and
  * having no payout details on file. Both used to be silent.
  */
 const StatusBanners = ({ profile }) => {
-    const status = profile?.vetting_status;
+    const status = profile?.verification_status;
     return (
         <div className="mt-8 space-y-3">
             {status === "pending" && (
                 <div
-                    data-testid="vetting-pending-banner"
+                    data-testid="verification-pending-banner"
                     className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
                 >
                     <Clock className="mt-0.5 h-4 w-4 flex-none" />
@@ -1066,7 +1069,7 @@ const StatusBanners = ({ profile }) => {
             )}
             {status === "rejected" && (
                 <div
-                    data-testid="vetting-rejected-banner"
+                    data-testid="verification-rejected-banner"
                     className="flex items-start gap-3 rounded-md border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"
                 >
                     <XCircle className="mt-0.5 h-4 w-4 flex-none" />
@@ -1082,9 +1085,9 @@ const StatusBanners = ({ profile }) => {
                     </p>
                 </div>
             )}
-            {status === "vetted" && profile?.pending_review && (
+            {status === "verified" && profile?.pending_review && (
                 <div
-                    data-testid="vetting-changes-banner"
+                    data-testid="verification-changes-banner"
                     className="flex items-start gap-3 rounded-md border border-sky-500/30 bg-sky-500/10 p-4 text-sm text-sky-200"
                 >
                     <Clock className="mt-0.5 h-4 w-4 flex-none" />
@@ -1094,7 +1097,7 @@ const StatusBanners = ({ profile }) => {
                     </p>
                 </div>
             )}
-            {status === "vetted" && !profile?.payout_ready && (
+            {status === "verified" && !profile?.payout_ready && (
                 <div
                     data-testid="payout-missing-banner"
                     className="flex items-start gap-3 rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm text-ember-500/90"

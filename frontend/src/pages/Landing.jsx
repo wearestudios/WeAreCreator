@@ -59,7 +59,7 @@ const STEPS = [
     {
         n: "01",
         Icon: ShieldCheck,
-        title: "Get vetted",
+        title: "Get verified",
         body: "Apply once. Our team reviews your profile, niche and audience — from every city in India.",
     },
     {
@@ -90,7 +90,7 @@ const TRUST_POINTS = [
     },
     {
         Icon: ShieldCheck,
-        title: "Vetted on both sides",
+        title: "Verified on both sides",
         body: "Every creator is reviewed before they can pitch, and every brand we promote is verified by our team.",
     },
     {
@@ -415,7 +415,7 @@ export default function Landing() {
                         className="mt-8 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg"
                     >
                         Post your brief yourself — or hand it to our team. Either way,
-                        you're working with the same vetted creator network across
+                        you're working with the same verified creator network across
                         every city in India.
                     </motion.p>
 
@@ -463,7 +463,7 @@ export default function Landing() {
                         className="mt-20 grid max-w-3xl grid-cols-3 gap-8 border-t border-white/10 pt-8"
                     >
                         {[
-                            { k: 500, s: "+", v: "vetted creators" },
+                            { k: 500, s: "+", v: "verified creators" },
                             { k: 12, s: "+ cities", v: "live coverage" },
                             { k: 0, s: "", v: "hidden fees", prefix: "₹" },
                         ].map((s) => (

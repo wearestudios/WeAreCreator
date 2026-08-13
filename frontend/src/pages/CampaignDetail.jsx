@@ -41,7 +41,7 @@ const CAT_LABEL = {
 
 const STATE_LABEL = {
     applied: "With the WeAre team",
-    vetted: "With the brand",
+    verified: "With the brand",
     accepted: "Accepted",
     commercial_agreed: "Fee agreed",
     slot_booked: "Slot booked",
@@ -409,7 +409,7 @@ export default function CampaignDetail() {
         if (campaign.has_applied) {
             return <AppliedCard application={campaign.application} />;
         }
-        // The server decides eligibility — vetting, and whether slots remain.
+        // The server decides eligibility — verification, and whether slots remain.
         if (campaign.apply_blocked_reason) {
             return (
                 <div

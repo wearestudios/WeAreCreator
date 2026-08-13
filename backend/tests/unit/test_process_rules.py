@@ -13,25 +13,56 @@ import server
 
 
 # ---------------------------------------------------------------------------
-# Vetting status — the brand directory could only ever see seeded creators
-# because approvals wrote "vetted" and the directory queried "approved".
+# Verification status — this concept has been called three things ("approved",
+# "vetted", now "verified"). A mismatch between what approvals write and what
+# the directory queries once hid every approved creator from brands, so the
+# rules below guard the vocabulary rather than trusting it.
 # ---------------------------------------------------------------------------
 
 
-class TestVettingStatusIsOneWord:
-    def test_no_query_or_write_still_uses_the_illegal_status(self):
-        source = (server.ROOT_DIR / "server.py").read_text()
-        # Exactly one mention is legitimate: the startup migration that converts
-        # the old rows. Any other means the directory and the vetting queue are
-        # once again looking at two different populations.
-        assert source.count('"vetting_status": "approved"') == 1, (
-            "'approved' is not in the VettingStatus enum. The only permitted "
-            "reference is the startup migration that rewrites those rows."
-        )
-        assert '{"vetting_status": "approved"}, {"$set": {"vetting_status": "vetted"}}' in source
+class TestVerificationStatusIsOneWord:
+    SOURCE = None
+
+    @classmethod
+    def setup_class(cls):
+        cls.SOURCE = (server.ROOT_DIR / "server.py").read_text()
 
     def test_declared_statuses_are_the_ones_we_write(self):
-        assert set(server.VettingStatus.__args__) == {"pending", "vetted", "rejected"}
+        assert set(server.VerificationStatus.__args__) == {"pending", "verified", "rejected"}
+
+    def test_the_only_field_name_is_verification_status(self):
+        # `vetting_status` may appear solely inside the startup migration that
+        # renames it. Anywhere else means two field names are live at once.
+        for line in self.SOURCE.splitlines():
+            if "vetting_status" not in line:
+                continue
+            assert any(
+                marker in line
+                for marker in (
+                    "$rename",
+                    "$unset",
+                    "$exists",
+                    "Field rename",
+                    "startswith(",
+                    '"verification_status")',  # the (old, new) rename pair
+                )
+            ), f"stray reference to the old field name outside the migration: {line.strip()}"
+
+    def test_legacy_values_are_only_mentioned_where_they_are_migrated_away(self):
+        for legacy in ('"approved"', '"vetted"'):
+            for line in self.SOURCE.splitlines():
+                if legacy not in line:
+                    continue
+                assert any(
+                    marker in line
+                    for marker in ("for legacy in", '"state": "vetted"', "#", "Migrated")
+                ), f"stray legacy status {legacy} outside the migration: {line.strip()}"
+
+    def test_the_migration_covers_every_legacy_value(self):
+        # Databases from either previous version have to land on "verified".
+        assert 'for legacy in ("approved", "vetted"):' in self.SOURCE
+        assert '{"state": "vetted"}, {"$set": {"state": "verified"}}' in self.SOURCE
+        assert '("vetting_status", "verification_status")' in self.SOURCE
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +112,7 @@ class TestCampaignFill:
     def test_applicants_awaiting_a_decision_do_not_occupy_a_slot(self):
         # Otherwise one campaign with ten hopefuls looks full.
         assert "applied" not in server._FILLED_COLLAB_STATES
-        assert "vetted" not in server._FILLED_COLLAB_STATES
+        assert "verified" not in server._FILLED_COLLAB_STATES
 
     def test_accepted_onwards_occupies_a_slot(self):
         for state in ("accepted", "commercial_agreed", "slot_booked", "attended", "closed"):
@@ -235,7 +266,7 @@ class TestApplicantProjection:
     CREATOR_USER = {"_id": "u1", "name": "Priya Rao", "email": "p@x.in", "phone": "+9198"}
     PROFILE = {"name": "Priya Rao", "instagram_handle": "priyaeats", "city": "Bengaluru"}
 
-    @pytest.mark.parametrize("state", ["applied", "vetted", "declined", "cancelled"])
+    @pytest.mark.parametrize("state", ["applied", "verified", "declined", "cancelled"])
     def test_contact_details_hidden_before_a_working_relationship(self, state):
         row = server._serialize_applicant(
             _collab(state), self.CREATOR_USER, self.PROFILE, None
@@ -255,8 +286,8 @@ class TestApplicantProjection:
         assert row["creator"]["phone"] == "+9198"
 
     def test_actions_are_decided_server_side(self):
-        vetted = server._serialize_applicant(_collab("vetted"), self.CREATOR_USER, self.PROFILE, None)
-        assert vetted["can_accept"] and vetted["can_decline"]
+        verified = server._serialize_applicant(_collab("verified"), self.CREATOR_USER, self.PROFILE, None)
+        assert verified["can_accept"] and verified["can_decline"]
 
         # Already accepted: no second acceptance, but it can still be declined.
         accepted = server._serialize_applicant(_collab("accepted"), self.CREATOR_USER, self.PROFILE, None)

@@ -1,7 +1,7 @@
 """Shared helpers for walking a collaboration through the pipeline.
 
 The pipeline is no longer a single admin clicking Advance nine times: applying
-requires a vetted creator, and two of the steps belong to the brand. Every
+requires a verified creator, and two of the steps belong to the brand. Every
 integration test that needs a collaboration in a given state goes through here,
 so the shape of the process lives in one place.
 """
@@ -12,7 +12,7 @@ BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 
 # Steps an admin drives, and what each one needs.
 _ADMIN_STEPS = {
-    "vetted": lambda **kw: {},
+    "verified": lambda **kw: {},
     "commercial_agreed": lambda agreed_amount=8500, **kw: {
         "agreed_amount": agreed_amount
     },
@@ -31,7 +31,7 @@ _BRAND_STEPS = ("accepted", "content_approved")
 
 # The happy path, in order.
 PIPELINE = [
-    "vetted",
+    "verified",
     "accepted",
     "commercial_agreed",
     "slot_booked",
@@ -50,7 +50,7 @@ PAYOUT_DETAILS = {
 
 
 def complete_creator_profile(session, *, with_payout=True, suffix=None):
-    """Submit a full creator profile so the account can be vetted."""
+    """Submit a full creator profile so the account can be verified."""
     suf = suffix or uuid.uuid4().hex[:6]
     me = session.get(f"{BASE_URL}/auth/me").json()
     body = {
@@ -71,11 +71,11 @@ def complete_creator_profile(session, *, with_payout=True, suffix=None):
     return r.json()
 
 
-def vet_creator(admin_session, user_id):
+def verify_creator(admin_session, user_id):
     """Approve a creator so they can apply to briefs."""
     r = admin_session.post(f"{BASE_URL}/admin/creators/{user_id}/approve")
     assert r.status_code == 200, r.text
-    assert r.json()["vetting_status"] == "vetted"
+    assert r.json()["verification_status"] == "verified"
     return r.json()
 
 
@@ -204,10 +204,10 @@ def make_collab_in_state(
     admin_session, brand_session, creator_session, creator_user_id, target_state,
     *, creators_needed=3,
 ):
-    """End-to-end setup: vetted creator applies to a live brief, then walks the
+    """End-to-end setup: verified creator applies to a live brief, then walks the
     pipeline to `target_state`. Returns (collab_id, campaign_id)."""
     complete_creator_profile(creator_session)
-    vet_creator(admin_session, creator_user_id)
+    verify_creator(admin_session, creator_user_id)
     campaign_id = seed_open_campaign(brand_session, creators_needed=creators_needed)
     collab_id = apply_to_campaign(creator_session, campaign_id)
     if target_state != "applied":
