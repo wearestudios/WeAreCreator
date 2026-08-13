@@ -97,9 +97,11 @@ export default function Landing() {
                         initial="hidden"
                         animate="show"
                         variants={fadeUp}
-                        className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground backdrop-blur"
+                        className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                     >
                         <MapPin className="h-3.5 w-3.5 text-ember-500" />
+                        <span className="text-ember-500/90">Vol. 01</span>
+                        <span className="h-3 w-px bg-white/15" />
                         Bengaluru · Invite-only network
                     </motion.p>
 
@@ -223,24 +225,29 @@ export default function Landing() {
 
                     <ol className="mt-16 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
                         {STEPS.map(({ n, Icon, title, body }, idx) => (
-                            <li
+                            <motion.li
                                 key={n}
                                 data-testid={`step-${idx + 1}`}
-                                className="group relative flex flex-col rounded-md border border-white/10 bg-card p-7 transition-colors duration-200 hover:border-ember-500/50"
+                                initial={{ opacity: 0, y: 16 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-80px" }}
+                                transition={{ duration: 0.55, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                                className="group relative flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card p-7 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:shadow-[0_20px_60px_-30px_rgba(240,93,20,0.4)]"
                             >
+                                <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
                                 <div className="flex items-center justify-between">
-                                    <span className="font-serif text-5xl text-ember-500">
+                                    <span className="font-serif text-[52px] leading-none text-ember-500/90">
                                         {n}
                                     </span>
                                     <Icon className="h-5 w-5 text-muted-foreground transition-colors duration-200 group-hover:text-ember-500" />
                                 </div>
-                                <div className="mt-8 font-serif text-2xl leading-tight">
+                                <div className="mt-8 font-serif text-[26px] leading-tight tracking-tight">
                                     {title}
                                 </div>
                                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                                     {body}
                                 </p>
-                            </li>
+                            </motion.li>
                         ))}
                     </ol>
 
@@ -276,19 +283,24 @@ export default function Landing() {
                 </h2>
 
                 <div className="mt-14 grid gap-6 md:grid-cols-3">
-                    {TRUST_POINTS.map(({ Icon, title, body }) => (
-                        <div
+                    {TRUST_POINTS.map(({ Icon, title, body }, idx) => (
+                        <motion.div
                             key={title}
-                            className="rounded-md border border-white/10 bg-card p-8 transition-colors duration-200 hover:border-ember-500/40"
+                            initial={{ opacity: 0, y: 16 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true, margin: "-80px" }}
+                            transition={{ duration: 0.55, delay: idx * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                            className="group relative overflow-hidden rounded-lg border border-white/10 bg-card p-8 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/40 hover:shadow-[0_20px_60px_-30px_rgba(240,93,20,0.35)]"
                         >
+                            <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
                             <Icon className="h-6 w-6 text-ember-500" />
-                            <div className="mt-6 font-serif text-2xl leading-tight">
+                            <div className="mt-6 font-serif text-[26px] leading-tight tracking-tight">
                                 {title}
                             </div>
                             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                                 {body}
                             </p>
-                        </div>
+                        </motion.div>
                     ))}
                 </div>
             </section>

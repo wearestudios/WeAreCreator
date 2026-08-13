@@ -1915,6 +1915,10 @@ async def _load_brand_map(brand_ids: list) -> dict:
 async def list_campaigns(
     area: Optional[str] = None,
     category: Optional[str] = None,
+    budget_min: Optional[float] = None,
+    budget_max: Optional[float] = None,
+    q: Optional[str] = None,
+    sort: Optional[str] = None,  # "newest" | "budget_desc" | "budget_asc"
     user: dict = Depends(require_roles("creator", "admin")),
 ):
     query: dict = {"status": {"$in": list(_LIVE_STATUSES)}}
@@ -1922,8 +1926,29 @@ async def list_campaigns(
         query["area"] = area
     if category:
         query["category"] = category
+    if budget_min is not None or budget_max is not None:
+        budget_q: dict = {}
+        if budget_min is not None:
+            budget_q["$gte"] = budget_min
+        if budget_max is not None:
+            budget_q["$lte"] = budget_max
+        query["budget_per_creator"] = budget_q
+    if q:
+        # Case-insensitive keyword match against title / brief / deliverables.
+        term = re.escape(q.strip())
+        query["$or"] = [
+            {"title": {"$regex": term, "$options": "i"}},
+            {"brief": {"$regex": term, "$options": "i"}},
+            {"deliverables": {"$regex": term, "$options": "i"}},
+        ]
 
-    docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=200)
+    sort_key: list = [("created_at", -1)]
+    if sort == "budget_desc":
+        sort_key = [("budget_per_creator", -1), ("created_at", -1)]
+    elif sort == "budget_asc":
+        sort_key = [("budget_per_creator", 1), ("created_at", -1)]
+
+    docs = await db.campaigns.find(query).sort(sort_key).to_list(length=200)
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
     return [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
 
@@ -1932,13 +1957,31 @@ async def list_campaigns(
 async def campaign_filters(
     user: dict = Depends(require_roles("creator", "admin")),
 ):
-    """Distinct areas + categories across currently-listable campaigns."""
+    """Distinct areas + categories + budget bounds across listable campaigns."""
     base = {"status": {"$in": list(_LIVE_STATUSES)}}
     areas = await db.campaigns.distinct("area", base)
     categories = await db.campaigns.distinct("category", base)
+
+    # Budget bounds — used by the UI to build a sensible range slider/bucket.
+    budget_bounds = {"min": None, "max": None}
+    pipeline = [
+        {"$match": {**base, "budget_per_creator": {"$type": "number"}}},
+        {
+            "$group": {
+                "_id": None,
+                "min": {"$min": "$budget_per_creator"},
+                "max": {"$max": "$budget_per_creator"},
+            }
+        },
+    ]
+    async for row in db.campaigns.aggregate(pipeline):
+        budget_bounds = {"min": row.get("min"), "max": row.get("max")}
+        break
+
     return {
         "areas": sorted([a for a in areas if a]),
         "categories": sorted([c for c in categories if c]),
+        "budget_bounds": budget_bounds,
     }
 
 

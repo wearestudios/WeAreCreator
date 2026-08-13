@@ -62,9 +62,12 @@ export default function Signup() {
                     <Link to="/" className="mb-10 inline-block font-serif text-xl md:hidden">
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Create account</p>
-                    <h1 className="mt-3 font-serif text-4xl leading-none tracking-tight">
-                        Join WeAre Creators
+                    <p className="text-xs uppercase tracking-[0.22em] text-ember-500/90">
+                        <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-ember-500/80 align-middle" />
+                        Create account
+                    </p>
+                    <h1 className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight">
+                        Join <span className="italic">WeAre</span> Creators
                     </h1>
                     <p className="mt-4 text-sm text-muted-foreground">
                         Already a member?{" "}

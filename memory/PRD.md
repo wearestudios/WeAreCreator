@@ -54,9 +54,19 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
-## Prioritized backlog
+## Implemented (v1.2 — Editorial refresh + campaign filters, Feb 2026)
+- Font system upgraded: Fraunces (variable editorial serif) + Inter Tight — sitewide via `index.css` + `tailwind.config.js`
+- Landing: Vol. 01 kicker, motion-in on step cards + trust cards, gradient accent line on hover
+- Campaigns page: editorial masthead with italic accent, live-pool total, richer filter bar (keyword search + area + category + budget bucket + sort), Clear all pill, motion-in cards with hover lift + accent line
+- OTP screens (`/login`, `/signup`): kicker + italicized heading treatment
+- Backend: `GET /api/campaigns` now accepts `budget_min`, `budget_max`, `q`, `sort={newest|budget_desc|budget_asc}`; `GET /api/campaigns/filters` returns `budget_bounds`
+- Regression tests: 17 new pytest cases (`test_campaign_filters.py`) + 13 existing OTP auth tests still green
 - P1: YouTube stats integration for creators (parked earlier per user)
+- P1: Rich creator profiles — avatar upload, portfolio grid, city/area, "About me"
+- P1: Brand applicant board — side-by-side shortlist/reject on a campaign
+- P1: Deliverable-type filter on campaigns (requires new schema field or heuristic)
 - P2: Wire real AiSensy API key + campaign name (currently simulation mode)
+- P2: WhatsApp notifications on collab state changes (accepted, commercial_agreed, slot_booked, day-before reminder, attended, closed) — parked until AiSensy templates provided
 - P2: Payments (Razorpay/Stripe), invoices, ratings & reviews
 - P2: Email/SMS notifications
 

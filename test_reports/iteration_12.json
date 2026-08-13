@@ -1,0 +1,44 @@
+{
+  "summary": "Verified iteration 12: new /api/campaigns filter/sort/search params + budget_bounds on filters endpoint, plus polished /campaigns UI, landing motion, and editorial mastheads on /signup and /login. 17/17 new backend pytest cases pass (test_campaign_filters.py). 13/13 OTP auth regression tests still pass (test_otp_auth.py). All requested frontend flows work end-to-end. Found ONE minor UX inconsistency: changing only the sort dropdown does not surface the 'Clear all' button because hasFilters logic excludes sort state.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Campaigns.jsx (hasFilters)",
+        "issue": "Changing ONLY the sort dropdown (e.g. selecting 'Budget: high to low') does NOT show the clear-filters-btn. hasFilters at line 214 checks area/category/budget/debouncedQ but not sort. If the intended UX is that any non-default filter/sort should surface Clear all, add `|| sort !== 'newest'` to hasFilters and reset sort in resetAll (which is already there). If sort is intentionally excluded, ignore. Search+budget+area+category all correctly surface the Clear all button, and resetAll does reset sort back to 'newest'.",
+        "selector": "[data-testid=\"clear-filters-btn\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_campaign_filters.py",
+    "/app/test_reports/pytest/campaign_filters.xml",
+    "/app/backend/tests/test_otp_auth.py"
+  ],
+  "action_items": [
+    "OPTIONAL: extend hasFilters in /app/frontend/src/pages/Campaigns.jsx line 214 to include `|| sort !== 'newest'` so the Clear all button also appears when the user has only re-sorted the list."
+  ],
+  "critical_code_review_comments": [
+    "server.py is still ~2444 lines — the new list_campaigns() adds nice params but the file continues to grow; suggest extracting campaign routes into /app/backend/routers/campaigns.py.",
+    "list_campaigns q param builds a $or with regex on title/brief/deliverables — for larger seed sets consider a MongoDB text index (`db.campaigns.create_index([('title','text'),('brief','text'),('deliverables','text')])`) and use `$text`; current re.escape guards against ReDoS which is good.",
+    "campaign_filters budget_bounds pipeline: returns {min:None,max:None} shape when no numeric budgets exist — the UI currently trusts these are numbers (BUDGET_BUCKETS are hardcoded anyway), so safe today, but consider omitting min/max keys when null to make the contract explicit.",
+    "Campaigns.jsx line 214 hasFilters excludes sort — see UI bug above.",
+    "Campaigns.jsx debouncedQ debounce interval — verify it matches backend expectation (worked at ~600-900ms in tests). Consider setting explicit 300ms."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_campaign_filters.py (new — 17 test cases covering filters endpoint budget_bounds, sort=budget_desc/asc/newest, budget_min/max, q keyword+case+empty, combined filters, auth regression)"
+  ],
+  "success_rate": {"backend": "100% (17/17 new + 13/13 OTP regression)", "frontend": "100% of requested flows (with 1 minor UX note)"},
+  "test_credentials": "Admin: creators@wearemonk.in / WeAreMonk@2026. Creator: ephemeral +9198xxxxxxxx phones with OTP scraped from /var/log/supervisor/backend.err.log.",
+  "seed_data_creation": "Test suite creates ephemeral creator users; no campaign seed changes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test_campaign_filters.py is idempotent and safe to rerun. Frontend flow needs an admin login timing wait of ~1s AFTER wait_for_url('**/admin**') before navigating to /campaigns, otherwise the httpOnly cookie is not yet applied and ProtectedRoute redirects to /login (this is a browser-context timing artifact, not an app bug). Filter/sort UI works with test-ids: filter-search-input, filter-area-trigger, filter-category-trigger, filter-budget-trigger, filter-sort-trigger, filter-budget-{u5|5_15|15_50|50p|__any__}, filter-sort-{newest|budget_desc|budget_asc}, clear-filters-btn. Verified italic 'open' in campaigns masthead, VOL. 01 · BENGALURU kicker, and italic 'WeAre'/'WhatsApp' on /signup /login mastheads.",
+  "rca of the issue": "Minor UI inconsistency: Clear all button hidden after sort-only change. Root cause: `hasFilters` in Campaigns.jsx (line 214) does not include `sort !== 'newest'` in its OR chain. Fix: add that clause. resetAll already resets sort to 'newest' so the fix is a 1-line change."
+}
