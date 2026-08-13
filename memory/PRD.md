@@ -22,18 +22,25 @@ placeholder home + login/signup. GitHub sync via Emergent UI.
 
 ## Core requirements (static)
 - Role-based access: creator | brand | admin
-- Email + password auth (WhatsApp OTP planned for later phase)
+- Creators & brands: WhatsApp OTP login/signup (AiSensy delivery). Admin: email + password.
 - Mobile-first, premium dark editorial UI
 - All backend routes prefixed with `/api`
 
 ## Implemented (v0 — Feb 2026)
 - JWT auth: register/login/logout/me/refresh, httpOnly cookies, bcrypt hashing
 - Admin auto-seed from env on startup
-- MongoDB unique index on `users.email`
+- MongoDB unique indexes: partial-unique on `users.email` + `users.phone` (string-typed only)
 - Role guard dependency (`require_roles`) + sample `/api/admin/ping`
-- Frontend: Landing page, Login, Signup with role toggle (creator/brand), role-aware
-  Dashboard shell, ProtectedRoute, Navbar, AuthContext
+- Frontend: Landing page, WhatsApp OTP Login (`/login`), Signup with role picker (`/signup`), Admin email login (`/admin/login`), role-aware Dashboard shell, ProtectedRoute, Navbar, AuthContext
 - Design system: Instrument Serif + DM Sans, burnt-orange accent, dark tinted-grey base
+
+## Implemented (v1.1 — WhatsApp OTP Auth, Feb 2026)
+- New `otp_codes` collection (TTL 5 min, bcrypt-hashed codes, attempt counter)
+- `POST /api/auth/otp/request` — 30s per-phone cooldown, 5/hour per-phone limit, purpose=login|signup
+- `POST /api/auth/otp/verify` — 5-wrong-attempt lockout, issues JWT cookies on success
+- AiSensy WhatsApp delivery with simulation mode when creds missing (logs OTP)
+- `/auth/login` now admin-only (role=admin gate); creators/brands must use OTP
+- Startup migration drops legacy single-field `email_1`/`phone_1` indexes before creating partial-unique variants
 
 ## Data model (v1 — Feb 2026)
 Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
@@ -48,12 +55,8 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
 ## Prioritized backlog
-- P0: WhatsApp OTP login (replace/augment email+password)
-- P0: Creator profile & portfolio screen
-- P0: Brand profile screen
-- P0: Brief creation flow (brand) & Brief discovery feed (creator)
-- P1: Application flow, chat between brand & creator
-- P1: Admin approval console (creator/brand vetting)
+- P1: YouTube stats integration for creators (parked earlier per user)
+- P2: Wire real AiSensy API key + campaign name (currently simulation mode)
 - P2: Payments (Razorpay/Stripe), invoices, ratings & reviews
 - P2: Email/SMS notifications
 

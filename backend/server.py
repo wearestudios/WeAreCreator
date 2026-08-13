@@ -142,6 +142,48 @@ class LoginInput(BaseModel):
     password: str
 
 
+# --- OTP (WhatsApp) ---------------------------------------------------------
+
+E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
+
+
+def _normalize_phone(raw: str) -> str:
+    """Normalize a phone number to E.164. Raises HTTPException(400) on invalid."""
+    if not raw:
+        raise HTTPException(status_code=400, detail="Phone number is required.")
+    p = re.sub(r"[\s\-()]", "", raw.strip())
+    if not p.startswith("+"):
+        raise HTTPException(
+            status_code=400,
+            detail="Phone must be in international format, e.g. +9198…",
+        )
+    if not E164_RE.match(p):
+        raise HTTPException(
+            status_code=400,
+            detail="Phone must be in E.164 format, e.g. +919876543210",
+        )
+    return p
+
+
+OtpPurpose = Literal["login", "signup"]
+
+
+class OtpRequestInput(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    purpose: OtpPurpose = "login"
+    # required for signup only
+    name: Optional[str] = Field(default=None, max_length=80)
+    role: Optional[Literal["creator", "brand"]] = None
+
+
+class OtpVerifyInput(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    code: str = Field(pattern=r"^\d{6}$")
+    purpose: OtpPurpose = "login"
+    name: Optional[str] = Field(default=None, max_length=80)
+    role: Optional[Literal["creator", "brand"]] = None
+
+
 class CreatorProfileUpdate(BaseModel):
     """Payload for creator onboarding / profile edits."""
 
@@ -433,10 +475,19 @@ async def register(payload: RegisterInput, response: Response):
 
 @auth_router.post("/login")
 async def login(payload: LoginInput, response: Response):
+    """Email + password login. Reserved for admin users only.
+    Creators and brands must sign in via WhatsApp OTP (/auth/otp/*).
+    """
     email = payload.email.lower().strip()
     user = await db.users.find_one({"email": email})
-    if not user or not verify_password(payload.password, user["password_hash"]):
+    if not user or not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Please sign in with your WhatsApp number.",
+        )
 
     user_id = str(user["_id"])
     access = create_access_token(user_id, email, user["role"])
@@ -499,6 +550,317 @@ async def refresh_token(request: Request, response: Response):
         path="/",
     )
     return {"success": True}
+
+
+# --- OTP endpoints ---------------------------------------------------------
+
+import secrets as _secrets
+
+
+def _otp_ttl() -> int:
+    return int(os.environ.get("OTP_TTL_SECONDS", "300"))
+
+
+def _otp_cooldown() -> int:
+    return int(os.environ.get("OTP_RESEND_COOLDOWN_SECONDS", "30"))
+
+
+def _otp_hourly_limit() -> int:
+    return int(os.environ.get("OTP_HOURLY_LIMIT", "5"))
+
+
+def _otp_max_attempts() -> int:
+    return int(os.environ.get("OTP_MAX_ATTEMPTS", "5"))
+
+
+def _hash_otp_code(phone: str, code: str) -> str:
+    """Bcrypt-hash the OTP so raw codes never sit in the database."""
+    salted = f"{phone}:{code}".encode("utf-8")
+    return bcrypt.hashpw(salted, bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_otp_code(phone: str, code: str, code_hash: str) -> bool:
+    salted = f"{phone}:{code}".encode("utf-8")
+    try:
+        return bcrypt.checkpw(salted, code_hash.encode("utf-8"))
+    except Exception:
+        return False
+
+
+async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
+    """Send OTP over WhatsApp via AiSensy.
+
+    Returns the provider mode ("aisensy" or "simulation").
+    In simulation mode (creds missing) the code is logged and no HTTP call is made.
+    Raises HTTPException on provider failure so the caller can surface a resend option.
+    """
+    api_key = os.environ.get("AISENSY_API_KEY", "").strip()
+    campaign = os.environ.get("AISENSY_CAMPAIGN_NAME", "").strip()
+
+    if not api_key or not campaign:
+        logger.warning(
+            "AISENSY simulation mode — OTP for %s is %s (do NOT enable in prod)",
+            phone,
+            code,
+        )
+        return "simulation"
+
+    payload = {
+        "apiKey": api_key,
+        "campaignName": campaign,
+        "destination": phone,
+        "userName": name or "User",
+        "templateParams": [code],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client_http:
+            resp = await client_http.post(
+                "https://backend.aisensy.com/campaign/t1/api/v2",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.error("AiSensy request failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not send WhatsApp code right now. Please try again.",
+        )
+
+    if resp.status_code == 200:
+        return "aisensy"
+
+    logger.error(
+        "AiSensy rejected OTP for %s — status=%s body=%s",
+        phone,
+        resp.status_code,
+        resp.text[:400],
+    )
+    if resp.status_code in (408, 425, 429) or resp.status_code >= 500:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp delivery is temporarily unavailable. Please resend.",
+        )
+    raise HTTPException(
+        status_code=502,
+        detail="WhatsApp delivery failed. Please resend or try a different number.",
+    )
+
+
+@auth_router.post("/otp/request")
+async def request_otp(payload: OtpRequestInput):
+    """Generate a 6-digit code and deliver it to the phone over WhatsApp."""
+    phone = _normalize_phone(payload.phone)
+    now = datetime.now(timezone.utc)
+
+    # Purpose-specific pre-checks (so we don't spam OTPs to the wrong flow).
+    existing_user = await db.users.find_one({"phone": phone})
+    if payload.purpose == "login":
+        if not existing_user:
+            raise HTTPException(
+                status_code=404,
+                detail="No account found for this number. Please sign up first.",
+            )
+        if existing_user.get("role") == "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admins must sign in with email and password.",
+            )
+    else:  # signup
+        if existing_user:
+            raise HTTPException(
+                status_code=409,
+                detail="This number is already registered. Please log in.",
+            )
+        if not payload.name or not payload.role:
+            raise HTTPException(
+                status_code=400,
+                detail="Name and role are required to sign up.",
+            )
+
+    # Rate limits ---------------------------------------------------------
+    cooldown = _otp_cooldown()
+    hourly_limit = _otp_hourly_limit()
+    last = await db.otp_codes.find_one({"phone": phone}, sort=[("created_at", -1)])
+    if last:
+        last_created = last["created_at"]
+        if last_created.tzinfo is None:
+            last_created = last_created.replace(tzinfo=timezone.utc)
+        elapsed = (now - last_created).total_seconds()
+        if elapsed < cooldown:
+            retry_after = int(cooldown - elapsed)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Please wait {retry_after}s before requesting another code.",
+            )
+
+    hour_ago = now - timedelta(hours=1)
+    count_recent = await db.otp_codes.count_documents(
+        {"phone": phone, "created_at": {"$gte": hour_ago}}
+    )
+    if count_recent >= hourly_limit:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many code requests for this number. Try again later.",
+        )
+
+    # Generate + send -----------------------------------------------------
+    code = f"{_secrets.randbelow(1_000_000):06d}"
+    if payload.name:
+        display_name = payload.name
+    elif existing_user:
+        display_name = existing_user.get("name") or "User"
+    else:
+        display_name = "User"
+    mode = await _send_aisensy_otp(phone, display_name, code)
+
+    await db.otp_codes.insert_one(
+        {
+            "phone": phone,
+            "code_hash": _hash_otp_code(phone, code),
+            "purpose": payload.purpose,
+            "name": (payload.name or "").strip() or None,
+            "role": payload.role,
+            "attempts": 0,
+            "verified": False,
+            "provider_mode": mode,
+            "created_at": now,
+            "expires_at": now + timedelta(seconds=_otp_ttl()),
+        }
+    )
+
+    return {
+        "success": True,
+        "mode": mode,
+        "resend_available_in": cooldown,
+        "expires_in": _otp_ttl(),
+    }
+
+
+@auth_router.post("/otp/verify")
+async def verify_otp(payload: OtpVerifyInput, response: Response):
+    phone = _normalize_phone(payload.phone)
+    now = datetime.now(timezone.utc)
+
+    record = await db.otp_codes.find_one(
+        {"phone": phone, "purpose": payload.purpose, "verified": False},
+        sort=[("created_at", -1)],
+    )
+    if not record:
+        raise HTTPException(status_code=400, detail="No active code. Please request a new one.")
+
+    expires_at = record["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= now:
+        raise HTTPException(status_code=400, detail="Code expired. Please resend.")
+
+    max_attempts = _otp_max_attempts()
+    if record["attempts"] >= max_attempts:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many wrong attempts. Please request a new code.",
+        )
+
+    if not _verify_otp_code(phone, payload.code, record["code_hash"]):
+        await db.otp_codes.update_one({"_id": record["_id"]}, {"$inc": {"attempts": 1}})
+        remaining = max_attempts - (record["attempts"] + 1)
+        if remaining <= 0:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many wrong attempts. Please request a new code.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Incorrect code. {remaining} attempt(s) remaining.",
+        )
+
+    # Mark verified & consume all other pending codes for this phone.
+    await db.otp_codes.update_one(
+        {"_id": record["_id"]}, {"$set": {"verified": True, "verified_at": now}}
+    )
+    await db.otp_codes.delete_many(
+        {"phone": phone, "verified": False}
+    )
+
+    # Login flow ----------------------------------------------------------
+    if payload.purpose == "login":
+        user = await db.users.find_one({"phone": phone})
+        if not user:
+            raise HTTPException(status_code=404, detail="Account not found. Please sign up.")
+        if user.get("role") == "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admins must sign in with email and password.",
+            )
+    else:  # signup
+        existing_user = await db.users.find_one({"phone": phone})
+        if existing_user:
+            raise HTTPException(status_code=409, detail="This number is already registered.")
+
+        signup_name = (record.get("name") or payload.name or "").strip()
+        signup_role = record.get("role") or payload.role
+        if not signup_name or signup_role not in ("creator", "brand"):
+            raise HTTPException(status_code=400, detail="Missing signup details.")
+
+        user_doc = {
+            "email": None,
+            "password_hash": None,
+            "name": signup_name,
+            "role": signup_role,
+            "phone": phone,
+            "status": "pending",
+            "created_at": now,
+        }
+        result = await db.users.insert_one(user_doc)
+        user_id = result.inserted_id
+
+        if signup_role == "creator":
+            await db.creator_profiles.insert_one(
+                {
+                    "user_id": user_id,
+                    "name": signup_name,
+                    "instagram_handle": None,
+                    "instagram_profile_url": None,
+                    "email": None,
+                    "address": None,
+                    "niches": [],
+                    "base_rate": None,
+                    "follower_count": None,
+                    "vetting_status": "pending",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        else:
+            await db.brand_profiles.insert_one(
+                {
+                    "user_id": user_id,
+                    "business_name": signup_name,
+                    "category": None,
+                    "areas": [],
+                    "verified": False,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+
+        user = await db.users.find_one({"_id": user_id})
+
+    user_id_str = str(user["_id"])
+    access = create_access_token(user_id_str, user.get("email") or "", user["role"])
+    refresh = create_refresh_token(user_id_str)
+    _set_auth_cookies(response, access, refresh)
+
+    return {
+        "id": user_id_str,
+        "email": user.get("email"),
+        "name": user["name"],
+        "role": user["role"],
+        "phone": user.get("phone"),
+        "status": user.get("status"),
+        "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+    }
 
 
 api_router.include_router(auth_router)
@@ -1706,9 +2068,37 @@ app.add_middleware(
 @app.on_event("startup")
 async def _startup():
     # users
-    await db.users.create_index("email", unique=True)
+    # NOTE: partial-unique indexes on email + phone because creators/brands now
+    # sign up with phone only (email may be null), and admins have email but
+    # no phone. A partial filter is required because `sparse` still indexes
+    # explicit null values, which would collide.
+    async def _ensure_partial_unique(collection, field: str) -> None:
+        target_name = f"{field}_partial_unique"
+        # First, drop any legacy single-field index on this field that isn't the
+        # target — old non-partial `unique` or `sparse+unique` variants collide
+        # on multiple null values and must go.
+        existing = await collection.index_information()
+        for name, info in existing.items():
+            if name in ("_id_", target_name):
+                continue
+            keys = info.get("key", [])
+            if len(keys) == 1 and keys[0][0] == field:
+                await collection.drop_index(name)
+        await collection.create_index(
+            field,
+            unique=True,
+            partialFilterExpression={field: {"$type": "string"}},
+            name=target_name,
+        )
+
+    await _ensure_partial_unique(db.users, "email")
+    await _ensure_partial_unique(db.users, "phone")
     await db.users.create_index("role")
     await db.users.create_index("status")
+
+    # otp_codes (TTL cleans up expired docs automatically)
+    await db.otp_codes.create_index("expires_at", expireAfterSeconds=0)
+    await db.otp_codes.create_index([("phone", 1), ("created_at", -1)])
 
     # creator_profiles (1:1 with users)
     await db.creator_profiles.create_index("user_id", unique=True)

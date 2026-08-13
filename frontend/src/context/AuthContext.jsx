@@ -20,7 +20,8 @@ export const AuthProvider = ({ children }) => {
         fetchMe();
     }, [fetchMe]);
 
-    const login = async (email, password) => {
+    // Admin-only email/password login
+    const loginAdmin = async (email, password) => {
         try {
             const { data } = await api.post("/auth/login", { email, password });
             setUser(data);
@@ -30,13 +31,35 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const register = async (payload) => {
+    // WhatsApp OTP — request a code
+    const requestOtp = async ({ phone, purpose, name, role }) => {
         try {
-            const { data } = await api.post("/auth/register", payload);
+            const { data } = await api.post("/auth/otp/request", {
+                phone,
+                purpose,
+                name,
+                role,
+            });
+            return { ok: true, ...data };
+        } catch (e) {
+            return { ok: false, error: formatApiError(e), status: e?.response?.status };
+        }
+    };
+
+    // WhatsApp OTP — verify code (logs in or completes signup)
+    const verifyOtp = async ({ phone, code, purpose, name, role }) => {
+        try {
+            const { data } = await api.post("/auth/otp/verify", {
+                phone,
+                code,
+                purpose,
+                name,
+                role,
+            });
             setUser(data);
             return { ok: true, user: data };
         } catch (e) {
-            return { ok: false, error: formatApiError(e) };
+            return { ok: false, error: formatApiError(e), status: e?.response?.status };
         }
     };
 
@@ -50,7 +73,16 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, refresh: fetchMe }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                loginAdmin,
+                requestOtp,
+                verifyOtp,
+                logout,
+                refresh: fetchMe,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
