@@ -184,6 +184,18 @@ class OtpVerifyInput(BaseModel):
     role: Optional[Literal["creator", "brand"]] = None
 
 
+CATEGORY_LITERAL = Literal[
+    "fnb",
+    "hospitality",
+    "retail",
+    "real_estate",
+    "fashion",
+    "travel",
+    "wellness",
+    "lifestyle",
+]
+
+
 class CreatorProfileUpdate(BaseModel):
     """Payload for creator onboarding / profile edits."""
 
@@ -191,6 +203,7 @@ class CreatorProfileUpdate(BaseModel):
     instagram_handle: str = Field(min_length=1, max_length=60)
     instagram_profile_url: str = Field(min_length=1, max_length=300)
     email: EmailStr
+    city: Optional[str] = Field(default=None, max_length=80)
     address: str = Field(min_length=1, max_length=500)
     niches: list[str] = Field(default_factory=list, max_length=25)
     base_rate: Optional[float] = Field(default=None, ge=0)
@@ -217,7 +230,7 @@ class BrandProfileUpdate(BaseModel):
     """Payload for brand onboarding / profile edits."""
 
     business_name: str = Field(min_length=1, max_length=140)
-    category: Literal["fnb", "hospitality", "retail", "lifestyle"]
+    category: CATEGORY_LITERAL
     areas: list[str] = Field(default_factory=list, max_length=30)
 
 
@@ -228,7 +241,7 @@ class PostCampaignPayload(BaseModel):
     brief: str = Field(min_length=1, max_length=5000)
     deliverables: str = Field(min_length=1, max_length=1000)
     budget_per_creator: float = Field(ge=0)
-    category: Literal["fnb", "hospitality", "retail", "lifestyle"]
+    category: CATEGORY_LITERAL
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
     start_date: Optional[datetime] = None
@@ -267,6 +280,7 @@ class CreatorProfile(BaseModel):
     instagram_handle: Optional[str] = None
     instagram_profile_url: Optional[str] = None
     email: Optional[EmailStr] = None
+    city: Optional[str] = None
     address: Optional[str] = None
     niches: list[str] = Field(default_factory=list)
     base_rate: Optional[float] = None
@@ -283,7 +297,7 @@ class BrandProfile(BaseModel):
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
     user_id: PyObjectId
     business_name: str
-    category: Optional[Literal["fnb", "hospitality", "retail", "lifestyle"]] = None
+    category: Optional[CATEGORY_LITERAL] = None
     areas: list[str] = Field(default_factory=list)
     verified: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -882,6 +896,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
         "email": doc.get("email"),
+        "city": doc.get("city"),
         "address": doc.get("address"),
         "niches": doc.get("niches") or [],
         "base_rate": doc.get("base_rate"),
@@ -917,6 +932,7 @@ async def update_creator_profile(
         "instagram_handle": handle,
         "instagram_profile_url": payload.instagram_profile_url.strip(),
         "email": payload.email.lower().strip(),
+        "city": (payload.city or "").strip() or None,
         "address": payload.address.strip(),
         "niches": [n.strip().lower() for n in payload.niches if n and n.strip()],
         "base_rate": payload.base_rate,
@@ -1551,6 +1567,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "phone": user.get("phone"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "city": profile.get("city"),
         "address": profile.get("address"),
         "niches": profile.get("niches") or [],
         "base_rate": profile.get("base_rate"),

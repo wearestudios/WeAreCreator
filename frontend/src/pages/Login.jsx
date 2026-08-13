@@ -31,9 +31,9 @@ export default function Login() {
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Bengaluru</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Every city that matters</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            The city's most curated creator-brand network.
+                            India's most curated creator × brand network.
                         </p>
                     </div>
                 </div>

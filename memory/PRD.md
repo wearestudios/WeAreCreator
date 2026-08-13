@@ -54,6 +54,14 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
+## Implemented (v1.3 — All-India pivot + Landing rewrite, Feb 2026)
+- Positioning shift: no longer Bengaluru-only. Now framed as an all-India influencer studio across F&B, hospitality, retail, real estate, fashion, travel, wellness and lifestyle. Agency angle woven in ("Self-serve, or hand it to our team").
+- Backend category enum expanded to 8 values: fnb, hospitality, retail, real_estate, fashion, travel, wellness, lifestyle
+- Creator profile: new optional `city` field (persisted, returned on GET, surfaced in admin console + applicant lists)
+- Landing rewrite: rotating hero vertical (cafés → restaurants → retail → real estate → fashion → travel → hotels), infinite cities marquee, animated number counters, scroll-parallax hero, dedicated 'For brands' section, mailto managed-service CTA
+- Signup role subtitles + Login + Signup taglines + Campaigns kicker + brand/creator onboarding copy all reworked for pan-India + all-verticals
+- 22 new pytest cases in `test_pivot_city_categories.py`; OTP + filter regressions still green
+
 ## Implemented (v1.2 — Editorial refresh + campaign filters, Feb 2026)
 - Font system upgraded: Fraunces (variable editorial serif) + Inter Tight — sitewide via `index.css` + `tailwind.config.js`
 - Landing: Vol. 01 kicker, motion-in on step cards + trust cards, gradient accent line on hover

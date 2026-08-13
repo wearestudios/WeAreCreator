@@ -28,6 +28,10 @@ const CAT_LABEL = {
     fnb: "F&B",
     hospitality: "Hospitality",
     retail: "Retail",
+    real_estate: "Real Estate",
+    fashion: "Fashion",
+    travel: "Travel",
+    wellness: "Wellness",
     lifestyle: "Lifestyle",
 };
 
@@ -247,7 +251,7 @@ export default function Campaigns() {
                     <div className="md:col-span-8">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
-                            Vol. 01 · Bengaluru
+                            Vol. 01 · India · Influencer studio
                         </p>
                         <h1
                             data-testid="campaigns-heading"
@@ -257,7 +261,8 @@ export default function Campaigns() {
                         </h1>
                         <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">
                             Every campaign here comes from a vetted brand with a fixed
-                            budget. Tap any card to see the full brief.
+                            budget — across F&amp;B, retail, real estate, fashion,
+                            travel and hospitality. Tap any card to see the full brief.
                         </p>
                     </div>
                     {Array.isArray(items) && items.length > 0 && (

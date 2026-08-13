@@ -90,6 +90,21 @@
     line-height: 1;
 }
 
+/* Infinite marquee for the cities strip */
+@keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+.marquee-track {
+    animation: marquee 42s linear infinite;
+}
+.marquee-track:hover {
+    animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+    .marquee-track { animation: none; }
+}
+
 /* Focus ring override for premium feel */
 :focus-visible {
     outline: 2px solid hsl(var(--primary));

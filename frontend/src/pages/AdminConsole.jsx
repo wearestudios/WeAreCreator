@@ -178,7 +178,7 @@ function VettingQueue({ onChange }) {
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                        Bengaluru · applied {new Date(c.created_at).toLocaleDateString("en-IN")}
+                                        {c.city || "India"} · applied {new Date(c.created_at).toLocaleDateString("en-IN")}
                                     </div>
                                     <div className="mt-1.5 font-serif text-2xl leading-tight">
                                         {c.name}

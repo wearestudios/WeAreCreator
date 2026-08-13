@@ -31,19 +31,18 @@ const CATEGORY_OPTIONS = [
 ];
 
 const SUGGESTED_AREAS = [
-    "Indiranagar",
-    "Koramangala",
-    "HSR Layout",
-    "Whitefield",
-    "Jayanagar",
-    "MG Road",
-    "JP Nagar",
-    "Bellandur",
-    "Marathahalli",
-    "Sadashivanagar",
-    "Malleshwaram",
-    "Basavanagudi",
-    "Ulsoor",
+    "Bengaluru",
+    "Mumbai",
+    "Delhi NCR",
+    "Hyderabad",
+    "Pune",
+    "Chennai",
+    "Kolkata",
+    "Goa",
+    "Ahmedabad",
+    "Jaipur",
+    "Chandigarh",
+    "Kochi",
 ];
 
 const normalise = (v) => v.trim().replace(/\s+/g, " ");
@@ -109,7 +108,7 @@ export default function BrandOnboarding() {
         if (!businessName.trim()) return setError("Please enter your business name.");
         if (!category) return setError("Please pick a category.");
         if (areas.length === 0)
-            return setError("Add at least one Bengaluru area you operate in.");
+            return setError("Add at least one area or city you operate in.");
         setSubmitting(true);
         try {
             await api.put("/brand/profile", {
@@ -210,7 +209,7 @@ export default function BrandOnboarding() {
                     <section className="space-y-4">
                         <div className="flex items-baseline justify-between">
                             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                Bengaluru areas you operate in
+                                Cities & areas you operate in
                             </p>
                             <span className="text-xs text-muted-foreground">
                                 Pick or type — add several
@@ -248,7 +247,7 @@ export default function BrandOnboarding() {
                                     className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
                                     placeholder={
                                         areas.length === 0
-                                            ? "e.g. Indiranagar — press Enter"
+                                            ? "e.g. Bengaluru — press Enter"
                                             : "Add another…"
                                     }
                                 />

@@ -11,13 +11,13 @@ const ROLE_OPTIONS = [
     {
         value: "creator",
         title: "I'm a Creator",
-        subtitle: "Food, café & lifestyle storytellers in Bengaluru.",
+        subtitle: "Storytellers across F&B, retail, real estate, fashion, travel and lifestyle.",
         Icon: Camera,
     },
     {
         value: "brand",
         title: "I'm a Brand",
-        subtitle: "Restaurant, café, or lifestyle brand looking for creators.",
+        subtitle: "Café, restaurant, hotel, retail, real estate, fashion or travel brand.",
         Icon: Building2,
     },
 ];
@@ -51,7 +51,7 @@ export default function Signup() {
                     <div className="max-w-md">
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Invite-only</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Get on the list. Applications are reviewed by the WeAre team.
+                            Get on the list. Every application is reviewed by our team — from every city in India.
                         </p>
                     </div>
                 </div>

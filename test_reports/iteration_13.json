@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 13 pivot (Bengaluru-only → all-India) tested end-to-end. Backend: added /app/backend/tests/test_pivot_city_categories.py — 22/22 passed, covers creator `city` PUT/GET (Mumbai, null, omitted, whitespace), all 8 CATEGORY_LITERAL values on brand profile + brand campaigns, invalid-category 422, admin /admin/creators/pending includes new `city` field, /api/campaigns/filters shape unchanged, list_campaigns budget/sort/q filters unchanged. OTP regression (test_otp_auth.py) still 11/11 pass. Frontend: landing/signup/login/campaigns copy all match pivot spec. Cities marquee, rotating hero word, hero CTAs, step-1..4, why-section, closing-cta, brand-cta, managed-cta all render. FOUND & FIXED one CRITICAL runtime bug on /onboarding/creator.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/creators", "issue": "Test brief mentions GET /api/admin/creators; only /api/admin/creators/pending exists in server.py. Tested against the pending endpoint — it correctly returns the new `city` field. If a non-pending listing is desired, add the endpoint."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CreatorOnboarding.jsx",
+        "issue": "CRITICAL: ReferenceError `SUGGESTED_CITIES is not defined` at line 272 — the constant was referenced in the datalist JSX but never declared. This crashed /onboarding/creator with a red overlay for every user (Uncaught runtime errors). FIX APPLIED by testing agent: added SUGGESTED_CITIES = [Bengaluru, Mumbai, Delhi NCR, Hyderabad, Pune, Chennai, Kolkata, Goa, Ahmedabad, Jaipur, Chandigarh, Kochi] at module scope alongside SUGGESTED_NICHES. After the fix: city datalist renders 12 suggestions, city input works, address label 'Neighbourhood / address' is correct, and PUT+refresh persists city (verified with Chennai — prefilled on reload).",
+        "selector": "[data-testid=\"onboarding-city-input\"]",
+        "priority": "CRITICAL (already patched, please review/approve the city list vs. your design)"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pivot_city_categories.py",
+    "/app/test_reports/pytest/pivot.xml",
+    "/app/backend/tests/test_otp_auth.py"
+  ],
+  "action_items": [
+    "REVIEW the SUGGESTED_CITIES list I added to /app/frontend/src/pages/CreatorOnboarding.jsx (line ~39) — I mirrored the landing-page marquee cities. If the intended list differs (e.g., add/remove cities, different ordering), update accordingly.",
+    "OPTIONAL: expose a GET /api/admin/creators (non-pending listing) if the spec really wants a global list. Right now only /admin/creators/pending exists (working, city field present)."
+  ],
+  "critical_code_review_comments": [
+    "CreatorOnboarding.jsx shipped with an undefined identifier (SUGGESTED_CITIES) — this is the same class of bug the previous iteration note mentions (duplicate JSX tail). Consider adding an ESLint no-undef rule to CI or a smoke render test so the /onboarding/creator page is exercised before deploy.",
+    "server.py continues to grow (~2461 lines). Consider splitting into routers/creator.py, routers/brand.py, routers/admin.py, routers/campaigns.py.",
+    "CATEGORY_LITERAL is defined once but the 8 labels are duplicated across at least 3 frontend files (Campaigns.jsx CAT_LABEL, PostCampaign.jsx options, Signup subtitles). Consider a shared constants module (src/lib/categories.js) that exports { key, label } pairs so future category additions require only one edit.",
+    "The datalist-only city UX in CreatorOnboarding requires no validation — a creator can type any free-form string. If you want a strict enum, switch to a shadcn Combobox that restricts values."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/CreatorOnboarding.jsx (added missing SUGGESTED_CITIES constant to fix runtime ReferenceError)",
+    "/app/backend/tests/test_pivot_city_categories.py (new — 22 pytest cases for pivot iteration)"
+  ],
+  "success_rate": {"backend": "100% (22/22 pivot + 11/11 OTP regression)", "frontend": "100% (after SUGGESTED_CITIES fix)"},
+  "test_credentials": "Admin: creators@wearemonk.in / WeAreMonk@2026. Creators/brands: ephemeral +9198xxxxxxxx signup, OTP grepped from /var/log/supervisor/backend.err.log.",
+  "seed_data_creation": "Test suite creates ephemeral users and (a few) test campaigns with TEST_ prefix. Not cleaned up but harmless as they use random emails/phones per run.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pivot tests are at /app/backend/tests/test_pivot_city_categories.py (22 cases, ~18s). Use OTP simulation to auth ephemeral creators/brands; admin login is email/password. To auth via browser, POST /api/auth/otp/request then grep the log then /api/auth/otp/verify with credentials:'include' — this is what the frontend test used. Frontend copy checks passed against these exact strings: hero 'Influencer campaigns for', tagline 'Done right, in every city that matters.', signup creator subtitle 'F&B, retail, real estate, fashion, travel and lifestyle', brand subtitle 'Café, restaurant, hotel, retail, real estate, fashion or travel brand', login tagline \"India's most curated creator × brand network\", campaigns kicker 'Vol. 01 · India · Influencer studio'. The rotating hero word cycles cafés → restaurants → retail → real estate → fashion → travel → hotels (confirmed at least 3 different snapshots in a 6s poll). CreatorOnboarding.jsx now includes SUGGESTED_CITIES — if the main agent redesigns this list, update at src/pages/CreatorOnboarding.jsx line ~39.",
+  "rca of the issue": "ReferenceError SUGGESTED_CITIES on /onboarding/creator. Root cause: developer wrote the datalist JSX (`{SUGGESTED_CITIES.map(...)}`) but forgot to declare the constant. React tried to render the component, JS threw ReferenceError, react-error-boundary surfaced the red overlay. Reproduction: sign up as creator → navigate to /onboarding/creator → red overlay 'SUGGESTED_CITIES is not defined'. Mitigation: added `const SUGGESTED_CITIES = [...12 cities]` at module scope in CreatorOnboarding.jsx. Post-fix verified: page renders, datalist populated with 12 options, city persists across PUT+reload."
+}

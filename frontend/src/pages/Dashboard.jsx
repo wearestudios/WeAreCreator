@@ -155,7 +155,7 @@ const NonCreatorDashboard = ({ user }) => {
                     data-testid="dashboard-role-tag"
                     className="text-xs uppercase tracking-[0.2em] text-ember-500"
                 >
-                    {copy.label} · Bengaluru
+                    {copy.label} · India
                 </p>
                 <h1
                     data-testid="dashboard-welcome"
@@ -231,7 +231,7 @@ const CreatorHeader = ({ user, profile }) => {
         <header data-testid="creator-header" className="grid gap-6 md:grid-cols-12 md:items-end">
             <div className="md:col-span-8">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    Creator · Bengaluru
+                    Creator · India
                 </p>
                 <h1
                     data-testid="creator-name-heading"

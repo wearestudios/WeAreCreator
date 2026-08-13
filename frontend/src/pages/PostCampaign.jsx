@@ -29,6 +29,10 @@ const CATEGORY_OPTIONS = [
     { value: "fnb", label: "F&B" },
     { value: "hospitality", label: "Hospitality" },
     { value: "retail", label: "Retail" },
+    { value: "real_estate", label: "Real Estate" },
+    { value: "fashion", label: "Fashion" },
+    { value: "travel", label: "Travel" },
+    { value: "wellness", label: "Wellness" },
     { value: "lifestyle", label: "Lifestyle" },
 ];
 
@@ -73,12 +77,16 @@ export default function PostCampaign() {
         const list = brandProfile?.areas?.length
             ? brandProfile.areas
             : [
-                  "Indiranagar",
-                  "Koramangala",
-                  "HSR Layout",
-                  "Whitefield",
-                  "Jayanagar",
-                  "MG Road",
+                  "Bengaluru",
+                  "Mumbai",
+                  "Delhi NCR",
+                  "Hyderabad",
+                  "Pune",
+                  "Chennai",
+                  "Kolkata",
+                  "Goa",
+                  "Ahmedabad",
+                  "Jaipur",
               ];
         return list;
     }, [brandProfile]);
@@ -170,8 +178,9 @@ export default function PostCampaign() {
                     Post a paid brief.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                    Publish it live and vetted Bengaluru creators will start applying
-                    within hours. Save as a draft if you want to polish it first.
+                    Publish it live and vetted creators from across India start
+                    applying within hours. Save as a draft if you want to polish it
+                    first.
                 </p>
 
                 <form

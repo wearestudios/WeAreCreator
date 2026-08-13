@@ -36,6 +36,21 @@ const SUGGESTED_NICHES = [
     "wellness",
 ];
 
+const SUGGESTED_CITIES = [
+    "Bengaluru",
+    "Mumbai",
+    "Delhi NCR",
+    "Hyderabad",
+    "Pune",
+    "Chennai",
+    "Kolkata",
+    "Goa",
+    "Ahmedabad",
+    "Jaipur",
+    "Chandigarh",
+    "Kochi",
+];
+
 const normalise = (v) => v.trim().toLowerCase().replace(/\s+/g, " ");
 
 export default function CreatorOnboarding() {
@@ -50,6 +65,7 @@ export default function CreatorOnboarding() {
     const [instagramHandle, setInstagramHandle] = useState("");
     const [instagramUrl, setInstagramUrl] = useState("");
     const [email, setEmail] = useState("");
+    const [city, setCity] = useState("");
     const [address, setAddress] = useState("");
     const [niches, setNiches] = useState([]);
     const [nicheInput, setNicheInput] = useState("");
@@ -67,6 +83,7 @@ export default function CreatorOnboarding() {
                 setInstagramHandle(data.instagram_handle || "");
                 setInstagramUrl(data.instagram_profile_url || "");
                 setEmail(data.email || user?.email || "");
+                setCity(data.city || "");
                 setAddress(data.address || "");
                 setNiches(data.niches || []);
                 setBaseRate(
@@ -135,6 +152,7 @@ export default function CreatorOnboarding() {
                 instagram_handle: instagramHandle,
                 instagram_profile_url: instagramUrl,
                 email,
+                city: city.trim() || null,
                 address,
                 niches,
                 base_rate: baseRate === "" ? null : Number(baseRate),
@@ -251,22 +269,44 @@ export default function CreatorOnboarding() {
                                 />
                             </div>
                             <div>
-                                <Label htmlFor="address" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Address (Bengaluru)
+                                <Label htmlFor="city" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    City
                                 </Label>
-                                <div className="relative mt-2">
-                                    <MapPin className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                                    <Textarea
-                                        id="address"
-                                        data-testid="onboarding-address-input"
-                                        value={address}
-                                        onChange={(e) => setAddress(e.target.value)}
-                                        required
-                                        rows={2}
-                                        className="min-h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                        placeholder="Neighbourhood, city"
-                                    />
-                                </div>
+                                <Input
+                                    id="city"
+                                    data-testid="onboarding-city-input"
+                                    list="city-suggestions"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    required
+                                    maxLength={80}
+                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    placeholder="e.g. Bengaluru"
+                                />
+                                <datalist id="city-suggestions">
+                                    {SUGGESTED_CITIES.map((c) => (
+                                        <option value={c} key={c} />
+                                    ))}
+                                </datalist>
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label htmlFor="address" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Neighbourhood / address
+                            </Label>
+                            <div className="relative mt-2">
+                                <MapPin className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+                                <Textarea
+                                    id="address"
+                                    data-testid="onboarding-address-input"
+                                    value={address}
+                                    onChange={(e) => setAddress(e.target.value)}
+                                    required
+                                    rows={2}
+                                    className="min-h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                    placeholder="Neighbourhood or short address so brands can plan visits"
+                                />
                             </div>
                         </div>
                     </section>
