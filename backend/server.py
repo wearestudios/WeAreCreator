@@ -121,6 +121,8 @@ class UserPublic(BaseModel):
     email: EmailStr
     name: str
     role: Role
+    phone: Optional[str] = None
+    status: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -129,11 +131,117 @@ class RegisterInput(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=80)
     role: Literal["creator", "brand"]  # admins can only be seeded
+    phone: Optional[str] = Field(default=None, max_length=20)
 
 
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+
+
+# --- Domain models (schema-only; used for validation & docs) ---------------
+
+UserStatus = Literal["pending", "active", "suspended"]
+VettingStatus = Literal["pending", "vetted", "rejected"]
+CampaignStatus = Literal[
+    "draft", "upcoming", "open", "in_progress", "completed", "closed"
+]
+CollabState = Literal[
+    "applied",
+    "vetted",
+    "accepted",
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "content_submitted",
+    "in_payment",
+    "closed",
+]
+PaymentState = Literal["pending", "paid"]
+
+
+class CreatorProfile(BaseModel):
+    """Collection: creator_profiles (1:1 with users where role='creator')."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    user_id: PyObjectId
+    name: str
+    instagram_handle: Optional[str] = None
+    instagram_profile_url: Optional[str] = None
+    email: Optional[EmailStr] = None
+    address: Optional[str] = None
+    niches: list[str] = Field(default_factory=list)
+    base_rate: Optional[float] = None
+    follower_count: Optional[int] = None
+    vetting_status: VettingStatus = "pending"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BrandProfile(BaseModel):
+    """Collection: brand_profiles (1:1 with users where role='brand')."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    user_id: PyObjectId
+    business_name: str
+    category: Optional[Literal["fnb", "hospitality", "retail", "lifestyle"]] = None
+    areas: list[str] = Field(default_factory=list)
+    verified: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Campaign(BaseModel):
+    """Collection: campaigns. Owned by a brand user."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    brand_id: PyObjectId  # references users._id (role=brand)
+    title: str = Field(min_length=1, max_length=140)
+    brief: str
+    deliverables: str
+    budget_per_creator: float = Field(ge=0)
+    category: Optional[str] = None
+    area: Optional[str] = None
+    creators_needed: int = Field(ge=1, default=1)
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: CampaignStatus = "draft"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Collaboration(BaseModel):
+    """Collection: collaborations. Join of a creator to a campaign."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    campaign_id: PyObjectId
+    creator_id: PyObjectId  # references users._id (role=creator)
+    pitch: Optional[str] = None
+    quoted_rate: Optional[float] = None
+    agreed_amount: Optional[float] = None
+    content_url: Optional[str] = None
+    state: CollabState = "applied"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Payment(BaseModel):
+    """Collection: payments. One payment per collaboration."""
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    collaboration_id: PyObjectId
+    agreed_amount: float = Field(ge=0)
+    platform_fee: float = Field(ge=0, default=0)
+    creator_payout: float = Field(ge=0)
+    state: PaymentState = "pending"
+    paid_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------
@@ -208,25 +316,62 @@ async def register(payload: RegisterInput, response: Response):
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
+    now = datetime.now(timezone.utc)
     doc = {
         "email": email,
         "password_hash": hash_password(payload.password),
         "name": payload.name.strip(),
         "role": payload.role,
-        "created_at": datetime.now(timezone.utc),
+        "phone": (payload.phone or "").strip() or None,
+        "status": "pending",
+        "created_at": now,
     }
     result = await db.users.insert_one(doc)
-    user_id = str(result.inserted_id)
+    user_id = result.inserted_id
 
-    access = create_access_token(user_id, email, payload.role)
-    refresh = create_refresh_token(user_id)
+    # Auto-create the role-specific profile stub so relationships are wired up.
+    if payload.role == "creator":
+        await db.creator_profiles.insert_one(
+            {
+                "user_id": user_id,
+                "name": doc["name"],
+                "instagram_handle": None,
+                "instagram_profile_url": None,
+                "email": email,
+                "address": None,
+                "niches": [],
+                "base_rate": None,
+                "follower_count": None,
+                "vetting_status": "pending",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    elif payload.role == "brand":
+        await db.brand_profiles.insert_one(
+            {
+                "user_id": user_id,
+                "business_name": doc["name"],
+                "category": None,
+                "areas": [],
+                "verified": False,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    user_id_str = str(user_id)
+    access = create_access_token(user_id_str, email, payload.role)
+    refresh = create_refresh_token(user_id_str)
     _set_auth_cookies(response, access, refresh)
 
     return {
-        "id": user_id,
+        "id": user_id_str,
         "email": email,
         "name": doc["name"],
         "role": doc["role"],
+        "phone": doc["phone"],
+        "status": doc["status"],
         "created_at": doc["created_at"].isoformat(),
     }
 
@@ -248,6 +393,8 @@ async def login(payload: LoginInput, response: Response):
         "email": user["email"],
         "name": user["name"],
         "role": user["role"],
+        "phone": user.get("phone"),
+        "status": user.get("status"),
         "created_at": user["created_at"].isoformat() if user.get("created_at") else None,
     }
 
@@ -265,6 +412,8 @@ async def me(user: dict = Depends(get_current_user)):
         "email": user["email"],
         "name": user["name"],
         "role": user["role"],
+        "phone": user.get("phone"),
+        "status": user.get("status"),
         "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
     }
 
@@ -333,7 +482,39 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
+    # users
     await db.users.create_index("email", unique=True)
+    await db.users.create_index("role")
+    await db.users.create_index("status")
+
+    # creator_profiles (1:1 with users)
+    await db.creator_profiles.create_index("user_id", unique=True)
+    await db.creator_profiles.create_index("vetting_status")
+    await db.creator_profiles.create_index("niches")
+
+    # brand_profiles (1:1 with users)
+    await db.brand_profiles.create_index("user_id", unique=True)
+    await db.brand_profiles.create_index("verified")
+    await db.brand_profiles.create_index("category")
+
+    # campaigns
+    await db.campaigns.create_index("brand_id")
+    await db.campaigns.create_index("status")
+    await db.campaigns.create_index([("status", 1), ("created_at", -1)])
+    await db.campaigns.create_index([("area", 1), ("category", 1)])
+
+    # collaborations
+    await db.collaborations.create_index("campaign_id")
+    await db.collaborations.create_index("creator_id")
+    # A creator can only apply once per campaign
+    await db.collaborations.create_index(
+        [("campaign_id", 1), ("creator_id", 1)], unique=True
+    )
+    await db.collaborations.create_index("state")
+
+    # payments (one per collaboration)
+    await db.payments.create_index("collaboration_id", unique=True)
+    await db.payments.create_index("state")
 
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower().strip()
     admin_password = os.environ.get("ADMIN_PASSWORD", "")
@@ -342,6 +523,7 @@ async def _startup():
         logger.warning("ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin seed")
         return
 
+    now = datetime.now(timezone.utc)
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one(
@@ -350,17 +532,23 @@ async def _startup():
                 "password_hash": hash_password(admin_password),
                 "name": admin_name,
                 "role": "admin",
-                "created_at": datetime.now(timezone.utc),
+                "phone": None,
+                "status": "active",
+                "created_at": now,
             }
         )
         logger.info("Seeded admin user %s", admin_email)
     else:
+        update = {"role": "admin", "status": existing.get("status") or "active"}
         if not verify_password(admin_password, existing["password_hash"]):
-            await db.users.update_one(
-                {"email": admin_email},
-                {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}},
-            )
-            logger.info("Updated admin password for %s", admin_email)
+            update["password_hash"] = hash_password(admin_password)
+        await db.users.update_one({"email": admin_email}, {"$set": update})
+
+    # Backfill status field on any legacy users that were created before the
+    # schema was extended so downstream code can rely on the field existing.
+    await db.users.update_many(
+        {"status": {"$exists": False}}, {"$set": {"status": "pending"}}
+    )
 
 
 @app.on_event("shutdown")

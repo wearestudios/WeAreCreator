@@ -35,6 +35,18 @@ placeholder home + login/signup. GitHub sync via Emergent UI.
   Dashboard shell, ProtectedRoute, Navbar, AuthContext
 - Design system: Instrument Serif + DM Sans, burnt-orange accent, dark tinted-grey base
 
+## Data model (v1 — Feb 2026)
+Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
+
+- `users` — id, email(unique), name, role(creator|brand|admin), phone?, status(pending|active|suspended), password_hash, created_at. Indexes: `email` unique, `role`, `status`.
+- `creator_profiles` (1:1 users where role=creator) — user_id(unique), name, instagram_handle?, instagram_profile_url?, email?, address?, niches[], base_rate?, follower_count?, vetting_status(pending|vetted|rejected). Indexes: `user_id` unique, `vetting_status`, `niches`.
+- `brand_profiles` (1:1 users where role=brand) — user_id(unique), business_name, category(fnb|hospitality|retail|lifestyle)?, areas[], verified. Indexes: `user_id` unique, `verified`, `category`.
+- `campaigns` — brand_id → users._id, title, brief, deliverables, budget_per_creator, category?, area?, creators_needed, start_date?, end_date?, status(draft|upcoming|open|in_progress|completed|closed). Indexes: `brand_id`, `status`, `(status, created_at desc)`, `(area, category)`.
+- `collaborations` — campaign_id → campaigns._id, creator_id → users._id, pitch?, quoted_rate?, agreed_amount?, content_url?, state(applied|vetted|accepted|commercial_agreed|slot_booked|attended|content_submitted|in_payment|closed). Indexes: `campaign_id`, `creator_id`, **unique `(campaign_id, creator_id)`** so a creator can apply only once, `state`.
+- `payments` (1:1 collaborations) — collaboration_id(unique), agreed_amount, platform_fee, creator_payout, state(pending|paid), paid_at?. Indexes: `collaboration_id` unique, `state`.
+
+On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
+
 ## Prioritized backlog
 - P0: WhatsApp OTP login (replace/augment email+password)
 - P0: Creator profile & portfolio screen
