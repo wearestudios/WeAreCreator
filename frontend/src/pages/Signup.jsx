@@ -51,7 +51,11 @@ export default function Signup() {
         if (res.ok) {
             toast.success("Account created — welcome to WeAre.");
             const next =
-                res.user?.role === "creator" ? "/onboarding/creator" : "/dashboard";
+                res.user?.role === "creator"
+                    ? "/onboarding/creator"
+                    : res.user?.role === "brand"
+                    ? "/onboarding/brand"
+                    : "/dashboard";
             navigate(next, { replace: true });
         } else {
             setError(res.error);

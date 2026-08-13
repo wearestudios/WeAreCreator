@@ -18,6 +18,7 @@ import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import BrandDashboardView from "@/pages/BrandDashboardView";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -681,6 +682,9 @@ export default function Dashboard() {
     const justOnboarded = Boolean(location.state?.justOnboarded);
     if (user.role === "creator") {
         return <CreatorDashboard user={user} justOnboarded={justOnboarded} />;
+    }
+    if (user.role === "brand") {
+        return <BrandDashboardView user={user} />;
     }
     return <NonCreatorDashboard user={user} />;
 }

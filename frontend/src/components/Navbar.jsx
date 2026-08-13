@@ -67,6 +67,15 @@ export const Navbar = () => {
                                     Campaigns
                                 </Link>
                             )}
+                            {user.role === "brand" && (
+                                <Link
+                                    to="/campaigns/new"
+                                    data-testid="nav-post-campaign"
+                                    className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                >
+                                    Post a campaign
+                                </Link>
+                            )}
                             <Link
                                 to="/dashboard"
                                 data-testid="nav-dashboard"

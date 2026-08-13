@@ -160,6 +160,29 @@ class ApplyPayload(BaseModel):
     quoted_rate: float = Field(ge=0)
 
 
+class BrandProfileUpdate(BaseModel):
+    """Payload for brand onboarding / profile edits."""
+
+    business_name: str = Field(min_length=1, max_length=140)
+    category: Literal["fnb", "hospitality", "retail", "lifestyle"]
+    areas: list[str] = Field(default_factory=list, max_length=30)
+
+
+class PostCampaignPayload(BaseModel):
+    """Payload for a brand posting a new campaign."""
+
+    title: str = Field(min_length=1, max_length=140)
+    brief: str = Field(min_length=1, max_length=5000)
+    deliverables: str = Field(min_length=1, max_length=1000)
+    budget_per_creator: float = Field(ge=0)
+    category: Literal["fnb", "hospitality", "retail", "lifestyle"]
+    area: str = Field(min_length=1, max_length=80)
+    creators_needed: int = Field(ge=1, le=100)
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: Literal["draft", "open"] = "open"
+
+
 # --- Domain models (schema-only; used for validation & docs) ---------------
 
 UserStatus = Literal["pending", "active", "suspended"]
@@ -666,6 +689,187 @@ async def get_creator_dashboard(
 
 
 api_router.include_router(creator_router)
+
+
+# --- Brand router ----------------------------------------------------------
+
+brand_router = APIRouter(prefix="/brand", tags=["brand"])
+
+
+def _serialize_brand_profile(doc: dict) -> dict:
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "user_id": str(doc["user_id"]),
+        "business_name": doc.get("business_name"),
+        "category": doc.get("category"),
+        "areas": doc.get("areas") or [],
+        "verified": bool(doc.get("verified", False)),
+        "created_at": doc["created_at"].isoformat()
+        if isinstance(doc.get("created_at"), datetime)
+        else doc.get("created_at"),
+        "updated_at": doc["updated_at"].isoformat()
+        if isinstance(doc.get("updated_at"), datetime)
+        else doc.get("updated_at"),
+    }
+
+
+def _serialize_brand_campaign(doc: dict, applicant_count: int) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "title": doc.get("title"),
+        "brief": doc.get("brief"),
+        "deliverables": doc.get("deliverables"),
+        "budget_per_creator": doc.get("budget_per_creator"),
+        "category": doc.get("category"),
+        "area": doc.get("area"),
+        "creators_needed": doc.get("creators_needed"),
+        "start_date": doc["start_date"].isoformat()
+        if isinstance(doc.get("start_date"), datetime)
+        else doc.get("start_date"),
+        "end_date": doc["end_date"].isoformat()
+        if isinstance(doc.get("end_date"), datetime)
+        else doc.get("end_date"),
+        "status": doc.get("status"),
+        "created_at": doc["created_at"].isoformat()
+        if isinstance(doc.get("created_at"), datetime)
+        else doc.get("created_at"),
+        "applicant_count": applicant_count,
+    }
+
+
+@brand_router.get("/profile")
+async def get_brand_profile(user: dict = Depends(require_roles("brand"))):
+    doc = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    return _serialize_brand_profile(doc)
+
+
+@brand_router.put("/profile")
+async def update_brand_profile(
+    payload: BrandProfileUpdate,
+    user: dict = Depends(require_roles("brand")),
+):
+    now = datetime.now(timezone.utc)
+    business_name = payload.business_name.strip()
+    update = {
+        "business_name": business_name,
+        "category": payload.category,
+        "areas": [a.strip() for a in payload.areas if a and a.strip()],
+        "updated_at": now,
+    }
+    result = await db.brand_profiles.find_one_and_update(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": update},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    # Keep the display name on the user doc in sync with business_name.
+    if business_name and business_name != user.get("name"):
+        await db.users.update_one(
+            {"_id": ObjectId(user["_id"])}, {"$set": {"name": business_name}}
+        )
+    return _serialize_brand_profile(result)
+
+
+async def _applicant_counts_for(campaign_ids: list) -> dict:
+    if not campaign_ids:
+        return {}
+    unique = list({cid for cid in campaign_ids})
+    counts = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": {"$in": unique}}},
+            {"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=len(unique))
+    return {c["_id"]: c["n"] for c in counts}
+
+
+@brand_router.get("/campaigns")
+async def list_brand_campaigns(user: dict = Depends(require_roles("brand"))):
+    brand_oid = ObjectId(user["_id"])
+    docs = (
+        await db.campaigns.find({"brand_id": brand_oid})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    count_map = await _applicant_counts_for([d["_id"] for d in docs])
+    return [
+        _serialize_brand_campaign(d, count_map.get(d["_id"], 0)) for d in docs
+    ]
+
+
+@brand_router.post("/campaigns")
+async def create_brand_campaign(
+    payload: PostCampaignPayload,
+    user: dict = Depends(require_roles("brand")),
+):
+    if (
+        payload.start_date
+        and payload.end_date
+        and payload.end_date < payload.start_date
+    ):
+        raise HTTPException(
+            status_code=422, detail="End date cannot be before start date"
+        )
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "brand_id": ObjectId(user["_id"]),
+        "title": payload.title.strip(),
+        "brief": payload.brief.strip(),
+        "deliverables": payload.deliverables.strip(),
+        "budget_per_creator": float(payload.budget_per_creator),
+        "category": payload.category,
+        "area": payload.area.strip(),
+        "creators_needed": int(payload.creators_needed),
+        "start_date": payload.start_date,
+        "end_date": payload.end_date,
+        "status": payload.status,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.campaigns.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _serialize_brand_campaign(doc, 0)
+
+
+@brand_router.get("/dashboard")
+async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
+    brand_oid = ObjectId(user["_id"])
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    campaigns = (
+        await db.campaigns.find({"brand_id": brand_oid})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    count_map = await _applicant_counts_for([c["_id"] for c in campaigns])
+    campaign_rows = [
+        _serialize_brand_campaign(c, count_map.get(c["_id"], 0)) for c in campaigns
+    ]
+
+    total_applications = sum(count_map.values())
+    live = sum(1 for c in campaign_rows if c["status"] in ("open", "upcoming"))
+    drafts = sum(1 for c in campaign_rows if c["status"] == "draft")
+
+    return {
+        "profile": _serialize_brand_profile(profile),
+        "campaigns": campaign_rows,
+        "totals": {
+            "total_campaigns": len(campaign_rows),
+            "live_campaigns": live,
+            "draft_campaigns": drafts,
+            "total_applications": total_applications,
+        },
+    }
+
+
+api_router.include_router(brand_router)
+
 
 
 # --- Campaigns router ------------------------------------------------------

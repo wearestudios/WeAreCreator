@@ -1,0 +1,31 @@
+{
+  "summary": "Tested new brand surface end-to-end. Backend: 19/19 new brand tests + 35/35 prior tests all pass (54 total). Coverage: GET/PUT /api/brand/profile (200 stub after signup, 403 for creator/admin, category enum 422, empty areas allowed, business_name mirrors to users.name), GET /api/brand/dashboard (shape + totals with real applicant count via cross-role apply, 403 for creator/admin), GET /api/brand/campaigns (only own campaigns incl. draft, newest-first, applicant_count), POST /api/brand/campaigns (open/draft OK, invalid category 422, end<start 422 with exact message, creators_needed<1 422, 403 for creator), cross-visibility (open shows on creator feed with area/category filters, draft hidden from creator with 404 on detail, admin sees draft detail 200). Frontend: brand signup redirects to /onboarding/brand; onboarding shows brand-onb-error for empty category and empty areas; area chips add via suggest buttons; submit lands on /dashboard with brand-header, brand-name-heading='Retest Cafe', brand-stats-panel (Live/Draft/Total/Applications tiles), brand-campaigns-empty when no campaigns, brand-header-post-btn → /campaigns/new. Post-a-Campaign: publish flow navigates to /dashboard and shows brand-campaign-status-open (Live) pill; save-draft flow shows brand-campaign-status-draft; end<start renders pc-error 'End date cannot be before the start date.'; area select is prefilled with brand's own areas. After logout, fresh creator signup goes to /onboarding/creator; navbar shows nav-campaigns (not nav-post-campaign); /campaigns feed contains the brand-published 'Retest Live' campaign and does NOT contain the draft. Role guards: creator hitting /campaigns/new and /onboarding/brand both redirect to /dashboard.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_brand.py",
+    "/app/backend/tests/test_campaigns.py",
+    "/app/backend/tests/test_creator_profile.py",
+    "/app/backend/tests/test_creator_dashboard.py",
+    "/app/test_reports/pytest/brand.xml",
+    "/app/test_reports/pytest/all.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1387 lines — refactor is overdue. Split brand_router, creator_router, campaigns_router, auth_router into /app/backend/routers/*.py before admin surface lands. This was flagged in iteration 6 and has grown further.",
+    "GET /api/brand/profile currently 404s if the stub row is missing (e.g., legacy brand users pre-signup-stub) even though a brand exists — consider returning an empty profile shape {business_name:user.name, category:null, areas:[]} instead of 404, so BrandDashboardView's brand-profile-incomplete branch also covers this edge. Not a blocker: current signup always creates the stub.",
+    "PostCampaign submit does not defensively re-clamp end_date>=start_date server-side beyond the direct comparison; if someone posts equal timestamps that's allowed (probably intentional). Doc this expectation or add tests.",
+    "PostCampaign.jsx area select falls back to a hardcoded Bengaluru list when brand has no areas — the fallback is duplicated with BrandOnboarding.jsx suggestions. Extract to a shared constant.",
+    "_applicant_counts_for uses one aggregation per call which is fine, but it counts every collaboration row regardless of state (applied/closed/etc). If 'applications' should exclude 'closed', add a state filter. Verify PM intent.",
+    "Frontend: signup → /onboarding/brand happens immediately after POST /auth/register; there's no defensive fetch of /auth/me before routing, so if register response drops the role field the routing breaks silently. Register does return the user; low risk."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_brand.py (new — 19 tests across TestBrandProfile, TestBrandCampaigns, TestBrandDashboard, TestCrossVisibility)"
+  ],
+  "success_rate": {"backend": "100% (54/54)", "frontend": "100% (all 13 review-request bullets validated)"},
+  "test_credentials": "Admin creators@wearemonk.in / WeAreMonk@2026 (seeded). Fresh TEST_brand-<rand>@example.com and TEST_creator-<rand>@example.com per run, password Password123!.",
+  "seed_data_creation": "None persistent — every test creates fresh users, brand profiles, and campaigns per run. No cleanup implemented but rows are namespaced with TEST_ prefix on user emails.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Brand surface is fully green. Regression: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests -v --junitxml=/app/test_reports/pytest/all.xml` (54 tests). Full brand happy-path in Playwright: brand signup → /onboarding/brand → fill name+category+area chips → /dashboard → brand-header-post-btn → /campaigns/new → publish → LIVE pill visible on dashboard. Draft flow: same form but pc-save-draft-btn → DRAFT pill. Note that the Navbar depends on the `user` object from auth context — after signup there's a ~500ms delay before user loads on the destination page, so any UI test that inspects nav-campaigns/nav-post-campaign immediately after signup must wait_for_timeout(1500) or check post-navigation. Verified role guards: /campaigns/new and /onboarding/brand are brand-only; /campaigns is creator+admin only. Next surface (admin brand list) can safely build on brand_profiles collection."
+}
