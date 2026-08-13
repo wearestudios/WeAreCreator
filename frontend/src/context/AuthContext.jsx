@@ -32,13 +32,14 @@ export const AuthProvider = ({ children }) => {
     };
 
     // WhatsApp OTP — request a code
-    const requestOtp = async ({ phone, purpose, name, role }) => {
+    const requestOtp = async ({ phone, purpose, name, role, accept_terms }) => {
         try {
             const { data } = await api.post("/auth/otp/request", {
                 phone,
                 purpose,
                 name,
                 role,
+                accept_terms,
             });
             return { ok: true, ...data };
         } catch (e) {
@@ -47,7 +48,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     // WhatsApp OTP — verify code (logs in or completes signup)
-    const verifyOtp = async ({ phone, code, purpose, name, role }) => {
+    const verifyOtp = async ({ phone, code, purpose, name, role, accept_terms }) => {
         try {
             const { data } = await api.post("/auth/otp/verify", {
                 phone,
@@ -55,6 +56,7 @@ export const AuthProvider = ({ children }) => {
                 purpose,
                 name,
                 role,
+                accept_terms,
             });
             setUser(data);
             return { ok: true, user: data };

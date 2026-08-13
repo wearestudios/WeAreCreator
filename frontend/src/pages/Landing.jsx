@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 
 const IMG_HERO =
     "https://images.unsplash.com/photo-1728910156510-77488f19b152?auto=format&fit=crop&w=1800&q=80";
@@ -77,7 +78,7 @@ const STEPS = [
         n: "04",
         Icon: Wallet,
         title: "Deliver & get paid",
-        body: "Shoot, publish, submit. Payment is released the moment your work is approved — no chasing.",
+        body: "Shoot, publish, submit. Once the brand approves, your payout is released — you'll see every step, and we chase the brand, not you.",
     },
 ];
 
@@ -90,14 +91,156 @@ const TRUST_POINTS = [
     {
         Icon: ShieldCheck,
         title: "Vetted on both sides",
-        body: "Every creator and every brand is reviewed by our team before they can transact.",
+        body: "Every creator is reviewed before they can pitch, and every brand we promote is verified by our team.",
     },
     {
         Icon: Lock,
-        title: "Payments held safely",
-        body: "Brands fund the collab up-front. Payout is released the moment work is approved.",
+        title: "The fee is agreed in writing",
+        body: "Your rate is locked and recorded before the shoot, and we handle collecting from the brand.",
     },
 ];
+
+const CAT_LABEL = {
+    fnb: "F&B",
+    hospitality: "Hospitality",
+    retail: "Retail",
+    real_estate: "Real Estate",
+    fashion: "Fashion",
+    travel: "Travel",
+    wellness: "Wellness",
+    lifestyle: "Lifestyle",
+};
+
+/**
+ * Real open briefs, before anyone signs up.
+ *
+ * The page promises "discover briefs", but the campaign feed needs an account
+ * and a WhatsApp round trip. This shows enough to judge whether it's worth
+ * joining — title, brand, area, fee — and nothing you could work the brief from.
+ */
+function LiveBriefs() {
+    const [briefs, setBriefs] = useState(null);
+    const [totalOpen, setTotalOpen] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        api.get("/public/campaigns", { params: { limit: 6 } })
+            .then(({ data }) => {
+                if (cancelled) return;
+                setBriefs(data.campaigns || []);
+                setTotalOpen(data.total_open || 0);
+            })
+            .catch(() => {
+                if (!cancelled) setBriefs([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Nothing live: don't show an empty shelf on the front page.
+    if (briefs !== null && briefs.length === 0) return null;
+
+    return (
+        <section
+            id="live-briefs"
+            data-testid="live-briefs-section"
+            className="border-y border-white/10 bg-card/30"
+        >
+            <div className="mx-auto max-w-7xl px-6 py-24 md:py-32">
+                <div className="grid gap-10 md:grid-cols-12 md:items-end">
+                    <div className="md:col-span-7">
+                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <span className="h-px w-8 bg-ember-500" />
+                            Open right now
+                        </p>
+                        <h2 className="mt-5 max-w-2xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl">
+                            Briefs live on the platform{" "}
+                            <span className="italic">today</span>.
+                        </h2>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
+                        {totalOpen > 0
+                            ? `${totalOpen} paid ${
+                                  totalOpen === 1 ? "brief is" : "briefs are"
+                              } open as you read this. Sign up as a creator to see the full brief and pitch.`
+                            : "Paid briefs from brands across India. Sign up as a creator to see the full brief and pitch."}
+                    </p>
+                </div>
+
+                <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    {briefs === null
+                        ? Array.from({ length: 3 }).map((_, i) => (
+                              <div
+                                  key={i}
+                                  className="h-56 animate-pulse rounded-lg border border-white/10 bg-card"
+                              />
+                          ))
+                        : briefs.map((b, idx) => (
+                              <motion.article
+                                  key={b.id}
+                                  data-testid={`live-brief-${b.id}`}
+                                  initial={{ opacity: 0, y: 18 }}
+                                  whileInView={{ opacity: 1, y: 0 }}
+                                  viewport={{ once: true, margin: "-60px" }}
+                                  transition={{
+                                      duration: 0.55,
+                                      delay: idx * 0.06,
+                                      ease: [0.22, 1, 0.36, 1],
+                                  }}
+                                  className="group flex flex-col rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50"
+                              >
+                                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                      <span>{CAT_LABEL[b.category] || b.category}</span>
+                                      {b.area && <span>{b.area}</span>}
+                                  </div>
+                                  <h3 className="mt-5 font-serif text-2xl leading-tight tracking-tight">
+                                      {b.title}
+                                  </h3>
+                                  <p className="mt-2 text-xs uppercase tracking-[0.15em] text-ember-500">
+                                      {b.brand_name || "Brand"}
+                                  </p>
+                                  <p className="mt-4 flex-1 text-sm leading-relaxed text-muted-foreground">
+                                      {b.teaser}
+                                  </p>
+                                  <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
+                                      <div>
+                                          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                              Per creator
+                                          </div>
+                                          <div className="mt-1 flex items-baseline font-serif text-3xl">
+                                              <IndianRupee className="h-5 w-5 text-ember-500" />
+                                              {typeof b.budget_per_creator === "number"
+                                                  ? b.budget_per_creator.toLocaleString("en-IN")
+                                                  : "—"}
+                                          </div>
+                                      </div>
+                                      {b.spots_left > 0 && (
+                                          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                              {b.spots_left}{" "}
+                                              {b.spots_left === 1 ? "spot" : "spots"} left
+                                          </span>
+                                      )}
+                                  </div>
+                              </motion.article>
+                          ))}
+                </div>
+
+                <div className="mt-12">
+                    <Link to="/signup?role=creator" data-testid="live-briefs-cta">
+                        <Button
+                            size="lg"
+                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
+                        >
+                            Sign up to pitch on these
+                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                        </Button>
+                    </Link>
+                </div>
+            </div>
+        </section>
+    );
+}
 
 // ---- Small building blocks ------------------------------------------------
 
@@ -416,6 +559,9 @@ export default function Landing() {
                     </div>
                 </div>
             </section>
+
+            {/* --------------------- LIVE BRIEFS (public) --------------------- */}
+            <LiveBriefs />
 
             {/* ------------------------ TRUST / WHY ------------------------ */}
             <section

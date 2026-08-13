@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export const Navbar = () => {
     const { user, logout } = useAuth();
@@ -101,6 +102,7 @@ export const Navbar = () => {
                             >
                                 Dashboard
                             </Link>
+                            <NotificationBell />
                             <Button
                                 data-testid="nav-logout-btn"
                                 onClick={handleLogout}

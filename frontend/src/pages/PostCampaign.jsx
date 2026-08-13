@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
     ArrowLeft,
@@ -36,10 +36,25 @@ const CATEGORY_OPTIONS = [
     { value: "lifestyle", label: "Lifestyle" },
 ];
 
+// An ISO timestamp back into the yyyy-mm-dd an <input type="date"> expects.
+const toDateInput = (iso) => {
+    if (!iso) return "";
+    try {
+        return new Date(iso).toISOString().slice(0, 10);
+    } catch {
+        return "";
+    }
+};
+
 export default function PostCampaign() {
     const navigate = useNavigate();
+    // Same form, two jobs: /campaigns/new creates, /campaigns/:id/edit corrects.
+    const { id: editingId } = useParams();
+    const isEditing = Boolean(editingId);
+
     const [brandProfile, setBrandProfile] = useState(null);
     const [loadingProfile, setLoadingProfile] = useState(true);
+    const [existing, setExisting] = useState(null);
 
     const [title, setTitle] = useState("");
     const [brief, setBrief] = useState("");
@@ -57,21 +72,48 @@ export default function PostCampaign() {
     // Preload the brand profile so we can pre-fill area + category and offer area suggestions.
     useEffect(() => {
         let cancelled = false;
-        api.get("/brand/profile")
-            .then(({ data }) => {
+        (async () => {
+            try {
+                const { data } = await api.get("/brand/profile");
                 if (cancelled) return;
                 setBrandProfile(data);
-                if (data?.category) setCategory(data.category);
-                if (data?.areas?.length === 1) setArea(data.areas[0]);
-            })
-            .catch(() => {})
-            .finally(() => {
-                if (!cancelled) setLoadingProfile(false);
-            });
+                if (!isEditing) {
+                    if (data?.category) setCategory(data.category);
+                    if (data?.areas?.length === 1) setArea(data.areas[0]);
+                }
+            } catch {
+                /* the form still works without the profile */
+            }
+
+            if (isEditing) {
+                try {
+                    const { data } = await api.get(`/campaigns/${editingId}`);
+                    if (cancelled) return;
+                    setExisting(data);
+                    setTitle(data.title || "");
+                    setBrief(data.brief || "");
+                    setDeliverables(data.deliverables || "");
+                    setBudget(
+                        data.budget_per_creator == null
+                            ? ""
+                            : String(data.budget_per_creator),
+                    );
+                    setCategory(data.category || "");
+                    setArea(data.area || "");
+                    setCreatorsNeeded(String(data.creators_needed ?? 1));
+                    setStartDate(toDateInput(data.start_date));
+                    setEndDate(toDateInput(data.end_date));
+                } catch (err) {
+                    if (!cancelled) setError(formatApiError(err));
+                }
+            }
+
+            if (!cancelled) setLoadingProfile(false);
+        })();
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [isEditing, editingId]);
 
     const areaOptions = useMemo(() => {
         const list = brandProfile?.areas?.length
@@ -132,6 +174,20 @@ export default function PostCampaign() {
         const isDraft = status === "draft";
         (isDraft ? setSavingDraft : setSubmitting)(true);
         try {
+            if (isEditing) {
+                const { status: _ignored, ...changes } = buildPayload(status);
+                await api.put(`/brand/campaigns/${editingId}`, changes);
+                // Saving an edit on a draft and choosing "Publish" should do both.
+                if (!isDraft && existing?.status === "draft") {
+                    await api.post(`/brand/campaigns/${editingId}/publish`);
+                    toast.success("Campaign published — creators can see it now");
+                } else {
+                    toast.success("Campaign updated");
+                }
+                navigate("/dashboard", { replace: true });
+                return;
+            }
+
             const { data } = await api.post("/brand/campaigns", buildPayload(status));
             toast.success(
                 isDraft
@@ -172,15 +228,17 @@ export default function PostCampaign() {
                 </button>
 
                 <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
-                    New campaign
+                    {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
                 <h1 className="mt-3 font-serif text-4xl leading-none tracking-tight md:text-5xl">
-                    Post a paid brief.
+                    {isEditing ? "Change the brief." : "Post a paid brief."}
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                    Publish it live and vetted creators from across India start
-                    applying within hours. Save as a draft if you want to polish it
-                    first.
+                    {isEditing
+                        ? existing?.status === "draft"
+                            ? "This is still a draft — nobody can see it yet. Publish when you're ready."
+                            : "This brief is live. Changes show up on the creator feed straight away."
+                        : "Publish it live and vetted creators from across India start applying within hours. Save as a draft if you want to polish it first."}
                 </p>
 
                 <form
@@ -380,41 +438,50 @@ export default function PostCampaign() {
                     )}
 
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            data-testid="pc-save-draft-btn"
-                            onClick={(e) => submit(e, "draft")}
-                            disabled={submitting || savingDraft}
-                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
-                        >
-                            {savingDraft ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Saving…
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-2 h-4 w-4" />
-                                    Save as draft
-                                </>
-                            )}
-                        </Button>
+                        {/* On a live campaign there's no draft to save back to. */}
+                        {(!isEditing || existing?.status === "draft") && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                data-testid="pc-save-draft-btn"
+                                onClick={(e) => submit(e, "draft")}
+                                disabled={submitting || savingDraft}
+                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            >
+                                {savingDraft ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Saving…
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="mr-2 h-4 w-4" />
+                                        {isEditing ? "Save draft" : "Save as draft"}
+                                    </>
+                                )}
+                            </Button>
+                        )}
                         <Button
                             type="submit"
                             data-testid="pc-publish-btn"
                             disabled={submitting || savingDraft}
-                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
+                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 md:ml-auto"
                         >
                             {submitting ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Publishing…
+                                    {isEditing && existing?.status !== "draft"
+                                        ? "Saving…"
+                                        : "Publishing…"}
                                 </>
                             ) : (
                                 <>
                                     <Send className="mr-2 h-4 w-4" />
-                                    Publish campaign
+                                    {isEditing
+                                        ? existing?.status === "draft"
+                                            ? "Publish campaign"
+                                            : "Save changes"
+                                        : "Publish campaign"}
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                 </>
                             )}

@@ -1,25 +1,46 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import {
     ArrowRight,
     Building2,
     CalendarDays,
     Compass,
+    Eye,
     IndianRupee,
     Loader2,
     MapPin,
+    MessageSquare,
+    Pencil,
     Plus,
+    Send,
     Sparkles,
+    Trash2,
     Users,
+    XCircle,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const CAT_LABEL = {
     fnb: "F&B",
     hospitality: "Hospitality",
     retail: "Retail",
+    real_estate: "Real Estate",
+    fashion: "Fashion",
+    travel: "Travel",
+    wellness: "Wellness",
     lifestyle: "Lifestyle",
 };
 
@@ -86,35 +107,82 @@ const formatDate = (iso) => {
     }
 };
 
-const StatTile = ({ label, value, Icon }) => (
-    <div className="rounded-md border border-white/10 bg-card p-5">
+const StatTile = ({ label, value, Icon, highlight }) => (
+    <div
+        className={
+            "rounded-md border p-5 transition-colors duration-200 " +
+            (highlight
+                ? "border-ember-500/40 bg-ember-500/10"
+                : "border-white/10 bg-card")
+        }
+    >
         <div className="flex items-center justify-between">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                 {label}
             </p>
             {Icon && <Icon className="h-4 w-4 text-ember-500" />}
         </div>
-        <div className="mt-4 font-serif text-3xl md:text-4xl">{value}</div>
+        <div
+            className={
+                "mt-4 font-serif text-3xl md:text-4xl " +
+                (highlight ? "text-ember-500" : "")
+            }
+        >
+            {value}
+        </div>
     </div>
 );
 
 export default function BrandDashboardView({ user }) {
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
+    const [busyId, setBusyId] = useState(null);
+    const [confirm, setConfirm] = useState({ kind: null, campaign: null });
+
+    const load = useCallback(async () => {
+        try {
+            const { data } = await api.get("/brand/dashboard");
+            setData(data);
+            setError("");
+        } catch (err) {
+            setError(formatApiError(err));
+        }
+    }, []);
 
     useEffect(() => {
-        let cancelled = false;
-        api.get("/brand/dashboard")
-            .then(({ data }) => {
-                if (!cancelled) setData(data);
-            })
-            .catch((err) => {
-                if (!cancelled) setError(formatApiError(err));
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+        load();
+    }, [load]);
+
+    const runAction = async (campaign, fn, successMessage) => {
+        setBusyId(campaign.id);
+        try {
+            await fn();
+            toast.success(successMessage);
+            setConfirm({ kind: null, campaign: null });
+            await load();
+        } catch (err) {
+            toast.error(formatApiError(err));
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const publish = (c) =>
+        runAction(
+            c,
+            () => api.post(`/brand/campaigns/${c.id}/publish`),
+            "Campaign published — creators can see it now",
+        );
+
+    const closeCampaign = (c) =>
+        runAction(
+            c,
+            () => api.post(`/brand/campaigns/${c.id}/close`, {}),
+            "Campaign closed",
+        );
+
+    const deleteDraft = (c) =>
+        runAction(c, () => api.delete(`/brand/campaigns/${c.id}`), "Draft deleted");
 
     const profileMissing =
         data && (!data.profile || !data.profile.business_name);
@@ -218,25 +286,28 @@ export default function BrandDashboardView({ user }) {
                             data-testid="brand-stats-panel"
                             className="mt-10 grid gap-4 sm:grid-cols-2 md:grid-cols-4"
                         >
+                            {/* The two tiles that mean "somebody do something" come first. */}
+                            <StatTile
+                                label="Waiting on you"
+                                value={data.totals.awaiting_decision ?? 0}
+                                Icon={Users}
+                                highlight={(data.totals.awaiting_decision ?? 0) > 0}
+                            />
+                            <StatTile
+                                label="Content to review"
+                                value={data.totals.content_to_review ?? 0}
+                                Icon={MessageSquare}
+                                highlight={(data.totals.content_to_review ?? 0) > 0}
+                            />
                             <StatTile
                                 label="Live campaigns"
                                 value={data.totals.live_campaigns}
                                 Icon={Compass}
                             />
                             <StatTile
-                                label="Draft"
-                                value={data.totals.draft_campaigns}
-                                Icon={CalendarDays}
-                            />
-                            <StatTile
-                                label="Total campaigns"
-                                value={data.totals.total_campaigns}
-                                Icon={Building2}
-                            />
-                            <StatTile
                                 label="Applications received"
                                 value={data.totals.total_applications}
-                                Icon={Users}
+                                Icon={Building2}
                             />
                         </section>
 
@@ -288,67 +359,173 @@ export default function BrandDashboardView({ user }) {
                                 ) : (
                                     <ul className="divide-y divide-white/10">
                                         {data.campaigns.map((c) => {
-                                            const canBrowsePublicly = c.status === "open" || c.status === "upcoming";
+                                            const canBrowsePublicly =
+                                                c.status === "open" || c.status === "upcoming";
+                                            const busy = busyId === c.id;
                                             return (
                                                 <li
                                                     key={c.id}
                                                     data-testid={`brand-campaign-row-${c.id}`}
-                                                    className="flex flex-col gap-4 px-5 py-5 transition-colors duration-200 hover:bg-white/5 md:flex-row md:items-center md:gap-6 md:px-6 md:py-6"
+                                                    className="flex flex-col gap-4 px-5 py-5 md:px-6 md:py-6"
                                                 >
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                                            {CAT_LABEL[c.category] || c.category || "—"}
-                                                            {c.area ? ` · ${c.area}` : ""}
-                                                            {c.start_date
-                                                                ? ` · ${formatDate(c.start_date)}${
-                                                                      c.end_date
-                                                                          ? " → " + formatDate(c.end_date)
-                                                                          : ""
-                                                                  }`
-                                                                : ""}
+                                                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                                                {CAT_LABEL[c.category] || c.category || "—"}
+                                                                {c.area ? ` · ${c.area}` : ""}
+                                                                {c.start_date
+                                                                    ? ` · ${formatDate(c.start_date)}${
+                                                                          c.end_date
+                                                                              ? " → " + formatDate(c.end_date)
+                                                                              : ""
+                                                                      }`
+                                                                    : ""}
+                                                            </div>
+                                                            <div className="mt-1.5 truncate font-serif text-xl leading-tight text-foreground">
+                                                                {c.title}
+                                                            </div>
+                                                            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <IndianRupee className="h-3.5 w-3.5" />
+                                                                    {formatRupees(c.budget_per_creator)} / creator
+                                                                </span>
+                                                                <span>·</span>
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <Users className="h-3.5 w-3.5" />
+                                                                    {c.filled_slots ?? 0} of {c.creators_needed}{" "}
+                                                                    confirmed
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                        <div className="mt-1.5 truncate font-serif text-xl leading-tight text-foreground">
-                                                            {c.title}
-                                                        </div>
-                                                        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <IndianRupee className="h-3.5 w-3.5" />
-                                                                {formatRupees(c.budget_per_creator)} / creator
-                                                            </span>
-                                                            <span>·</span>
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <Users className="h-3.5 w-3.5" />
-                                                                {c.creators_needed} needed
-                                                            </span>
+
+                                                        <div className="flex items-center gap-6 md:min-w-[240px] md:justify-end">
+                                                            <Link
+                                                                to={`/brand/campaigns/${c.id}/applicants`}
+                                                                data-testid={`brand-campaign-applicants-link-${c.id}`}
+                                                                className="group text-right transition-colors duration-200 hover:text-ember-500"
+                                                            >
+                                                                <div
+                                                                    data-testid={`brand-campaign-applicants-${c.id}`}
+                                                                    className="font-serif text-2xl leading-none"
+                                                                >
+                                                                    {c.applicant_count}
+                                                                </div>
+                                                                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground group-hover:text-ember-500">
+                                                                    {c.applicant_count === 1
+                                                                        ? "applicant"
+                                                                        : "applicants"}
+                                                                </div>
+                                                            </Link>
+                                                            <div className="flex flex-col items-end gap-2">
+                                                                <StatusPill status={c.status} />
+                                                                {c.awaiting_decision > 0 && (
+                                                                    <span
+                                                                        data-testid={`brand-campaign-awaiting-${c.id}`}
+                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+                                                                    >
+                                                                        {c.awaiting_decision} waiting on you
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex items-center gap-6 md:min-w-[220px] md:justify-end">
-                                                        <div className="text-right">
-                                                            <div
-                                                                data-testid={`brand-campaign-applicants-${c.id}`}
-                                                                className="font-serif text-2xl leading-none"
+                                                    {/* Actions — a draft used to be a dead end here. */}
+                                                    <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+                                                        <Link
+                                                            to={`/brand/campaigns/${c.id}/applicants`}
+                                                            data-testid={`brand-campaign-review-${c.id}`}
+                                                        >
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
                                                             >
-                                                                {c.applicant_count}
-                                                            </div>
-                                                            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                                                {c.applicant_count === 1
-                                                                    ? "applicant"
-                                                                    : "applicants"}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex flex-col items-end gap-2">
-                                                            <StatusPill status={c.status} />
-                                                            {canBrowsePublicly && (
-                                                                <Link
-                                                                    to={`/campaigns/${c.id}`}
-                                                                    data-testid={`brand-campaign-view-${c.id}`}
-                                                                    className="inline-flex items-center gap-1 text-xs uppercase tracking-[0.18em] text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                                                                <Users className="mr-1.5 h-3.5 w-3.5" />
+                                                                Applicants
+                                                            </Button>
+                                                        </Link>
+
+                                                        {c.can_publish && (
+                                                            <Button
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                data-testid={`brand-campaign-publish-${c.id}`}
+                                                                onClick={() => publish(c)}
+                                                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                                            >
+                                                                <Send className="mr-1.5 h-3.5 w-3.5" />
+                                                                Publish
+                                                            </Button>
+                                                        )}
+
+                                                        {c.can_edit && (
+                                                            <Link
+                                                                to={`/campaigns/${c.id}/edit`}
+                                                                data-testid={`brand-campaign-edit-${c.id}`}
+                                                            >
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
                                                                 >
-                                                                    View <ArrowRight className="h-3.5 w-3.5" />
-                                                                </Link>
-                                                            )}
-                                                        </div>
+                                                                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                                                    Edit
+                                                                </Button>
+                                                            </Link>
+                                                        )}
+
+                                                        {canBrowsePublicly && (
+                                                            <Link
+                                                                to={`/campaigns/${c.id}`}
+                                                                data-testid={`brand-campaign-view-${c.id}`}
+                                                            >
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                >
+                                                                    <Eye className="mr-1.5 h-3.5 w-3.5" />
+                                                                    Preview
+                                                                </Button>
+                                                            </Link>
+                                                        )}
+
+                                                        {c.can_close && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                data-testid={`brand-campaign-close-${c.id}`}
+                                                                onClick={() =>
+                                                                    setConfirm({ kind: "close", campaign: c })
+                                                                }
+                                                                className="rounded-full border-white/15 bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                                                            >
+                                                                <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                                                                Close
+                                                            </Button>
+                                                        )}
+
+                                                        {c.can_delete && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                data-testid={`brand-campaign-delete-${c.id}`}
+                                                                onClick={() =>
+                                                                    setConfirm({ kind: "delete", campaign: c })
+                                                                }
+                                                                className="rounded-full border-red-500/40 bg-transparent text-red-300 hover:bg-red-500/10"
+                                                            >
+                                                                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                                                Delete
+                                                            </Button>
+                                                        )}
+
+                                                        {busy && (
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                                        )}
                                                     </div>
                                                 </li>
                                             );
@@ -360,7 +537,8 @@ export default function BrandDashboardView({ user }) {
 
                         <div className="mt-16 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">
                             <span className="text-foreground">Signed in as</span>{" "}
-                            {user.email} ·{" "}
+                            {/* Accounts created over WhatsApp have no email. */}
+                            {user.email || user.phone || user.name} ·{" "}
                             <span className="uppercase tracking-[0.15em] text-ember-500">
                                 {user.role}
                             </span>
@@ -368,6 +546,62 @@ export default function BrandDashboardView({ user }) {
                     </>
                 )}
             </main>
+
+            <AlertDialog
+                open={confirm.kind !== null}
+                onOpenChange={(v) => !v && setConfirm({ kind: null, campaign: null })}
+            >
+                <AlertDialogContent
+                    data-testid="brand-campaign-confirm"
+                    className="rounded-md border border-white/10 bg-card"
+                >
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="font-serif text-2xl">
+                            {confirm.kind === "delete"
+                                ? "Delete this draft?"
+                                : "Close this campaign?"}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-sm text-muted-foreground">
+                            {confirm.kind === "delete" ? (
+                                <>
+                                    “{confirm.campaign?.title}” hasn't been published and has
+                                    no applicants. This can't be undone.
+                                </>
+                            ) : (
+                                <>
+                                    “{confirm.campaign?.title}” will stop accepting
+                                    applications. Anyone still waiting on a decision is told
+                                    it's closed. Collaborations already under way carry on
+                                    as normal.
+                                </>
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel
+                            data-testid="brand-campaign-confirm-cancel"
+                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                        >
+                            Keep it
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            data-testid="brand-campaign-confirm-ok"
+                            onClick={() =>
+                                confirm.kind === "delete"
+                                    ? deleteDraft(confirm.campaign)
+                                    : closeCampaign(confirm.campaign)
+                            }
+                            className={
+                                confirm.kind === "delete"
+                                    ? "rounded-full bg-red-500/90 text-black hover:bg-red-400"
+                                    : "rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            }
+                        >
+                            {confirm.kind === "delete" ? "Delete draft" : "Close campaign"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

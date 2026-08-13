@@ -10,6 +10,7 @@ import {
     IndianRupee,
     X,
     ShieldCheck,
+    Wallet,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
@@ -71,6 +72,11 @@ export default function CreatorOnboarding() {
     const [nicheInput, setNicheInput] = useState("");
     const [baseRate, setBaseRate] = useState("");
     const [followerCount, setFollowerCount] = useState("");
+    const [payoutUpi, setPayoutUpi] = useState("");
+    const [payoutAccountName, setPayoutAccountName] = useState("");
+    const [pan, setPan] = useState("");
+    const [gstin, setGstin] = useState("");
+    const [vettingStatus, setVettingStatus] = useState("pending");
 
     // Prefill from the existing stub / previous submission.
     useEffect(() => {
@@ -96,6 +102,11 @@ export default function CreatorOnboarding() {
                         ? ""
                         : String(data.follower_count),
                 );
+                setPayoutUpi(data.payout_upi || "");
+                setPayoutAccountName(data.payout_account_name || "");
+                setPan(data.pan || "");
+                setGstin(data.gstin || "");
+                setVettingStatus(data.vetting_status || "pending");
             } catch (e) {
                 setError(formatApiError(e));
             } finally {
@@ -158,9 +169,17 @@ export default function CreatorOnboarding() {
                 base_rate: baseRate === "" ? null : Number(baseRate),
                 follower_count:
                     followerCount === "" ? null : Number(followerCount),
+                payout_upi: payoutUpi.trim() || null,
+                payout_account_name: payoutAccountName.trim() || null,
+                pan: pan.trim() || null,
+                gstin: gstin.trim() || null,
             });
             await refresh(); // pick up any name change
-            toast.success("Profile submitted for review");
+            toast.success(
+                vettingStatus === "vetted"
+                    ? "Profile updated"
+                    : "Profile submitted for review",
+            );
             navigate("/dashboard", { replace: true, state: { justOnboarded: true } });
         } catch (err) {
             setError(formatApiError(err));
@@ -191,9 +210,9 @@ export default function CreatorOnboarding() {
                     Tell us about you.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                    This becomes your creator profile on WeAre. Once submitted, the
-                    WeAre team reviews it — usually within 48 hours. Meanwhile you can
-                    already browse open campaigns.
+                    {vettingStatus === "vetted"
+                        ? "You're vetted, so you stay live while you edit. Changing your name, handle or city means we'll take another look — you won't drop off the directory in the meantime."
+                        : "This becomes your creator profile on WeAre. The team reviews it — usually within 48 hours — and you can pitch on briefs as soon as you're approved."}
                 </p>
 
                 <form onSubmit={onSubmit} className="mt-12 space-y-8">
@@ -424,6 +443,92 @@ export default function CreatorOnboarding() {
                         </div>
                     </section>
 
+                    {/* Payout — asked for here so the money can actually move later */}
+                    <section className="space-y-5">
+                        <div className="flex items-baseline justify-between">
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Getting paid
+                            </p>
+                            <span className="text-xs text-muted-foreground">
+                                Needed before your first payout
+                            </span>
+                        </div>
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            You can add these later, but we can't release a payment
+                            without them. Only the WeAre team ever sees this — brands
+                            never do.
+                        </p>
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <Label htmlFor="payout-upi" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    UPI ID
+                                </Label>
+                                <div className="relative mt-2">
+                                    <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="payout-upi"
+                                        data-testid="onboarding-upi-input"
+                                        value={payoutUpi}
+                                        onChange={(e) => setPayoutUpi(e.target.value)}
+                                        maxLength={120}
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        placeholder="e.g. priya@okhdfcbank"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <Label htmlFor="payout-name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Name on the account
+                                </Label>
+                                <Input
+                                    id="payout-name"
+                                    data-testid="onboarding-payout-name-input"
+                                    value={payoutAccountName}
+                                    onChange={(e) => setPayoutAccountName(e.target.value)}
+                                    maxLength={140}
+                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    placeholder="As it appears on your bank account"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <Label htmlFor="payout-pan" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    PAN
+                                </Label>
+                                <Input
+                                    id="payout-pan"
+                                    data-testid="onboarding-pan-input"
+                                    value={pan}
+                                    onChange={(e) => setPan(e.target.value.toUpperCase())}
+                                    maxLength={10}
+                                    className="mt-2 h-11 border-white/10 bg-card/60 uppercase focus-visible:ring-ember-500"
+                                    placeholder="ABCDE1234F"
+                                />
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    Required for TDS on your payout.
+                                </p>
+                            </div>
+                            <div>
+                                <Label htmlFor="payout-gstin" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    GSTIN (optional)
+                                </Label>
+                                <Input
+                                    id="payout-gstin"
+                                    data-testid="onboarding-gstin-input"
+                                    value={gstin}
+                                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                                    maxLength={15}
+                                    className="mt-2 h-11 border-white/10 bg-card/60 uppercase focus-visible:ring-ember-500"
+                                    placeholder="29ABCDE1234F1Z5"
+                                />
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    Only if you're GST-registered.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+
                     {error && (
                         <p
                             data-testid="onboarding-error"
@@ -436,7 +541,9 @@ export default function CreatorOnboarding() {
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <ShieldCheck className="h-4 w-4 text-ember-500" />
-                            Your profile is reviewed by the WeAre team before going live.
+                            {vettingStatus === "vetted"
+                                ? "You stay live while we review any changes."
+                                : "Your profile is reviewed by the WeAre team before going live."}
                         </div>
                         <Button
                             type="submit"
@@ -451,7 +558,9 @@ export default function CreatorOnboarding() {
                                 </>
                             ) : (
                                 <>
-                                    Submit for review
+                                    {vettingStatus === "vetted"
+                                        ? "Save changes"
+                                        : "Submit for review"}
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                 </>
                             )}

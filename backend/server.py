@@ -3787,9 +3787,33 @@ async def get_campaign(
     # Whether the current creator has already applied.
     payload["has_applied"] = False
     payload["application"] = None
+    payload["can_apply"] = False
+    payload["apply_blocked_reason"] = None
     if user["role"] == "creator":
+        # Decide eligibility server-side so the button and the API agree.
+        profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+        vetting = (profile or {}).get("vetting_status", "pending")
+        needed = int(doc.get("creators_needed") or 1)
+        filled = (await _filled_counts_for([oid])).get(oid, 0)
+
+        if vetting == "pending":
+            payload["apply_blocked_reason"] = (
+                "Your profile is still with the WeAre team. You can pitch on briefs "
+                "as soon as it's approved."
+            )
+        elif vetting == "rejected":
+            payload["apply_blocked_reason"] = (
+                "Your profile wasn't approved. Update it and we'll take another look."
+            )
+        elif filled >= needed:
+            payload["apply_blocked_reason"] = (
+                "This campaign has all the creators it needs."
+            )
+        else:
+            payload["can_apply"] = True
+
         existing = await db.collaborations.find_one(
-            {"campaign_id": oid, "creator_id": ObjectId(user["_id"])}
+            {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
         )
         if existing:
             payload["has_applied"] = True
@@ -3905,8 +3929,21 @@ async def public_campaign_preview(limit: int = 6):
     """
     await _expire_stale_campaigns()
     limit = max(1, min(int(limit or 6), 24))
+
+    # Only verified brands get the shop window. An unverified brand can still
+    # post and be seen by vetted creators in-app; it just isn't promoted to the
+    # public internet under our name.
+    verified = await db.brand_profiles.find(
+        {"verified": True}, {"user_id": 1}
+    ).to_list(length=1000)
+    verified_ids = [b["user_id"] for b in verified]
+    if not verified_ids:
+        return {"campaigns": [], "total_open": 0}
+
     docs = (
-        await db.campaigns.find({"status": "open"})
+        await db.campaigns.find(
+            {"status": "open", "brand_id": {"$in": verified_ids}}
+        )
         .sort("created_at", -1)
         .to_list(length=limit)
     )
@@ -3930,7 +3967,12 @@ async def public_campaign_preview(limit: int = 6):
                 "spots_left": max(0, needed - filled.get(d["_id"], 0)),
             }
         )
-    return {"campaigns": out, "total_open": await db.campaigns.count_documents({"status": "open"})}
+    return {
+        "campaigns": out,
+        "total_open": await db.campaigns.count_documents(
+            {"status": "open", "brand_id": {"$in": verified_ids}}
+        ),
+    }
 
 
 @public_router.get("/stats")
