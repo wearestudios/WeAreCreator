@@ -1,0 +1,47 @@
+{
+  "summary": "Backend: 17/17 pytest cases green covering the new apply-with-body contract (422 on missing/empty pitch/negative rate, 200 with pitch trimmed + quoted_rate, 409 duplicate, 403 brand, 401 unauth, 404 draft/closed/invalid) and detail-embeds-application (has_applied + application {id,state,pitch,quoted_rate,agreed_amount,created_at}). Frontend: happy-path apply flow works end-to-end — dialog opens with rate pre-filled to 8000, exact fee-note text present, submit with 9000 closes dialog, applied-status-card renders APPLIED / pitch / ₹9,000, and it persists across reload. Cancel + Escape both close the dialog. Two spec deviations found on the frontend — see frontend_issues.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ApplyDialog (CampaignDetail.jsx)",
+        "issue": "Textarea and Input have HTML5 `required` attribute, so submitting empty pitch or empty rate triggers the browser-native 'Please fill out this field' tooltip and never reaches the JS validation branch. As a result, the spec-required inline apply-error messages ('Please write a one or two line pitch.' / 'Please enter a valid quoted rate.') are unreachable via normal UI interaction. Manually removing `required` shows the JS check does fire correctly for the empty-pitch case ('Please write a one or two line pitch.').",
+        "selector": "[data-testid=\"apply-pitch-input\"], [data-testid=\"apply-rate-input\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "CampaignDetail brand branch",
+        "issue": "Spec: 'Brand user visiting a campaign detail sees an \"Only creator accounts can apply\" notice, NOT an apply button.' In reality GET /api/campaigns/{id} is guarded by require_roles('creator','admin'), so a brand hits 403 → CampaignDetail falls through to the 'Campaign not found' error state. The sidebar branch that renders the 'Only creator accounts can apply' notice is never reached because `campaign` is null. Either open GET /campaigns/{id} to brands (read-only) or render the notice on the error path.",
+        "selector": "sidebarContent branch in CampaignDetail.jsx",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_campaigns.py",
+    "/app/test_reports/pytest/campaigns.xml"
+  ],
+  "action_items": [
+    "Remove HTML5 `required` from apply-pitch-input / apply-rate-input (or add noValidate on the <form>) so the JS validation and inline `apply-error` message fire per spec.",
+    "Fix brand-on-campaign-detail behaviour: either allow brands to GET /api/campaigns/{id} (returning has_applied=false + application=null and no apply UI), or render the 'Only creator accounts can apply' notice on the error/not-found fallback when the user is a brand. Currently brands see 'Campaign not found'."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1066 lines — increasingly urgent to split into modules (auth.py, creators.py, campaigns.py, seed.py).",
+    "apply endpoint correctly uses pymongo DuplicateKeyError for 409 (good — no more substring-matching).",
+    "get_campaign embeds application inline — clean. Consider also returning `budget_per_creator` echo in the apply response for symmetry, so the client doesn't need to hold on to the campaign object.",
+    "ApplyDialog validates rate with `Number.isFinite(numericRate) || numericRate < 0` but empty string coerces to 0 (Number('') === 0) which passes; this is why the empty-rate branch also relies on HTML5 `required`. Consider explicit `rate === ''` check.",
+    "Dialog form uses `required` HTML5 attrs on Textarea/Input — conflicts with the custom apply-error contract. Pick one validation model."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_campaigns.py (rewritten to send pitch+quoted_rate; added 422 missing-body / empty-pitch / negative-rate / draft-closed-apply-404 / detail-embeds-application tests; 17 tests total, all green)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "~85% — happy path green; two spec deviations (see frontend_issues)"},
+  "test_credentials": "Admin creators@wearemonk.in / WeAreMonk@2026 seeded. Fresh TEST_creator-<rand>@example.com / TEST_brand-<rand>@example.com registered per run with password Password123!.",
+  "seed_data_creation": "None manual; startup seeder still creates 4 demo brands + 7 campaigns (5 live, 1 draft, 1 closed). 'Weekend brunch reel' (budget 8000) was used for the frontend flow.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend contract is stable and tested at /app/backend/tests/test_campaigns.py. Two open frontend items: (1) HTML5 required on pitch/rate blocks the spec's inline apply-error; (2) brand-on-detail shows 'Campaign not found' instead of the 'Only creator accounts can apply' notice because backend 403s brands on GET /campaigns/{id}. Re-run: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests -v --junitxml=/app/test_reports/pytest/campaigns.xml`.",
+  "rca of the issue": "1) apply-error not reachable: JSX puts `required` on Textarea and Input; when the form is submitted the browser HTML5 constraint validation fires first and blocks the JS onSubmit, so setError() never runs and [data-testid=apply-error] is not rendered. Reproduction: open dialog, click submit with empty pitch — you see the native browser tooltip, not apply-error. Fix: drop `required` or add `noValidate` on the form. 2) Brand notice not reachable: GET /api/campaigns/{id} depends on require_roles('creator','admin'), so brands get 403 → api.get throws → CampaignDetail renders the 'Campaign not found' fallback and never mounts the sidebar 'Only creator accounts can apply' notice. Fix options: allow brand role to read campaign detail (server-side) OR in the fallback, check user.role==='brand' and render the notice."
+}

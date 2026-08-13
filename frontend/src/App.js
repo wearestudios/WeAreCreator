@@ -47,7 +47,7 @@ function App() {
                         <Route
                             path="/campaigns/:id"
                             element={
-                                <ProtectedRoute roles={["creator", "admin"]}>
+                                <ProtectedRoute roles={["creator", "brand", "admin"]}>
                                     <CampaignDetail />
                                 </ProtectedRoute>
                             }

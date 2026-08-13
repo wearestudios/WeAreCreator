@@ -153,6 +153,13 @@ class CreatorProfileUpdate(BaseModel):
     follower_count: Optional[int] = Field(default=None, ge=0)
 
 
+class ApplyPayload(BaseModel):
+    """Payload for a creator applying to a campaign."""
+
+    pitch: str = Field(min_length=1, max_length=1000)
+    quoted_rate: float = Field(ge=0)
+
+
 # --- Domain models (schema-only; used for validation & docs) ---------------
 
 UserStatus = Literal["pending", "active", "suspended"]
@@ -631,7 +638,7 @@ async def campaign_filters(
 @campaigns_router.get("/{campaign_id}")
 async def get_campaign(
     campaign_id: str,
-    user: dict = Depends(require_roles("creator", "admin")),
+    user: dict = Depends(require_roles("creator", "brand", "admin")),
 ):
     try:
         oid = ObjectId(campaign_id)
@@ -651,17 +658,30 @@ async def get_campaign(
 
     # Whether the current creator has already applied.
     payload["has_applied"] = False
+    payload["application"] = None
     if user["role"] == "creator":
         existing = await db.collaborations.find_one(
             {"campaign_id": oid, "creator_id": ObjectId(user["_id"])}
         )
-        payload["has_applied"] = existing is not None
+        if existing:
+            payload["has_applied"] = True
+            payload["application"] = {
+                "id": str(existing["_id"]),
+                "state": existing.get("state", "applied"),
+                "pitch": existing.get("pitch"),
+                "quoted_rate": existing.get("quoted_rate"),
+                "agreed_amount": existing.get("agreed_amount"),
+                "created_at": existing["created_at"].isoformat()
+                if isinstance(existing.get("created_at"), datetime)
+                else existing.get("created_at"),
+            }
     return payload
 
 
 @campaigns_router.post("/{campaign_id}/apply")
 async def apply_to_campaign(
     campaign_id: str,
+    payload: ApplyPayload,
     user: dict = Depends(require_roles("creator")),
 ):
     try:
@@ -680,8 +700,8 @@ async def apply_to_campaign(
             {
                 "campaign_id": oid,
                 "creator_id": creator_oid,
-                "pitch": None,
-                "quoted_rate": None,
+                "pitch": payload.pitch.strip(),
+                "quoted_rate": float(payload.quoted_rate),
                 "agreed_amount": None,
                 "content_url": None,
                 "state": "applied",
@@ -698,6 +718,8 @@ async def apply_to_campaign(
         "id": str(result.inserted_id),
         "campaign_id": campaign_id,
         "state": "applied",
+        "pitch": payload.pitch.strip(),
+        "quoted_rate": float(payload.quoted_rate),
         "created_at": now.isoformat(),
     }
 

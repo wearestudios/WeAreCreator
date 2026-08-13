@@ -1,0 +1,24 @@
+{
+  "summary": "Retest of both HIGH issues from iteration_4 — both fixed. Backend: 20/20 pytest green in /app/backend/tests/test_campaigns.py (added 3 new tests: brand-can-GET-detail, brand-draft/closed-404, admin-cannot-apply-403). All prior contracts intact (list creator/admin-only, apply body-required 422/409/403/401, draft/closed 404). Frontend: 4/4 playwright flows green — (1) inline apply-error 'Please write a one or two line pitch.' fires on empty pitch and 'Please enter a valid quoted rate.' fires on empty rate, no native browser tooltip; (2) Cancel button + Escape both close dialog; (3) creator happy path submits 9000 on the 8000 Weekend brunch reel, applied-status-card shows APPLIED / pitch / ₹9,000 and persists across reload; (4) brand navigates directly to /campaigns/{id}, sees detail-title/detail-brief/detail-budget, no detail-apply-btn, no applied-status-card, and the sidebar renders the 'Only creator accounts can apply' notice.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_campaigns.py",
+    "/app/test_reports/pytest/campaigns.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py continues to grow (~1066+ lines) — recommend splitting into modules (auth.py, creators.py, campaigns.py, seed.py) before adding more surface.",
+    "GET /campaigns/{id} now correctly allows brand as a read-only viewer; apply remains creator-only — clean role separation.",
+    "ApplyDialog now uses noValidate + explicit JS checks (empty pitch, empty rate string, negative/non-finite rate) — the two validation models no longer conflict."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_campaigns.py (added test_detail_open_campaign_brand_allowed, test_detail_draft_hidden_for_brand, test_apply_admin_forbidden — 20 tests total, all green)"
+  ],
+  "success_rate": {"backend": "100% (20/20)", "frontend": "100% (4/4 flows: inline-validation, cancel+esc, happy-path+persist, brand-on-detail)"},
+  "test_credentials": "Admin creators@wearemonk.in / WeAreMonk@2026 seeded. Fresh TEST_creator-<rand>@example.com and TEST_brand-<rand>@example.com registered per run with password Password123!.",
+  "seed_data_creation": "None manual; startup seed provides 5 live/upcoming + 1 draft + 1 closed. Used 'Weekend brunch reel' (budget 8000) for the frontend happy path.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Apply flow + role permissions are stable and fully covered by /app/backend/tests/test_campaigns.py (20 tests) and the frontend flows verified in iteration_5. Both HIGH issues from iteration_4 (HTML5 required blocking apply-error; brand seeing 'Campaign not found') are resolved. Rerun: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests -v --junitxml=/app/test_reports/pytest/campaigns.xml`."
+}
