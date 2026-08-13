@@ -7,6 +7,7 @@ import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import Dashboard from "@/pages/Dashboard";
+import CreatorOnboarding from "@/pages/CreatorOnboarding";
 
 function App() {
     return (
@@ -22,6 +23,14 @@ function App() {
                             element={
                                 <ProtectedRoute>
                                     <Dashboard />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/onboarding/creator"
+                            element={
+                                <ProtectedRoute roles={["creator"]}>
+                                    <CreatorOnboarding />
                                 </ProtectedRoute>
                             }
                         />

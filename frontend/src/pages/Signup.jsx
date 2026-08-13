@@ -50,7 +50,9 @@ export default function Signup() {
         setSubmitting(false);
         if (res.ok) {
             toast.success("Account created — welcome to WeAre.");
-            navigate("/dashboard", { replace: true });
+            const next =
+                res.user?.role === "creator" ? "/onboarding/creator" : "/dashboard";
+            navigate(next, { replace: true });
         } else {
             setError(res.error);
         }

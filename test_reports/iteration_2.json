@@ -1,0 +1,26 @@
+{
+  "summary": "Full backend + frontend test of creator onboarding flow. 7/7 backend pytest cases for /api/creator/profile pass (role guards 403 for brand/admin, 200 for creator; PUT normalizes IG handle (strips leading @, lowercases), lowercases + trims niches, mirrors name onto users, keeps vetting_status='pending' on every user-side edit; 401 unauthenticated). Frontend E2E via Playwright: creator signup redirects to /onboarding/creator (not /dashboard); onboarding form prefills name/email from stub; suggestion chip adds niche; typing 'homely'+Enter adds custom niche; chip X removes; zero-niche submit shows onboarding-error 'Please add at least one niche…'; successful submit → /dashboard; dashboard shows role tag 'Creator · Bengaluru', vetting-banner-pending ('Profile submitted' text when justOnboarded), edit-profile-link, dashboard-tile-campaigns; edit-profile-link routes back to /onboarding/creator with all fields prefilled (IG handle stored as 'test.handle', address, rate 5000, followers 12400, chips cafe+homely intact); brand user visiting /onboarding/creator is redirected to /dashboard by role guard. All 8 requested checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_creator_profile.py",
+    "/app/test_reports/pytest/creator_profile.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend: creator_profiles insert on signup uses lowercased email; consistent with PUT normalization — good.",
+    "Backend PUT sets vetting_status='pending' on every edit — matches spec.",
+    "Dashboard.jsx: creator profile fetch is fire-and-forget; if fetch fails, vetting banner silently omitted (no error state). Consider a fallback UI/toast. Not blocking.",
+    "CreatorOnboarding.jsx: onBlur autoAdds pending niche input — nice UX, but may lead to duplicate submissions if user tabs away; addNiche dedupes so behaviour is safe.",
+    "Landing hero CTAs use testids hero-cta-creator / hero-cta-brand (not cta-creator / cta-brand as review body hinted). Both route to /signup?role=creator and /signup?role=brand respectively — spec satisfied."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_creator_profile.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all 8 checks in review request pass)"},
+  "test_credentials": "Admin seeded: creators@wearemonk.in / WeAreMonk@2026. Fresh users generated per run.",
+  "seed_data_creation": "Test creator/brand users created with TEST_ / creator-<rand>@example.com prefix; not cleaned up (fresh emails each run avoid unique-email 409).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend has /api/creator/profile (GET, PUT) guarded by require_roles('creator'). Dashboard tile renamed from briefs to dashboard-tile-campaigns. Landing hero CTAs are hero-cta-creator / hero-cta-brand (both routing correctly). Vetting banner appears only after async /creator/profile GET resolves — wait_for_selector needed rather than immediate query."
+}

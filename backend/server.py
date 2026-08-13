@@ -139,6 +139,19 @@ class LoginInput(BaseModel):
     password: str
 
 
+class CreatorProfileUpdate(BaseModel):
+    """Payload for creator onboarding / profile edits."""
+
+    name: str = Field(min_length=1, max_length=120)
+    instagram_handle: str = Field(min_length=1, max_length=60)
+    instagram_profile_url: str = Field(min_length=1, max_length=300)
+    email: EmailStr
+    address: str = Field(min_length=1, max_length=500)
+    niches: list[str] = Field(default_factory=list, max_length=25)
+    base_rate: Optional[float] = Field(default=None, ge=0)
+    follower_count: Optional[int] = Field(default=None, ge=0)
+
+
 # --- Domain models (schema-only; used for validation & docs) ---------------
 
 UserStatus = Literal["pending", "active", "suspended"]
@@ -447,6 +460,86 @@ async def refresh_token(request: Request, response: Response):
 
 
 api_router.include_router(auth_router)
+
+
+# --- Creator endpoints -----------------------------------------------------
+
+creator_router = APIRouter(prefix="/creator", tags=["creator"])
+
+
+def _serialize_creator_profile(doc: dict) -> dict:
+    """Convert a raw mongo doc to a JSON-safe response."""
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "user_id": str(doc["user_id"]),
+        "name": doc.get("name"),
+        "instagram_handle": doc.get("instagram_handle"),
+        "instagram_profile_url": doc.get("instagram_profile_url"),
+        "email": doc.get("email"),
+        "address": doc.get("address"),
+        "niches": doc.get("niches") or [],
+        "base_rate": doc.get("base_rate"),
+        "follower_count": doc.get("follower_count"),
+        "vetting_status": doc.get("vetting_status", "pending"),
+        "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+        "updated_at": doc["updated_at"].isoformat() if isinstance(doc.get("updated_at"), datetime) else doc.get("updated_at"),
+    }
+
+
+@creator_router.get("/profile")
+async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
+    doc = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not doc:
+        # Shouldn't happen (stub created at signup), but handle gracefully.
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+    return _serialize_creator_profile(doc)
+
+
+@creator_router.put("/profile")
+async def update_creator_profile(
+    payload: CreatorProfileUpdate,
+    user: dict = Depends(require_roles("creator")),
+):
+    # Normalise Instagram handle (strip leading @, lowercase, no whitespace).
+    handle = payload.instagram_handle.strip().lstrip("@").lower()
+    if not handle:
+        raise HTTPException(status_code=422, detail="Instagram handle is required")
+
+    now = datetime.now(timezone.utc)
+    update = {
+        "name": payload.name.strip(),
+        "instagram_handle": handle,
+        "instagram_profile_url": payload.instagram_profile_url.strip(),
+        "email": payload.email.lower().strip(),
+        "address": payload.address.strip(),
+        "niches": [n.strip().lower() for n in payload.niches if n and n.strip()],
+        "base_rate": payload.base_rate,
+        "follower_count": payload.follower_count,
+        # Any user-side edit resubmits the profile for review.
+        "vetting_status": "pending",
+        "updated_at": now,
+    }
+
+    result = await db.creator_profiles.find_one_and_update(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": update},
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    # Also mirror the display name onto the user document so it stays in sync.
+    if update["name"] != user.get("name"):
+        await db.users.update_one(
+            {"_id": ObjectId(user["_id"])}, {"$set": {"name": update["name"]}}
+        )
+
+    return _serialize_creator_profile(result)
+
+
+api_router.include_router(creator_router)
 
 
 # --- Admin sample route ----------------------------------------------------
