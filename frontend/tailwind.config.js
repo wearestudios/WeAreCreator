@@ -5,14 +5,14 @@ module.exports = {
         extend: {
             fontFamily: {
                 serif: [
-                    "Instrument Serif",
+                    "Fraunces",
                     "Cormorant Garamond",
                     "ui-serif",
                     "Georgia",
                     "serif",
                 ],
                 sans: [
-                    "DM Sans",
+                    "Inter Tight",
                     "ui-sans-serif",
                     "system-ui",
                     "-apple-system",
