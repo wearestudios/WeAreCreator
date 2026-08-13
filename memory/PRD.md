@@ -54,6 +54,14 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
+## Implemented (v1.4 — Brand-facing creator directory, Feb 2026)
+- New endpoint `GET /api/brand/creators` — public projection (no PII) with `city`, `niche`, `min_followers`, `q`, `sort` filters
+- New endpoint `GET /api/brand/creators/filters` — distinct cities + case-deduped niches + total count
+- New page `/brand/creators` with one-tap city chips (aria-pressed), filter bar (niche/followers/sort/search), animated cards, empty state, `Clear all`
+- Navbar: brand-only "Creators" link; Brand Dashboard header: "Browse creators" outline button
+- Idempotent seed of 8 vetted demo creators across 7 cities (Bengaluru, Mumbai, Delhi NCR, Hyderabad, Chennai, Pune, Goa) so the directory has content on fresh installs
+- Regression tests: 19 new pytest cases (`test_brand_directory.py`) + 52 previous ones — all green
+
 ## Implemented (v1.3 — All-India pivot + Landing rewrite, Feb 2026)
 - Positioning shift: no longer Bengaluru-only. Now framed as an all-India influencer studio across F&B, hospitality, retail, real estate, fashion, travel, wellness and lifestyle. Agency angle woven in ("Self-serve, or hand it to our team").
 - Backend category enum expanded to 8 values: fnb, hospitality, retail, real_estate, fashion, travel, wellness, lifestyle

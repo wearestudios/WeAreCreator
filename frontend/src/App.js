@@ -14,6 +14,7 @@ import PostCampaign from "@/pages/PostCampaign";
 import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
 import AdminConsole from "@/pages/AdminConsole";
+import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
 
 function App() {
     return (
@@ -54,6 +55,14 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["brand"]}>
                                     <PostCampaign />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/brand/creators"
+                            element={
+                                <ProtectedRoute roles={["brand", "admin"]}>
+                                    <BrandCreatorDirectory />
                                 </ProtectedRoute>
                             }
                         />

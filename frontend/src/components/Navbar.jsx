@@ -68,13 +68,22 @@ export const Navbar = () => {
                                 </Link>
                             )}
                             {user.role === "brand" && (
-                                <Link
-                                    to="/campaigns/new"
-                                    data-testid="nav-post-campaign"
-                                    className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
-                                >
-                                    Post a campaign
-                                </Link>
+                                <>
+                                    <Link
+                                        to="/brand/creators"
+                                        data-testid="nav-brand-creators"
+                                        className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                    >
+                                        Creators
+                                    </Link>
+                                    <Link
+                                        to="/campaigns/new"
+                                        data-testid="nav-post-campaign"
+                                        className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                    >
+                                        Post a campaign
+                                    </Link>
+                                </>
                             )}
                             {user.role === "admin" && (
                                 <Link

@@ -1519,6 +1519,88 @@ async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
     }
 
 
+# --- Creator directory (brand-facing) --------------------------------------
+
+def _serialize_directory_creator(profile: dict) -> dict:
+    """Public projection of a creator profile for the brand-side directory."""
+    return {
+        "id": str(profile["_id"]),
+        "user_id": str(profile["user_id"]),
+        "name": profile.get("name"),
+        "instagram_handle": profile.get("instagram_handle"),
+        "instagram_profile_url": profile.get("instagram_profile_url"),
+        "city": profile.get("city"),
+        "niches": profile.get("niches") or [],
+        "follower_count": profile.get("follower_count"),
+        "base_rate": profile.get("base_rate"),
+        # Intentionally omitted: email, address, phone — brands see them
+        # only after inviting/accepting a collaboration.
+    }
+
+
+@brand_router.get("/creators")
+async def brand_directory(
+    city: Optional[str] = None,
+    niche: Optional[str] = None,
+    min_followers: Optional[int] = None,
+    q: Optional[str] = None,
+    sort: Optional[str] = None,  # "newest" | "followers_desc" | "rate_asc"
+    user: dict = Depends(require_roles("brand", "admin")),
+):
+    """Browse vetted creators with optional city/niche/keyword filters."""
+    query: dict = {"vetting_status": "approved"}
+    if city:
+        query["city"] = city
+    if niche:
+        # Case-insensitive membership match in the niches array.
+        query["niches"] = {"$regex": f"^{re.escape(niche)}$", "$options": "i"}
+    if min_followers is not None:
+        query["follower_count"] = {"$gte": min_followers}
+    if q:
+        # Cap length + escape user input before feeding it to a case-insensitive regex.
+        term = re.escape(q.strip()[:120])
+        query["$or"] = [
+            {"name": {"$regex": term, "$options": "i"}},
+            {"instagram_handle": {"$regex": term, "$options": "i"}},
+            {"niches": {"$regex": term, "$options": "i"}},
+        ]
+
+    sort_spec: list = [("created_at", -1)]
+    if sort == "followers_desc":
+        sort_spec = [("follower_count", -1), ("created_at", -1)]
+    elif sort == "rate_asc":
+        sort_spec = [("base_rate", 1), ("created_at", -1)]
+
+    docs = await db.creator_profiles.find(query).sort(sort_spec).to_list(length=300)
+    return [_serialize_directory_creator(d) for d in docs]
+
+
+@brand_router.get("/creators/filters")
+async def brand_directory_filters(
+    user: dict = Depends(require_roles("brand", "admin")),
+):
+    """Distinct filter options across vetted creators."""
+    base = {"vetting_status": "approved"}
+    cities_raw = await db.creator_profiles.distinct("city", base)
+    niches_flat: list[str] = []
+    async for doc in db.creator_profiles.find(base, {"niches": 1}):
+        for n in doc.get("niches") or []:
+            niches_flat.append(n)
+    # Deduplicate case-insensitively, keep original casing of first occurrence.
+    seen: set[str] = set()
+    niches: list[str] = []
+    for n in niches_flat:
+        key = n.lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            niches.append(n)
+    return {
+        "cities": sorted([c for c in cities_raw if c]),
+        "niches": sorted(niches, key=str.lower),
+        "total": await db.creator_profiles.count_documents(base),
+    }
+
+
 api_router.include_router(brand_router)
 
 
@@ -2226,6 +2308,7 @@ async def _startup():
     # Seed a handful of demo brand accounts + campaigns so the Campaigns page
     # is not empty on a fresh install. Fully idempotent — keyed by email/title.
     await _seed_demo_campaigns()
+    await _seed_demo_creators()
 
 
 # ---------------------------------------------------------------------------
@@ -2458,3 +2541,142 @@ async def _seed_demo_campaigns() -> None:
 @app.on_event("shutdown")
 async def _shutdown():
     client.close()
+
+
+# ---------------------------------------------------------------------------
+# Demo creators — populate the brand-side directory on a fresh install
+# ---------------------------------------------------------------------------
+
+_DEMO_CREATORS = [
+    {
+        "email": "priya.rao+demo@wearemonk.in",
+        "phone": "+919000000101",
+        "name": "Priya Rao",
+        "instagram_handle": "priyaeats",
+        "instagram_profile_url": "https://instagram.com/priyaeats",
+        "city": "Bengaluru",
+        "niches": ["cafe", "brunch", "coffee"],
+        "follower_count": 84500,
+        "base_rate": 12000,
+    },
+    {
+        "email": "arjun.mehta+demo@wearemonk.in",
+        "phone": "+919000000102",
+        "name": "Arjun Mehta",
+        "instagram_handle": "arjuneats",
+        "instagram_profile_url": "https://instagram.com/arjuneats",
+        "city": "Mumbai",
+        "niches": ["fine dining", "cocktails", "lifestyle"],
+        "follower_count": 132000,
+        "base_rate": 24000,
+    },
+    {
+        "email": "ananya.gupta+demo@wearemonk.in",
+        "phone": "+919000000103",
+        "name": "Ananya Gupta",
+        "instagram_handle": "styledbyananya",
+        "instagram_profile_url": "https://instagram.com/styledbyananya",
+        "city": "Delhi NCR",
+        "niches": ["fashion", "beauty", "lifestyle"],
+        "follower_count": 210000,
+        "base_rate": 38000,
+    },
+    {
+        "email": "rohan.kapoor+demo@wearemonk.in",
+        "phone": "+919000000104",
+        "name": "Rohan Kapoor",
+        "instagram_handle": "roamswithrohan",
+        "instagram_profile_url": "https://instagram.com/roamswithrohan",
+        "city": "Goa",
+        "niches": ["travel", "hotels", "staycations"],
+        "follower_count": 96500,
+        "base_rate": 18000,
+    },
+    {
+        "email": "meera.iyer+demo@wearemonk.in",
+        "phone": "+919000000105",
+        "name": "Meera Iyer",
+        "instagram_handle": "meerainmadras",
+        "instagram_profile_url": "https://instagram.com/meerainmadras",
+        "city": "Chennai",
+        "niches": ["home decor", "retail", "lifestyle"],
+        "follower_count": 47000,
+        "base_rate": 8500,
+    },
+    {
+        "email": "kabir.singh+demo@wearemonk.in",
+        "phone": "+919000000106",
+        "name": "Kabir Singh",
+        "instagram_handle": "kabirbuilds",
+        "instagram_profile_url": "https://instagram.com/kabirbuilds",
+        "city": "Hyderabad",
+        "niches": ["real estate", "lifestyle"],
+        "follower_count": 61000,
+        "base_rate": 15000,
+    },
+    {
+        "email": "sana.khan+demo@wearemonk.in",
+        "phone": "+919000000107",
+        "name": "Sana Khan",
+        "instagram_handle": "sanaskitchen",
+        "instagram_profile_url": "https://instagram.com/sanaskitchen",
+        "city": "Pune",
+        "niches": ["home chef", "bakery", "brunch"],
+        "follower_count": 38000,
+        "base_rate": 6500,
+    },
+    {
+        "email": "vivek.rao+demo@wearemonk.in",
+        "phone": "+919000000108",
+        "name": "Vivek Rao",
+        "instagram_handle": "vivekfits",
+        "instagram_profile_url": "https://instagram.com/vivekfits",
+        "city": "Bengaluru",
+        "niches": ["fitness", "wellness"],
+        "follower_count": 72000,
+        "base_rate": 11000,
+    },
+]
+
+
+async def _seed_demo_creators() -> None:
+    """Idempotently seed a small directory of vetted demo creators."""
+    now = datetime.now(timezone.utc)
+    for c in _DEMO_CREATORS:
+        existing = await db.users.find_one({"email": c["email"]})
+        if existing is None:
+            result = await db.users.insert_one(
+                {
+                    "email": c["email"],
+                    "password_hash": None,
+                    "name": c["name"],
+                    "role": "creator",
+                    "phone": c["phone"],
+                    "status": "active",
+                    "created_at": now,
+                }
+            )
+            uid = result.inserted_id
+        else:
+            uid = existing["_id"]
+
+        await db.creator_profiles.update_one(
+            {"user_id": uid},
+            {
+                "$set": {
+                    "name": c["name"],
+                    "instagram_handle": c["instagram_handle"],
+                    "instagram_profile_url": c["instagram_profile_url"],
+                    "email": c["email"],
+                    "city": c["city"],
+                    "niches": c["niches"],
+                    "follower_count": c["follower_count"],
+                    "base_rate": c["base_rate"],
+                    "vetting_status": "approved",
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"user_id": uid, "created_at": now},
+            },
+            upsert=True,
+        )
+    logger.info("Demo creators ensured (%d specs)", len(_DEMO_CREATORS))

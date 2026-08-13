@@ -178,6 +178,14 @@ export default function BrandDashboardView({ user }) {
                                         Edit brand
                                     </Button>
                                 </Link>
+                                <Link to="/brand/creators" data-testid="brand-header-browse-creators-btn">
+                                    <Button
+                                        variant="outline"
+                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                    >
+                                        Browse creators
+                                    </Button>
+                                </Link>
                                 <Link to="/campaigns/new" data-testid="brand-header-post-btn">
                                     <Button className="group rounded-full bg-ember-500 text-black hover:bg-ember-400">
                                         <Plus className="mr-1 h-4 w-4" />

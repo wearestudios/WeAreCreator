@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 14 (brand-facing creator directory) tested end-to-end. Backend: 19/19 pytest cases pass in /app/backend/tests/test_brand_directory.py — covers auth guardrails (401 unauth, 403 creator), public projection (no PII: email/phone/address/password_hash absent), all 8 seeded creators present, city/niche/min_followers/q/sort filters (case-insensitive q, followers_desc ordering, min_followers>=100000), filters endpoint shape + seeded cities + case-dedup niches + total matches. Idempotency: manually restarted backend twice, /brand/creators/filters total remained 8. Regression: test_otp_auth.py + test_campaign_filters.py + test_pivot_city_categories.py = 52/52 pass. Frontend: /brand/creators heading 'Every vetted creator, by city' verified; cities strip renders any/Bengaluru/Mumbai/Goa chips; clicking Mumbai narrows to 1 card = Arjun Mehta; followers 100k+ narrows to 2 cards (210k + 132k) and sort followers_desc is correctly ordered; search 'travel' narrows to Rohan Kapoor; empty state + reset-btn works; directory-clear-btn appears when filters active; IG link opens in new tab (target=_blank). Brand dashboard header shows brand-header-browse-creators-btn which navigates to directory; brand navbar shows nav-brand-creators; admin navbar does NOT show nav-brand-creators (as spec expects); creator role visiting /brand/creators is redirected to /dashboard; unauthenticated visitor redirected to /login.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_brand_directory.py",
+    "/app/test_reports/pytest/brand_directory.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~2682 lines — split into routers/brand.py, routers/admin.py, routers/creator.py, seed/demo.py for maintainability. Same feedback as iteration 13.",
+    "_serialize_directory_creator explicitly omits PII (email/phone/address) — good. Consider adding a Pydantic response_model to /brand/creators so FastAPI enforces the schema at framework level (defense in depth).",
+    "BrandCreatorDirectory.jsx has minor a11y gap: city-chip buttons have no aria-pressed for the selected state. Screen-reader users cannot tell which chip is active (only visual outline changes).",
+    "The `q` search is regex-based on user input; while re.escape is applied server-side (line 1560), consider also capping input length (currently uncapped) to prevent very long regex terms from causing latency spikes on large collections."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_brand_directory.py (new — 19 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (19/19 new + 52/52 regression)", "frontend": "100%"},
+  "test_credentials": "Admin: creators@wearemonk.in / WeAreMonk@2026. Ephemeral OTP brand/creator via +9198xxxxxxxx (OTP grepped from /var/log/supervisor/backend.err.log).",
+  "seed_data_creation": "None permanent. Tests create ephemeral OTP users (creator + brand roles) with TEST_ prefix names.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The brand directory endpoint is /api/brand/creators (GET, brand+admin roles). Its filters endpoint is /api/brand/creators/filters. 8 demo creators are seeded idempotently on startup with vetting_status=approved (Priya Rao/Bengaluru, Arjun Mehta/Mumbai, Ananya Gupta/Delhi NCR, Rohan Kapoor/Goa, Meera Iyer/Chennai, Kabir Singh/Hyderabad, Sana Khan/Pune, Vivek Rao/Bengaluru — verify names/cities by hitting /api/brand/creators as admin). Admin can access the directory (require_roles('brand','admin')). To auth as brand in Playwright, use the browser's fetch to /api/auth/otp/request+verify with credentials:'include' — see the pattern used in this iteration's playwright script. Admin navbar intentionally omits nav-brand-creators, but admin CAN visit /brand/creators directly. The directory response is a plain list (no envelope) — do not assume {items:[...]}.",
+  "rca of the issue": "No bugs found this iteration."
+}
