@@ -547,6 +547,124 @@ async def update_creator_profile(
     return _serialize_creator_profile(result)
 
 
+_UPCOMING_STATES = ("slot_booked",)
+_PAYMENT_STATES = ("in_payment",)
+
+
+def _serialize_collab_row(
+    collab: dict,
+    campaign: Optional[dict],
+    brand_name: Optional[str],
+) -> dict:
+    return {
+        "id": str(collab["_id"]),
+        "campaign_id": str(collab["campaign_id"]),
+        "campaign_title": (campaign or {}).get("title"),
+        "brand_name": brand_name,
+        "area": (campaign or {}).get("area"),
+        "category": (campaign or {}).get("category"),
+        "quoted_rate": collab.get("quoted_rate"),
+        "agreed_amount": collab.get("agreed_amount"),
+        "state": collab.get("state", "applied"),
+        "created_at": collab["created_at"].isoformat()
+        if isinstance(collab.get("created_at"), datetime)
+        else collab.get("created_at"),
+    }
+
+
+@creator_router.get("/dashboard")
+async def get_creator_dashboard(
+    user: dict = Depends(require_roles("creator")),
+):
+    creator_oid = ObjectId(user["_id"])
+
+    # Profile summary.
+    profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+    profile_summary = {
+        "name": (profile or {}).get("name") or user.get("name"),
+        "instagram_handle": (profile or {}).get("instagram_handle"),
+        "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+        "vetting_status": (profile or {}).get("vetting_status", "pending"),
+        "niches": (profile or {}).get("niches") or [],
+        "follower_count": (profile or {}).get("follower_count"),
+        "base_rate": (profile or {}).get("base_rate"),
+    }
+
+    # All of this creator's collaborations, newest first.
+    collabs = (
+        await db.collaborations.find({"creator_id": creator_oid})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    campaign_ids = [c["campaign_id"] for c in collabs]
+    campaign_map: dict = {}
+    brand_map: dict = {}
+    if campaign_ids:
+        campaigns = await db.campaigns.find(
+            {"_id": {"$in": list({cid for cid in campaign_ids})}}
+        ).to_list(length=len(campaign_ids))
+        campaign_map = {c["_id"]: c for c in campaigns}
+        brand_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+
+    def _row(collab: dict) -> dict:
+        camp = campaign_map.get(collab["campaign_id"])
+        brand = brand_map.get(camp["brand_id"]) if camp else None
+        brand_name = (brand or {}).get("business_name") or (brand or {}).get("name")
+        return _serialize_collab_row(collab, camp, brand_name)
+
+    applications = [_row(c) for c in collabs]
+    upcoming = [r for r in applications if r["state"] in _UPCOMING_STATES]
+
+    # Payments: pull from the payments collection joined by collaboration.
+    collab_ids = [c["_id"] for c in collabs]
+    payment_docs = []
+    if collab_ids:
+        payment_docs = await db.payments.find(
+            {"collaboration_id": {"$in": collab_ids}}
+        ).to_list(length=len(collab_ids))
+    collab_by_id = {c["_id"]: c for c in collabs}
+    payments = []
+    for p in payment_docs:
+        c = collab_by_id.get(p["collaboration_id"])
+        camp = campaign_map.get(c["campaign_id"]) if c else None
+        brand = brand_map.get(camp["brand_id"]) if camp else None
+        payments.append(
+            {
+                "id": str(p["_id"]),
+                "collaboration_id": str(p["collaboration_id"]),
+                "campaign_title": (camp or {}).get("title"),
+                "brand_name": (brand or {}).get("business_name")
+                or (brand or {}).get("name"),
+                "agreed_amount": p.get("agreed_amount"),
+                "platform_fee": p.get("platform_fee"),
+                "creator_payout": p.get("creator_payout"),
+                "state": p.get("state", "pending"),
+                "paid_at": p["paid_at"].isoformat()
+                if isinstance(p.get("paid_at"), datetime)
+                else p.get("paid_at"),
+            }
+        )
+
+    # Also include collabs currently mid-payment even if payments row not yet created.
+    in_payment_collabs = [
+        r for r in applications if r["state"] in _PAYMENT_STATES
+    ]
+
+    return {
+        "profile": profile_summary,
+        "applications": applications,
+        "upcoming": upcoming,
+        "payments": payments,
+        "in_payment_collaborations": in_payment_collabs,
+        "totals": {
+            "applications": len(applications),
+            "upcoming": len(upcoming),
+            "payments": len(payments) + len(in_payment_collabs),
+        },
+    }
+
+
+
 api_router.include_router(creator_router)
 
 
