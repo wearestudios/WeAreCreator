@@ -5,11 +5,13 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import re
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal, Annotated
 
 import bcrypt
+import httpx
 import jwt
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
@@ -161,9 +163,12 @@ class ApplyPayload(BaseModel):
 
 
 class SubmitContentPayload(BaseModel):
-    """Payload for a creator submitting their published content URL."""
+    """Payload for a creator submitting their published content URL(s)."""
 
-    content_url: str = Field(min_length=8, max_length=500)
+    # Preferred field — a list of one or more URLs.
+    content_urls: Optional[list[str]] = Field(default=None, max_length=25)
+    # Legacy single-URL field (still accepted for backward compatibility).
+    content_url: Optional[str] = Field(default=None, min_length=1, max_length=500)
 
 
 class BrandProfileUpdate(BaseModel):
@@ -595,6 +600,8 @@ def _serialize_collab_row(
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
         "content_url": collab.get("content_url"),
+        "content_urls": collab.get("content_urls")
+        or ([collab["content_url"]] if collab.get("content_url") else []),
         "state": collab.get("state", "applied"),
         "created_at": collab["created_at"].isoformat()
         if isinstance(collab.get("created_at"), datetime)
@@ -619,6 +626,12 @@ async def get_creator_dashboard(
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
     }
+
+    # Attach cached Instagram stats if we have any for this handle.
+    ig_handle = _extract_ig_handle((profile or {}).get("instagram_handle") or "")
+    profile_summary["instagram_stats"] = (
+        await _load_cached_ig_stats(ig_handle) if ig_handle else None
+    )
 
     # All of this creator's collaborations, newest first.
     collabs = (
@@ -706,9 +719,40 @@ async def submit_collab_content(
     except Exception:
         raise HTTPException(status_code=404, detail="Collaboration not found")
 
-    url = payload.content_url.strip()
-    if not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(status_code=422, detail="Content URL must start with http:// or https://")
+    # Merge the new (list) + legacy (single) fields into a single ordered, deduped list.
+    raw: list[str] = []
+    if payload.content_urls:
+        raw.extend(payload.content_urls)
+    if payload.content_url and payload.content_url not in raw:
+        raw.append(payload.content_url)
+
+    urls: list[str] = []
+    for u in raw:
+        if not isinstance(u, str):
+            continue
+        u = u.strip()
+        if not u:
+            continue
+        if not (u.startswith("http://") or u.startswith("https://")):
+            raise HTTPException(
+                status_code=422,
+                detail="Each content URL must start with http:// or https://",
+            )
+        if len(u) > 500:
+            raise HTTPException(
+                status_code=422, detail="One of the URLs is too long"
+            )
+        if u not in urls:
+            urls.append(u)
+
+    if not urls:
+        raise HTTPException(
+            status_code=422, detail="At least one content URL is required"
+        )
+    if len(urls) > 25:
+        raise HTTPException(
+            status_code=422, detail="Too many URLs (max 25)"
+        )
 
     collab = await db.collaborations.find_one(
         {"_id": oid, "creator_id": ObjectId(user["_id"])}
@@ -727,7 +771,8 @@ async def submit_collab_content(
         {"_id": oid},
         {
             "$set": {
-                "content_url": url,
+                "content_url": urls[0],          # keep legacy field in sync
+                "content_urls": urls,
                 "state": "content_submitted",
                 "updated_at": now,
             }
@@ -737,8 +782,182 @@ async def submit_collab_content(
     return {
         "id": collab_id,
         "state": updated["state"],
-        "content_url": updated["content_url"],
+        "content_url": updated.get("content_url"),
+        "content_urls": updated.get("content_urls") or [],
     }
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Instagram stats via Apify (server-only)
+# ---------------------------------------------------------------------------
+
+APIFY_ACTOR = "apify~instagram-profile-scraper"
+INSTAGRAM_STATS_TTL_SECONDS = 6 * 3600
+_HANDLE_URL_RE = re.compile(
+    r"(?:instagram\.com/)?@?([A-Za-z0-9._]{1,60})/?", re.IGNORECASE
+)
+
+
+def _extract_ig_handle(raw: str) -> Optional[str]:
+    if not raw:
+        return None
+    raw = raw.strip().split("?")[0].rstrip("/")
+    if not raw:
+        return None
+    # A pasted URL or bare handle. Take the last path segment, strip @.
+    if "/" in raw:
+        raw = raw.rsplit("/", 1)[-1]
+    raw = raw.lstrip("@").lower()
+    if not raw or "." in raw and raw.count(".") > 3:
+        return None
+    if not re.fullmatch(r"[a-z0-9._]{1,60}", raw):
+        return None
+    return raw
+
+
+def _apify_token() -> Optional[str]:
+    tok = os.environ.get("APIFY_API_TOKEN", "").strip()
+    return tok or None
+
+
+async def _fetch_instagram_from_apify(handle: str) -> dict:
+    """Call the Apify Instagram Profile Scraper actor synchronously."""
+    token = _apify_token()
+    if not token:
+        raise HTTPException(
+            status_code=503,
+            detail="Instagram stats aren't configured on this server yet.",
+        )
+    url = (
+        f"https://api.apify.com/v2/acts/{APIFY_ACTOR}"
+        f"/run-sync-get-dataset-items?token={token}&timeout=60"
+    )
+    payload = {"usernames": [handle]}
+    try:
+        async with httpx.AsyncClient(timeout=75.0) as client:
+            resp = await client.post(url, json=payload)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Instagram fetch timed out. Please try again in a moment.",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502, detail=f"Could not reach Instagram provider: {e}"
+        )
+
+    if resp.status_code == 401:
+        raise HTTPException(
+            status_code=500, detail="Invalid Instagram provider token."
+        )
+    if resp.status_code == 402:
+        raise HTTPException(
+            status_code=402,
+            detail="Instagram stats provider is out of credits. Please recharge.",
+        )
+    if resp.status_code == 429:
+        raise HTTPException(
+            status_code=429,
+            detail="Instagram stats provider rate limit hit. Try again shortly.",
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Instagram provider error ({resp.status_code}).",
+        )
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Invalid response from Instagram provider.")
+
+    if not isinstance(data, list) or not data:
+        raise HTTPException(
+            status_code=404,
+            detail="No public Instagram profile found for that handle.",
+        )
+
+    item = data[0]
+    # Apify sometimes returns an error item — flag it.
+    if isinstance(item, dict) and item.get("error"):
+        raise HTTPException(status_code=404, detail="Instagram profile not found or is private.")
+
+    return {
+        "handle": (item.get("username") or handle).lower(),
+        "full_name": item.get("fullName") or None,
+        "biography": item.get("biography") or None,
+        "profile_pic_url": item.get("profilePicUrlHD") or item.get("profilePicUrl"),
+        "followers_count": item.get("followersCount"),
+        "following_count": item.get("followsCount"),
+        "posts_count": item.get("postsCount"),
+        "verified": bool(item.get("verified", False)),
+        "is_private": bool(item.get("private", False)),
+        "business_category": item.get("businessCategoryName"),
+        "external_url": item.get("externalUrl"),
+    }
+
+
+async def _load_cached_ig_stats(handle: str) -> Optional[dict]:
+    doc = await db.instagram_stats_cache.find_one({"handle": handle})
+    if not doc:
+        return None
+    updated = doc.get("updated_at")
+    age = None
+    if isinstance(updated, datetime):
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - updated).total_seconds()
+        doc["updated_at"] = updated.isoformat()
+    doc["_age_seconds"] = age
+    doc.pop("_id", None)
+    return doc
+
+
+async def _save_ig_stats(handle: str, stats: dict) -> dict:
+    now = datetime.now(timezone.utc)
+    doc = {**stats, "handle": handle, "updated_at": now}
+    await db.instagram_stats_cache.update_one(
+        {"handle": handle}, {"$set": doc}, upsert=True
+    )
+    doc["updated_at"] = now.isoformat()
+    doc["_age_seconds"] = 0
+    return doc
+
+
+async def _get_or_refresh_ig(handle: str, force: bool = False) -> dict:
+    if not force:
+        cached = await _load_cached_ig_stats(handle)
+        if cached and (cached.get("_age_seconds") or 0) < INSTAGRAM_STATS_TTL_SECONDS:
+            cached["from_cache"] = True
+            return cached
+    stats = await _fetch_instagram_from_apify(handle)
+    saved = await _save_ig_stats(handle, stats)
+    saved["from_cache"] = False
+    return saved
+
+
+@creator_router.get("/instagram-stats")
+async def get_instagram_stats(
+    refresh: bool = False,
+    user: dict = Depends(require_roles("creator")),
+):
+    profile = await db.creator_profiles.find_one(
+        {"user_id": ObjectId(user["_id"])}
+    )
+    raw = (profile or {}).get("instagram_handle") or (profile or {}).get(
+        "instagram_profile_url"
+    )
+    handle = _extract_ig_handle(raw or "")
+    if not handle:
+        raise HTTPException(
+            status_code=400,
+            detail="Add your Instagram handle on your profile first.",
+        )
+    return await _get_or_refresh_ig(handle, force=refresh)
+
 
 
 
@@ -1049,6 +1268,8 @@ def _serialize_admin_collab(
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
         "content_url": collab.get("content_url"),
+        "content_urls": collab.get("content_urls")
+        or ([collab["content_url"]] if collab.get("content_url") else []),
         "created_at": collab["created_at"].isoformat()
         if isinstance(collab.get("created_at"), datetime)
         else collab.get("created_at"),

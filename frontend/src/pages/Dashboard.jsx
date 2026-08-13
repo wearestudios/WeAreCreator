@@ -10,11 +10,13 @@ import {
     Instagram,
     Link as LinkIcon,
     Loader2,
+    Plus as PlusIcon,
     Send,
     Sparkles,
     Users,
     Wallet,
     IndianRupee,
+    X as XIcon,
     XCircle,
     CalendarClock,
 } from "lucide-react";
@@ -292,8 +294,59 @@ const CreatorHeader = ({ user, profile }) => {
     );
 };
 
-const StatsPanel = ({ profile }) => {
+const StatsPanel = ({ profile, onRefresh }) => {
     const niches = profile?.niches || [];
+    const stats = profile?.instagram_stats;
+    const [refreshing, setRefreshing] = useState(false);
+    const [errMsg, setErrMsg] = useState("");
+    const hasHandle = Boolean(profile?.instagram_handle);
+
+    // Auto-fetch on first load if there's a handle but no cached stats.
+    useEffect(() => {
+        if (hasHandle && !stats && !refreshing) {
+            (async () => {
+                setRefreshing(true);
+                try {
+                    await api.get("/creator/instagram-stats");
+                    onRefresh?.();
+                } catch (e) {
+                    setErrMsg(formatApiError(e));
+                } finally {
+                    setRefreshing(false);
+                }
+            })();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hasHandle]);
+
+    const refresh = async () => {
+        if (refreshing) return;
+        setErrMsg("");
+        setRefreshing(true);
+        try {
+            await api.get("/creator/instagram-stats?refresh=true");
+            onRefresh?.();
+        } catch (e) {
+            setErrMsg(formatApiError(e));
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    const ageMinutes = stats?._age_seconds != null
+        ? Math.max(0, Math.round(stats._age_seconds / 60))
+        : null;
+    const ageLabel = ageMinutes === null
+        ? ""
+        : ageMinutes < 1
+        ? "just now"
+        : ageMinutes < 60
+        ? `${ageMinutes}m ago`
+        : `${Math.round(ageMinutes / 60)}h ago`;
+
+    const followers = stats?.followers_count ?? profile?.follower_count;
+    const followersSource = stats?.followers_count != null ? "Instagram · live" : "Self-reported";
+
     return (
         <section
             data-testid="stats-panel"
@@ -310,14 +363,79 @@ const StatsPanel = ({ profile }) => {
                     data-testid="stat-followers"
                     className="mt-6 font-serif text-4xl md:text-5xl"
                 >
-                    {formatCompact(profile?.follower_count)}
+                    {formatCompact(followers)}
                 </div>
-                <p
-                    data-testid="stat-live-note"
-                    className="mt-3 text-xs text-muted-foreground"
-                >
-                    Self-reported · Live Instagram stats coming soon
-                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span data-testid="stat-live-note">
+                        {followersSource}
+                        {ageLabel ? ` · ${ageLabel}` : ""}
+                    </span>
+                    {stats?.verified && (
+                        <span
+                            data-testid="stat-verified-badge"
+                            className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-sky-300"
+                        >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Verified
+                        </span>
+                    )}
+                    {hasHandle && (
+                        <button
+                            type="button"
+                            onClick={refresh}
+                            disabled={refreshing}
+                            data-testid="stat-refresh-btn"
+                            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-transparent px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                        >
+                            {refreshing ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                                <ArrowRight className="h-3 w-3 rotate-90" />
+                            )}
+                            Refresh
+                        </button>
+                    )}
+                </div>
+                {stats && (
+                    <div className="mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
+                        <div>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                Posts
+                            </div>
+                            <div
+                                data-testid="stat-ig-posts"
+                                className="mt-1 font-serif text-2xl"
+                            >
+                                {formatCompact(stats.posts_count)}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                Following
+                            </div>
+                            <div
+                                data-testid="stat-ig-following"
+                                className="mt-1 font-serif text-2xl"
+                            >
+                                {formatCompact(stats.following_count)}
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {errMsg && (
+                    <p
+                        data-testid="stat-ig-error"
+                        className="mt-3 text-xs text-destructive"
+                    >
+                        {errMsg}{" "}
+                        <Link
+                            to="/onboarding/creator"
+                            className="underline underline-offset-2"
+                        >
+                            Update handle
+                        </Link>
+                    </p>
+                )}
             </div>
 
             <div className="rounded-md border border-white/10 bg-card p-7 md:col-span-5">
@@ -371,36 +489,61 @@ const StatsPanel = ({ profile }) => {
 };
 
 function SubmitContentDialog({ open, onOpenChange, collab, onSubmitted }) {
-    const [url, setUrl] = useState("");
+    const [urls, setUrls] = useState([""]);
     const [err, setErr] = useState("");
     const [busy, setBusy] = useState(false);
 
     useEffect(() => {
         if (open) {
-            setUrl(collab?.content_url || "");
+            const initial =
+                collab?.content_urls && collab.content_urls.length > 0
+                    ? [...collab.content_urls]
+                    : collab?.content_url
+                    ? [collab.content_url]
+                    : [""];
+            setUrls(initial.length ? initial : [""]);
             setErr("");
         }
     }, [open, collab]);
 
+    const setAt = (i, v) =>
+        setUrls((prev) => prev.map((u, j) => (j === i ? v : u)));
+    const addRow = () => setUrls((prev) => [...prev, ""]);
+    const removeAt = (i) =>
+        setUrls((prev) => (prev.length <= 1 ? [""] : prev.filter((_, j) => j !== i)));
+
     const submit = async (e) => {
         e.preventDefault();
         setErr("");
-        const trimmed = url.trim();
-        if (!trimmed) {
-            setErr("Paste the link to your published post or reel.");
+        const clean = [];
+        for (const raw of urls) {
+            const u = (raw || "").trim();
+            if (!u) continue;
+            if (!/^https?:\/\/.+\..+/i.test(u)) {
+                setErr("Every URL must start with http:// or https:// and look like a real link.");
+                return;
+            }
+            if (!clean.includes(u)) clean.push(u);
+        }
+        if (clean.length === 0) {
+            setErr("Paste at least one link to your published post or reel.");
             return;
         }
-        if (!/^https?:\/\//i.test(trimmed)) {
-            setErr("URL must start with http:// or https://");
+        if (clean.length > 25) {
+            setErr("You can submit up to 25 URLs at a time.");
             return;
         }
         setBusy(true);
         try {
             await api.post(
                 `/creator/collaborations/${collab.id}/submit_content`,
-                { content_url: trimmed },
+                { content_urls: clean },
             );
-            toast.success("Content submitted — the WeAre team will review it");
+            toast.success(
+                clean.length === 1
+                    ? "Content submitted — the WeAre team will review it"
+                    : `${clean.length} links submitted — the WeAre team will review them`,
+            );
             onOpenChange(false);
             onSubmitted?.();
         } catch (e) {
@@ -414,7 +557,7 @@ function SubmitContentDialog({ open, onOpenChange, collab, onSubmitted }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="submit-content-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-lg rounded-md border border-white/10 bg-card"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -424,31 +567,63 @@ function SubmitContentDialog({ open, onOpenChange, collab, onSubmitted }) {
                         {collab?.campaign_title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-sm text-muted-foreground">
-                        Once you submit, the WeAre team will verify your post and move the collab to payment.
+                        Paste every published link — reel, carousel, stories archive.
+                        Add as many as your deliverable calls for.
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={submit} noValidate className="mt-4 space-y-4">
-                    <div>
-                        <Label
-                            htmlFor="sc-url"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
-                        >
-                            Instagram post / reel URL
-                        </Label>
-                        <div className="relative mt-2">
-                            <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                                id="sc-url"
-                                data-testid="submit-content-url-input"
-                                type="url"
-                                inputMode="url"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
-                                placeholder="https://instagram.com/p/..."
-                            />
-                        </div>
+                    <div className="space-y-3">
+                        {urls.map((u, i) => (
+                            <div key={i} className="space-y-1">
+                                <Label
+                                    htmlFor={`sc-url-${i}`}
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    URL {i + 1}
+                                </Label>
+                                <div className="relative">
+                                    <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id={`sc-url-${i}`}
+                                        data-testid={
+                                            i === 0
+                                                ? "submit-content-url-input"
+                                                : `submit-content-url-input-${i}`
+                                        }
+                                        type="url"
+                                        inputMode="url"
+                                        value={u}
+                                        onChange={(e) => setAt(i, e.target.value)}
+                                        className="h-11 border-white/10 bg-background/60 pl-9 pr-10 focus-visible:ring-ember-500"
+                                        placeholder="https://instagram.com/p/..."
+                                    />
+                                    {urls.length > 1 && (
+                                        <button
+                                            type="button"
+                                            aria-label={`Remove URL ${i + 1}`}
+                                            data-testid={`submit-content-remove-${i}`}
+                                            onClick={() => removeAt(i)}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-red-300"
+                                        >
+                                            <XIcon className="h-3.5 w-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
                     </div>
+
+                    <button
+                        type="button"
+                        data-testid="submit-content-add-url"
+                        onClick={addRow}
+                        disabled={urls.length >= 25}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                    >
+                        <PlusIcon className="h-3.5 w-3.5" />
+                        Add another URL
+                    </button>
+
                     {err && (
                         <p
                             data-testid="submit-content-error"
@@ -582,18 +757,27 @@ const ApplicationsSection = ({ applications, onRefresh }) => {
                                                 Submit content
                                             </Button>
                                         )}
-                                        {a.content_url && (
-                                            <a
-                                                href={a.content_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                data-testid={`application-content-link-${a.id}`}
-                                                className="inline-flex items-center gap-1 text-xs text-ember-500 hover:text-ember-400"
-                                            >
-                                                <LinkIcon className="h-3 w-3" />
-                                                View submitted content
-                                                <ExternalLink className="h-3 w-3" />
-                                            </a>
+                                        {a.content_urls && a.content_urls.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 md:justify-end">
+                                                {a.content_urls.map((u, i) => (
+                                                    <a
+                                                        key={u + i}
+                                                        href={u}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        data-testid={
+                                                            i === 0
+                                                                ? `application-content-link-${a.id}`
+                                                                : `application-content-link-${a.id}-${i}`
+                                                        }
+                                                        className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/60 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-400"
+                                                    >
+                                                        <LinkIcon className="h-3 w-3" />
+                                                        Post {i + 1}
+                                                        <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
                                 </li>
@@ -823,7 +1007,7 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
                     <>
                         <CreatorHeader user={user} profile={data.profile} />
                         <OnboardedBanner visible={justOnboarded} />
-                        <StatsPanel profile={data.profile} />
+                        <StatsPanel profile={data.profile} onRefresh={load} />
                         <ApplicationsSection applications={data.applications} onRefresh={load} />
                         <UpcomingSection upcoming={data.upcoming} />
                         <PaymentsSection

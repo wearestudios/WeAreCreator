@@ -1,0 +1,42 @@
+{
+  "summary": "Verified Multi-Link Deliverables feature end-to-end. Backend: extended /app/backend/tests/test_submit_content.py with 7 new tests (dedupe+order preservation, empty content_urls 422, mixed valid+invalid 422, too-many-URLs 422, single-URL >500 chars 422, legacy content_url still works and returns content_urls=[url], admin serializer surfaces content_urls). Also updated the pre-existing happy-path test to assert body['content_urls']==[url]. All 15 submit_content tests pass. Full regression: 91/91 pass (~107s) — the iter-9 stale test_admin.py test has since been fixed by the main agent. Frontend Playwright: seeded brand+creator+campaign+advance-to-attended via API, then via UI logged in as creator, opened Submit Content dialog (URL stayed /dashboard — no accidental campaign navigation), clicked submit-content-add-url twice → submit-content-url-input-1 and submit-content-url-input-2 appear ✓, tested remove: after removing index 1, the value at index 0 stayed (A) and the value from the ORIGINAL index 2 (C) collapsed into visible URL 2 ✓ and submit-content-url-input-2 no longer exists ✓, empty submit → 'Paste at least one link to your published post or reel.' ✓, mixed https+notaurl → 'Every URL must start with http:// or https://…' ✓, submit 3 valid URLs → toast '3 links submitted — the WeAre team will review them' ✓, dialog closes, state-pill flips to 'Content submitted' ✓, submit-content-btn removed ✓, three chips render as application-content-link-<id> (href=reel1), -<id>-1 (carousel1), -<id>-2 (stories1), all target=_blank ✓. Console captured — ZERO 'cannot be a descendant of <a>' warnings (the iter-9 nested-<a> bug is FIXED — chips are now outside the campaign Link, in the action column).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/creator/collaborations/{id}/submit_content", "issue": "Pydantic max_length=25 on content_urls returns its own 422 body before our custom 'Too many URLs (max 25)' HTTPException fires, so the human-friendly message is never surfaced when the list has >25 items. Not a functional bug (still returns 422) but the detail message from the review-request bullet is masked."},
+      {"endpoint": "POST /api/creator/collaborations/{id}/submit_content", "issue": "content_url has min_length=1 but individual entries in content_urls list are not length-validated at the Pydantic layer (only 500-char check in code). Fine because code enforces it, but tighten with a per-item constraint for a cleaner 422."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_submit_content.py",
+    "/app/test_reports/pytest/submit_content_v2.xml",
+    "/app/test_reports/pytest/all_v2.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: consider dropping Pydantic max_length=25 on content_urls (or move the check into the endpoint before Pydantic returns), so the custom 'Too many URLs (max 25)' message surfaces instead of the generic 'List should have at most 25 items' Pydantic error.",
+    "(Carried) server.py=1830 lines, Dashboard.jsx=931 lines — both above 700-line threshold; SubmitContentDialog + ApplicationsSection are prime candidates to extract."
+  ],
+  "critical_code_review_comments": [
+    "Client-side dedupe silently drops duplicates but does not tell the user (server does same). Consider showing a subtle hint like 'Removed 1 duplicate URL' when clean.length < urls.filter(u=>u.trim()).length.",
+    "removeAt keeps at least one row (pushes [''] when removing the last one) — correct UX; matches server contract of requiring ≥1.",
+    "The client regex /^https?:\\/\\/.+\\..+/i is stricter than server (server only checks the http/https prefix). Consistent-with-server would be to relax the client OR tighten the server; today an https://localhost URL would be rejected by client but accepted by server.",
+    "SubmitContentPayload has BOTH content_urls AND content_url optional — endpoint requires ≥1 after merge, which is correct, but a request body with NEITHER field returns a raw 422 'At least one content URL is required' (good). Consider a Pydantic root_validator for a cleaner OpenAPI schema.",
+    "Chips are now correctly outside the campaign Link — nested-<a> bug from iter 9 is fully fixed; verified via console listener capturing zero warnings.",
+    "Admin serializer fallback `doc.get('content_urls') or ([doc['content_url']] if doc.get('content_url') else [])` correctly derives the list for pre-existing legacy docs. Nice."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_submit_content.py (extended: 8→15 tests; added TestSubmitContentMultiUrl class with 7 tests; happy-path now asserts content_urls==[url])"
+  ],
+  "success_rate": {"backend": "100% (15/15 submit_content, 91/91 full regression)", "frontend": "100% (all 10 review-request UI bullets verified)"},
+  "test_credentials": "Admin creators@wearemonk.in / WeAreMonk@2026 (seeded). Fresh test_creator-<rand>@example.com + test_brand-<rand>@example.com per run, Password123!",
+  "seed_data_creation": "Playwright run seeds 1 fresh brand + campaign + 1 fresh creator + collab advanced to attended; then submits 3 URLs → content_submitted. Backend tests: each test class creates fresh throwaway users (uuid-suffixed) — no cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file: /app/backend/tests/test_submit_content.py (15 tests, 3 classes: Auth/Validation/HappyPath/MultiUrl). Run: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest backend/tests -q`. Frontend chips now live in the action column (outside the campaign Link) — application-content-link-<id> for i=0, application-content-link-<id>-<i> for i≥1. remove-<i> pops that specific index (state array). Playwright note in review-request confirmed: use page.context.request for seeding (cookies live on the context) and call POST /auth/logout between roles instead of clearing cookies — this pattern worked cleanly across brand→creator→admin→creator flows.",
+  "rca of the issue": "N/A — feature works as specified. The iter-9 nested-<a> bug is fully resolved by moving the chip <a> elements OUT of the campaign React-Router <Link> and INTO the sibling action column div (Dashboard.jsx:644-665). Verified via a console listener that captured zero 'cannot be a descendant of <a>' React warnings during the full multi-URL submit flow."
+}
