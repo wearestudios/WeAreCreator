@@ -114,7 +114,7 @@ def test_put_profile_brand_403(brand_session):
     assert r.status_code == 403
 
 
-def test_put_profile_vetting_reset_to_pending(creator_session):
+def test_put_profile_keeps_an_unvetted_creator_pending(creator_session):
     s, email, _ = creator_session
     payload = {
         "name": "N", "instagram_handle": "n", "instagram_profile_url": "https://ig/n",
@@ -126,6 +126,64 @@ def test_put_profile_vetting_reset_to_pending(creator_session):
     # second edit still pending
     r2 = s.put(f"{BASE_URL}/creator/profile", json=payload)
     assert r2.json()["vetting_status"] == "pending"
+
+
+def test_a_vetted_creator_stays_live_while_edits_are_reviewed(creator_session):
+    """Editing used to reset vetting to pending, so fixing a typo dropped a
+    creator out of the brand directory with no warning."""
+    s, email, user = creator_session
+    base = {
+        "name": "Vetted Vee", "instagram_handle": "vettedvee",
+        "instagram_profile_url": "https://instagram.com/vettedvee",
+        "email": email, "city": "Bengaluru", "address": "addr", "niches": ["cafe"],
+    }
+    assert s.put(f"{BASE_URL}/creator/profile", json=base).status_code == 200
+
+    admin = requests.Session()
+    admin.post(f"{BASE_URL}/auth/login", json={
+        "email": os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in"),
+        "password": os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026"),
+    })
+    assert admin.post(
+        f"{BASE_URL}/admin/creators/{user['id']}/approve"
+    ).status_code == 200
+
+    # A cosmetic edit keeps them vetted and out of the review queue.
+    cosmetic = {**base, "base_rate": 9000}
+    r = s.put(f"{BASE_URL}/creator/profile", json=cosmetic)
+    assert r.status_code == 200
+    assert r.json()["vetting_status"] == "vetted"
+    assert r.json()["pending_review"] is False
+
+    # Changing who they are flags a re-review, but they stay live meanwhile.
+    material = {**base, "instagram_handle": "vettedvee2"}
+    r2 = s.put(f"{BASE_URL}/creator/profile", json=material)
+    assert r2.status_code == 200
+    assert r2.json()["vetting_status"] == "vetted"
+    assert r2.json()["pending_review"] is True
+
+    changed = admin.get(f"{BASE_URL}/admin/creators/changed").json()
+    assert any(x["user_id"] == user["id"] for x in changed)
+
+
+def test_payout_details_are_validated(creator_session):
+    """A typo'd UPI ID is a payout that silently goes nowhere."""
+    s, email, _ = creator_session
+    base = {
+        "name": "P", "instagram_handle": "p", "instagram_profile_url": "https://ig/p",
+        "email": email, "address": "addr", "niches": ["cafe"],
+    }
+    assert s.put(f"{BASE_URL}/creator/profile",
+                 json={**base, "payout_upi": "not-a-upi"}).status_code == 422
+    assert s.put(f"{BASE_URL}/creator/profile",
+                 json={**base, "pan": "BADPAN"}).status_code == 422
+
+    r = s.put(f"{BASE_URL}/creator/profile", json={
+        **base, "payout_upi": "payee@okhdfcbank", "pan": "aaapt1234c",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["pan"] == "AAAPT1234C"  # normalised for TDS filing
+    assert r.json()["payout_ready"] is True
 
 
 def test_put_profile_unauthenticated_401():

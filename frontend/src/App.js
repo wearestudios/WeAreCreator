@@ -15,6 +15,8 @@ import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
 import AdminConsole from "@/pages/AdminConsole";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
+import BrandCampaignApplicants from "@/pages/BrandCampaignApplicants";
+import { Terms, Privacy } from "@/pages/Legal";
 
 function App() {
     return (
@@ -26,6 +28,8 @@ function App() {
                         <Route path="/login" element={<Login />} />
                         <Route path="/signup" element={<Signup />} />
                         <Route path="/admin/login" element={<AdminLogin />} />
+                        <Route path="/terms" element={<Terms />} />
+                        <Route path="/privacy" element={<Privacy />} />
                         <Route
                             path="/dashboard"
                             element={
@@ -55,6 +59,22 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["brand"]}>
                                     <PostCampaign />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/campaigns/:id/edit"
+                            element={
+                                <ProtectedRoute roles={["brand"]}>
+                                    <PostCampaign />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/brand/campaigns/:id/applicants"
+                            element={
+                                <ProtectedRoute roles={["brand", "admin"]}>
+                                    <BrandCampaignApplicants />
                                 </ProtectedRoute>
                             }
                         />

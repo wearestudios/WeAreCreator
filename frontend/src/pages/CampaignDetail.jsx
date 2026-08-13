@@ -40,15 +40,18 @@ const CAT_LABEL = {
 };
 
 const STATE_LABEL = {
-    applied: "Applied",
-    vetted: "Vetted",
+    applied: "With the WeAre team",
+    vetted: "With the brand",
     accepted: "Accepted",
-    commercial_agreed: "Commercial agreed",
+    commercial_agreed: "Fee agreed",
     slot_booked: "Slot booked",
     attended: "Attended",
-    content_submitted: "Content submitted",
+    content_submitted: "In review",
+    content_approved: "Approved",
     in_payment: "Payment in progress",
-    closed: "Closed",
+    closed: "Paid",
+    declined: "Not taken forward",
+    cancelled: "Cancelled",
 };
 
 const formatDate = (iso, opts) => {
@@ -267,7 +270,9 @@ function AppliedCard({ application }) {
                 </span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-foreground/90">
-                Your pitch is with the brand. You'll be notified as things move.
+                {application.state === "applied"
+                    ? "Our team is reviewing your pitch before it goes to the brand. We'll message you on WhatsApp as it moves."
+                    : "Your pitch is with the brand. We'll message you on WhatsApp as it moves."}
             </p>
 
             <dl className="mt-5 space-y-3 border-t border-emerald-500/20 pt-4 text-sm">
@@ -403,6 +408,25 @@ export default function CampaignDetail() {
         }
         if (campaign.has_applied) {
             return <AppliedCard application={campaign.application} />;
+        }
+        // The server decides eligibility — vetting, and whether slots remain.
+        if (campaign.apply_blocked_reason) {
+            return (
+                <div
+                    data-testid="detail-apply-blocked"
+                    className="rounded-md border border-amber-500/30 bg-amber-500/10 p-5 text-sm leading-relaxed text-amber-200"
+                >
+                    <Info className="mb-2 h-4 w-4" />
+                    {campaign.apply_blocked_reason}
+                    <Link
+                        to="/onboarding/creator"
+                        data-testid="detail-apply-blocked-link"
+                        className="mt-3 block underline underline-offset-4 hover:no-underline"
+                    >
+                        Review your profile →
+                    </Link>
+                </div>
+            );
         }
         return (
             <Button

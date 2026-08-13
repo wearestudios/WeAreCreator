@@ -54,7 +54,7 @@ const STATE_META = {
         tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
     },
     vetted: {
-        label: "Vetted",
+        label: "With the brand",
         tone: "bg-sky-500/15 text-sky-300 border-sky-500/30",
     },
     accepted: {
@@ -74,16 +74,28 @@ const STATE_META = {
         tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
     },
     content_submitted: {
-        label: "Content submitted",
+        label: "In review",
         tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+    },
+    content_approved: {
+        label: "Approved",
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
     },
     in_payment: {
         label: "In payment",
         tone: "bg-ember-500/15 text-ember-500 border-ember-500/30",
     },
     closed: {
-        label: "Closed",
+        label: "Paid",
         tone: "bg-white/5 text-muted-foreground border-white/15",
+    },
+    declined: {
+        label: "Not taken forward",
+        tone: "bg-white/5 text-muted-foreground border-white/15",
+    },
+    cancelled: {
+        label: "Cancelled",
+        tone: "bg-red-500/10 text-red-300/80 border-red-500/25",
     },
 };
 
@@ -122,6 +134,20 @@ const formatDate = (iso) => {
             day: "2-digit",
             month: "short",
             year: "numeric",
+        });
+    } catch {
+        return iso;
+    }
+};
+
+const formatDateTime = (iso) => {
+    if (!iso) return "—";
+    try {
+        return new Date(iso).toLocaleString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
         });
     } catch {
         return iso;
@@ -717,7 +743,10 @@ const ApplicationsSection = ({ applications, onRefresh }) => {
                 ) : (
                     <ul className="divide-y divide-white/10">
                         {applications.map((a) => {
-                            const isAttended = a.state === "attended";
+                            // The API decides when submission is open, so the button
+                            // never appears for a state the server will refuse.
+                            const canSubmit =
+                                a.can_submit_content ?? a.state === "attended";
                             return (
                                 <li
                                     key={a.id}
@@ -739,6 +768,36 @@ const ApplicationsSection = ({ applications, onRefresh }) => {
                                         <div className="mt-2 text-xs text-muted-foreground">
                                             Applied {formatDate(a.created_at)}
                                         </div>
+                                        {a.scheduled_at && (
+                                            <div
+                                                data-testid={`application-slot-${a.id}`}
+                                                className="mt-2 inline-flex items-center gap-1.5 text-xs text-sky-300"
+                                            >
+                                                <CalendarClock className="h-3.5 w-3.5" />
+                                                {formatDateTime(a.scheduled_at)}
+                                                {a.location_note ? ` · ${a.location_note}` : ""}
+                                            </div>
+                                        )}
+                                        {a.revision_note && (
+                                            <div
+                                                data-testid={`application-revision-${a.id}`}
+                                                className="mt-2 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200"
+                                            >
+                                                <span className="uppercase tracking-[0.15em]">
+                                                    Changes asked for
+                                                </span>
+                                                <br />
+                                                {a.revision_note}
+                                            </div>
+                                        )}
+                                        {a.exit_reason && (
+                                            <div
+                                                data-testid={`application-exit-${a.id}`}
+                                                className="mt-2 text-xs leading-relaxed text-muted-foreground"
+                                            >
+                                                {a.exit_reason}
+                                            </div>
+                                        )}
                                     </Link>
 
                                     <div className="flex flex-col items-stretch gap-2 md:items-end md:min-w-[220px]">
@@ -747,14 +806,16 @@ const ApplicationsSection = ({ applications, onRefresh }) => {
                                             {formatRupees(a.quoted_rate)}
                                         </div>
                                         <StatePill state={a.state} />
-                                        {isAttended && (
+                                        {canSubmit && (
                                             <Button
                                                 data-testid={`submit-content-btn-${a.id}`}
                                                 onClick={() => openFor(a)}
                                                 className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
                                             >
                                                 <Send className="mr-1.5 h-4 w-4" />
-                                                Submit content
+                                                {a.state === "content_submitted"
+                                                    ? "Edit links"
+                                                    : "Submit content"}
                                             </Button>
                                         )}
                                         {a.content_urls && a.content_urls.length > 0 && (
@@ -840,6 +901,20 @@ const UpcomingSection = ({ upcoming }) => (
                                     <div className="mt-1 font-serif text-xl leading-tight">
                                         {u.campaign_title}
                                     </div>
+                                    {u.scheduled_at && (
+                                        <div
+                                            data-testid={`upcoming-when-${u.id}`}
+                                            className="mt-2 inline-flex items-center gap-1.5 text-sm text-sky-300"
+                                        >
+                                            <CalendarClock className="h-4 w-4" />
+                                            {formatDateTime(u.scheduled_at)}
+                                            {u.location_note ? (
+                                                <span className="text-muted-foreground">
+                                                    · {u.location_note}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    )}
                                 </div>
                                 <StatePill state={u.state} />
                             </Link>
@@ -963,8 +1038,81 @@ const OnboardedBanner = ({ visible }) => {
             <Sparkles className="mt-0.5 h-4 w-4 flex-none" />
             <p>
                 Thanks — your profile is with the WeAre team. Reviews usually finish
-                within 48 hours. Meanwhile, browse open campaigns below.
+                within 48 hours, and briefs open up to you the moment you're approved.
             </p>
+        </div>
+    );
+};
+
+/**
+ * The two things that block a creator from earning: not being vetted yet, and
+ * having no payout details on file. Both used to be silent.
+ */
+const StatusBanners = ({ profile }) => {
+    const status = profile?.vetting_status;
+    return (
+        <div className="mt-8 space-y-3">
+            {status === "pending" && (
+                <div
+                    data-testid="vetting-pending-banner"
+                    className="flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
+                >
+                    <Clock className="mt-0.5 h-4 w-4 flex-none" />
+                    <p>
+                        Your profile is under review. You'll be able to pitch on briefs
+                        as soon as the team approves it — usually within 48 hours.
+                    </p>
+                </div>
+            )}
+            {status === "rejected" && (
+                <div
+                    data-testid="vetting-rejected-banner"
+                    className="flex items-start gap-3 rounded-md border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"
+                >
+                    <XCircle className="mt-0.5 h-4 w-4 flex-none" />
+                    <p>
+                        Your profile wasn't approved yet.{" "}
+                        <Link
+                            to="/onboarding/creator"
+                            className="underline underline-offset-4 hover:no-underline"
+                        >
+                            Update it
+                        </Link>{" "}
+                        and we'll take another look.
+                    </p>
+                </div>
+            )}
+            {status === "vetted" && profile?.pending_review && (
+                <div
+                    data-testid="vetting-changes-banner"
+                    className="flex items-start gap-3 rounded-md border border-sky-500/30 bg-sky-500/10 p-4 text-sm text-sky-200"
+                >
+                    <Clock className="mt-0.5 h-4 w-4 flex-none" />
+                    <p>
+                        You're still live and visible to brands. We're just taking a
+                        second look at the details you changed.
+                    </p>
+                </div>
+            )}
+            {status === "vetted" && !profile?.payout_ready && (
+                <div
+                    data-testid="payout-missing-banner"
+                    className="flex items-start gap-3 rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm text-ember-500/90"
+                >
+                    <Wallet className="mt-0.5 h-4 w-4 flex-none" />
+                    <p>
+                        Add your UPI ID and PAN so we can pay you — we can't release a
+                        payout without them.{" "}
+                        <Link
+                            to="/onboarding/creator"
+                            data-testid="payout-missing-link"
+                            className="underline underline-offset-4 hover:no-underline"
+                        >
+                            Add payout details
+                        </Link>
+                    </p>
+                </div>
+            )}
         </div>
     );
 };
@@ -1007,6 +1155,7 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
                     <>
                         <CreatorHeader user={user} profile={data.profile} />
                         <OnboardedBanner visible={justOnboarded} />
+                        <StatusBanners profile={data.profile} />
                         <StatsPanel profile={data.profile} onRefresh={load} />
                         <ApplicationsSection applications={data.applications} onRefresh={load} />
                         <UpcomingSection upcoming={data.upcoming} />
@@ -1016,7 +1165,8 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
                         />
                         <div className="mt-16 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">
                             <span className="text-foreground">Signed in as</span>{" "}
-                            {user.email} ·{" "}
+                            {/* Accounts created over WhatsApp have no email. */}
+                            {user.email || user.phone || user.name} ·{" "}
                             <span className="uppercase tracking-[0.15em] text-ember-500">
                                 {user.role}
                             </span>

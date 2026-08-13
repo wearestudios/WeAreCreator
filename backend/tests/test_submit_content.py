@@ -4,6 +4,8 @@ import uuid
 import pytest
 import requests
 
+import pipeline  # tests/ is on sys.path (no __init__.py, pytest prepend mode)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026")
@@ -50,76 +52,24 @@ def brand():
     return s, email
 
 
-def _complete_creator(s):
-    suf = uuid.uuid4().hex[:6]
-    me = s.get(f"{BASE_URL}/auth/me").json()
-    r = s.put(f"{BASE_URL}/creator/profile", json={
-        "name": f"Creator {suf}",
-        "instagram_handle": f"@c_{suf}",
-        "instagram_profile_url": f"https://instagram.com/c_{suf}",
-        "email": me.get("email"),
-        "address": "Bengaluru",
-        "niches": ["cafe"],
-        "follower_count": 12000,
-        "base_rate": 5000,
-    })
-    assert r.status_code == 200, r.text
-
-
-def _seed_open_campaign(bs):
-    bs.put(f"{BASE_URL}/brand/profile", json={
-        "business_name": f"Br-{uuid.uuid4().hex[:5]}",
-        "category": "fnb", "areas": ["Indiranagar"],
-    })
-    body = {
-        "title": f"Camp-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
-        "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
-        "creators_needed": 3,
-        "start_date": "2026-02-01T00:00:00Z", "end_date": "2026-03-01T00:00:00Z",
-        "status": "open",
-    }
-    r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
-    assert r.status_code == 200, r.text
-    return r.json()["id"]
-
-
-def _advance_to(admin_s, collab_id, target_state):
-    """Advance a collab from applied all the way to target_state."""
-    # order: applied->vetted->accepted->commercial_agreed(amt)->slot_booked->attended->content_submitted->in_payment(fee)->closed
-    steps = [
-        ("vetted", {}),
-        ("accepted", {}),
-        ("commercial_agreed", {"agreed_amount": 8500}),
-        ("slot_booked", {}),
-        ("attended", {}),
-        ("content_submitted", {}),
-        ("in_payment", {"platform_fee": 1500}),
-        ("closed", {}),
-    ]
-    for state, body in steps:
-        r = admin_s.post(
-            f"{BASE_URL}/admin/collaborations/{collab_id}/advance", json=body
-        )
-        assert r.status_code == 200, f"failed to advance to {state}: {r.text}"
-        if state == target_state:
-            return
-    raise AssertionError(f"unreachable state {target_state}")
-
-
 def _make_collab_in_state(admin_s, brand_tuple, creator_tuple, target_state):
-    """Register+complete creator, seed campaign, apply, advance admin-side to target_state."""
+    """Vetted creator applies to a live brief, then walks to target_state.
+
+    Steps are routed to whoever owns them — the brand accepts and approves, the
+    creator submits — so this mirrors the real pipeline rather than an admin
+    clicking Advance nine times.
+    """
     bs, _ = brand_tuple
     cs, cemail = creator_tuple
-    _complete_creator(cs)
-    cid = _seed_open_campaign(bs)
-    ar = cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
-        "pitch": "eager to collaborate with you all", "quoted_rate": 5500,
-    })
-    assert ar.status_code in (200, 201), ar.text
-    rows = admin_s.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]["applied"]
-    collab_id = next(x["id"] for x in rows if x["creator"]["email"] == cemail)
+    pipeline.complete_creator_profile(cs)
+
+    me = cs.get(f"{BASE_URL}/auth/me").json()
+    pipeline.vet_creator(admin_s, me["id"])
+
+    cid = pipeline.seed_open_campaign(bs)
+    collab_id = pipeline.apply_to_campaign(cs, cid)
     if target_state != "applied":
-        _advance_to(admin_s, collab_id, target_state)
+        pipeline.advance_to(admin_s, bs, cs, collab_id, target_state)
     return collab_id, cemail
 
 
@@ -231,12 +181,25 @@ class TestSubmitContentHappyPath:
         assert "content_url" in row, "content_url field missing from creator dashboard row"
         assert row["content_url"] == url
 
-        # Cannot re-submit (state != attended now)
+        # A creator can correct their links right up until the brand approves.
+        # This used to be refused, which meant a wrong link needed an admin to
+        # unpick the state by hand.
         r2 = cs.post(
             f"{BASE_URL}/creator/collaborations/{collab_id}/submit_content",
             json={"content_url": "https://instagram.com/p/other"},
         )
-        assert r2.status_code == 400
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["content_url"] == "https://instagram.com/p/other"
+
+        # Once approved, it's locked.
+        bs, _ = brand
+        ar = bs.post(f"{BASE_URL}/brand/collaborations/{collab_id}/approve_content")
+        assert ar.status_code == 200, ar.text
+        r3 = cs.post(
+            f"{BASE_URL}/creator/collaborations/{collab_id}/submit_content",
+            json={"content_url": "https://instagram.com/p/toolate"},
+        )
+        assert r3.status_code == 400
 
 
 # ---------- Multi-URL support ----------

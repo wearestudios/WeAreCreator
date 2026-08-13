@@ -4,6 +4,8 @@ import uuid
 import pytest
 import requests
 
+import pipeline  # tests/ is on sys.path (no __init__.py, pytest prepend mode)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026")
@@ -20,6 +22,12 @@ def _register(session, role):
     })
     assert r.status_code == 200, r.text
     return email, r.json()
+
+
+def _admin_session():
+    s = requests.Session()
+    _login(s, ADMIN_EMAIL, ADMIN_PASSWORD)
+    return s
 
 
 def _login(session, email, password):
@@ -247,13 +255,10 @@ class TestBrandDashboard:
         open_id = r_open.json()["id"]
 
         # A creator applies to the open campaign → applicant_count should become 1
-        cs, _, _ = creator_session
-        # creator must complete onboarding to apply
-        cs.put(f"{BASE_URL}/creator/profile", json={
-            "name": "C", "instagram_handle": "@c",
-            "instagram_profile_url": "https://instagram.com/c",
-            "address": "Bengaluru", "niches": ["cafe"],
-        })
+        cs, _, cuser = creator_session
+        # The creator must be onboarded *and vetted* to apply.
+        pipeline.complete_creator_profile(cs)
+        pipeline.vet_creator(_admin_session(), cuser["id"])
         ar = cs.post(f"{BASE_URL}/campaigns/{open_id}/apply",
                      json={"pitch": "hi there really keen", "quoted_rate": 5000})
         assert ar.status_code in (200, 201), ar.text
@@ -345,3 +350,183 @@ class TestCrossVisibility:
 
         det_admin = admin_session.get(f"{BASE_URL}/campaigns/{cid}")
         assert det_admin.status_code == 200
+
+
+# ---------- campaign lifecycle ----------
+
+class TestCampaignLifecycle:
+    """A draft used to be a trap door: no edit, no publish, no delete."""
+
+    def _seed_profile(self, s):
+        s.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": "Lifecycle Co", "category": "fnb", "areas": ["Indiranagar"],
+        })
+
+    def _draft(self, s, **overrides):
+        body = {
+            "title": f"Draft-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 3000, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 2, "status": "draft",
+        }
+        body.update(overrides)
+        r = s.post(f"{BASE_URL}/brand/campaigns", json=body)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_draft_can_be_edited_then_published(self, brand_session):
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        draft = self._draft(s)
+        assert draft["can_publish"] and draft["can_edit"] and draft["can_delete"]
+
+        r = s.put(f"{BASE_URL}/brand/campaigns/{draft['id']}", json={
+            "title": "Polished title", "budget_per_creator": 4500,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["title"] == "Polished title"
+        assert r.json()["budget_per_creator"] == 4500
+
+        r = s.post(f"{BASE_URL}/brand/campaigns/{draft['id']}/publish")
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] in ("open", "upcoming")
+
+        # Publishing twice is refused.
+        assert s.post(f"{BASE_URL}/brand/campaigns/{draft['id']}/publish").status_code == 409
+
+    def test_live_campaign_can_be_corrected(self, brand_session):
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        live = self._draft(s, status="open")
+        r = s.put(f"{BASE_URL}/brand/campaigns/{live['id']}", json={"deliverables": "2 reels"})
+        assert r.status_code == 200, r.text
+        assert r.json()["deliverables"] == "2 reels"
+
+    def test_end_before_start_is_refused_on_edit(self, brand_session):
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        c = self._draft(s, start_date="2026-09-01T00:00:00Z", end_date="2026-10-01T00:00:00Z")
+        r = s.put(f"{BASE_URL}/brand/campaigns/{c['id']}",
+                  json={"end_date": "2026-08-01T00:00:00Z"})
+        assert r.status_code == 422
+
+    def test_empty_draft_can_be_deleted_but_a_live_one_cannot(self, brand_session):
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        draft = self._draft(s)
+        assert s.delete(f"{BASE_URL}/brand/campaigns/{draft['id']}").status_code == 200
+        assert s.get(f"{BASE_URL}/campaigns/{draft['id']}").status_code == 404
+
+        live = self._draft(s, status="open")
+        r = s.delete(f"{BASE_URL}/brand/campaigns/{live['id']}")
+        assert r.status_code == 409
+        assert "close" in r.json()["detail"].lower()
+
+    def test_closing_answers_everyone_still_waiting(self, brand_session, creator_session):
+        s, _, _ = brand_session
+        cs, _, cuser = creator_session
+        self._seed_profile(s)
+        live = self._draft(s, status="open")
+
+        pipeline.complete_creator_profile(cs)
+        pipeline.vet_creator(_admin_session(), cuser["id"])
+        cs.post(f"{BASE_URL}/campaigns/{live['id']}/apply",
+                json={"pitch": "keen on this one please", "quoted_rate": 3000})
+
+        r = s.post(f"{BASE_URL}/brand/campaigns/{live['id']}/close",
+                   json={"reason": "Changed the plan"})
+        assert r.status_code == 200, r.text
+        assert r.json()["applications_closed"] == 1
+
+        # The creator is told, rather than left waiting forever.
+        dash = cs.get(f"{BASE_URL}/creator/dashboard").json()
+        row = next(a for a in dash["applications"] if a["campaign_id"] == live["id"])
+        assert row["state"] == "declined"
+        assert row["exit_reason"]
+
+    def test_cannot_touch_another_brands_campaign(self, brand_session, brand_session_2):
+        s1, _, _ = brand_session
+        s2, _, _ = brand_session_2
+        self._seed_profile(s1)
+        self._seed_profile(s2)
+        mine = self._draft(s1)
+        assert s2.put(f"{BASE_URL}/brand/campaigns/{mine['id']}",
+                      json={"title": "hijacked"}).status_code == 404
+        assert s2.post(f"{BASE_URL}/brand/campaigns/{mine['id']}/publish").status_code == 404
+        assert s2.delete(f"{BASE_URL}/brand/campaigns/{mine['id']}").status_code == 404
+
+
+# ---------- applicant board ----------
+
+class TestApplicantBoard:
+    """Before this the brand side could only ever show a count."""
+
+    def _live_campaign_with_applicant(self, bs, cs, cuser, creators_needed=2):
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": "Board Co", "category": "fnb", "areas": ["Indiranagar"],
+        })
+        cid = pipeline.seed_open_campaign(bs, creators_needed=creators_needed)
+        pipeline.complete_creator_profile(cs)
+        pipeline.vet_creator(_admin_session(), cuser["id"])
+        collab_id = pipeline.apply_to_campaign(cs, cid)
+        return cid, collab_id
+
+    def test_brand_sees_the_pitch_and_the_rate(self, brand_session, creator_session):
+        bs, _, _ = brand_session
+        cs, _, cuser = creator_session
+        cid, collab_id = self._live_campaign_with_applicant(bs, cs, cuser)
+
+        r = bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        row = next(a for a in d["applicants"] if a["id"] == collab_id)
+        assert row["pitch"]
+        assert row["quoted_rate"] == 5500
+        assert row["creator"]["instagram_handle"]
+        assert d["totals"]["with_weare"] == 1
+
+    def test_contact_details_are_withheld_until_acceptance(
+        self, brand_session, creator_session
+    ):
+        bs, _, _ = brand_session
+        cs, _, cuser = creator_session
+        cid, collab_id = self._live_campaign_with_applicant(bs, cs, cuser)
+        admin = _admin_session()
+
+        row = bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").json()["applicants"][0]
+        assert row["creator"]["email"] is None
+        assert row["creator"]["phone"] is None
+
+        pipeline.step(admin, bs, collab_id, "vetted")
+        pipeline.step(admin, bs, collab_id, "accepted")
+
+        row2 = next(
+            a for a in bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").json()["applicants"]
+            if a["id"] == collab_id
+        )
+        assert row2["creator"]["email"], "contact should unlock once working together"
+
+    def test_a_full_campaign_stops_accepting(self, brand_session, creator_session):
+        """creators_needed used to be decoration."""
+        bs, _, _ = brand_session
+        cs, _, cuser = creator_session
+        cid, collab_id = self._live_campaign_with_applicant(bs, cs, cuser, creators_needed=1)
+        admin = _admin_session()
+
+        pipeline.step(admin, bs, collab_id, "vetted")
+        pipeline.step(admin, bs, collab_id, "accepted")
+
+        # The brief is full, so it leaves the feed and refuses new pitches.
+        other = requests.Session()
+        _, ouser = _register(other, "creator")
+        pipeline.complete_creator_profile(other)
+        pipeline.vet_creator(admin, ouser["id"])
+        r = other.post(f"{BASE_URL}/campaigns/{cid}/apply",
+                       json={"pitch": "any room left for me?", "quoted_rate": 4000})
+        assert r.status_code in (404, 409), r.text
+
+    def test_applicants_are_brand_scoped(self, brand_session, brand_session_2, creator_session):
+        bs, _, _ = brand_session
+        s2, _, _ = brand_session_2
+        cs, _, cuser = creator_session
+        cid, _ = self._live_campaign_with_applicant(bs, cs, cuser)
+        assert s2.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").status_code == 404

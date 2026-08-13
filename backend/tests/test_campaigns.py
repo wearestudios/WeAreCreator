@@ -4,6 +4,8 @@ import uuid
 import pytest
 import requests
 
+import pipeline  # tests/ is on sys.path (no __init__.py, pytest prepend mode)
+
 BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/") + "/api"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "creators@wearemonk.in")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "WeAreMonk@2026")
@@ -24,15 +26,41 @@ def _register(session, role):
     return email, r.json()
 
 
-@pytest.fixture
-def creator_session():
+def _admin_session():
+    s = requests.Session()
+    r = s.post(
+        f"{BASE_URL}/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+    )
+    assert r.status_code == 200, r.text
+    return s
+
+
+def _vetted_creator():
+    """A creator who can actually apply.
+
+    Vetting gates applying now, so a bare registration is no longer enough to
+    exercise the apply endpoint.
+    """
     s = requests.Session()
     email, user = _register(s, "creator")
+    pipeline.complete_creator_profile(s)
+    pipeline.vet_creator(_admin_session(), user["id"])
     return s, email, user
 
 
 @pytest.fixture
+def creator_session():
+    return _vetted_creator()
+
+
+@pytest.fixture
 def creator_session_2():
+    return _vetted_creator()
+
+
+@pytest.fixture
+def unvetted_creator_session():
     s = requests.Session()
     email, user = _register(s, "creator")
     return s, email, user
@@ -123,15 +151,13 @@ def test_detail_draft_hidden_for_creator_visible_for_admin(creator_session, admi
     assert admin_session.get(f"{BASE_URL}/campaigns/{closed['_id']}").status_code == 200
 
 
-def test_detail_open_campaign_brand_allowed(brand_session, creator_session):
+def test_detail_open_campaign_hidden_from_other_brands(brand_session, creator_session):
+    """Changed deliberately: a brand used to be able to read every live brief,
+    including a competitor's budget and deliverables."""
     s_c, _, _ = creator_session
     open_c = next(c for c in s_c.get(f"{BASE_URL}/campaigns").json() if c["status"] == "open")
     s_b, _, _ = brand_session
-    r = s_b.get(f"{BASE_URL}/campaigns/{open_c['id']}")
-    assert r.status_code == 200, r.text
-    d = r.json()
-    assert d["id"] == open_c["id"]
-    assert d.get("has_applied") in (False, None)
+    assert s_b.get(f"{BASE_URL}/campaigns/{open_c['id']}").status_code == 404
 
 
 def test_detail_draft_hidden_for_brand(brand_session):
@@ -246,3 +272,88 @@ def test_second_creator_can_apply_to_same_campaign(creator_session, creator_sess
     cid = s1.get(f"{BASE_URL}/campaigns").json()[-1]["id"]
     r = s2.post(f"{BASE_URL}/campaigns/{cid}/apply", json={"pitch": "me too", "quoted_rate": 100})
     assert r.status_code == 200
+
+
+# ---------- Vetting gates applying ----------
+
+def test_unvetted_creator_cannot_apply(unvetted_creator_session, creator_session):
+    """The 48-hour review used to be advisory — anyone could pitch on anything."""
+    s, _, _ = unvetted_creator_session
+    live, _, _ = creator_session
+    cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
+    r = s.post(f"{BASE_URL}/campaigns/{cid}/apply", json=APPLY_BODY)
+    assert r.status_code == 403, r.text
+    assert "approved" in r.json()["detail"].lower()
+
+
+def test_rejected_creator_is_told_why_they_cannot_apply(unvetted_creator_session,
+                                                        creator_session):
+    s, _, user = unvetted_creator_session
+    pipeline.complete_creator_profile(s)
+    admin = _admin_session()
+    r = admin.post(f"{BASE_URL}/admin/creators/{user['id']}/reject")
+    assert r.status_code == 200, r.text
+
+    live, _, _ = creator_session
+    cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
+    r = s.post(f"{BASE_URL}/campaigns/{cid}/apply", json=APPLY_BODY)
+    assert r.status_code == 403
+    assert "wasn't approved" in r.json()["detail"].lower()
+
+
+def test_detail_explains_why_apply_is_blocked(unvetted_creator_session, creator_session):
+    """The button and the API must agree — the page says why, up front."""
+    s, _, _ = unvetted_creator_session
+    live, _, _ = creator_session
+    cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
+
+    d = s.get(f"{BASE_URL}/campaigns/{cid}").json()
+    assert d["can_apply"] is False
+    assert d["apply_blocked_reason"]
+
+    d2 = live.get(f"{BASE_URL}/campaigns/{cid}").json()
+    assert d2["can_apply"] is True
+    assert d2["apply_blocked_reason"] is None
+
+
+def test_brand_cannot_read_another_brands_brief(brand_session, creator_session):
+    """A live brief carries a competitor's budget and deliverables."""
+    s_b, _, _ = brand_session
+    live, _, _ = creator_session
+    cid = live.get(f"{BASE_URL}/campaigns").json()[0]["id"]
+    assert s_b.get(f"{BASE_URL}/campaigns/{cid}").status_code == 404
+
+    # Its own brief is readable in any state, including draft.
+    s_b.put(f"{BASE_URL}/brand/profile", json={
+        "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+        "category": "fnb", "areas": ["Indiranagar"],
+    })
+    own = s_b.post(f"{BASE_URL}/brand/campaigns", json={
+        "title": f"Own-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
+        "budget_per_creator": 4000, "category": "fnb", "area": "Indiranagar",
+        "creators_needed": 1, "status": "draft",
+    }).json()
+    assert s_b.get(f"{BASE_URL}/campaigns/{own['id']}").status_code == 200
+
+
+# ---------- Public preview ----------
+
+def test_public_preview_needs_no_account():
+    """The landing page promises "discover briefs"; a visitor can now see some."""
+    r = requests.get(f"{BASE_URL}/public/campaigns")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "campaigns" in data and "total_open" in data
+    for c in data["campaigns"]:
+        # Enough to judge whether it's worth joining, and no more.
+        for field in ["id", "title", "brand_name", "budget_per_creator", "teaser"]:
+            assert field in c
+        assert "brief" not in c, "the full brief stays behind the signup"
+        assert "deliverables" not in c
+
+
+def test_public_stats_needs_no_account():
+    r = requests.get(f"{BASE_URL}/public/stats")
+    assert r.status_code == 200
+    for k in ["vetted_creators", "open_campaigns", "cities"]:
+        assert isinstance(r.json()[k], int)

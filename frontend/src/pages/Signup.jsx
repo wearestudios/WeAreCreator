@@ -5,6 +5,7 @@ import { Camera, Building2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import OtpForm from "@/components/OtpForm";
 
 const ROLE_OPTIONS = [
@@ -34,6 +35,8 @@ export default function Signup() {
     const [role, setRole] = useState(initialRole);
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
+    // Consent is recorded against the account, so it has to be an actual act.
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
 
     return (
         <div data-testid="signup-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
@@ -111,14 +114,23 @@ export default function Signup() {
                     <OtpForm
                         phone={phone}
                         setPhone={setPhone}
-                        canSubmitPhoneStep={name.trim().length > 0}
-                        onRequest={(p) => requestOtp({ phone: p, purpose: "signup", name: name.trim(), role })}
+                        canSubmitPhoneStep={name.trim().length > 0 && acceptedTerms}
+                        onRequest={(p) =>
+                            requestOtp({
+                                phone: p,
+                                purpose: "signup",
+                                name: name.trim(),
+                                role,
+                                accept_terms: acceptedTerms,
+                            })
+                        }
                         onVerify={(code) => verifyOtp({
                             phone: phone.trim().replace(/[\s\-()]/g, ""),
                             code,
                             purpose: "signup",
                             name: name.trim(),
                             role,
+                            accept_terms: acceptedTerms,
                         })}
                         onVerified={(user) => {
                             toast.success("Account created — welcome to WeAre.");
@@ -132,25 +144,58 @@ export default function Signup() {
                         }}
                         hint="We'll WhatsApp a 6-digit code to verify this number."
                         extraTop={
-                            <div>
-                                <Label htmlFor="name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    {role === "brand" ? "Brand name" : "Full name"}
-                                </Label>
-                                <Input
-                                    id="name"
-                                    data-testid="signup-name-input"
-                                    required
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                    placeholder={role === "brand" ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
-                                />
-                            </div>
+                            <>
+                                <div>
+                                    <Label htmlFor="name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        {role === "brand" ? "Brand name" : "Full name"}
+                                    </Label>
+                                    <Input
+                                        id="name"
+                                        data-testid="signup-name-input"
+                                        required
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                        placeholder={role === "brand" ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
+                                    />
+                                </div>
+                                <label
+                                    htmlFor="accept-terms"
+                                    className="flex cursor-pointer items-start gap-3 text-xs leading-relaxed text-muted-foreground"
+                                >
+                                    <Checkbox
+                                        id="accept-terms"
+                                        data-testid="signup-terms-checkbox"
+                                        checked={acceptedTerms}
+                                        onCheckedChange={(v) => setAcceptedTerms(v === true)}
+                                        className="mt-0.5 border-white/25 data-[state=checked]:border-ember-500 data-[state=checked]:bg-ember-500 data-[state=checked]:text-black"
+                                    />
+                                    <span>
+                                        I agree to the{" "}
+                                        <Link
+                                            to="/terms"
+                                            data-testid="signup-terms-link"
+                                            className="text-ember-500 underline-offset-4 hover:underline"
+                                        >
+                                            terms
+                                        </Link>{" "}
+                                        and{" "}
+                                        <Link
+                                            to="/privacy"
+                                            data-testid="signup-privacy-link"
+                                            className="text-ember-500 underline-offset-4 hover:underline"
+                                        >
+                                            privacy policy
+                                        </Link>
+                                        , including how WeAre stores my contact details.
+                                    </span>
+                                </label>
+                            </>
                         }
                     />
 
                     <p className="mt-8 text-xs text-muted-foreground">
-                        By signing up you agree to our terms & privacy.
+                        We record when you accepted, so you always know what you agreed to.
                     </p>
                 </div>
             </div>
