@@ -1251,6 +1251,137 @@ function CollaborationsBoard({ onChange, feePercent }) {
 }
 
 // ---------------------------------------------------------------------------
+// Section 4: Audit trail
+// ---------------------------------------------------------------------------
+
+const ACTION_LABEL = {
+    "creator.vetted": "approved creator",
+    "creator.rejected": "rejected creator",
+    "brand.verify": "verified brand",
+    "brand.unverify": "un-verified brand",
+    "campaign.create": "created campaign",
+    "campaign.update": "edited campaign",
+    "campaign.publish": "published campaign",
+    "campaign.close": "closed campaign",
+    "campaign.delete": "deleted draft",
+    "collaboration.accept": "accepted creator",
+    "collaboration.decline": "declined applicant",
+    "collaboration.advance": "advanced collaboration",
+    "collaboration.cancel": "cancelled collaboration",
+    "collaboration.approve_content": "approved content",
+    "collaboration.request_changes": "requested changes",
+    "collaboration.submit_content": "submitted content",
+    "payment.mark_paid": "recorded payout",
+    "payment.invoice_state": "updated invoice",
+};
+
+function AuditTrail() {
+    const [rows, setRows] = useState(null);
+    const [expanded, setExpanded] = useState(false);
+
+    const load = useCallback(async () => {
+        setRows(null);
+        try {
+            const { data } = await api.get("/admin/audit", { params: { limit: 100 } });
+            setRows(data);
+        } catch (e) {
+            toast.error(formatApiError(e));
+            setRows([]);
+        }
+    }, []);
+
+    useEffect(() => {
+        load();
+    }, [load]);
+
+    const visible = expanded ? rows || [] : (rows || []).slice(0, 12);
+
+    return (
+        <section data-testid="admin-audit-section" className="mt-16">
+            <div className="flex items-baseline justify-between">
+                <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        Section 4
+                    </p>
+                    <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
+                        Who did what
+                    </h2>
+                </div>
+                <button
+                    type="button"
+                    onClick={load}
+                    data-testid="admin-audit-refresh"
+                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                >
+                    <RotateCw className="h-3.5 w-3.5" />
+                    Refresh
+                </button>
+            </div>
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                Every decision that moves a creator, a campaign or money, with the
+                person who made it.
+            </p>
+
+            <div className="mt-8 rounded-md border border-white/10 bg-card">
+                {rows === null && (
+                    <div className="grid place-items-center py-16 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                )}
+                {Array.isArray(rows) && rows.length === 0 && (
+                    <p
+                        data-testid="admin-audit-empty"
+                        className="px-6 py-10 text-sm text-muted-foreground"
+                    >
+                        Nothing recorded yet.
+                    </p>
+                )}
+                {visible.length > 0 && (
+                    <ul className="divide-y divide-white/10">
+                        {visible.map((a) => (
+                            <li
+                                key={a.id}
+                                data-testid={`admin-audit-row-${a.id}`}
+                                className="flex flex-col gap-1 px-5 py-3 md:flex-row md:items-baseline md:gap-4"
+                            >
+                                <span className="flex-none text-[10px] uppercase tracking-[0.15em] text-muted-foreground md:w-36">
+                                    {formatDateTime(a.created_at)}
+                                </span>
+                                <span className="flex-1 text-sm">
+                                    <span className="text-foreground">
+                                        {a.actor_name || "Someone"}
+                                    </span>{" "}
+                                    <span className="text-muted-foreground">
+                                        {ACTION_LABEL[a.action] || a.action}
+                                    </span>
+                                    {a.note ? (
+                                        <span className="text-muted-foreground"> — {a.note}</span>
+                                    ) : null}
+                                </span>
+                                <span className="flex-none text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                                    {a.actor_role}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            {Array.isArray(rows) && rows.length > 12 && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    data-testid="admin-audit-toggle"
+                    className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                >
+                    {expanded ? "Show less" : `Show all ${rows.length}`}
+                </button>
+            )}
+        </section>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
@@ -1382,6 +1513,7 @@ export default function AdminConsole() {
                     onChange={bump}
                     feePercent={metrics?.platform_fee_percent}
                 />
+                <AuditTrail key={refreshKey} />
             </main>
         </div>
     );
