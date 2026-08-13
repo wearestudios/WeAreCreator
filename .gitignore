@@ -83,6 +83,9 @@ android-sdk/
 .env
 .env.*
 *.env
+# …but the templates carry no secrets and are how you set the app up.
+!.env.example
+!**/.env.example
 credentials.json
 *.key
 .credentials
