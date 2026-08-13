@@ -1,17 +1,75 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { Menu } from "lucide-react";
+import { useAuth, homePathFor } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
+import {
+    Sheet,
+    SheetClose,
+    SheetContent,
+    SheetTitle,
+    SheetTrigger,
+} from "@/components/ui/sheet";
+
+/**
+ * The role-specific links, defined once so the desktop bar and the mobile
+ * sheet can't drift apart.
+ */
+const linksFor = (role) => {
+    const links = [];
+    if (role === "creator" || role === "admin") {
+        links.push({ to: "/campaigns", label: "Campaigns", testId: "nav-campaigns" });
+    }
+    if (role === "brand") {
+        links.push(
+            { to: "/brand/creators", label: "Creators", testId: "nav-brand-creators" },
+            {
+                to: "/campaigns/new",
+                label: "Post a campaign",
+                testId: "nav-post-campaign",
+            },
+        );
+    }
+    if (role === "admin") {
+        links.push({
+            to: "/admin",
+            label: "Admin",
+            testId: "nav-admin",
+            accent: true,
+        });
+    } else {
+        links.push({
+            to: homePathFor(role),
+            label: "Dashboard",
+            testId: "nav-dashboard",
+        });
+    }
+    return links;
+};
+
+const MARKETING_LINKS = [
+    { href: "#how-it-works", label: "How it works", testId: "nav-how" },
+    { href: "#why", label: "Why WeAre", testId: "nav-why" },
+    { to: "/signup?role=brand", label: "For brands →", testId: "nav-for-brands" },
+];
 
 export const Navbar = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    // null while /auth/me is in flight, false once we know nobody is signed in.
+    const checking = user === null;
+    const signedIn = Boolean(user) && user !== false;
 
     const handleLogout = async () => {
+        setMenuOpen(false);
         navigate("/", { replace: true });
         await logout();
     };
+
+    const roleLinks = signedIn ? linksFor(user.role) : [];
 
     return (
         <header
@@ -33,81 +91,62 @@ export const Navbar = () => {
                 </Link>
 
                 <nav className="hidden items-center gap-8 md:flex">
-                    <a
-                        href="#how-it-works"
-                        data-testid="nav-how"
-                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                    >
-                        How it works
-                    </a>
-                    <a
-                        href="#why"
-                        data-testid="nav-why"
-                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                    >
-                        Why WeAre
-                    </a>
-                    <Link
-                        to="/signup?role=brand"
-                        data-testid="nav-for-brands"
-                        className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                    >
-                        For brands →
-                    </Link>
+                    {MARKETING_LINKS.map((l) =>
+                        l.href ? (
+                            <a
+                                key={l.testId}
+                                href={l.href}
+                                data-testid={l.testId}
+                                className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                            >
+                                {l.label}
+                            </a>
+                        ) : (
+                            <Link
+                                key={l.testId}
+                                to={l.to}
+                                data-testid={l.testId}
+                                className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                            >
+                                {l.label}
+                            </Link>
+                        ),
+                    )}
                 </nav>
 
                 <div className="flex items-center gap-3">
-                    {user && user !== false ? (
+                    {/* Until /auth/me resolves we don't know who this is. Showing
+                        "Log in" here made every signed-in user flash logged-out on
+                        load, so hold the space instead of guessing. */}
+                    {checking ? (
+                        <div
+                            data-testid="nav-auth-loading"
+                            aria-hidden
+                            className="h-9 w-28 animate-pulse rounded-full bg-white/5"
+                        />
+                    ) : signedIn ? (
                         <>
-                            {(user.role === "creator" || user.role === "admin") && (
+                            {roleLinks.map((l) => (
                                 <Link
-                                    to="/campaigns"
-                                    data-testid="nav-campaigns"
-                                    className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                    key={l.testId}
+                                    to={l.to}
+                                    data-testid={l.testId}
+                                    className={
+                                        "hidden text-sm transition-colors duration-200 sm:inline " +
+                                        (l.accent
+                                            ? "text-ember-500 hover:text-ember-400"
+                                            : "text-muted-foreground hover:text-foreground")
+                                    }
                                 >
-                                    Campaigns
+                                    {l.label}
                                 </Link>
-                            )}
-                            {user.role === "brand" && (
-                                <>
-                                    <Link
-                                        to="/brand/creators"
-                                        data-testid="nav-brand-creators"
-                                        className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
-                                    >
-                                        Creators
-                                    </Link>
-                                    <Link
-                                        to="/campaigns/new"
-                                        data-testid="nav-post-campaign"
-                                        className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
-                                    >
-                                        Post a campaign
-                                    </Link>
-                                </>
-                            )}
-                            {user.role === "admin" && (
-                                <Link
-                                    to="/admin"
-                                    data-testid="nav-admin"
-                                    className="hidden text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400 sm:inline"
-                                >
-                                    Admin
-                                </Link>
-                            )}
-                            <Link
-                                to="/dashboard"
-                                data-testid="nav-dashboard"
-                                className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
-                            >
-                                Dashboard
-                            </Link>
+                            ))}
                             <NotificationBell />
                             <Button
                                 data-testid="nav-logout-btn"
                                 onClick={handleLogout}
                                 variant="outline"
-                                className="border-white/15 bg-transparent text-foreground hover:bg-white/5"
+                                className="hidden border-white/15 bg-transparent text-foreground hover:bg-white/5 sm:inline-flex"
                             >
                                 Log out
                             </Button>
@@ -117,20 +156,157 @@ export const Navbar = () => {
                             <Link
                                 to="/login"
                                 data-testid="nav-login-link"
-                                className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                                className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
                             >
                                 Log in
                             </Link>
+                            {/* The primary conversion action stays in the bar at
+                                every width; only its label shortens. */}
                             <Link
                                 to="/signup?role=creator"
                                 data-testid="nav-signup-creator-link"
                             >
                                 <Button className="rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400">
-                                    Sign up as a creator
+                                    <span className="sm:hidden">Sign up</span>
+                                    <span className="hidden sm:inline">
+                                        Sign up as a creator
+                                    </span>
                                 </Button>
                             </Link>
                         </>
                     )}
+
+                    {/* Everything above collapses below md; this is the way in. */}
+                    <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+                        <SheetTrigger asChild>
+                            <button
+                                type="button"
+                                data-testid="nav-mobile-menu-btn"
+                                aria-label="Open menu"
+                                className="rounded-md p-2 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:hidden"
+                            >
+                                <Menu className="h-5 w-5" />
+                            </button>
+                        </SheetTrigger>
+                        <SheetContent
+                            side="right"
+                            data-testid="nav-mobile-menu"
+                            // A menu needs no description; opting out explicitly
+                            // keeps Radix from warning about a missing one.
+                            aria-describedby={undefined}
+                            className="w-[86%] border-l border-white/10 bg-background p-0 sm:max-w-sm"
+                        >
+                            <SheetTitle className="sr-only">Menu</SheetTitle>
+
+                            <div className="flex h-full flex-col">
+                                <div className="border-b border-white/10 px-6 py-5">
+                                    <span className="font-serif text-xl tracking-tight">
+                                        WeAre <span className="text-ember-500">Creators</span>
+                                    </span>
+                                </div>
+
+                                <nav className="flex-1 overflow-y-auto px-6 py-7">
+                                    {signedIn && (
+                                        <>
+                                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                                {user.role}
+                                            </p>
+                                            <div className="mt-4 flex flex-col">
+                                                {roleLinks.map((l) => (
+                                                    <SheetClose asChild key={l.testId}>
+                                                        <Link
+                                                            to={l.to}
+                                                            data-testid={`${l.testId}-mobile`}
+                                                            className={
+                                                                "border-b border-white/10 py-3.5 font-serif text-2xl leading-tight transition-colors duration-200 " +
+                                                                (l.accent
+                                                                    ? "text-ember-500 hover:text-ember-400"
+                                                                    : "text-foreground hover:text-ember-500")
+                                                            }
+                                                        >
+                                                            {l.label}
+                                                        </Link>
+                                                    </SheetClose>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <p
+                                        className={
+                                            "text-[10px] uppercase tracking-[0.2em] text-muted-foreground " +
+                                            (signedIn ? "mt-10" : "")
+                                        }
+                                    >
+                                        Explore
+                                    </p>
+                                    <div className="mt-4 flex flex-col">
+                                        {MARKETING_LINKS.map((l) => (
+                                            <SheetClose asChild key={l.testId}>
+                                                {l.href ? (
+                                                    <a
+                                                        href={l.href}
+                                                        data-testid={`${l.testId}-mobile`}
+                                                        className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
+                                                    >
+                                                        {l.label}
+                                                    </a>
+                                                ) : (
+                                                    <Link
+                                                        to={l.to}
+                                                        data-testid={`${l.testId}-mobile`}
+                                                        className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
+                                                    >
+                                                        {l.label}
+                                                    </Link>
+                                                )}
+                                            </SheetClose>
+                                        ))}
+                                    </div>
+                                </nav>
+
+                                <div className="border-t border-white/10 px-6 py-6">
+                                    {checking ? (
+                                        <div
+                                            aria-hidden
+                                            className="h-11 w-full animate-pulse rounded-full bg-white/5"
+                                        />
+                                    ) : signedIn ? (
+                                        <Button
+                                            data-testid="nav-logout-btn-mobile"
+                                            onClick={handleLogout}
+                                            variant="outline"
+                                            className="h-11 w-full rounded-full border-white/15 bg-transparent text-foreground hover:bg-white/5"
+                                        >
+                                            Log out
+                                        </Button>
+                                    ) : (
+                                        <div className="flex flex-col gap-3">
+                                            <SheetClose asChild>
+                                                <Link
+                                                    to="/signup?role=creator"
+                                                    data-testid="nav-signup-creator-link-mobile"
+                                                >
+                                                    <Button className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                                        Sign up as a creator
+                                                    </Button>
+                                                </Link>
+                                            </SheetClose>
+                                            <SheetClose asChild>
+                                                <Link
+                                                    to="/login"
+                                                    data-testid="nav-login-link-mobile"
+                                                    className="py-2 text-center text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                                                >
+                                                    Log in
+                                                </Link>
+                                            </SheetClose>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </SheetContent>
+                    </Sheet>
                 </div>
             </div>
         </header>

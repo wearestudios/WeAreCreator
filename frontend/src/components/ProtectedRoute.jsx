@@ -1,6 +1,6 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, homePathFor } from "@/context/AuthContext";
 
 export const ProtectedRoute = ({ children, roles }) => {
     const { user } = useAuth();
@@ -21,7 +21,9 @@ export const ProtectedRoute = ({ children, roles }) => {
     if (user === false) return <Navigate to="/login" replace />;
 
     if (roles && !roles.includes(user.role)) {
-        return <Navigate to="/dashboard" replace />;
+        // Straight to the role's own home, not via /dashboard — an admin bounced
+        // there would only be redirected again.
+        return <Navigate to={homePathFor(user.role)} replace />;
     }
     return children;
 };

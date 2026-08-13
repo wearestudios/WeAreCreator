@@ -3,6 +3,16 @@ import { api, formatApiError } from "@/lib/api";
 
 const AuthContext = createContext(null);
 
+/**
+ * Where a signed-in user belongs after login, or when they land somewhere their
+ * role can't see. Admins have no dashboard — the console is their only surface —
+ * so sending them to /dashboard just bounced them straight back out.
+ *
+ * Exported from here so the navbar, the route guard and the dashboard root all
+ * agree; three copies of this rule is how you get a redirect loop.
+ */
+export const homePathFor = (role) => (role === "admin" ? "/admin" : "/dashboard");
+
 export const AuthProvider = ({ children }) => {
     // null = checking, false = anonymous, object = authenticated
     const [user, setUser] = useState(null);

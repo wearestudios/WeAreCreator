@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import {
     ArrowRight,
@@ -21,7 +21,7 @@ import {
     CalendarClock,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, homePathFor } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,80 +152,6 @@ const formatDateTime = (iso) => {
     } catch {
         return iso;
     }
-};
-
-// ---------------------------------------------------------------------------
-// Non-creator dashboards (kept minimal, unchanged behavior)
-// ---------------------------------------------------------------------------
-
-const NON_CREATOR_COPY = {
-    brand: {
-        label: "Brand",
-        headline: "your brand workspace.",
-        body: "Post briefs, review curated creator shortlists, approve content and pay from a single dashboard.",
-    },
-    admin: {
-        label: "Admin",
-        headline: "the WeAre admin console.",
-        body: "Approve creator & brand applications, moderate campaigns and see the marketplace pulse.",
-    },
-};
-
-const NonCreatorDashboard = ({ user }) => {
-    const copy = NON_CREATOR_COPY[user.role] || NON_CREATOR_COPY.brand;
-    return (
-        <div data-testid="dashboard-page" className="min-h-screen bg-background">
-            <Navbar />
-            <main className="mx-auto max-w-7xl px-6 py-16">
-                <p
-                    data-testid="dashboard-role-tag"
-                    className="text-xs uppercase tracking-[0.2em] text-ember-500"
-                >
-                    {copy.label} · India
-                </p>
-                <h1
-                    data-testid="dashboard-welcome"
-                    className="mt-4 max-w-3xl font-serif text-4xl leading-none tracking-tight md:text-5xl"
-                >
-                    Hi <span className="italic">{user.name}</span>, welcome to{" "}
-                    {copy.headline}
-                </h1>
-                <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
-                    {copy.body}
-                </p>
-                <div className="mt-14 grid gap-6 md:grid-cols-3">
-                    <div
-                        data-testid="dashboard-tile-campaigns"
-                        className="rounded-md border border-white/10 bg-card p-8"
-                    >
-                        <Compass className="h-5 w-5 text-ember-500" />
-                        <div className="mt-6 font-serif text-3xl">Coming soon</div>
-                        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                            Post a new campaign or manage the ones you already have.
-                        </p>
-                    </div>
-                    <div className="rounded-md border border-white/10 bg-card p-8">
-                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Applications
-                        </div>
-                        <div className="mt-6 font-serif text-3xl">Coming soon</div>
-                    </div>
-                    <div className="rounded-md border border-white/10 bg-card p-8">
-                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Payments
-                        </div>
-                        <div className="mt-6 font-serif text-3xl">Coming soon</div>
-                    </div>
-                </div>
-                <div className="mt-14 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">
-                    <span className="text-foreground">Signed in as</span> {user.email} ·{" "}
-                    <span className="uppercase tracking-[0.15em] text-ember-500">
-                        {user.role}
-                    </span>
-                </div>
-            </main>
-        </div>
-    );
 };
 
 // ---------------------------------------------------------------------------
@@ -1196,5 +1122,6 @@ export default function Dashboard() {
     if (user.role === "brand") {
         return <BrandDashboardView user={user} />;
     }
-    return <NonCreatorDashboard user={user} />;
+    // Admins have no dashboard of their own — the console is their home.
+    return <Navigate to={homePathFor(user.role)} replace />;
 }
