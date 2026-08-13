@@ -64,7 +64,21 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install --legacy-peer-deps --no-audit --no-fund
+        # @emergentbase/visual-edits is served from a private host and is only
+        # used by the dev server (craco.config.js already guards for its
+        # absence). If the runner can't reach it, drop it and build anyway
+        # rather than failing the whole job on a tool the build doesn't use.
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund || {
+            echo "::warning::Install failed; retrying without @emergentbase/visual-edits"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              delete pkg.devDependencies['@emergentbase/visual-edits'];
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+            npm install --legacy-peer-deps --no-audit --no-fund
+          }
 
       - name: Build
         working-directory: frontend
