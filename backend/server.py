@@ -14,8 +14,18 @@ import bcrypt
 import httpx
 import jwt
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
+from fastapi import (
+    FastAPI,
+    APIRouter,
+    HTTPException,
+    Depends,
+    File,
+    Request,
+    Response,
+    UploadFile,
+)
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict
@@ -396,6 +406,8 @@ class CreatorProfile(BaseModel):
     name: str
     instagram_handle: Optional[str] = None
     instagram_profile_url: Optional[str] = None
+    # Set by the upload endpoint, not by the profile PUT — see upload_profile_image.
+    profile_image_url: Optional[str] = None
     email: Optional[EmailStr] = None
     city: Optional[str] = None
     address: Optional[str] = None
@@ -681,6 +693,118 @@ async def notify(
 # ---------------------------------------------------------------------------
 # Pricing
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Uploads
+# ---------------------------------------------------------------------------
+
+# Where uploaded files land. Served back out at /uploads by the static mount.
+# NOTE: this is local disk. On an ephemeral container it does not survive a
+# restart — point UPLOAD_DIR at a mounted volume, or swap _store_upload for
+# object storage, before relying on it in production.
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
+UPLOAD_URL_PREFIX = "/uploads"
+
+# Declared content types are client-controlled, so these are matched against
+# the file's actual leading bytes rather than the header.
+_IMAGE_SIGNATURES = (
+    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+    (b"GIF87a", "image/gif", ".gif"),
+    (b"GIF89a", "image/gif", ".gif"),
+)
+
+
+def max_upload_bytes() -> int:
+    try:
+        mb = float(os.environ.get("MAX_UPLOAD_MB", "5"))
+    except ValueError:
+        mb = 5.0
+    return int(max(0.1, min(mb, 25)) * 1024 * 1024)
+
+
+def sniff_image_type(head: bytes) -> Optional[tuple]:
+    """Identify an image from its leading bytes.
+
+    Returns (mime, extension) or None. WebP needs a two-part check: 'RIFF'
+    at 0 and 'WEBP' at 8.
+    """
+    for magic, mime, ext in _IMAGE_SIGNATURES:
+        if head.startswith(magic):
+            return mime, ext
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
+
+
+async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
+    """Validate and write an uploaded image. Returns (public_url, disk_path).
+
+    Reads in chunks so an oversized upload is rejected without first pulling the
+    whole thing into memory.
+    """
+    limit = max_upload_bytes()
+    chunk_size = 64 * 1024
+
+    first = await file.read(chunk_size)
+    if not first:
+        raise HTTPException(status_code=422, detail="That file is empty.")
+
+    sniffed = sniff_image_type(first)
+    if not sniffed:
+        raise HTTPException(
+            status_code=422,
+            detail="Please upload a JPEG, PNG, WebP or GIF image.",
+        )
+    mime, ext = sniffed
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    # The client's filename is never trusted — the extension comes from the
+    # bytes, and the stem is random so uploads can't be guessed or overwritten.
+    filename = f"{prefix}-{_secrets.token_urlsafe(16)}{ext}"
+    path = UPLOAD_DIR / filename
+
+    written = 0
+    try:
+        with open(path, "wb") as out:
+            chunk = first
+            while chunk:
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Images must be under {limit // (1024 * 1024)}MB.",
+                    )
+                out.write(chunk)
+                chunk = await file.read(chunk_size)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        path.unlink(missing_ok=True)
+        logger.error("upload write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save that image.")
+    finally:
+        await file.close()
+
+    logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
+    return f"{UPLOAD_URL_PREFIX}/{filename}", path
+
+
+def _delete_upload(public_url: Optional[str]) -> None:
+    """Remove a previously stored upload. Never raises — a leftover file is a
+    smaller problem than a failed request."""
+    if not public_url or not public_url.startswith(f"{UPLOAD_URL_PREFIX}/"):
+        return
+    name = public_url.rsplit("/", 1)[-1]
+    # Defend the directory boundary even though the name is generated by us.
+    if "/" in name or "\\" in name or name in ("", ".", ".."):
+        return
+    try:
+        (UPLOAD_DIR / name).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("could not delete upload %s: %s", name, exc)
 
 
 def platform_fee_percent() -> float:
@@ -1237,6 +1361,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "name": doc.get("name"),
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
+        "profile_image_url": doc.get("profile_image_url"),
         "email": doc.get("email"),
         "city": doc.get("city"),
         "address": doc.get("address"),
@@ -1306,6 +1431,51 @@ def _clean_payout_fields(payload) -> dict:
     return out
 
 
+@creator_router.post("/profile/image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles("creator")),
+):
+    """Upload the creator's profile photo.
+
+    Deliberately separate from PUT /profile: the field holds a path we issued,
+    so it is set by storing a file rather than by accepting a URL from the
+    client. Replacing a photo removes the old file.
+    """
+    profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    public_url, _path = await _store_upload(file, prefix=f"creator-{user['_id']}")
+
+    previous = profile.get("profile_image_url")
+    now = datetime.now(timezone.utc)
+    await db.creator_profiles.update_one(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": {"profile_image_url": public_url, "updated_at": now}},
+    )
+    # Only once the new one is safely recorded.
+    if previous and previous != public_url:
+        _delete_upload(previous)
+
+    return {"profile_image_url": public_url}
+
+
+@creator_router.delete("/profile/image")
+async def delete_profile_image(user: dict = Depends(require_roles("creator"))):
+    profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    previous = profile.get("profile_image_url")
+    await db.creator_profiles.update_one(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": {"profile_image_url": None, "updated_at": datetime.now(timezone.utc)}},
+    )
+    _delete_upload(previous)
+    return {"profile_image_url": None}
+
+
 @creator_router.get("/profile")
 async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     doc = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
@@ -1321,9 +1491,13 @@ async def update_creator_profile(
     user: dict = Depends(require_roles("creator")),
 ):
     # Normalise Instagram handle (strip leading @, lowercase, no whitespace).
-    handle = payload.instagram_handle.strip().lstrip("@").lower()
+    # Accepts "@name", "name" or a pasted profile URL and stores the bare handle.
+    handle = _extract_ig_handle(payload.instagram_handle)
     if not handle:
-        raise HTTPException(status_code=422, detail="Instagram handle is required")
+        raise HTTPException(
+            status_code=422,
+            detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
+        )
 
     existing = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not existing:
@@ -1441,19 +1615,19 @@ async def get_creator_dashboard(
         "name": (profile or {}).get("name") or user.get("name"),
         "instagram_handle": (profile or {}).get("instagram_handle"),
         "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+        "profile_image_url": (profile or {}).get("profile_image_url"),
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
         "niches": (profile or {}).get("niches") or [],
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
+        # Follower counts are the creator's own figure. The scraped source was
+        # removed — it breached Instagram's terms — so the number is labelled
+        # honestly rather than presented as measured.
+        "follower_count_source": "self_reported",
+        "verified_stats_available": False,
     }
-
-    # Attach cached Instagram stats if we have any for this handle.
-    ig_handle = _extract_ig_handle((profile or {}).get("instagram_handle") or "")
-    profile_summary["instagram_stats"] = (
-        await _load_cached_ig_stats(ig_handle) if ig_handle else None
-    )
 
     # All of this creator's collaborations, newest first.
     collabs = (
@@ -1645,17 +1819,19 @@ async def submit_collab_content(
 
 
 # ---------------------------------------------------------------------------
-# Instagram stats via Apify (server-only)
+# Instagram handle parsing
 # ---------------------------------------------------------------------------
-
-APIFY_ACTOR = "apify~instagram-profile-scraper"
-INSTAGRAM_STATS_TTL_SECONDS = 6 * 3600
-_HANDLE_URL_RE = re.compile(
-    r"(?:instagram\.com/)?@?([A-Za-z0-9._]{1,60})/?", re.IGNORECASE
-)
+#
+# The Apify Instagram scraper that used to live here has been removed: scraping
+# Instagram breaches their terms of service and put the connected Meta Business
+# account at risk. Follower counts are self-reported until an officially
+# permitted source is wired up.
+#
+# What survives is handle parsing, which is ours and touches no third party.
 
 
 def _extract_ig_handle(raw: str) -> Optional[str]:
+    """Normalise a pasted handle or profile URL down to the bare handle."""
     if not raw:
         return None
     raw = raw.strip().split("?")[0].rstrip("/")
@@ -1670,147 +1846,6 @@ def _extract_ig_handle(raw: str) -> Optional[str]:
     if not re.fullmatch(r"[a-z0-9._]{1,60}", raw):
         return None
     return raw
-
-
-def _apify_token() -> Optional[str]:
-    tok = os.environ.get("APIFY_API_TOKEN", "").strip()
-    return tok or None
-
-
-async def _fetch_instagram_from_apify(handle: str) -> dict:
-    """Call the Apify Instagram Profile Scraper actor synchronously."""
-    token = _apify_token()
-    if not token:
-        raise HTTPException(
-            status_code=503,
-            detail="Instagram stats aren't configured on this server yet.",
-        )
-    url = (
-        f"https://api.apify.com/v2/acts/{APIFY_ACTOR}"
-        f"/run-sync-get-dataset-items?token={token}&timeout=60"
-    )
-    payload = {"usernames": [handle]}
-    try:
-        async with httpx.AsyncClient(timeout=75.0) as client:
-            resp = await client.post(url, json=payload)
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Instagram fetch timed out. Please try again in a moment.",
-        )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Could not reach Instagram provider: {e}"
-        )
-
-    if resp.status_code == 401:
-        raise HTTPException(
-            status_code=500, detail="Invalid Instagram provider token."
-        )
-    if resp.status_code == 402:
-        raise HTTPException(
-            status_code=402,
-            detail="Instagram stats provider is out of credits. Please recharge.",
-        )
-    if resp.status_code == 429:
-        raise HTTPException(
-            status_code=429,
-            detail="Instagram stats provider rate limit hit. Try again shortly.",
-        )
-    if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Instagram provider error ({resp.status_code}).",
-        )
-
-    try:
-        data = resp.json()
-    except Exception:
-        raise HTTPException(status_code=502, detail="Invalid response from Instagram provider.")
-
-    if not isinstance(data, list) or not data:
-        raise HTTPException(
-            status_code=404,
-            detail="No public Instagram profile found for that handle.",
-        )
-
-    item = data[0]
-    # Apify sometimes returns an error item — flag it.
-    if isinstance(item, dict) and item.get("error"):
-        raise HTTPException(status_code=404, detail="Instagram profile not found or is private.")
-
-    return {
-        "handle": (item.get("username") or handle).lower(),
-        "full_name": item.get("fullName") or None,
-        "biography": item.get("biography") or None,
-        "profile_pic_url": item.get("profilePicUrlHD") or item.get("profilePicUrl"),
-        "followers_count": item.get("followersCount"),
-        "following_count": item.get("followsCount"),
-        "posts_count": item.get("postsCount"),
-        "verified": bool(item.get("verified", False)),
-        "is_private": bool(item.get("private", False)),
-        "business_category": item.get("businessCategoryName"),
-        "external_url": item.get("externalUrl"),
-    }
-
-
-async def _load_cached_ig_stats(handle: str) -> Optional[dict]:
-    doc = await db.instagram_stats_cache.find_one({"handle": handle})
-    if not doc:
-        return None
-    updated = doc.get("updated_at")
-    age = None
-    if isinstance(updated, datetime):
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=timezone.utc)
-        age = (datetime.now(timezone.utc) - updated).total_seconds()
-        doc["updated_at"] = updated.isoformat()
-    doc["_age_seconds"] = age
-    doc.pop("_id", None)
-    return doc
-
-
-async def _save_ig_stats(handle: str, stats: dict) -> dict:
-    now = datetime.now(timezone.utc)
-    doc = {**stats, "handle": handle, "updated_at": now}
-    await db.instagram_stats_cache.update_one(
-        {"handle": handle}, {"$set": doc}, upsert=True
-    )
-    doc["updated_at"] = now.isoformat()
-    doc["_age_seconds"] = 0
-    return doc
-
-
-async def _get_or_refresh_ig(handle: str, force: bool = False) -> dict:
-    if not force:
-        cached = await _load_cached_ig_stats(handle)
-        if cached and (cached.get("_age_seconds") or 0) < INSTAGRAM_STATS_TTL_SECONDS:
-            cached["from_cache"] = True
-            return cached
-    stats = await _fetch_instagram_from_apify(handle)
-    saved = await _save_ig_stats(handle, stats)
-    saved["from_cache"] = False
-    return saved
-
-
-@creator_router.get("/instagram-stats")
-async def get_instagram_stats(
-    refresh: bool = False,
-    user: dict = Depends(require_roles("creator")),
-):
-    profile = await db.creator_profiles.find_one(
-        {"user_id": ObjectId(user["_id"])}
-    )
-    raw = (profile or {}).get("instagram_handle") or (profile or {}).get(
-        "instagram_profile_url"
-    )
-    handle = _extract_ig_handle(raw or "")
-    if not handle:
-        raise HTTPException(
-            status_code=400,
-            detail="Add your Instagram handle on your profile first.",
-        )
-    return await _get_or_refresh_ig(handle, force=refresh)
 
 
 
@@ -2226,6 +2261,7 @@ def _serialize_applicant(
             "name": (profile or {}).get("name") or (creator_user or {}).get("name"),
             "instagram_handle": (profile or {}).get("instagram_handle"),
             "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+            "profile_image_url": (profile or {}).get("profile_image_url"),
             "city": (profile or {}).get("city"),
             "niches": (profile or {}).get("niches") or [],
             "follower_count": (profile or {}).get("follower_count"),
@@ -2617,6 +2653,7 @@ def _serialize_directory_creator(profile: dict) -> dict:
         "name": profile.get("name"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "niches": profile.get("niches") or [],
         "follower_count": profile.get("follower_count"),
@@ -2740,6 +2777,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "phone": user.get("phone"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "address": profile.get("address"),
         "niches": profile.get("niches") or [],
@@ -4772,6 +4810,16 @@ async def admin_ping(user: dict = Depends(require_roles("admin"))):
 
 app.include_router(api_router)
 
+# Uploaded images are served straight off disk. Mounted outside /api because
+# these are plain files, not API responses — the frontend joins the backend
+# origin with the stored path.
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    UPLOAD_URL_PREFIX,
+    StaticFiles(directory=str(UPLOAD_DIR)),
+    name="uploads",
+)
+
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
@@ -4948,6 +4996,22 @@ async def _startup():
     await db.creator_profiles.update_many(
         {"pending_review": {"$exists": False}}, {"$set": {"pending_review": False}}
     )
+
+    # The Apify scraper is gone, so nothing writes or reads this cache any more.
+    # It holds scraped Instagram data, which is exactly what we no longer want
+    # to be storing — but dropping a collection is not something startup should
+    # decide on its own, so this only says so.
+    try:
+        if "instagram_stats_cache" in await db.list_collection_names():
+            stale = await db.instagram_stats_cache.estimated_document_count()
+            logger.warning(
+                "instagram_stats_cache still holds ~%d scraped profile(s). Nothing "
+                "reads it now the Apify integration is removed — drop it with: "
+                "db.instagram_stats_cache.drop()",
+                stale,
+            )
+    except Exception as exc:  # a diagnostic must never block startup
+        logger.debug("could not inspect instagram_stats_cache: %s", exc)
 
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower().strip()
     admin_password = os.environ.get("ADMIN_PASSWORD", "")

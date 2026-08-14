@@ -484,3 +484,142 @@ class TestTermsConsent:
         # Consent has to be an act, not a default.
         assert server.RegisterInput.model_fields["accept_terms"].default is False
         assert server.OtpVerifyInput.model_fields["accept_terms"].default is False
+
+
+# ---------------------------------------------------------------------------
+# Profile image uploads. The declared content type comes from the client, so
+# the only thing that decides what a file is are its own leading bytes.
+# ---------------------------------------------------------------------------
+
+
+class TestUploadSniffing:
+    @pytest.mark.parametrize(
+        "head,expected",
+        [
+            (b"\xff\xd8\xff\xe0\x00\x10JFIF", ("image/jpeg", ".jpg")),
+            (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", ("image/png", ".png")),
+            (b"GIF87a\x01\x00", ("image/gif", ".gif")),
+            (b"GIF89a\x01\x00", ("image/gif", ".gif")),
+            (b"RIFF\x24\x00\x00\x00WEBPVP8 ", ("image/webp", ".webp")),
+        ],
+    )
+    def test_recognises_the_formats_creators_actually_upload(self, head, expected):
+        assert server.sniff_image_type(head) == expected
+
+    @pytest.mark.parametrize(
+        "head",
+        [
+            b"",
+            b"GIF",                              # truncated below the magic
+            b"%PDF-1.4",                         # a document renamed to .jpg
+            b"<?php system($_GET['c']); ?>",     # the one that matters
+            b"RIFF\x24\x00\x00\x00AVI LIST",     # RIFF, but not WebP
+            b"\x89PNG",                          # partial PNG magic
+        ],
+    )
+    def test_refuses_anything_that_is_not_an_image(self, head):
+        assert server.sniff_image_type(head) is None
+
+
+class TestUploadSizeLimit:
+    def test_defaults_to_five_megabytes(self, monkeypatch):
+        monkeypatch.delenv("MAX_UPLOAD_MB", raising=False)
+        assert server.max_upload_bytes() == 5 * 1024 * 1024
+
+    @pytest.mark.parametrize(
+        "raw,expected_mb",
+        [
+            ("2", 2),
+            ("25", 25),
+            ("400", 25),        # clamped down: disk is not free
+            ("0", 0.1),         # clamped up: zero would reject every upload
+            ("-3", 0.1),
+            ("not a number", 5),
+        ],
+    )
+    def test_environment_value_is_clamped_to_something_sane(
+        self, monkeypatch, raw, expected_mb
+    ):
+        monkeypatch.setenv("MAX_UPLOAD_MB", raw)
+        assert server.max_upload_bytes() == int(expected_mb * 1024 * 1024)
+
+
+class TestUploadDeletionStaysInsideItsDirectory:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            None,
+            "",
+            "https://cdn.example.com/evil.jpg",   # not ours
+            "/uploads/../../server.py",           # traversal
+            "/uploads/",
+            "/etc/passwd",
+        ],
+    )
+    def test_ignores_anything_it_did_not_write(self, url, tmp_path, monkeypatch):
+        monkeypatch.setattr(server, "UPLOAD_DIR", tmp_path)
+        victim = tmp_path.parent / "server.py"
+        victim.write_text("do not delete me")
+        server._delete_upload(url)
+        assert victim.exists()
+
+    def test_deletes_a_file_it_did_write(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(server, "UPLOAD_DIR", tmp_path)
+        stored = tmp_path / "creator-abc123.jpg"
+        stored.write_bytes(b"\xff\xd8\xff")
+        server._delete_upload("/uploads/creator-abc123.jpg")
+        assert not stored.exists()
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(server, "UPLOAD_DIR", tmp_path)
+        server._delete_upload("/uploads/creator-gone.jpg")  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# The Instagram scraper is gone. Scraping breached Instagram's terms and put
+# the connected Meta Business account at risk, so this guards against it
+# quietly reappearing — including via a new client or a renamed helper.
+# ---------------------------------------------------------------------------
+
+
+class TestNoInstagramScraper:
+    SOURCE = None
+
+    @classmethod
+    def setup_class(cls):
+        cls.SOURCE = (server.ROOT_DIR / "server.py").read_text()
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "_fetch_instagram_from_apify",
+            "_apify_token",
+            "APIFY_ACTOR",
+            "_get_or_refresh_ig",
+            "_load_cached_ig_stats",
+            "_save_ig_stats",
+            "INSTAGRAM_STATS_TTL_SECONDS",
+        ],
+    )
+    def test_the_scraper_symbols_are_gone(self, name):
+        assert not hasattr(server, name)
+
+    def test_no_route_serves_scraped_stats(self):
+        paths = {getattr(r, "path", "") for r in server.app.routes}
+        assert not any("instagram-stats" in p for p in paths)
+
+    def test_nothing_calls_a_scraping_service(self):
+        # The word may only survive in the comment explaining the removal and
+        # in the startup warning about the orphaned cache.
+        allowed = ("removed", "breach", "cache", "drop", "gone", "scraper")
+        for n, line in enumerate(self.SOURCE.splitlines(), 1):
+            low = line.lower()
+            if "apify" not in low:
+                continue
+            assert low.lstrip().startswith("#") or any(a in low for a in allowed), (
+                f"server.py:{n} looks like live Apify code: {line.strip()!r}"
+            )
+
+    def test_follower_counts_are_labelled_self_reported(self):
+        # A number presented without provenance reads as measured. It isn't.
+        assert '"follower_count_source": "self_reported"' in self.SOURCE

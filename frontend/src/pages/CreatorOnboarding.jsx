@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -11,9 +11,11 @@ import {
     X,
     ShieldCheck,
     Wallet,
+    Upload,
+    Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,9 @@ const SUGGESTED_CITIES = [
 
 const normalise = (v) => v.trim().toLowerCase().replace(/\s+/g, " ");
 
+// Mirrors MAX_UPLOAD_MB on the server; checked here only to fail fast.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 export default function CreatorOnboarding() {
     const { user, refresh } = useAuth();
     const navigate = useNavigate();
@@ -76,6 +81,10 @@ export default function CreatorOnboarding() {
     const [payoutAccountName, setPayoutAccountName] = useState("");
     const [pan, setPan] = useState("");
     const [gstin, setGstin] = useState("");
+    const [profileImageUrl, setProfileImageUrl] = useState(null);
+    const [imageBusy, setImageBusy] = useState(false);
+    const [imageError, setImageError] = useState("");
+    const fileInputRef = useRef(null);
     const [verificationStatus, setVerificationStatus] = useState("pending");
 
     // Prefill from the existing stub / previous submission.
@@ -107,6 +116,7 @@ export default function CreatorOnboarding() {
                 setPan(data.pan || "");
                 setGstin(data.gstin || "");
                 setVerificationStatus(data.verification_status || "pending");
+                setProfileImageUrl(data.profile_image_url || null);
             } catch (e) {
                 setError(formatApiError(e));
             } finally {
@@ -148,6 +158,54 @@ export default function CreatorOnboarding() {
         () => SUGGESTED_NICHES.filter((s) => !niches.includes(s)),
         [niches],
     );
+
+    // The photo saves on its own, not with the form — a file upload is a
+    // different kind of write, and it shouldn't be lost if the form is
+    // abandoned or fails validation.
+    const onPickImage = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ""; // let the same file be re-picked after an error
+        if (!file) return;
+
+        setImageError("");
+        if (!file.type.startsWith("image/")) {
+            setImageError("Please choose an image file.");
+            return;
+        }
+        if (file.size > MAX_IMAGE_BYTES) {
+            setImageError("That image is over 5MB. Try a smaller one.");
+            return;
+        }
+
+        const body = new FormData();
+        body.append("file", file);
+        setImageBusy(true);
+        try {
+            // Let the browser set the multipart boundary.
+            const { data } = await api.post("/creator/profile/image", body, {
+                headers: { "Content-Type": undefined },
+            });
+            setProfileImageUrl(data.profile_image_url);
+            toast.success("Photo updated");
+        } catch (err) {
+            setImageError(formatApiError(err));
+        } finally {
+            setImageBusy(false);
+        }
+    };
+
+    const onRemoveImage = async () => {
+        setImageError("");
+        setImageBusy(true);
+        try {
+            await api.delete("/creator/profile/image");
+            setProfileImageUrl(null);
+        } catch (err) {
+            setImageError(formatApiError(err));
+        } finally {
+            setImageBusy(false);
+        }
+    };
 
     const onSubmit = async (e) => {
         e.preventDefault();
@@ -221,6 +279,83 @@ export default function CreatorOnboarding() {
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             Basics
                         </p>
+
+                        {/* Photo — saves immediately, separate from the form. */}
+                        <div className="flex flex-wrap items-center gap-5">
+                            <div
+                                data-testid="onboarding-photo-preview"
+                                className="grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-white/10 bg-card/60"
+                            >
+                                {profileImageUrl ? (
+                                    <img
+                                        src={mediaUrl(profileImageUrl)}
+                                        alt="Your profile"
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Profile photo
+                                </Label>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp,image/gif"
+                                        onChange={onPickImage}
+                                        data-testid="onboarding-photo-input"
+                                        className="hidden"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={imageBusy}
+                                        data-testid="onboarding-photo-upload-btn"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                    >
+                                        {imageBusy ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Uploading…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="mr-2 h-4 w-4" />
+                                                {profileImageUrl ? "Replace photo" : "Upload photo"}
+                                            </>
+                                        )}
+                                    </Button>
+                                    {profileImageUrl && (
+                                        <button
+                                            type="button"
+                                            disabled={imageBusy}
+                                            onClick={onRemoveImage}
+                                            data-testid="onboarding-photo-remove-btn"
+                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-red-300 disabled:opacity-40"
+                                        >
+                                            Remove
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    JPEG, PNG, WebP or GIF, up to 5MB. Brands see this on
+                                    your card in the directory.
+                                </p>
+                                {imageError && (
+                                    <p
+                                        data-testid="onboarding-photo-error"
+                                        className="mt-2 text-xs text-destructive"
+                                    >
+                                        {imageError}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
                         <div>
                             <Label htmlFor="name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                                 Full name

@@ -9,6 +9,19 @@ export const api = axios.create({
     headers: { "Content-Type": "application/json" },
 });
 
+/**
+ * Resolve a stored media path to a URL the browser can load.
+ *
+ * Uploads are stored as origin-relative paths ("/uploads/xyz.jpg") so the
+ * record survives the backend moving host. Absolute URLs pass through
+ * untouched, which keeps this working if storage moves to a CDN later.
+ */
+export function mediaUrl(path) {
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) return path;
+    return `${BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 export function formatApiError(err) {
     const detail = err?.response?.data?.detail;
     if (detail == null) return err?.message || "Something went wrong.";
