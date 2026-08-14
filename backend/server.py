@@ -382,6 +382,10 @@ ADMIN_ACTION_STATES = (
 # A campaign in one of these states is visible on the creator feed.
 LIVE_CAMPAIGN_STATUSES = ("open", "upcoming")
 
+# Still running, from the brand's point of view: taking applications or
+# mid-delivery. Wider than LIVE_CAMPAIGN_STATUSES, which is about the feed.
+ACTIVE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
+
 
 class CreatorProfile(BaseModel):
     """Collection: creator_profiles (1:1 with users where role='creator')."""
@@ -3283,14 +3287,250 @@ async def reject_creator(
 # --- Brand verification (GAP 5) --------------------------------------------
 
 
-@admin_router.get("/brands")
-async def list_brands_for_review(
-    unverified_only: bool = True,
+@admin_router.get("/campaigns")
+async def list_all_campaigns(
+    brand_id: Optional[str] = None,
+    status: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    date_field: str = "created_at",  # created_at | start_date | end_date
+    q: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 25,
     user: dict = Depends(require_roles("admin")),
 ):
-    """Brands awaiting review. The landing page promises both sides are checked;
-    until this existed only one side was."""
+    """Every campaign in every state, closed and draft included.
+
+    The creator feed is deliberately narrow — `list_campaigns` still only shows
+    LIVE_CAMPAIGN_STATUSES, and that is unchanged. This is the admin's view of
+    the same collection, which has to include what the feed hides.
+    """
+    page = max(1, int(page or 1))
+    page_size = max(1, min(int(page_size or 25), 100))
+
+    if date_field not in ("created_at", "start_date", "end_date"):
+        raise HTTPException(
+            status_code=422,
+            detail="date_field must be created_at, start_date or end_date.",
+        )
+
+    match: dict = {}
+    if status:
+        if status not in CampaignStatus.__args__:
+            raise HTTPException(
+                status_code=422,
+                detail=f"status must be one of: {', '.join(CampaignStatus.__args__)}.",
+            )
+        match["status"] = status
+    if brand_id:
+        try:
+            match["brand_id"] = ObjectId(brand_id)
+        except Exception:
+            raise HTTPException(status_code=422, detail="brand_id is not a valid id.")
+    if date_from or date_to:
+        window: dict = {}
+        if date_from:
+            window["$gte"] = date_from
+        if date_to:
+            window["$lte"] = date_to
+        match[date_field] = window
+    if q:
+        term = re.escape(q.strip()[:120])
+        match["title"] = {"$regex": term, "$options": "i"}
+
+    pipeline: list = []
+    if match:
+        pipeline.append({"$match": match})
+    pipeline += [
+        {"$sort": {"created_at": -1}},
+        {
+            "$facet": {
+                "rows": [{"$skip": (page - 1) * page_size}, {"$limit": page_size}],
+                "total": [{"$count": "n"}],
+            }
+        },
+    ]
+
+    result = await db.campaigns.aggregate(pipeline).to_list(length=1)
+    facet = result[0] if result else {}
+    docs = facet.get("rows") or []
+    total_rows = facet.get("total") or []
+    total = total_rows[0]["n"] if total_rows else 0
+
+    campaign_ids = [d["_id"] for d in docs]
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+
+    # Everyone who is or was on these campaigns, in one grouped pipeline rather
+    # than a query per campaign.
+    collaborators: dict = {}
+    if campaign_ids:
+        async for row in db.collaborations.aggregate(
+            [
+                {"$match": {"campaign_id": {"$in": campaign_ids}}},
+                {"$sort": {"created_at": 1}},
+                {
+                    "$lookup": {
+                        "from": "creator_profiles",
+                        "localField": "creator_id",
+                        "foreignField": "user_id",
+                        "as": "profile",
+                    }
+                },
+                {"$addFields": {"profile": {"$arrayElemAt": ["$profile", 0]}}},
+                {
+                    "$lookup": {
+                        "from": "payments",
+                        "localField": "_id",
+                        "foreignField": "collaboration_id",
+                        "as": "payment",
+                    }
+                },
+                {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+                {
+                    "$group": {
+                        "_id": "$campaign_id",
+                        "creators": {
+                            "$push": {
+                                "collaboration_id": "$_id",
+                                "creator_id": "$creator_id",
+                                "name": "$profile.name",
+                                "instagram_handle": "$profile.instagram_handle",
+                                "state": "$state",
+                                "quoted_rate": "$quoted_rate",
+                                "agreed_amount": "$agreed_amount",
+                                "scheduled_at": "$scheduled_at",
+                                "payment_state": "$payment.state",
+                            }
+                        },
+                    }
+                },
+            ]
+        ):
+            collaborators[row["_id"]] = row["creators"]
+
+    campaigns = []
+    for d in docs:
+        brand = brand_map.get(d["brand_id"]) or {}
+        rows = collaborators.get(d["_id"], [])
+        creators = [
+            {
+                "collaboration_id": str(c["collaboration_id"]),
+                "creator_id": str(c["creator_id"]),
+                "name": c.get("name"),
+                "instagram_handle": c.get("instagram_handle"),
+                "state": c.get("state"),
+                "quoted_rate": c.get("quoted_rate"),
+                "agreed_amount": c.get("agreed_amount"),
+                "scheduled_at": _iso(c.get("scheduled_at")),
+                "payment_state": c.get("payment_state"),
+            }
+            for c in rows
+        ]
+        needed = int(d.get("creators_needed") or 1)
+        filled = sum(1 for c in creators if c["state"] in _FILLED_COLLAB_STATES)
+        campaigns.append(
+            {
+                "id": str(d["_id"]),
+                "brand_id": str(d["brand_id"]),
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "title": d.get("title"),
+                "brief": d.get("brief"),
+                "deliverables": d.get("deliverables"),
+                "budget_per_creator": d.get("budget_per_creator"),
+                "category": d.get("category"),
+                "area": d.get("area"),
+                "status": d.get("status"),
+                "creators_needed": needed,
+                "filled_slots": filled,
+                "applicant_count": len(creators),
+                "start_date": _iso(d.get("start_date")),
+                "end_date": _iso(d.get("end_date")),
+                "created_at": _iso(d.get("created_at")),
+                # Everyone who is or was part of it, declined included.
+                "creators": creators,
+            }
+        )
+
+    return {
+        "campaigns": campaigns,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": (total + page_size - 1) // page_size if page_size else 0,
+    }
+
+
+async def _brand_spend_map(brand_ids: list) -> dict:
+    """What each brand has actually paid, in one round trip.
+
+    Walks payments → collaborations → campaigns inside the pipeline. Older
+    payment rows predate `brand_invoice_amount`, so it falls back to the payout
+    plus our fee, which is the same number by construction.
+    """
+    if not brand_ids:
+        return {}
+    rows = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {
+                "$lookup": {
+                    "from": "campaigns",
+                    "localField": "collab.campaign_id",
+                    "foreignField": "_id",
+                    "as": "campaign",
+                }
+            },
+            {"$addFields": {"campaign": {"$arrayElemAt": ["$campaign", 0]}}},
+            {"$match": {"campaign.brand_id": {"$in": list(brand_ids)}}},
+            {
+                "$group": {
+                    "_id": "$campaign.brand_id",
+                    "spend": {
+                        "$sum": {
+                            "$ifNull": [
+                                "$brand_invoice_amount",
+                                {
+                                    "$add": [
+                                        {"$ifNull": ["$creator_payout", 0]},
+                                        {"$ifNull": ["$platform_fee", 0]},
+                                    ]
+                                },
+                            ]
+                        }
+                    },
+                    "paid_collaborations": {"$sum": 1},
+                }
+            },
+        ]
+    ).to_list(length=len(brand_ids) + 1)
+    return {r["_id"]: r for r in rows}
+
+
+@admin_router.get("/brands")
+async def list_brands_for_review(
+    unverified_only: bool = False,
+    q: Optional[str] = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Every brand, with what they've run and what they've spent.
+
+    `unverified_only=true` narrows this to the verification queue — which is how
+    the admin console's "Brands to verify" section calls it.
+    """
     query: dict = {"verified": False} if unverified_only else {}
+    if q:
+        term = re.escape(q.strip()[:120])
+        query["business_name"] = {"$regex": term, "$options": "i"}
+
     profiles = (
         await db.brand_profiles.find(query)
         .sort("created_at", -1)
@@ -3298,20 +3538,42 @@ async def list_brands_for_review(
     )
     if not profiles:
         return []
+
     user_ids = [p["user_id"] for p in profiles]
     users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
     users_by_id = {u["_id"]: u for u in users}
-    campaign_counts = await db.campaigns.aggregate(
+
+    # Total and active campaign counts in a single grouped pass.
+    counts: dict = {}
+    async for row in db.campaigns.aggregate(
         [
             {"$match": {"brand_id": {"$in": user_ids}}},
-            {"$group": {"_id": "$brand_id", "n": {"$sum": 1}}},
+            {
+                "$group": {
+                    "_id": "$brand_id",
+                    "total": {"$sum": 1},
+                    "active": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$status", list(ACTIVE_CAMPAIGN_STATUSES)]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                }
+            },
         ]
-    ).to_list(length=len(user_ids))
-    counts = {c["_id"]: c["n"] for c in campaign_counts}
+    ):
+        counts[row["_id"]] = row
+
+    spend = await _brand_spend_map(user_ids)
 
     out = []
     for p in profiles:
         u = users_by_id.get(p["user_id"], {})
+        c = counts.get(p["user_id"]) or {}
+        s = spend.get(p["user_id"]) or {}
         out.append(
             {
                 "user_id": str(p["user_id"]),
@@ -3321,7 +3583,12 @@ async def list_brands_for_review(
                 "verified": bool(p.get("verified", False)),
                 "email": u.get("email"),
                 "phone": u.get("phone"),
-                "campaign_count": counts.get(p["user_id"], 0),
+                "status": u.get("status"),
+                "campaign_count": c.get("total", 0),
+                # Still taking applications or mid-delivery.
+                "active_campaign_count": c.get("active", 0),
+                "total_spend": round(float(s.get("spend", 0) or 0), 2),
+                "paid_collaborations": s.get("paid_collaborations", 0),
                 "created_at": _iso(p.get("created_at")),
             }
         )

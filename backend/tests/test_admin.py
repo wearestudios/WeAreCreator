@@ -57,6 +57,14 @@ def brand():
     return s, email
 
 
+@pytest.fixture
+def brand_2():
+    """A second, unrelated brand — for asserting one brand's data stays its own."""
+    s = requests.Session()
+    email, user = _register(s, "brand")
+    return s, email
+
+
 def _complete_creator(s, handle_suffix=None):
     return pipeline.complete_creator_profile(s, suffix=handle_suffix)
 
@@ -577,7 +585,10 @@ class TestBrandVerification:
                 "areas": ["Indiranagar"],
             },
         )
-        rows = admin.get(f"{BASE_URL}/admin/brands").json()
+        # The default now returns every brand, so the verification queue has to
+        # be asked for explicitly.
+        queue = {"unverified_only": True}
+        rows = admin.get(f"{BASE_URL}/admin/brands", params=queue).json()
         row = next((x for x in rows if x["email"] == bemail), None)
         assert row is not None, "a new brand should be waiting for verification"
         assert row["verified"] is False
@@ -586,8 +597,13 @@ class TestBrandVerification:
         assert r.status_code == 200
         assert r.json()["verified"] is True
 
-        rows2 = admin.get(f"{BASE_URL}/admin/brands").json()
+        rows2 = admin.get(f"{BASE_URL}/admin/brands", params=queue).json()
         assert not any(x["email"] == bemail for x in rows2)
+
+        # …but it's still on the full roster.
+        everyone = admin.get(f"{BASE_URL}/admin/brands").json()
+        listed = next(x for x in everyone if x["email"] == bemail)
+        assert listed["verified"] is True
 
     def test_brand_endpoints_are_admin_only(self, creator, brand, anon):
         cs, _, _ = creator
@@ -887,3 +903,224 @@ class TestMetricsOversight:
             >= before["awaiting_breakdown"]["applicants_to_verify"] + 1
         )
         assert after["awaiting_admin_action"] > before["awaiting_admin_action"]
+
+
+# ---------- 10. Campaign and brand oversight ----------
+
+class TestCampaignOversight:
+    """GET /admin/campaigns — the creator feed hides closed and draft briefs;
+    the admin has to be able to see them."""
+
+    def test_admin_only(self, creator, brand, anon):
+        cs, _, _ = creator
+        bs, _ = brand
+        assert anon.get(f"{BASE_URL}/admin/campaigns").status_code == 401
+        assert cs.get(f"{BASE_URL}/admin/campaigns").status_code == 403
+        assert bs.get(f"{BASE_URL}/admin/campaigns").status_code == 403
+
+    def _seed(self, bs, status="open", **overrides):
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+            "category": "fnb", "areas": ["Indiranagar"],
+        })
+        body = {
+            "title": f"Oversight-{uuid.uuid4().hex[:6]}", "brief": "b",
+            "deliverables": "d", "budget_per_creator": 5000, "category": "fnb",
+            "area": "Indiranagar", "creators_needed": 2, "status": status,
+        }
+        body.update(overrides)
+        r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def _ids(self, admin, **params):
+        r = admin.get(f"{BASE_URL}/admin/campaigns", params={"page_size": 100, **params})
+        assert r.status_code == 200, r.text
+        return {c["id"] for c in r.json()["campaigns"]}
+
+    def test_shows_draft_and_closed_which_the_feed_hides(self, admin, brand, creator):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        draft = self._seed(bs, status="draft")
+        live = self._seed(bs, status="open")
+        bs.post(f"{BASE_URL}/brand/campaigns/{live['id']}/close", json={"reason": "done"})
+
+        visible = self._ids(admin)
+        assert draft["id"] in visible, "draft campaigns must be visible to an admin"
+        assert live["id"] in visible, "closed campaigns must be visible to an admin"
+
+        # And the creator feed is unchanged — still only live briefs.
+        pipeline.complete_creator_profile(cs)
+        pipeline.verify_creator(admin, cuid)
+        feed = {c["id"] for c in cs.get(f"{BASE_URL}/campaigns").json()}
+        assert draft["id"] not in feed
+        assert live["id"] not in feed
+
+    def test_filter_by_status_and_brand(self, admin, brand, brand_2):
+        bs, _ = brand
+        bs2, _ = brand_2
+        mine_draft = self._seed(bs, status="draft")
+        mine_open = self._seed(bs, status="open")
+        theirs = self._seed(bs2, status="open")
+
+        drafts = self._ids(admin, status="draft")
+        assert mine_draft["id"] in drafts
+        assert mine_open["id"] not in drafts
+
+        row = next(
+            c for c in admin.get(
+                f"{BASE_URL}/admin/campaigns",
+                params={"page_size": 100, "status": "draft"},
+            ).json()["campaigns"] if c["id"] == mine_draft["id"]
+        )
+        by_brand = self._ids(admin, brand_id=row["brand_id"])
+        assert mine_draft["id"] in by_brand and mine_open["id"] in by_brand
+        assert theirs["id"] not in by_brand
+
+    def test_rejects_unknown_status_brand_and_date_field(self, admin):
+        assert admin.get(
+            f"{BASE_URL}/admin/campaigns", params={"status": "archived"}
+        ).status_code == 422
+        assert admin.get(
+            f"{BASE_URL}/admin/campaigns", params={"brand_id": "not-an-id"}
+        ).status_code == 422
+        assert admin.get(
+            f"{BASE_URL}/admin/campaigns", params={"date_field": "whenever"}
+        ).status_code == 422
+
+    def test_date_range_filters(self, admin, brand):
+        bs, _ = brand
+        c = self._seed(bs, status="open")
+        # A window that ends before anything was created excludes it…
+        assert c["id"] not in self._ids(admin, date_to="2020-01-01T00:00:00Z")
+        # …and one that starts before now includes it.
+        assert c["id"] in self._ids(admin, date_from="2020-01-01T00:00:00Z")
+
+    def test_row_carries_brand_name_and_its_creators(self, admin, brand, creator):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, campaign_id = pipeline.make_collab_in_state(
+            admin, bs, cs, cuid, "commercial_agreed"
+        )
+
+        row = next(
+            c for c in admin.get(
+                f"{BASE_URL}/admin/campaigns", params={"page_size": 100}
+            ).json()["campaigns"] if c["id"] == campaign_id
+        )
+        assert row["brand_name"], "brand name missing"
+        who = next(x for x in row["creators"] if x["collaboration_id"] == collab_id)
+        assert who["creator_id"] == cuid
+        assert who["name"]
+        assert who["state"] == "commercial_agreed"
+        assert who["agreed_amount"] == 8500
+        assert row["filled_slots"] >= 1
+
+    def test_declined_creators_are_still_listed(self, admin, brand, creator):
+        """"who are or were part of it" — a decline is part of the history."""
+        bs, _ = brand
+        cs, cuid, _ = creator
+        collab_id, campaign_id = pipeline.make_collab_in_state(
+            admin, bs, cs, cuid, "verified"
+        )
+        bs.post(f"{BASE_URL}/brand/collaborations/{collab_id}/decline", json={})
+
+        row = next(
+            c for c in admin.get(
+                f"{BASE_URL}/admin/campaigns", params={"page_size": 100}
+            ).json()["campaigns"] if c["id"] == campaign_id
+        )
+        who = next(x for x in row["creators"] if x["collaboration_id"] == collab_id)
+        assert who["state"] == "declined"
+        # …but not counted as filling a slot.
+        assert row["filled_slots"] == 0
+
+    def test_pagination(self, admin):
+        first = admin.get(
+            f"{BASE_URL}/admin/campaigns", params={"page": 1, "page_size": 2}
+        ).json()
+        assert first["page"] == 1 and first["page_size"] == 2
+        assert len(first["campaigns"]) <= 2
+        if first["total"] > 2:
+            second = admin.get(
+                f"{BASE_URL}/admin/campaigns", params={"page": 2, "page_size": 2}
+            ).json()
+            ids1 = {c["id"] for c in first["campaigns"]}
+            ids2 = {c["id"] for c in second["campaigns"]}
+            assert not (ids1 & ids2), "pages overlap"
+
+
+class TestBrandOversight:
+    """GET /admin/brands — the roster, not just the verification queue."""
+
+    def test_lists_verified_brands_too(self, admin, brand):
+        bs, bemail = brand
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+            "category": "fnb", "areas": ["Indiranagar"],
+        })
+        row = next(
+            x for x in admin.get(f"{BASE_URL}/admin/brands").json()
+            if x["email"] == bemail
+        )
+        admin.post(f"{BASE_URL}/admin/brands/{row['user_id']}/verify")
+
+        after = next(
+            x for x in admin.get(f"{BASE_URL}/admin/brands").json()
+            if x["email"] == bemail
+        )
+        assert after["verified"] is True
+        for field in ["campaign_count", "active_campaign_count", "total_spend"]:
+            assert field in after, f"missing {field}"
+
+    def test_counts_and_spend(self, admin, brand, creator):
+        bs, bemail = brand
+        cs, cuid, _ = creator
+
+        def row():
+            return next(
+                x for x in admin.get(f"{BASE_URL}/admin/brands").json()
+                if x["email"] == bemail
+            )
+
+        collab_id, _ = pipeline.make_collab_in_state(admin, bs, cs, cuid, "in_payment")
+        mid = row()
+        assert mid["campaign_count"] >= 1
+        assert mid["active_campaign_count"] >= 1
+        assert mid["total_spend"] == 0, "nothing is spent until a payout is recorded"
+
+        board = admin.get(f"{BASE_URL}/admin/collaborations").json()["by_state"]
+        payment = next(x["payment"] for x in board["in_payment"] if x["id"] == collab_id)
+        admin.post(
+            f"{BASE_URL}/admin/payments/{payment['id']}/mark_paid",
+            json={"payment_reference": f"UTR{uuid.uuid4().hex[:10].upper()}"},
+        )
+
+        after = row()
+        # Spend is what the brand pays: the creator's fee plus our margin.
+        assert after["total_spend"] == pytest.approx(
+            payment["creator_payout"] + payment["platform_fee"], abs=0.01
+        )
+        assert after["paid_collaborations"] >= 1
+
+    def test_closed_campaigns_are_not_active(self, admin, brand):
+        bs, bemail = brand
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+            "category": "fnb", "areas": ["Indiranagar"],
+        })
+        c = bs.post(f"{BASE_URL}/brand/campaigns", json={
+            "title": f"C-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 1, "status": "open",
+        }).json()
+
+        def active():
+            return next(
+                x for x in admin.get(f"{BASE_URL}/admin/brands").json()
+                if x["email"] == bemail
+            )["active_campaign_count"]
+
+        before = active()
+        bs.post(f"{BASE_URL}/brand/campaigns/{c['id']}/close", json={})
+        assert active() == before - 1

@@ -147,6 +147,27 @@ class TestCreatorHistoryGroups:
         assert "cancelled" not in server.COLLAB_GROUP_COMPLETED
 
 
+class TestCampaignVisibility:
+    """The creator feed and the admin view answer different questions, and the
+    admin one must never narrow to the feed's rule."""
+
+    def test_the_feed_stays_narrow(self):
+        assert server.LIVE_CAMPAIGN_STATUSES == ("open", "upcoming")
+        assert server._LIVE_STATUSES == server.LIVE_CAMPAIGN_STATUSES
+
+    def test_active_is_wider_than_live_but_excludes_finished_work(self):
+        active = set(server.ACTIVE_CAMPAIGN_STATUSES)
+        assert set(server.LIVE_CAMPAIGN_STATUSES) < active, (
+            "a campaign mid-delivery is still active even though the feed hides it"
+        )
+        for finished in ("closed", "completed", "draft"):
+            assert finished not in active
+
+    def test_every_active_status_is_a_real_campaign_status(self):
+        for status in server.ACTIVE_CAMPAIGN_STATUSES:
+            assert status in server.CampaignStatus.__args__
+
+
 class TestAdminActionQueue:
     def test_only_states_the_admin_can_actually_move(self):
         # `attended` waits on the creator and `content_submitted` on the brand,
