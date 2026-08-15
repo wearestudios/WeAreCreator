@@ -3,8 +3,8 @@
 // Three things shape it. It is an endorsed sub-brand — WeAre Creators is an
 // offering of WeAre Studios, so the studio is credited in the nav and the
 // footer and nowhere else; the ember identity stays Creators'. The hero is a
-// slider because the product runs four quite different kinds of campaign and
-// one still photograph can only argue for one of them. And the geography is
+// slider because creators sign up from every category and one still
+// photograph can only argue for one of them. And the geography is
 // stated plainly: the network is deepest in Bengaluru, that is where the work
 // is today, and signing up is open to anyone in India.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,42 +43,55 @@ import { StudioEndorsement } from "@/components/StudioEndorsement";
 // Hero deck
 // ---------------------------------------------------------------------------
 //
-// Four slides, one per campaign type we actually run. Only the photograph and
-// the headline change between them — the eyebrow, the subheading, both CTAs
-// and the stats are fixed, so the page never appears to be selling four
-// different products.
+// Five slides, spanning the categories creators actually sign up from. The
+// deck used to be four food shots, which quietly told a beauty or tech creator
+// this wasn't for them — the range is the argument, so the deck has to carry
+// it. Only the photograph and the headline change between slides; the eyebrow,
+// the subheading, both CTAs and the stats are fixed, so the page never appears
+// to be selling five different products.
+//
+// Each headline names the outcome the brand is buying in that category, not
+// the shoot. That keeps them specific without any of them being generic.
 const SLIDES = [
     {
         key: "launch",
-        kicker: "Launch night",
-        headline: ["A room full of people", "on opening night."],
+        kicker: "Restaurant launch",
+        headline: ["A full room", "on opening night."],
         image:
             "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=2000&q=80",
-        alt: "A busy bar on a launch night",
+        alt: "A busy restaurant on its launch night",
     },
     {
-        key: "brunch",
-        kicker: "Café brunch",
-        headline: ["The brunch that books out", "the following weekend."],
+        key: "fashion",
+        kicker: "Fashion & beauty",
+        headline: ["The lookbook that moves", "the whole collection."],
         image:
-            "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&fit=crop&w=2000&q=80",
-        alt: "A brunch table laid out at a café",
+            "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=2000&q=80",
+        alt: "A fashion shoot on a studio rail",
     },
     {
-        key: "bakery",
-        kicker: "Bakery opening",
-        headline: ["A queue down the street", "before the ovens cool."],
+        key: "travel",
+        kicker: "Hotels & travel",
+        headline: ["Two nights away.", "A season of bookings."],
         image:
-            "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=2000&q=80",
-        alt: "Fresh bread and pastries at a bakery counter",
+            "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=2000&q=80",
+        alt: "A hotel room opening onto a balcony",
     },
     {
-        key: "tasting",
-        kicker: "Group tasting",
-        headline: ["Ten creators, one table,", "one afternoon."],
+        key: "tech",
+        kicker: "Tech & gadgets",
+        headline: ["The review people", "actually watch to the end."],
         image:
-            "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=2000&q=80",
-        alt: "A long table set for a group tasting",
+            "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=2000&q=80",
+        alt: "A desk of gadgets set up for a review",
+    },
+    {
+        key: "fitness",
+        kicker: "Fitness & wellness",
+        headline: ["One class filmed.", "Six weeks booked out."],
+        image:
+            "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=2000&q=80",
+        alt: "A fitness class mid-session",
     },
 ];
 
@@ -109,7 +122,7 @@ const STEPS = [
         n: "02",
         Icon: Compass,
         title: "Discover briefs",
-        body: "Live paid campaigns from cafés, restaurants, retail, real estate, fashion, travel and hotels.",
+        body: "Paid campaigns from brands across fashion, beauty, food, travel, tech, fitness and retail. You see the deliverable and the fee before you pitch.",
     },
     {
         n: "03",
@@ -129,7 +142,7 @@ const TRUST_POINTS = [
     {
         Icon: IndianRupee,
         title: "Fixed, upfront budgets",
-        body: "See the fee before you pitch. No opaque negotiations, no bartered meals.",
+        body: "See the fee before you pitch. No opaque negotiations, and no free product or \"exposure\" standing in for money.",
     },
     {
         Icon: ShieldCheck,
@@ -814,7 +827,20 @@ function ClosingCta() {
 
 export default function Landing() {
     const verticals = useMemo(
-        () => ["F&B", "Hotels", "Retail", "Real Estate", "Fashion", "Travel", "Wellness"],
+        // One label per campaign category the server accepts (fnb, hospitality,
+        // retail, real_estate, fashion, travel, wellness, lifestyle), worded the
+        // way a brand would say it. A brief can only be filed under one of
+        // these, so nothing here promises a vertical the product can't express.
+        () => [
+            "Fashion",
+            "Beauty & Wellness",
+            "Food & Drink",
+            "Hotels",
+            "Travel",
+            "Retail",
+            "Real Estate",
+            "Lifestyle",
+        ],
         [],
     );
 
@@ -967,14 +993,14 @@ export default function Landing() {
                             </h2>
                         </div>
                         <p className="text-sm leading-relaxed text-muted-foreground md:col-span-4">
-                            Whether you're a café in Indiranagar, a hotel off Church
-                            Street or a launch out in Whitefield — post a brief and
-                            shortlist creators yourself, or hand it to us and we'll
-                            take it from brief to reporting.
+                            A label launching a collection, a studio filling classes,
+                            a hotel with rooms to sell, a restaurant opening its doors
+                            — post a brief and shortlist creators yourself, or hand it
+                            to us and we'll take it from brief to reporting.
                         </p>
                     </div>
 
-                    <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+                    <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4">
                         {verticals.map((v, i) => (
                             <motion.div
                                 key={v}
