@@ -1549,15 +1549,17 @@ class TestSlots:
         assert "409" in src
 
     def test_an_event_slot_must_sit_on_the_event_day(self):
+        # The rule lives in _validate_slot_times, which create and edit share —
+        # a slot moved onto the wrong day is as wrong as one created there.
         import inspect
 
-        src = inspect.getsource(server.create_campaign_slot)
+        src = inspect.getsource(server._validate_slot_times)
         assert "event_date" in src and ".date()" in src
 
     def test_a_table_window_must_sit_inside_the_campaigns_dates(self):
         import inspect
 
-        src = inspect.getsource(server.create_campaign_slot)
+        src = inspect.getsource(server._validate_slot_times)
         assert "start_date" in src and "end_date" in src
 
 
@@ -1598,3 +1600,307 @@ class TestCoordinationDetailsAreEarned:
 
         src = inspect.getsource(server.list_slots_for_creator)
         assert "_ONBOARD_COLLAB_STATES" in src
+
+
+# ---------------------------------------------------------------------------
+# The manager's operational endpoints. Everything here is scoped through the
+# campaign: a manager touches a creator because they are running the day that
+# creator is booked onto, not because of anything about the creator.
+# ---------------------------------------------------------------------------
+
+
+MANAGER_ENDPOINTS = [
+    "create_slot",
+    "update_slot",
+    "delete_campaign_slot",
+    "create_campaign_slot",
+    "list_campaign_slots",
+    "list_managed_campaigns",
+    "campaign_roster",
+    "campaign_daysheet",
+    "check_in_creator",
+    "mark_no_show",
+    "reschedule_creator",
+    "broadcast_to_campaign",
+]
+
+
+class TestManagerScoping:
+    @pytest.mark.parametrize("fn_name", MANAGER_ENDPOINTS)
+    def test_every_endpoint_is_role_guarded(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert 'require_roles("campaign_manager", "admin")' in src
+
+    @pytest.mark.parametrize(
+        "fn_name",
+        ["campaign_roster", "campaign_daysheet", "broadcast_to_campaign",
+         "list_campaign_slots", "create_campaign_slot"],
+    )
+    def test_campaign_endpoints_go_through_the_scope_check(self, fn_name):
+        import inspect
+
+        assert "_managed_campaign_or_404" in inspect.getsource(getattr(server, fn_name))
+
+    @pytest.mark.parametrize(
+        "fn_name", ["check_in_creator", "mark_no_show", "reschedule_creator"]
+    )
+    def test_collaboration_endpoints_scope_through_the_campaign(self, fn_name):
+        import inspect
+
+        assert "_managed_collab_or_404" in inspect.getsource(getattr(server, fn_name))
+
+    @pytest.mark.parametrize("fn_name", ["update_slot", "delete_campaign_slot"])
+    def test_slot_endpoints_scope_through_the_campaign(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert "_slot_or_404" in src or "_managed_campaign_or_404" in src
+
+    def test_the_scope_helpers_404_rather_than_403(self):
+        import inspect
+
+        for fn in (server._managed_collab_or_404, server._slot_or_404):
+            raised = [ln for ln in inspect.getsource(fn).splitlines() if "status_code=" in ln]
+            assert raised and all("404" in ln for ln in raised)
+
+    def test_a_slot_on_another_campaign_is_not_a_reschedule_target(self):
+        import inspect
+
+        src = inspect.getsource(server.reschedule_creator)
+        assert 'target["campaign_id"] != campaign["_id"]' in src
+
+
+class TestManagerAudit:
+    @pytest.mark.parametrize(
+        "fn_name,action",
+        [
+            ("update_slot", "slot.update"),
+            ("delete_campaign_slot", "slot.delete"),
+            ("create_campaign_slot", "slot.create"),
+            ("check_in_creator", "collaboration.check_in"),
+            ("mark_no_show", "collaboration.no_show"),
+            ("reschedule_creator", "collaboration.reschedule"),
+            ("broadcast_to_campaign", "campaign.broadcast"),
+        ],
+    )
+    def test_each_action_is_logged_under_its_own_name(self, fn_name, action):
+        import inspect
+
+        assert f'"{action}"' in inspect.getsource(getattr(server, fn_name))
+
+    def test_every_manager_mutation_writes_to_the_audit_log(self):
+        import inspect
+        import re as _re
+
+        source = (server.ROOT_DIR / "server.py").read_text()
+        blocks = _re.split(r"\n(?=@manager_router\.)", source)
+        missing = []
+        for b in blocks[1:]:
+            m = _re.match(r'@manager_router\.(post|patch|put|delete)\("([^"]+)"\)', b)
+            if not m:
+                continue
+            end = b.find("\n@")
+            body = b[:end] if end > 0 else b
+            fn = _re.search(r"async def (\w+)", b)
+            # create_slot delegates to create_campaign_slot, which audits.
+            if "await audit(" in body or "await create_campaign_slot(" in body:
+                continue
+            missing.append(f"{m.group(2)} ({fn.group(1) if fn else '?'})")
+        assert not missing, f"manager mutations with no audit trail: {missing}"
+        assert inspect.getsource(server.broadcast_to_campaign).count("await audit(") == 1
+
+
+class TestRosterAndDaysheet:
+    def test_the_roster_is_who_the_brand_actually_took(self):
+        # An applicant isn't on the roster: nobody is expecting them at a venue.
+        assert "applied" not in server._ROSTER_STATES
+        assert "verified" not in server._ROSTER_STATES
+        assert "accepted" in server._ROSTER_STATES
+
+    def test_it_carries_what_the_manager_needs_on_the_day(self):
+        import inspect
+
+        src = inspect.getsource(server._roster_rows)
+        for field in ("phone", "instagram_handle", "slot_time", "attendance"):
+            assert f'"{field}"' in src
+
+    def test_attendance_collapses_nine_states_into_three_answers(self):
+        import inspect
+
+        src = inspect.getsource(server._roster_rows)
+        for word in ('"expected"', '"attended"', '"no_show"'):
+            assert word in src
+
+    def test_the_roster_is_one_pipeline_not_a_query_per_creator(self):
+        import inspect
+
+        src = inspect.getsource(server._roster_rows)
+        assert src.count("$lookup") == 3
+        assert "for r in rows" in src
+
+    def test_the_daysheet_uses_a_real_csv_writer(self):
+        # A creator called "Priya, Rao" would silently become two columns
+        # under a hand-rolled join.
+        import inspect
+
+        src = inspect.getsource(server.campaign_daysheet)
+        assert "csv.writer" in src
+        assert "text/csv" in src
+        assert "attachment; filename=" in src
+
+
+class TestOnTheDayTransitions:
+    def test_check_in_only_from_slot_booked(self):
+        import inspect
+
+        src = inspect.getsource(server.check_in_creator)
+        assert 'current != "slot_booked"' in src
+        assert '{"_id": collab["_id"], "state": "slot_booked"}' in src, (
+            "the write needs a precondition"
+        )
+
+    def test_check_in_lands_on_attended(self):
+        import inspect
+
+        assert '"state": "attended"' in inspect.getsource(server.check_in_creator)
+
+    def test_a_no_show_needs_a_note(self):
+        assert server.NoShowPayload.model_fields["note"].is_required()
+        with pytest.raises(Exception):
+            server.NoShowPayload(note="")
+
+    def test_a_no_show_flags_rather_than_cancels(self):
+        # The manager knows who was in the room; whether anything is owed is
+        # the admin's call with the money in front of them.
+        import inspect
+
+        src = inspect.getsource(server.mark_no_show)
+        assert "no_show_reported" in src
+        assert '"state": "cancelled"' not in src
+        assert "next_step" in src
+
+    def test_the_no_show_flag_feeds_the_admin_path(self):
+        import inspect
+
+        src = inspect.getsource(server.mark_no_show)
+        assert "creator_no_show" in src, "the note has to point at the cancel type"
+        # And the admin's cancel is what suppresses the settlement question.
+        cancel = inspect.getsource(server.cancel_collaboration)
+        assert 'cancellation_type != "creator_no_show"' in cancel
+
+    def test_reschedule_claims_the_new_seat_before_freeing_the_old(self):
+        # The other order would free their place and then discover the target
+        # is full, leaving the creator with neither.
+        import inspect
+
+        src = inspect.getsource(server.reschedule_creator)
+        claim = src.index('"$inc": {"booked_count": 1}')
+        release = src.index('"$inc": {"booked_count": -1}, "$set": {"updated_at": now}')
+        assert claim < release
+
+    def test_reschedule_uses_the_same_atomic_claim_as_booking(self):
+        import inspect
+
+        src = inspect.getsource(server.reschedule_creator)
+        assert '"$expr": {"$lt": ["$booked_count", "$capacity"]}' in src
+
+    def test_a_failed_reschedule_gives_the_seat_back(self):
+        import inspect
+
+        src = inspect.getsource(server.reschedule_creator)
+        assert src.count('"$inc": {"booked_count": -1}') >= 2
+
+
+class TestSlotEditing:
+    def test_capacity_cannot_shrink_below_what_is_booked(self):
+        import inspect
+
+        src = inspect.getsource(server.update_slot)
+        assert "booked" in src and "409" in src
+
+    def test_moving_a_slot_moves_the_people_on_it(self):
+        # Otherwise their collaborations keep pointing at the old hour.
+        import inspect
+
+        src = inspect.getsource(server.update_slot)
+        assert "collaborations.update_many" in src
+        assert '"scheduled_at": starts' in src
+
+    def test_an_edit_is_validated_against_the_campaign_like_a_create(self):
+        import inspect
+
+        assert "_validate_slot_times" in inspect.getsource(server.update_slot)
+        assert "_validate_slot_times" in inspect.getsource(server.create_campaign_slot)
+
+    def test_an_empty_edit_is_refused(self):
+        import inspect
+
+        assert "Nothing to update" in inspect.getsource(server.update_slot)
+
+    def test_both_create_routes_land_on_one_implementation(self):
+        import inspect
+
+        assert "await create_campaign_slot(" in inspect.getsource(server.create_slot)
+
+
+class TestBroadcast:
+    def test_it_uses_the_sender_with_the_simulation_fallback(self):
+        import inspect
+
+        src = inspect.getsource(server.broadcast_to_campaign)
+        assert "notify_over_utility_template" in src
+
+    def test_one_bad_number_does_not_swallow_the_rest(self):
+        import inspect
+
+        src = inspect.getsource(server.broadcast_to_campaign)
+        assert "for row in audience" in src
+        assert '"results"' in src and '"failed"' in src
+
+    def test_it_only_messages_people_still_expected(self):
+        import inspect
+
+        src = inspect.getsource(server.broadcast_to_campaign)
+        assert 'r["attendance"] == "expected"' in src
+
+    def test_an_empty_audience_is_a_409_not_a_silent_success(self):
+        import inspect
+
+        src = inspect.getsource(server.broadcast_to_campaign)
+        assert "Nobody is confirmed" in src
+
+    def test_a_message_is_required(self):
+        with pytest.raises(Exception):
+            server.BroadcastPayload(message="")
+
+
+class TestManagerNotifications:
+    @pytest.mark.parametrize(
+        "event", ["manager_slot_booked", "manager_slot_released", "campaign_broadcast"]
+    )
+    def test_the_events_are_declared(self, event):
+        assert event in server.NOTIFY_EVENTS
+
+    def test_booking_tells_the_manager(self):
+        import inspect
+
+        assert "notify_campaign_manager" in inspect.getsource(server.book_slot)
+
+    @pytest.mark.parametrize(
+        "fn_name", ["revert_collaboration", "cancel_collaboration"]
+    )
+    def test_freeing_a_seat_tells_the_manager(self, fn_name):
+        import inspect
+
+        assert "_tell_manager_a_seat_freed" in inspect.getsource(getattr(server, fn_name))
+
+    def test_an_unassigned_campaign_is_not_an_error(self):
+        # A campaign with no manager has nobody to tell, and that must not
+        # fail the booking that triggered it.
+        import inspect
+
+        src = inspect.getsource(server.notify_campaign_manager)
+        assert "if not manager_id:" in src
+        assert "return" in src
