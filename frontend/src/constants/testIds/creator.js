@@ -22,6 +22,7 @@ export const CREATOR_HERO = {
 	badge: (status) => `verification-badge-${status}`,
 	followers: 'stat-followers',
 	followersNote: 'stat-source-note',
+	followersVerified: 'stat-source-verified',
 	lifetime: 'creator-stat-lifetime',
 	completed: 'creator-stat-completed',
 	pending: 'creator-stat-pending',
@@ -180,4 +181,36 @@ export const CREATOR_ONBOARDING = {
 	submitBlocked: 'onboarding-submit-blocked',
 	later: 'onboarding-later-link',
 	statusNote: 'onboarding-status-note',
+};
+
+// The Instagram connection. Official stats via "Instagram API with Instagram
+// Login" — the connect button, its disabled state while the Meta app is in
+// review, and the guidance for creators still on a personal account.
+export const CREATOR_INSTAGRAM = {
+	card: 'creator-instagram-card',
+	skeleton: 'creator-instagram-skeleton',
+	status: 'creator-instagram-status',
+	connect: 'creator-instagram-connect',
+	unavailable: 'creator-instagram-unavailable',
+	username: 'creator-instagram-username',
+	badge: 'creator-instagram-verified-badge',
+	stat: (key) => `creator-instagram-stat-${key}`,
+	updated: 'creator-instagram-updated',
+	refresh: 'creator-instagram-refresh',
+	disconnect: 'creator-instagram-disconnect',
+	stale: 'creator-instagram-stale',
+	reconnect: 'creator-instagram-reconnect',
+	error: 'creator-instagram-error',
+	notProfessional: 'creator-instagram-not-professional',
+	scopes: 'creator-instagram-scopes',
+};
+
+export const CREATOR_INSTAGRAM_CALLBACK = {
+	page: 'creator-instagram-callback-page',
+	working: 'creator-instagram-callback-working',
+	success: 'creator-instagram-callback-success',
+	error: 'creator-instagram-callback-error',
+	notProfessional: 'creator-instagram-callback-not-professional',
+	retry: 'creator-instagram-callback-retry',
+	back: 'creator-instagram-callback-back',
 };

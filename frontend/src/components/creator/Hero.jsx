@@ -7,6 +7,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import {
     ArrowRight,
+    BadgeCheck,
     CheckCircle2,
     Clock,
     Instagram,
@@ -130,14 +131,28 @@ export default function Hero({ user, profile, earnings }) {
                             <span data-testid={IDS.followers}>
                                 {formatCompact(profile.follower_count)} followers
                             </span>
-                            {/* Said plainly. The figure is the creator's own until
-                                there is a source we're permitted to measure with. */}
-                            <span
-                                data-testid={IDS.followersNote}
-                                className="text-xs text-muted-foreground/70"
-                            >
-                                (self-reported)
-                            </span>
+                            {/* Where the number came from, always said. A
+                                measured figure and a remembered one are worth
+                                different amounts to a brand, and showing them
+                                identically is how the scraped ones got
+                                trusted. */}
+                            {profile.follower_count_verified ? (
+                                <span
+                                    data-testid={IDS.followersVerified}
+                                    title="Pulled from Instagram, refreshed every 12 hours"
+                                    className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-300"
+                                >
+                                    <BadgeCheck className="h-3 w-3" />
+                                    Verified
+                                </span>
+                            ) : (
+                                <span
+                                    data-testid={IDS.followersNote}
+                                    className="text-xs text-muted-foreground/70"
+                                >
+                                    (self-reported)
+                                </span>
+                            )}
                         </>
                     )}
                 </div>

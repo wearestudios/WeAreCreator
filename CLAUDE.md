@@ -61,6 +61,36 @@ it takes:
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
 
+## Instagram stats
+
+Official numbers come from **"Instagram API with Instagram Login"**, never the
+Facebook-Login flow — that one requires every creator to link a Facebook Page.
+`graph.facebook.com` must not appear in this codebase; a unit test enforces it.
+The Apify scraper this replaces breached Instagram's terms; **don't bring back
+any scraped source.**
+
+- Two read scopes only (`INSTAGRAM_SCOPES`): `instagram_business_basic` and
+  `instagram_business_manage_insights`. Nothing here can post or change anything.
+- Tokens live in their own collection, `instagram_connections`, encrypted with
+  Fernet over `INSTAGRAM_TOKEN_KEY`. A separate collection means no creator-profile
+  serializer can leak one by accident. **No route may return a decrypted token.**
+- Absent credentials is a supported state (the app is in review): `instagram_configured()`
+  is false, the connect routes 503 with an explanation, the jobs no-op, and follower
+  counts stay self-reported. Never make anything else depend on it being on.
+- Stats are cached for `INSTAGRAM_STATS_TTL_HOURS` (12) and refreshed by
+  `refresh_instagram_stats`. **Never fetch on a dashboard load** — the ceiling is
+  200 calls per user per hour and a reading costs three.
+- `refresh_instagram_tokens` renews the 60-day token a week before expiry. A
+  revoked or expired token (`_is_revoked`) sets the connection `stale`, drops the
+  token and asks the creator to reconnect; a transient Graph error is deferred, not
+  treated as revocation.
+- `_follower_provenance` travels with every follower count on every surface.
+  `follower_count_self_reported` is kept so disconnecting falls back to it, and a
+  typed number can't overwrite a verified one.
+- Only a Professional (Business/Creator) account can authorise. A personal one gets
+  a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
+  switching steps and a retry.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:

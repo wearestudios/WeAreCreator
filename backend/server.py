@@ -11,6 +11,7 @@ import os
 import re
 import logging
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 from typing import Optional, Literal, Annotated
 
 import bcrypt
@@ -632,6 +633,40 @@ BRAND_SETTABLE_CAMPAIGN_STATUSES = ("draft", "pending_review")
 CAMPAIGN_REVIEW_STATUS = "pending_review"
 
 
+# How a connection can be. `stale` is recoverable by reconnecting; it is not
+# the same as disconnected, and the difference is what the UI needs to say.
+InstagramConnectionStatus = Literal["connected", "stale"]
+
+
+class InstagramConnection(BaseModel):
+    """Collection: instagram_connections (1:1 with creators who connected).
+
+    Kept out of `creator_profiles` on purpose. The access token is the most
+    sensitive thing we hold about a creator, and a separate collection means
+    no profile serializer can leak it by accident — there is simply no branch
+    where the field is in scope.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    user_id: PyObjectId
+    ig_user_id: str
+    username: Optional[str] = None
+    # BUSINESS or MEDIA_CREATOR. A personal account can't authorise this API.
+    account_type: Optional[str] = None
+    # Fernet ciphertext over INSTAGRAM_TOKEN_KEY. Never returned by any route.
+    access_token: Optional[str] = None
+    token_expires_at: Optional[datetime] = None
+    scopes: list[str] = Field(default_factory=list)
+    status: InstagramConnectionStatus = "connected"
+    # Why it went stale, in words a creator can act on.
+    stale_reason: Optional[str] = None
+    stats: Optional[dict] = None
+    stats_fetched_at: Optional[datetime] = None
+    connected_at: Optional[datetime] = None
+    last_refreshed_at: Optional[datetime] = None
+
+
 class CreatorProfile(BaseModel):
     """Collection: creator_profiles (1:1 with users where role='creator')."""
 
@@ -653,6 +688,12 @@ class CreatorProfile(BaseModel):
     full_address: Optional[str] = None
     base_rate: Optional[float] = None
     follower_count: Optional[int] = None
+    # Where that number came from. "instagram_verified" while an Instagram
+    # connection is live, "self_reported" otherwise; the figure they typed is
+    # kept alongside so disconnecting falls back to it rather than to nothing.
+    follower_count_source: Literal["self_reported", "instagram_verified"] = "self_reported"
+    follower_count_self_reported: Optional[int] = None
+    follower_count_verified_at: Optional[datetime] = None
     verification_status: VerificationStatus = "pending"
     # True when an already-verified creator edits something material. They stay
     # verified (and visible to brands) but surface in a separate admin queue.
@@ -880,6 +921,7 @@ NOTIFY_EVENTS = {
     "campaign_broadcast": "A message from your campaign manager",
     "profile_submitted": "Your profile is with the team",
     "profile_nudge": "Your profile is still half-finished",
+    "instagram_disconnected": "Reconnect Instagram to keep your verified stats",
 }
 
 
@@ -1848,6 +1890,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "platforms": doc.get("platforms") or [],
         "base_rate": doc.get("base_rate"),
         "follower_count": doc.get("follower_count"),
+        **_follower_provenance(doc),
         "verification_status": doc.get("verification_status", "pending"),
         "pending_review": bool(doc.get("pending_review", False)),
         "payout_upi": doc.get("payout_upi"),
@@ -1995,6 +2038,618 @@ async def delete_profile_image(user: dict = Depends(require_roles("creator"))):
     return {"profile_image_url": None}
 
 
+# ---------------------------------------------------------------------------
+# Instagram — official stats, via "Instagram API with Instagram Login"
+# ---------------------------------------------------------------------------
+#
+# Deliberately the Instagram-Login flow and not the Facebook-Login one. The
+# Facebook route requires every creator to have a Facebook Page linked to their
+# account, which most of ours do not and should not have to create. This flow
+# authorises against the Instagram account itself.
+#
+# Two scopes only, and both are read: `instagram_business_basic` for the
+# profile and `instagram_business_manage_insights` for reach and interactions.
+# Nothing here can post, reply or change anything on a creator's account, and
+# asking for a scope we don't use would be asking for trust we don't need.
+#
+# The predecessor to this was an Apify scraper, which breached Instagram's
+# terms and put the connected Meta Business account at risk. It was removed,
+# follower counts fell back to self-reported, and this is the sanctioned way
+# to get the real number back.
+
+INSTAGRAM_AUTH_URL = "https://www.instagram.com/oauth/authorize"
+INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
+INSTAGRAM_GRAPH = "https://graph.instagram.com"
+INSTAGRAM_SCOPES = ("instagram_business_basic", "instagram_business_manage_insights")
+
+# Only a Professional account (Business or Creator) can authorise this API at
+# all. Meta has used both spellings for the creator variant over time, so both
+# are accepted rather than locking somebody out over a rename.
+INSTAGRAM_PROFESSIONAL_TYPES = ("BUSINESS", "MEDIA_CREATOR", "CREATOR")
+
+# A long-lived token is good for 60 days and can be refreshed once it is at
+# least 24 hours old. Refreshing a week out leaves room for the job to be down
+# for a few days without anybody silently falling off.
+INSTAGRAM_TOKEN_TTL_DAYS = 60
+INSTAGRAM_REFRESH_WINDOW_DAYS = 7
+
+def _instagram_stats_ttl_hours() -> int:
+    """How long a cached reading counts as current.
+
+    Twelve hours by design: the ceiling is 200 calls per user per hour and a
+    refresh costs three, so a dashboard-load refresh would burn the budget of
+    a creator who simply opened the app a lot, for numbers that move slowly.
+    """
+    try:
+        return max(1, int(os.environ.get("INSTAGRAM_STATS_TTL_HOURS", "12")))
+    except ValueError:
+        return 12
+
+
+def _instagram_job_interval_seconds() -> int:
+    """How often the refresh loop wakes. Zero disables it."""
+    try:
+        return max(0, int(os.environ.get("INSTAGRAM_JOB_INTERVAL_SECONDS", "1800")))
+    except ValueError:
+        return 1800
+
+
+def _instagram_config() -> Optional[dict]:
+    """The Meta app credentials, or None while they're absent.
+
+    Absent is a normal state, not an error: the app is in review, and every
+    other part of the product has to keep working meanwhile. Everything below
+    checks this and degrades rather than raising at import or startup.
+    """
+    app_id = os.environ.get("INSTAGRAM_APP_ID", "").strip()
+    app_secret = os.environ.get("INSTAGRAM_APP_SECRET", "").strip()
+    redirect_uri = os.environ.get("INSTAGRAM_REDIRECT_URI", "").strip()
+    if not (app_id and app_secret and redirect_uri):
+        return None
+    # No key means no way to store the token safely, and a token at rest in
+    # plaintext is worse than the feature being off.
+    if not os.environ.get("INSTAGRAM_TOKEN_KEY", "").strip():
+        logger.warning(
+            "Instagram app credentials are set but INSTAGRAM_TOKEN_KEY is not. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())\""
+        )
+        return None
+    return {"app_id": app_id, "app_secret": app_secret, "redirect_uri": redirect_uri}
+
+
+def instagram_configured() -> bool:
+    return _instagram_config() is not None
+
+
+def _instagram_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=(
+            "Instagram connection isn't switched on yet — our Meta app is still "
+            "in review. Your self-reported follower count is fine in the meantime."
+        ),
+    )
+
+
+def _token_cipher():
+    """Fernet over INSTAGRAM_TOKEN_KEY.
+
+    Imported here rather than at module scope so the app (and CI, which
+    installs a minimal dependency set) still imports without `cryptography`
+    present. It is in requirements.txt; this only keeps its absence from
+    taking down everything else.
+    """
+    key = os.environ.get("INSTAGRAM_TOKEN_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:  # pragma: no cover - present in requirements.txt
+        logger.error("cryptography is not installed; Instagram tokens cannot be stored.")
+        return None
+    try:
+        return Fernet(key.encode())
+    except Exception as exc:
+        logger.error("INSTAGRAM_TOKEN_KEY is not a valid Fernet key: %s", exc)
+        return None
+
+
+def _encrypt_token(raw: str) -> str:
+    cipher = _token_cipher()
+    if not cipher:
+        # Refuse rather than fall back to plaintext. A token that can read a
+        # creator's insights is not something to store in the clear because a
+        # config value was missing.
+        raise _instagram_unavailable()
+    return cipher.encrypt(raw.encode()).decode()
+
+
+def _decrypt_token(blob: Optional[str]) -> Optional[str]:
+    cipher = _token_cipher()
+    if not cipher or not blob:
+        return None
+    try:
+        return cipher.decrypt(blob.encode()).decode()
+    except Exception as exc:
+        # A rotated key makes every stored token unreadable. Say so once per
+        # call site rather than presenting it as the creator revoking access.
+        logger.error("Could not decrypt a stored Instagram token: %s", exc)
+        return None
+
+
+class InstagramCallbackPayload(BaseModel):
+    """What the frontend hands back after Instagram redirects to it."""
+
+    code: str = Field(min_length=1, max_length=1000)
+    state: str = Field(min_length=1, max_length=200)
+
+
+def _serialize_instagram(doc: Optional[dict], *, configured: Optional[bool] = None) -> dict:
+    """The connection as the creator's own UI sees it.
+
+    The token is not in here, and there is no branch that could put it there —
+    which is the point of keeping connections in their own collection rather
+    than as fields on the profile that every serializer walks.
+    """
+    if configured is None:
+        configured = instagram_configured()
+    if not doc:
+        return {
+            "configured": configured,
+            "connected": False,
+            "status": None,
+            "username": None,
+            "account_type": None,
+            "connected_at": None,
+            "stats": None,
+            "stats_fetched_at": None,
+            "stale_reason": None,
+        }
+    stats = doc.get("stats") or None
+    return {
+        "configured": configured,
+        "connected": doc.get("status") == "connected",
+        "status": doc.get("status"),
+        "username": doc.get("username"),
+        "account_type": doc.get("account_type"),
+        "connected_at": _iso(doc.get("connected_at")),
+        "last_refreshed_at": _iso(doc.get("last_refreshed_at")),
+        "token_expires_at": _iso(doc.get("token_expires_at")),
+        "stats": stats,
+        "stats_fetched_at": _iso(doc.get("stats_fetched_at")),
+        "stale_reason": doc.get("stale_reason"),
+    }
+
+
+async def _instagram_get(path: str, params: dict) -> dict:
+    """One GET against the Instagram Graph, with the errors translated.
+
+    Meta returns 200 with an `error` body about as often as it returns a 4xx,
+    so both shapes are checked here rather than at every call site.
+    """
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as http:
+        resp = await http.get(f"{INSTAGRAM_GRAPH}{path}", params=params)
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Instagram returned something we couldn't read.")
+    if isinstance(data, dict) and data.get("error"):
+        err = data["error"]
+        raise HTTPException(
+            status_code=502,
+            detail=err.get("message") or "Instagram refused the request.",
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail="Instagram refused the request.")
+    return data
+
+
+def _is_revoked(detail: str) -> bool:
+    """Whether an Instagram error means the creator took access away.
+
+    Matched on the message because the Graph reuses code 190 for everything
+    from a revoked token to an expired one, and both mean the same thing to
+    us: stop trying, ask them to reconnect.
+    """
+    lowered = (detail or "").lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "expired",
+            "revoked",
+            "invalid oauth",
+            "session has been invalidated",
+            "not authorized",
+            "cannot parse access token",
+        )
+    )
+
+
+async def _mark_connection_stale(doc: dict, reason: str) -> None:
+    """Keep the row, drop the token, tell the creator.
+
+    Deleting the connection would lose the fact that they once had one, and a
+    creator who sees a plain "connect" button after their token expired has no
+    idea anything happened. `stale` says it out loud and asks for one tap.
+    """
+    if doc.get("status") == "stale" and doc.get("stale_reason") == reason:
+        return  # already said; don't notify twice
+    await db.instagram_connections.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "status": "stale",
+                "stale_reason": reason,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            # The token is no good and is the most sensitive thing we hold.
+            "$unset": {"access_token": ""},
+        },
+    )
+    await notify(
+        doc["user_id"],
+        "instagram_disconnected",
+        title="Reconnect Instagram",
+        body=f"{reason} Reconnect to keep your verified follower count.",
+        link="/onboarding/creator",
+    )
+
+
+async def _fetch_instagram_stats(ig_user_id: str, token: str) -> dict:
+    """Profile counts plus insights, as one cached snapshot.
+
+    Three calls per creator per refresh, against a limit of 200 per user per
+    hour — which is why this is on a 12-hour schedule and never on a dashboard
+    load. Insights are best-effort: a brand-new account with no activity has
+    no reach to report, and that must not cost us the follower count too.
+    """
+    profile = await _instagram_get(
+        "/me",
+        {
+            "fields": "user_id,username,account_type,media_count,followers_count",
+            "access_token": token,
+        },
+    )
+
+    async def _insight(metric: str) -> Optional[int]:
+        try:
+            data = await _instagram_get(
+                f"/{ig_user_id}/insights",
+                {
+                    "metric": metric,
+                    "period": "day",
+                    "metric_type": "total_value",
+                    "access_token": token,
+                },
+            )
+        except HTTPException as exc:
+            logger.info("Instagram %s unavailable for %s: %s", metric, ig_user_id, exc.detail)
+            return None
+        rows = data.get("data") or []
+        if not rows:
+            return None
+        value = (rows[0].get("total_value") or {}).get("value")
+        return int(value) if isinstance(value, (int, float)) else None
+
+    reach = await _insight("reach")
+    engagement = await _insight("total_interactions")
+
+    return {
+        "username": profile.get("username"),
+        "account_type": profile.get("account_type"),
+        "followers_count": profile.get("followers_count"),
+        "media_count": profile.get("media_count"),
+        "reach": reach,
+        "engagement": engagement,
+    }
+
+
+async def _store_instagram_stats(doc: dict, stats: dict) -> dict:
+    """Write a snapshot, and mirror the follower count onto the profile.
+
+    The mirror is what lets the brand directory sort and filter on a real
+    number without a join on every query. `follower_count_self_reported` keeps
+    what the creator told us, so disconnecting falls back to it rather than to
+    nothing.
+    """
+    now = datetime.now(timezone.utc)
+    await db.instagram_connections.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "stats": {
+                    "followers_count": stats.get("followers_count"),
+                    "media_count": stats.get("media_count"),
+                    "reach": stats.get("reach"),
+                    "engagement": stats.get("engagement"),
+                },
+                "stats_fetched_at": now,
+                "username": stats.get("username") or doc.get("username"),
+                "account_type": stats.get("account_type") or doc.get("account_type"),
+                "status": "connected",
+                "stale_reason": None,
+                "updated_at": now,
+            }
+        },
+    )
+    followers = stats.get("followers_count")
+    if isinstance(followers, int):
+        profile = await db.creator_profiles.find_one({"user_id": doc["user_id"]})
+        update = {
+            "follower_count": followers,
+            "follower_count_source": "instagram_verified",
+            "follower_count_verified_at": now,
+            "updated_at": now,
+        }
+        if profile and profile.get("follower_count_self_reported") is None:
+            update["follower_count_self_reported"] = profile.get("follower_count")
+        await db.creator_profiles.update_one({"user_id": doc["user_id"]}, {"$set": update})
+    return stats
+
+
+def _follower_provenance(profile: Optional[dict]) -> dict:
+    """Where a follower count came from.
+
+    Returned as a block rather than a bare string so every surface that shows
+    the number shows its provenance with it. A measured figure and a
+    self-reported one are worth different amounts to a brand, and presenting
+    them identically is how the scraped numbers got trusted in the first place.
+    """
+    source = (profile or {}).get("follower_count_source") or "self_reported"
+    verified = source == "instagram_verified"
+    return {
+        "follower_count_source": source,
+        "follower_count_verified": verified,
+        "follower_count_verified_at": _iso((profile or {}).get("follower_count_verified_at")),
+        "follower_count_self_reported": (profile or {}).get("follower_count_self_reported"),
+        "verified_stats_available": verified,
+    }
+
+
+@creator_router.get("/instagram")
+async def get_instagram_connection(user: dict = Depends(require_roles("creator"))):
+    """Where this creator's Instagram connection stands. Never the token."""
+    doc = await db.instagram_connections.find_one({"user_id": ObjectId(user["_id"])})
+    return _serialize_instagram(doc)
+
+
+@creator_router.post("/instagram/connect")
+async def start_instagram_connect(user: dict = Depends(require_roles("creator"))):
+    """Hand back the URL to send the creator to, and remember why.
+
+    The state is single-use and stored server-side rather than signed and
+    trusted, so a callback can only ever be spent once and only by the account
+    that started it.
+    """
+    config = _instagram_config()
+    if not config:
+        raise _instagram_unavailable()
+
+    state = _secrets.token_urlsafe(24)
+    now = datetime.now(timezone.utc)
+    await db.instagram_oauth_states.insert_one(
+        {
+            "state": state,
+            "user_id": ObjectId(user["_id"]),
+            "created_at": now,
+            "expires_at": now + timedelta(minutes=15),
+        }
+    )
+    params = {
+        "client_id": config["app_id"],
+        "redirect_uri": config["redirect_uri"],
+        "response_type": "code",
+        "scope": ",".join(INSTAGRAM_SCOPES),
+        "state": state,
+    }
+    return {
+        "authorize_url": f"{INSTAGRAM_AUTH_URL}?{urlencode(params)}",
+        "state": state,
+        "scopes": list(INSTAGRAM_SCOPES),
+    }
+
+
+@creator_router.post("/instagram/callback")
+async def finish_instagram_connect(
+    payload: InstagramCallbackPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Exchange the code, keep the long-lived token, take a first reading."""
+    config = _instagram_config()
+    if not config:
+        raise _instagram_unavailable()
+
+    creator_oid = ObjectId(user["_id"])
+    now = datetime.now(timezone.utc)
+    consumed = await db.instagram_oauth_states.find_one_and_delete(
+        {"state": payload.state, "user_id": creator_oid}
+    )
+    if not consumed:
+        raise HTTPException(
+            status_code=400,
+            detail="That Instagram link has already been used or has expired. Start again.",
+        )
+    expires_at = consumed.get("expires_at")
+    if expires_at and _as_utc(expires_at) < now:
+        raise HTTPException(status_code=400, detail="That Instagram link expired. Start again.")
+
+    # 1. Code -> short-lived token (one hour).
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as http:
+        resp = await http.post(
+            INSTAGRAM_TOKEN_URL,
+            data={
+                "client_id": config["app_id"],
+                "client_secret": config["app_secret"],
+                "grant_type": "authorization_code",
+                "redirect_uri": config["redirect_uri"],
+                "code": payload.code,
+            },
+        )
+    try:
+        token_body = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Instagram returned something we couldn't read.")
+    if resp.status_code >= 400 or token_body.get("error_type") or token_body.get("error"):
+        message = (
+            token_body.get("error_message")
+            or (token_body.get("error") or {}).get("message")
+            if isinstance(token_body.get("error"), dict)
+            else token_body.get("error_message")
+        ) or "Instagram wouldn't complete the connection."
+        raise HTTPException(status_code=400, detail=message)
+
+    short_token = token_body.get("access_token")
+    ig_user_id = str(token_body.get("user_id") or "")
+    if not short_token or not ig_user_id:
+        raise HTTPException(status_code=502, detail="Instagram didn't return an account to connect.")
+
+    # 2. Short-lived -> long-lived (60 days).
+    long_body = await _instagram_get(
+        "/access_token",
+        {
+            "grant_type": "ig_exchange_token",
+            "client_secret": config["app_secret"],
+            "access_token": short_token,
+        },
+    )
+    token = long_body.get("access_token") or short_token
+    expires_in = int(long_body.get("expires_in") or INSTAGRAM_TOKEN_TTL_DAYS * 86400)
+
+    # 3. First reading — and the only reliable way to find out whether this is
+    #    a Professional account, which is the one thing this API needs.
+    try:
+        stats = await _fetch_instagram_stats(ig_user_id, token)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Connected, but Instagram wouldn't give us your stats: {exc.detail}",
+        )
+
+    account_type = (stats.get("account_type") or "").upper()
+    if account_type and account_type not in INSTAGRAM_PROFESSIONAL_TYPES:
+        # The single most common failure, and the one people get stuck on.
+        # It is fixable in about thirty seconds if somebody says where to tap.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "not_professional",
+                "message": (
+                    "Instagram only shares stats with Professional accounts, and yours "
+                    "is still a personal one. In Instagram: Settings → Account type and "
+                    "tools → Switch to professional account → pick Creator. It's free, "
+                    "it keeps your account public and nothing about your posts changes. "
+                    "Then come back and connect again."
+                ),
+                "account_type": account_type,
+            },
+        )
+
+    doc = await db.instagram_connections.find_one_and_update(
+        {"user_id": creator_oid},
+        {
+            "$set": {
+                "ig_user_id": ig_user_id,
+                "username": stats.get("username"),
+                "account_type": stats.get("account_type"),
+                "access_token": _encrypt_token(token),
+                "token_expires_at": now + timedelta(seconds=expires_in),
+                "last_refreshed_at": now,
+                "scopes": list(INSTAGRAM_SCOPES),
+                "status": "connected",
+                "stale_reason": None,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"user_id": creator_oid, "connected_at": now, "created_at": now},
+        },
+        upsert=True,
+        return_document=True,
+    )
+    await _store_instagram_stats(doc, stats)
+
+    await audit(
+        user,
+        "creator.instagram_connect",
+        "creator_profile",
+        creator_oid,
+        after={"ig_user_id": ig_user_id, "username": stats.get("username")},
+    )
+    fresh = await db.instagram_connections.find_one({"_id": doc["_id"]})
+    return _serialize_instagram(fresh)
+
+
+@creator_router.delete("/instagram")
+async def disconnect_instagram(user: dict = Depends(require_roles("creator"))):
+    """Hand access back. The row goes, and so does the token with it."""
+    creator_oid = ObjectId(user["_id"])
+    existing = await db.instagram_connections.find_one_and_delete({"user_id": creator_oid})
+    if not existing:
+        return _serialize_instagram(None)
+
+    now = datetime.now(timezone.utc)
+    profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+    # Back to whatever they told us themselves, which is why it was kept.
+    await db.creator_profiles.update_one(
+        {"user_id": creator_oid},
+        {
+            "$set": {
+                "follower_count": (profile or {}).get("follower_count_self_reported"),
+                "follower_count_source": "self_reported",
+                "follower_count_verified_at": None,
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "creator.instagram_disconnect",
+        "creator_profile",
+        creator_oid,
+        before={"ig_user_id": existing.get("ig_user_id")},
+    )
+    return _serialize_instagram(None)
+
+
+@creator_router.post("/instagram/refresh")
+async def refresh_instagram_now(user: dict = Depends(require_roles("creator"))):
+    """Pull a fresh reading on demand, within the cache window.
+
+    The scheduled job is the normal path. This exists for the creator who has
+    just connected and wants to see the number move — and it still refuses
+    inside the cache window, because 200 calls per user per hour is a budget
+    somebody hammering a button would spend for no benefit.
+    """
+    doc = await db.instagram_connections.find_one({"user_id": ObjectId(user["_id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="No Instagram account connected.")
+    if doc.get("status") != "connected":
+        raise HTTPException(
+            status_code=409,
+            detail="Your Instagram connection needs renewing — reconnect and we'll pick up again.",
+        )
+
+    fetched_at = _as_utc(doc.get("stats_fetched_at"))
+    now = datetime.now(timezone.utc)
+    if fetched_at and now - fetched_at < timedelta(hours=_instagram_stats_ttl_hours()):
+        # Not an error — they already have the current numbers.
+        return _serialize_instagram(doc)
+
+    token = _decrypt_token(doc.get("access_token"))
+    if not token:
+        await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+        raise HTTPException(status_code=409, detail="Reconnect Instagram to refresh your stats.")
+
+    try:
+        stats = await _fetch_instagram_stats(doc["ig_user_id"], token)
+    except HTTPException as exc:
+        if _is_revoked(str(exc.detail)):
+            await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+            raise HTTPException(status_code=409, detail="Reconnect Instagram to refresh your stats.")
+        raise
+    await _store_instagram_stats(doc, stats)
+    return _serialize_instagram(await db.instagram_connections.find_one({"_id": doc["_id"]}))
+
+
 @creator_router.get("/profile")
 async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     doc = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
@@ -2063,7 +2718,15 @@ async def update_creator_profile(
     if "base_rate" in sent:
         update["base_rate"] = payload.base_rate
     if "follower_count" in sent:
-        update["follower_count"] = payload.follower_count
+        # While Instagram is connected the live figure wins, and what they
+        # type goes to the self-reported field instead. Otherwise saving any
+        # other part of the form would quietly replace a measured number with
+        # a remembered one, and nothing on screen would say it had happened.
+        if existing.get("follower_count_source") == "instagram_verified":
+            update["follower_count_self_reported"] = payload.follower_count
+        else:
+            update["follower_count"] = payload.follower_count
+            update["follower_count_self_reported"] = payload.follower_count
     update.update(_clean_payout_fields(payload, only=sent))
 
     # A verified creator who fixes a typo should not fall out of the directory.
@@ -2433,12 +3096,14 @@ async def get_creator_dashboard(
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
-        # Follower counts are the creator's own figure. The scraped source was
-        # removed — it breached Instagram's terms — so the number is labelled
-        # honestly rather than presented as measured.
-        "follower_count_source": "self_reported",
-        "verified_stats_available": False,
+        # Where the follower number came from, said out loud. It is measured
+        # while Instagram is connected and self-reported otherwise, and the
+        # two are never presented as the same thing.
+        **_follower_provenance(profile),
     }
+    profile_summary["instagram"] = _serialize_instagram(
+        await db.instagram_connections.find_one({"user_id": creator_oid})
+    )
 
     # All of this creator's collaborations, newest first.
     collabs = (
@@ -3973,6 +4638,7 @@ def _serialize_directory_creator(profile: dict) -> dict:
         "city": profile.get("city"),
         "niches": profile.get("niches") or [],
         "follower_count": profile.get("follower_count"),
+        **_follower_provenance(profile),
         "base_rate": profile.get("base_rate"),
         # Intentionally omitted: email, address, phone — brands see them
         # only after inviting/accepting a collaboration.
@@ -4122,6 +4788,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "full_address": profile.get("full_address"),
         "base_rate": profile.get("base_rate"),
         "follower_count": profile.get("follower_count"),
+        **_follower_provenance(profile),
         "verification_status": profile.get("verification_status", "pending"),
         "created_at": profile["created_at"].isoformat()
         if isinstance(profile.get("created_at"), datetime)
@@ -7630,6 +8297,164 @@ async def _nudge_loop() -> None:
             logger.error("profile nudge pass failed: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Scheduled jobs: keep Instagram tokens alive and the stats current
+# ---------------------------------------------------------------------------
+
+
+async def refresh_instagram_tokens(limit: int = 200) -> dict:
+    """Renew long-lived tokens before they lapse.
+
+    A long-lived token is good for 60 days and can be exchanged for a fresh 60
+    from 24 hours old. We renew a week out, so the job can be down for days
+    without anybody quietly falling off — and when Instagram refuses, the
+    connection goes stale and the creator is asked to reconnect rather than
+    the number silently freezing at whatever it last was.
+    """
+    if not instagram_configured():
+        return {"considered": 0, "refreshed": 0, "stale": 0, "skipped": "not configured"}
+
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(days=INSTAGRAM_REFRESH_WINDOW_DAYS)
+    docs = (
+        await db.instagram_connections.find(
+            {"status": "connected", "token_expires_at": {"$lte": due}}
+        )
+        .sort("token_expires_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(docs), "refreshed": 0, "stale": 0}
+    for doc in docs:
+        token = _decrypt_token(doc.get("access_token"))
+        if not token:
+            await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+            report["stale"] += 1
+            continue
+        try:
+            body = await _instagram_get(
+                "/refresh_access_token",
+                {"grant_type": "ig_refresh_token", "access_token": token},
+            )
+        except HTTPException as exc:
+            detail = str(exc.detail)
+            if _is_revoked(detail):
+                await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+                report["stale"] += 1
+            else:
+                # A transient Graph error is not a revocation. Leave it
+                # connected and try again next pass rather than sending
+                # somebody a reconnect prompt over a blip.
+                logger.warning("Instagram token refresh deferred for %s: %s", doc.get("username"), detail)
+            continue
+
+        fresh = body.get("access_token")
+        expires_in = int(body.get("expires_in") or INSTAGRAM_TOKEN_TTL_DAYS * 86400)
+        if not fresh:
+            logger.warning("Instagram refresh returned no token for %s", doc.get("username"))
+            continue
+        await db.instagram_connections.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "access_token": _encrypt_token(fresh),
+                    "token_expires_at": now + timedelta(seconds=expires_in),
+                    "last_refreshed_at": now,
+                    "status": "connected",
+                    "stale_reason": None,
+                    "updated_at": now,
+                }
+            },
+        )
+        report["refreshed"] += 1
+
+    if report["refreshed"] or report["stale"]:
+        logger.info("Instagram token refresh: %s", report)
+    return report
+
+
+async def refresh_instagram_stats(limit: int = 200) -> dict:
+    """Pull follower count, media count, reach and engagement on a schedule.
+
+    Never on a dashboard load. The ceiling is 200 calls per user per hour and
+    a reading costs three, so a creator who opens the app twenty times a day
+    would spend that budget on numbers that barely move. Cached for
+    INSTAGRAM_STATS_TTL_HOURS (12) and read from the cache everywhere else.
+    """
+    if not instagram_configured():
+        return {"considered": 0, "updated": 0, "stale": 0, "skipped": "not configured"}
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=_instagram_stats_ttl_hours())
+    docs = (
+        await db.instagram_connections.find(
+            {
+                "status": "connected",
+                "$or": [
+                    {"stats_fetched_at": {"$lte": cutoff}},
+                    {"stats_fetched_at": {"$exists": False}},
+                ],
+            }
+        )
+        .sort("stats_fetched_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(docs), "updated": 0, "stale": 0, "failed": 0}
+    for doc in docs:
+        token = _decrypt_token(doc.get("access_token"))
+        if not token:
+            await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+            report["stale"] += 1
+            continue
+        try:
+            stats = await _fetch_instagram_stats(doc["ig_user_id"], token)
+        except HTTPException as exc:
+            if _is_revoked(str(exc.detail)):
+                await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+                report["stale"] += 1
+            else:
+                logger.warning("Instagram stats deferred for %s: %s", doc.get("username"), exc.detail)
+                report["failed"] += 1
+            continue
+        except Exception as exc:  # one bad account must not stop the batch
+            logger.error("Instagram stats failed for %s: %s", doc.get("username"), exc)
+            report["failed"] += 1
+            continue
+        await _store_instagram_stats(doc, stats)
+        report["updated"] += 1
+
+    if report["updated"] or report["stale"]:
+        logger.info("Instagram stats refresh: %s", report)
+    return report
+
+
+async def _instagram_loop() -> None:
+    """Drive both Instagram jobs on a timer, since there is no scheduler here."""
+    interval = _instagram_job_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await refresh_instagram_tokens()
+            await refresh_instagram_stats()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A failed pass must never take the loop — or the app — down.
+            logger.error("Instagram job pass failed: %s", exc)
+
+
+@admin_router.post("/jobs/instagram")
+async def run_instagram_jobs(user: dict = Depends(require_roles("admin"))):
+    """Run both Instagram passes now. Same functions the timer calls, same
+    cache window, so a manual run can't blow the rate limit."""
+    tokens = await refresh_instagram_tokens()
+    stats = await refresh_instagram_stats()
+    report = {"tokens": tokens, "stats": stats}
+    await audit(user, "job.instagram_refresh", "job", "instagram", after=report)
+    return report
+
+
 @admin_router.post("/jobs/creator-nudges")
 async def run_creator_nudges(user: dict = Depends(require_roles("admin"))):
     """Run the nudge pass now. Same function the timer calls, same once-only
@@ -9270,6 +10095,16 @@ async def _startup():
     await db.creator_profiles.create_index(
         [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
     )
+
+    # Instagram connections — one per creator, read by the two refresh jobs in
+    # expiry and staleness order.
+    await db.instagram_connections.create_index("user_id", unique=True)
+    await db.instagram_connections.create_index([("status", 1), ("token_expires_at", 1)])
+    await db.instagram_connections.create_index([("status", 1), ("stats_fetched_at", 1)])
+    # OAuth states are single-use and short-lived; Mongo expires the leftovers
+    # from journeys nobody finished.
+    await db.instagram_oauth_states.create_index("state", unique=True)
+    await db.instagram_oauth_states.create_index("expires_at", expireAfterSeconds=0)
     await db.creator_profiles.create_index("niches")
 
     # brand_profiles (1:1 with users)
@@ -9446,6 +10281,22 @@ async def _startup():
             "Creator profile nudges on: every %ds, %d day(s) after signup",
             _nudge_interval_seconds(),
             _nudge_after_days(),
+        )
+
+    # Instagram token renewal and stats caching. Off when the Meta app isn't
+    # configured yet, which is the normal state during app review — the rest
+    # of the product carries on with self-reported numbers.
+    if instagram_configured() and _instagram_job_interval_seconds() > 0:
+        app.state.instagram_task = asyncio.create_task(_instagram_loop())
+        logger.info(
+            "Instagram refresh on: every %ds, stats cached for %dh",
+            _instagram_job_interval_seconds(),
+            _instagram_stats_ttl_hours(),
+        )
+    elif not instagram_configured():
+        logger.info(
+            "Instagram stats are off — set INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, "
+            "INSTAGRAM_REDIRECT_URI and INSTAGRAM_TOKEN_KEY to switch them on."
         )
 
     # The Apify scraper is gone, so nothing writes or reads this cache any more.
@@ -9754,9 +10605,10 @@ async def _seed_demo_campaigns() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown():
-    task = getattr(app.state, "nudge_task", None)
-    if task:
-        task.cancel()
+    for name in ("nudge_task", "instagram_task"):
+        task = getattr(app.state, name, None)
+        if task:
+            task.cancel()
     client.close()
 
 

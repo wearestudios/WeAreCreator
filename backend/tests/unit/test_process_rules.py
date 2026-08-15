@@ -2891,3 +2891,444 @@ class TestProfileNudge:
         src = inspect.getsource(server.run_creator_nudges)
         assert "nudge_stale_creator_profiles()" in src
         assert "audit(" in src
+
+
+# ---------------------------------------------------------------------------
+# Instagram, the sanctioned way. The scraper that used to sit here breached
+# Instagram's terms and risked the Meta Business account; these rules exist so
+# its replacement stays inside the lines — the right login flow, the narrowest
+# scopes, a token that is never readable by anything but the server, and a call
+# budget that a busy creator can't spend by refreshing a page.
+# ---------------------------------------------------------------------------
+
+
+class TestInstagramUsesTheRightFlow:
+    def test_it_is_the_instagram_login_flow_not_the_facebook_one(self):
+        # The Facebook route would make every creator link a Facebook Page,
+        # which most of ours don't have and shouldn't have to create.
+        assert server.INSTAGRAM_AUTH_URL.startswith("https://www.instagram.com/oauth/authorize")
+        assert server.INSTAGRAM_TOKEN_URL.startswith("https://api.instagram.com/oauth/access_token")
+        assert server.INSTAGRAM_GRAPH == "https://graph.instagram.com"
+
+    def test_no_facebook_graph_host_anywhere(self):
+        src = (server.ROOT_DIR / "server.py").read_text()
+        assert "graph.facebook.com" not in src
+
+    def test_only_the_two_read_scopes_are_asked_for(self):
+        # Anything wider would be asking for trust we have no use for.
+        assert set(server.INSTAGRAM_SCOPES) == {
+            "instagram_business_basic",
+            "instagram_business_manage_insights",
+        }
+
+    def test_the_authorize_url_carries_exactly_those_scopes(self):
+        import inspect
+
+        src = inspect.getsource(server.start_instagram_connect)
+        assert '",".join(INSTAGRAM_SCOPES)' in src
+        assert '"response_type": "code"' in src
+
+    def test_the_scopes_reach_the_creator_so_they_know_what_they_gave(self):
+        import inspect
+
+        assert '"scopes": list(INSTAGRAM_SCOPES)' in inspect.getsource(
+            server.start_instagram_connect
+        )
+
+
+class TestInstagramWorksWithoutCredentials:
+    def test_it_is_off_when_nothing_is_configured(self, monkeypatch):
+        # The normal state during app review. Everything else must keep working.
+        for key in ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "INSTAGRAM_REDIRECT_URI"):
+            monkeypatch.delenv(key, raising=False)
+        assert server.instagram_configured() is False
+        assert server._instagram_config() is None
+
+    def test_credentials_without_an_encryption_key_stay_off(self, monkeypatch):
+        # A token at rest in plaintext is worse than the feature being off.
+        monkeypatch.setenv("INSTAGRAM_APP_ID", "123")
+        monkeypatch.setenv("INSTAGRAM_APP_SECRET", "shh")
+        monkeypatch.setenv("INSTAGRAM_REDIRECT_URI", "https://weare.example/ig")
+        monkeypatch.delenv("INSTAGRAM_TOKEN_KEY", raising=False)
+        assert server.instagram_configured() is False
+
+    def test_the_full_set_switches_it_on(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_APP_ID", "123")
+        monkeypatch.setenv("INSTAGRAM_APP_SECRET", "shh")
+        monkeypatch.setenv("INSTAGRAM_REDIRECT_URI", "https://weare.example/ig")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", "x" * 44)
+        assert server.instagram_configured() is True
+
+    def test_the_status_endpoint_says_so_rather_than_failing(self):
+        # The UI needs to disable a button, not handle an error.
+        assert server._serialize_instagram(None, configured=False) == {
+            "configured": False,
+            "connected": False,
+            "status": None,
+            "username": None,
+            "account_type": None,
+            "connected_at": None,
+            "stats": None,
+            "stats_fetched_at": None,
+            "stale_reason": None,
+        }
+
+    def test_connecting_while_off_is_a_503_that_explains_itself(self):
+        exc = server._instagram_unavailable()
+        assert exc.status_code == 503
+        assert "review" in exc.detail
+        assert "self-reported" in exc.detail
+
+    def test_the_jobs_no_op_rather_than_erroring(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            src = inspect.getsource(fn)
+            assert "if not instagram_configured():" in src
+            assert '"not configured"' in src
+
+    def test_the_loop_is_not_started_when_it_is_off(self):
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert "if instagram_configured() and _instagram_job_interval_seconds() > 0:" in src
+
+
+class TestInstagramTokensNeverLeave:
+    def test_the_token_is_encrypted_before_it_is_stored(self):
+        import inspect
+
+        for fn in (server.finish_instagram_connect, server.refresh_instagram_tokens):
+            assert "_encrypt_token(" in inspect.getsource(fn)
+
+    def test_encryption_refuses_rather_than_falling_back_to_plaintext(self, monkeypatch):
+        monkeypatch.delenv("INSTAGRAM_TOKEN_KEY", raising=False)
+        with pytest.raises(HTTPException) as exc:
+            server._encrypt_token("a-real-token")
+        assert exc.value.status_code == 503
+
+    def test_a_bad_key_does_not_crash_the_process(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", "not-a-fernet-key")
+        assert server._token_cipher() is None
+
+    def test_an_undecryptable_token_reads_as_absent(self, monkeypatch):
+        # A rotated key must degrade to "reconnect", not to a 500.
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        assert server._decrypt_token("garbage") is None
+        assert server._decrypt_token(None) is None
+
+    def test_a_token_survives_a_round_trip(self, monkeypatch):
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        blob = server._encrypt_token("IGAA-long-lived-token")
+        assert "IGAA-long-lived-token" not in blob
+        assert server._decrypt_token(blob) == "IGAA-long-lived-token"
+
+    def test_a_token_written_under_a_different_key_is_not_readable(self, monkeypatch):
+        # Key rotation reads as "reconnect", which is recoverable, rather than
+        # as a decryption error nobody can act on.
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        blob = server._encrypt_token("IGAA-token")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        assert server._decrypt_token(blob) is None
+
+    def test_the_serializer_cannot_return_the_token(self):
+        doc = {
+            "user_id": "u", "ig_user_id": "1", "username": "someone",
+            "access_token": "SECRET-TOKEN-VALUE", "status": "connected",
+            "stats": {"followers_count": 10}, "account_type": "MEDIA_CREATOR",
+        }
+        assert "SECRET-TOKEN-VALUE" not in str(server._serialize_instagram(doc))
+        assert "access_token" not in server._serialize_instagram(doc)
+
+    def test_connections_live_in_their_own_collection(self):
+        # So no creator-profile serializer can leak the token by accident —
+        # the field is never in scope.
+        src = (server.ROOT_DIR / "server.py").read_text()
+        assert "db.instagram_connections" in src
+        import inspect
+
+        assert "access_token" not in inspect.getsource(server._serialize_creator_profile)
+        assert "access_token" not in inspect.getsource(server._serialize_admin_creator)
+
+    def test_no_route_returns_the_raw_token(self):
+        import inspect
+
+        for fn in (
+            server.get_instagram_connection,
+            server.finish_instagram_connect,
+            server.disconnect_instagram,
+            server.refresh_instagram_now,
+        ):
+            src = inspect.getsource(fn)
+            assert "_serialize_instagram" in src
+            assert "_decrypt_token" not in src or "return _decrypt_token" not in src
+
+
+class TestInstagramOauthState:
+    def test_the_state_is_single_use_and_server_side(self):
+        import inspect
+
+        assert "db.instagram_oauth_states.insert_one" in inspect.getsource(
+            server.start_instagram_connect
+        )
+        # find_one_and_delete: spending it and consuming it are one operation,
+        # so a replayed callback finds nothing.
+        assert "find_one_and_delete" in inspect.getsource(server.finish_instagram_connect)
+
+    def test_it_is_bound_to_the_creator_who_started_it(self):
+        import inspect
+
+        assert '{"state": payload.state, "user_id": creator_oid}' in inspect.getsource(
+            server.finish_instagram_connect
+        )
+
+    def test_it_expires(self):
+        import inspect
+
+        assert "expires_at" in inspect.getsource(server.start_instagram_connect)
+        assert "expireAfterSeconds=0" in inspect.getsource(server._startup)
+
+
+class TestInstagramProfessionalAccountsOnly:
+    def test_both_professional_spellings_are_accepted(self):
+        # Meta has renamed the creator variant; locking somebody out over that
+        # would be our bug, not theirs.
+        assert {"BUSINESS", "MEDIA_CREATOR"} <= set(server.INSTAGRAM_PROFESSIONAL_TYPES)
+
+    def test_a_personal_account_is_refused_with_a_code_the_ui_can_switch_on(self):
+        import inspect
+
+        src = inspect.getsource(server.finish_instagram_connect)
+        assert '"code": "not_professional"' in src
+        assert "409" in src
+
+    def test_the_refusal_says_where_to_tap(self):
+        import inspect
+
+        src = inspect.getsource(server.finish_instagram_connect)
+        assert "Settings" in src and "Switch to professional account" in src
+        # And that it costs them nothing, which is the actual worry.
+        assert "free" in src
+
+
+class TestInstagramCaching:
+    def test_stats_are_cached_for_twelve_hours_by_default(self, monkeypatch):
+        monkeypatch.delenv("INSTAGRAM_STATS_TTL_HOURS", raising=False)
+        assert server._instagram_stats_ttl_hours() == 12
+
+    def test_the_window_is_configurable_and_never_zero(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_STATS_TTL_HOURS", "6")
+        assert server._instagram_stats_ttl_hours() == 6
+        monkeypatch.setenv("INSTAGRAM_STATS_TTL_HOURS", "0")
+        assert server._instagram_stats_ttl_hours() == 1
+
+    def test_nothing_fetches_on_a_dashboard_load(self):
+        # The whole point of the cache: 200 calls per user per hour, three per
+        # reading, and a creator who opens the app a lot must not spend it.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "_fetch_instagram_stats" not in src
+        assert "_serialize_instagram" in src
+
+    def test_the_manual_refresh_still_respects_the_window(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_now)
+        assert "_instagram_stats_ttl_hours()" in src
+
+    def test_the_scheduled_pass_only_takes_stale_rows(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_stats)
+        assert '{"stats_fetched_at": {"$lte": cutoff}}' in src
+        assert '{"stats_fetched_at": {"$exists": False}}' in src
+
+    def test_all_four_numbers_are_pulled(self):
+        import inspect
+
+        src = inspect.getsource(server._fetch_instagram_stats)
+        for field in ("followers_count", "media_count", "reach", "engagement"):
+            assert f'"{field}"' in src
+
+    def test_insights_are_best_effort(self):
+        # A new account with no activity has no reach to report, and that must
+        # not cost us the follower count as well.
+        import inspect
+
+        src = inspect.getsource(server._fetch_instagram_stats)
+        assert "except HTTPException" in src
+        assert "return None" in src
+
+
+class TestInstagramTokenRefresh:
+    def test_it_renews_before_expiry_not_after(self):
+        assert server.INSTAGRAM_REFRESH_WINDOW_DAYS > 0
+        assert server.INSTAGRAM_REFRESH_WINDOW_DAYS < server.INSTAGRAM_TOKEN_TTL_DAYS
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert '"token_expires_at": {"$lte": due}' in src
+
+    def test_it_uses_the_documented_refresh_grant(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert '"grant_type": "ig_refresh_token"' in src
+
+    def test_the_connect_exchange_asks_for_a_long_lived_token(self):
+        import inspect
+
+        assert '"grant_type": "ig_exchange_token"' in inspect.getsource(
+            server.finish_instagram_connect
+        )
+
+    def test_a_withdrawn_token_goes_stale_rather_than_silently_freezing(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            src = inspect.getsource(fn)
+            assert "_is_revoked(" in src
+            assert "_mark_connection_stale(" in src
+
+    def test_a_transient_error_is_not_treated_as_a_revocation(self):
+        # Sending a reconnect prompt over a Graph blip trains people to ignore
+        # them.
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert "deferred" in src
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Error validating access token: Session has been invalidated",
+            "The access token has expired",
+            "Invalid OAuth access token",
+            "The user has not authorized application",
+        ],
+    )
+    def test_revocation_is_recognised_from_the_message(self, message):
+        assert server._is_revoked(message) is True
+
+    def test_an_unrelated_error_is_not(self):
+        assert server._is_revoked("Please reduce the amount of data you're asking for") is False
+
+    def test_going_stale_drops_the_token_and_asks_for_a_reconnect(self):
+        import inspect
+
+        src = inspect.getsource(server._mark_connection_stale)
+        assert '"$unset": {"access_token": ""}' in src
+        assert "notify(" in src
+        assert '"status": "stale"' in src
+
+    def test_it_does_not_nag_about_the_same_thing_twice(self):
+        import inspect
+
+        src = inspect.getsource(server._mark_connection_stale)
+        assert 'doc.get("status") == "stale"' in src
+        assert "return" in src
+
+    def test_stale_is_not_the_same_as_disconnected(self):
+        # One needs a tap; the other means they chose to leave.
+        assert set(server.InstagramConnectionStatus.__args__) == {"connected", "stale"}
+
+    def test_the_disconnect_event_is_declared(self):
+        assert "instagram_disconnected" in server.NOTIFY_EVENTS
+
+
+class TestVerifiedFollowerCount:
+    def test_a_connected_creator_reads_as_verified(self):
+        result = server._follower_provenance({"follower_count_source": "instagram_verified"})
+        assert result["follower_count_source"] == "instagram_verified"
+        assert result["follower_count_verified"] is True
+        assert result["verified_stats_available"] is True
+
+    def test_the_default_is_self_reported(self):
+        result = server._follower_provenance({})
+        assert result["follower_count_source"] == "self_reported"
+        assert result["follower_count_verified"] is False
+
+    def test_provenance_travels_with_the_number_everywhere_it_is_shown(self):
+        # Presenting a measured figure and a remembered one identically is how
+        # the scraped numbers got trusted in the first place.
+        import inspect
+
+        for fn in (
+            server._serialize_creator_profile,
+            server._serialize_admin_creator,
+            server._serialize_directory_creator,
+            server.get_creator_dashboard,
+        ):
+            assert "_follower_provenance" in inspect.getsource(fn)
+
+    def test_the_self_reported_figure_is_kept_as_a_fallback(self):
+        import inspect
+
+        src = inspect.getsource(server._store_instagram_stats)
+        assert '"follower_count_self_reported"' in src
+
+    def test_disconnecting_falls_back_to_it(self):
+        import inspect
+
+        src = inspect.getsource(server.disconnect_instagram)
+        assert 'get("follower_count_self_reported")' in src
+        assert '"follower_count_source": "self_reported"' in src
+
+    def test_a_typed_number_cannot_overwrite_a_verified_one(self):
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert 'existing.get("follower_count_source") == "instagram_verified"' in src
+
+    def test_the_live_number_is_mirrored_onto_the_profile(self):
+        # So the brand directory can sort and filter on a real figure without
+        # a join on every query.
+        import inspect
+
+        src = inspect.getsource(server._store_instagram_stats)
+        assert "db.creator_profiles.update_one" in src
+        assert '"follower_count_source": "instagram_verified"' in src
+
+
+class TestInstagramJobsAreSafeToRun:
+    def test_a_failed_pass_never_kills_the_loop(self):
+        import inspect
+
+        src = inspect.getsource(server._instagram_loop)
+        assert "except asyncio.CancelledError" in src
+        assert "except Exception" in src
+
+    def test_one_bad_account_does_not_stop_the_batch(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_stats)
+        assert "except Exception as exc:" in src
+        assert "continue" in src
+
+    def test_both_passes_are_bounded(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            assert "to_list(length=limit)" in inspect.getsource(fn)
+
+    def test_a_manual_run_goes_through_the_same_functions_and_is_audited(self):
+        import inspect
+
+        src = inspect.getsource(server.run_instagram_jobs)
+        assert "refresh_instagram_tokens()" in src
+        assert "refresh_instagram_stats()" in src
+        assert "audit(" in src
+
+    def test_the_loop_can_be_turned_off(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_JOB_INTERVAL_SECONDS", "0")
+        assert server._instagram_job_interval_seconds() == 0
+
+    def test_both_tasks_are_cancelled_on_shutdown(self):
+        import inspect
+
+        src = inspect.getsource(server._shutdown)
+        assert "nudge_task" in src and "instagram_task" in src

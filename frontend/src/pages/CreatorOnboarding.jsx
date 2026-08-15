@@ -44,6 +44,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navbar } from "@/components/Navbar";
 import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
+import InstagramConnect from "@/components/creator/InstagramConnect";
 
 const SUGGESTED_NICHES = [
     "cafe", "brunch", "bakery", "fine dining", "coffee", "dessert",
@@ -749,6 +750,12 @@ export default function CreatorOnboarding() {
                             </motion.div>
                         )}
 
+                        {/* Official stats, when Instagram is one of them. The
+                            self-reported figure below stays as the fallback. */}
+                        {onInstagram && (
+                            <InstagramConnect onChanged={refreshCompleteness} />
+                        )}
+
                         {onYouTube && (
                             <motion.div
                                 initial={still ? false : { opacity: 0, y: -6 }}
@@ -794,7 +801,7 @@ export default function CreatorOnboarding() {
                             <Field
                                 id="followers"
                                 label="Followers"
-                                hint="Your own figure — brands see it labelled that way."
+                                hint="Your own figure. Connect Instagram above and the real one takes over — this stays as the fallback."
                             >
                                 <div className="relative mt-2">
                                     <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
