@@ -125,3 +125,59 @@ export const CREATOR_SUBMIT_CONTENT = {
 	submit: 'submit-content-submit',
 	cancel: 'submit-content-cancel',
 };
+
+// The profile builder. Signup asks for a name and a number, so everything else
+// lives here — filled in over as many sittings as it takes. Ids that shipped
+// with the old single-shot onboarding form keep their exact values, so tests
+// written against them still find the same control.
+export const CREATOR_ONBOARDING = {
+	page: 'creator-onboarding-page',
+	skeleton: 'onboarding-skeleton',
+	error: 'onboarding-error',
+	ring: 'onboarding-completeness-ring',
+	percent: 'onboarding-completeness-percent',
+	missing: 'onboarding-completeness-missing',
+	missingItem: (field) => `onboarding-missing-${field}`,
+	section: (key) => `onboarding-section-${key}`,
+
+	name: 'onboarding-name-input',
+	email: 'onboarding-email-input',
+	city: 'onboarding-city-input',
+	address: 'onboarding-address-input',
+	fullAddress: 'onboarding-full-address-input',
+
+	genres: 'onboarding-genres-editor',
+	genresInput: 'onboarding-genres-input',
+	genreChip: (value) => `genre-chip-${value}`,
+	genreSuggest: (value) => `genre-suggest-${value}`,
+
+	niches: 'onboarding-niches-editor',
+	nichesInput: 'onboarding-niches-input',
+	nicheChip: (value) => `niche-chip-${value}`,
+	nicheSuggest: (value) => `niche-suggest-${value}`,
+
+	platform: (value) => `onboarding-platform-${value}`,
+	igHandle: 'onboarding-ig-handle-input',
+	igUrl: 'onboarding-ig-url-input',
+	youtube: 'onboarding-youtube-input',
+
+	baseRate: 'onboarding-base-rate-input',
+	followers: 'onboarding-followers-input',
+
+	photoPreview: 'onboarding-photo-preview',
+	photoInput: 'onboarding-photo-input',
+	photoUpload: 'onboarding-photo-upload-btn',
+	photoRemove: 'onboarding-photo-remove-btn',
+	photoError: 'onboarding-photo-error',
+
+	upi: 'onboarding-upi-input',
+	payoutName: 'onboarding-payout-name-input',
+	pan: 'onboarding-pan-input',
+	gstin: 'onboarding-gstin-input',
+
+	save: 'onboarding-save-btn',
+	submit: 'onboarding-submit-btn',
+	submitBlocked: 'onboarding-submit-blocked',
+	later: 'onboarding-later-link',
+	statusNote: 'onboarding-status-note',
+};

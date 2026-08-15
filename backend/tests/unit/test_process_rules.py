@@ -2153,10 +2153,12 @@ class TestCreatorProfileFields:
     def test_the_neighbourhood_and_the_postal_address_are_separate(self):
         fields = server.CreatorProfileUpdate.model_fields
         assert "address" in fields and "full_address" in fields
-        # The one a brand filters on stays required; the one post goes to is
-        # only needed when something is actually being sent.
-        assert fields["address"].is_required()
-        assert not fields["full_address"].is_required()
+
+    def test_nothing_is_required_to_save(self):
+        # The builder is filled in over several sittings, so a save that
+        # demanded the whole thing would mean nobody ever saved.
+        for name, field in server.CreatorProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
 
     def test_platforms_is_a_closed_list(self):
         assert set(server.CreatorPlatform.__args__) == {"instagram", "youtube"}
@@ -2226,11 +2228,12 @@ class TestProfileCompleteness:
         for row in server._profile_completeness({})["missing"]:
             assert row["field"] and row["label"]
 
-    def test_the_payout_fields_are_counted(self):
-        # They are what stands between a finished campaign and being paid, so
-        # they belong in the number the creator is nudged by.
+    def test_the_payout_fields_are_not_counted(self):
+        # Bank details are needed before we can pay somebody, not before we can
+        # look at them. Counting them here would make a PAN the price of being
+        # reviewed at all, since submitting for review requires 100%.
         fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
-        assert {"payout_upi", "pan"} <= fields
+        assert not ({"payout_upi", "pan", "gstin"} & fields)
 
     def test_the_new_profile_fields_are_counted(self):
         fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
@@ -2529,3 +2532,362 @@ class TestSuggestedCampaigns:
 
         src = inspect.getsource(server._suggested_campaigns)
         assert "scored[:limit]" in src
+
+
+# ---------------------------------------------------------------------------
+# Onboarding. Signup used to ask for a profile's worth of detail before anyone
+# had seen the product, and the vetting queue filled with stubs nobody could
+# decide on. Signup is now a name and a number; the profile is built after, at
+# whatever pace, and an explicit submission is what asks us to look.
+# ---------------------------------------------------------------------------
+
+
+class TestSignupAsksForAlmostNothing:
+    def test_the_signup_payloads_carry_only_identity(self):
+        # role picks which product you get and accept_terms is consent we have
+        # to be able to evidence. Anything else belongs in the profile builder.
+        allowed = {"phone", "purpose", "name", "role", "accept_terms", "code"}
+        for model in (server.OtpRequestInput, server.OtpVerifyInput):
+            assert set(model.model_fields) <= allowed, sorted(set(model.model_fields) - allowed)
+
+    def test_signup_needs_a_name_and_a_role_and_nothing_more(self):
+        import inspect
+
+        src = inspect.getsource(server.request_otp)
+        assert "Name and role are required to sign up." in src
+
+    def test_the_profile_stub_starts_empty(self):
+        # A half-guessed stub would show up as progress the creator never made.
+        import inspect
+
+        src = inspect.getsource(server.verify_otp)
+        start = src.index("db.creator_profiles.insert_one")
+        block = src[start : start + 1200]
+        for field in ("instagram_handle", "email", "city", "genres", "platforms"):
+            assert f'"{field}"' in block
+        assert '"verification_status": "pending"' in block
+
+
+class TestProfileSavesPartially:
+    def test_every_field_is_optional(self):
+        for name, field in server.CreatorProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
+
+    def test_only_the_keys_that_were_sent_are_written(self):
+        # An omitted key means "leave it alone"; an explicit null means "clear
+        # it". A builder saving one step at a time depends on the difference.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "payload.model_fields_set" in src
+        assert src.count('in sent:') >= 10
+
+    def test_payout_fields_respect_a_partial_save_too(self):
+        import inspect
+
+        src = inspect.getsource(server._clean_payout_fields)
+        assert "only" in src and "wanted(" in src
+
+    def test_saving_no_longer_puts_anybody_in_the_queue(self):
+        # This is the whole point: saving and submitting are separate acts.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert 'update["pending_review"] = bool(existing.get("submitted_for_review_at"))' in src
+
+    def test_a_verified_creator_still_stays_live_while_edits_are_reviewed(self):
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "material_fields" in src
+        assert '"name", "instagram_handle", "city"' in src
+
+
+class TestYoutubeLink:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "https://youtube.com/@someone",
+            "https://www.youtube.com/channel/UCabc123",
+            "youtube.com/c/SomeChannel",
+            "https://youtu.be/abc123",
+        ],
+    )
+    def test_a_real_channel_link_is_kept(self, raw):
+        assert server._clean_youtube_url(raw)
+
+    def test_a_bare_link_gets_a_scheme(self):
+        assert server._clean_youtube_url("youtube.com/@someone").startswith("https://")
+
+    @pytest.mark.parametrize("raw", ["https://vimeo.com/someone", "not a url", "https://youtube.evil.com/@x"])
+    def test_anything_else_is_refused(self, raw):
+        # A brand clicks this to decide whether to book somebody; a link that
+        # goes nowhere costs the creator the booking and they never find out.
+        with pytest.raises(HTTPException) as exc:
+            server._clean_youtube_url(raw)
+        assert exc.value.status_code == 422
+
+    def test_blank_clears_it(self):
+        assert server._clean_youtube_url("") is None
+        assert server._clean_youtube_url(None) is None
+
+
+class TestCompletenessFollowsThePlatforms:
+    def _full(self, platforms):
+        profile = {field: "x" for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        profile["platforms"] = platforms
+        for p in platforms:
+            for field, _ in server._PLATFORM_COMPLETENESS_FIELDS[p]:
+                profile[field] = "x"
+        return profile
+
+    def test_an_instagram_creator_is_never_asked_for_a_youtube_link(self):
+        # Otherwise they could never reach 100%, and so could never submit for
+        # review at all.
+        result = server._profile_completeness(self._full(["instagram"]))
+        assert result["complete"] is True
+        assert result["percent"] == 100
+
+    def test_a_youtube_creator_is_asked_for_the_channel(self):
+        profile = self._full(["youtube"])
+        profile.pop("youtube_url")
+        missing = {r["field"] for r in server._profile_completeness(profile)["missing"]}
+        assert "youtube_url" in missing
+
+    def test_someone_on_both_is_asked_for_both(self):
+        fields = {f for f, _ in server._completeness_fields_for({"platforms": ["instagram", "youtube"]})}
+        assert {"instagram_handle", "instagram_profile_url", "youtube_url"} <= fields
+
+    def test_naming_no_platform_can_never_be_complete(self):
+        # platforms is itself a required field, so an empty list is missing one.
+        result = server._profile_completeness({})
+        assert result["complete"] is False
+        assert "platforms" in {r["field"] for r in result["missing"]}
+
+    def test_the_percentage_is_out_of_what_this_creator_was_asked(self):
+        profile = self._full(["instagram"])
+        profile.pop("city")
+        result = server._profile_completeness(profile)
+        assert result["total"] == len(server._PROFILE_COMPLETENESS_FIELDS) + 2
+        assert result["filled"] == result["total"] - 1
+
+
+class TestTheBuilderIsToldWhereItStands:
+    def test_the_profile_read_carries_completeness(self):
+        # So the builder's submit button and the server's gate can never
+        # disagree about what "done" means.
+        import inspect
+
+        assert "_profile_completeness" in inspect.getsource(server.get_creator_profile)
+
+
+class TestSubmitForReview:
+    def test_it_is_the_only_creator_path_that_stamps_the_submission(self):
+        # Writes only — a query filtering on the field is not a write. If a
+        # second path could stamp it, a half-built profile could reach the
+        # vetting queue again, which is the thing this restructure removes.
+        import inspect
+
+        src = server.ROOT_DIR.joinpath("server.py").read_text()
+        writers = [
+            line.strip()
+            for line in src.splitlines()
+            if '"submitted_for_review_at": now' in line
+        ]
+        # This endpoint, and the campaign-review equivalent on brands.
+        assert len(writers) == 2, writers
+        assert '"submitted_for_review_at": now' in inspect.getsource(
+            server.submit_profile_for_review
+        )
+
+    def test_it_refuses_an_unfinished_profile(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'completeness["complete"]' in src
+        assert "409" in src
+
+    def test_the_refusal_names_what_is_missing(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'row["label"] for row in completeness["missing"]' in src
+
+    def test_an_already_verified_creator_is_refused(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'status == "verified"' in src
+
+    def test_a_resubmission_clears_the_old_rejection_reason(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert '"verification_reason": None' in src
+
+    def test_it_is_audited_and_confirmed_to_the_creator(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert '"creator.submit_for_review"' in src
+        assert "notify(" in src
+
+
+class TestVettingQueueShowsOnlySubmittedProfiles:
+    def test_the_queue_reads_the_shared_query(self):
+        import inspect
+
+        assert "_AWAITING_REVIEW_QUERY" in inspect.getsource(server.list_pending_creators)
+
+    def test_the_query_is_submission_not_a_guess_at_one(self):
+        assert server._AWAITING_REVIEW_QUERY["verification_status"] == "pending"
+        assert "submitted_for_review_at" in server._AWAITING_REVIEW_QUERY
+        assert "instagram_handle" not in server._AWAITING_REVIEW_QUERY
+
+    def test_the_badge_counts_the_same_rows_the_queue_shows(self):
+        import inspect
+
+        for fn in (server.admin_metrics, server.admin_dashboard):
+            assert "_AWAITING_REVIEW_QUERY" in inspect.getsource(fn)
+
+    def test_the_longest_wait_is_first(self):
+        import inspect
+
+        assert '.sort("submitted_for_review_at", 1)' in inspect.getsource(
+            server.list_pending_creators
+        )
+
+
+class TestApplyingIsGatedServerSide:
+    def test_the_endpoint_checks_verification_itself(self):
+        import inspect
+
+        src = inspect.getsource(server.apply_to_campaign)
+        assert 'verification_status") != "verified"' in src
+        assert "403" in src
+
+    def test_browsing_is_not_gated(self):
+        # A creator deciding whether this is worth finishing a profile for has
+        # to be able to see what is on offer.
+        import inspect
+
+        src = inspect.getsource(server.list_campaigns)
+        assert "verification_status" not in src
+
+    def test_someone_still_building_is_told_what_is_left(self):
+        message = server._why_you_cannot_apply({"platforms": ["instagram"]})
+        assert "Finish your profile" in message
+        assert "Instagram handle" in message
+
+    def test_someone_waiting_on_us_is_told_that_instead(self):
+        message = server._why_you_cannot_apply(
+            {"verification_status": "pending", "submitted_for_review_at": "2026-08-01T00:00:00Z"}
+        )
+        assert "with the WeAre team" in message
+        assert "Finish your profile" not in message
+
+    def test_a_rejected_creator_gets_the_reason_back(self):
+        message = server._why_you_cannot_apply(
+            {"verification_status": "rejected", "verification_reason": "Handle didn't match."}
+        )
+        assert "Handle didn't match." in message
+        assert "submit it again" in message
+
+    def test_a_rejection_with_no_reason_still_says_what_to_do(self):
+        message = server._why_you_cannot_apply({"verification_status": "rejected"})
+        assert "submit it again" in message
+
+
+class TestProfileNudge:
+    def test_it_waits_three_days_by_default(self, monkeypatch):
+        monkeypatch.delenv("PROFILE_NUDGE_AFTER_DAYS", raising=False)
+        assert server._nudge_after_days() == 3
+
+    def test_the_wait_is_configurable_and_never_zero(self, monkeypatch):
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "7")
+        assert server._nudge_after_days() == 7
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "0")
+        assert server._nudge_after_days() == 1
+
+    def test_nonsense_falls_back_rather_than_crashing_startup(self, monkeypatch):
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "soon")
+        assert server._nudge_after_days() == 3
+
+    def test_the_loop_can_be_turned_off(self, monkeypatch):
+        # So a deployment with its own scheduler can drive the endpoint instead
+        # without two things chasing the same people.
+        monkeypatch.setenv("PROFILE_NUDGE_INTERVAL_SECONDS", "0")
+        assert server._nudge_interval_seconds() == 0
+
+    def test_the_send_is_claimed_before_it_is_made(self):
+        # The stamp is the claim, under a filter that only matches while it is
+        # absent — so a race produces one message and a failed send still counts
+        # as used up. Chasing twice is how you get muted.
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert '"onboarding_nudge_sent_at": {"$exists": False}' in src
+        assert "find_one_and_update" in src
+        claim = src.index("find_one_and_update")
+        assert src.index("_send_aisensy_utility") > claim
+
+    def test_it_only_chases_people_who_actually_stalled(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert '"created_at": {"$lte": cutoff}' in src
+        assert '"verification_status": "pending"' in src
+        assert '"submitted_for_review_at": {"$in": [None, False]}' in src
+
+    def test_a_finished_but_unsubmitted_profile_is_left_alone(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert 'completeness["complete"]' in src
+        assert "continue" in src
+
+    def test_it_reuses_the_utility_helper_and_its_simulation_fallback(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "_send_aisensy_utility" in src
+        assert 'mode == "simulation"' in src
+
+    def test_one_bad_send_does_not_take_the_batch(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "except HTTPException" in src and "except Exception" in src
+
+    def test_a_failed_pass_never_kills_the_loop(self):
+        import inspect
+
+        src = inspect.getsource(server._nudge_loop)
+        assert "except asyncio.CancelledError" in src
+        assert "raise" in src
+        assert "except Exception" in src
+
+    def test_the_message_names_what_is_missing(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert 'completeness["missing"][:3]' in src
+
+    def test_it_lands_in_the_creators_notifications_too(self):
+        # WhatsApp can fail; the in-app record is what survives it.
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "record_notification" in src
+        assert '"profile_nudge"' in src
+
+    def test_the_event_is_declared(self):
+        assert "profile_nudge" in server.NOTIFY_EVENTS
+        assert "profile_submitted" in server.NOTIFY_EVENTS
+
+    def test_a_manual_run_goes_through_the_same_function(self):
+        import inspect
+
+        src = inspect.getsource(server.run_creator_nudges)
+        assert "nudge_stale_creator_profiles()" in src
+        assert "audit(" in src

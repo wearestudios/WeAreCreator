@@ -42,6 +42,13 @@ PIPELINE = [
     "closed",
 ]
 
+# The smallest valid PNG, so the photo upload has something real to accept.
+_TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000a49444154789c6360000002000100ffff0300000600"
+    "05572bd8e40000000049454e44ae426082"
+)
+
 PAYOUT_DETAILS = {
     "payout_upi": "testcreator@okhdfcbank",
     "payout_account_name": "Test Creator",
@@ -49,8 +56,17 @@ PAYOUT_DETAILS = {
 }
 
 
-def complete_creator_profile(session, *, with_payout=True, suffix=None):
-    """Submit a full creator profile so the account can be verified."""
+def complete_creator_profile(session, *, with_payout=True, suffix=None, submit=True):
+    """Fill a creator profile in and hand it to the team.
+
+    Saving and submitting are separate acts now — a saved profile sits with the
+    creator, and only `/creator/profile/submit-for-review` puts them in the
+    vetting queue. Almost every caller wants a creator an admin can approve, so
+    this does both; pass `submit=False` to stop at the save.
+
+    The body is everything completeness asks an Instagram creator for, minus
+    the photo (its own endpoint), so submitting is accepted.
+    """
     suf = suffix or uuid.uuid4().hex[:6]
     me = session.get(f"{BASE_URL}/auth/me").json()
     body = {
@@ -60,7 +76,10 @@ def complete_creator_profile(session, *, with_payout=True, suffix=None):
         "email": me.get("email"),
         "city": "Bengaluru",
         "address": "Indiranagar",
+        "full_address": f"{suf} 12th Main, Indiranagar, Bengaluru 560038",
         "niches": ["cafe"],
+        "genres": ["food"],
+        "platforms": ["instagram"],
         "follower_count": 12000,
         "base_rate": 5000,
     }
@@ -68,7 +87,19 @@ def complete_creator_profile(session, *, with_payout=True, suffix=None):
         body.update(PAYOUT_DETAILS)
     r = session.put(f"{BASE_URL}/creator/profile", json=body)
     assert r.status_code == 200, r.text
-    return r.json()
+    profile = r.json()
+
+    if submit:
+        # The photo is the last thing completeness wants, and it has its own
+        # route because a file upload is a different kind of write.
+        files = {"file": ("me.png", _TINY_PNG, "image/png")}
+        img = session.post(f"{BASE_URL}/creator/profile/image", files=files)
+        assert img.status_code == 200, img.text
+        sub = session.post(f"{BASE_URL}/creator/profile/submit-for-review")
+        # 409 means they were already verified, which is not a failure here.
+        assert sub.status_code in (200, 409), sub.text
+        profile = session.get(f"{BASE_URL}/creator/profile").json()
+    return profile
 
 
 def verify_creator(admin_session, user_id):

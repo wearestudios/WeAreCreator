@@ -211,12 +211,16 @@ class TestCreatorProfileFields:
         r = cs.put(f"{BASE_URL}/creator/profile", json=self._full_body(cs, platforms=["tiktok"]))
         assert r.status_code == 422, r.text
 
-    def test_the_neighbourhood_is_still_required(self, creator):
-        # It is what a brand filters on; a full postal address does not replace it.
+    def test_omitting_the_neighbourhood_leaves_it_alone(self, creator):
+        # Nothing is required to save any more — the builder is filled in over
+        # several sittings — and an omitted key means "don't touch this".
         cs, _ = creator
+        cs.put(f"{BASE_URL}/creator/profile", json=self._full_body(cs))
         body = self._full_body(cs)
         body.pop("address")
-        assert cs.put(f"{BASE_URL}/creator/profile", json=body).status_code == 422
+        r = cs.put(f"{BASE_URL}/creator/profile", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["address"] == "Indiranagar"
 
     def test_the_full_address_is_optional(self, creator):
         cs, _ = creator
@@ -257,11 +261,10 @@ class TestProfileCompleteness:
 
     def test_the_missing_list_names_the_fields_not_yet_filled(self, creator):
         cs, _ = creator
-        # complete_creator_profile leaves genres, platforms and full_address unset.
-        pipeline.complete_creator_profile(cs)
+        # Saving without a photo leaves exactly one thing outstanding.
+        pipeline.complete_creator_profile(cs, submit=False)
         data = cs.get(f"{BASE_URL}/creator/dashboard").json()["profile_completeness"]
-        missing = {row["field"] for row in data["missing"]}
-        assert {"genres", "platforms", "full_address"} <= missing
+        assert {row["field"] for row in data["missing"]} == {"profile_image_url"}
 
     def test_a_complete_profile_reads_a_hundred(self, creator):
         cs, _ = creator

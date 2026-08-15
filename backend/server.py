@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import asyncio
 import csv
 import io
 import os
@@ -225,17 +226,31 @@ CREATOR_PLATFORMS = ("instagram", "youtube")
 
 
 class CreatorProfileUpdate(BaseModel):
-    """Payload for creator onboarding / profile edits."""
+    """Payload for the creator profile builder.
 
-    name: str = Field(min_length=1, max_length=120)
-    instagram_handle: str = Field(min_length=1, max_length=60)
-    instagram_profile_url: str = Field(min_length=1, max_length=300)
-    email: EmailStr
+    Every field is optional, and only the keys actually present in the request
+    body are written. Signup asks for a name and a number and nothing else, so
+    the profile is built up over however many sittings it takes — a save that
+    demanded the whole thing at once would just mean nobody ever saved.
+
+    That makes an omitted key mean "leave it alone" and an explicit null mean
+    "clear it", which are genuinely different intentions on a form somebody is
+    filling in a bit at a time.
+    """
+
+    name: Optional[str] = Field(default=None, max_length=120)
+    instagram_handle: Optional[str] = Field(default=None, max_length=60)
+    instagram_profile_url: Optional[str] = Field(default=None, max_length=300)
+    # Where the channel actually lives. Kept separate from the Instagram pair
+    # rather than a generic "links" bag, because completeness has to be able to
+    # ask for the one that matches a platform they said they post on.
+    youtube_url: Optional[str] = Field(default=None, max_length=300)
+    email: Optional[EmailStr] = None
     city: Optional[str] = Field(default=None, max_length=80)
     # `address` is the neighbourhood a brand filters on ("Indiranagar");
     # `full_address` is where post actually goes. Two different questions, so
     # two fields rather than one overloaded one.
-    address: str = Field(min_length=1, max_length=500)
+    address: Optional[str] = Field(default=None, max_length=500)
     full_address: Optional[str] = Field(default=None, max_length=500)
     niches: list[str] = Field(default_factory=list, max_length=25)
     # What they make (food, travel, comedy) as opposed to `niches`, which is
@@ -626,6 +641,7 @@ class CreatorProfile(BaseModel):
     name: str
     instagram_handle: Optional[str] = None
     instagram_profile_url: Optional[str] = None
+    youtube_url: Optional[str] = None
     # Set by the upload endpoint, not by the profile PUT — see upload_profile_image.
     profile_image_url: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -641,6 +657,11 @@ class CreatorProfile(BaseModel):
     # True when an already-verified creator edits something material. They stay
     # verified (and visible to brands) but surface in a separate admin queue.
     pending_review: bool = False
+    # When the creator asked us to look, via /creator/profile/submit-for-review.
+    # This — not a stub row or a stray handle — is what puts them in the queue.
+    submitted_for_review_at: Optional[datetime] = None
+    # Set once by the 3-day nudge, so nobody gets chased twice.
+    onboarding_nudge_sent_at: Optional[datetime] = None
     # Payout identity — required before a collaboration can enter payment.
     payout_upi: Optional[str] = None
     payout_account_name: Optional[str] = None
@@ -857,6 +878,8 @@ NOTIFY_EVENTS = {
     "manager_slot_booked": "A creator booked a slot",
     "manager_slot_released": "A creator gave up a slot",
     "campaign_broadcast": "A message from your campaign manager",
+    "profile_submitted": "Your profile is with the team",
+    "profile_nudge": "Your profile is still half-finished",
 }
 
 
@@ -1744,14 +1767,23 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
                 {
                     "user_id": user_id,
                     "name": signup_name,
+                    # Signup asks for a name and a number. Everything else is
+                    # the profile builder's job, so the stub is deliberately
+                    # empty rather than half-guessed.
                     "instagram_handle": None,
                     "instagram_profile_url": None,
+                    "youtube_url": None,
                     "email": None,
+                    "city": None,
                     "address": None,
+                    "full_address": None,
                     "niches": [],
+                    "genres": [],
+                    "platforms": [],
                     "base_rate": None,
                     "follower_count": None,
                     "verification_status": "pending",
+                    "pending_review": False,
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -1805,6 +1837,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "name": doc.get("name"),
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
+        "youtube_url": doc.get("youtube_url"),
         "profile_image_url": doc.get("profile_image_url"),
         "email": doc.get("email"),
         "city": doc.get("city"),
@@ -1835,13 +1868,47 @@ def payout_ready(profile: dict) -> bool:
     return bool(profile.get("payout_upi")) and bool(profile.get("pan"))
 
 
-def _clean_payout_fields(payload) -> dict:
-    """Normalise and validate the payout identity fields. Each is optional, but
-    anything supplied has to be well-formed — a typo'd UPI ID is a lost payout."""
+YOUTUBE_URL_RE = re.compile(
+    r"^https?://(www\.|m\.)?(youtube\.com/(channel/|c/|user/|@)?[\w\-.]+|youtu\.be/[\w\-]+)/?",
+    re.IGNORECASE,
+)
+
+
+def _clean_youtube_url(raw: Optional[str]) -> Optional[str]:
+    """Normalise a YouTube channel link, or refuse it.
+
+    Checked rather than stored blind because this is what a brand clicks to
+    decide whether to book somebody — a link that goes nowhere costs the
+    creator the booking, and they never find out why.
+    """
+    url = (raw or "").strip()
+    if not url:
+        return None
+    if not url.lower().startswith(("http://", "https://")):
+        url = f"https://{url}"
+    if not YOUTUBE_URL_RE.match(url):
+        raise HTTPException(
+            status_code=422,
+            detail="That doesn't look like a YouTube channel link, e.g. https://youtube.com/@yourchannel.",
+        )
+    return url
+
+
+def _clean_payout_fields(payload, only: Optional[set] = None) -> dict:
+    """Normalise and validate the payout identity fields.
+
+    Each is optional, but anything supplied has to be well-formed — a typo'd
+    UPI ID is a lost payout. `only` limits the result to the keys the caller
+    actually sent, so a partial save leaves the rest of the payout identity
+    where it was.
+    """
     out: dict = {}
+    wanted = (lambda key: True) if only is None else (lambda key: key in only)
 
     upi = (payload.payout_upi or "").strip()
-    if upi:
+    if not wanted("payout_upi"):
+        pass
+    elif upi:
         if not UPI_RE.match(upi):
             raise HTTPException(
                 status_code=422,
@@ -1851,10 +1918,13 @@ def _clean_payout_fields(payload) -> dict:
     else:
         out["payout_upi"] = None
 
-    out["payout_account_name"] = (payload.payout_account_name or "").strip() or None
+    if wanted("payout_account_name"):
+        out["payout_account_name"] = (payload.payout_account_name or "").strip() or None
 
     pan = (payload.pan or "").strip().upper()
-    if pan:
+    if not wanted("pan"):
+        pass
+    elif pan:
         if not PAN_RE.match(pan):
             raise HTTPException(
                 status_code=422,
@@ -1865,7 +1935,9 @@ def _clean_payout_fields(payload) -> dict:
         out["pan"] = None
 
     gstin = (payload.gstin or "").strip().upper()
-    if gstin:
+    if not wanted("gstin"):
+        pass
+    elif gstin:
         if not GSTIN_RE.match(gstin):
             raise HTTPException(
                 status_code=422,
@@ -1929,7 +2001,13 @@ async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     if not doc:
         # Shouldn't happen (stub created at signup), but handle gracefully.
         raise HTTPException(status_code=404, detail="Creator profile not found")
-    return _serialize_creator_profile(doc)
+    # Completeness rides along so the builder never has to re-implement the
+    # rule that decides whether its submit button works. One definition, and
+    # the client and the server can't disagree about what "done" means.
+    return {
+        **_serialize_creator_profile(doc),
+        "profile_completeness": _profile_completeness(doc),
+    }
 
 
 @creator_router.put("/profile")
@@ -1937,53 +2015,75 @@ async def update_creator_profile(
     payload: CreatorProfileUpdate,
     user: dict = Depends(require_roles("creator")),
 ):
-    # Normalise Instagram handle (strip leading @, lowercase, no whitespace).
-    # Accepts "@name", "name" or a pasted profile URL and stores the bare handle.
-    handle = _extract_ig_handle(payload.instagram_handle)
-    if not handle:
-        raise HTTPException(
-            status_code=422,
-            detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
-        )
-
     existing = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not existing:
         raise HTTPException(status_code=404, detail="Creator profile not found")
 
+    sent = payload.model_fields_set
     now = datetime.now(timezone.utc)
-    update = {
-        "name": payload.name.strip(),
-        "instagram_handle": handle,
-        "instagram_profile_url": payload.instagram_profile_url.strip(),
-        "email": payload.email.lower().strip(),
-        "city": (payload.city or "").strip() or None,
-        "address": payload.address.strip(),
-        "full_address": (payload.full_address or "").strip() or None,
-        "niches": [n.strip().lower() for n in payload.niches if n and n.strip()],
-        "genres": [g.strip().lower() for g in payload.genres if g and g.strip()],
+    update: dict = {"updated_at": now}
+
+    # Only what the request actually named. A builder that saves one step at a
+    # time would otherwise blank every field the current step doesn't show.
+    if "name" in sent:
+        update["name"] = (payload.name or "").strip() or None
+    if "instagram_handle" in sent:
+        raw = (payload.instagram_handle or "").strip()
+        if raw:
+            # Accepts "@name", "name" or a pasted profile URL; stores the bare
+            # handle so the directory has one shape to search.
+            handle = _extract_ig_handle(raw)
+            if not handle:
+                raise HTTPException(
+                    status_code=422,
+                    detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
+                )
+            update["instagram_handle"] = handle
+        else:
+            update["instagram_handle"] = None
+    if "instagram_profile_url" in sent:
+        update["instagram_profile_url"] = (payload.instagram_profile_url or "").strip() or None
+    if "youtube_url" in sent:
+        update["youtube_url"] = _clean_youtube_url(payload.youtube_url)
+    if "email" in sent:
+        update["email"] = (payload.email or "").lower().strip() or None
+    if "city" in sent:
+        update["city"] = (payload.city or "").strip() or None
+    if "address" in sent:
+        update["address"] = (payload.address or "").strip() or None
+    if "full_address" in sent:
+        update["full_address"] = (payload.full_address or "").strip() or None
+    if "niches" in sent:
+        update["niches"] = [n.strip().lower() for n in payload.niches if n and n.strip()]
+    if "genres" in sent:
+        update["genres"] = [g.strip().lower() for g in payload.genres if g and g.strip()]
+    if "platforms" in sent:
         # Deduped, order kept, so the list reads the way they entered it.
-        "platforms": list(dict.fromkeys(payload.platforms)),
-        "base_rate": payload.base_rate,
-        "follower_count": payload.follower_count,
-        "updated_at": now,
-        **_clean_payout_fields(payload),
-    }
+        update["platforms"] = list(dict.fromkeys(payload.platforms))
+    if "base_rate" in sent:
+        update["base_rate"] = payload.base_rate
+    if "follower_count" in sent:
+        update["follower_count"] = payload.follower_count
+    update.update(_clean_payout_fields(payload, only=sent))
 
     # A verified creator who fixes a typo should not fall out of the directory.
     # Only a material change (who they are, or where their audience is) needs a
     # second look, and even then they stay live while we look.
     material_fields = ("name", "instagram_handle", "city")
     changed_material = any(
-        (existing.get(f) or None) != (update.get(f) or None) for f in material_fields
+        f in update and (existing.get(f) or None) != (update.get(f) or None)
+        for f in material_fields
     )
     if existing.get("verification_status") == "verified":
         update["pending_review"] = changed_material or bool(
             existing.get("pending_review")
         )
     else:
-        # Still pending, or previously rejected — this is a (re)submission.
-        update["verification_status"] = "pending"
-        update["pending_review"] = False
+        # Editing is no longer the act that asks us to look — that is
+        # `/profile/submit-for-review`, which only opens at 100%. Saving a
+        # half-built profile must not put anybody in the queue, and a rejected
+        # creator stays rejected until they actually resubmit.
+        update["pending_review"] = bool(existing.get("submitted_for_review_at"))
 
     result = await db.creator_profiles.find_one_and_update(
         {"user_id": ObjectId(user["_id"])},
@@ -1994,7 +2094,7 @@ async def update_creator_profile(
         raise HTTPException(status_code=404, detail="Creator profile not found")
 
     # Also mirror the display name onto the user document so it stays in sync.
-    if update["name"] != user.get("name"):
+    if update.get("name") and update["name"] != user.get("name"):
         await db.users.update_one(
             {"_id": ObjectId(user["_id"])}, {"$set": {"name": update["name"]}}
         )
@@ -2054,47 +2154,137 @@ def _serialize_collab_row(
     }
 
 
-# What a creator is asked for, and what it is called on screen. Weighted
-# equally on purpose: a percentage that quietly counts PAN for three points
-# and a city for one is a number nobody can act on. The list is ordered the
-# way the profile form asks, so "what's missing" reads top to bottom.
+# What the profile builder asks for, and what each field is called on screen.
+# Weighted equally on purpose: a percentage that quietly counts PAN for three
+# points and a city for one is a number nobody can act on. Ordered the way the
+# builder asks, so "what's missing" reads top to bottom.
+#
+# Payout details (UPI, PAN) are deliberately absent. They are needed before we
+# can pay somebody, not before we can look at them, and putting them here would
+# make bank details the price of being reviewed at all.
 _PROFILE_COMPLETENESS_FIELDS = (
-    ("name", "Your name"),
-    ("instagram_handle", "Instagram handle"),
-    ("profile_image_url", "Profile photo"),
-    ("email", "Email address"),
-    ("city", "City"),
-    ("address", "Neighbourhood"),
-    ("full_address", "Full address"),
-    ("niches", "What you cover"),
     ("genres", "What you make"),
     ("platforms", "Where you post"),
-    ("follower_count", "Follower count"),
+    ("city", "City"),
+    ("full_address", "Full address"),
+    ("email", "Email address"),
+    ("niches", "What you cover for brands"),
     ("base_rate", "Your usual rate"),
-    ("payout_upi", "UPI ID"),
-    ("pan", "PAN"),
+    ("profile_image_url", "Profile photo"),
 )
+
+# Asked for only when the creator says they post there. An Instagram-only
+# creator who could never reach 100% could never submit for review at all, so
+# a channel is required per platform rather than across the board.
+_PLATFORM_COMPLETENESS_FIELDS = {
+    "instagram": (
+        ("instagram_handle", "Instagram handle"),
+        ("instagram_profile_url", "Instagram profile link"),
+    ),
+    "youtube": (("youtube_url", "YouTube channel link"),),
+}
+
+
+def _completeness_fields_for(profile: dict) -> tuple:
+    """The fields this particular creator is being asked for."""
+    fields = list(_PROFILE_COMPLETENESS_FIELDS)
+    for platform in (profile or {}).get("platforms") or []:
+        fields.extend(_PLATFORM_COMPLETENESS_FIELDS.get(platform, ()))
+    return tuple(fields)
 
 
 def _profile_completeness(profile: dict) -> dict:
     """How much of the profile is filled in, and what is left.
 
-    A brand shortlists off this and we pay off the last two lines of it, so an
-    empty field is a real cost to the creator rather than a cosmetic one.
+    A brand shortlists off this, so an empty field is a real cost to the
+    creator rather than a cosmetic one. The list is also the gate on
+    submitting for review, which is why it names fields rather than just
+    returning a number.
     """
+    fields = _completeness_fields_for(profile)
     missing = [
         {"field": field, "label": label}
-        for field, label in _PROFILE_COMPLETENESS_FIELDS
+        for field, label in fields
         if not (profile or {}).get(field)
     ]
-    total = len(_PROFILE_COMPLETENESS_FIELDS)
+    total = len(fields)
     filled = total - len(missing)
     return {
-        "percent": round(filled * 100 / total),
+        "percent": round(filled * 100 / total) if total else 0,
         "filled": filled,
         "total": total,
         "complete": not missing,
         "missing": missing,
+    }
+
+
+@creator_router.post("/profile/submit-for-review")
+async def submit_profile_for_review(user: dict = Depends(require_roles("creator"))):
+    """Hand a finished profile to the team.
+
+    Saving and submitting are separate acts. A stub row exists from the moment
+    somebody signs up, so if saving were the trigger the vetting queue would
+    fill with half-built profiles nobody could make a decision about — which is
+    exactly what it used to do. This is the only thing that puts a creator in
+    front of an admin.
+    """
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    status = profile.get("verification_status", "pending")
+    if status == "verified":
+        raise HTTPException(
+            status_code=409,
+            detail="You're already verified. Edits go for a second look on their own.",
+        )
+
+    completeness = _profile_completeness(profile)
+    if not completeness["complete"]:
+        # Name what is missing rather than just refusing — this is the whole
+        # reason completeness returns fields and not only a percentage.
+        outstanding = ", ".join(row["label"] for row in completeness["missing"])
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your profile is {completeness['percent']}% done. Still needed: {outstanding}.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.creator_profiles.find_one_and_update(
+        {"user_id": oid},
+        {
+            "$set": {
+                "verification_status": "pending",
+                "pending_review": True,
+                "submitted_for_review_at": now,
+                # A resubmission after a rejection starts clean; leaving the old
+                # reason on screen would read as a fresh verdict.
+                "verification_reason": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "creator.submit_for_review",
+        "creator_profile",
+        profile["_id"],
+        before={"verification_status": status},
+        after={"verification_status": "pending", "submitted_for_review_at": _iso(now)},
+    )
+    await notify(
+        oid,
+        "profile_submitted",
+        title="Profile submitted",
+        body="Your profile is with the WeAre team. Reviews usually finish within 48 hours.",
+        link="/dashboard",
+    )
+    return {
+        "verification_status": "pending",
+        "submitted_for_review_at": _iso(now),
+        "profile_completeness": _profile_completeness(updated or profile),
     }
 
 
@@ -2223,9 +2413,13 @@ async def get_creator_dashboard(
         "name": (profile or {}).get("name") or user.get("name"),
         "instagram_handle": (profile or {}).get("instagram_handle"),
         "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+        "youtube_url": (profile or {}).get("youtube_url"),
         "profile_image_url": (profile or {}).get("profile_image_url"),
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
+        # Whether they have actually asked us to look. Without this the UI
+        # can't tell "still building" from "waiting on us".
+        "submitted_for_review_at": _iso((profile or {}).get("submitted_for_review_at")),
         "niches": (profile or {}).get("niches") or [],
         "genres": (profile or {}).get("genres") or [],
         "platforms": (profile or {}).get("platforms") or [],
@@ -3774,6 +3968,7 @@ def _serialize_directory_creator(profile: dict) -> dict:
         "name": profile.get("name"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "youtube_url": profile.get("youtube_url"),
         "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "niches": profile.get("niches") or [],
@@ -4175,22 +4370,28 @@ async def list_all_creators(
     }
 
 
+# Who is actually waiting on a decision. Defined once because it feeds three
+# places — the queue itself, the tab badge and the dashboard facet — and the
+# last time they disagreed the badge counted people the queue never showed.
+_AWAITING_REVIEW_QUERY = {
+    "verification_status": "pending",
+    "submitted_for_review_at": {"$ne": None, "$exists": True},
+}
+
+
 @admin_router.get("/creators/pending")
 async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
     """Creators actually waiting on us.
 
     A profile stub is created at signup, so filtering on `pending` alone fills
-    the queue with people who never finished onboarding. Requiring an Instagram
-    handle is what separates "waiting on us" from "never applied".
+    the queue with people who never finished onboarding. The submission
+    timestamp is what separates "waiting on us" from "still building" — it is
+    only set by /creator/profile/submit-for-review, which in turn only opens at
+    100% completeness, so every row here is a profile that can be decided on.
     """
     profiles = (
-        await db.creator_profiles.find(
-            {
-                "verification_status": "pending",
-                "instagram_handle": {"$type": "string", "$ne": ""},
-            }
-        )
-        .sort("created_at", -1)
+        await db.creator_profiles.find(_AWAITING_REVIEW_QUERY)
+        .sort("submitted_for_review_at", 1)  # longest wait first
         .to_list(length=500)
     )
     return await _hydrate_creator_rows(profiles)
@@ -6650,7 +6851,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         collab_action_counts[row["_id"]] = row["n"]
 
     creators_pending_review = await db.creator_profiles.count_documents(
-        {"verification_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
+        _AWAITING_REVIEW_QUERY
     )
     creators_changed = await db.creator_profiles.count_documents(
         {"verification_status": "verified", "pending_review": True}
@@ -6888,12 +7089,7 @@ async def admin_dashboard(
                 {
                     "$facet": {
                         "pending": [
-                            {
-                                "$match": {
-                                    "verification_status": "pending",
-                                    "instagram_handle": {"$type": "string", "$ne": ""},
-                                }
-                            },
+                            {"$match": _AWAITING_REVIEW_QUERY},
                             {"$count": "n"},
                         ],
                         "changed": [
@@ -7311,6 +7507,138 @@ async def assign_campaign_manager(
         "manager_email": manager.get("email"),
         "reassigned_from": previous,
     }
+
+
+# ---------------------------------------------------------------------------
+# Scheduled job: chase half-finished creator profiles
+# ---------------------------------------------------------------------------
+
+
+def _nudge_after_days() -> int:
+    """How long to leave somebody alone before chasing them."""
+    try:
+        return max(1, int(os.environ.get("PROFILE_NUDGE_AFTER_DAYS", "3")))
+    except ValueError:
+        logger.warning("PROFILE_NUDGE_AFTER_DAYS is not a number — using 3")
+        return 3
+
+
+def _nudge_interval_seconds() -> int:
+    """How often the loop wakes. Zero disables it entirely."""
+    try:
+        return max(0, int(os.environ.get("PROFILE_NUDGE_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600
+
+
+async def nudge_stale_creator_profiles(limit: int = 200) -> dict:
+    """WhatsApp the creators who signed up, started a profile and stopped.
+
+    Exactly once each, ever. The claim is the write: the profile is stamped
+    with `onboarding_nudge_sent_at` under a filter that only matches while it
+    is absent, so two workers racing produce one message, and a send that
+    fails afterwards still counts as used up. Chasing somebody twice about the
+    same unfinished form is how a marketplace teaches people to mute it.
+
+    Idempotent and safe to call by hand — it is wired to a loop below and to
+    POST /admin/jobs/creator-nudges, because this deployment has no external
+    scheduler to hang it off.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=_nudge_after_days())
+    template = os.environ.get("AISENSY_TEMPLATE_PROFILE_NUDGE", "").strip()
+
+    # Old enough to have gone quiet, not yet chased, not yet decided on.
+    candidates = (
+        await db.creator_profiles.find(
+            {
+                "created_at": {"$lte": cutoff},
+                "onboarding_nudge_sent_at": {"$exists": False},
+                "verification_status": "pending",
+                "submitted_for_review_at": {"$in": [None, False]},
+            }
+        )
+        .sort("created_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(candidates), "sent": 0, "skipped": 0, "failed": 0}
+    for profile in candidates:
+        completeness = _profile_completeness(profile)
+        if completeness["complete"]:
+            # Finished but not submitted. That is a different message and a
+            # different problem, so leave them for it rather than spending the
+            # one nudge here.
+            report["skipped"] += 1
+            continue
+
+        claimed = await db.creator_profiles.find_one_and_update(
+            {"_id": profile["_id"], "onboarding_nudge_sent_at": {"$exists": False}},
+            {"$set": {"onboarding_nudge_sent_at": now}},
+        )
+        if not claimed:
+            report["skipped"] += 1
+            continue
+
+        account = await db.users.find_one({"_id": profile["user_id"]})
+        name = profile.get("name") or (account or {}).get("name") or "there"
+        outstanding = ", ".join(row["label"] for row in completeness["missing"][:3])
+        body = (
+            f"Your WeAre profile is {completeness['percent']}% done. "
+            f"Still needed: {outstanding}. Finish it and brands can start booking you."
+        )
+        delivered = False
+        mode = None
+        phone = (account or {}).get("phone")
+        if phone:
+            try:
+                mode = await _send_aisensy_utility(
+                    phone, name, template, [name, str(completeness["percent"]), outstanding]
+                )
+                delivered = mode == "aisensy"
+            except HTTPException as exc:
+                logger.warning("profile nudge to %s failed: %s", phone, exc.detail)
+            except Exception as exc:  # a bad send must not stop the batch
+                logger.error("profile nudge to %s failed: %s", phone, exc)
+
+        await record_notification(
+            profile["user_id"],
+            "profile_nudge",
+            title="Finish your profile",
+            body=body,
+            link="/onboarding/creator",
+            delivered=delivered,
+        )
+        report["sent" if delivered or mode == "simulation" else "failed"] += 1
+
+    if report["sent"]:
+        logger.info("profile nudge: %s", report)
+    return report
+
+
+async def _nudge_loop() -> None:
+    """Drive the nudge on a timer, since there is no external scheduler here."""
+    interval = _nudge_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await nudge_stale_creator_profiles()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A failed pass must never take the loop — or the app — down.
+            logger.error("profile nudge pass failed: %s", exc)
+
+
+@admin_router.post("/jobs/creator-nudges")
+async def run_creator_nudges(user: dict = Depends(require_roles("admin"))):
+    """Run the nudge pass now. Same function the timer calls, same once-only
+    guarantee, so a manual run can't double-message anybody."""
+    report = await nudge_stale_creator_profiles()
+    # A manual run puts messages on real phones, so it belongs in the log next
+    # to every other admin action that reaches somebody.
+    await audit(user, "job.creator_nudges", "job", "creator_nudges", after=report)
+    return report
 
 
 api_router.include_router(admin_router)
@@ -8421,6 +8749,36 @@ async def get_campaign(
     return payload
 
 
+def _why_you_cannot_apply(profile: Optional[dict]) -> str:
+    """Why this creator can't pitch yet, and what to do about it.
+
+    "Not verified" on its own sends people to support. Whether they are still
+    building, waiting on us, or were turned down are three different problems
+    with three different next steps, so the message says which one it is and
+    names the fields when the answer is "finish your profile".
+    """
+    status = (profile or {}).get("verification_status", "pending")
+    if status == "rejected":
+        reason = (profile or {}).get("verification_reason")
+        return (
+            f"Your profile wasn't approved: {reason} Update it and submit it again."
+            if reason
+            else "Your profile wasn't approved. Update it and submit it again to be reviewed."
+        )
+    if (profile or {}).get("submitted_for_review_at"):
+        return (
+            "Your profile is with the WeAre team — you can pitch on briefs as soon "
+            "as it's approved. Reviews usually finish within 48 hours."
+        )
+    completeness = _profile_completeness(profile or {})
+    outstanding = ", ".join(row["label"] for row in completeness["missing"])
+    return (
+        f"Finish your profile before pitching — it's {completeness['percent']}% done. "
+        f"Still needed: {outstanding}. Submit it for review and we'll get back to you "
+        "within 48 hours."
+    )
+
+
 @campaigns_router.post("/{campaign_id}/apply")
 async def apply_to_campaign(
     campaign_id: str,
@@ -8439,18 +8797,13 @@ async def apply_to_campaign(
     creator_oid = ObjectId(user["_id"])
 
     # Verification has to gate something, or the 48-hour review is decoration.
+    # Browsing stays open to everyone — a creator deciding whether this is worth
+    # finishing a profile for needs to see what is on offer — but pitching does
+    # not, and the check lives here rather than in the UI so it holds whatever
+    # the request came from.
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
-    verification = (profile or {}).get("verification_status", "pending")
-    if verification != "verified":
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Your profile is still with the WeAre team — you can apply to briefs "
-                "as soon as it's approved."
-                if verification == "pending"
-                else "Your profile wasn't approved. Update it to be reviewed again."
-            ),
-        )
+    if (profile or {}).get("verification_status") != "verified":
+        raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
 
     # Don't take a pitch for a slot that's already gone.
     needed = int(campaign.get("creators_needed") or 1)
@@ -8910,6 +9263,13 @@ async def _startup():
     # creator_profiles (1:1 with users)
     await db.creator_profiles.create_index("user_id", unique=True)
     await db.creator_profiles.create_index("verification_status")
+    # The vetting queue reads these together; the nudge job reads the second.
+    await db.creator_profiles.create_index(
+        [("verification_status", 1), ("submitted_for_review_at", 1)]
+    )
+    await db.creator_profiles.create_index(
+        [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
+    )
     await db.creator_profiles.create_index("niches")
 
     # brand_profiles (1:1 with users)
@@ -9044,6 +9404,49 @@ async def _startup():
     await db.creator_profiles.update_many(
         {"pending_review": {"$exists": False}}, {"$set": {"pending_review": False}}
     )
+
+    # 5. The vetting queue used to be "pending, and has an Instagram handle",
+    #    which was a guess at who had finished onboarding. It is now an
+    #    explicit submission timestamp. Backfill it from the old heuristic so
+    #    nobody who was already waiting on us silently drops out of the queue
+    #    on deploy; `updated_at` is the closest thing we have to when they
+    #    finished.
+    backfilled = 0
+    async for doc in db.creator_profiles.find(
+        {
+            "verification_status": "pending",
+            "submitted_for_review_at": {"$exists": False},
+            "instagram_handle": {"$type": "string", "$ne": ""},
+        }
+    ):
+        await db.creator_profiles.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "submitted_for_review_at": doc.get("updated_at")
+                    or doc.get("created_at")
+                    or datetime.now(timezone.utc)
+                }
+            },
+        )
+        backfilled += 1
+    if backfilled:
+        logger.info(
+            "Backfilled submitted_for_review_at on %d creator profile(s) already "
+            "waiting in the vetting queue",
+            backfilled,
+        )
+
+    # The nudge loop. Off entirely when the interval is zero, so a deployment
+    # that has its own scheduler can drive POST /admin/jobs/creator-nudges
+    # instead without two things chasing the same people.
+    if _nudge_interval_seconds() > 0:
+        app.state.nudge_task = asyncio.create_task(_nudge_loop())
+        logger.info(
+            "Creator profile nudges on: every %ds, %d day(s) after signup",
+            _nudge_interval_seconds(),
+            _nudge_after_days(),
+        )
 
     # The Apify scraper is gone, so nothing writes or reads this cache any more.
     # It holds scraped Instagram data, which is exactly what we no longer want
@@ -9351,6 +9754,9 @@ async def _seed_demo_campaigns() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown():
+    task = getattr(app.state, "nudge_task", None)
+    if task:
+        task.cancel()
     client.close()
 
 

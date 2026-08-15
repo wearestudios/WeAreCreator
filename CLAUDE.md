@@ -28,8 +28,38 @@ async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
 `get_current_user` decodes the cookie (or `Authorization: Bearer`) and returns the
 user document with `password_hash` stripped. Admins sign in with email + password;
 creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
+
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
+
+## Creator onboarding
+
+Signup takes a **name and a WhatsApp number**, nothing else. Everything a brand
+shortlists on is built afterwards in the profile builder, over as many sittings as
+it takes:
+
+- `PUT /creator/profile` writes **only the keys present in the body**
+  (`payload.model_fields_set`) — every field is optional, an omitted key means
+  "leave it alone", an explicit `null` means "clear it". Saving never puts anyone
+  in a queue.
+- `POST /creator/profile/submit-for-review` is the only thing that does, and it
+  409s below 100%, naming the missing fields. It stamps `submitted_for_review_at`,
+  which is what `/admin/creators/pending` filters on (`_AWAITING_REVIEW_QUERY`) —
+  not a stray Instagram handle, which is what it used to guess with.
+- `_profile_completeness` is the single definition of "done" and rides along on
+  `GET /creator/profile` and the dashboard. It asks for a channel **per platform
+  the creator picked** (`_PLATFORM_COMPLETENESS_FIELDS`): an Instagram-only creator
+  is never asked for a YouTube link, because otherwise they could never reach 100%
+  and so could never submit at all. Payout details are deliberately not counted —
+  a PAN must not be the price of being looked at.
+- Browsing campaigns is open to everyone; `POST /campaigns/{id}/apply` 403s anyone
+  not `verified` and says which of the three states they're in
+  (`_why_you_cannot_apply`).
+- `nudge_stale_creator_profiles` WhatsApps creators who stalled, once each ever —
+  the `onboarding_nudge_sent_at` stamp is claimed under a filter that only matches
+  while it's absent, before the send. Driven by a startup asyncio loop
+  (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
+  `POST /admin/jobs/creator-nudges`.
 
 ## Collaboration lifecycle
 

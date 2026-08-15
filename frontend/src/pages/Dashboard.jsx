@@ -10,7 +10,7 @@
 // once it has arrived, and every piece of it checks prefers-reduced-motion.
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
-import { Clock, RotateCw, Sparkles, Wallet, XCircle } from "lucide-react";
+import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth, homePathFor } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
@@ -52,9 +52,37 @@ const Banner = ({ Icon, tone, testid, children }) => (
  * and a finished campaign that couldn't be paid out. Neither is discoverable
  * from anywhere else on the page.
  */
-const StatusBanners = ({ profile, justOnboarded }) => {
+const StatusBanners = ({ profile, completeness, justOnboarded }) => {
     const status = profile?.verification_status;
     const items = [];
+
+    // Finished but never sent. Without this a creator can sit at 100% forever
+    // waiting on a review nobody was asked for — the completeness panel hides
+    // itself at 100%, so this is the only thing left to say it.
+    if (
+        status !== "verified" &&
+        completeness?.complete &&
+        !profile?.submitted_for_review_at
+    ) {
+        items.push(
+            <Banner
+                key="ready"
+                testid="profile-ready-banner"
+                Icon={Send}
+                tone="border-ember-500/30 bg-ember-500/10 text-ember-500/90"
+            >
+                Your profile is finished but we haven't seen it yet.{" "}
+                <Link
+                    to="/onboarding/creator"
+                    data-testid="profile-ready-link"
+                    className="underline underline-offset-4 hover:no-underline"
+                >
+                    Send it for review
+                </Link>{" "}
+                and we'll come back within 48 hours.
+            </Banner>,
+        );
+    }
 
     if (justOnboarded) {
         items.push(
@@ -69,7 +97,7 @@ const StatusBanners = ({ profile, justOnboarded }) => {
             </Banner>,
         );
     }
-    if (status === "pending") {
+    if (status === "pending" && profile?.submitted_for_review_at) {
         items.push(
             <Banner
                 key="pending"
@@ -167,6 +195,27 @@ const CreatorHome = ({ user, justOnboarded }) => {
     const groups = data?.collaborations || {};
     const loading = !data && !error;
 
+    // First login after signup: signup collects a name and a number and
+    // nothing else, so a creator who has filled in none of their profile has
+    // no dashboard worth reading yet — send them to the builder instead.
+    // Once per browser session, so "Finish later" actually works and somebody
+    // who just wants to browse isn't bounced back every time.
+    const untouched =
+        Boolean(data) &&
+        (data.profile_completeness?.percent ?? 0) === 0 &&
+        !data.profile?.submitted_for_review_at;
+    const alreadySteered =
+        typeof sessionStorage !== "undefined" &&
+        sessionStorage.getItem("weare.builder-steered") === "1";
+    if (untouched && !alreadySteered) {
+        try {
+            sessionStorage.setItem("weare.builder-steered", "1");
+        } catch {
+            // Private mode. Worst case they get steered again next load.
+        }
+        return <Navigate to="/onboarding/creator" replace />;
+    }
+
     // Section order is the reading order, and the index drives the stagger.
     // Completeness is the only one that can drop out — at 100% there is nothing
     // to say, and an empty wrapper would leave a gap where a panel used to be.
@@ -245,6 +294,7 @@ const CreatorHome = ({ user, justOnboarded }) => {
                         <div className="mt-8">
                             <StatusBanners
                                 profile={data.profile}
+                                completeness={data.profile_completeness}
                                 justOnboarded={justOnboarded}
                             />
                         </div>
