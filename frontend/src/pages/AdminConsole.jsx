@@ -21,6 +21,7 @@ import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
     Dialog,
     DialogClose,
@@ -30,56 +31,21 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-
-const STATE_ORDER = [
-    "applied",
-    "verified",
-    "accepted",
-    "commercial_agreed",
-    "slot_booked",
-    "attended",
-    "content_submitted",
-    "content_approved",
-    "in_payment",
-    "closed",
-    "declined",
-    "cancelled",
-];
-
-const STATE_META = {
-    applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    verified: { label: "Verified", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
-    accepted: { label: "Accepted", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    commercial_agreed: { label: "Commercial agreed", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    slot_booked: { label: "Slot booked", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    attended: { label: "Attended", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
-    content_submitted: { label: "Content submitted", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
-    content_approved: { label: "Content approved", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
-    in_payment: { label: "In payment", tone: "bg-ember-500/15 text-ember-500 border-ember-500/30" },
-    closed: { label: "Closed", tone: "bg-white/5 text-muted-foreground border-white/15" },
-    declined: { label: "Declined", tone: "bg-white/5 text-muted-foreground border-white/15" },
-    cancelled: { label: "Cancelled", tone: "bg-red-500/10 text-red-300/80 border-red-500/25" },
-};
+import AdminCreators from "@/components/admin/AdminCreators";
+import AdminCampaigns from "@/components/admin/AdminCampaigns";
+import {
+    ListSkeleton,
+    STATE_ORDER,
+    StatePill,
+    formatDateTime,
+    formatRupees,
+} from "@/components/admin/shared";
 
 // Steps the brand takes. The console shows these as waiting on them rather than
 // offering an Advance button the API will refuse.
 const BRAND_OWNED = {
     accepted: "Waiting on the brand to accept",
     content_approved: "Waiting on the brand to approve content",
-};
-
-const formatDateTime = (iso) => {
-    if (!iso) return "—";
-    try {
-        return new Date(iso).toLocaleString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    } catch {
-        return iso;
-    }
 };
 
 // A local datetime for <input type="datetime-local">, defaulted a week out.
@@ -90,27 +56,6 @@ const defaultSlotValue = () => {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
         d.getHours(),
     )}:${pad(d.getMinutes())}`;
-};
-
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
-
-const StatePill = ({ state }) => {
-    const m = STATE_META[state] || {
-        label: state,
-        tone: "bg-white/5 text-muted-foreground border-white/15",
-    };
-    return (
-        <span
-            data-testid={`admin-state-pill-${state}`}
-            className={
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
-                m.tone
-            }
-        >
-            {m.label}
-        </span>
-    );
 };
 
 const MetricTile = ({ label, value, prefix, Icon, testid }) => (
@@ -259,9 +204,7 @@ function VerificationQueue({ onChange }) {
 
             <div className="mt-8 rounded-md border border-white/10 bg-card">
                 {rows === null && (
-                    <div className="grid place-items-center py-16 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                    </div>
+                    <ListSkeleton rows={3} testid="admin-verification-skeleton" />
                 )}
                 {Array.isArray(rows) && rows.length === 0 && (
                     <div
@@ -855,11 +798,7 @@ function BrandQueue({ onChange }) {
             </div>
 
             <div className="mt-8 rounded-md border border-white/10 bg-card">
-                {rows === null && (
-                    <div className="grid place-items-center py-16 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                    </div>
-                )}
+                {rows === null && <ListSkeleton rows={2} testid="admin-brands-skeleton" />}
                 {Array.isArray(rows) && rows.length === 0 && (
                     <div
                         data-testid="admin-brands-empty"
@@ -1034,8 +973,11 @@ function CollaborationsBoard({ onChange, feePercent }) {
 
             <div className="mt-8 space-y-8">
                 {board === null && (
-                    <div className="grid place-items-center py-16 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
+                    <div className="rounded-md border border-white/10 bg-card">
+                        <div className="px-6 pt-6">
+                            <Skeleton className="h-4 w-40" />
+                        </div>
+                        <ListSkeleton rows={3} testid="admin-collabs-skeleton" />
                     </div>
                 )}
 
@@ -1251,7 +1193,7 @@ function CollaborationsBoard({ onChange, feePercent }) {
 }
 
 // ---------------------------------------------------------------------------
-// Section 4: Audit trail
+// Section 7: Audit trail
 // ---------------------------------------------------------------------------
 
 const ACTION_LABEL = {
@@ -1301,7 +1243,7 @@ function AuditTrail() {
             <div className="flex items-baseline justify-between">
                 <div>
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                        Section 4
+                        Section 7
                     </p>
                     <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
                         Who did what
@@ -1324,8 +1266,14 @@ function AuditTrail() {
 
             <div className="mt-8 rounded-md border border-white/10 bg-card">
                 {rows === null && (
-                    <div className="grid place-items-center py-16 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
+                    <div data-testid="admin-audit-skeleton" className="divide-y divide-white/10">
+                        {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className="flex items-center gap-4 px-5 py-3">
+                                <Skeleton className="h-3 w-32 flex-none" />
+                                <Skeleton className="h-3 flex-1" />
+                                <Skeleton className="h-3 w-14 flex-none" />
+                            </div>
+                        ))}
                     </div>
                 )}
                 {Array.isArray(rows) && rows.length === 0 && (
@@ -1423,9 +1371,28 @@ export default function AdminConsole() {
                 </p>
 
                 {/* Metrics */}
+                {!metrics && (
+                    <div
+                        data-testid="admin-metrics-skeleton"
+                        className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                    >
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <div
+                                key={i}
+                                className="rounded-md border border-white/10 bg-card p-6"
+                            >
+                                <Skeleton className="h-3 w-24" />
+                                <Skeleton className="mt-6 h-10 w-32" />
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <section
                     data-testid="admin-metrics-strip"
-                    className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                    className={
+                        "mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 " +
+                        (metrics ? "" : "hidden")
+                    }
                 >
                     <MetricTile
                         testid="admin-metric-open-campaigns"
@@ -1472,6 +1439,20 @@ export default function AdminConsole() {
                         Icon={IndianRupee}
                         value={metrics ? formatRupees(metrics.brand_receivable) : "—"}
                     />
+                    {/* Gross value transacted — creator fees plus our margin. */}
+                    <MetricTile
+                        testid="admin-metric-gmv"
+                        label="GMV settled"
+                        prefix
+                        Icon={TrendingUp}
+                        value={metrics ? formatRupees(metrics.gmv) : "—"}
+                    />
+                    <MetricTile
+                        testid="admin-metric-campaigns-total"
+                        label="Campaigns, all time"
+                        Icon={Sparkles}
+                        value={metrics ? metrics.campaigns_total : "—"}
+                    />
                 </section>
 
                 {/* Queues that should be at zero. */}
@@ -1481,6 +1462,10 @@ export default function AdminConsole() {
                         className="mt-4 flex flex-wrap gap-3 text-xs"
                     >
                         {[
+                            {
+                                label: "on your desk",
+                                value: metrics.awaiting_admin_action,
+                            },
                             {
                                 label: "creators awaiting review",
                                 value: metrics.creators_pending_review,
@@ -1513,6 +1498,10 @@ export default function AdminConsole() {
                     onChange={bump}
                     feePercent={metrics?.platform_fee_percent}
                 />
+                {/* Oversight: the roster, the brands, and every campaign in
+                    every state — including the ones the creator feed hides. */}
+                <AdminCreators />
+                <AdminCampaigns />
                 <AuditTrail key={refreshKey} />
             </main>
         </div>
