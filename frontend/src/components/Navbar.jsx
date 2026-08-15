@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
-import { useAuth, homePathFor } from "@/context/AuthContext";
+import { useAuth, homePathFor, isBrandSide } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
@@ -23,7 +23,7 @@ const linksFor = (role) => {
     if (role === "creator" || role === "admin") {
         links.push({ to: "/campaigns", label: "Campaigns", testId: "nav-campaigns" });
     }
-    if (role === "brand") {
+    if (isBrandSide(role)) {
         links.push(
             { to: "/brand/creators", label: "Creators", testId: "nav-brand-creators" },
             {

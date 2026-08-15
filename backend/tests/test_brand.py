@@ -558,17 +558,21 @@ class TestApplicantBoard:
         assert row["creator"]["instagram_handle"]
         assert d["totals"]["with_weare"] == 1
 
-    def test_contact_details_are_withheld_until_acceptance(
+    def test_contact_details_are_withheld_at_every_stage(
         self, brand_session, creator_session
     ):
+        # This used to unlock an email and a phone number on acceptance, which
+        # meant taking somebody onto a campaign handed over a contact they had
+        # never offered. A brand reaches a creator through the platform, or not
+        # at all — before, during and after.
         bs, _, _ = brand_session
         cs, _, cuser = creator_session
         cid, collab_id = self._live_campaign_with_applicant(bs, cs, cuser)
         admin = _admin_session()
 
         row = bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").json()["applicants"][0]
-        assert row["creator"]["email"] is None
-        assert row["creator"]["phone"] is None
+        assert "email" not in row["creator"]
+        assert "phone" not in row["creator"]
 
         pipeline.step(admin, bs, collab_id, "verified")
         pipeline.step(admin, bs, collab_id, "accepted")
@@ -577,7 +581,11 @@ class TestApplicantBoard:
             a for a in bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").json()["applicants"]
             if a["id"] == collab_id
         )
-        assert row2["creator"]["email"], "contact should unlock once working together"
+        assert "email" not in row2["creator"]
+        assert "phone" not in row2["creator"]
+        # What they do get is everything needed to work with the person.
+        assert row2["creator"]["name"]
+        assert row2["creator"]["instagram_handle"]
 
     def test_a_full_campaign_stops_accepting(self, brand_session, creator_session):
         """creators_needed used to be decoration."""

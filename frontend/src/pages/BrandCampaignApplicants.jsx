@@ -13,13 +13,13 @@ import {
     Loader2,
     MapPin,
     MessageSquare,
-    Phone,
     Send,
-    ShieldCheck,
     Users,
     X,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import { WorkNotes } from "@/components/brand/WorkNotes";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -522,22 +522,16 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                 </blockquote>
             )}
 
-            {/* Contact details, once you're working together */}
-            {(c.email || c.phone) && (
-                <div className="flex flex-wrap items-center gap-4 rounded-md border border-white/10 bg-background/40 px-4 py-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1.5 text-ember-500">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Contact unlocked
-                    </span>
-                    {c.phone && (
-                        <span className="inline-flex items-center gap-1.5">
-                            <Phone className="h-3.5 w-3.5" />
-                            {c.phone}
-                        </span>
-                    )}
-                    {c.email && <span>{c.email}</span>}
-                </div>
-            )}
+            {/* Where the offline negotiation gets written down. This used to be
+                a "contact unlocked" panel showing the creator's phone number and
+                email; brands reach creators through the platform now, so what
+                belongs here is the record of the conversation, not a way to
+                start one off-platform. */}
+            <WorkNotes
+                collaborationId={a.id}
+                agreedAmount={a.agreed_amount}
+                quotedRate={a.quoted_rate}
+            />
 
             {a.scheduled_at && (
                 <div
@@ -897,6 +891,10 @@ export default function BrandCampaignApplicants() {
                         </ul>
                     )}
                 </div>
+
+                {/* Applicants are who came to you. This is who to go and ask —
+                    same page, because they are two halves of filling a brief. */}
+                <SuggestedCreators campaignId={id} />
             </main>
 
             <AcceptDialog

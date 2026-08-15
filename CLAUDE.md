@@ -4,8 +4,9 @@ Two-sided marketplace connecting verified creators with brands running paid
 campaigns in Bengaluru. The product is Bengaluru-first — user-facing copy says
 Bengaluru, not "every city in India". The city field and the category list are
 deliberately open for later expansion, but don't write claims the operation
-can't back. Roles: `creator`, `brand`, `admin`, `campaign_manager`
-(staff, assigned per campaign — sees only what they're assigned to).
+can't back. Roles: `creator`, `brand_manager`, `admin`, `campaign_manager`
+(staff, assigned per campaign — sees only what they're assigned to). `brand` is
+the old name for `brand_manager` and both are still accepted — see below.
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
   JWT in httpOnly cookies (`access_token` / `refresh_token`).
@@ -18,14 +19,15 @@ can't back. Roles: `creator`, `brand`, `admin`, `campaign_manager`
 All routes mount under `/api` (`api_router`), with sub-routers by audience:
 `/auth` and `/public` (unauthenticated), `/creator`, `/brand` (some endpoints also
 allow `admin`), `/admin`, `/campaigns` (creator + admin; detail also the owning
-brand), and `/notifications` (any signed-in user), and `/manager` (campaign_manager + admin,
+brand), `/collaborations` (work notes — brand, admin and the assigned manager),
+`/notifications` (any signed-in user), and `/manager` (campaign_manager + admin,
 scoped to assigned campaigns via `_managed_campaign_or_404`).
 
 Guard every non-public endpoint with the `require_roles` dependency factory:
 
 ```python
 @brand_router.get("/dashboard")
-async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
+async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES))):
 ```
 
 `get_current_user` decodes the cookie (or `Authorization: Bearer`) and returns the
@@ -34,6 +36,103 @@ creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
 
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
+
+## The brand manager
+
+A brand has exactly **one login**, and it belongs to a named person captured at
+registration: full name, designation, WhatsApp number (which *is* the login),
+work email. That person is the `brand_manager`.
+
+- `BRAND_ROLES = ("brand", "brand_manager")` — spread into `require_roles` on
+  every brand endpoint. `brand` is what the role used to be called; startup
+  migrates real accounts over (demo feed rows, which have no phone and nobody
+  signs into, are left alone). Never name either string directly; use the tuple,
+  or `is_brand_side(user)`.
+- **`_brand_scope(user)` is how every brand-scoped query finds its brand.**
+  Reaching for `user["_id"]` is correct only while the login and the brand are
+  the same row — a unit test fails any brand endpoint that does. The actor's own
+  id is still right for `agreed_by` and `checked_in_by`.
+- One login per brand is a database constraint (`one_manager_per_brand`, partial
+  unique on `users.brand_id`), not a rule to remember. There is no endpoint that
+  mints a second manager. Don't add one.
+- **Campaigns default their manager to the brand's own person** — `manager_id`,
+  `manager_name`, `manager_phone`, `manager_email` from `_brand_manager_contact`.
+  An admin can still reassign to a WeAre manager.
+- That default means `_managed_campaign_or_404` would pass a brand manager into
+  the `/manager` router on ownership alone. **The role guard is the only thing
+  keeping them out**, and out of the daysheet CSV, which carries creators' phone
+  numbers by design. Every `/manager` route stays `require_roles("campaign_manager",
+  "admin")`; a unit test enforces it.
+- What the brand manager can do on their own campaigns: pause, resume, close,
+  edit while draft, accept/decline, invite (verified brands only), record the
+  agreed fee, approve content or request changes, mark attendance, and read a
+  phone-free roster. **Going live is not theirs** — that stays with admin review.
+  Pause/resume/invite/check-in share one implementation with the admin routes
+  (`_pause_campaign`, `_resume_campaign`, `_invite_creators`,
+  `_check_in_collaboration`) so the two can't diverge.
+- `notify_brand_manager` tells them what happened; `_tell_brand_manager_unless_managed`
+  skips the message when the campaign's manager *is* them and
+  `notify_campaign_manager` already sent one. Two WhatsApps for one booking is
+  how a channel stops being read.
+- Every brand-manager action audits with `**_campaign_audit_context(campaign)`,
+  which attaches `brand_id` and `campaign_id`. "Everything this brand did" and
+  "everything that happened on this brief" are the questions the log is asked.
+
+## Creator data a brand may see
+
+`_brand_visible_creator` is the **only** projection of a creator on any
+brand-facing surface — the directory, the applicant board, the suggestions panel
+and the notes header all go through it. It is an allow-list
+(`_BRAND_VISIBLE_CREATOR_FIELDS`): name, photo, Instagram and YouTube handles
+with their public stats, follower count and its provenance, engagement rate,
+city, niches, genres, platforms, base rate, verification status.
+
+**A brand never receives a phone number, WhatsApp number, email or full
+address** — not at any collaboration state, not in the invite flow, not in an
+export. This is a change: the applicant board used to reveal an email and a
+phone once a collaboration reached `accepted`, so taking somebody onto a
+campaign handed over a contact they never offered. Brands reach creators through
+the platform — the invite endpoint reads the number and never returns it.
+
+`BRAND_FORBIDDEN_CREATOR_FIELDS` lists what must never appear; a unit test walks
+every brand response shape looking for both the keys and the values, and an
+integration test does the same against live HTTP. The WeAre manager's roster and
+daysheet still carry phone numbers — that is the job of the person at the door —
+and stay behind the staff role. The brand's roster passes
+`reveal_contact=False`, which omits the key rather than nulling it.
+
+## Work notes
+
+`collaboration_notes`, reached at `POST`/`GET /collaborations/{id}/notes`.
+Offline negotiation is the model, so this is where the paper trail lives: who
+said what, when, against the application it was about, with the agreed amount
+returned alongside the thread.
+
+Visible to the brand manager on their own campaigns, to admins, and to the
+assigned campaign manager (`_note_readable_collab_or_404` — three doors, a 404
+behind all of them, so whether a thread exists on somebody else's collaboration
+is itself not answered). **Creators never see them**, and the route doesn't
+accept the role at all. Append-only: no edit, no delete — a record that can be
+quietly rewritten is not a record. Every note is audited.
+
+## Suggesting creators
+
+`GET /brand/campaigns/{id}/suggested-creators` ranks verified creators against a
+brief. The whole score is `score_creator_for_campaign` — one pure function, no
+database, no hidden term; `CREATOR_MATCH_WEIGHTS` sums to 100 and is the only
+tuning knob. The components ship with every result, so a brand can see why
+somebody was suggested.
+
+- Signals: niche and genre overlap with the brief, city match, follower count
+  against the budget tier (`CREATOR_REACH_TIERS`), engagement rate, past on-time
+  delivery here. `CAMPAIGN_CATEGORY_SYNONYMS` bridges the category enum to the
+  words creators actually use — nobody writes "fnb" about themselves.
+- **An unmeasured signal scores at the midpoint, never zero.** A creator with no
+  connected Instagram has an unknown engagement rate, not a bad one, and scoring
+  unknowns at zero would bury everyone who has never worked here — which is
+  everyone, at the start. `unknown_signals` names them so the UI can say so.
+- Anyone who already applied or was invited is excluded. Filters for niche, city
+  and follower range; paginated. Admins can call it on any campaign.
 
 ## Creator onboarding
 

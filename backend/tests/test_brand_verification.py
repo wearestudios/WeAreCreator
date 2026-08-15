@@ -533,14 +533,15 @@ class TestUnverifiedBrandCannotReachCreators:
         pipeline.apply_to_campaign(cs, cid)
         assert bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").status_code == 404
 
-    def test_contact_details_still_wait_for_an_accepted_collaboration(self, admin, brand, creator):
-        # Verification is necessary, not sufficient — a verified brand still
-        # doesn't get a phone number off the back of an application.
+    def test_contact_details_are_not_a_reward_for_being_verified(self, admin, brand, creator):
+        # Verification is necessary, not sufficient — and passing it does not
+        # buy a phone number. The key is absent rather than null: a brand
+        # response has no creator-contact shape at all.
         bs, user_id = brand
         cs, _ = creator
         _fully_verified(bs, admin, user_id)
         cid = pipeline.seed_open_campaign(bs, admin, brand_ready=True)
         pipeline.apply_to_campaign(cs, cid)
         row = bs.get(f"{BASE_URL}/brand/campaigns/{cid}/applicants").json()["applicants"][0]
-        assert row["creator"]["phone"] is None
-        assert row["creator"]["email"] is None
+        assert "phone" not in row["creator"]
+        assert "email" not in row["creator"]
