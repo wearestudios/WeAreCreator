@@ -11,7 +11,8 @@ const AuthContext = createContext(null);
  * Exported from here so the navbar, the route guard and the dashboard root all
  * agree; three copies of this rule is how you get a redirect loop.
  */
-export const homePathFor = (role) => (role === "admin" ? "/admin" : "/dashboard");
+export const homePathFor = (role) =>
+    role === "admin" ? "/admin" : role === "campaign_manager" ? "/manager" : "/dashboard";
 
 export const AuthProvider = ({ children }) => {
     // null = checking, false = anonymous, object = authenticated

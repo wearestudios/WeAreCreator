@@ -38,6 +38,14 @@ const linksFor = (role) => {
             testId: "nav-admin",
             accent: true,
         });
+    } else if (role === "campaign_manager") {
+        // A manager's home is their campaign list; there is no other page.
+        links.push({
+            to: "/manager",
+            label: "My campaigns",
+            testId: "nav-manager",
+            accent: true,
+        });
     } else {
         links.push({
             to: homePathFor(role),

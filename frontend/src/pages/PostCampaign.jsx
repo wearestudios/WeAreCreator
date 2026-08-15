@@ -277,6 +277,126 @@ export default function PostCampaign() {
                 >
                     <section className="space-y-5">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            What kind of campaign
+                        </p>
+                        <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-3">
+                            {[
+                                {
+                                    value: "launch",
+                                    label: "Launch",
+                                    blurb: "One day. Everyone comes at once.",
+                                },
+                                {
+                                    value: "group_event",
+                                    label: "Group event",
+                                    blurb: "One day, in timed groups.",
+                                },
+                                {
+                                    value: "personal_table",
+                                    label: "Personal table",
+                                    blurb: "A window creators book into.",
+                                },
+                            ].map((opt) => {
+                                const on = campaignType === opt.value;
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        aria-pressed={on}
+                                        disabled={isEditing}
+                                        data-testid={`pc-type-${opt.value}`}
+                                        onClick={() => setCampaignType(opt.value)}
+                                        className={
+                                            "rounded-md border p-5 text-left transition-colors duration-200 disabled:opacity-50 " +
+                                            (on
+                                                ? "border-ember-500 bg-ember-500/10"
+                                                : "border-white/10 bg-card/60 hover:border-white/25")
+                                        }
+                                    >
+                                        <span
+                                            className={
+                                                "block text-sm " +
+                                                (on ? "text-ember-500" : "text-foreground")
+                                            }
+                                        >
+                                            {opt.label}
+                                        </span>
+                                        <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                            {opt.blurb}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {isEditing && (
+                            <p className="text-xs text-muted-foreground">
+                                The type is fixed once a campaign exists — it decides which
+                                dates the brief carries.
+                            </p>
+                        )}
+
+                        {/* Only the dates this type actually has. */}
+                        {campaignType === "personal_table" ? (
+                            <div className="grid gap-5 md:grid-cols-2">
+                                <div>
+                                    <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        Bookable from
+                                    </Label>
+                                    <div className="relative mt-2">
+                                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="pc-start"
+                                            data-testid="pc-start-input"
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        Until
+                                    </Label>
+                                    <div className="relative mt-2">
+                                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="pc-end"
+                                            data-testid="pc-end-input"
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="md:max-w-xs">
+                                <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Which day
+                                </Label>
+                                <div className="relative mt-2">
+                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="pc-event"
+                                        data-testid="pc-event-input"
+                                        type="date"
+                                        value={eventDate}
+                                        onChange={(e) => setEventDate(e.target.value)}
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                    />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Your campaign manager sets the individual time slots once
+                                    the brief is approved.
+                                </p>
+                            </div>
+                        )}
+                    </section>
+
+                    <section className="space-y-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             The brief
                         </p>
                         <div>
@@ -421,98 +541,6 @@ export default function PostCampaign() {
                                         ))}
                                     </SelectContent>
                                 </Select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                Campaign type
-                            </Label>
-                            <div data-testid="pc-type-picker" className="mt-2 flex flex-wrap gap-2">
-                                {[
-                                    { value: "personal_table", label: "Personal table" },
-                                    { value: "launch", label: "Launch" },
-                                    { value: "group_event", label: "Group event" },
-                                ].map((opt) => {
-                                    const on = campaignType === opt.value;
-                                    return (
-                                        <button
-                                            key={opt.value}
-                                            type="button"
-                                            aria-pressed={on}
-                                            disabled={isEditing}
-                                            data-testid={`pc-type-${opt.value}`}
-                                            onClick={() => setCampaignType(opt.value)}
-                                            className={
-                                                "rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 disabled:opacity-50 " +
-                                                (on
-                                                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                                                    : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
-                                            }
-                                        >
-                                            {opt.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                                {campaignType === "personal_table"
-                                    ? "Creators book a table inside a window you set."
-                                    : "Everyone comes on one day — you'll set the slots after review."}
-                            </p>
-                        </div>
-
-                        {campaignType !== "personal_table" && (
-                            <div>
-                                <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Event day
-                                </Label>
-                                <div className="relative mt-2 md:max-w-xs">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="pc-event"
-                                        data-testid="pc-event-input"
-                                        type="date"
-                                        value={eventDate}
-                                        onChange={(e) => setEventDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        <div className={campaignType === "personal_table" ? "grid gap-5 md:grid-cols-2" : "hidden"}>
-                            <div>
-                                <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Start date
-                                </Label>
-                                <div className="relative mt-2">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="pc-start"
-                                        data-testid="pc-start-input"
-                                        type="date"
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    End date
-                                </Label>
-                                <div className="relative mt-2">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="pc-end"
-                                        data-testid="pc-end-input"
-                                        type="date"
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                    />
-                                </div>
                             </div>
                         </div>
 
