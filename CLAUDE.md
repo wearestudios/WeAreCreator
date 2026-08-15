@@ -91,10 +91,12 @@ Every interactive or informational element carries a `data-testid`, kebab-case a
 shaped `<feature>-<element>[-<qualifier>]` (e.g. `brand-campaign-publish-{id}`).
 The automated test agent locates elements this way; UI without them can't be checked.
 
-`frontend/src/constants/testIds/` documents the registry pattern (per-feature file,
-re-exported from `index.js`), **but nothing imports it** — all usages are inline
-string literals, and `auth.js` doesn't match the shipped OTP screens. Match the
-surrounding file's inline style unless you're migrating the whole thing.
+`frontend/src/constants/testIds/` holds the registry (per-feature file, re-exported
+from `index.js`). The admin console, the manager interface and the creator home
+(`components/creator/`, `pages/Dashboard.jsx`) import from it; the older
+brand-facing pages still use inline string literals, and `auth.js` doesn't match
+the shipped OTP screens. Match the surrounding file — add to the registry when the
+feature already uses it, inline otherwise, and don't half-migrate a page.
 
 ## Tests
 
