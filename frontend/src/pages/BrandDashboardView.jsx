@@ -62,6 +62,11 @@ const STATUS_META = {
         label: "Live",
         tone: "bg-ember-500/15 text-ember-500 border-ember-500/30",
     },
+    // Stopped by us, not over — see pause_campaign on the server.
+    paused: {
+        label: "Paused",
+        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    },
     in_progress: {
         label: "In progress",
         tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",

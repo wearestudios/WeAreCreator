@@ -322,10 +322,41 @@ class ScheduleSlotPayload(BaseModel):
     location_note: Optional[str] = Field(default=None, max_length=300)
 
 
+# Why a collaboration ended. Recorded separately from the free-text reason so
+# no-shows can be counted rather than read.
+CANCELLATION_TYPES = ("creator_no_show", "brand_cancelled", "admin_cancelled")
+CancellationType = Literal["creator_no_show", "brand_cancelled", "admin_cancelled"]
+
+
 class MarkPaidPayload(BaseModel):
     """Payload recording an actual payout that happened outside the platform."""
 
     payment_reference: str = Field(min_length=1, max_length=140)
+
+
+class ReasonPayload(BaseModel):
+    """A decision somebody has to be able to explain afterwards.
+
+    Distinct from `DecisionPayload`, where the reason is optional: these are the
+    actions that undo, stop or claw back something, and an unexplained one is
+    unreadable a week later.
+    """
+
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class CancelCollabPayload(ReasonPayload):
+    """Why a collaboration ended, in both a countable and a readable form."""
+
+    # Defaults to the admin doing it, which is true whenever nobody says
+    # otherwise, and keeps older callers working.
+    cancellation_type: CancellationType = "admin_cancelled"
+
+
+class RefundPayload(ReasonPayload):
+    """A payout being clawed back. The reference is how it reconciles."""
+
+    refund_reference: Optional[str] = Field(default=None, max_length=140)
 
 
 # --- Domain models (schema-only; used for validation & docs) ---------------
@@ -333,7 +364,16 @@ class MarkPaidPayload(BaseModel):
 UserStatus = Literal["pending", "active", "suspended"]
 VerificationStatus = Literal["pending", "verified", "rejected"]
 CampaignStatus = Literal[
-    "draft", "pending_review", "upcoming", "open", "in_progress", "completed", "closed"
+    "draft",
+    "pending_review",
+    "upcoming",
+    "open",
+    "in_progress",
+    # Off the feed but not over: work already under way carries on, and it can
+    # be resumed. A campaign we had to stop is not the same as one that ended.
+    "paused",
+    "completed",
+    "closed",
 ]
 CollabState = Literal[
     "applied",
@@ -350,8 +390,10 @@ CollabState = Literal[
     "declined",
     "cancelled",
 ]
-PaymentState = Literal["pending", "paid"]
-BrandInvoiceState = Literal["pending", "sent", "settled"]
+# "cancelled" is a payout that will never happen; "refunded" is one that
+# happened and was clawed back. Reporting has to be able to tell them apart.
+PaymentState = Literal["pending", "paid", "cancelled", "refunded"]
+BrandInvoiceState = Literal["pending", "sent", "settled", "void"]
 
 # The happy path, in order. `declined` / `cancelled` are exits, not steps, so
 # they deliberately do not appear here.
@@ -2094,12 +2136,16 @@ def _serialize_brand_campaign(
         "review_reason": doc.get("review_reason"),
         "submitted_for_review_at": _iso(doc.get("submitted_for_review_at")),
         "reviewed_at": _iso(doc.get("reviewed_at")),
-        "can_edit": status in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open"),
+        # Why it is off the feed, when an admin took it off.
+        "pause_reason": doc.get("pause_reason"),
+        "paused": status == "paused",
+        "can_edit": status
+        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "paused"),
         # "Publish" now means "submit for review" — see publish_brand_campaign.
         "can_publish": status == "draft",
         "awaiting_review": status == CAMPAIGN_REVIEW_STATUS,
         "can_close": status
-        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "in_progress"),
+        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "in_progress", "paused"),
         "can_delete": status == "draft" and applicant_count == 0,
     }
 
@@ -2299,8 +2345,11 @@ async def update_brand_campaign(
     once it's in progress the terms creators applied under are fixed."""
     doc = await _own_campaign_or_404(campaign_id, user)
     # A campaign under review is editable: it isn't in front of anyone yet, and
-    # fixing what we asked about is the whole point of a rejection.
-    if doc.get("status") not in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open"):
+    # fixing what we asked about is the whole point of a rejection. So is a
+    # paused one — fixing it is often why it was paused.
+    if doc.get("status") not in (
+        "draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "paused",
+    ):
         raise HTTPException(
             status_code=409,
             detail="This campaign can no longer be edited — close it and post a new one.",
@@ -3027,9 +3076,29 @@ def _next_collab_state(current: str) -> Optional[str]:
     return COLLAB_STATE_ORDER[idx + 1]
 
 
+def _previous_collab_state(current: str) -> Optional[str]:
+    """The step before this one, or None at the start / on an exit state.
+
+    The mirror of `_next_collab_state`. Terminal exits are not on the ladder, so
+    they have no previous step either — coming back from one is a different
+    decision, not a step backwards.
+    """
+    try:
+        idx = COLLAB_STATE_ORDER.index(current)
+    except ValueError:
+        return None
+    if idx == 0:
+        return None
+    return COLLAB_STATE_ORDER[idx - 1]
+
+
 # Steps only the brand may take. The admin console shows them as waiting on the
 # brand rather than offering an Advance button that bypasses the buyer.
 _BRAND_OWNED_TRANSITIONS = {"accepted", "content_approved"}
+
+# States a collaboration can be declined from: before the brand has taken the
+# creator on. After that it is a cancellation, which is a different admission.
+_DECLINABLE_STATES = ("applied", "verified")
 
 
 class AdvanceCollabPayload(BaseModel):
@@ -4003,6 +4072,273 @@ async def reject_campaign(
     }
 
 
+# A campaign can be paused from any state where it is still running, and comes
+# back to whichever of those it was in.
+_PAUSABLE_STATUSES = ("upcoming", "open", "in_progress")
+_CLOSED_CAMPAIGN_STATUSES = ("completed", "closed")
+
+
+async def _admin_campaign_or_404(campaign_id: str) -> dict:
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    doc = await db.campaigns.find_one({"_id": cid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return doc
+
+
+@admin_router.post("/campaigns/{campaign_id}/pause")
+async def pause_campaign(
+    campaign_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take a live campaign off the feed without ending it.
+
+    Collaborations already under way are untouched — pausing stops new
+    applications, it does not cancel work somebody is mid-way through. The
+    status it was in is remembered so resuming puts it back rather than
+    guessing.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current == "paused":
+        raise HTTPException(status_code=409, detail="This campaign is already paused.")
+    if current not in _PAUSABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A campaign that is {current} isn't running, so there's nothing to pause.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": current},
+        {
+            "$set": {
+                "status": "paused",
+                "paused_at": now,
+                "paused_from_status": current,
+                "pause_reason": payload.reason,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.pause",
+        "campaign",
+        doc["_id"],
+        before={"status": current},
+        after={"status": "paused"},
+        note=payload.reason,
+    )
+    return {"id": campaign_id, "status": "paused", "paused_from_status": current}
+
+
+@admin_router.post("/campaigns/{campaign_id}/resume")
+async def resume_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Put a paused campaign back where it was.
+
+    Pause without this is a one-way door, which is the shape of problem the rest
+    of this change is about. The end date is re-checked on the way back, so a
+    campaign paused past its window returns as completed rather than quietly
+    reopening.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    if doc.get("status") != "paused":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {doc.get('status')}, not paused.",
+        )
+
+    now = datetime.now(timezone.utc)
+    back_to = doc.get("paused_from_status") or "open"
+    end = doc.get("end_date")
+    if end is not None and end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    if end and end < now:
+        back_to = "completed"
+
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": "paused"},
+        {
+            "$set": {"status": back_to, "resumed_at": now, "updated_at": now},
+            "$unset": {"paused_from_status": "", "pause_reason": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.resume",
+        "campaign",
+        doc["_id"],
+        before={"status": "paused"},
+        after={"status": back_to},
+        note=(payload.reason if payload else None),
+    )
+    # Re-check the fill: slots may have changed while it was off the feed.
+    await _sync_campaign_fill(doc["_id"])
+    return {"id": campaign_id, "status": back_to}
+
+
+@admin_router.post("/campaigns/{campaign_id}/close")
+async def admin_close_campaign(
+    campaign_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stop a campaign for good, and answer everyone still waiting on it.
+
+    The same shape as the brand's own close, but available to us when the brand
+    won't or can't: collaborations under way are left alone, and applications
+    nobody ever decided on are declined rather than left hanging forever.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current in _CLOSED_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409, detail=f"This campaign is already {current}."
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": current},
+        {
+            "$set": {
+                "status": "closed",
+                "closed_reason": payload.reason,
+                "closed_at": now,
+                "closed_by_admin": True,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    stale = await db.collaborations.find(
+        {"campaign_id": doc["_id"], "state": {"$in": list(_DECLINABLE_STATES)}}
+    ).to_list(length=500)
+    for collab in stale:
+        await db.collaborations.update_one(
+            {"_id": collab["_id"], "state": collab["state"]},
+            {
+                "$set": {
+                    "state": "declined",
+                    "active": False,
+                    "exit_reason": f"Campaign closed: {payload.reason}",
+                    "declined_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+        await notify(
+            collab["creator_id"],
+            "application_declined",
+            title="Campaign closed",
+            body=payload.reason,
+            link="/campaigns",
+        )
+
+    await audit(
+        user,
+        "campaign.close",
+        "campaign",
+        doc["_id"],
+        before={"status": current},
+        after={"status": "closed", "applications_closed": len(stale)},
+        note=payload.reason,
+    )
+    return {
+        "id": campaign_id,
+        "status": "closed",
+        "applications_closed": len(stale),
+    }
+
+
+@admin_router.patch("/campaigns/{campaign_id}")
+async def admin_update_campaign(
+    campaign_id: str,
+    payload: UpdateCampaignPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Correct a campaign, including a live one.
+
+    The brand's own edit stops once a campaign is finished; ours does too, for
+    the same reason — the terms creators applied under can't be rewritten after
+    the fact. What this adds is the ability to fix a live brief without going
+    through the brand, which is what support actually needs.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current in _CLOSED_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {current} and can no longer be edited.",
+        )
+
+    fields = payload.model_dump(exclude_unset=True)
+    update: dict = {}
+    for key, value in fields.items():
+        if value is None and key not in ("start_date", "end_date"):
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        update[key] = value
+    if not update:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+
+    start = update.get("start_date", doc.get("start_date"))
+    end = update.get("end_date", doc.get("end_date"))
+    if start and end and end < start:
+        raise HTTPException(
+            status_code=422, detail="End date cannot be before start date"
+        )
+
+    # The same floor the brand's edit has: never shrink a brief below the
+    # creators already committed to it.
+    if "creators_needed" in update:
+        filled = (await _filled_counts_for([doc["_id"]])).get(doc["_id"], 0)
+        if int(update["creators_needed"]) < filled:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{filled} creator(s) are already confirmed on this campaign.",
+            )
+
+    before = {k: doc.get(k) for k in update}
+    update["updated_at"] = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"]}, {"$set": update}, return_document=True
+    )
+
+    await audit(
+        user,
+        "campaign.update",
+        "campaign",
+        doc["_id"],
+        before=before,
+        after={k: v for k, v in update.items() if k != "updated_at"},
+    )
+    await _sync_campaign_fill(doc["_id"])
+
+    counts = await _applicant_counts_for([doc["_id"]])
+    return _serialize_brand_campaign(updated, counts.get(doc["_id"], 0))
+
+
 # Campaigns you can still usefully invite someone to. A finished campaign gives
 # the creator a brief they can never apply to; a draft or one still in review
 # gives them one they cannot even see, which would walk an unapproved brief
@@ -4886,15 +5222,210 @@ async def advance_collaboration(
     }
 
 
+@admin_router.post("/collaborations/{collab_id}/revert")
+async def revert_collaboration(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Move a collaboration back one step.
+
+    The ladder used to only go up, so a fee agreed at the wrong number or a slot
+    booked on the wrong day had no fix short of cancelling the whole thing. This
+    is the step back; re-advancing then writes the corrected values over the old
+    ones.
+
+    Not a way out of a finished collaboration: `closed` means the creator has
+    been paid, and the exits are decisions rather than steps, so neither can be
+    walked back from here.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    current = collab.get("state", "applied")
+    if current == "closed":
+        raise HTTPException(
+            status_code=409,
+            detail="This collaboration is closed and paid. It can't be reverted.",
+        )
+    if current in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This collaboration is {current}, which is an exit rather than a "
+                "step. Reverting only walks back the pipeline."
+            ),
+        )
+
+    to_state = _previous_collab_state(current)
+    if not to_state:
+        raise HTTPException(
+            status_code=409,
+            detail="This collaboration is at the first step — there's nothing behind it.",
+        )
+
+    # A paid-out payout is money that left the bank. Undoing the state that
+    # produced it would strand the payment; refund is the route for that.
+    payment = await db.payments.find_one({"collaboration_id": oid})
+    if payment and payment.get("state") == "paid":
+        raise HTTPException(
+            status_code=409,
+            detail="This payout has already been paid. Refund it instead of reverting.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid, "state": current},  # precondition — never a blind write
+        {
+            "$set": {
+                "state": to_state,
+                "reverted_at": now,
+                "reverted_from": current,
+                "revert_reason": payload.reason,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    # Stepping back out of `in_payment` must take the payable with it. The row
+    # is deleted rather than cancelled because `collaboration_id` is unique, so
+    # a cancelled one left behind would stop the payment being recreated when
+    # the collaboration advances again. The audit entry below is the record.
+    payment_removed = None
+    if payment and current == "in_payment":
+        await db.payments.delete_one({"_id": payment["_id"], "state": "pending"})
+        payment_removed = {
+            "payment_id": str(payment["_id"]),
+            "creator_payout": payment.get("creator_payout"),
+        }
+
+    await audit(
+        user,
+        "collaboration.revert",
+        "collaboration",
+        oid,
+        before={
+            "state": current,
+            # What the forward step had written, so the old numbers survive the
+            # overwrite that a re-advance performs.
+            "agreed_amount": collab.get("agreed_amount"),
+            "scheduled_at": collab.get("scheduled_at"),
+            "payment": payment_removed,
+        },
+        after={"state": to_state},
+        note=payload.reason,
+    )
+
+    # Coming back below `accepted` frees the slot on the campaign again.
+    await _sync_campaign_fill(collab["campaign_id"])
+
+    return {
+        "id": collab_id,
+        "state": to_state,
+        "reverted_from": current,
+        "payment_voided": payment_removed is not None,
+        "next_state": _next_collab_state(to_state),
+    }
+
+
+@admin_router.post("/collaborations/{collab_id}/decline")
+async def decline_applicant(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Turn down an applicant before anyone took them on.
+
+    Separate from `cancel`: nothing was agreed and nothing was owed, so this is
+    a "no thanks" rather than an admission that something fell through. Past
+    `verified` the brand has accepted them, and ending it there is a
+    cancellation.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    current = collab.get("state", "applied")
+    if current in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409, detail=f"This application is already {current}."
+        )
+    if current not in _DECLINABLE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This creator is already {current} on the campaign. Cancel the "
+                "collaboration instead of declining the application."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid, "state": current},
+        {
+            "$set": {
+                "state": "declined",
+                "active": False,
+                "exit_reason": payload.reason,
+                "declined_at": now,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.decline",
+        "collaboration",
+        oid,
+        before={"state": current},
+        after={"state": "declined"},
+        note=payload.reason,
+    )
+    await _sync_campaign_fill(collab["campaign_id"])
+    await notify(
+        collab["creator_id"],
+        "application_declined",
+        title="Your application wasn't taken forward",
+        body=payload.reason,
+        link="/campaigns",
+    )
+    return {"id": collab_id, "state": "declined"}
+
+
 @admin_router.post("/collaborations/{collab_id}/cancel")
 async def cancel_collaboration(
     collab_id: str,
-    payload: DecisionPayload,
+    payload: CancelCollabPayload,
     user: dict = Depends(require_roles("admin")),
 ):
     """End a collaboration that is already under way — a no-show, a pull-out, a
     brand cancelling the shoot. Without this the only exit was to leave the row
-    sitting mid-pipeline forever."""
+    sitting mid-pipeline forever.
+
+    The awkward case is a cancellation after the fee was agreed: no payment row
+    exists yet (one is only created at `in_payment`), so there is nothing to
+    refund, but there was a number both sides had accepted. That number is
+    recorded on the way out, and a cancellation after the creator has already
+    turned up is flagged for a settlement decision rather than silently dropped.
+    """
     try:
         oid = ObjectId(collab_id)
     except Exception:
@@ -4914,8 +5445,26 @@ async def cancel_collaboration(
     if payment and payment.get("state") == "paid":
         raise HTTPException(
             status_code=409,
-            detail="This collaboration has already been paid out and can't be cancelled.",
+            detail=(
+                "This collaboration has already been paid out. Refund the payment "
+                "instead — that cancels the collaboration with it."
+            ),
         )
+
+    # Was there a live commitment when it fell over, and had the creator already
+    # done the work? Both are facts, not policy — what to pay is a human call,
+    # so this flags it rather than deciding it.
+    order = COLLAB_STATE_ORDER
+    agreed_amount = collab.get("agreed_amount")
+    had_agreement = current in order and order.index(current) >= order.index(
+        "commercial_agreed"
+    )
+    creator_attended = current in order and order.index(current) >= order.index(
+        "attended"
+    )
+    settlement_review_needed = bool(
+        agreed_amount and creator_attended and payload.cancellation_type != "creator_no_show"
+    )
 
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
@@ -4925,6 +5474,14 @@ async def cancel_collaboration(
                 "state": "cancelled",
                 "active": False,
                 "exit_reason": payload.reason,
+                "cancellation_type": payload.cancellation_type,
+                "cancelled_at": now,
+                "cancelled_from_state": current,
+                # Kept so a dropped commitment is still readable after the
+                # collaboration leaves the "ongoing" group it was counted in.
+                "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
+                "creator_attended": creator_attended,
+                "settlement_review_needed": settlement_review_needed,
                 "updated_at": now,
             }
         },
@@ -4945,8 +5502,12 @@ async def cancel_collaboration(
         "collaboration.cancel",
         "collaboration",
         oid,
-        before={"state": current},
-        after={"state": "cancelled"},
+        before={"state": current, "agreed_amount": agreed_amount},
+        after={
+            "state": "cancelled",
+            "cancellation_type": payload.cancellation_type,
+            "settlement_review_needed": settlement_review_needed,
+        },
         note=payload.reason,
     )
     await _sync_campaign_fill(collab["campaign_id"])
@@ -4954,10 +5515,19 @@ async def cancel_collaboration(
         collab["creator_id"],
         "application_declined",
         title="Collaboration cancelled",
-        body=payload.reason or "This collaboration was cancelled.",
+        body=payload.reason,
         link="/dashboard",
     )
-    return {"id": collab_id, "state": "cancelled"}
+    return {
+        "id": collab_id,
+        "state": "cancelled",
+        "cancellation_type": payload.cancellation_type,
+        "cancelled_from_state": current,
+        "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
+        # True when the creator had already turned up for work that was agreed:
+        # somebody has to decide what they are owed.
+        "settlement_review_needed": settlement_review_needed,
+    }
 
 
 @admin_router.post("/payments/{payment_id}/mark_paid")
@@ -5044,6 +5614,133 @@ async def mark_payment_paid(
         "paid_at": _iso(payment["paid_at"]),
         "payment_reference": payment.get("payment_reference"),
         "collaboration_id": str(payment["collaboration_id"]),
+    }
+
+
+@admin_router.post("/payments/{payment_id}/refund")
+async def refund_payment(
+    payment_id: str,
+    payload: RefundPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Claw back a payout that already went out, and end the collaboration.
+
+    Like `mark_paid`, this records something that happened in the bank rather
+    than moving money itself. `refunded` is deliberately a separate state from
+    `cancelled`: cancelled is a payout that never happened, refunded is one that
+    happened and came back, and every revenue figure has to be able to tell them
+    apart.
+
+    If we had already collected from the brand, the refund leaves us holding
+    their money — that is flagged rather than resolved, because paying a brand
+    back is a decision with an invoice attached.
+    """
+    try:
+        pid = ObjectId(payment_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    existing = await db.payments.find_one({"_id": pid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    state = existing.get("state")
+    if state == "refunded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This payout was already refunded on {_iso(existing.get('refunded_at'))}.",
+        )
+    if state != "paid":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This payout is {state}, so there is nothing to refund. Cancel the "
+                "collaboration instead."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    invoice_state = existing.get("brand_invoice_state")
+    brand_refund_due = invoice_state == "settled"
+
+    payment = await db.payments.find_one_and_update(
+        {"_id": pid, "state": "paid"},  # precondition, so a double-click is a no-op
+        {
+            "$set": {
+                "state": "refunded",
+                "refunded_at": now,
+                "refund_reason": payload.reason,
+                "refund_reference": (payload.refund_reference or "").strip() or None,
+                # Nothing is owed to us on a refunded collaboration. An invoice
+                # already settled is money we now hold for the brand, so that
+                # one is left alone and flagged instead of quietly voided.
+                "brand_invoice_state": invoice_state if brand_refund_due else "void",
+                "brand_refund_due": brand_refund_due,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not payment:
+        raise HTTPException(
+            status_code=409, detail="This payment just changed — reload and try again."
+        )
+
+    # The collaboration goes with it: work that was paid for and then unwound is
+    # not a closed collaboration.
+    collab_id = payment["collaboration_id"]
+    collab = await db.collaborations.find_one({"_id": collab_id})
+    previous_state = (collab or {}).get("state")
+    await db.collaborations.update_one(
+        {"_id": collab_id},
+        {
+            "$set": {
+                "state": "cancelled",
+                "active": False,
+                "cancellation_type": "admin_cancelled",
+                "exit_reason": payload.reason,
+                "cancelled_at": now,
+                "cancelled_from_state": previous_state,
+                "refunded": True,
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "payment.refund",
+        "payment",
+        pid,
+        before={"state": "paid", "creator_payout": payment.get("creator_payout")},
+        after={
+            "state": "refunded",
+            "refund_reference": payment.get("refund_reference"),
+            "collaboration_state": "cancelled",
+            "brand_refund_due": brand_refund_due,
+        },
+        note=payload.reason,
+    )
+
+    if collab:
+        await _sync_campaign_fill(collab["campaign_id"])
+        await notify(
+            collab["creator_id"],
+            "application_declined",
+            title="Collaboration reversed",
+            body=payload.reason,
+            link="/dashboard",
+        )
+
+    return {
+        "id": payment_id,
+        "state": "refunded",
+        "refunded_at": _iso(now),
+        "refund_reference": payment.get("refund_reference"),
+        "collaboration_id": str(collab_id),
+        "collaboration_state": "cancelled",
+        # True when the brand had already settled: we are holding their money.
+        "brand_refund_due": brand_refund_due,
     }
 
 
@@ -5182,13 +5879,51 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
 @admin_router.get("/audit")
 async def list_audit_log(
     limit: int = 100,
+    actor_id: Optional[str] = None,
+    action: Optional[str] = None,
     subject_type: Optional[str] = None,
+    subject_id: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
     user: dict = Depends(require_roles("admin")),
 ):
-    """Who did what, most recent first."""
+    """Who did what, most recent first.
+
+    `action` matches a whole action ("payment.refund") or a prefix ("payment"),
+    because "everything that happened to money" is the question people actually
+    arrive with.
+    """
     query: dict = {}
     if subject_type:
         query["subject_type"] = subject_type
+    if subject_id:
+        # Subject ids are stored as ObjectId where we have one and as a string
+        # otherwise, so both shapes have to be matched.
+        candidates: list = [subject_id]
+        try:
+            candidates.append(ObjectId(subject_id))
+        except Exception:
+            pass
+        query["subject_id"] = {"$in": candidates}
+    if actor_id:
+        try:
+            query["actor_id"] = ObjectId(actor_id)
+        except Exception:
+            raise HTTPException(status_code=422, detail="actor_id is not a valid id.")
+    if action:
+        term = action.strip()[:80]
+        if "." in term:
+            query["action"] = term
+        else:
+            query["action"] = {"$regex": f"^{re.escape(term)}\\.", "$options": "i"}
+    if date_from or date_to:
+        window: dict = {}
+        if date_from:
+            window["$gte"] = date_from
+        if date_to:
+            window["$lte"] = date_to
+        query["created_at"] = window
+
     limit = max(1, min(int(limit or 100), 500))
     docs = (
         await db.audit_log.find(query)
@@ -5198,6 +5933,9 @@ async def list_audit_log(
     return [
         {
             "id": str(d["_id"]),
+            # The id, not just the name: names change, and "which admin" is the
+            # question an audit log exists to answer.
+            "actor_id": str(d["actor_id"]) if d.get("actor_id") else None,
             "actor_name": d.get("actor_name"),
             "actor_role": d.get("actor_role"),
             "action": d.get("action"),
@@ -5847,6 +6585,10 @@ async def _startup():
     # audit log + notifications
     await db.audit_log.create_index([("created_at", -1)])
     await db.audit_log.create_index([("subject_type", 1), ("subject_id", 1)])
+    # "what did this admin do", and "everything that happened to money", both
+    # newest-first — the two ways the log is actually read.
+    await db.audit_log.create_index([("actor_id", 1), ("created_at", -1)])
+    await db.audit_log.create_index([("action", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("read", 1)])
 

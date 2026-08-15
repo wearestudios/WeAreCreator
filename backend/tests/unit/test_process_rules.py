@@ -952,3 +952,314 @@ class TestRejectionsCarryAReason:
         src = inspect.getsource(server.reject_campaign)
         assert '"status": "draft"' in src
         assert "review_reason" in src
+
+
+# ---------------------------------------------------------------------------
+# Reversal, failure paths and refunds. The ladder used to only go up: a fee
+# agreed at the wrong number had no fix short of cancelling the whole thing,
+# and a payout that went out could not come back.
+# ---------------------------------------------------------------------------
+
+
+class TestReversal:
+    def test_the_step_back_mirrors_the_step_forward(self):
+        for state in server.COLLAB_STATE_ORDER[1:]:
+            back = server._previous_collab_state(state)
+            assert server._next_collab_state(back) == state
+
+    def test_the_first_step_has_nothing_behind_it(self):
+        assert server._previous_collab_state(server.COLLAB_STATE_ORDER[0]) is None
+
+    @pytest.mark.parametrize("state", ["declined", "cancelled"])
+    def test_an_exit_is_not_a_step_you_can_walk_back(self, state):
+        # Coming back from an exit is a different decision, not a reversal.
+        assert server._previous_collab_state(state) is None
+
+    def test_unknown_state_does_not_crash_the_board(self):
+        assert server._previous_collab_state("something_we_removed") is None
+
+    def test_closed_cannot_be_reverted(self):
+        import inspect
+
+        src = inspect.getsource(server.revert_collaboration)
+        assert 'current == "closed"' in src
+        assert "409" in src
+
+    def test_a_paid_payout_sends_you_to_refund_instead(self):
+        import inspect
+
+        src = inspect.getsource(server.revert_collaboration)
+        assert '"paid"' in src
+        assert "refund" in src.lower()
+
+    def test_stepping_back_out_of_payment_takes_the_payable_with_it(self):
+        # `collaboration_id` is unique on payments, so a cancelled row left
+        # behind would stop a new one being created on the way forward again.
+        import inspect
+
+        src = inspect.getsource(server.revert_collaboration)
+        assert "payments.delete_one" in src
+
+    def test_reverting_frees_the_campaign_slot(self):
+        import inspect
+
+        assert "_sync_campaign_fill" in inspect.getsource(server.revert_collaboration)
+
+    def test_a_revert_has_to_be_explained(self):
+        assert server.ReasonPayload.model_fields["reason"].is_required()
+        with pytest.raises(Exception):
+            server.ReasonPayload(reason="")
+
+
+class TestFailurePaths:
+    def test_the_exits_are_terminal_states(self):
+        for exit_state in ("cancelled", "declined"):
+            assert exit_state in server.TERMINAL_COLLAB_STATES
+            assert exit_state not in server.COLLAB_STATE_ORDER
+
+    def test_cancellation_types_are_the_three_ways_it_actually_fails(self):
+        assert set(server.CANCELLATION_TYPES) == {
+            "creator_no_show",
+            "brand_cancelled",
+            "admin_cancelled",
+        }
+        assert set(server.CancellationType.__args__) == set(server.CANCELLATION_TYPES)
+
+    def test_an_unattributed_cancellation_is_ours(self):
+        payload = server.CancelCollabPayload(reason="Venue flooded")
+        assert payload.cancellation_type == "admin_cancelled"
+
+    def test_a_cancellation_has_to_be_explained(self):
+        with pytest.raises(Exception):
+            server.CancelCollabPayload(cancellation_type="brand_cancelled")
+
+    def test_an_invented_cancellation_type_is_refused(self):
+        with pytest.raises(Exception):
+            server.CancelCollabPayload(reason="because", cancellation_type="vibes")
+
+    def test_declining_is_only_before_anyone_took_them_on(self):
+        # Past these the brand has accepted the creator, and ending it is a
+        # cancellation — a different admission with money attached.
+        assert server._DECLINABLE_STATES == ("applied", "verified")
+        for later in ("accepted", "commercial_agreed", "attended"):
+            assert later not in server._DECLINABLE_STATES
+
+    def test_cancelling_after_an_agreement_keeps_the_number(self):
+        # The collaboration leaves the "ongoing" group it was counted in, so
+        # without this the agreed figure disappears from the record entirely.
+        import inspect
+
+        src = inspect.getsource(server.cancel_collaboration)
+        assert "agreed_amount_at_cancellation" in src
+        assert "commercial_agreed" in src
+
+    def test_a_no_show_is_not_flagged_for_settlement(self):
+        # Attendance is what makes a settlement a question; a creator who never
+        # turned up did not do the work.
+        import inspect
+
+        src = inspect.getsource(server.cancel_collaboration)
+        assert 'cancellation_type != "creator_no_show"' in src
+
+    def test_a_paid_collaboration_cannot_be_cancelled(self):
+        import inspect
+
+        src = inspect.getsource(server.cancel_collaboration)
+        assert '"paid"' in src and "409" in src
+
+
+class TestRefunds:
+    def test_refunded_is_its_own_payment_state(self):
+        # Cancelled is a payout that never happened; refunded is one that did
+        # and came back. Revenue figures have to tell them apart.
+        states = set(server.PaymentState.__args__)
+        assert {"pending", "paid", "cancelled", "refunded"} == states
+
+    def test_only_a_paid_payout_can_be_refunded(self):
+        import inspect
+
+        src = inspect.getsource(server.refund_payment)
+        assert 'state != "paid"' in src
+
+    def test_refunding_twice_is_refused(self):
+        import inspect
+
+        src = inspect.getsource(server.refund_payment)
+        assert 'state == "refunded"' in src
+        assert '{"_id": pid, "state": "paid"}' in src, "the write needs a precondition"
+
+    def test_a_refund_cancels_the_collaboration_with_it(self):
+        import inspect
+
+        src = inspect.getsource(server.refund_payment)
+        assert '"state": "cancelled"' in src
+        assert "collaborations.update_one" in src
+
+    def test_a_settled_brand_invoice_is_flagged_not_quietly_voided(self):
+        # We would be holding the brand's money; paying it back is a decision
+        # with an invoice attached, not a status flip.
+        import inspect
+
+        src = inspect.getsource(server.refund_payment)
+        assert "brand_refund_due" in src
+        assert '"void"' in src
+
+    def test_a_refund_has_to_be_explained(self):
+        assert server.RefundPayload.model_fields["reason"].is_required()
+        assert not server.RefundPayload.model_fields["refund_reference"].is_required()
+
+
+class TestCampaignControls:
+    def test_paused_is_a_real_status_and_off_the_feed(self):
+        assert "paused" in server.CampaignStatus.__args__
+        assert "paused" not in server.LIVE_CAMPAIGN_STATUSES
+        assert "paused" not in server._LIVE_STATUSES
+
+    def test_a_paused_campaign_is_not_counted_as_running(self):
+        assert "paused" not in server.ACTIVE_CAMPAIGN_STATUSES
+
+    def test_nobody_can_be_invited_to_a_paused_campaign(self):
+        assert "paused" not in server.INVITABLE_CAMPAIGN_STATUSES
+
+    def test_only_a_running_campaign_can_be_paused(self):
+        assert server._PAUSABLE_STATUSES == ("upcoming", "open", "in_progress")
+        for finished in ("draft", "pending_review", "completed", "closed"):
+            assert finished not in server._PAUSABLE_STATUSES
+
+    def test_pause_remembers_where_to_come_back_to(self):
+        import inspect
+
+        assert "paused_from_status" in inspect.getsource(server.pause_campaign)
+        assert "paused_from_status" in inspect.getsource(server.resume_campaign)
+
+    def test_resuming_re_checks_the_end_date(self):
+        # A campaign paused past its window must not quietly reopen.
+        import inspect
+
+        src = inspect.getsource(server.resume_campaign)
+        assert "end_date" in src and '"completed"' in src
+
+    def test_closing_answers_everyone_still_waiting(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_close_campaign)
+        assert "_DECLINABLE_STATES" in src
+        assert '"declined"' in src
+
+    def test_the_admin_edit_keeps_the_same_floor_as_the_brands(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_update_campaign)
+        assert "_filled_counts_for" in src, "an edit must not shrink below the committed"
+        assert "End date cannot be before start date" in src
+
+    def test_a_finished_campaign_cannot_be_edited(self):
+        assert server._CLOSED_CAMPAIGN_STATUSES == ("completed", "closed")
+
+
+class TestAuditCoverage:
+    """Every admin mutation has to leave a trace. A payout with no author is
+    the thing this log exists to make impossible."""
+
+    SOURCE = None
+
+    @classmethod
+    def setup_class(cls):
+        cls.SOURCE = (server.ROOT_DIR / "server.py").read_text()
+
+    def _admin_mutations(self):
+        import re as _re
+
+        blocks = _re.split(r"\n(?=@admin_router\.)", self.SOURCE)
+        out = []
+        for b in blocks[1:]:
+            m = _re.match(r'@admin_router\.(post|patch|put|delete)\("([^"]+)"\)', b)
+            if not m:
+                continue
+            fn = _re.search(r"async def (\w+)", b)
+            end = b.find("\n@")
+            out.append((m.group(2), fn.group(1), b[:end] if end > 0 else b))
+        return out
+
+    def test_there_are_mutations_to_check(self):
+        assert len(self._admin_mutations()) >= 15
+
+    def test_every_admin_mutation_writes_to_the_audit_log(self):
+        missing = []
+        for path, fn, body in self._admin_mutations():
+            if "await audit(" in body:
+                continue
+            # Some endpoints delegate to a helper that audits on their behalf.
+            delegates = any(
+                f"await {helper}(" in body
+                for helper in ("_set_creator_verification",)
+            )
+            if not delegates:
+                missing.append(f"{path} ({fn})")
+        assert not missing, f"admin mutations with no audit trail: {missing}"
+
+    @pytest.mark.parametrize(
+        "fn_name,action",
+        [
+            ("advance_collaboration", "collaboration.advance"),
+            ("revert_collaboration", "collaboration.revert"),
+            ("cancel_collaboration", "collaboration.cancel"),
+            ("decline_applicant", "collaboration.decline"),
+            ("mark_payment_paid", "payment.mark_paid"),
+            ("refund_payment", "payment.refund"),
+            ("approve_campaign", "campaign.approve"),
+            ("reject_campaign", "campaign.reject"),
+            ("pause_campaign", "campaign.pause"),
+            ("resume_campaign", "campaign.resume"),
+            ("admin_close_campaign", "campaign.close"),
+            ("admin_update_campaign", "campaign.update"),
+        ],
+    )
+    def test_each_action_is_logged_under_its_own_name(self, fn_name, action):
+        import inspect
+
+        assert f'"{action}"' in inspect.getsource(getattr(server, fn_name))
+
+    def test_the_log_records_who_as_an_id_not_just_a_name(self):
+        import inspect
+
+        # Names change; "which admin" is the question the log exists to answer.
+        assert '"actor_id"' in inspect.getsource(server.audit)
+        assert '"actor_id"' in inspect.getsource(server.list_audit_log)
+
+    def test_before_and_after_are_both_recorded(self):
+        params = list(
+            __import__("inspect").signature(server.audit).parameters
+        )
+        for field in ("before", "after", "note"):
+            assert field in params
+
+    def test_writing_the_log_can_never_break_the_operation(self):
+        import inspect
+
+        src = inspect.getsource(server.audit)
+        assert "except Exception" in src
+        assert "raise" not in src.split("except Exception")[1]
+
+
+class TestAuditFilters:
+    def test_it_filters_on_the_three_things_people_ask_for(self):
+        params = list(
+            __import__("inspect").signature(server.list_audit_log).parameters
+        )
+        for field in ("actor_id", "action", "date_from", "date_to"):
+            assert field in params
+
+    def test_a_bare_action_matches_the_whole_family(self):
+        # "everything that happened to money" is the question people arrive with.
+        import inspect
+
+        src = inspect.getsource(server.list_audit_log)
+        assert "$regex" in src
+        assert '"." in term' in src
+
+    def test_a_bad_actor_id_is_a_422_not_a_500(self):
+        import inspect
+
+        src = inspect.getsource(server.list_audit_log)
+        assert "422" in src

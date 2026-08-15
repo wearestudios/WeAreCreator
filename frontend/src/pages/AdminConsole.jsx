@@ -1166,6 +1166,7 @@ function CollaborationsBoard({ onChange, feePercent }) {
                 label="Reason"
                 placeholder="e.g. Creator couldn't make the rescheduled slot."
                 confirmLabel="Cancel collaboration"
+                required
                 destructive
                 submitting={submitting}
                 onSubmit={(reason) => cancel(cancelFor, reason)}
@@ -1214,7 +1215,16 @@ const ACTION_LABEL = {
     "collaboration.request_changes": "requested changes",
     "collaboration.submit_content": "submitted content",
     "payment.mark_paid": "recorded payout",
+    "payment.refund": "refunded payout",
     "payment.invoice_state": "updated invoice",
+    "campaign.submit_for_review": "submitted campaign for review",
+    "campaign.approve": "approved campaign",
+    "campaign.reject": "sent campaign back",
+    "campaign.pause": "paused campaign",
+    "campaign.resume": "resumed campaign",
+    "campaign.invite": "invited creators",
+    "collaboration.revert": "reverted collaboration",
+    "brand.reject": "rejected brand",
 };
 
 function AuditTrail() {

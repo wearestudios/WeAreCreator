@@ -52,6 +52,10 @@ export const CAMPAIGN_STATUS_META = {
     upcoming: { label: "Upcoming", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     open: { label: "Open", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
     in_progress: { label: "In progress", tone: "bg-ember-500/15 text-ember-500 border-ember-500/30" },
+    paused: {
+        label: "Paused",
+        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    },
     completed: { label: "Completed", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
     closed: { label: "Closed", tone: "bg-white/5 text-muted-foreground border-white/15" },
 };
@@ -63,8 +67,9 @@ export const VERIFICATION_META = {
 };
 
 // Campaigns you can still invite someone to. Mirrors INVITABLE_CAMPAIGN_STATUSES
-// on the server, which is what actually enforces it.
-export const INVITABLE_STATUSES = ["draft", "upcoming", "open", "in_progress"];
+// on the server, which is what actually enforces it. Drafts, briefs in review
+// and paused ones are out — the creator could not open what they were sent.
+export const INVITABLE_STATUSES = ["upcoming", "open", "in_progress"];
 
 export const formatRupees = (n) =>
     typeof n === "number" ? n.toLocaleString("en-IN") : "—";
