@@ -152,6 +152,7 @@ class TestBrandCampaigns:
             "title": "Straight to live", "brief": "b", "deliverables": "d",
             "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 3, "status": "open",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 422, r.text
         assert "review" in r.text.lower()
@@ -163,6 +164,8 @@ class TestBrandCampaigns:
             "title": "Weekend Reel", "brief": "Shoot a warm reel at our cafe.",
             "deliverables": "1 reel, 3 stories", "budget_per_creator": 5000,
             "category": "fnb", "area": "Indiranagar", "creators_needed": 3,
+            "campaign_type": "personal_table",
+            "start_date": "2025-02-15T00:00:00Z",
             "end_date": "2027-02-15T00:00:00Z",
             "status": "pending_review",
         }
@@ -182,7 +185,8 @@ class TestBrandCampaigns:
         cid, status = self._go_live(s, {
             "title": "Reviewed Reel", "brief": "b", "deliverables": "d",
             "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
-            "creators_needed": 3, "end_date": "2027-02-15T00:00:00Z",
+            "creators_needed": 3, "campaign_type": "personal_table",
+            "start_date": "2025-02-15T00:00:00Z", "end_date": "2027-02-15T00:00:00Z",
         })
         assert status == "open"
         row = next(c for c in s.get(f"{BASE_URL}/brand/campaigns").json() if c["id"] == cid)
@@ -195,6 +199,7 @@ class TestBrandCampaigns:
             "title": "Draft", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 200
         assert r.json()["status"] == "draft"
@@ -206,6 +211,7 @@ class TestBrandCampaigns:
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "tech", "area": "Indiranagar",
             "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 422
 
@@ -215,7 +221,7 @@ class TestBrandCampaigns:
         r = s.post(f"{BASE_URL}/brand/campaigns", json={
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
-            "creators_needed": 1,
+            "creators_needed": 1, "campaign_type": "personal_table",
             "start_date": "2026-02-15T00:00:00Z", "end_date": "2026-02-01T00:00:00Z",
             "status": "draft",
         })
@@ -229,6 +235,7 @@ class TestBrandCampaigns:
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 0, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 422
 
@@ -240,7 +247,9 @@ class TestBrandCampaigns:
 
         # brand1 posts two, brand2 posts one
         base = {"brief": "b", "deliverables": "d", "budget_per_creator": 100,
-                "category": "fnb", "area": "Indiranagar", "creators_needed": 1}
+                "category": "fnb", "area": "Indiranagar", "creators_needed": 1,
+                "campaign_type": "personal_table",
+                "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z"}
         r1 = s1.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "B1-first", "status": "draft"})
         assert r1.status_code == 200, r1.text
         self._go_live(s1, {**base, "title": "B1-second"})
@@ -271,6 +280,7 @@ class TestBrandCampaigns:
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 403
 
@@ -285,7 +295,9 @@ class TestBrandDashboard:
             "areas": ["Whitefield"],
         })
         base = {"brief": "b", "deliverables": "d", "budget_per_creator": 100,
-                "category": "hospitality", "area": "Whitefield", "creators_needed": 1}
+                "category": "hospitality", "area": "Whitefield", "creators_needed": 1,
+                "campaign_type": "personal_table",
+                "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z"}
         pipeline.verify_brand(_admin_session(), pipeline.user_id_of(s))
         r_open = s.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "Open1", "status": "draft"})
         r_draft = s.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "Draft1", "status": "draft"})
@@ -338,6 +350,7 @@ class TestCrossVisibility:
             "title": title, "brief": "b", "deliverables": "d",
             "budget_per_creator": 200, "category": "retail", "area": "HSR Layout",
             "creators_needed": 2, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert r.status_code == 200
         cid = r.json()["id"]
@@ -421,6 +434,7 @@ class TestCampaignLifecycle:
             "title": f"Draft-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
             "budget_per_creator": 3000, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 2, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }
         body.update(overrides)
         r = s.post(f"{BASE_URL}/brand/campaigns", json=body)

@@ -1263,3 +1263,338 @@ class TestAuditFilters:
 
         src = inspect.getsource(server.list_audit_log)
         assert "422" in src
+
+
+# ---------------------------------------------------------------------------
+# Campaign types. The shape of the work decides the shape of the dates, and
+# storing both shapes on every campaign is how a brief ends up with an event
+# day AND a booking window.
+# ---------------------------------------------------------------------------
+
+
+def _campaign_body(**overrides):
+    body = {
+        "title": "Weekend reel",
+        "brief": "b",
+        "deliverables": "d",
+        "budget_per_creator": 5000,
+        "category": "fnb",
+        "area": "Indiranagar",
+        "creators_needed": 2,
+    }
+    body.update(overrides)
+    return body
+
+
+class TestCampaignTypes:
+    def test_the_three_types_are_the_declared_ones(self):
+        assert set(server.CampaignType.__args__) == {
+            "launch",
+            "group_event",
+            "personal_table",
+        }
+        assert server.EVENT_CAMPAIGN_TYPES == ("launch", "group_event")
+
+    def test_a_type_is_required(self):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(**_campaign_body())
+
+    @pytest.mark.parametrize("ctype", ["launch", "group_event"])
+    def test_an_event_campaign_takes_one_day(self, ctype):
+        payload = server.PostCampaignPayload(
+            **_campaign_body(campaign_type=ctype, event_date="2026-09-01T10:00:00Z")
+        )
+        assert payload.event_date is not None
+        assert payload.start_date is None and payload.end_date is None
+
+    @pytest.mark.parametrize("ctype", ["launch", "group_event"])
+    def test_an_event_campaign_without_a_day_is_refused(self, ctype):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(**_campaign_body(campaign_type=ctype))
+
+    @pytest.mark.parametrize("ctype", ["launch", "group_event"])
+    def test_an_event_campaign_cannot_also_carry_a_window(self, ctype):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(
+                    campaign_type=ctype,
+                    event_date="2026-09-01T10:00:00Z",
+                    start_date="2026-09-01T00:00:00Z",
+                )
+            )
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(
+                    campaign_type=ctype,
+                    event_date="2026-09-01T10:00:00Z",
+                    end_date="2026-09-30T00:00:00Z",
+                )
+            )
+
+    def test_a_personal_table_runs_over_a_window(self):
+        payload = server.PostCampaignPayload(
+            **_campaign_body(
+                campaign_type="personal_table",
+                start_date="2026-09-01T00:00:00Z",
+                end_date="2026-09-30T00:00:00Z",
+            )
+        )
+        assert payload.event_date is None
+        assert payload.start_date is not None and payload.end_date is not None
+
+    @pytest.mark.parametrize(
+        "dates",
+        [
+            {},
+            {"start_date": "2026-09-01T00:00:00Z"},
+            {"end_date": "2026-09-30T00:00:00Z"},
+        ],
+    )
+    def test_a_personal_table_needs_both_ends(self, dates):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(campaign_type="personal_table", **dates)
+            )
+
+    def test_a_personal_table_cannot_carry_an_event_day(self):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(
+                    campaign_type="personal_table",
+                    start_date="2026-09-01T00:00:00Z",
+                    end_date="2026-09-30T00:00:00Z",
+                    event_date="2026-09-15T10:00:00Z",
+                )
+            )
+
+    def test_a_window_has_to_run_forwards(self):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(
+                    campaign_type="personal_table",
+                    start_date="2026-09-30T00:00:00Z",
+                    end_date="2026-09-01T00:00:00Z",
+                )
+            )
+
+    def test_an_invented_type_is_refused(self):
+        with pytest.raises(Exception):
+            server.PostCampaignPayload(
+                **_campaign_body(campaign_type="popup", event_date="2026-09-01T10:00:00Z")
+            )
+
+    def test_the_type_cannot_be_changed_by_an_edit(self):
+        # It decides which date fields exist; changing it would orphan whichever
+        # dates were already set.
+        assert "campaign_type" not in server.UpdateCampaignPayload.model_fields
+
+    def test_an_edit_cannot_hand_a_campaign_the_other_types_dates(self):
+        launch = {"campaign_type": "launch"}
+        with pytest.raises(HTTPException) as exc:
+            server._refuse_dates_foreign_to_type(launch, {"start_date": datetime.now(timezone.utc)})
+        assert exc.value.status_code == 422
+
+        table = {"campaign_type": "personal_table"}
+        with pytest.raises(HTTPException):
+            server._refuse_dates_foreign_to_type(table, {"event_date": datetime.now(timezone.utc)})
+
+    def test_an_edit_cannot_strip_the_dates_a_type_requires(self):
+        with pytest.raises(HTTPException):
+            server._refuse_dates_foreign_to_type(
+                {"campaign_type": "launch"}, {"event_date": None}
+            )
+        with pytest.raises(HTTPException):
+            server._refuse_dates_foreign_to_type(
+                {"campaign_type": "personal_table"}, {"end_date": None}
+            )
+
+    def test_an_edit_that_touches_neither_is_fine(self):
+        server._refuse_dates_foreign_to_type({"campaign_type": "launch"}, {"title": "x"})
+
+    def test_a_passed_event_day_expires_the_campaign_too(self):
+        # Not just closed windows: an event whose day has gone must stop taking
+        # applications.
+        import inspect
+
+        src = inspect.getsource(server._expire_stale_campaigns)
+        assert "event_date" in src and "end_date" in src
+
+
+class TestCampaignManagerRole:
+    def test_the_role_exists_in_the_rbac(self):
+        assert "campaign_manager" in server.Role.__args__
+
+    def test_nobody_can_sign_themselves_up_as_one(self):
+        # It can read creators' phone numbers — an admin makes the account.
+        assert set(server.RegisterInput.model_fields["role"].annotation.__args__) == {
+            "creator",
+            "brand",
+        }
+        for model in (server.OtpRequestInput, server.OtpVerifyInput):
+            allowed = model.model_fields["role"].annotation
+            assert "campaign_manager" not in str(allowed)
+
+    def test_managers_sign_in_with_a_password_like_admins(self):
+        import inspect
+
+        src = inspect.getsource(server.login)
+        assert '"admin", "campaign_manager"' in src
+
+    def test_a_manager_only_reaches_their_own_campaigns(self):
+        import inspect
+
+        src = inspect.getsource(server._managed_campaign_or_404)
+        assert "manager_id" in src
+        # 404 rather than 403, the same shape as brand ownership: the existence
+        # of other campaigns leaks nothing. (The docstring says so too, so only
+        # the raised statuses are checked.)
+        raised = [ln for ln in src.splitlines() if "status_code=" in ln]
+        assert raised
+        assert all("404" in ln for ln in raised)
+
+    @pytest.mark.parametrize(
+        "fn_name",
+        ["list_managed_campaigns", "list_campaign_slots", "create_campaign_slot",
+         "delete_campaign_slot"],
+    )
+    def test_the_manager_endpoints_are_role_guarded(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert 'require_roles("campaign_manager", "admin")' in src
+
+    def test_assignment_is_the_admins_alone(self):
+        import inspect
+
+        src = inspect.getsource(server.assign_campaign_manager)
+        assert 'require_roles("admin")' in src
+        # The snapshot is the point: the brand and the creators see these, and
+        # they must not change under them if the manager edits their account.
+        for field in ("manager_name", "manager_phone", "manager_email"):
+            assert field in src
+
+    def test_assignment_is_audited_and_the_manager_told(self):
+        import inspect
+
+        src = inspect.getsource(server.assign_campaign_manager)
+        assert '"campaign.assign_manager"' in src
+        assert "manager_assigned" in src
+
+
+class TestSlots:
+    def test_a_slot_has_to_end_after_it_starts(self):
+        with pytest.raises(Exception):
+            server.SlotPayload(
+                starts_at="2026-09-01T12:00:00Z",
+                ends_at="2026-09-01T11:00:00Z",
+                capacity=4,
+            )
+
+    def test_a_slot_holds_at_least_one_person(self):
+        with pytest.raises(Exception):
+            server.SlotPayload(starts_at="2026-09-01T12:00:00Z", capacity=0)
+
+    def test_an_event_slot_needs_no_end_time(self):
+        payload = server.SlotPayload(starts_at="2026-09-01T12:00:00Z", capacity=4)
+        assert payload.ends_at is None
+
+    def test_booking_claims_the_seat_atomically(self):
+        # The check and the increment are one operation, so two creators after
+        # the last place resolve inside the database rather than both winning.
+        import inspect
+
+        src = inspect.getsource(server.book_slot)
+        assert "find_one_and_update" in src
+        assert '"$expr": {"$lt": ["$booked_count", "$capacity"]}' in src
+        assert '"$inc": {"booked_count": 1}' in src
+
+    def test_a_lost_race_is_a_409_not_a_double_booking(self):
+        import inspect
+
+        src = inspect.getsource(server.book_slot)
+        assert "just filled up" in src
+
+    def test_a_claimed_seat_is_given_back_if_the_collaboration_moved(self):
+        import inspect
+
+        src = inspect.getsource(server.book_slot)
+        assert '"$inc": {"booked_count": -1}' in src
+
+    def test_booking_is_the_step_out_of_commercial_agreed(self):
+        import inspect
+
+        src = inspect.getsource(server.book_slot)
+        assert '"commercial_agreed"' in src
+        assert '"slot_booked"' in src
+
+    def test_reverting_out_of_slot_booked_frees_the_seat(self):
+        import inspect
+
+        src = inspect.getsource(server.revert_collaboration)
+        assert 'current == "slot_booked"' in src
+        assert '"$inc": {"booked_count": -1}' in src
+
+    def test_cancelling_frees_the_seat_too(self):
+        import inspect
+
+        src = inspect.getsource(server.cancel_collaboration)
+        assert "campaign_slots" in src
+        assert '"$inc": {"booked_count": -1}' in src
+
+    def test_a_slot_with_bookings_cannot_be_deleted(self):
+        import inspect
+
+        src = inspect.getsource(server.delete_campaign_slot)
+        assert '"booked_count": 0' in src, "the delete needs a precondition"
+        assert "409" in src
+
+    def test_an_event_slot_must_sit_on_the_event_day(self):
+        import inspect
+
+        src = inspect.getsource(server.create_campaign_slot)
+        assert "event_date" in src and ".date()" in src
+
+    def test_a_table_window_must_sit_inside_the_campaigns_dates(self):
+        import inspect
+
+        src = inspect.getsource(server.create_campaign_slot)
+        assert "start_date" in src and "end_date" in src
+
+
+class TestCoordinationDetailsAreEarned:
+    def test_only_creators_actually_on_the_campaign_see_them(self):
+        # Applying is not being on it — a staff phone number is not applicant
+        # information.
+        assert "applied" not in server._ONBOARD_COLLAB_STATES
+        assert "verified" not in server._ONBOARD_COLLAB_STATES
+        assert "accepted" in server._ONBOARD_COLLAB_STATES
+        assert "closed" in server._ONBOARD_COLLAB_STATES
+
+    def test_the_public_serializer_leaks_neither_venue_nor_manager(self):
+        import inspect
+
+        src = inspect.getsource(server._serialize_campaign)
+        for field in ("venue_address", "manager_phone", "manager_email", "on_site_contact"):
+            assert field not in src, f"{field} must not reach the open campaign feed"
+
+    def test_the_detail_view_gates_the_coordination_block(self):
+        import inspect
+
+        src = inspect.getsource(server.get_campaign)
+        assert "_ONBOARD_COLLAB_STATES" in src
+        assert "coordination" in src
+
+    def test_creators_never_see_the_managers_email(self):
+        # Name and phone are for coordinating on the day; the email is internal.
+        import inspect
+
+        src = inspect.getsource(server.get_campaign)
+        block = src.split('payload["coordination"] = {')[1][:400]
+        assert "manager_phone" in block
+        assert "manager_email" not in block
+
+    def test_the_slot_list_is_gated_the_same_way(self):
+        import inspect
+
+        src = inspect.getsource(server.list_slots_for_creator)
+        assert "_ONBOARD_COLLAB_STATES" in src

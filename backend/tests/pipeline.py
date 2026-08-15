@@ -148,8 +148,10 @@ def seed_open_campaign(
             "category": "fnb",
             "area": "Indiranagar",
             "creators_needed": creators_needed,
-            # No start_date, so approval lands on "open" rather than "upcoming".
-            # Far enough out that the expiry sweep leaves it alone.
+            # A window that already opened, so approval lands on "open" rather
+            # than "upcoming"; far enough out that the expiry sweep leaves it.
+            "campaign_type": "personal_table",
+            "start_date": "2025-01-01T00:00:00Z",
             "end_date": "2027-01-01T00:00:00Z",
             "status": "draft",
         },

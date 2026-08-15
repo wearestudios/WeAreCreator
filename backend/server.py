@@ -28,7 +28,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict, model_validator
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -48,7 +48,9 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MIN = 60 * 24  # 1 day
 REFRESH_TOKEN_DAYS = 7
 
-Role = Literal["creator", "brand", "admin"]
+# campaign_manager is staff: created by an admin, signs in with email +
+# password, and sees only the campaigns they are assigned to.
+Role = Literal["creator", "brand", "admin", "campaign_manager"]
 
 
 def _pyobjectid_validator(v):
@@ -262,6 +264,14 @@ class BrandProfileUpdate(BaseModel):
     areas: list[str] = Field(default_factory=list, max_length=30)
 
 
+# The shape of the work decides the shape of the dates. A launch or a group
+# event happens on one day; a personal table runs over a window a creator books
+# into. Storing both shapes on every campaign and trusting the UI to fill the
+# right ones is how a brief ends up with an event date *and* a window.
+CampaignType = Literal["launch", "group_event", "personal_table"]
+EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
@@ -272,11 +282,47 @@ class PostCampaignPayload(BaseModel):
     category: CATEGORY_LITERAL
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
+    campaign_type: CampaignType
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    # Where creators actually show up. Optional at draft time — a brand can
+    # brief before the venue is confirmed — but part of the campaign, not the
+    # chat thread it would otherwise live in.
+    venue_address: Optional[str] = Field(default=None, max_length=500)
+    venue_instructions: Optional[str] = Field(default=None, max_length=1000)
+    on_site_contact: Optional[str] = Field(default=None, max_length=200)
     # "open" is accepted by the schema only so the handler can explain why it is
     # refused. A brand saves a draft or submits for review; an admin publishes.
     status: Literal["draft", "pending_review", "open"] = "draft"
+
+    @model_validator(mode="after")
+    def _dates_match_the_type(self):
+        if self.campaign_type in EVENT_CAMPAIGN_TYPES:
+            if self.event_date is None:
+                raise ValueError(
+                    f"A {self.campaign_type.replace('_', ' ')} happens on a day — "
+                    "event_date is required."
+                )
+            if self.start_date is not None or self.end_date is not None:
+                raise ValueError(
+                    "An event campaign has an event_date, not a start/end window. "
+                    "Leave start_date and end_date out."
+                )
+        else:  # personal_table
+            if self.start_date is None or self.end_date is None:
+                raise ValueError(
+                    "A personal table runs over a window — start_date and "
+                    "end_date are both required."
+                )
+            if self.event_date is not None:
+                raise ValueError(
+                    "A personal table has a booking window, not an event_date. "
+                    "Leave event_date out."
+                )
+            if self.end_date < self.start_date:
+                raise ValueError("End date cannot be before start date")
+        return self
 
 
 class UpdateCampaignPayload(BaseModel):
@@ -290,8 +336,49 @@ class UpdateCampaignPayload(BaseModel):
     category: Optional[CATEGORY_LITERAL] = None
     area: Optional[str] = Field(default=None, min_length=1, max_length=80)
     creators_needed: Optional[int] = Field(default=None, ge=1, le=100)
+    # campaign_type is deliberately absent: the type decides which date fields
+    # exist, so changing it mid-flight would orphan whichever dates were set.
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    venue_address: Optional[str] = Field(default=None, max_length=500)
+    venue_instructions: Optional[str] = Field(default=None, max_length=1000)
+    on_site_contact: Optional[str] = Field(default=None, max_length=200)
+
+
+class CreateManagerPayload(BaseModel):
+    """An admin creating a campaign-manager account. Staff, so email+password."""
+
+    name: str = Field(min_length=1, max_length=140)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    phone: Optional[str] = Field(default=None, max_length=20)
+
+
+class AssignManagerPayload(BaseModel):
+    """Point a campaign at the manager who runs it."""
+
+    manager_user_id: str
+
+
+class SlotPayload(BaseModel):
+    """One bookable slot (or window) on a campaign.
+
+    For launch/group_event this is a time on the event day; for personal_table
+    it is an availability window, so ends_at is required there and optional
+    otherwise — the handler enforces the per-type rule since it knows the
+    campaign.
+    """
+
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    capacity: int = Field(ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _window_runs_forward(self):
+        if self.ends_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("A slot has to end after it starts.")
+        return self
 
 
 class CampaignInvitePayload(BaseModel):
@@ -514,8 +601,21 @@ class Campaign(BaseModel):
     category: Optional[str] = None
     area: Optional[str] = None
     creators_needed: int = Field(ge=1, default=1)
+    # launch / group_event carry event_date; personal_table carries the window.
+    campaign_type: Optional[CampaignType] = None  # None on pre-types documents
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    venue_address: Optional[str] = None
+    venue_instructions: Optional[str] = None
+    on_site_contact: Optional[str] = None
+    # The assigned campaign manager — differs across concurrent campaigns, so
+    # it lives here and not on the brand. Snapshot of the manager user at
+    # assignment time, plus the linking id for RBAC.
+    manager_id: Optional[PyObjectId] = None
+    manager_name: Optional[str] = None
+    manager_phone: Optional[str] = None
+    manager_email: Optional[str] = None
     status: CampaignStatus = "draft"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -676,6 +776,8 @@ NOTIFY_EVENTS = {
     "brand_rejected": "We couldn't verify your brand yet",
     "campaign_approved": "Your campaign is live",
     "campaign_rejected": "Your campaign needs a change before it goes live",
+    "manager_assigned": "You've been assigned a campaign",
+    "slot_confirmed": "Your slot is booked",
 }
 
 
@@ -1028,7 +1130,8 @@ async def login(payload: LoginInput, response: Response):
     if not user or not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if user.get("role") != "admin":
+    # Staff sign in here; creators and brands use WhatsApp OTP.
+    if user.get("role") not in ("admin", "campaign_manager"):
         raise HTTPException(
             status_code=403,
             detail="Please sign in with your WhatsApp number.",
@@ -2121,8 +2224,17 @@ def _serialize_brand_campaign(
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": needed,
+        "campaign_type": doc.get("campaign_type"),
+        "event_date": _iso(doc.get("event_date")),
         "start_date": _iso(doc.get("start_date")),
         "end_date": _iso(doc.get("end_date")),
+        "venue_address": doc.get("venue_address"),
+        "venue_instructions": doc.get("venue_instructions"),
+        "on_site_contact": doc.get("on_site_contact"),
+        # Who runs it day to day. The brand talks to them, so name and phone
+        # are theirs to see; assignment itself is the admin's.
+        "manager_name": doc.get("manager_name"),
+        "manager_phone": doc.get("manager_phone"),
         "status": status,
         "created_at": _iso(doc.get("created_at")),
         "applicant_count": applicant_count,
@@ -2193,6 +2305,38 @@ async def _verified_brand_or_403(user: dict) -> dict:
             ),
         )
     return profile
+
+
+def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
+    """An edit must not hand a campaign the other type's date fields.
+
+    Creation validates the combination; without this, a PATCH could quietly give
+    a launch a booking window or a personal table an event day.
+    """
+    ctype = campaign.get("campaign_type")
+    if ctype in EVENT_CAMPAIGN_TYPES:
+        if update.get("start_date") is not None or update.get("end_date") is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"A {ctype.replace('_', ' ')} has an event_date, not a start/end window.",
+            )
+        if "event_date" in update and update["event_date"] is None:
+            raise HTTPException(
+                status_code=422,
+                detail="An event campaign needs its event_date — set a new one instead.",
+            )
+    elif ctype == "personal_table":
+        if update.get("event_date") is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="A personal table has a booking window, not an event_date.",
+            )
+        for field in ("start_date", "end_date"):
+            if field in update and update[field] is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="A personal table needs its window — set new dates instead.",
+                )
 
 
 async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
@@ -2288,14 +2432,7 @@ async def create_brand_campaign(
     payload: PostCampaignPayload,
     user: dict = Depends(require_roles("brand")),
 ):
-    if (
-        payload.start_date
-        and payload.end_date
-        and payload.end_date < payload.start_date
-    ):
-        raise HTTPException(
-            status_code=422, detail="End date cannot be before start date"
-        )
+    # The type/date combinations are enforced by the payload model itself.
 
     # The status used to come straight off the payload, which let a brand post
     # itself live. Going live is a decision somebody makes about a brief, not a
@@ -2321,8 +2458,18 @@ async def create_brand_campaign(
         "category": payload.category,
         "area": payload.area.strip(),
         "creators_needed": int(payload.creators_needed),
+        "campaign_type": payload.campaign_type,
+        "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
+        "venue_address": (payload.venue_address or "").strip() or None,
+        "venue_instructions": (payload.venue_instructions or "").strip() or None,
+        "on_site_contact": (payload.on_site_contact or "").strip() or None,
+        # Assigned later by an admin — see assign_campaign_manager.
+        "manager_id": None,
+        "manager_name": None,
+        "manager_phone": None,
+        "manager_email": None,
         "status": payload.status,
         "created_at": now,
         "updated_at": now,
@@ -2367,6 +2514,7 @@ async def update_brand_campaign(
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
 
+    _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
     if start and end and end < start:
@@ -3835,6 +3983,10 @@ async def list_all_campaigns(
                 "budget_per_creator": d.get("budget_per_creator"),
                 "category": d.get("category"),
                 "area": d.get("area"),
+                "campaign_type": d.get("campaign_type"),
+                "event_date": _iso(d.get("event_date")),
+                "manager_id": str(d["manager_id"]) if d.get("manager_id") else None,
+                "manager_name": d.get("manager_name"),
                 "status": d.get("status"),
                 "creators_needed": needed,
                 "filled_slots": filled,
@@ -4308,6 +4460,7 @@ async def admin_update_campaign(
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
 
+    _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
     if start and end and end < start:
@@ -5295,12 +5448,23 @@ async def revert_collaboration(
                 "reverted_from": current,
                 "revert_reason": payload.reason,
                 "updated_at": now,
-            }
+            },
+            # Stepping back out of slot_booked gives the seat up; the slot link
+            # goes with it so a re-book claims fresh.
+            "$unset": {"slot_id": ""},
         },
         return_document=True,
     )
     if not updated:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    # The seat itself: only when leaving slot_booked backwards, and floored at
+    # zero so a manual booking (no slot row) can't drive the count negative.
+    if current == "slot_booked" and collab.get("slot_id"):
+        await db.campaign_slots.update_one(
+            {"_id": collab["slot_id"], "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+        )
 
     # Stepping back out of `in_payment` must take the payable with it. The row
     # is deleted rather than cancelled because `collaboration_id` is unique, so
@@ -5501,6 +5665,14 @@ async def cancel_collaboration(
         await db.payments.update_one(
             {"_id": payment["_id"]},
             {"$set": {"state": "cancelled", "updated_at": now}},
+        )
+
+    # And a seat it was holding goes back on sale — but only before the event:
+    # a no-show's seat was still consumed on the day.
+    if collab.get("slot_id") and current == "slot_booked":
+        await db.campaign_slots.update_one(
+            {"_id": collab["slot_id"], "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
         )
 
     await audit(
@@ -5956,7 +6128,398 @@ async def list_audit_log(
     ]
 
 
+# --- Campaign managers -------------------------------------------------------
+
+
+@admin_router.post("/managers")
+async def create_manager_account(
+    payload: CreateManagerPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Create a campaign-manager account.
+
+    Managers are staff: an admin makes the account, and they sign in with email
+    and password like an admin does. There is deliberately no self-signup route
+    into this role — it can read creators' phone numbers.
+    """
+    email = payload.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="That email already has an account.")
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "email": email,
+        "name": payload.name.strip(),
+        "role": "campaign_manager",
+        "phone": (payload.phone or "").strip() or None,
+        "status": "active",
+        "password_hash": hash_password(payload.password),
+        "created_at": now,
+    }
+    result = await db.users.insert_one(doc)
+    await audit(
+        user,
+        "manager.create",
+        "user",
+        result.inserted_id,
+        after={"email": email, "role": "campaign_manager"},
+    )
+    return {
+        "id": str(result.inserted_id),
+        "name": doc["name"],
+        "email": email,
+        "phone": doc["phone"],
+        "role": "campaign_manager",
+    }
+
+
+@admin_router.get("/managers")
+async def list_managers(user: dict = Depends(require_roles("admin"))):
+    """Every manager, with how many campaigns each is currently carrying —
+    the number you look at before assigning them another one."""
+    managers = (
+        await db.users.find({"role": "campaign_manager"})
+        .sort("name", 1)
+        .to_list(length=200)
+    )
+    if not managers:
+        return []
+
+    load: dict = {}
+    async for row in db.campaigns.aggregate(
+        [
+            {
+                "$match": {
+                    "manager_id": {"$in": [m["_id"] for m in managers]},
+                    "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES) + ["paused"]},
+                }
+            },
+            {"$group": {"_id": "$manager_id", "n": {"$sum": 1}}},
+        ]
+    ):
+        load[row["_id"]] = row["n"]
+
+    return [
+        {
+            "id": str(m["_id"]),
+            "name": m.get("name"),
+            "email": m.get("email"),
+            "phone": m.get("phone"),
+            "active_campaigns": load.get(m["_id"], 0),
+        }
+        for m in managers
+    ]
+
+
+@admin_router.post("/campaigns/{campaign_id}/assign-manager")
+async def assign_campaign_manager(
+    campaign_id: str,
+    payload: AssignManagerPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Assign (or reassign) the manager who runs a campaign.
+
+    Name, phone and email are snapshotted onto the campaign: that is what the
+    brand and the accepted creators see, and it must not silently change if the
+    manager later edits their account mid-campaign.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+
+    try:
+        manager_oid = ObjectId(payload.manager_user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    manager = await db.users.find_one({"_id": manager_oid, "role": "campaign_manager"})
+    if not manager:
+        raise HTTPException(
+            status_code=404,
+            detail="No campaign manager with that id. Create the account first.",
+        )
+
+    previous = campaign.get("manager_name")
+    now = datetime.now(timezone.utc)
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {
+            "$set": {
+                "manager_id": manager_oid,
+                "manager_name": manager.get("name"),
+                "manager_phone": manager.get("phone"),
+                "manager_email": manager.get("email"),
+                "manager_assigned_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "campaign.assign_manager",
+        "campaign",
+        campaign["_id"],
+        before={"manager_name": previous},
+        after={"manager_name": manager.get("name")},
+    )
+    await notify(
+        manager_oid,
+        "manager_assigned",
+        title="You've been assigned a campaign",
+        body=f"“{campaign.get('title')}” is yours to run.",
+        link="/manager",
+    )
+    return {
+        "id": campaign_id,
+        "manager_id": str(manager_oid),
+        "manager_name": manager.get("name"),
+        "manager_phone": manager.get("phone"),
+        "manager_email": manager.get("email"),
+        "reassigned_from": previous,
+    }
+
+
 api_router.include_router(admin_router)
+
+
+# ---------------------------------------------------------------------------
+# Campaign manager router — scoped to assigned campaigns
+# ---------------------------------------------------------------------------
+
+manager_router = APIRouter(prefix="/manager", tags=["manager"])
+
+
+async def _managed_campaign_or_404(campaign_id: str, user: dict) -> dict:
+    """Load a campaign the caller is allowed to run.
+
+    A manager sees only what they are assigned to — 404 rather than 403, the
+    same shape as brand ownership, so the existence of other campaigns leaks
+    nothing. Admins pass on everything.
+    """
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    doc = await db.campaigns.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if user.get("role") != "admin" and doc.get("manager_id") != ObjectId(user["_id"]):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return doc
+
+
+def _serialize_slot(doc: dict) -> dict:
+    capacity = int(doc.get("capacity") or 0)
+    booked = int(doc.get("booked_count") or 0)
+    return {
+        "id": str(doc["_id"]),
+        "campaign_id": str(doc["campaign_id"]),
+        "starts_at": _iso(doc.get("starts_at")),
+        "ends_at": _iso(doc.get("ends_at")),
+        "capacity": capacity,
+        "booked_count": booked,
+        "spots_left": max(0, capacity - booked),
+        "created_at": _iso(doc.get("created_at")),
+    }
+
+
+@manager_router.get("/campaigns")
+async def list_managed_campaigns(
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The campaigns this manager runs. An admin calling it sees everything
+    assigned to anyone — the workload view."""
+    query: dict = (
+        {"manager_id": ObjectId(user["_id"])}
+        if user.get("role") == "campaign_manager"
+        else {"manager_id": {"$ne": None}}
+    )
+    docs = (
+        await db.campaigns.find(query).sort("created_at", -1).to_list(length=500)
+    )
+    if not docs:
+        return []
+
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+    filled = await _filled_counts_for([d["_id"] for d in docs])
+
+    # Slot totals per campaign, one pass.
+    slot_totals: dict = {}
+    async for row in db.campaign_slots.aggregate(
+        [
+            {"$match": {"campaign_id": {"$in": [d["_id"] for d in docs]}}},
+            {
+                "$group": {
+                    "_id": "$campaign_id",
+                    "slots": {"$sum": 1},
+                    "capacity": {"$sum": "$capacity"},
+                    "booked": {"$sum": "$booked_count"},
+                }
+            },
+        ]
+    ):
+        slot_totals[row["_id"]] = row
+
+    out = []
+    for d in docs:
+        brand = brand_map.get(d["brand_id"]) or {}
+        s = slot_totals.get(d["_id"]) or {}
+        out.append(
+            {
+                "id": str(d["_id"]),
+                "title": d.get("title"),
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "campaign_type": d.get("campaign_type"),
+                "status": d.get("status"),
+                "area": d.get("area"),
+                "event_date": _iso(d.get("event_date")),
+                "start_date": _iso(d.get("start_date")),
+                "end_date": _iso(d.get("end_date")),
+                "venue_address": d.get("venue_address"),
+                "venue_instructions": d.get("venue_instructions"),
+                "on_site_contact": d.get("on_site_contact"),
+                "creators_needed": d.get("creators_needed"),
+                "filled_slots": filled.get(d["_id"], 0),
+                "manager_name": d.get("manager_name"),
+                "slot_count": s.get("slots", 0),
+                "slot_capacity": s.get("capacity", 0),
+                "slot_booked": s.get("booked", 0),
+            }
+        )
+    return out
+
+
+@manager_router.get("/campaigns/{campaign_id}/slots")
+async def list_campaign_slots(
+    campaign_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    docs = (
+        await db.campaign_slots.find({"campaign_id": campaign["_id"]})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    return {
+        "campaign_id": campaign_id,
+        "campaign_type": campaign.get("campaign_type"),
+        "slots": [_serialize_slot(d) for d in docs],
+    }
+
+
+@manager_router.post("/campaigns/{campaign_id}/slots")
+async def create_campaign_slot(
+    campaign_id: str,
+    payload: SlotPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Add a bookable slot.
+
+    For launch/group_event the slot has to sit on the event day — a slot on
+    another date is a typo with real people showing up to it. For
+    personal_table it is an availability window inside the campaign's dates,
+    so ends_at is required there.
+    """
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    ctype = campaign.get("campaign_type")
+    if not ctype:
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign predates campaign types and can't take slots.",
+        )
+
+    starts = payload.starts_at
+    if starts.tzinfo is None:
+        starts = starts.replace(tzinfo=timezone.utc)
+    ends = payload.ends_at
+    if ends is not None and ends.tzinfo is None:
+        ends = ends.replace(tzinfo=timezone.utc)
+
+    if ctype in EVENT_CAMPAIGN_TYPES:
+        event = campaign.get("event_date")
+        if event is not None and event.tzinfo is None:
+            event = event.replace(tzinfo=timezone.utc)
+        if event and starts.date() != event.date():
+            raise HTTPException(
+                status_code=422,
+                detail=f"This {ctype.replace('_', ' ')} happens on "
+                f"{event.date().isoformat()} — slots have to be on that day.",
+            )
+    else:  # personal_table
+        if ends is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A personal-table window needs an end time.",
+            )
+        win_start = campaign.get("start_date")
+        win_end = campaign.get("end_date")
+        if win_start is not None and win_start.tzinfo is None:
+            win_start = win_start.replace(tzinfo=timezone.utc)
+        if win_end is not None and win_end.tzinfo is None:
+            win_end = win_end.replace(tzinfo=timezone.utc)
+        if (win_start and starts < win_start) or (win_end and ends > win_end):
+            raise HTTPException(
+                status_code=422,
+                detail="The window has to sit inside the campaign's dates.",
+            )
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "campaign_id": campaign["_id"],
+        "starts_at": starts,
+        "ends_at": ends,
+        "capacity": int(payload.capacity),
+        "booked_count": 0,
+        "created_by": ObjectId(user["_id"]),
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.campaign_slots.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit(
+        user,
+        "slot.create",
+        "campaign_slot",
+        result.inserted_id,
+        after={"campaign_id": str(campaign["_id"]), "starts_at": _iso(starts),
+               "capacity": payload.capacity},
+    )
+    return _serialize_slot(doc)
+
+
+@manager_router.delete("/slots/{slot_id}")
+async def delete_campaign_slot(
+    slot_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Remove an empty slot. One with bookings holds real people's plans —
+    those bookings have to be moved (revert and rebook) before it can go."""
+    try:
+        oid = ObjectId(slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": oid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    # Scope check rides on the campaign.
+    await _managed_campaign_or_404(str(slot["campaign_id"]), user)
+
+    # Precondition on emptiness, so a booking that lands mid-delete wins.
+    result = await db.campaign_slots.delete_one({"_id": oid, "booked_count": 0})
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Creators are booked on this slot — move them before deleting it.",
+        )
+    await audit(
+        user,
+        "slot.delete",
+        "campaign_slot",
+        oid,
+        before={"starts_at": _iso(slot.get("starts_at")), "capacity": slot.get("capacity")},
+    )
+    return {"id": slot_id, "deleted": True}
+
+
+api_router.include_router(manager_router)
 
 
 
@@ -5980,6 +6543,8 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": doc.get("creators_needed"),
+        "campaign_type": doc.get("campaign_type"),
+        "event_date": doc["event_date"].isoformat() if isinstance(doc.get("event_date"), datetime) else doc.get("event_date"),
         "start_date": doc["start_date"].isoformat() if isinstance(doc.get("start_date"), datetime) else doc.get("start_date"),
         "end_date": doc["end_date"].isoformat() if isinstance(doc.get("end_date"), datetime) else doc.get("end_date"),
         "status": doc.get("status"),
@@ -5999,7 +6564,12 @@ async def _expire_stale_campaigns() -> None:
         result = await db.campaigns.update_many(
             {
                 "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
-                "end_date": {"$ne": None, "$lt": now},
+                # A window that closed, or an event day that passed — either
+                # way the brief must stop collecting applications.
+                "$or": [
+                    {"end_date": {"$ne": None, "$lt": now}},
+                    {"event_date": {"$ne": None, "$lt": now}},
+                ],
             },
             {"$set": {"status": "completed", "updated_at": now}},
         )
@@ -6232,6 +6802,19 @@ async def get_campaign(
                 if isinstance(existing.get("created_at"), datetime)
                 else existing.get("created_at"),
             }
+
+        # The venue and the person running the campaign, for creators the brand
+        # has actually taken on. An applicant doesn't get a staff phone number.
+        payload["coordination"] = None
+        if existing and existing.get("state") in _ONBOARD_COLLAB_STATES:
+            payload["coordination"] = {
+                "manager_name": doc.get("manager_name"),
+                "manager_phone": doc.get("manager_phone"),
+                "venue_address": doc.get("venue_address"),
+                "venue_instructions": doc.get("venue_instructions"),
+                "on_site_contact": doc.get("on_site_contact"),
+                "event_date": _iso(doc.get("event_date")),
+            }
     return payload
 
 
@@ -6313,6 +6896,163 @@ async def apply_to_campaign(
         "pitch": payload.pitch.strip(),
         "quoted_rate": float(payload.quoted_rate),
         "created_at": now.isoformat(),
+    }
+
+
+# States from which a creator is actually on the campaign — what unlocks the
+# venue details and the manager's number. Applying is not being on it.
+_ONBOARD_COLLAB_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+
+
+@campaigns_router.get("/{campaign_id}/slots")
+async def list_slots_for_creator(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator", "admin")),
+):
+    """The bookable slots, as the creator sees them.
+
+    Only a creator who has been accepted onto the campaign sees the schedule —
+    a slot list names dates, a venue's rhythm and capacity, none of which
+    belongs to an applicant the brand hasn't taken."""
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    collab = None
+    if user["role"] == "creator":
+        collab = await db.collaborations.find_one(
+            {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
+        )
+        if not collab or collab.get("state") not in _ONBOARD_COLLAB_STATES:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    docs = (
+        await db.campaign_slots.find({"campaign_id": oid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    return {
+        "campaign_id": campaign_id,
+        "campaign_type": campaign.get("campaign_type"),
+        # Booking is the step out of commercial_agreed; the flag saves the UI
+        # from re-deriving the state machine.
+        "can_book": bool(collab) and collab.get("state") == "commercial_agreed",
+        "booked_slot_id": str(collab["slot_id"]) if collab and collab.get("slot_id") else None,
+        "slots": [_serialize_slot(d) for d in docs],
+    }
+
+
+@campaigns_router.post("/slots/{slot_id}/book")
+async def book_slot(
+    slot_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """A creator taking a place on a slot.
+
+    The seat is claimed with a conditional increment — the filter only matches
+    while booked_count is under capacity, so two creators after the last place
+    resolve inside the database, and exactly one of them gets it. The other
+    sees a 409, not a double-booked table.
+    """
+    try:
+        soid = ObjectId(slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    campaign = await db.campaigns.find_one({"_id": slot["campaign_id"]})
+    if not campaign or campaign.get("status") not in (
+        tuple(ACTIVE_CAMPAIGN_STATUSES)
+    ):
+        raise HTTPException(
+            status_code=409, detail="This campaign isn't taking bookings right now."
+        )
+
+    collab = await db.collaborations.find_one(
+        {
+            "campaign_id": slot["campaign_id"],
+            "creator_id": ObjectId(user["_id"]),
+            "active": True,
+        }
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    state = collab.get("state")
+    if state == "slot_booked":
+        raise HTTPException(status_code=409, detail="You already have a slot booked.")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Booking opens once your fee is agreed."
+                if state in ("applied", "verified", "accepted")
+                else f"Your collaboration is {state} — there's nothing to book."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    # The atomic claim. $expr keeps the check and the increment in one
+    # operation — there is no window where both readers saw a free seat.
+    claimed = await db.campaign_slots.find_one_and_update(
+        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
+        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    if not claimed:
+        raise HTTPException(
+            status_code=409, detail="That slot just filled up. Pick another."
+        )
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {
+            "$set": {
+                "state": "slot_booked",
+                "scheduled_at": slot["starts_at"],
+                "slot_id": soid,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        # The collaboration moved while we held the seat — give it back.
+        await db.campaign_slots.update_one(
+            {"_id": soid, "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}},
+        )
+        raise HTTPException(
+            status_code=409, detail="Your collaboration just changed — reload and try again."
+        )
+
+    await audit(
+        user,
+        "collaboration.book_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "slot_booked", "slot_id": str(soid),
+               "scheduled_at": _iso(slot["starts_at"])},
+    )
+    await notify(
+        collab["creator_id"],
+        "slot_confirmed",
+        title="Slot booked",
+        body=f"{campaign.get('title')} — "
+        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
+        link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    return {
+        "collaboration_id": str(collab["_id"]),
+        "state": "slot_booked",
+        "slot": _serialize_slot(claimed),
+        "scheduled_at": _iso(slot["starts_at"]),
     }
 
 
@@ -6573,6 +7313,10 @@ async def _startup():
         partialFilterExpression={"active": True},
         name="one_live_application",
     )
+
+    # slots — read per campaign in time order; manager scoping reads by manager.
+    await db.campaign_slots.create_index([("campaign_id", 1), ("starts_at", 1)])
+    await db.campaigns.create_index("manager_id")
 
     # campaign invitations — one per creator per campaign, enforced in the
     # database so two admins inviting at once can't double-message anyone.

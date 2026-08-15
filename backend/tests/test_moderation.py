@@ -62,6 +62,8 @@ def creator():
 CAMPAIGN_BODY = {
     "brief": "b", "deliverables": "d", "budget_per_creator": 5000,
     "category": "fnb", "area": "Indiranagar", "creators_needed": 2,
+    "campaign_type": "personal_table",
+    "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
 }
 
 
@@ -265,7 +267,10 @@ class TestCampaignReview:
 
     def test_a_future_start_date_lands_on_upcoming(self, brand, admin):
         bs, _, uid = brand
-        draft = self._submitted(bs, admin, uid, start_date="2027-06-01T00:00:00Z")
+        draft = self._submitted(
+            bs, admin, uid,
+            start_date="2027-06-01T00:00:00Z", end_date="2027-09-01T00:00:00Z",
+        )
         assert admin.post(
             f"{BASE_URL}/admin/campaigns/{draft['id']}/approve"
         ).json()["status"] == "upcoming"

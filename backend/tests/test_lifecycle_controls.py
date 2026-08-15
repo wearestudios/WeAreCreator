@@ -492,6 +492,7 @@ class TestCampaignControls:
             "title": f"D-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         })
         assert admin.post(f"{BASE_URL}/admin/campaigns/{r.json()['id']}/pause",
                           json={"reason": "Hold"}).status_code == 409

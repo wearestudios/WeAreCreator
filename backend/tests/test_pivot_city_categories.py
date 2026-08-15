@@ -172,6 +172,7 @@ def test_post_campaign_new_categories(brand, cat):
         "area": "Mumbai",
         "creators_needed": 2,
         "status": "draft",
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 200, r.text
     assert r.json()["category"] == cat
@@ -187,6 +188,7 @@ def test_post_campaign_invalid_category_422(brand):
         "category": "foo",
         "area": "Mumbai",
         "creators_needed": 1,
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 422, r.text
 
@@ -205,6 +207,7 @@ def test_new_category_campaign_appears_in_list(creator, brand, admin):
         "area": "Mumbai",
         "creators_needed": 1,
         "status": "draft",
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 200
     pipeline.submit_campaign(s_b, r.json()["id"])

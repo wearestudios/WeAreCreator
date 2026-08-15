@@ -190,6 +190,8 @@ def _seed_open_campaign(brand_session, admin_session):
         "title": f"Camp-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
         "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
         "creators_needed": 3,
+        "campaign_type": "personal_table",
+        "start_date": "2025-03-01T00:00:00Z",
         "end_date": "2027-03-01T00:00:00Z",
         "status": "draft",
     }
@@ -934,6 +936,7 @@ class TestCampaignOversight:
             "title": f"Oversight-{uuid.uuid4().hex[:6]}", "brief": "b",
             "deliverables": "d", "budget_per_creator": 5000, "category": "fnb",
             "area": "Indiranagar", "creators_needed": 2, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }
         body.update(overrides)
         r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
@@ -1126,6 +1129,7 @@ class TestBrandOversight:
             "title": f"C-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }).json()
         pipeline.submit_campaign(bs, c["id"])
         assert pipeline.approve_campaign(admin, c["id"]) == "open"
@@ -1157,6 +1161,7 @@ class TestCampaignInvites:
             "title": f"Invite-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
             "budget_per_creator": 7500, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 3, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }
         body.update(overrides)
         r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
