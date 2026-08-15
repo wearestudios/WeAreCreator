@@ -57,6 +57,10 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
+## Admin console aggregation (Aug 2026)
+- `GET /api/admin/dashboard` — one call for the landing view: campaign counts by status (zero-filled, with `live` aliasing `open`), the five review queues plus a headline that is their sum, totals (GMV, paid out, active creators, active brands), and a per-campaign summary with applied/approved/rejected/completed counts. Optional `campaign_id` scopes every number to one brief; the platform-wide vetting queues read zero when scoped, since they are not that campaign's business. Four aggregations (`$facet`/`$group`), a fixed number of round trips whatever the data looks like.
+- `GET /api/admin/campaigns/{id}/applicants` — one pipeline with three `$lookup`s, bucketed into applied / approved (accepted and beyond, including finished) / rejected (declined + cancelled). Distinct from the brand's own board, which is a decision screen scoped to that brand's campaigns.
+
 ## Implemented (v1.4 — Brand-facing creator directory, Feb 2026)
 - New endpoint `GET /api/brand/creators` — public projection (no PII) with `city`, `niche`, `min_followers`, `q`, `sort` filters
 - New endpoint `GET /api/brand/creators/filters` — distinct cities + case-deduped niches + total count

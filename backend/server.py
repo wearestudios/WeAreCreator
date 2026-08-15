@@ -6130,6 +6130,396 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
     }
 
 
+# The three buckets an applicant can be in, from the console's point of view.
+# "approved" is accepted and beyond — once the brand takes somebody on, every
+# later state is still a yes, including a finished one.
+_APPLICANT_APPROVED_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+_APPLICANT_BUCKETS = (
+    ("applied", COLLAB_GROUP_APPLIED),
+    ("approved", _APPLICANT_APPROVED_STATES),
+    ("rejected", COLLAB_GROUP_ENDED),
+)
+
+
+def _bucket_counts_expr() -> dict:
+    """$sum/$cond accumulators counting each applicant bucket in one pass."""
+    out = {
+        name: {"$sum": {"$cond": [{"$in": ["$state", list(states)]}, 1, 0]}}
+        for name, states in _APPLICANT_BUCKETS
+    }
+    # Completed is a subset of approved, reported separately because "how many
+    # actually finished" is a different question from "how many were taken on".
+    out["completed"] = {
+        "$sum": {"$cond": [{"$in": ["$state", list(COLLAB_GROUP_COMPLETED)]}, 1, 0]}
+    }
+    return out
+
+
+@admin_router.get("/dashboard")
+async def admin_dashboard(
+    campaign_id: Optional[str] = None,
+    limit: int = 50,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Everything the console's landing view needs, in one call.
+
+    Five separate requests used to fill this screen, which meant five spinners
+    and five chances for one slow query to make the page look broken. Each
+    block below is a single aggregation — `$facet` where one collection answers
+    several questions, `$group` where it answers one — so this is a fixed
+    number of round trips whatever the data looks like.
+
+    `campaign_id` scopes every number to one campaign, for the same screen
+    zoomed in on a single brief.
+    """
+    await _expire_stale_campaigns()
+
+    limit = max(1, min(int(limit or 50), 200))
+    scoped_oid = None
+    if campaign_id:
+        try:
+            scoped_oid = ObjectId(campaign_id)
+        except Exception:
+            raise HTTPException(status_code=422, detail="campaign_id is not a valid id.")
+        if not await db.campaigns.find_one({"_id": scoped_oid}):
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign_match = {"_id": scoped_oid} if scoped_oid else {}
+    collab_match = {"campaign_id": scoped_oid} if scoped_oid else {}
+
+    # --- campaigns: statuses, the summary rows, and the active-brand count ---
+    campaign_facet = await db.campaigns.aggregate(
+        ([{"$match": campaign_match}] if campaign_match else [])
+        + [
+            {
+                "$facet": {
+                    "by_status": [{"$group": {"_id": "$status", "n": {"$sum": 1}}}],
+                    "active_brands": [
+                        {"$match": {"status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)}}},
+                        {"$group": {"_id": "$brand_id"}},
+                        {"$count": "n"},
+                    ],
+                    "rows": [
+                        {"$sort": {"created_at": -1}},
+                        {"$limit": limit},
+                        {
+                            "$lookup": {
+                                "from": "brand_profiles",
+                                "localField": "brand_id",
+                                "foreignField": "user_id",
+                                "as": "brand",
+                            }
+                        },
+                        {"$addFields": {"brand": {"$arrayElemAt": ["$brand", 0]}}},
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    facet = campaign_facet[0] if campaign_facet else {}
+
+    campaigns_by_status = {s: 0 for s in CampaignStatus.__args__}
+    for row in facet.get("by_status") or []:
+        if row["_id"]:
+            campaigns_by_status[row["_id"]] = row["n"]
+
+    active_brands_rows = facet.get("active_brands") or []
+    active_brands = active_brands_rows[0]["n"] if active_brands_rows else 0
+
+    docs = facet.get("rows") or []
+
+    # --- collaborations: per-campaign buckets and the queue counts, one pass ---
+    collab_facet = await db.collaborations.aggregate(
+        ([{"$match": collab_match}] if collab_match else [])
+        + [
+            {
+                "$facet": {
+                    "per_campaign": [
+                        {"$group": {"_id": "$campaign_id", **_bucket_counts_expr()}}
+                    ],
+                    "by_state": [{"$group": {"_id": "$state", "n": {"$sum": 1}}}],
+                    # Distinct creators with work in flight or finished — the
+                    # honest reading of "active", rather than "signed up once".
+                    "active_creators": [
+                        {"$match": {"state": {"$in": list(_APPLICANT_APPROVED_STATES)}}},
+                        {"$group": {"_id": "$creator_id"}},
+                        {"$count": "n"},
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    cfacet = collab_facet[0] if collab_facet else {}
+
+    per_campaign = {r["_id"]: r for r in (cfacet.get("per_campaign") or [])}
+    collab_by_state = {r["_id"]: r["n"] for r in (cfacet.get("by_state") or [])}
+    active_creator_rows = cfacet.get("active_creators") or []
+    active_creators = active_creator_rows[0]["n"] if active_creator_rows else 0
+
+    # --- money: settled and outstanding, one pass -------------------------
+    payment_match: dict = {}
+    if scoped_oid:
+        # Payments hang off collaborations, so scoping to a campaign means
+        # naming that campaign's collaborations first.
+        ids = await db.collaborations.find(
+            {"campaign_id": scoped_oid}, {"_id": 1}
+        ).to_list(length=1000)
+        payment_match = {"collaboration_id": {"$in": [d["_id"] for d in ids]}}
+
+    money = await db.payments.aggregate(
+        ([{"$match": payment_match}] if payment_match else [])
+        + [
+            {
+                "$facet": {
+                    "paid": [
+                        {"$match": {"state": "paid"}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "payout": {"$sum": "$creator_payout"},
+                                "fees": {"$sum": "$platform_fee"},
+                                "n": {"$sum": 1},
+                            }
+                        },
+                    ],
+                    "pending": [
+                        {"$match": {"state": "pending"}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "total": {"$sum": "$creator_payout"},
+                                "n": {"$sum": 1},
+                            }
+                        },
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    mfacet = money[0] if money else {}
+    paid_rows = mfacet.get("paid") or []
+    pending_rows = mfacet.get("pending") or []
+    total_paid = float(paid_rows[0]["payout"]) if paid_rows else 0.0
+    platform_revenue = float(paid_rows[0]["fees"]) if paid_rows else 0.0
+    payouts_pending_count = int(pending_rows[0]["n"]) if pending_rows else 0
+    payouts_pending = float(pending_rows[0]["total"]) if pending_rows else 0.0
+
+    # --- the review queues -------------------------------------------------
+    # Creator and brand vetting are platform-wide: they are not about any one
+    # campaign, so they read zero when the view is scoped to one.
+    if scoped_oid:
+        creators_to_review = 0
+        creator_edits = 0
+        brands_to_verify = 0
+        verified_creators = 0
+    else:
+        creator_facet = await db.creator_profiles.aggregate(
+            [
+                {
+                    "$facet": {
+                        "pending": [
+                            {
+                                "$match": {
+                                    "verification_status": "pending",
+                                    "instagram_handle": {"$type": "string", "$ne": ""},
+                                }
+                            },
+                            {"$count": "n"},
+                        ],
+                        "changed": [
+                            {
+                                "$match": {
+                                    "verification_status": "verified",
+                                    "pending_review": True,
+                                }
+                            },
+                            {"$count": "n"},
+                        ],
+                        "verified": [
+                            {"$match": {"verification_status": "verified"}},
+                            {"$count": "n"},
+                        ],
+                    }
+                }
+            ]
+        ).to_list(length=1)
+        cf = creator_facet[0] if creator_facet else {}
+        first = lambda rows: rows[0]["n"] if rows else 0  # noqa: E731
+        creators_to_review = first(cf.get("pending") or [])
+        creator_edits = first(cf.get("changed") or [])
+        verified_creators = first(cf.get("verified") or [])
+        brands_to_verify = await db.brand_profiles.count_documents({"verified": False})
+
+    awaiting = {
+        "creators_to_review": creators_to_review,
+        "creator_edits_to_review": creator_edits,
+        "brands_to_verify": brands_to_verify,
+        "campaigns_to_review": campaigns_by_status.get(CAMPAIGN_REVIEW_STATUS, 0),
+        "collaborations_to_move": sum(
+            collab_by_state.get(s, 0) for s in ADMIN_ACTION_STATES
+        ),
+        "payouts_to_record": payouts_pending_count,
+    }
+
+    # --- the per-campaign summary -----------------------------------------
+    summary = []
+    for d in docs:
+        counts = per_campaign.get(d["_id"]) or {}
+        brand = d.get("brand") or {}
+        summary.append(
+            {
+                "id": str(d["_id"]),
+                "title": d.get("title"),
+                "brand_id": str(d["brand_id"]),
+                "brand_name": brand.get("business_name"),
+                "campaign_type": d.get("campaign_type"),
+                "status": d.get("status"),
+                # One date or two, depending on what the type actually carries.
+                "event_date": _iso(d.get("event_date")),
+                "start_date": _iso(d.get("start_date")),
+                "end_date": _iso(d.get("end_date")),
+                "creators_needed": d.get("creators_needed"),
+                # Keyed off the bucket definitions rather than spelled out, so
+                # the summary can never drift from what was counted.
+                **{key: counts.get(key, 0) for key in _bucket_counts_expr()},
+            }
+        )
+
+    return {
+        "scoped_to_campaign": campaign_id,
+        "campaigns": {
+            **campaigns_by_status,
+            # The feed's word for it, so the console and the creator app agree.
+            "live": campaigns_by_status.get("open", 0),
+            "total": sum(campaigns_by_status.values()),
+        },
+        "awaiting": awaiting,
+        "awaiting_total": sum(awaiting.values()),
+        "totals": {
+            "gmv": round(total_paid + platform_revenue, 2),
+            "total_paid_out": round(total_paid, 2),
+            "platform_revenue": round(platform_revenue, 2),
+            "payouts_pending": round(payouts_pending, 2),
+            "collaborations_paid": int(paid_rows[0]["n"]) if paid_rows else 0,
+            # Creators with work in flight or behind them, not everyone who
+            # ever signed up.
+            "active_creators": active_creators,
+            "verified_creators": verified_creators,
+            "active_brands": active_brands,
+        },
+        "campaign_summary": summary,
+        "summary_truncated": len(docs) >= limit,
+    }
+
+
+@admin_router.get("/campaigns/{campaign_id}/applicants")
+async def admin_campaign_applicants(
+    campaign_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Everyone who ever applied to one campaign, in three groups.
+
+    The brand's own applicant board shows the same people but answers a
+    different question — it is a decision screen, and it stops at the brand's
+    own campaigns. This is the admin's read of any campaign, including the ones
+    that ended.
+
+    One pipeline with the three joins; the bucketing is done here because
+    splitting a list already in memory is cheaper than three more passes.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": campaign["_id"]}},
+            {"$sort": {"created_at": -1}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "creator_id",
+                    "foreignField": "_id",
+                    "as": "user",
+                }
+            },
+            {"$addFields": {"user": {"$arrayElemAt": ["$user", 0]}}},
+            {
+                "$lookup": {
+                    "from": "creator_profiles",
+                    "localField": "creator_id",
+                    "foreignField": "user_id",
+                    "as": "profile",
+                }
+            },
+            {"$addFields": {"profile": {"$arrayElemAt": ["$profile", 0]}}},
+            {
+                "$lookup": {
+                    "from": "payments",
+                    "localField": "_id",
+                    "foreignField": "collaboration_id",
+                    "as": "payment",
+                }
+            },
+            {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+        ]
+    ).to_list(length=1000)
+
+    groups = {name: [] for name, _ in _APPLICANT_BUCKETS}
+    for r in rows:
+        profile = r.get("profile") or {}
+        account = r.get("user") or {}
+        payment = r.get("payment") or {}
+        state = r.get("state")
+        entry = {
+            "collaboration_id": str(r["_id"]),
+            "creator_id": str(r["creator_id"]),
+            "name": profile.get("name") or account.get("name"),
+            "profile_image_url": profile.get("profile_image_url"),
+            "instagram_handle": profile.get("instagram_handle"),
+            "instagram_profile_url": profile.get("instagram_profile_url"),
+            "follower_count": profile.get("follower_count"),
+            "verification_status": profile.get("verification_status"),
+            "quoted_rate": r.get("quoted_rate"),
+            "agreed_amount": r.get("agreed_amount"),
+            "state": state,
+            "pitch": r.get("pitch"),
+            "scheduled_at": _iso(r.get("scheduled_at")),
+            "exit_reason": r.get("exit_reason"),
+            "payment_state": payment.get("state"),
+            "created_at": _iso(r.get("created_at")),
+            "updated_at": _iso(r.get("updated_at")),
+        }
+        for name, states in _APPLICANT_BUCKETS:
+            if state in states:
+                groups[name].append(entry)
+                break
+
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([campaign["_id"]])).get(campaign["_id"], 0)
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+
+    return {
+        "campaign": {
+            "id": campaign_id,
+            "title": campaign.get("title"),
+            "brand_id": str(campaign["brand_id"]),
+            "brand_name": brand.get("business_name") or brand.get("name"),
+            "campaign_type": campaign.get("campaign_type"),
+            "status": campaign.get("status"),
+            "budget_per_creator": campaign.get("budget_per_creator"),
+            "event_date": _iso(campaign.get("event_date")),
+            "start_date": _iso(campaign.get("start_date")),
+            "end_date": _iso(campaign.get("end_date")),
+            "creators_needed": needed,
+            "filled_slots": filled,
+            "spots_left": max(0, needed - filled),
+        },
+        "counts": {name: len(rows_) for name, rows_ in groups.items()},
+        "total": len(rows),
+        **groups,
+    }
+
+
 @admin_router.get("/audit")
 async def list_audit_log(
     limit: int = 100,

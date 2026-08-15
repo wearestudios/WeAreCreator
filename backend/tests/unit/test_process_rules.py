@@ -57,7 +57,18 @@ class TestVerificationStatusIsOneWord:
                     continue
                 assert any(
                     marker in line
-                    for marker in ("for legacy in", '"state": "vetted"', "#", "Migrated")
+                    for marker in (
+                        "for legacy in",
+                        '"state": "vetted"',
+                        "#",
+                        "Migrated",
+                        # The admin console groups applicants into applied /
+                        # approved / rejected. That "approved" is a bucket of
+                        # collaboration states, never a verification_status
+                        # value, so it cannot cause the mismatch this guard is
+                        # about — the marker keeps the exemption that narrow.
+                        "_APPLICANT",
+                    )
                 ), f"stray legacy status {legacy} outside the migration: {line.strip()}"
 
     def test_the_migration_covers_every_legacy_value(self):
@@ -1904,3 +1915,219 @@ class TestManagerNotifications:
         src = inspect.getsource(server.notify_campaign_manager)
         assert "if not manager_id:" in src
         assert "return" in src
+
+
+# ---------------------------------------------------------------------------
+# Dashboard aggregation. Five requests used to fill the console's landing view,
+# which meant five spinners and five chances for one slow query to make the
+# page look broken.
+# ---------------------------------------------------------------------------
+
+
+class TestApplicantBuckets:
+    def test_every_collaboration_state_lands_in_exactly_one_bucket(self):
+        seen = []
+        for _, states in server._APPLICANT_BUCKETS:
+            seen.extend(states)
+        every = set(server.COLLAB_STATE_ORDER) | set(server.TERMINAL_COLLAB_STATES)
+        assert set(seen) == every, "a state in no bucket disappears from the console"
+        assert len(seen) == len(set(seen)), "a state in two buckets is double-counted"
+
+    def test_approved_means_accepted_and_beyond(self):
+        approved = set(server._APPLICANT_APPROVED_STATES)
+        assert "accepted" in approved
+        # A finished collaboration is still a yes.
+        assert "closed" in approved
+        for not_yet in ("applied", "verified"):
+            assert not_yet not in approved
+
+    def test_rejected_covers_both_exits(self):
+        rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
+        assert set(rejected) == {"declined", "cancelled"}
+
+    def test_completed_is_reported_separately_from_approved(self):
+        # "How many finished" is a different question from "how many were
+        # taken on", so it is its own accumulator even though it is a subset.
+        expr = server._bucket_counts_expr()
+        assert set(expr) == {"applied", "approved", "rejected", "completed"}
+
+    def test_the_counters_are_aggregation_accumulators_not_python_loops(self):
+        expr = server._bucket_counts_expr()
+        for value in expr.values():
+            assert "$sum" in value
+            assert "$cond" in value["$sum"]
+
+
+class TestDashboardEndpoint:
+    def test_it_is_admin_only(self):
+        import inspect
+
+        for fn in (server.admin_dashboard, server.admin_campaign_applicants):
+            assert 'require_roles("admin")' in inspect.getsource(fn)
+
+    def test_it_takes_an_optional_campaign_scope(self):
+        params = __import__("inspect").signature(server.admin_dashboard).parameters
+        assert "campaign_id" in params
+        assert params["campaign_id"].default is None
+
+    def test_a_bad_campaign_id_is_a_422_and_a_missing_one_a_404(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "422" in src and "404" in src
+
+    def test_the_collections_are_read_with_facets_not_loops(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        # One aggregation per collection, each answering several questions.
+        assert src.count('"$facet"') >= 3
+        assert "find_one({" not in src.replace(
+            'if not await db.campaigns.find_one({"_id": scoped_oid}):', ""
+        ), "the scope check is the only single-document read"
+
+    def test_there_is_no_per_campaign_query(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        # The per-campaign counts come from one grouped pass, keyed afterwards.
+        assert '"$group": {"_id": "$campaign_id"' in src
+        assert "per_campaign.get(" in src
+
+    def test_campaign_statuses_are_zero_filled(self):
+        # A caller must never have to guard for a missing key.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "{s: 0 for s in CampaignStatus.__args__}" in src
+
+    def test_live_is_an_alias_for_open(self):
+        # The creator feed calls it live; the console should agree.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"live": campaigns_by_status.get("open", 0)' in src
+
+    def test_every_queue_the_console_shows_is_counted(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        for queue in (
+            "creators_to_review",
+            "campaigns_to_review",
+            "brands_to_verify",
+            "collaborations_to_move",
+            "payouts_to_record",
+        ):
+            assert f'"{queue}"' in src
+
+    def test_the_headline_number_is_the_sum_of_the_queues(self):
+        # So it can always be explained by pointing at a row.
+        import inspect
+
+        assert '"awaiting_total": sum(awaiting.values())' in inspect.getsource(
+            server.admin_dashboard
+        )
+
+    def test_active_creators_means_working_not_signed_up(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"active_creators"' in src
+        assert "_APPLICANT_APPROVED_STATES" in src
+
+    def test_active_brands_means_running_something(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "ACTIVE_CAMPAIGN_STATUSES" in src
+        assert '"$group": {"_id": "$brand_id"}' in src
+
+    def test_gmv_is_payouts_plus_our_margin(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"gmv": round(total_paid + platform_revenue, 2)' in src
+
+    def test_refunded_money_is_not_counted_as_paid(self):
+        # The facet matches "paid" exactly, so a clawed-back payout drops out.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '{"$match": {"state": "paid"}}' in src
+
+    def test_scoping_narrows_the_money_through_the_collaborations(self):
+        # Payments hang off collaborations, not campaigns, so a campaign scope
+        # has to name that campaign's collaborations first.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"collaboration_id": {"$in":' in src
+
+    def test_platform_wide_queues_read_zero_when_scoped(self):
+        # Creator and brand vetting are not about any one campaign; reporting
+        # the global number next to one campaign's stats would be a lie.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "if scoped_oid:" in src
+        assert "creators_to_review = 0" in src
+
+    def test_the_summary_list_is_bounded_and_says_so(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"$limit": limit' in src
+        assert '"summary_truncated"' in src
+
+    def test_the_summary_carries_whichever_dates_the_type_has(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        for field in ("event_date", "start_date", "end_date", "campaign_type"):
+            assert f'"{field}"' in src
+
+
+class TestAdminApplicantsEndpoint:
+    def test_it_is_one_pipeline_with_the_joins(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert src.count("$lookup") == 3
+        assert src.count("db.collaborations.aggregate") == 1
+
+    def test_it_groups_into_the_three_buckets(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert "_APPLICANT_BUCKETS" in src
+        assert "break" in src, "a collaboration lands in the first matching bucket only"
+
+    def test_each_entry_carries_what_the_console_renders(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        for field in (
+            "profile_image_url",
+            "instagram_handle",
+            "follower_count",
+            "quoted_rate",
+            "agreed_amount",
+            "state",
+        ):
+            assert f'"{field}"' in src
+
+    def test_it_reaches_any_campaign_not_just_one_brands(self):
+        # The brand's own board stops at its own campaigns; this is the admin's
+        # read of anything, including campaigns that ended.
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert "_admin_campaign_or_404" in src
+        assert "_own_campaign_or_404" not in src
+
+    def test_the_counts_match_the_lists(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert '"counts": {name: len(rows_) for name, rows_ in groups.items()}' in src
