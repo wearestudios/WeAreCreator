@@ -5,19 +5,21 @@
     "primary_color_name": "Burnt Orange"
   },
   "typography": {
-    "heading_font": "Instrument Serif",
-    "heading_fallback": "Cormorant Garamond, serif",
-    "body_font": "DM Sans",
-    "body_fallback": "sans-serif",
+    "heading_font": "Fraunces",
+    "heading_fallback": "Cormorant Garamond, ui-serif, Georgia, serif",
+    "body_font": "Inter Tight",
+    "body_fallback": "ui-sans-serif, system-ui, sans-serif",
     "rules": [
-      "CRITICAL: BANNED LIST - Do not use Inter, Roboto, Open Sans, Lato for Headings.",
+      "CRITICAL: BANNED LIST - Do not use Inter, Roboto, Open Sans or Lato for headings. Headings are Fraunces (font-serif). Inter Tight is the body face and is not covered by this.",
       "Headlines (Size > 32px): MUST use tight letter spacing (tracking-tighter).",
       "Overlines / Labels: MUST be Uppercase, Tiny, and Wide Spacing (tracking-[0.2em]).",
       "H1 (Hero/Main Heading): MAXIMUM text-6xl (clamp/fluid scaling). Do not use text-7xl, text-8xl, or text-9xl.",
       "Line Height: Tight (leading-none) for headers, Loose (leading-relaxed) for body.",
-      "Hierarchy Gap Rule: The jump between a heading and its subheading must not exceed 2 Tailwind steps."
+      "Hierarchy Gap Rule: The jump between a heading and its subheading must not exceed 2 Tailwind steps.",
+      "Load exactly one font stylesheet, the @import at the top of src/index.css. public/index.html must not load a second one."
     ],
-    "google_fonts_import": "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Instrument+Serif:ital@0;1&display=swap');"
+    "google_fonts_import": "@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..700,0..100&family=Inter+Tight:wght@300..700&display=swap');",
+    "source_of_truth": "tailwind.config.js and src/index.css. This file follows the code, not the other way round."
   },
   "colors": {
     "background": "hsl(0 0% 4%)",

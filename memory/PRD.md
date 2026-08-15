@@ -59,6 +59,11 @@ Collections + indexes provisioned on startup. All linking IDs are `ObjectId`.
 
 On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` so downstream flows can rely on the profile existing.
 
+## Copy and metadata (Aug 2026)
+- Geography: the product is **Bengaluru-first** and the copy now says so. "Every city in India", "brands across India" and "India's most curated network" are gone; eyebrows read `Bengaluru · Influencer studio`, and the landing marquee shows Bengaluru neighbourhoods (Indiranagar, Koramangala, HSR Layout, Whitefield…) instead of twelve city names, which read as twelve cities of operations. The `city` field, the city suggestion lists and the category enum are untouched — expansion stays possible, the claims just don't run ahead of it.
+- `frontend/public/index.html`: real title and description, Open Graph + Twitter card tags with `og:locale=en_IN`, `theme-color` set to `#0B0A09` (the app's actual `hsl(20 8% 4%)` background, not pure black), `lang="en-IN"`, and an icon set — `favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, plus a 1200×630 `og-image.png` rendered in the product's own type and palette. The `og:image` uses `%PUBLIC_URL%`, so builds intended for sharing need `PUBLIC_URL` set to the site origin; `og:url` is deliberately absent until a canonical domain exists.
+- Fonts: one stylesheet. The stray `Inter:wght@600` link in `index.html` is gone — the `@import` in `src/index.css` (Fraunces + Inter Tight) is the only one. `design_guidelines.json` now names those two rather than Instrument Serif + DM Sans, and records that the code is the source of truth.
+
 ## Instagram stats (Aug 2026)
 - **"Instagram API with Instagram Login"**, not the Facebook-Login flow — the latter requires every creator to link a Facebook Page, which most of ours don't have. `graph.facebook.com` appears nowhere in the codebase and a unit test keeps it that way. This replaces the removed Apify scraper, which breached Instagram's terms.
 - Scopes: `instagram_business_basic` and `instagram_business_manage_insights`. Read-only; nothing can post, message or change anything on a creator's account.
@@ -101,6 +106,9 @@ On signup, a stub row is auto-created in `creator_profiles` or `brand_profiles` 
 - Regression tests: 19 new pytest cases (`test_brand_directory.py`) + 52 previous ones — all green
 
 ## Implemented (v1.3 — All-India pivot + Landing rewrite, Feb 2026)
+> **Superseded, Aug 2026.** The pan-India copy this entry introduced overstated where we
+> operate. User-facing strings are back to Bengaluru-first (see "Copy and metadata" below).
+> The data model changes here — the `city` field and the 8-category enum — stand.
 - Positioning shift: no longer Bengaluru-only. Now framed as an all-India influencer studio across F&B, hospitality, retail, real estate, fashion, travel, wellness and lifestyle. Agency angle woven in ("Self-serve, or hand it to our team").
 - Backend category enum expanded to 8 values: fnb, hospitality, retail, real_estate, fashion, travel, wellness, lifestyle
 - Creator profile: new optional `city` field (persisted, returned on GET, surfaced in admin console + applicant lists)

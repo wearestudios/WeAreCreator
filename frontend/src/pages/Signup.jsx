@@ -54,7 +54,7 @@ export default function Signup() {
                     <div className="max-w-md">
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Invite-only</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Get on the list. Every application is reviewed by our team — from every city in India.
+                            Get on the list. Every application is reviewed by our team, one at a time.
                         </p>
                     </div>
                 </div>

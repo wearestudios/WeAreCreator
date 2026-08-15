@@ -221,7 +221,7 @@ export default function BrandDashboardView({ user }) {
                         <header data-testid="brand-header" className="grid gap-6 md:grid-cols-12 md:items-end">
                             <div className="md:col-span-8">
                                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                    Brand · India
+                                    Brand · Bengaluru
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
@@ -357,7 +357,7 @@ export default function BrandDashboardView({ user }) {
                                         </p>
                                         <p className="max-w-md text-sm text-muted-foreground">
                                             Post your first paid brief and it will start
-                                            reaching verified creators across India immediately.
+                                            reaching verified creators across Bengaluru immediately.
                                         </p>
                                         <Link to="/campaigns/new" className="mt-4">
                                             <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">

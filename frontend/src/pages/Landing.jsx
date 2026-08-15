@@ -39,20 +39,23 @@ const ROTATING_VERTICALS = [
     "hotels",
 ];
 
-// Cities for the marquee strip. Order matters visually.
-const CITIES = [
-    "Bengaluru",
-    "Mumbai",
-    "Delhi NCR",
-    "Hyderabad",
-    "Pune",
-    "Chennai",
-    "Kolkata",
-    "Goa",
-    "Ahmedabad",
-    "Jaipur",
-    "Chandigarh",
-    "Kochi",
+// Neighbourhoods for the marquee strip, not cities. A scrolling list of
+// twelve city names read as twelve cities of operations; these are the
+// Bengaluru areas campaigns actually run in, which is both true and more
+// use to a creator working out whether we're anywhere near them.
+const AREAS = [
+    "Indiranagar",
+    "Koramangala",
+    "HSR Layout",
+    "Whitefield",
+    "Jayanagar",
+    "Church Street",
+    "Domlur",
+    "JP Nagar",
+    "Malleshwaram",
+    "Sadashivanagar",
+    "Ulsoor",
+    "Bellandur",
 ];
 
 const STEPS = [
@@ -60,7 +63,7 @@ const STEPS = [
         n: "01",
         Icon: ShieldCheck,
         title: "Get verified",
-        body: "Apply once. Our team reviews your profile, niche and audience — from every city in India.",
+        body: "Apply once. Our team reviews your profile, niche and audience — every creator on here has been through it.",
     },
     {
         n: "02",
@@ -164,7 +167,7 @@ function LiveBriefs() {
                             ? `${totalOpen} paid ${
                                   totalOpen === 1 ? "brief is" : "briefs are"
                               } open as you read this. Sign up as a creator to see the full brief and pitch.`
-                            : "Paid briefs from brands across India. Sign up as a creator to see the full brief and pitch."}
+                            : "Paid briefs from Bengaluru brands. Sign up as a creator to see the full brief and pitch."}
                     </p>
                 </div>
 
@@ -275,12 +278,12 @@ function RotatingWord({ words, className = "" }) {
     );
 }
 
-function CitiesMarquee() {
+function AreasMarquee() {
     // Duplicate so the CSS translate creates a seamless loop.
-    const list = [...CITIES, ...CITIES];
+    const list = [...AREAS, ...AREAS];
     return (
         <div
-            data-testid="cities-marquee"
+            data-testid="areas-marquee"
             className="relative overflow-hidden border-y border-white/10 bg-card/30 py-6"
             style={{
                 maskImage:
@@ -376,7 +379,7 @@ export default function Landing() {
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500 animate-pulse" />
                         <span className="text-ember-500/90">Vol. 01</span>
                         <span className="h-3 w-px bg-white/15" />
-                        India · Influencer studio
+                        Bengaluru · Influencer studio
                     </motion.p>
 
                     <motion.h1
@@ -403,7 +406,7 @@ export default function Landing() {
                         variants={fadeUp}
                         className="mt-4 max-w-2xl font-serif text-2xl italic text-muted-foreground md:text-3xl"
                     >
-                        Done right, in every city that matters.
+                        Done right, across Bengaluru.
                     </motion.p>
 
                     <motion.p
@@ -416,7 +419,7 @@ export default function Landing() {
                     >
                         Post your brief yourself — or hand it to our team. Either way,
                         you're working with the same verified creator network across
-                        every city in India.
+                        Bengaluru.
                     </motion.p>
 
                     <motion.div
@@ -464,7 +467,11 @@ export default function Landing() {
                     >
                         {[
                             { k: 500, s: "+", v: "verified creators" },
-                            { k: 12, s: "+ cities", v: "live coverage" },
+                            // Was "12+ cities · live coverage", which was the
+                            // most concrete claim on the page and not one we
+                            // can stand behind. Neighbourhoods we actually run
+                            // campaigns in is both true and more specific.
+                            { k: 12, s: "+ areas", v: "across Bengaluru" },
                             { k: 0, s: "", v: "hidden fees", prefix: "₹" },
                         ].map((s) => (
                             <div key={s.v}>
@@ -481,8 +488,8 @@ export default function Landing() {
                 </div>
             </section>
 
-            {/* ------------------------ CITIES MARQUEE ------------------------ */}
-            <CitiesMarquee />
+            {/* ------------------------ AREAS MARQUEE ------------------------ */}
+            <AreasMarquee />
 
             {/* ------------------------ HOW IT WORKS ------------------------ */}
             <section
@@ -621,11 +628,11 @@ export default function Landing() {
                                 the whole thing.
                             </h2>
                             <p className="mt-6 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base">
-                                Whether you're a café in Bengaluru, a hotel in Goa,
-                                a fashion label in Mumbai or a real estate launch in
-                                Gurgaon — post a brief and shortlist creators
-                                yourself, or hand it to us and we'll take it from
-                                brief to reporting.
+                                Whether you're a café in Indiranagar, a hotel off
+                                Church Street, a fashion label in Koramangala or a
+                                launch out in Whitefield — post a brief and shortlist
+                                creators yourself, or hand it to us and we'll take it
+                                from brief to reporting.
                             </p>
                         </div>
                         <div className="md:col-span-4">
@@ -727,7 +734,7 @@ export default function Landing() {
                     <span className="font-serif text-lg text-foreground">
                         WeAre <span className="text-ember-500">Creators</span>
                     </span>
-                    <span>© {new Date().getFullYear()} WeAre Monk · India</span>
+                    <span>© {new Date().getFullYear()} WeAre Monk · Bengaluru, India</span>
                 </div>
             </footer>
         </div>

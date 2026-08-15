@@ -173,7 +173,7 @@ const EmptyState = ({ hasFilters, onReset }) => (
         </p>
         <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
             {hasFilters
-                ? "Try widening your filters. We're verifying new creators across every city every week."
+                ? "Try widening your filters. We're verifying new creators across Bengaluru every week."
                 : "Our team is onboarding creators right now. Please check back soon."}
         </p>
         {hasFilters && (
@@ -272,7 +272,7 @@ export default function BrandCreatorDirectory() {
                     <div className="md:col-span-8">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
-                            Creator directory · India
+                            Creator directory · Bengaluru
                         </p>
                         <h1
                             data-testid="directory-heading"

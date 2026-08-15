@@ -1,7 +1,10 @@
 # WeAre Creators
 
 Two-sided marketplace connecting verified creators with brands running paid
-campaigns across India. Roles: `creator`, `brand`, `admin`, `campaign_manager`
+campaigns in Bengaluru. The product is Bengaluru-first — user-facing copy says
+Bengaluru, not "every city in India". The city field and the category list are
+deliberately open for later expansion, but don't write claims the operation
+can't back. Roles: `creator`, `brand`, `admin`, `campaign_manager`
 (staff, assigned per campaign — sees only what they're assigned to).
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
@@ -138,9 +141,11 @@ Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 tinted near-black (never pure `#000`), max `rounded-lg`, generous padding, targeted
 transitions (never `transition-all`), left-aligned dense content.
 
-**The JSON is stale on typography.** It names Instrument Serif + DM Sans; the code
-uses **Fraunces** (`font-serif`, headings) and **Inter Tight** (body) via
-`tailwind.config.js` and `src/index.css`. Follow the code.
+Typography is **Fraunces** (`font-serif`, headings) and **Inter Tight** (body),
+defined in `tailwind.config.js` and `src/index.css`. `design_guidelines.json` now
+matches; if the two ever disagree again, the code wins. Exactly one font
+stylesheet loads — the `@import` at the top of `src/index.css`. Don't add a
+second one to `public/index.html`.
 
 In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
 `border-white/10` on `bg-card` surfaces, ember for CTAs and accents only.

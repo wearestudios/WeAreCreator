@@ -251,7 +251,7 @@ export default function Campaigns() {
                     <div className="md:col-span-8">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
-                            Vol. 01 · India · Influencer studio
+                            Vol. 01 · Bengaluru · Influencer studio
                         </p>
                         <h1
                             data-testid="campaigns-heading"

@@ -33,7 +33,7 @@ export default function Login() {
                     <div className="max-w-md">
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Every city that matters</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            India's most curated creator × brand network.
+                            Bengaluru's most curated creator × brand network.
                         </p>
                     </div>
                 </div>
