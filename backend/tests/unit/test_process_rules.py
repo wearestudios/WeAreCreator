@@ -3332,3 +3332,397 @@ class TestInstagramJobsAreSafeToRun:
 
         src = inspect.getsource(server._shutdown)
         assert "nudge_task" in src and "instagram_task" in src
+
+
+# ---------------------------------------------------------------------------
+# Brand representative verification. Anyone could sign up and claim to be any
+# business — the only check was a boolean an admin flipped on a name and a
+# category. These cover the documents, where they're stored, and the line
+# between a brand that has been checked and one that has merely said so.
+# ---------------------------------------------------------------------------
+
+
+class TestVerificationDocumentsAreNotPublic:
+    def test_they_are_stored_outside_the_static_directory(self):
+        # UPLOAD_DIR is mounted as StaticFiles. A GST certificate carries a
+        # registered address and a director's name; it must not be one guessed
+        # URL away from the internet.
+        assert server.PRIVATE_UPLOAD_DIR != server.UPLOAD_DIR
+        assert not str(server.PRIVATE_UPLOAD_DIR).startswith(str(server.UPLOAD_DIR))
+
+    def test_nothing_mounts_the_private_directory(self):
+        src = (server.ROOT_DIR / "server.py").read_text()
+        mounts = [ln for ln in src.splitlines() if "StaticFiles(" in ln]
+        assert mounts, "expected the public upload mount to still exist"
+        assert all("PRIVATE_UPLOAD_DIR" not in ln for ln in mounts)
+
+    def test_the_store_helper_returns_no_url(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "UPLOAD_URL_PREFIX" not in src
+        assert '"stored_name"' in src
+
+    def test_the_serializer_cannot_produce_a_link(self):
+        # A serializer with no path in it can't leak one into a template.
+        doc = {
+            "_id": "1", "doc_type": "gst_certificate", "stored_name": "secret-file.pdf",
+            "original_name": "gst.pdf", "mime": "application/pdf", "size": 10,
+        }
+        out = server._serialize_brand_document(doc)
+        assert "secret-file.pdf" not in str(out)
+        assert "stored_name" not in out
+        assert "path" not in out
+
+    def test_only_an_authenticated_admin_route_reads_them_back(self):
+        import inspect
+
+        src = inspect.getsource(server.download_brand_document)
+        assert 'require_roles("admin")' in inspect.getsource(server.download_brand_document)
+        # Both ids in the filter, so a document id can't be pulled out from
+        # under a different brand.
+        assert '{"_id": doc_oid, "brand_id": brand_oid}' in src
+        assert "audit(" in src
+        assert '"no-store"' in src
+
+
+class TestDocumentSniffing:
+    def test_a_pdf_is_accepted(self):
+        assert server.sniff_document_type(b"%PDF-1.7\n...") == ("application/pdf", ".pdf")
+
+    @pytest.mark.parametrize(
+        "head,expected",
+        [
+            (b"\xff\xd8\xff\xe0", "image/jpeg"),
+            (b"\x89PNG\r\n\x1a\n", "image/png"),
+            (b"GIF89a", "image/gif"),
+        ],
+    )
+    def test_the_image_types_still_pass(self, head, expected):
+        # Same magic-byte check as the creator profile image — one rule.
+        assert server.sniff_document_type(head)[0] == expected
+
+    @pytest.mark.parametrize("head", [b"MZ\x90\x00", b"<html>", b"PK\x03\x04", b""])
+    def test_anything_else_is_refused(self, head):
+        assert server.sniff_document_type(head) is None
+
+    def test_the_extension_comes_from_the_bytes_not_the_client(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "sniff_document_type(first)" in src
+        assert "file.filename" in src
+        # The client's name is a label only — it must not reach the path.
+        stored = src[src.index("stored_name = "):src.index("path = PRIVATE_UPLOAD_DIR")]
+        assert "filename" not in stored
+
+    def test_the_size_limit_is_enforced_while_streaming(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "written > limit" in src
+        assert "413" in src
+
+
+class TestPrivatePathResolution:
+    @pytest.mark.parametrize(
+        "name", ["../../etc/passwd", "a/b.pdf", "a\\b.pdf", "", ".", ".."],
+    )
+    def test_traversal_and_nonsense_are_refused(self, name):
+        assert server._private_upload_path(name) is None
+
+    def test_it_checks_the_directory_boundary(self):
+        import inspect
+
+        src = inspect.getsource(server._private_upload_path)
+        assert "relative_to" in src
+
+
+class TestBrandProfileFields:
+    def test_the_paperwork_and_the_trading_name_are_separate(self):
+        # "Third Wave Coffee" trades; "…Roasters Pvt Ltd" signs. A reviewer
+        # matching a document to a profile needs both.
+        fields = server.BrandProfileUpdate.model_fields
+        assert "business_name" in fields and "legal_entity_name" in fields
+
+    def test_it_asks_who_is_asking(self):
+        fields = server.BrandProfileUpdate.model_fields
+        assert {"contact_person_name", "contact_person_designation", "contact_email"} <= set(fields)
+
+    def test_everything_is_optional_to_save(self):
+        # A rejected brand has to be able to fix itself one field at a time.
+        for name, field in server.BrandProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
+
+    def test_only_the_keys_that_were_sent_are_written(self):
+        import inspect
+
+        assert "payload.model_fields_set" in inspect.getsource(server.update_brand_profile)
+
+    def test_business_type_is_a_closed_list(self):
+        assert "private_limited" in server.BusinessType.__args__
+        assert "sole_proprietorship" in server.BusinessType.__args__
+
+    def test_the_four_document_types_are_the_ones_asked_for(self):
+        assert set(server.BrandDocumentType.__args__) == {
+            "gst_certificate",
+            "business_registration",
+            "fssai_licence",
+            "shop_establishment_licence",
+        }
+        assert set(server.BRAND_DOCUMENT_LABELS) == set(server.BrandDocumentType.__args__)
+
+
+class TestBrandFieldValidation:
+    def test_a_gstin_is_normalised_or_refused(self):
+        assert server._clean_gstin(" 29abcde1234f1z5 ") == "29ABCDE1234F1Z5"
+        assert server._clean_gstin("") is None
+        with pytest.raises(HTTPException) as exc:
+            server._clean_gstin("NOT-A-GSTIN")
+        assert exc.value.status_code == 422
+
+    def test_a_url_gets_a_scheme_or_is_refused(self):
+        assert server._clean_web_url("example.com", label="website").startswith("https://")
+        assert server._clean_web_url(None, label="website") is None
+        with pytest.raises(HTTPException):
+            server._clean_web_url("not a url", label="website")
+
+    def test_a_free_mail_address_is_flagged_not_refused(self):
+        # A café on Gmail is normal. An address on the company's own domain is
+        # the cheapest signal that somebody actually works there.
+        assert server._is_free_email("owner@gmail.com") is True
+        assert server._is_free_email("riya@thirdwave.in") is False
+        import inspect
+
+        assert "contact_email_is_free_domain" in inspect.getsource(server.list_pending_brands)
+
+
+class TestBrandSubmission:
+    def test_the_required_set_is_named_not_guessed(self):
+        fields = {f for f, _ in server._BRAND_REQUIRED_FIELDS}
+        assert {"legal_entity_name", "business_type", "registered_address"} <= fields
+        assert {"contact_person_name", "contact_person_designation", "contact_email"} <= fields
+
+    def test_an_incomplete_profile_is_named_back(self):
+        missing = {r["field"] for r in server._brand_missing_fields({"business_name": "X"})}
+        assert "legal_entity_name" in missing
+        assert "business_name" not in missing
+
+    def test_submitting_needs_the_fields_and_a_document(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert "_brand_missing_fields(profile)" in src
+        assert "db.brand_documents.count_documents" in src
+        assert src.count("409") >= 2
+
+    def test_the_refusal_names_the_documents_we_accept(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        for name in ("GST certificate", "business registration", "FSSAI"):
+            assert name in src
+
+    def test_a_resubmission_clears_the_old_refusal(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert '"verification_reason": None' in src
+
+    def test_it_is_audited_and_confirmed(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert '"brand.submit_for_verification"' in src
+        assert "notify(" in src
+        assert "brand_verification_submitted" in server.NOTIFY_EVENTS
+
+
+class TestBrandVerificationState:
+    def test_verified_wins_whatever_is_stored(self):
+        assert server._brand_verification_state({"verified": True}) == "verified"
+
+    def test_a_stored_state_is_used(self):
+        assert (
+            server._brand_verification_state({"verification_state": "pending_verification"})
+            == "pending_verification"
+        )
+
+    def test_a_row_predating_the_field_is_derived(self):
+        # Old rows have a boolean and maybe a reason, and nothing else.
+        assert server._brand_verification_state({}) == "unsubmitted"
+        assert server._brand_verification_state({"verification_reason": "no"}) == "rejected"
+
+    def test_the_boolean_and_the_state_are_kept_in_step(self):
+        import inspect
+
+        for fn in (server.verify_brand, server.reject_brand, server.unverify_brand):
+            src = inspect.getsource(fn)
+            assert '"verification_state"' in src, fn.__name__
+
+    def test_startup_backfills_rather_than_emptying_the_queue(self):
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert '"verification_state": {"$exists": False}' in src
+        assert "pending_verification" in src
+
+
+class TestUnverifiedBrandsCannotReachCreators:
+    # The whole point of the feature. Each of these is a way an unverified
+    # brand could otherwise see, contact or notify a creator.
+    GATED = [
+        "list_campaign_applicants",
+        "brand_accept_applicant",
+        "brand_decline_applicant",
+        "brand_approve_content",
+        "brand_request_changes",
+        "brand_directory",
+        "brand_directory_filters",
+        "publish_brand_campaign",
+    ]
+
+    @pytest.mark.parametrize("fn_name", GATED)
+    def test_the_endpoint_checks_server_side(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert "_verified_brand_or_403(user)" in src, f"{fn_name} is not gated"
+
+    def test_drafting_and_editing_stay_open(self):
+        # A rejected brand has to be able to fix itself, and a draft reaches
+        # nobody.
+        import inspect
+
+        for fn in (server.update_brand_profile, server.get_brand_profile):
+            assert "_verified_brand_or_403" not in inspect.getsource(fn)
+
+    def test_the_directory_is_gated_before_it_queries(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_directory)
+        assert src.index("_verified_brand_or_403") < src.index("db.creator_profiles")
+
+    @pytest.mark.parametrize(
+        "fn_name,lookup",
+        [
+            ("list_campaign_applicants", "_own_campaign_or_404"),
+            ("brand_accept_applicant", "_brand_collab_or_404"),
+            ("brand_decline_applicant", "_brand_collab_or_404"),
+            ("brand_approve_content", "_brand_collab_or_404"),
+            ("brand_request_changes", "_brand_collab_or_404"),
+        ],
+    )
+    def test_ownership_is_checked_before_verification(self, fn_name, lookup):
+        # Somebody else's record stays a 404. An unverified brand probing ids
+        # must not learn what exists from the shape of the refusal.
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert src.index(lookup) < src.index("_verified_brand_or_403")
+
+    def test_contact_details_still_wait_for_an_accepted_collaboration(self):
+        # Verification is necessary, not sufficient — the older rule stands.
+        import inspect
+
+        src = inspect.getsource(server._serialize_applicant)
+        assert "revealed" in src
+        assert '"email": (creator_user or {}).get("email") if revealed else None' in src
+
+    def test_there_is_no_brand_facing_invite_route(self):
+        # Inviting a named creator is an admin action; a brand cannot reach
+        # one directly at all.
+        src = (server.ROOT_DIR / "server.py").read_text()
+        invite_routes = [
+            ln for ln in src.splitlines() if "invite" in ln and "_router." in ln
+        ]
+        assert invite_routes
+        assert all("admin_router" in ln for ln in invite_routes), invite_routes
+
+    def test_the_refusal_says_which_of_the_three_states_they_are_in(self):
+        never = server._why_brand_is_blocked({})
+        waiting = server._why_brand_is_blocked({"verification_state": "pending_verification"})
+        refused = server._why_brand_is_blocked(
+            {"verification_state": "rejected", "verification_reason": "Licence was illegible."}
+        )
+        assert "Verify your business" in never
+        assert "with the WeAre team" in waiting
+        assert "Licence was illegible." in refused
+        assert len({never, waiting, refused}) == 3
+
+    def test_someone_who_never_submitted_is_told_what_is_missing(self):
+        message = server._why_brand_is_blocked({"business_name": "Third Wave"})
+        assert "Legal entity name" in message
+        assert "document" in message
+
+
+class TestAdminBrandReview:
+    def test_the_queue_only_holds_brands_that_asked(self):
+        # It used to be every unverified row, which meant every signup.
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        assert '"verification_state": {"$in": ["pending_verification", "rejected"]}' in src
+
+    def test_the_longest_wait_is_first(self):
+        import inspect
+
+        assert '.sort("submitted_for_verification_at", 1)' in inspect.getsource(
+            server.list_pending_brands
+        )
+
+    def test_the_reviewer_sees_the_business_the_person_and_the_documents(self):
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        for field in (
+            "legal_entity_name",
+            "business_type",
+            "gst_number",
+            "registered_address",
+            "contact_person_name",
+            "contact_person_designation",
+            "documents",
+        ):
+            assert f'"{field}"' in src
+
+    def test_documents_are_loaded_in_one_query(self):
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        assert src.count("db.brand_documents.find") == 1
+
+    def test_a_rejection_still_requires_a_reason(self):
+        import inspect
+
+        src = inspect.getsource(server.reject_brand)
+        assert "422" in src
+        assert "the brand is told what to fix" in src
+
+    def test_both_decisions_reach_the_brand_on_whatsapp(self):
+        import inspect
+
+        for fn in (server.verify_brand, server.reject_brand):
+            assert "notify_over_utility_template" in inspect.getsource(fn)
+        assert "brand_verified" in server.NOTIFY_EVENTS
+        assert "brand_rejected" in server.NOTIFY_EVENTS
+
+    def test_a_document_can_be_rejected_on_its_own_with_a_note(self):
+        import inspect
+
+        src = inspect.getsource(server.review_brand_document)
+        assert "422" in src
+        assert "re-upload" in src
+
+    def test_a_verified_brand_cannot_delete_the_evidence(self):
+        import inspect
+
+        src = inspect.getsource(server.delete_brand_document)
+        assert 'profile.get("verified")' in src
+        assert "409" in src
+
+    def test_deleting_is_scoped_to_the_owner_in_the_query(self):
+        import inspect
+
+        src = inspect.getsource(server.delete_brand_document)
+        assert '{"_id": oid, "brand_id": brand_oid}' in src

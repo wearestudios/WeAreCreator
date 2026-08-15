@@ -94,6 +94,61 @@ any scraped source.**
   a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
   switching steps and a retry.
 
+## Brand verification
+
+Anyone can sign up and claim to be any business, so a brand is a claim until we
+have checked it. `verification_state` says where it stands —
+`unsubmitted | pending_verification | verified | rejected` — alongside the older
+`verified` boolean, which a great deal of code still gates on and which stays
+authoritative. `_brand_verification_state` derives the state for rows written
+before the field existed, and startup backfills it.
+
+- Required before we'll look (`_BRAND_REQUIRED_FIELDS`): business name, legal
+  entity name, business type, category, registered address, contact person,
+  their designation, a work email. GST number, website and the official social
+  handles are optional — plenty of real small businesses have none of them.
+  `PUT /brand/profile` is a partial save like the creator's, and stays open to a
+  rejected brand so it can fix itself.
+- Documents (`brand_documents`) prove the business exists; the fields say which
+  business and who is asking on its behalf. Any one of GST certificate, business
+  registration, FSSAI licence or shop & establishment licence is enough. Several
+  are allowed and nothing is deleted on upload, so a clearer scan after a
+  rejection doesn't cost the rest.
+- **They are never publicly served.** Files land in `PRIVATE_UPLOAD_DIR`,
+  deliberately *not* `UPLOAD_DIR` — that one is `app.mount`ed as `StaticFiles`,
+  so anything in it is fetchable by anyone who guesses the name, and these carry
+  registered addresses and directors' names. The only way out is
+  `GET /admin/brands/{user_id}/documents/{id}`, admin-only, audited,
+  `Cache-Control: no-store`, filtered on both ids. `_serialize_brand_document`
+  returns no path and no URL. Don't add one.
+- `_store_private_upload` sniffs magic bytes exactly like the creator profile
+  image (`sniff_document_type` = the image signatures plus `%PDF-`); the stored
+  name is ours and random, the uploader's filename is kept only as a label.
+- `POST /brand/verification/submit` needs every required field and at least one
+  document, and 409s naming what's absent. `POST /admin/brands/{id}/verify` and
+  `/reject` (reason required) decide, notify on WhatsApp either way, and the
+  rejection quotes the reason so the brand knows what to fix.
+- The queue is `verified: false` **and** `verification_state` in
+  `pending_verification | rejected` — a bare signup is not a queue item.
+
+The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
+and edit its own profile; anything that *reaches a creator* is behind it —
+publish, the creator directory and its filters, the applicant list, accept,
+decline, approve content, request changes. `_why_brand_is_blocked` gives the
+three states three different next steps; "not verified" on its own just
+generates a support email.
+
+**Ownership is checked before verification**, always:
+
+```python
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
+```
+
+The other order turns another brand's campaign from a 404 into a 403, which
+leaks which ids exist. A unit test pins the order for every gated endpoint.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:

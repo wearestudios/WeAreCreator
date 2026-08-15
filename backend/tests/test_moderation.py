@@ -77,6 +77,31 @@ def _draft(bs, **overrides):
     return r.json()
 
 
+# A brand is only reviewable once it has told us who it is and sent something
+# proving it — see test_brand_verification.py for that path in full.
+_TINY_PDF = b"%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+
+
+def _submit_for_verification(session):
+    r = session.put(f"{BASE_URL}/brand/profile", json={
+        "legal_entity_name": "Mod Test Private Limited",
+        "business_type": "private_limited",
+        "registered_address": "12 Church Street, Bengaluru 560001",
+        "contact_person_name": "Riya Menon",
+        "contact_person_designation": "Marketing Manager",
+        "contact_email": "riya@modtest.in",
+    })
+    assert r.status_code == 200, r.text
+    r = session.post(
+        f"{BASE_URL}/brand/verification/documents",
+        data={"doc_type": "gst_certificate"},
+        files={"file": ("gst.pdf", _TINY_PDF, "application/pdf")},
+    )
+    assert r.status_code == 200, r.text
+    r = session.post(f"{BASE_URL}/brand/verification/submit")
+    assert r.status_code == 200, r.text
+
+
 # ---------- 1. Brand verification ----------
 
 class TestBrandVerificationQueue:
@@ -87,15 +112,25 @@ class TestBrandVerificationQueue:
         assert bs.get(f"{BASE_URL}/admin/brands/pending").status_code == 403
         assert cs.get(f"{BASE_URL}/admin/brands/pending").status_code == 403
 
-    def test_a_new_brand_lands_in_the_queue_with_its_signup_details(self, admin, brand):
-        _, email, uid = brand
+    def test_a_bare_signup_is_not_a_queue_item(self, admin, brand):
+        # It used to be: every unverified row landed here, which meant every
+        # signup, which meant an admin looking at rows with nothing to decide
+        # on. Submitting the business details and a document is what asks.
+        _, _, uid = brand
+        rows = admin.get(f"{BASE_URL}/admin/brands/pending").json()
+        assert not any(x["user_id"] == uid for x in rows)
+
+    def test_a_submitted_brand_lands_in_the_queue_with_its_details(self, admin, brand):
+        bs, email, uid = brand
+        _submit_for_verification(bs)
         rows = admin.get(f"{BASE_URL}/admin/brands/pending").json()
         row = next((x for x in rows if x["user_id"] == uid), None)
-        assert row, "a brand that just signed up must be waiting on us"
-        assert row["verification_state"] == "pending"
+        assert row, "a brand that submitted must be waiting on us"
+        assert row["verification_state"] == "pending_verification"
         assert row["email"] == email
         for field in ("business_name", "category", "areas", "signed_up_at", "campaign_count"):
             assert field in row
+        assert row["documents"], "a queue row without its documents can't be decided on"
 
     def test_verifying_takes_them_out_of_the_queue(self, admin, brand):
         _, _, uid = brand
@@ -104,7 +139,8 @@ class TestBrandVerificationQueue:
         assert not any(x["user_id"] == uid for x in rows)
 
     def test_a_rejected_brand_stays_visible_and_says_why(self, admin, brand):
-        _, _, uid = brand
+        bs, _, uid = brand
+        _submit_for_verification(bs)
         r = admin.post(f"{BASE_URL}/admin/brands/{uid}/reject",
                        json={"reason": "Could not confirm the business address"})
         assert r.status_code == 200, r.text

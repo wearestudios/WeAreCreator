@@ -24,11 +24,13 @@ from fastapi import (
     HTTPException,
     Depends,
     File,
+    Form,
     Request,
     Response,
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -289,12 +291,82 @@ class SubmitContentPayload(BaseModel):
     content_url: Optional[str] = Field(default=None, min_length=1, max_length=500)
 
 
-class BrandProfileUpdate(BaseModel):
-    """Payload for brand onboarding / profile edits."""
+# Indian entity types, because "business type" with a free-text box is a field
+# nobody can review. `other` exists so an unusual structure isn't a dead end.
+BusinessType = Literal[
+    "sole_proprietorship",
+    "partnership",
+    "llp",
+    "private_limited",
+    "public_limited",
+    "trust",
+    "society",
+    "other",
+]
 
-    business_name: str = Field(min_length=1, max_length=140)
-    category: CATEGORY_LITERAL
+# What a brand can hand us to prove it is the business it says it is. Any one
+# of these is enough — a small café has a shop establishment licence and no
+# GST; a company has a certificate of incorporation and no FSSAI.
+BrandDocumentType = Literal[
+    "gst_certificate",
+    "business_registration",
+    "fssai_licence",
+    "shop_establishment_licence",
+]
+
+BRAND_DOCUMENT_LABELS = {
+    "gst_certificate": "GST certificate",
+    "business_registration": "Business registration",
+    "fssai_licence": "FSSAI licence",
+    "shop_establishment_licence": "Shop & establishment licence",
+}
+
+# Where a brand stands with us. `verified` is kept as a boolean alongside this
+# because a great deal of code already gates on it; this says *why* it is
+# false, which the boolean never could.
+BrandVerificationState = Literal[
+    "unsubmitted",
+    "pending_verification",
+    "verified",
+    "rejected",
+]
+
+
+class BrandProfileUpdate(BaseModel):
+    """Payload for brand onboarding / profile edits.
+
+    Same partial-save rule as the creator builder: every field is optional and
+    only the keys actually present in the body are written, so a brand can fill
+    this in over several sittings without a later step blanking an earlier one.
+    Submitting for verification is what checks the set is complete.
+    """
+
+    business_name: Optional[str] = Field(default=None, max_length=140)
+    category: Optional[CATEGORY_LITERAL] = None
     areas: list[str] = Field(default_factory=list, max_length=30)
+
+    # The name on the paperwork, which is often not the name on the door —
+    # "Third Wave Coffee" trades, "Third Wave Coffee Roasters Pvt Ltd" signs.
+    # A reviewer needs both to match a document against a profile.
+    legal_entity_name: Optional[str] = Field(default=None, max_length=200)
+    gst_number: Optional[str] = Field(default=None, max_length=15)
+    business_type: Optional[BusinessType] = None
+    registered_address: Optional[str] = Field(default=None, max_length=500)
+    website: Optional[str] = Field(default=None, max_length=300)
+
+    # The accounts we can check the business against. Not proof on their own —
+    # anyone can type a handle — but a reviewer comparing a handle to a
+    # licence catches the obvious impersonation.
+    instagram_handle: Optional[str] = Field(default=None, max_length=60)
+    facebook_url: Optional[str] = Field(default=None, max_length=300)
+    linkedin_url: Optional[str] = Field(default=None, max_length=300)
+
+    # Who is actually asking, and on what authority. The whole point of this
+    # feature: an account is a person claiming to represent a business.
+    contact_person_name: Optional[str] = Field(default=None, max_length=140)
+    contact_person_designation: Optional[str] = Field(default=None, max_length=140)
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = Field(default=None, max_length=20)
 
 
 # The shape of the work decides the shape of the dates. A launch or a group
@@ -483,6 +555,14 @@ class DecisionPayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class DocumentReviewPayload(BaseModel):
+    """One document, accepted or rejected. A rejection has to say why, because
+    the brand is told what to re-upload."""
+
+    status: Literal["accepted", "rejected"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class BrandAcceptPayload(BaseModel):
     """Payload for a brand accepting an applicant onto a campaign."""
 
@@ -636,6 +716,28 @@ CAMPAIGN_REVIEW_STATUS = "pending_review"
 # How a connection can be. `stale` is recoverable by reconnecting; it is not
 # the same as disconnected, and the difference is what the UI needs to say.
 InstagramConnectionStatus = Literal["connected", "stale"]
+
+
+class BrandDocument(BaseModel):
+    """Collection: brand_documents — proof that a brand is the business it claims.
+
+    Files live in PRIVATE_UPLOAD_DIR, which is deliberately not the static
+    upload directory: these carry registered addresses and directors' names,
+    and there is no public path to them. `stored_name` is ours and random; the
+    uploader's filename is kept only as a label and never touches the disk.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    brand_id: PyObjectId
+    doc_type: BrandDocumentType
+    stored_name: str
+    original_name: Optional[str] = None
+    mime: Optional[str] = None
+    size: Optional[int] = None
+    status: Literal["submitted", "accepted", "rejected"] = "submitted"
+    review_note: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class InstagramConnection(BaseModel):
@@ -922,6 +1024,7 @@ NOTIFY_EVENTS = {
     "profile_submitted": "Your profile is with the team",
     "profile_nudge": "Your profile is still half-finished",
     "instagram_disconnected": "Reconnect Instagram to keep your verified stats",
+    "brand_verification_submitted": "Your business details are with the team",
 }
 
 
@@ -1130,6 +1233,122 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
 
     logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
     return f"{UPLOAD_URL_PREFIX}/{filename}", path
+
+
+# ---------------------------------------------------------------------------
+# Private uploads — verification documents
+# ---------------------------------------------------------------------------
+#
+# A separate directory from UPLOAD_DIR, which is mounted as static files and
+# therefore world-readable by design. A GST certificate carries a registered
+# address and a director's name; it must never be one guessable URL away from
+# the public internet. Nothing serves this directory — the only way out is an
+# authenticated admin route that streams the bytes.
+PRIVATE_UPLOAD_DIR = Path(
+    os.environ.get("PRIVATE_UPLOAD_DIR", str(ROOT_DIR / "private_uploads"))
+)
+
+# The same sniffing rule as the profile-image upload — the extension comes from
+# the bytes, never from the client — plus PDF, because that is what a licence
+# is usually downloaded as.
+_DOCUMENT_SIGNATURES = ((b"%PDF-", "application/pdf", ".pdf"),)
+
+
+def sniff_document_type(head: bytes) -> Optional[tuple]:
+    """Identify a document from its leading bytes: PDF, or any image we accept."""
+    for magic, mime, ext in _DOCUMENT_SIGNATURES:
+        if head.startswith(magic):
+            return mime, ext
+    return sniff_image_type(head)
+
+
+async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
+    """Validate and write a document outside the public upload directory.
+
+    Returns the stored metadata. Deliberately never returns a URL: there isn't
+    one, and a caller that can't accidentally be handed a link can't
+    accidentally render it.
+    """
+    limit = max_upload_bytes()
+    chunk_size = 64 * 1024
+
+    first = await file.read(chunk_size)
+    if not first:
+        raise HTTPException(status_code=422, detail="That file is empty.")
+
+    sniffed = sniff_document_type(first)
+    if not sniffed:
+        raise HTTPException(
+            status_code=422,
+            detail="Please upload a PDF, JPEG, PNG, WebP or GIF.",
+        )
+    mime, ext = sniffed
+
+    PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{prefix}-{_secrets.token_urlsafe(20)}{ext}"
+    path = PRIVATE_UPLOAD_DIR / stored_name
+
+    written = 0
+    try:
+        with open(path, "wb") as out:
+            chunk = first
+            while chunk:
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Documents must be under {limit // (1024 * 1024)}MB.",
+                    )
+                out.write(chunk)
+                chunk = await file.read(chunk_size)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        path.unlink(missing_ok=True)
+        logger.error("private upload write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save that document.")
+    finally:
+        await file.close()
+
+    # The original filename is kept only to show the uploader what they sent;
+    # it never touches the filesystem, so a "../../etc/passwd" is just a label.
+    original = (file.filename or "document")[:200]
+    logger.info("stored private upload %s (%s, %d bytes)", stored_name, mime, written)
+    return {
+        "stored_name": stored_name,
+        "original_name": original,
+        "mime": mime,
+        "size": written,
+    }
+
+
+def _private_upload_path(stored_name: Optional[str]) -> Optional[Path]:
+    """Resolve a stored document, refusing anything that escapes the directory.
+
+    The names are ours and random, but this is the one place a path is built
+    from stored data, so it checks rather than assumes.
+    """
+    if not stored_name or "/" in stored_name or "\\" in stored_name:
+        return None
+    if stored_name in ("", ".", ".."):
+        return None
+    path = (PRIVATE_UPLOAD_DIR / stored_name).resolve()
+    try:
+        path.relative_to(PRIVATE_UPLOAD_DIR.resolve())
+    except ValueError:
+        return None
+    return path if path.is_file() else None
+
+
+def _delete_private_upload(stored_name: Optional[str]) -> None:
+    path = _private_upload_path(stored_name)
+    if not path:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("could not delete private upload %s: %s", stored_name, exc)
 
 
 def _delete_upload(public_url: Optional[str]) -> None:
@@ -3698,7 +3917,23 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "business_name": doc.get("business_name"),
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
+        # The business as claimed, which is what documents get checked against.
+        "legal_entity_name": doc.get("legal_entity_name"),
+        "gst_number": doc.get("gst_number"),
+        "business_type": doc.get("business_type"),
+        "registered_address": doc.get("registered_address"),
+        "website": doc.get("website"),
+        "instagram_handle": doc.get("instagram_handle"),
+        "facebook_url": doc.get("facebook_url"),
+        "linkedin_url": doc.get("linkedin_url"),
+        # And the person asking on its behalf.
+        "contact_person_name": doc.get("contact_person_name"),
+        "contact_person_designation": doc.get("contact_person_designation"),
+        "contact_email": doc.get("contact_email"),
+        "contact_phone": doc.get("contact_phone"),
         "verified": bool(doc.get("verified", False)),
+        "verification_state": _brand_verification_state(doc),
+        "submitted_for_verification_at": _iso(doc.get("submitted_for_verification_at")),
         # Set when we refuse a brand, so it can be shown rather than guessed at.
         "verification_reason": doc.get("verification_reason"),
         "created_at": doc["created_at"].isoformat()
@@ -3776,12 +4011,48 @@ async def _awaiting_brand_counts(campaign_ids: list) -> dict:
     return {r["_id"]: r["n"] for r in rows}
 
 
+def _why_brand_is_blocked(profile: Optional[dict]) -> str:
+    """Why this brand can't reach creators yet, and what to do about it.
+
+    Three different situations with three different next steps: never
+    submitted, waiting on us, or turned down. "Not verified" on its own just
+    generates a support email.
+    """
+    state = _brand_verification_state(profile or {})
+    if state == "rejected":
+        reason = (profile or {}).get("verification_reason")
+        return (
+            f"Your brand wasn't verified: {reason} Fix that and submit again."
+            if reason
+            else "Your brand wasn't verified. Update your details and submit again."
+        )
+    if state == "pending_verification":
+        return (
+            "Your business details are with the WeAre team. You can keep drafting — "
+            "we'll be in touch as soon as you're verified, usually within 48 hours."
+        )
+    missing = _brand_missing_fields(profile or {})
+    if missing:
+        return (
+            "Verify your business first — still needed: "
+            + ", ".join(row["label"] for row in missing)
+            + ", plus a document proving you represent it."
+        )
+    return (
+        "Verify your business first — upload a document proving you represent it, "
+        "then submit for verification."
+    )
+
+
 async def _verified_brand_or_403(user: dict) -> dict:
     """Assert the caller's brand has been verified by us.
 
-    Drafting is open to anyone who signs up — writing a brief costs nobody
-    anything. Putting one in front of creators is what needs a real business
-    behind it, so that is where the gate sits.
+    Anyone can sign up and claim to be any business, so this is the line
+    between a claim and a checked one. Drafting a brief and editing your own
+    profile stay open — they cost nobody anything and a rejected brand has to
+    be able to fix itself. Everything that *reaches a creator* is behind here:
+    publishing, the directory, the applicant list, and every action that
+    notifies somebody.
     """
     if user.get("role") == "admin":
         return {}
@@ -3792,18 +4063,7 @@ async def _verified_brand_or_403(user: dict) -> dict:
             detail="Finish your brand profile before submitting a campaign.",
         )
     if not profile.get("verified", False):
-        reason = profile.get("verification_reason")
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"Your brand hasn't been verified yet: {reason}"
-                if reason
-                else (
-                    "Your brand is still being verified. You can keep drafting — "
-                    "we'll be in touch as soon as it's approved."
-                )
-            ),
-        )
+        raise HTTPException(status_code=403, detail=_why_brand_is_blocked(profile))
     return profile
 
 
@@ -3853,12 +4113,145 @@ async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
     return doc
 
 
+def _clean_gstin(raw: Optional[str]) -> Optional[str]:
+    """A GSTIN is either well-formed or it isn't. Optional, but not sloppy —
+    a reviewer matching a number to a certificate needs it in one shape."""
+    value = (raw or "").strip().upper().replace(" ", "")
+    if not value:
+        return None
+    if not GSTIN_RE.match(value):
+        raise HTTPException(
+            status_code=422,
+            detail="GSTIN should be 15 characters, like 29ABCDE1234F1Z5.",
+        )
+    return value
+
+
+def _clean_web_url(raw: Optional[str], *, label: str) -> Optional[str]:
+    """Normalise a URL, or refuse it.
+
+    A reviewer clicks these to check the business exists, so a link that goes
+    nowhere is worse than no link — it looks like evidence and isn't.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if not value.lower().startswith(("http://", "https://")):
+        value = f"https://{value}"
+    if not re.match(r"^https?://[\w.-]+\.[a-z]{2,}(/.*)?$", value, re.IGNORECASE):
+        raise HTTPException(
+            status_code=422, detail=f"That doesn't look like a {label} URL."
+        )
+    return value
+
+
+# What a brand has to tell us before we will look at it. Documents prove the
+# business exists; these say which business, and who is asking on its behalf.
+_BRAND_REQUIRED_FIELDS = (
+    ("business_name", "Business name"),
+    ("legal_entity_name", "Legal entity name"),
+    ("business_type", "Business type"),
+    ("category", "Category"),
+    ("registered_address", "Registered address"),
+    ("contact_person_name", "Contact person"),
+    ("contact_person_designation", "Their designation"),
+    ("contact_email", "Work email"),
+)
+
+# Domains where an address proves nothing about employment. Not a rejection —
+# plenty of real small businesses run on Gmail — but the reviewer should be
+# told, because a work email on the company domain is the cheapest signal that
+# somebody actually works there.
+_FREE_EMAIL_DOMAINS = frozenset(
+    {
+        "gmail.com", "googlemail.com", "yahoo.com", "yahoo.in", "yahoo.co.in",
+        "outlook.com", "hotmail.com", "live.com", "rediffmail.com",
+        "icloud.com", "proton.me", "protonmail.com", "zoho.com",
+    }
+)
+
+
+def _is_free_email(address: Optional[str]) -> bool:
+    domain = (address or "").rsplit("@", 1)[-1].lower().strip()
+    return bool(domain) and domain in _FREE_EMAIL_DOMAINS
+
+
+def _brand_missing_fields(profile: dict) -> list:
+    return [
+        {"field": field, "label": label}
+        for field, label in _BRAND_REQUIRED_FIELDS
+        if not (profile or {}).get(field)
+    ]
+
+
+def _brand_verification_state(profile: dict) -> str:
+    """Where the brand stands, derived so old rows without the field still work."""
+    if (profile or {}).get("verified"):
+        return "verified"
+    stored = (profile or {}).get("verification_state")
+    if stored in ("unsubmitted", "pending_verification", "rejected"):
+        return stored
+    # Pre-dates the field: a refusal left a reason behind, everything else
+    # never submitted anything.
+    return "rejected" if (profile or {}).get("verification_reason") else "unsubmitted"
+
+
+async def _brand_documents(brand_oid) -> list:
+    docs = (
+        await db.brand_documents.find({"brand_id": brand_oid})
+        .sort("created_at", -1)
+        .to_list(length=100)
+    )
+    return [_serialize_brand_document(d) for d in docs]
+
+
+def _serialize_brand_document(doc: dict) -> dict:
+    """A document as its uploader sees it: what it is, not where it lives.
+
+    No path and no URL — there is no public one, and a serializer that can't
+    produce a link can't leak one into a template by accident.
+    """
+    return {
+        "id": str(doc["_id"]),
+        "doc_type": doc.get("doc_type"),
+        "doc_label": BRAND_DOCUMENT_LABELS.get(doc.get("doc_type"), doc.get("doc_type")),
+        "original_name": doc.get("original_name"),
+        "mime": doc.get("mime"),
+        "size": doc.get("size"),
+        "status": doc.get("status", "submitted"),
+        "review_note": doc.get("review_note"),
+        "uploaded_at": _iso(doc.get("created_at")),
+    }
+
+
+async def _brand_profile_response(profile: dict) -> dict:
+    """The profile plus everything the verification screen needs in one call."""
+    out = _serialize_brand_profile(profile)
+    missing = _brand_missing_fields(profile)
+    # Keyed on user_id, the same id campaigns use for brand_id.
+    documents = await _brand_documents(profile["user_id"])
+    state = _brand_verification_state(profile)
+    out["verification"] = {
+        "state": state,
+        "missing_fields": missing,
+        "documents": documents,
+        "document_count": len(documents),
+        "can_submit": not missing and bool(documents) and state != "verified",
+        "submitted_at": _iso(profile.get("submitted_for_verification_at")),
+        "verification_reason": profile.get("verification_reason"),
+        "accepted_document_types": [
+            {"value": v, "label": BRAND_DOCUMENT_LABELS[v]} for v in BRAND_DOCUMENT_LABELS
+        ],
+    }
+    return out
+
+
 @brand_router.get("/profile")
 async def get_brand_profile(user: dict = Depends(require_roles("brand"))):
     doc = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not doc:
         raise HTTPException(status_code=404, detail="Brand profile not found")
-    return _serialize_brand_profile(doc)
+    return await _brand_profile_response(doc)
 
 
 @brand_router.put("/profile")
@@ -3866,14 +4259,63 @@ async def update_brand_profile(
     payload: BrandProfileUpdate,
     user: dict = Depends(require_roles("brand")),
 ):
+    """Save the brand profile. Editing stays open whatever the brand's state.
+
+    An unverified brand can always fix its own details — that is the only way
+    a rejected brand ever becomes a verified one. What it cannot do is reach a
+    creator, which is enforced separately.
+    """
+    existing = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    sent = payload.model_fields_set
     now = datetime.now(timezone.utc)
-    business_name = payload.business_name.strip()
-    update = {
-        "business_name": business_name,
-        "category": payload.category,
-        "areas": [a.strip() for a in payload.areas if a and a.strip()],
-        "updated_at": now,
-    }
+    update: dict = {"updated_at": now}
+
+    def text(field, value, *, lower=False):
+        if field not in sent:
+            return
+        cleaned = (value or "").strip()
+        update[field] = (cleaned.lower() if lower else cleaned) or None
+
+    text("business_name", payload.business_name)
+    text("legal_entity_name", payload.legal_entity_name)
+    text("registered_address", payload.registered_address)
+    text("contact_person_name", payload.contact_person_name)
+    text("contact_person_designation", payload.contact_person_designation)
+    text("contact_email", payload.contact_email, lower=True)
+
+    if "category" in sent:
+        update["category"] = payload.category
+    if "business_type" in sent:
+        update["business_type"] = payload.business_type
+    if "areas" in sent:
+        update["areas"] = [a.strip() for a in payload.areas if a and a.strip()]
+    if "gst_number" in sent:
+        update["gst_number"] = _clean_gstin(payload.gst_number)
+    if "website" in sent:
+        update["website"] = _clean_web_url(payload.website, label="website")
+    if "facebook_url" in sent:
+        update["facebook_url"] = _clean_web_url(payload.facebook_url, label="Facebook page")
+    if "linkedin_url" in sent:
+        update["linkedin_url"] = _clean_web_url(payload.linkedin_url, label="LinkedIn page")
+    if "instagram_handle" in sent:
+        raw = (payload.instagram_handle or "").strip()
+        if raw:
+            handle = _extract_ig_handle(raw)
+            if not handle:
+                raise HTTPException(
+                    status_code=422,
+                    detail="That doesn't look like an Instagram handle.",
+                )
+            update["instagram_handle"] = handle
+        else:
+            update["instagram_handle"] = None
+    if "contact_phone" in sent:
+        raw = (payload.contact_phone or "").strip()
+        update["contact_phone"] = _normalize_phone(raw) if raw else None
+
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": ObjectId(user["_id"])},
         {"$set": update},
@@ -3883,11 +4325,167 @@ async def update_brand_profile(
         raise HTTPException(status_code=404, detail="Brand profile not found")
 
     # Keep the display name on the user doc in sync with business_name.
+    business_name = update.get("business_name")
     if business_name and business_name != user.get("name"):
         await db.users.update_one(
             {"_id": ObjectId(user["_id"])}, {"$set": {"name": business_name}}
         )
-    return _serialize_brand_profile(result)
+    return await _brand_profile_response(result)
+
+
+@brand_router.get("/verification")
+async def get_brand_verification(user: dict = Depends(require_roles("brand"))):
+    """Where this brand stands, and what it has already sent us."""
+    profile = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    return (await _brand_profile_response(profile))["verification"]
+
+
+@brand_router.post("/verification/documents")
+async def upload_brand_document(
+    doc_type: BrandDocumentType = Form(...),
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles("brand")),
+):
+    """Upload one proof-of-business document.
+
+    Several are allowed and expected: a brand may have a GST certificate and a
+    shop licence, and after a rejection it needs to be able to send a clearer
+    scan without losing the rest. Nothing is deleted on upload.
+    """
+    brand_oid = ObjectId(user["_id"])
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    existing = await db.brand_documents.count_documents({"brand_id": brand_oid})
+    if existing >= 12:
+        raise HTTPException(
+            status_code=409,
+            detail="That's a lot of documents. Remove one before adding another.",
+        )
+
+    stored = await _store_private_upload(file, prefix=f"brand-{brand_oid}")
+    now = datetime.now(timezone.utc)
+    result = await db.brand_documents.insert_one(
+        {
+            "brand_id": brand_oid,
+            "doc_type": doc_type,
+            "stored_name": stored["stored_name"],
+            "original_name": stored["original_name"],
+            "mime": stored["mime"],
+            "size": stored["size"],
+            "status": "submitted",
+            "review_note": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    doc = await db.brand_documents.find_one({"_id": result.inserted_id})
+    await audit(
+        user,
+        "brand.document_upload",
+        "brand_profile",
+        profile["_id"],
+        after={"doc_type": doc_type, "size": stored["size"]},
+    )
+    return _serialize_brand_document(doc)
+
+
+@brand_router.delete("/verification/documents/{document_id}")
+async def delete_brand_document(
+    document_id: str,
+    user: dict = Depends(require_roles("brand")),
+):
+    """Remove a document — to replace a bad scan, usually.
+
+    Refused once verified: the paperwork we approved against is the record of
+    why, and a brand shouldn't be able to empty it after the fact.
+    """
+    brand_oid = ObjectId(user["_id"])
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if profile and profile.get("verified"):
+        raise HTTPException(
+            status_code=409,
+            detail="Your brand is verified — get in touch if a document needs changing.",
+        )
+    try:
+        oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Scoped to the owner in the same query, so another brand's id is a 404.
+    doc = await db.brand_documents.find_one_and_delete(
+        {"_id": oid, "brand_id": brand_oid}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _delete_private_upload(doc.get("stored_name"))
+    return {"deleted": True, "id": document_id}
+
+
+@brand_router.post("/verification/submit")
+async def submit_brand_for_verification(user: dict = Depends(require_roles("brand"))):
+    """Ask us to check the business out.
+
+    Refused until the details are complete and at least one document is on
+    file, because a review with nothing to review is a queue item that wastes
+    an admin's time and tells the brand nothing.
+    """
+    brand_oid = ObjectId(user["_id"])
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    if profile.get("verified"):
+        raise HTTPException(status_code=409, detail="Your brand is already verified.")
+
+    missing = _brand_missing_fields(profile)
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail="Still needed: " + ", ".join(row["label"] for row in missing) + ".",
+        )
+    if not await db.brand_documents.count_documents({"brand_id": brand_oid}):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Upload at least one document proving you represent this business — "
+                "a GST certificate, business registration, FSSAI licence or shop "
+                "establishment licence."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.brand_profiles.find_one_and_update(
+        {"user_id": brand_oid},
+        {
+            "$set": {
+                "verification_state": "pending_verification",
+                "submitted_for_verification_at": now,
+                # A resubmission starts clean; the old refusal is not a verdict
+                # on the documents they have just sent.
+                "verification_reason": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "brand.submit_for_verification",
+        "brand_profile",
+        profile["_id"],
+        after={"verification_state": "pending_verification"},
+    )
+    await notify(
+        brand_oid,
+        "brand_verification_submitted",
+        title="Verification submitted",
+        body="Your business details are with the WeAre team. We usually come back within 48 hours.",
+        link="/brand/profile",
+    )
+    return (await _brand_profile_response(updated))["verification"]
 
 
 async def _applicant_counts_for(campaign_ids: list) -> dict:
@@ -4274,6 +4872,8 @@ async def list_campaign_applicants(
     brand side of the product could only show a count.
     """
     campaign = await _own_campaign_or_404(campaign_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     collabs = (
         await db.collaborations.find({"campaign_id": campaign["_id"]})
         .sort("created_at", -1)
@@ -4367,6 +4967,8 @@ async def brand_accept_applicant(
 ):
     """The brand picks a creator. Records who agreed to what, and when."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "verified":
         raise HTTPException(
             status_code=409,
@@ -4440,6 +5042,8 @@ async def brand_decline_applicant(
 ):
     """Say no, out loud. Every applicant gets an answer instead of silence."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") not in ("applied", "verified", "accepted"):
         raise HTTPException(
             status_code=409,
@@ -4494,6 +5098,8 @@ async def brand_approve_content(
     """Sign off the work. This is the step the landing page promises and the
     thing that should release payment."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
@@ -4534,6 +5140,8 @@ async def brand_request_changes(
     """Send the work back with a note. The creator can resubmit without an admin
     unpicking the state by hand."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
@@ -4655,6 +5263,8 @@ async def brand_directory(
     user: dict = Depends(require_roles("brand", "admin")),
 ):
     """Browse verified creators with optional city/niche/keyword filters."""
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     query: dict = {"verification_status": "verified"}
     if city:
         query["city"] = city
@@ -4687,6 +5297,8 @@ async def brand_directory_filters(
     user: dict = Depends(require_roles("brand", "admin")),
 ):
     """Distinct filter options across verified creators."""
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     base = {"verification_status": "verified"}
     cities_raw = await db.creator_profiles.distinct("city", base)
     niches_flat: list[str] = []
@@ -6387,8 +6999,10 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     it is; `verification_state` says which is which.
     """
     profiles = (
-        await db.brand_profiles.find({"verified": False})
-        .sort("created_at", -1)
+        await db.brand_profiles.find(
+            {"verified": False, "verification_state": {"$in": ["pending_verification", "rejected"]}}
+        )
+        .sort("submitted_for_verification_at", 1)  # longest wait first
         .to_list(length=500)
     )
     if not profiles:
@@ -6397,6 +7011,16 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     user_ids = [p["user_id"] for p in profiles]
     users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
     users_by_id = {u["_id"]: u for u in users}
+
+    # Every queued brand's documents in one query, so a page of twenty doesn't
+    # become twenty round trips.
+    docs_by_brand: dict = {}
+    for doc in await db.brand_documents.find(
+        {"brand_id": {"$in": user_ids}}
+    ).sort("created_at", -1).to_list(length=1000):
+        docs_by_brand.setdefault(doc["brand_id"], []).append(
+            _serialize_brand_document(doc)
+        )
 
     # How much they have already drafted — a brand with briefs waiting is a
     # more urgent review than one that signed up and stopped.
@@ -6431,12 +7055,33 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
                 "category": p.get("category"),
                 "areas": p.get("areas") or [],
                 "verified": False,
-                # "pending" = never decided; "rejected" = we said no and why.
-                "verification_state": (
-                    "rejected" if p.get("verification_reason") else "pending"
-                ),
+                # The same vocabulary the brand's own profile reports, so one
+                # field name doesn't mean two different things on two screens.
+                # In this queue it is always pending_verification or rejected.
+                "verification_state": _brand_verification_state(p),
                 "verification_reason": p.get("verification_reason"),
                 "rejected_at": _iso(p.get("rejected_at")),
+                "submitted_at": _iso(p.get("submitted_for_verification_at")),
+                # The business, as claimed — this is what the documents are
+                # checked against.
+                "legal_entity_name": p.get("legal_entity_name"),
+                "business_type": p.get("business_type"),
+                "gst_number": p.get("gst_number"),
+                "registered_address": p.get("registered_address"),
+                "website": p.get("website"),
+                "instagram_handle": p.get("instagram_handle"),
+                "facebook_url": p.get("facebook_url"),
+                "linkedin_url": p.get("linkedin_url"),
+                # And the person asking on its behalf.
+                "contact_person_name": p.get("contact_person_name"),
+                "contact_person_designation": p.get("contact_person_designation"),
+                "contact_email": p.get("contact_email"),
+                "contact_phone": p.get("contact_phone"),
+                # Flagged, not refused: a café on Gmail is normal, but an
+                # address on the company's own domain is the cheapest evidence
+                # that somebody actually works there.
+                "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
+                "documents": docs_by_brand.get(p["user_id"], []),
                 "name": u.get("name"),
                 "email": u.get("email"),
                 "phone": u.get("phone"),
@@ -6449,6 +7094,104 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
             }
         )
     return out
+
+
+@admin_router.get("/brands/{user_id}/documents/{document_id}")
+async def download_brand_document(
+    user_id: str,
+    document_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stream one verification document to a reviewing admin.
+
+    The only way these bytes leave the server. They are written outside the
+    static upload directory precisely so there is no second path — a GST
+    certificate carries a registered address and a director's name, and it must
+    never be one guessed URL away from the public internet.
+    """
+    try:
+        brand_oid = ObjectId(user_id)
+        doc_oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Both ids in the filter, so a document id can't be pulled out from under a
+    # different brand.
+    doc = await db.brand_documents.find_one({"_id": doc_oid, "brand_id": brand_oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    path = _private_upload_path(doc.get("stored_name"))
+    if not path:
+        logger.error("brand document %s is recorded but missing on disk", document_id)
+        raise HTTPException(status_code=410, detail="That file is no longer on disk.")
+
+    await audit(
+        user,
+        "brand.document_view",
+        "brand_profile",
+        brand_oid,
+        after={"document_id": document_id, "doc_type": doc.get("doc_type")},
+    )
+    return FileResponse(
+        path,
+        media_type=doc.get("mime") or "application/octet-stream",
+        # inline so a reviewer can read it in the browser; the filename is the
+        # one they uploaded, which is only ever a label.
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.get("original_name") or "document"}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@admin_router.post("/brands/{user_id}/documents/{document_id}/review")
+async def review_brand_document(
+    user_id: str,
+    document_id: str,
+    payload: DocumentReviewPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Mark one document accepted or rejected, with a note.
+
+    Per-document rather than only per-brand, so "your FSSAI licence is
+    illegible" doesn't have to be written as a whole-brand rejection.
+    """
+    decision = (payload.reason or "").strip()
+    status = payload.status
+    if status == "rejected" and not decision:
+        raise HTTPException(
+            status_code=422,
+            detail="Say what's wrong with it — the brand is told what to re-upload.",
+        )
+    try:
+        brand_oid = ObjectId(user_id)
+        doc_oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    updated = await db.brand_documents.find_one_and_update(
+        {"_id": doc_oid, "brand_id": brand_oid},
+        {
+            "$set": {
+                "status": status,
+                "review_note": decision or None,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Document not found")
+    await audit(
+        user,
+        f"brand.document_{status}",
+        "brand_profile",
+        brand_oid,
+        after={"document_id": document_id, "doc_type": updated.get("doc_type")},
+        note=decision or None,
+    )
+    return _serialize_brand_document(updated)
 
 
 @admin_router.post("/brands/{user_id}/verify")
@@ -6465,7 +7208,12 @@ async def verify_brand(
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
         {
-            "$set": {"verified": True, "verified_at": now, "updated_at": now},
+            "$set": {
+                "verified": True,
+                "verification_state": "verified",
+                "verified_at": now,
+                "updated_at": now,
+            },
             # Approving clears an earlier refusal; leaving it would keep telling
             # the brand it was rejected.
             "$unset": {"verification_reason": "", "rejected_at": ""},
@@ -6527,6 +7275,7 @@ async def reject_brand(
         {
             "$set": {
                 "verified": False,
+                "verification_state": "rejected",
                 "verification_reason": reason,
                 "rejected_at": now,
                 "updated_at": now,
@@ -6586,7 +7335,8 @@ async def unverify_brand(
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
-        {"$set": {"verified": False, "updated_at": now}},
+        {"$set": {"verified": False,
+                "verification_state": "pending_verification", "updated_at": now}},
         return_document=True,
     )
     if not result:
@@ -10096,6 +10846,12 @@ async def _startup():
         [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
     )
 
+    # Brand verification documents — read per brand, newest first.
+    await db.brand_documents.create_index([("brand_id", 1), ("created_at", -1)])
+    await db.brand_profiles.create_index(
+        [("verified", 1), ("verification_state", 1), ("submitted_for_verification_at", 1)]
+    )
+
     # Instagram connections — one per creator, read by the two refresh jobs in
     # expiry and staleness order.
     await db.instagram_connections.create_index("user_id", unique=True)
@@ -10271,6 +11027,27 @@ async def _startup():
             "waiting in the vetting queue",
             backfilled,
         )
+
+    # 6. Brands predate `verification_state`, and the review queue now filters
+    #    on it. Anyone already waiting on us is moved to pending_verification
+    #    rather than dropped — they will show in the queue with no documents
+    #    attached, which is the truth about them and something an admin can act
+    #    on, where vanishing silently would not be.
+    for query, state in (
+        ({"verified": True}, "verified"),
+        ({"verified": False, "verification_reason": {"$nin": [None, ""]}}, "rejected"),
+        ({"verified": False}, "pending_verification"),
+    ):
+        moved = await db.brand_profiles.update_many(
+            {**query, "verification_state": {"$exists": False}},
+            {"$set": {"verification_state": state}},
+        )
+        if moved.modified_count:
+            logger.info(
+                "Backfilled verification_state=%s on %d brand profile(s)",
+                state,
+                moved.modified_count,
+            )
 
     # The nudge loop. Off entirely when the interval is zero, so a deployment
     # that has its own scheduler can drive POST /admin/jobs/creator-nudges
