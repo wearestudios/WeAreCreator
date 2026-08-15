@@ -16,6 +16,66 @@ export const ADMIN_SHELL = {
 	section: (key) => `admin-section-${key}`,
 };
 
+export const ADMIN_TABS = {
+	nav: 'admin-tabs',
+	tab: (key) => `admin-tab-${key}`,
+	badge: (key) => `admin-tab-badge-${key}`,
+};
+
+export const ADMIN_OVERVIEW = {
+	section: 'admin-overview-section',
+	refresh: 'admin-overview-refresh',
+	statsSkeleton: 'admin-overview-stats-skeleton',
+	stats: 'admin-overview-stats',
+	stat: (key) => `admin-overview-stat-${key}`,
+	statClear: 'admin-overview-stat-clear',
+	tableSkeleton: 'admin-overview-table-skeleton',
+	table: 'admin-overview-table',
+	empty: 'admin-overview-empty',
+	count: 'admin-overview-count',
+	filterBrand: 'admin-overview-filter-brand',
+	filterStatus: 'admin-overview-filter-status',
+	filterType: 'admin-overview-filter-type',
+	filterDateFrom: 'admin-overview-filter-date-from',
+	filterDateTo: 'admin-overview-filter-date-to',
+	filterClear: 'admin-overview-filter-clear',
+	sort: (key) => `admin-overview-sort-${key}`,
+	row: (id) => `admin-overview-row-${id}`,
+	rowApplied: (id) => `admin-overview-applied-${id}`,
+	rowApproved: (id) => `admin-overview-approved-${id}`,
+	rowRejected: (id) => `admin-overview-rejected-${id}`,
+};
+
+export const ADMIN_CAMPAIGN_DETAIL = {
+	panel: 'admin-campaign-detail',
+	skeleton: 'admin-campaign-detail-skeleton',
+	back: 'admin-campaign-detail-back',
+	title: 'admin-campaign-detail-title',
+	column: (key) => `admin-campaign-column-${key}`,
+	columnEmpty: (key) => `admin-campaign-column-empty-${key}`,
+	columnCount: (key) => `admin-campaign-column-count-${key}`,
+	creator: (id) => `admin-campaign-creator-${id}`,
+	creatorAdvance: (id) => `admin-campaign-advance-${id}`,
+	creatorDecline: (id) => `admin-campaign-decline-${id}`,
+	creatorCancel: (id) => `admin-campaign-cancel-${id}`,
+};
+
+export const ADMIN_REVIEWS = {
+	section: (kind) => `admin-reviews-${kind}-section`,
+	refresh: (kind) => `admin-reviews-${kind}-refresh`,
+	skeleton: (kind) => `admin-reviews-${kind}-skeleton`,
+	empty: (kind) => `admin-reviews-${kind}-empty`,
+	list: (kind) => `admin-reviews-${kind}-list`,
+	count: (kind) => `admin-reviews-${kind}-count`,
+	row: (id) => `admin-review-row-${id}`,
+	expand: (id) => `admin-review-expand-${id}`,
+	detail: (id) => `admin-review-detail-${id}`,
+	approve: (id) => `admin-review-approve-${id}`,
+	reject: (id) => `admin-review-reject-${id}`,
+	instagram: (id) => `admin-review-instagram-${id}`,
+	blockedNote: 'admin-reviews-blocked-note',
+};
+
 export const ADMIN_QUEUE = {
 	section: 'admin-queue-section',
 	refresh: 'admin-queue-refresh',
