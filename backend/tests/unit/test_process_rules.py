@@ -1512,9 +1512,11 @@ class TestSlots:
     def test_booking_claims_the_seat_atomically(self):
         # The check and the increment are one operation, so two creators after
         # the last place resolve inside the database rather than both winning.
+        # Read off `_claim_slot`: both booking routes go through it, so there
+        # is one atomic claim rather than one per entry point.
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert "find_one_and_update" in src
         assert '"$expr": {"$lt": ["$booked_count", "$capacity"]}' in src
         assert '"$inc": {"booked_count": 1}' in src
@@ -1522,19 +1524,19 @@ class TestSlots:
     def test_a_lost_race_is_a_409_not_a_double_booking(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert "just filled up" in src
 
     def test_a_claimed_seat_is_given_back_if_the_collaboration_moved(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert '"$inc": {"booked_count": -1}' in src
 
     def test_booking_is_the_step_out_of_commercial_agreed(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server.book_slot) + inspect.getsource(server._claim_slot)
         assert '"commercial_agreed"' in src
         assert '"slot_booked"' in src
 
@@ -1897,7 +1899,7 @@ class TestManagerNotifications:
     def test_booking_tells_the_manager(self):
         import inspect
 
-        assert "notify_campaign_manager" in inspect.getsource(server.book_slot)
+        assert "notify_campaign_manager" in inspect.getsource(server._claim_slot)
 
     @pytest.mark.parametrize(
         "fn_name", ["revert_collaboration", "cancel_collaboration"]
@@ -2131,3 +2133,399 @@ class TestAdminApplicantsEndpoint:
 
         src = inspect.getsource(server.admin_campaign_applicants)
         assert '"counts": {name: len(rows_) for name, rows_ in groups.items()}' in src
+
+
+# ---------------------------------------------------------------------------
+# The creator's own side: their profile, their slots, their dashboard. Slots
+# and the manager tooling shipped before the creator could see either, so a
+# creator sat at commercial_agreed with no way forward — these guard the route
+# out of it.
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorProfileFields:
+    def test_genres_and_niches_are_separate_questions(self):
+        # A brand filters the directory on niches and briefs against genres.
+        # Collapsing them into one list breaks whichever of the two it isn't.
+        fields = server.CreatorProfileUpdate.model_fields
+        assert "niches" in fields and "genres" in fields
+
+    def test_the_neighbourhood_and_the_postal_address_are_separate(self):
+        fields = server.CreatorProfileUpdate.model_fields
+        assert "address" in fields and "full_address" in fields
+        # The one a brand filters on stays required; the one post goes to is
+        # only needed when something is actually being sent.
+        assert fields["address"].is_required()
+        assert not fields["full_address"].is_required()
+
+    def test_platforms_is_a_closed_list(self):
+        assert set(server.CreatorPlatform.__args__) == {"instagram", "youtube"}
+
+    def test_a_platform_we_do_not_run_on_is_refused(self):
+        with pytest.raises(Exception):
+            server.CreatorProfileUpdate(
+                name="A",
+                instagram_handle="a",
+                instagram_profile_url="https://instagram.com/a",
+                email="a@b.com",
+                address="Indiranagar",
+                platforms=["tiktok"],
+            )
+
+    def test_the_profile_response_carries_the_new_fields(self):
+        import inspect
+
+        src = inspect.getsource(server._serialize_creator_profile)
+        for field in ("genres", "platforms", "full_address"):
+            assert f'"{field}"' in src
+
+    def test_the_dashboard_shows_a_creator_their_own_email(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '"email"' in src
+
+    def test_platforms_are_deduped_on_write(self):
+        import inspect
+
+        assert "dict.fromkeys(payload.platforms)" in inspect.getsource(
+            server.update_creator_profile
+        )
+
+    def test_genres_are_stored_lowercase_like_niches(self):
+        # Matching is done on these, and "Food" never matching "food" would
+        # quietly empty every suggestion list.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "g.strip().lower() for g in payload.genres" in src
+
+
+class TestProfileCompleteness:
+    def test_an_empty_profile_is_zero_and_lists_everything(self):
+        result = server._profile_completeness({})
+        assert result["percent"] == 0
+        assert len(result["missing"]) == result["total"]
+        assert result["complete"] is False
+
+    def test_a_full_profile_is_a_hundred_with_nothing_missing(self):
+        profile = {field: "x" for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        result = server._profile_completeness(profile)
+        assert result["percent"] == 100
+        assert result["missing"] == []
+        assert result["complete"] is True
+
+    def test_an_empty_list_counts_as_missing(self):
+        # `niches: []` is not an answer, and treating it as one would tell a
+        # creator they were done while brands couldn't find them.
+        result = server._profile_completeness({"niches": [], "genres": []})
+        missing = {row["field"] for row in result["missing"]}
+        assert {"niches", "genres"} <= missing
+
+    def test_every_missing_entry_names_a_field_and_a_label(self):
+        for row in server._profile_completeness({})["missing"]:
+            assert row["field"] and row["label"]
+
+    def test_the_payout_fields_are_counted(self):
+        # They are what stands between a finished campaign and being paid, so
+        # they belong in the number the creator is nudged by.
+        fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        assert {"payout_upi", "pan"} <= fields
+
+    def test_the_new_profile_fields_are_counted(self):
+        fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        assert {"genres", "platforms", "full_address"} <= fields
+
+
+class TestCreatorNextAction:
+    def test_an_agreed_fee_puts_the_ball_with_the_creator(self):
+        action = server._creator_next_action(
+            {"state": "commercial_agreed"}, {"campaign_type": "launch"}, True
+        )
+        assert action["action"] == "book_slot"
+        assert action["waiting_on"] == "you"
+
+    def test_a_personal_table_asks_for_a_time_not_a_slot(self):
+        action = server._creator_next_action(
+            {"state": "commercial_agreed"}, {"campaign_type": "personal_table"}, True
+        )
+        assert "window" in action["label"]
+
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            ("slot_booked", "attend"),
+            ("attended", "submit_content"),
+            ("content_submitted", "resubmit_content"),
+        ],
+    )
+    def test_each_step_names_what_the_creator_does(self, state, expected):
+        assert server._creator_next_action({"state": state}, {}, True)["action"] == expected
+
+    def test_waiting_on_us_is_said_plainly(self):
+        action = server._creator_next_action({"state": "accepted"}, {}, True)
+        assert action["action"] is None
+        assert action["waiting_on"] == "weare"
+
+    def test_missing_payout_details_outrank_the_reassuring_message(self):
+        # This is the one place a creator blocks their own money without being
+        # told, so it has to win over "payment is being processed".
+        action = server._creator_next_action({"state": "in_payment"}, {}, False)
+        assert action["action"] == "add_payout_details"
+        assert action["waiting_on"] == "you"
+
+    def test_with_payout_details_there_is_nothing_to_do(self):
+        action = server._creator_next_action({"state": "content_approved"}, {}, True)
+        assert action["action"] is None
+
+    def test_every_active_state_gets_an_answer(self):
+        for state in server._CREATOR_ACTIVE_STATES:
+            action = server._creator_next_action({"state": state}, {}, True)
+            assert action["label"], f"{state} leaves the creator with no next step"
+
+
+class TestCreatorSlotBooking:
+    def test_the_creator_route_reuses_the_shared_claim(self):
+        # A second copy of an atomic claim is a second chance to get it wrong.
+        import inspect
+
+        assert "_claim_slot" in inspect.getsource(server.creator_book_slot)
+        assert "find_one_and_update" not in inspect.getsource(server.creator_book_slot)
+
+    def test_booking_opens_only_once_the_fee_is_agreed(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert '"commercial_agreed"' in src
+        assert "409" in src
+
+    def test_another_campaigns_slot_is_not_a_slot(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert 'slot["campaign_id"] != collab["campaign_id"]' in src
+
+    def test_a_personal_table_requires_a_time_inside_the_window(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert '"personal_table"' in src
+        assert "preferred < starts" in src and "preferred > ends" in src
+
+    def test_a_fixed_time_campaign_refuses_a_chosen_time(self):
+        # Everyone arrives together on a launch; one creator writing their own
+        # time would put them at the venue alone.
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert "elif payload.preferred_time is not None:" in src
+
+    def test_somebody_elses_collaboration_is_a_404(self):
+        import inspect
+
+        src = inspect.getsource(server._own_collab_or_404)
+        assert '"creator_id": ObjectId(user["_id"])' in src
+        # Only the raises, not the docstring — which explains why it is not a 403.
+        codes = [ln for ln in src.splitlines() if "status_code=" in ln]
+        assert codes and all("404" in ln for ln in codes)
+
+    def test_the_slot_list_is_gated_on_being_on_the_campaign(self):
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert "_ONBOARD_COLLAB_STATES" in src
+        assert 'detail="Campaign not found"' in src
+
+    def test_the_slot_list_says_which_one_is_theirs(self):
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert '"is_mine"' in src
+        assert '"booked_slot_id"' in src
+
+    def test_an_invitation_is_surfaced_but_not_required(self):
+        # A creator who applied off the open list is just as much on the
+        # campaign as one who was invited.
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert "campaign_invitations" in src
+        assert '"invited"' in src
+
+    def test_a_full_slot_is_marked_rather_than_hidden(self):
+        import inspect
+
+        assert '"is_full"' in inspect.getsource(server.list_creator_slots)
+
+
+class TestCreatorSlotCancellation:
+    def test_there_is_a_cutoff(self):
+        assert server.SLOT_CANCEL_CUTOFF_HOURS > 0
+
+    def test_inside_the_cutoff_is_a_409(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert "SLOT_CANCEL_CUTOFF_HOURS" in src
+        assert "409" in src
+
+    def test_cancelling_returns_them_to_commercial_agreed(self):
+        # They are still on the campaign and still owed a place — just not
+        # that one. Leaving the campaign is a different decision.
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"state": "commercial_agreed"' in src
+
+    def test_the_booking_is_cleared_not_left_dangling(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""}' in src
+
+    def test_the_collaboration_moves_before_the_seat_is_released(self):
+        # The other order would put the place on sale while the creator still
+        # held it.
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert src.index("db.collaborations.find_one_and_update") < src.index(
+            "db.campaign_slots.update_one"
+        )
+
+    def test_the_release_is_written_with_a_precondition(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"state": "slot_booked", "slot_id": slot_oid' in src
+        assert '{"$gt": 0}' in src
+
+    def test_the_manager_is_told(self):
+        import inspect
+
+        assert "_tell_manager_a_seat_freed" in inspect.getsource(server.creator_cancel_slot)
+
+    def test_it_is_audited(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"collaboration.cancel_slot"' in src
+
+
+class TestCreatorDashboardEarnings:
+    def test_refunded_and_cancelled_money_is_counted_nowhere(self):
+        # "cancelled" is a payout that never happens; "refunded" is one clawed
+        # back. Either one in a total has the creator waiting on nothing.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert 'p.get("state") == "paid"' in src
+        assert 'p.get("state") == "pending"' in src
+
+    def test_both_figures_are_net_of_the_platform_fee(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "creator_payout" in src
+        assert "compute_fee(float(agreed))" in src
+
+    def test_an_agreed_fee_with_no_payment_row_yet_still_counts_as_pending(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "if c[\"_id\"] in payment_by_collab" in src
+
+    def test_an_ended_collaboration_is_not_pending_money(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert 'c.get("state") in COLLAB_GROUP_ENDED' in src
+
+    def test_campaigns_completed_means_closed(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "COLLAB_GROUP_COMPLETED" in src
+
+
+class TestCreatorDashboardGrouping:
+    def test_every_state_lands_in_exactly_one_group(self):
+        # Nothing may drop out of a creator's own record.
+        groups = (
+            set(server._CREATOR_ACTIVE_STATES)
+            | set(server.COLLAB_GROUP_COMPLETED)
+            | set(server.COLLAB_GROUP_ENDED)
+            | set(server.COLLAB_GROUP_APPLIED)
+        )
+        assert groups == set(server.COLLAB_STATE_ORDER) | set(server.COLLAB_GROUP_ENDED)
+
+    def test_waiting_to_be_paid_is_active_not_completed(self):
+        assert "in_payment" in server._CREATOR_ACTIVE_STATES
+        assert "in_payment" not in server.COLLAB_GROUP_COMPLETED
+
+    def test_an_active_row_carries_the_venue_and_the_manager(self):
+        # This is the view a creator opens on the way to a venue, so it cannot
+        # need a second request to be useful.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        for field in ("manager_name", "manager_phone", "venue_address", "venue_instructions"):
+            assert f'"{field}"' in src
+
+    def test_an_active_row_carries_the_booked_time_and_the_next_step(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '"slot_starts_at"' in src
+        assert "_creator_next_action" in src
+
+
+class TestSuggestedCampaigns:
+    def test_only_live_campaigns_are_suggested(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "LIVE_CAMPAIGN_STATUSES" in src
+
+    def test_campaigns_already_applied_to_are_excluded(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert '"_id": {"$nin": list(exclude_ids)}' in src
+
+    def test_the_exclusion_covers_every_collaboration_not_just_open_ones(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '{c["campaign_id"] for c in collabs}' in src
+
+    def test_a_blank_profile_gets_no_suggestions_rather_than_random_ones(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "if not (niches or genres or places):" in src
+
+    def test_every_suggestion_says_why(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert '"match_reason"' in src
+        assert "reasons.append" in src
+
+    def test_a_campaign_matching_nothing_is_not_suggested(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "if reasons:" in src
+
+    def test_niches_genres_and_place_are_all_matched(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "in niches" in src and "in genres" in src and "in places" in src
+
+    def test_the_list_is_bounded(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "scored[:limit]" in src

@@ -46,7 +46,17 @@ Plus two terminal exits that are **not** steps: `declined`, `cancelled`
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
   The admin `advance` endpoint refuses these with 409 by design.
-- **Creator** — `content_submitted`, and may resubmit until the brand approves.
+- **Creator** — `slot_booked` (booking their own place, and cancelling it back to
+  `commercial_agreed` up to 24h before) and `content_submitted`, and may resubmit
+  until the brand approves.
+
+Booking is atomic and lives in exactly one function, `_claim_slot`: a conditional
+`$inc` on `booked_count` under `{"$expr": {"$lt": ["$booked_count", "$capacity"]}}`,
+so two creators after the last place resolve inside the database. Both the
+`/campaigns/slots/{id}/book` and `/creator/collaborations/{id}/book-slot` routes go
+through it. **Do not add a second copy.** Releasing a seat always writes the
+collaboration first and decrements after, so a place is never on sale while
+somebody still holds it.
 
 Rules to preserve when touching this:
 

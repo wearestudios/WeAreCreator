@@ -218,6 +218,12 @@ CATEGORY_LITERAL = Literal[
 ]
 
 
+# Where a creator actually publishes. Deliberately a closed list: "youtube"
+# and "YT" in the same column makes the directory unsearchable.
+CreatorPlatform = Literal["instagram", "youtube"]
+CREATOR_PLATFORMS = ("instagram", "youtube")
+
+
 class CreatorProfileUpdate(BaseModel):
     """Payload for creator onboarding / profile edits."""
 
@@ -226,8 +232,17 @@ class CreatorProfileUpdate(BaseModel):
     instagram_profile_url: str = Field(min_length=1, max_length=300)
     email: EmailStr
     city: Optional[str] = Field(default=None, max_length=80)
+    # `address` is the neighbourhood a brand filters on ("Indiranagar");
+    # `full_address` is where post actually goes. Two different questions, so
+    # two fields rather than one overloaded one.
     address: str = Field(min_length=1, max_length=500)
+    full_address: Optional[str] = Field(default=None, max_length=500)
     niches: list[str] = Field(default_factory=list, max_length=25)
+    # What they make (food, travel, comedy) as opposed to `niches`, which is
+    # what they cover for a brand (cafe, brunch). Kept apart because a brand
+    # searches on one and briefs on the other.
+    genres: list[str] = Field(default_factory=list, max_length=25)
+    platforms: list[CreatorPlatform] = Field(default_factory=list, max_length=5)
     base_rate: Optional[float] = Field(default=None, ge=0)
     follower_count: Optional[int] = Field(default=None, ge=0)
     # Payout identity. Optional at onboarding, required before payment.
@@ -409,6 +424,27 @@ class ReschedulePayload(BaseModel):
     """Move a creator to a different slot on the same campaign."""
 
     slot_id: str
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class CreatorBookSlotPayload(BaseModel):
+    """A creator taking a place on a slot.
+
+    `preferred_time` only means anything on a personal table, where the slot is
+    a window of availability rather than a fixed sitting. On a launch or a
+    group event everyone arrives together and the field is refused, so a
+    stray value can't quietly put one creator at the venue on their own.
+    """
+
+    slot_id: str
+    preferred_time: Optional[datetime] = None
+
+
+class CreatorCancelSlotPayload(BaseModel):
+    """Handing a booked slot back. The reason is optional — we would rather
+    know early without one than have the seat held because a form asked a
+    question the creator didn't want to answer."""
+
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
@@ -596,6 +632,9 @@ class CreatorProfile(BaseModel):
     city: Optional[str] = None
     address: Optional[str] = None
     niches: list[str] = Field(default_factory=list)
+    genres: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    full_address: Optional[str] = None
     base_rate: Optional[float] = None
     follower_count: Optional[int] = None
     verification_status: VerificationStatus = "pending"
@@ -1770,7 +1809,10 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "email": doc.get("email"),
         "city": doc.get("city"),
         "address": doc.get("address"),
+        "full_address": doc.get("full_address"),
         "niches": doc.get("niches") or [],
+        "genres": doc.get("genres") or [],
+        "platforms": doc.get("platforms") or [],
         "base_rate": doc.get("base_rate"),
         "follower_count": doc.get("follower_count"),
         "verification_status": doc.get("verification_status", "pending"),
@@ -1916,7 +1958,11 @@ async def update_creator_profile(
         "email": payload.email.lower().strip(),
         "city": (payload.city or "").strip() or None,
         "address": payload.address.strip(),
+        "full_address": (payload.full_address or "").strip() or None,
         "niches": [n.strip().lower() for n in payload.niches if n and n.strip()],
+        "genres": [g.strip().lower() for g in payload.genres if g and g.strip()],
+        # Deduped, order kept, so the list reads the way they entered it.
+        "platforms": list(dict.fromkeys(payload.platforms)),
         "base_rate": payload.base_rate,
         "follower_count": payload.follower_count,
         "updated_at": now,
@@ -2008,6 +2054,163 @@ def _serialize_collab_row(
     }
 
 
+# What a creator is asked for, and what it is called on screen. Weighted
+# equally on purpose: a percentage that quietly counts PAN for three points
+# and a city for one is a number nobody can act on. The list is ordered the
+# way the profile form asks, so "what's missing" reads top to bottom.
+_PROFILE_COMPLETENESS_FIELDS = (
+    ("name", "Your name"),
+    ("instagram_handle", "Instagram handle"),
+    ("profile_image_url", "Profile photo"),
+    ("email", "Email address"),
+    ("city", "City"),
+    ("address", "Neighbourhood"),
+    ("full_address", "Full address"),
+    ("niches", "What you cover"),
+    ("genres", "What you make"),
+    ("platforms", "Where you post"),
+    ("follower_count", "Follower count"),
+    ("base_rate", "Your usual rate"),
+    ("payout_upi", "UPI ID"),
+    ("pan", "PAN"),
+)
+
+
+def _profile_completeness(profile: dict) -> dict:
+    """How much of the profile is filled in, and what is left.
+
+    A brand shortlists off this and we pay off the last two lines of it, so an
+    empty field is a real cost to the creator rather than a cosmetic one.
+    """
+    missing = [
+        {"field": field, "label": label}
+        for field, label in _PROFILE_COMPLETENESS_FIELDS
+        if not (profile or {}).get(field)
+    ]
+    total = len(_PROFILE_COMPLETENESS_FIELDS)
+    filled = total - len(missing)
+    return {
+        "percent": round(filled * 100 / total),
+        "filled": filled,
+        "total": total,
+        "complete": not missing,
+        "missing": missing,
+    }
+
+
+# Collaborations the creator is actually on, as the dashboard groups them.
+# `content_approved` and `in_payment` sit here rather than under completed:
+# the work is done but the money isn't in, and a creator waiting to be paid is
+# not finished with us.
+_CREATOR_ACTIVE_STATES = COLLAB_GROUP_ONGOING
+
+
+def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bool) -> dict:
+    """The one thing this creator has to do next, or who they're waiting on.
+
+    Named from the creator's side: "book your slot", not "awaiting slot". Half
+    of these are deliberately "nothing" — telling someone plainly that the ball
+    is not in their court is worth as much as telling them it is.
+    """
+    state = collab.get("state")
+    if state == "accepted":
+        return {"action": None, "label": "We're agreeing your fee with the brand.", "waiting_on": "weare"}
+    if state == "commercial_agreed":
+        kind = (campaign or {}).get("campaign_type")
+        return {
+            "action": "book_slot",
+            "label": (
+                "Pick a time inside the window."
+                if kind == "personal_table"
+                else "Book your slot."
+            ),
+            "waiting_on": "you",
+        }
+    if state == "slot_booked":
+        return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
+    if state == "attended":
+        return {"action": "submit_content", "label": "Submit your content.", "waiting_on": "you"}
+    if state == "content_submitted":
+        return {
+            "action": "resubmit_content",
+            "label": "The brand is reviewing your content. You can still replace it.",
+            "waiting_on": "brand",
+        }
+    if state in ("content_approved", "in_payment"):
+        # The payout gate is the one place a creator can be blocking their own
+        # money without being told, so it outranks the reassuring message.
+        if not can_be_paid:
+            return {
+                "action": "add_payout_details",
+                "label": "Add your UPI ID and PAN so we can pay you.",
+                "waiting_on": "you",
+            }
+        return {"action": None, "label": "Payment is being processed.", "waiting_on": "weare"}
+    return {"action": None, "label": None, "waiting_on": None}
+
+
+async def _suggested_campaigns(
+    profile: dict, exclude_ids: set, limit: int = 6
+) -> list[dict]:
+    """Open campaigns that look like this creator's work, minus the ones they
+    are already on.
+
+    Matched in Python rather than in the query: the reason shown to the creator
+    has to name which of their niches, genres or neighbourhood it matched, and
+    a `$in` that only answers yes or no can't produce that sentence.
+    """
+    niches = {n.lower() for n in (profile or {}).get("niches") or [] if n}
+    genres = {g.lower() for g in (profile or {}).get("genres") or [] if g}
+    places = {
+        p.lower().strip()
+        for p in ((profile or {}).get("city"), (profile or {}).get("address"))
+        if p and p.strip()
+    }
+    if not (niches or genres or places):
+        return []
+
+    docs = (
+        await db.campaigns.find(
+            {
+                "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
+                "_id": {"$nin": list(exclude_ids)},
+            }
+        )
+        .sort("created_at", -1)
+        .to_list(length=200)
+    )
+    if not docs:
+        return []
+
+    scored = []
+    for doc in docs:
+        category = (doc.get("category") or "").lower().strip()
+        area = (doc.get("area") or "").lower().strip()
+        reasons = []
+        if category and category in niches:
+            reasons.append(f"You cover {doc['category']}")
+        if category and category in genres:
+            reasons.append(f"You make {doc['category']} content")
+        # A neighbourhood match is worth saying out loud — most of these are
+        # in-person, and a creator won't cross a city for one table.
+        if area and area in places:
+            reasons.append(f"In {doc['area']}, where you're based")
+        if reasons:
+            scored.append((len(reasons), doc, reasons))
+
+    scored.sort(key=lambda row: row[0], reverse=True)
+    top = scored[:limit]
+    brand_map = await _load_brand_map([doc["brand_id"] for _, doc, _ in top])
+    return [
+        {
+            **_serialize_campaign(doc, brand_map.get(doc["brand_id"])),
+            "match_reason": " · ".join(reasons),
+            "match_score": score,
+        }
+        for score, doc, reasons in top
+    ]
+
+
 @creator_router.get("/dashboard")
 async def get_creator_dashboard(
     user: dict = Depends(require_roles("creator")),
@@ -2024,6 +2227,15 @@ async def get_creator_dashboard(
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
         "niches": (profile or {}).get("niches") or [],
+        "genres": (profile or {}).get("genres") or [],
+        "platforms": (profile or {}).get("platforms") or [],
+        # Their own email, on their own dashboard — it was only ever visible to
+        # us, which made "is this the right account?" unanswerable for them.
+        "email": (profile or {}).get("email") or user.get("email"),
+        "phone": user.get("phone"),
+        "city": (profile or {}).get("city"),
+        "address": (profile or {}).get("address"),
+        "full_address": (profile or {}).get("full_address"),
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
@@ -2094,16 +2306,123 @@ async def get_creator_dashboard(
         r for r in applications if r["state"] in _PAYMENT_STATES
     ]
 
+    # --- Earnings ----------------------------------------------------------
+    #
+    # Both figures are what actually reaches the creator — net of the platform
+    # fee — because a dashboard that quotes the gross and then pays less is a
+    # dashboard nobody trusts twice. Where a payment row exists it is the
+    # authority; where one doesn't yet, the fee is computed the same way the
+    # payment row will compute it.
+    payment_by_collab = {p["collaboration_id"]: p for p in payment_docs}
+    lifetime_earned = 0.0
+    pending_earnings = 0.0
+    for p in payment_docs:
+        net = p.get("creator_payout")
+        if net is None:
+            net = float(p.get("agreed_amount") or 0) - float(p.get("platform_fee") or 0)
+        if p.get("state") == "paid":
+            lifetime_earned += float(net or 0)
+        elif p.get("state") == "pending":
+            pending_earnings += float(net or 0)
+        # "cancelled" and "refunded" are money that will not arrive. Counting
+        # them anywhere would have the creator waiting on nothing.
+
+    for c in collabs:
+        if c["_id"] in payment_by_collab or c.get("state") in COLLAB_GROUP_ENDED:
+            continue
+        agreed = c.get("agreed_amount")
+        if agreed:
+            pending_earnings += float(agreed) - compute_fee(float(agreed))
+
+    campaigns_completed = sum(
+        1 for c in collabs if c.get("state") in COLLAB_GROUP_COMPLETED
+    )
+
+    # --- Grouped collaborations -------------------------------------------
+    #
+    # Every state lands in exactly one bucket, so nothing can drop out of a
+    # creator's own record.
+    row_by_id = {r["id"]: r for r in applications}
+    grouped: dict = {"active": [], "completed": [], "applied": [], "declined": []}
+    for c in collabs:
+        state = c.get("state")
+        if state in _CREATOR_ACTIVE_STATES:
+            grouped["active"].append(c)
+        elif state in COLLAB_GROUP_COMPLETED:
+            grouped["completed"].append(row_by_id[str(c["_id"])])
+        elif state in COLLAB_GROUP_ENDED:
+            grouped["declined"].append(row_by_id[str(c["_id"])])
+        else:
+            grouped["applied"].append(row_by_id[str(c["_id"])])
+
+    # Active rows carry everything needed to turn up: who to call, where to go,
+    # when they're expected, and what they have to do next. This is the view a
+    # creator opens on the way to a venue, so it can't require another request.
+    slot_ids = [c["slot_id"] for c in grouped["active"] if c.get("slot_id")]
+    slot_map: dict = {}
+    if slot_ids:
+        slot_docs = await db.campaign_slots.find(
+            {"_id": {"$in": list({s for s in slot_ids})}}
+        ).to_list(length=len(slot_ids))
+        slot_map = {d["_id"]: d for d in slot_docs}
+
+    can_be_paid = payout_ready(profile or {})
+    active_rows = []
+    for c in grouped["active"]:
+        camp = campaign_map.get(c["campaign_id"]) or {}
+        slot = slot_map.get(c.get("slot_id")) if c.get("slot_id") else None
+        active_rows.append(
+            {
+                **row_by_id[str(c["_id"])],
+                "campaign": _serialize_campaign(
+                    camp, brand_map.get(camp.get("brand_id"))
+                )
+                if camp
+                else None,
+                "manager": {
+                    "name": camp.get("manager_name"),
+                    "phone": camp.get("manager_phone"),
+                },
+                "venue": {
+                    "area": camp.get("area"),
+                    "address": camp.get("venue_address"),
+                    "instructions": camp.get("venue_instructions"),
+                },
+                "slot": _serialize_slot(slot) if slot else None,
+                "slot_starts_at": _iso(c.get("scheduled_at")),
+                "can_cancel_slot": bool(c.get("slot_id")),
+                "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+                "next_action": _creator_next_action(c, camp, can_be_paid),
+            }
+        )
+    grouped["active"] = active_rows
+
+    completeness = _profile_completeness(profile or {})
+    suggestions = await _suggested_campaigns(
+        profile or {}, {c["campaign_id"] for c in collabs}
+    )
+
     return {
         "profile": profile_summary,
+        "profile_completeness": completeness,
         "applications": applications,
+        "collaborations": grouped,
         "upcoming": upcoming,
         "payments": payments,
         "in_payment_collaborations": in_payment_collabs,
+        "earnings": {
+            "lifetime_earned": round(lifetime_earned, 2),
+            "pending_earnings": round(pending_earnings, 2),
+            "campaigns_completed": campaigns_completed,
+        },
+        "suggested_campaigns": suggestions,
         "totals": {
             "applications": len(applications),
             "upcoming": len(upcoming),
             "payments": len(payments) + len(in_payment_collabs),
+            "active": len(grouped["active"]),
+            "completed": len(grouped["completed"]),
+            "declined": len(grouped["declined"]),
         },
     }
 
@@ -2220,6 +2539,254 @@ async def submit_collab_content(
     }
 
 
+# --- Creator-side slot booking ---------------------------------------------
+#
+# The atomic claim itself lives in `_claim_slot`, next to the campaigns-router
+# booking route, so there is exactly one implementation of it. What lives here
+# is the creator's own view of it: their collaborations, addressed by
+# collaboration id rather than by slot id, which is what the creator app holds.
+
+
+# How close to their slot a creator can still hand it back. A venue plans
+# staffing and stock off the day's bookings, so a walk-away an hour before is
+# the manager's problem, not a self-service action.
+SLOT_CANCEL_CUTOFF_HOURS = 24
+
+
+async def _own_collab_or_404(collab_id: str, user: dict) -> dict:
+    """Load a collaboration belonging to the caller.
+
+    Someone else's collaboration is a 404, not a 403 — the same rule the brand
+    and manager scopes follow, so an id can't be probed for existence.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    return collab
+
+
+def _slot_window_note(campaign: dict) -> Optional[str]:
+    """What the creator is actually choosing, in their own words.
+
+    A launch has a start time everyone shares; a personal table is a window the
+    creator picks a time inside. The distinction changes what the form asks
+    for, so the API says which it is rather than leaving the UI to infer it.
+    """
+    if campaign.get("campaign_type") == "personal_table":
+        return "Pick the time inside the window that suits you."
+    return "The time is fixed by the campaign manager."
+
+
+@creator_router.get("/campaigns/{campaign_id}/slots")
+async def list_creator_slots(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The slots this creator can actually take a place on.
+
+    Gated on being on the campaign, not on having heard of it: a slot list
+    names dates, capacity and the rhythm of a venue, which is not an
+    applicant's to read. Slots with no room left are still returned, marked
+    full — hiding them makes a half-empty schedule look broken.
+    """
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    collab = await db.collaborations.find_one(
+        {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
+    )
+    if not collab or collab.get("state") not in _ONBOARD_COLLAB_STATES:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # An invitation isn't required to book — a creator who applied off the open
+    # list is just as much on the campaign — but where one exists it is the
+    # reason they are here, so it comes back with the schedule.
+    invitation = await db.campaign_invitations.find_one(
+        {"campaign_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+
+    docs = (
+        await db.campaign_slots.find({"campaign_id": oid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    booked_id = collab.get("slot_id")
+    slots = []
+    for d in docs:
+        row = _serialize_slot(d)
+        row["is_mine"] = bool(booked_id) and d["_id"] == booked_id
+        row["is_full"] = row["spots_left"] <= 0 and not row["is_mine"]
+        slots.append(row)
+
+    return {
+        "campaign_id": campaign_id,
+        "campaign_title": campaign.get("title"),
+        "campaign_type": campaign.get("campaign_type"),
+        "collaboration_id": str(collab["_id"]),
+        "state": collab.get("state"),
+        # Booking is the step out of commercial_agreed; the flag saves the UI
+        # re-deriving the state machine to decide whether to show the button.
+        "can_book": collab.get("state") == "commercial_agreed",
+        "picks_own_time": campaign.get("campaign_type") == "personal_table",
+        "how_it_works": _slot_window_note(campaign),
+        "booked_slot_id": str(booked_id) if booked_id else None,
+        "scheduled_at": _iso(collab.get("scheduled_at")),
+        "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+        "invited": bool(invitation),
+        "invitation_note": (invitation or {}).get("note"),
+        "slots": slots,
+    }
+
+
+@creator_router.post("/collaborations/{collab_id}/book-slot")
+async def creator_book_slot(
+    collab_id: str,
+    payload: CreatorBookSlotPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Take a place on a slot on one of my collaborations."""
+    collab = await _own_collab_or_404(collab_id, user)
+    state = collab.get("state")
+    if state == "slot_booked":
+        raise HTTPException(status_code=409, detail="You already have a slot booked.")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Booking opens once your fee is agreed."
+                if state in ("applied", "verified", "accepted")
+                else f"Your collaboration is {state} — there's nothing to book."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign or campaign.get("status") not in ACTIVE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409, detail="This campaign isn't taking bookings right now."
+        )
+
+    try:
+        soid = ObjectId(payload.slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    # Another campaign's slot is not a slot as far as this collaboration goes.
+    if not slot or slot["campaign_id"] != collab["campaign_id"]:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    preferred = None
+    if campaign.get("campaign_type") == "personal_table":
+        if payload.preferred_time is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Pick the time you want inside the window.",
+            )
+        preferred = _as_utc(payload.preferred_time)
+        starts, ends = _as_utc(slot.get("starts_at")), _as_utc(slot.get("ends_at"))
+        if (starts and preferred < starts) or (ends and preferred > ends):
+            raise HTTPException(
+                status_code=422,
+                detail="That time is outside the window you picked.",
+            )
+    elif payload.preferred_time is not None:
+        # Everyone arrives together on a launch or a group event; letting one
+        # creator write their own time would put them at the venue alone.
+        raise HTTPException(
+            status_code=422,
+            detail="The time on this campaign is set by the manager — you can't choose one.",
+        )
+
+    return await _claim_slot(user, collab, campaign, slot, preferred_time=preferred)
+
+
+@creator_router.post("/collaborations/{collab_id}/cancel-slot")
+async def creator_cancel_slot(
+    collab_id: str,
+    payload: CreatorCancelSlotPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Hand a booked slot back, up to the cutoff.
+
+    This returns the collaboration to `commercial_agreed` rather than ending
+    it: the creator is still on the campaign and still owed a place, they just
+    aren't on that one any more. Walking away from the campaign entirely is a
+    different decision, and stays with the team.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    if collab.get("state") != "slot_booked" or not collab.get("slot_id"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your collaboration is {collab.get('state')} — there's no booking to cancel.",
+        )
+
+    when = _as_utc(collab.get("scheduled_at"))
+    now = datetime.now(timezone.utc)
+    if when and when - now < timedelta(hours=SLOT_CANCEL_CUTOFF_HOURS):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"It's inside {SLOT_CANCEL_CUTOFF_HOURS} hours of your slot — "
+                "message the campaign manager instead."
+            ),
+        )
+
+    slot_oid = collab["slot_id"]
+    # The collaboration moves first. If the seat were released first and this
+    # write then lost a race, the place would be on sale while the creator
+    # still held it.
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "slot_booked", "slot_id": slot_oid},
+        {
+            "$set": {
+                "state": "commercial_agreed",
+                "updated_at": now,
+                "slot_cancelled_at": now,
+                "slot_cancel_reason": (payload.reason or "").strip() or None,
+            },
+            "$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="This just changed — reload and try again."
+        )
+
+    await db.campaign_slots.update_one(
+        {"_id": slot_oid, "booked_count": {"$gt": 0}},
+        {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+    )
+
+    await audit(
+        user,
+        "collaboration.cancel_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "slot_booked", "slot_id": str(slot_oid), "scheduled_at": _iso(when)},
+        after={"state": "commercial_agreed"},
+        note=(payload.reason or "").strip() or None,
+    )
+    # The manager is the one who has to fill the seat or re-plan the day.
+    await _tell_manager_a_seat_freed(collab, "cancelled by the creator")
+
+    return {
+        "id": collab_id,
+        "state": "commercial_agreed",
+        "slot_id": None,
+        "scheduled_at": None,
+        "next_step": "Pick another slot when you're ready.",
+    }
 
 
 
@@ -3355,6 +3922,9 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "city": profile.get("city"),
         "address": profile.get("address"),
         "niches": profile.get("niches") or [],
+        "genres": profile.get("genres") or [],
+        "platforms": profile.get("platforms") or [],
+        "full_address": profile.get("full_address"),
         "base_rate": profile.get("base_rate"),
         "follower_count": profile.get("follower_count"),
         "verification_status": profile.get("verification_status", "pending"),
@@ -7937,6 +8507,99 @@ async def apply_to_campaign(
 _ONBOARD_COLLAB_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
 
 
+async def _claim_slot(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    slot: dict,
+    preferred_time: Optional[datetime] = None,
+) -> dict:
+    """Take a place on a slot and move the collaboration onto it.
+
+    One implementation behind both booking routes, because a second copy of an
+    atomic claim is a second chance to get it subtly wrong.
+
+    The seat is claimed with a conditional increment — the filter only matches
+    while booked_count is under capacity, so two creators after the last place
+    resolve inside the database and exactly one wins. If the collaboration then
+    moves under us, the seat is handed straight back rather than held for
+    somebody who no longer has it.
+    """
+    soid = slot["_id"]
+    now = datetime.now(timezone.utc)
+
+    claimed = await db.campaign_slots.find_one_and_update(
+        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
+        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    if not claimed:
+        raise HTTPException(
+            status_code=409, detail="That slot just filled up. Pick another."
+        )
+
+    update = {
+        "state": "slot_booked",
+        "scheduled_at": slot["starts_at"],
+        "slot_id": soid,
+        "updated_at": now,
+    }
+    # A personal-table window is an availability range, so the creator can name
+    # the time inside it they actually want. The seat is still the window's —
+    # that is what carries the capacity.
+    if preferred_time is not None:
+        update["scheduled_at"] = preferred_time
+        update["preferred_time"] = preferred_time
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {"$set": update},
+        return_document=True,
+    )
+    if not updated:
+        await db.campaign_slots.update_one(
+            {"_id": soid, "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}},
+        )
+        raise HTTPException(
+            status_code=409, detail="Your collaboration just changed — reload and try again."
+        )
+
+    when = update["scheduled_at"]
+    await audit(
+        user,
+        "collaboration.book_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "slot_booked", "slot_id": str(soid), "scheduled_at": _iso(when)},
+    )
+    await notify(
+        collab["creator_id"],
+        "slot_confirmed",
+        title="Slot booked",
+        body=f"{campaign.get('title')} — "
+        f"{when.strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
+        link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    # The manager is the one who has to plan around it.
+    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    creator_name = (creator_profile or {}).get("name") or "A creator"
+    await notify_campaign_manager(
+        campaign,
+        "manager_slot_booked",
+        title="A creator booked a slot",
+        body=f"{creator_name} booked "
+        f"{when.strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
+    )
+    return {
+        "collaboration_id": str(collab["_id"]),
+        "state": "slot_booked",
+        "slot": _serialize_slot(claimed),
+        "scheduled_at": _iso(when),
+    }
+
+
 @campaigns_router.get("/{campaign_id}/slots")
 async def list_slots_for_creator(
     campaign_id: str,
@@ -8029,74 +8692,7 @@ async def book_slot(
             ),
         )
 
-    now = datetime.now(timezone.utc)
-    # The atomic claim. $expr keeps the check and the increment in one
-    # operation — there is no window where both readers saw a free seat.
-    claimed = await db.campaign_slots.find_one_and_update(
-        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
-        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
-        return_document=True,
-    )
-    if not claimed:
-        raise HTTPException(
-            status_code=409, detail="That slot just filled up. Pick another."
-        )
-
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": "commercial_agreed"},
-        {
-            "$set": {
-                "state": "slot_booked",
-                "scheduled_at": slot["starts_at"],
-                "slot_id": soid,
-                "updated_at": now,
-            }
-        },
-        return_document=True,
-    )
-    if not updated:
-        # The collaboration moved while we held the seat — give it back.
-        await db.campaign_slots.update_one(
-            {"_id": soid, "booked_count": {"$gt": 0}},
-            {"$inc": {"booked_count": -1}},
-        )
-        raise HTTPException(
-            status_code=409, detail="Your collaboration just changed — reload and try again."
-        )
-
-    await audit(
-        user,
-        "collaboration.book_slot",
-        "collaboration",
-        collab["_id"],
-        before={"state": "commercial_agreed"},
-        after={"state": "slot_booked", "slot_id": str(soid),
-               "scheduled_at": _iso(slot["starts_at"])},
-    )
-    await notify(
-        collab["creator_id"],
-        "slot_confirmed",
-        title="Slot booked",
-        body=f"{campaign.get('title')} — "
-        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
-        link=f"/campaigns/{str(campaign['_id'])}",
-    )
-    # The manager is the one who has to plan around it.
-    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
-    creator_name = (creator_profile or {}).get("name") or "A creator"
-    await notify_campaign_manager(
-        campaign,
-        "manager_slot_booked",
-        title="A creator booked a slot",
-        body=f"{creator_name} booked "
-        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
-    )
-    return {
-        "collaboration_id": str(collab["_id"]),
-        "state": "slot_booked",
-        "slot": _serialize_slot(claimed),
-        "scheduled_at": _iso(slot["starts_at"]),
-    }
+    return await _claim_slot(user, collab, campaign, slot)
 
 
 api_router.include_router(campaigns_router)
