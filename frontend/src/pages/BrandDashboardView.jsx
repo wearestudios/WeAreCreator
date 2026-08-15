@@ -49,6 +49,11 @@ const STATUS_META = {
         label: "Draft",
         tone: "bg-white/5 text-muted-foreground border-white/15",
     },
+    // With us, not with creators — see publish_brand_campaign on the server.
+    pending_review: {
+        label: "In review",
+        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    },
     upcoming: {
         label: "Upcoming",
         tone: "bg-sky-500/15 text-sky-300 border-sky-500/30",
@@ -171,7 +176,7 @@ export default function BrandDashboardView({ user }) {
         runAction(
             c,
             () => api.post(`/brand/campaigns/${c.id}/publish`),
-            "Campaign published — creators can see it now",
+            "Sent for review — we'll publish it once we've read it",
         );
 
     const closeCampaign = (c) =>
@@ -455,7 +460,7 @@ export default function BrandDashboardView({ user }) {
                                                                 className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
                                                             >
                                                                 <Send className="mr-1.5 h-3.5 w-3.5" />
-                                                                Publish
+                                                                Send for review
                                                             </Button>
                                                         )}
 

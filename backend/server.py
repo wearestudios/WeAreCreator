@@ -274,7 +274,9 @@ class PostCampaignPayload(BaseModel):
     creators_needed: int = Field(ge=1, le=100)
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    status: Literal["draft", "open"] = "open"
+    # "open" is accepted by the schema only so the handler can explain why it is
+    # refused. A brand saves a draft or submits for review; an admin publishes.
+    status: Literal["draft", "pending_review", "open"] = "draft"
 
 
 class UpdateCampaignPayload(BaseModel):
@@ -331,7 +333,7 @@ class MarkPaidPayload(BaseModel):
 UserStatus = Literal["pending", "active", "suspended"]
 VerificationStatus = Literal["pending", "verified", "rejected"]
 CampaignStatus = Literal[
-    "draft", "upcoming", "open", "in_progress", "completed", "closed"
+    "draft", "pending_review", "upcoming", "open", "in_progress", "completed", "closed"
 ]
 CollabState = Literal[
     "applied",
@@ -397,11 +399,20 @@ ADMIN_ACTION_STATES = (
 )
 
 # A campaign in one of these states is visible on the creator feed.
+# `pending_review` is deliberately absent: a brief nobody has read yet must
+# never reach a creator.
 LIVE_CAMPAIGN_STATUSES = ("open", "upcoming")
 
 # Still running, from the brand's point of view: taking applications or
 # mid-delivery. Wider than LIVE_CAMPAIGN_STATUSES, which is about the feed.
 ACTIVE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
+
+# What a brand may ask for when it creates a campaign. Going live is not on the
+# list — that is the admin's call, made in `approve_campaign`.
+BRAND_SETTABLE_CAMPAIGN_STATUSES = ("draft", "pending_review")
+
+# Waiting on us to read it.
+CAMPAIGN_REVIEW_STATUS = "pending_review"
 
 
 class CreatorProfile(BaseModel):
@@ -619,6 +630,10 @@ NOTIFY_EVENTS = {
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
     "campaign_invite": "A brand invited you to a campaign",
+    "brand_verified": "Your brand is verified",
+    "brand_rejected": "We couldn't verify your brand yet",
+    "campaign_approved": "Your campaign is live",
+    "campaign_rejected": "Your campaign needs a change before it goes live",
 }
 
 
@@ -1236,6 +1251,58 @@ async def _send_aisensy_utility(
         status_code=502,
         detail="WhatsApp delivery failed for this number.",
     )
+
+
+async def notify_over_utility_template(
+    user_id,
+    event: str,
+    *,
+    title: str,
+    body: str,
+    params: list[str],
+    link: Optional[str] = None,
+) -> dict:
+    """Send a moderation decision over WhatsApp and record it in-app.
+
+    The WhatsApp side goes through `_send_aisensy_utility` (its own template,
+    its own simulation fallback) rather than `notify`, because `notify` picks
+    its template from the event name and would send a second message.
+
+    Never raises: a decision that has already been written to the database must
+    not be undone by a messaging failure. Returns what happened, so the endpoint
+    can tell the admin whether the brand was actually reached.
+    """
+    template = os.environ.get(f"AISENSY_TEMPLATE_{event.upper()}", "").strip()
+    delivered = False
+    mode = None
+    error = None
+
+    try:
+        oid = user_id if isinstance(user_id, ObjectId) else ObjectId(str(user_id))
+    except Exception:
+        logger.error("notify_over_utility_template got an unusable user_id %r", user_id)
+        return {"delivered": False, "mode": None, "error": "Unusable user id."}
+
+    account = await db.users.find_one({"_id": oid})
+    phone = (account or {}).get("phone")
+    if not phone:
+        error = "No WhatsApp number on file."
+    else:
+        try:
+            mode = await _send_aisensy_utility(
+                phone, (account or {}).get("name") or "there", template, params
+            )
+            delivered = mode == "aisensy"
+        except HTTPException as exc:
+            error = exc.detail
+        except Exception as exc:  # never let a send break the decision
+            logger.error("utility notify failed for %s: %s", event, exc)
+            error = "WhatsApp delivery failed."
+
+    await record_notification(
+        oid, event, title=title, body=body, link=link, delivered=delivered
+    )
+    return {"delivered": delivered, "mode": mode, "error": error}
 
 
 @auth_router.post("/otp/request")
@@ -1987,6 +2054,8 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
         "verified": bool(doc.get("verified", False)),
+        # Set when we refuse a brand, so it can be shown rather than guessed at.
+        "verification_reason": doc.get("verification_reason"),
         "created_at": doc["created_at"].isoformat()
         if isinstance(doc.get("created_at"), datetime)
         else doc.get("created_at"),
@@ -2020,9 +2089,17 @@ def _serialize_brand_campaign(
         # How many applicants are sitting with the brand right now. This is the
         # number that should make somebody act.
         "awaiting_decision": awaiting,
-        "can_edit": status in ("draft", "upcoming", "open"),
+        # Why we sent it back, so the brand can fix the thing we asked about
+        # rather than guessing.
+        "review_reason": doc.get("review_reason"),
+        "submitted_for_review_at": _iso(doc.get("submitted_for_review_at")),
+        "reviewed_at": _iso(doc.get("reviewed_at")),
+        "can_edit": status in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open"),
+        # "Publish" now means "submit for review" — see publish_brand_campaign.
         "can_publish": status == "draft",
-        "can_close": status in ("draft", "upcoming", "open", "in_progress"),
+        "awaiting_review": status == CAMPAIGN_REVIEW_STATUS,
+        "can_close": status
+        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "in_progress"),
         "can_delete": status == "draft" and applicant_count == 0,
     }
 
@@ -2039,6 +2116,37 @@ async def _awaiting_brand_counts(campaign_ids: list) -> dict:
         ]
     ).to_list(length=len(unique))
     return {r["_id"]: r["n"] for r in rows}
+
+
+async def _verified_brand_or_403(user: dict) -> dict:
+    """Assert the caller's brand has been verified by us.
+
+    Drafting is open to anyone who signs up — writing a brief costs nobody
+    anything. Putting one in front of creators is what needs a real business
+    behind it, so that is where the gate sits.
+    """
+    if user.get("role") == "admin":
+        return {}
+    profile = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(
+            status_code=403,
+            detail="Finish your brand profile before submitting a campaign.",
+        )
+    if not profile.get("verified", False):
+        reason = profile.get("verification_reason")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Your brand hasn't been verified yet: {reason}"
+                if reason
+                else (
+                    "Your brand is still being verified. You can keep drafting — "
+                    "we'll be in touch as soon as it's approved."
+                )
+            ),
+        )
+    return profile
 
 
 async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
@@ -2143,6 +2251,20 @@ async def create_brand_campaign(
             status_code=422, detail="End date cannot be before start date"
         )
 
+    # The status used to come straight off the payload, which let a brand post
+    # itself live. Going live is a decision somebody makes about a brief, not a
+    # field on the request.
+    if payload.status not in BRAND_SETTABLE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Campaigns go live after a WeAre review. Save it as a draft, or "
+                "submit it for review — you can't publish directly."
+            ),
+        )
+    if payload.status == CAMPAIGN_REVIEW_STATUS:
+        await _verified_brand_or_403(user)
+
     now = datetime.now(timezone.utc)
     doc = {
         "brand_id": ObjectId(user["_id"]),
@@ -2159,6 +2281,8 @@ async def create_brand_campaign(
         "created_at": now,
         "updated_at": now,
     }
+    if payload.status == CAMPAIGN_REVIEW_STATUS:
+        doc["submitted_for_review_at"] = now
     result = await db.campaigns.insert_one(doc)
     doc["_id"] = result.inserted_id
     await audit(user, "campaign.create", "campaign", result.inserted_id, after={"title": doc["title"], "status": doc["status"]})
@@ -2174,7 +2298,9 @@ async def update_brand_campaign(
     """Correct a brief. Allowed while a campaign is a draft or still live —
     once it's in progress the terms creators applied under are fixed."""
     doc = await _own_campaign_or_404(campaign_id, user)
-    if doc.get("status") not in ("draft", "upcoming", "open"):
+    # A campaign under review is editable: it isn't in front of anyone yet, and
+    # fixing what we asked about is the whole point of a rejection.
+    if doc.get("status") not in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open"):
         raise HTTPException(
             status_code=409,
             detail="This campaign can no longer be edited — close it and post a new one.",
@@ -2238,10 +2364,27 @@ async def publish_brand_campaign(
     campaign_id: str,
     user: dict = Depends(require_roles("brand")),
 ):
-    """Take a draft live. Without this a saved draft is a trap door."""
+    """Submit a draft for review.
+
+    This used to take the draft straight live. It now hands it to us instead —
+    the campaign goes in front of creators when an admin approves it, not when
+    the brand clicks. The route keeps its name so existing clients keep working;
+    what changed is where the campaign lands.
+    """
     doc = await _own_campaign_or_404(campaign_id, user)
     if doc.get("status") != "draft":
-        raise HTTPException(status_code=409, detail="This campaign is already published.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This campaign is already with us for review."
+                if doc.get("status") == CAMPAIGN_REVIEW_STATUS
+                else "This campaign is already published."
+            ),
+        )
+
+    # An unverified brand can draft all it likes; it cannot put a brief in the
+    # queue that ends with creators being asked to show up somewhere.
+    await _verified_brand_or_403(user)
 
     missing = [
         field
@@ -2251,17 +2394,38 @@ async def publish_brand_campaign(
     if missing:
         raise HTTPException(
             status_code=422,
-            detail=f"Finish the brief before publishing — missing: {', '.join(missing)}.",
+            detail=f"Finish the brief before submitting — missing: {', '.join(missing)}.",
         )
 
     now = datetime.now(timezone.utc)
-    status = "upcoming" if doc.get("start_date") and doc["start_date"] > now else "open"
-    await db.campaigns.update_one(
+    updated = await db.campaigns.update_one(
         {"_id": doc["_id"], "status": "draft"},
-        {"$set": {"status": status, "updated_at": now}},
+        {
+            "$set": {
+                "status": CAMPAIGN_REVIEW_STATUS,
+                "submitted_for_review_at": now,
+                "updated_at": now,
+            },
+            # A resubmission starts clean rather than carrying the last refusal.
+            "$unset": {"review_reason": "", "reviewed_at": ""},
+        },
     )
-    await audit(user, "campaign.publish", "campaign", doc["_id"], before={"status": "draft"}, after={"status": status})
-    return {"id": campaign_id, "status": status}
+    if not updated.modified_count:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.submit_for_review",
+        "campaign",
+        doc["_id"],
+        before={"status": "draft"},
+        after={"status": CAMPAIGN_REVIEW_STATUS},
+    )
+    return {
+        "id": campaign_id,
+        "status": CAMPAIGN_REVIEW_STATUS,
+        "message": "Submitted for review. We'll publish it once we've read it.",
+    }
 
 
 @brand_router.post("/campaigns/{campaign_id}/close")
@@ -3617,9 +3781,233 @@ async def list_all_campaigns(
     }
 
 
-# Campaigns you can still usefully invite someone to. Inviting a creator to a
-# finished campaign gives them a brief they can never apply to.
-INVITABLE_CAMPAIGN_STATUSES = ("draft", "upcoming", "open", "in_progress")
+@admin_router.get("/campaigns/pending")
+async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))):
+    """The review queue: briefs a brand has submitted and nobody has read yet.
+
+    Declared before /campaigns/{campaign_id}/... so the fixed path wins. Oldest
+    first — a queue people jump is not a queue.
+    """
+    docs = (
+        await db.campaigns.find({"status": CAMPAIGN_REVIEW_STATUS})
+        .sort("submitted_for_review_at", 1)
+        .to_list(length=500)
+    )
+    if not docs:
+        return []
+
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+    verified_brand_ids = {
+        p["user_id"]
+        for p in await db.brand_profiles.find(
+            {"user_id": {"$in": [d["brand_id"] for d in docs]}, "verified": True},
+            {"user_id": 1},
+        ).to_list(length=len(docs))
+    }
+
+    return [
+        {
+            "id": str(d["_id"]),
+            "brand_id": str(d["brand_id"]),
+            "brand_name": (brand_map.get(d["brand_id"]) or {}).get("business_name")
+            or (brand_map.get(d["brand_id"]) or {}).get("name"),
+            # A brief can be sitting here from a brand we since un-verified.
+            "brand_verified": d["brand_id"] in verified_brand_ids,
+            "title": d.get("title"),
+            "brief": d.get("brief"),
+            "deliverables": d.get("deliverables"),
+            "budget_per_creator": d.get("budget_per_creator"),
+            "category": d.get("category"),
+            "area": d.get("area"),
+            "creators_needed": d.get("creators_needed"),
+            "start_date": _iso(d.get("start_date")),
+            "end_date": _iso(d.get("end_date")),
+            "submitted_for_review_at": _iso(d.get("submitted_for_review_at")),
+            "created_at": _iso(d.get("created_at")),
+            # Present when this is a resubmission of something we sent back.
+            "previous_review_reason": d.get("review_reason"),
+        }
+        for d in docs
+    ]
+
+
+@admin_router.post("/campaigns/{campaign_id}/approve")
+async def approve_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Publish a reviewed campaign — this is the only route to the creator feed.
+
+    Whether it lands on `upcoming` or `open` is the start date's call, the same
+    rule the brand's own publish button used before review existed.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    current = campaign.get("status")
+    if current != CAMPAIGN_REVIEW_STATUS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This campaign is {current}, not awaiting review. Only a submitted "
+                "campaign can be approved."
+            ),
+        )
+
+    # Approving a brief from a brand we have not verified would walk straight
+    # past the gate the review exists to hold.
+    brand_profile = await db.brand_profiles.find_one({"user_id": campaign["brand_id"]})
+    if not brand_profile or not brand_profile.get("verified", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Verify the brand before publishing its campaigns.",
+        )
+
+    now = datetime.now(timezone.utc)
+    start = campaign.get("start_date")
+    if start is not None and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    status = "upcoming" if start and start > now else "open"
+
+    updated = await db.campaigns.find_one_and_update(
+        # from_state as a write precondition, as everywhere else — two admins
+        # in the queue must not both publish it.
+        {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": status,
+                "reviewed_at": now,
+                "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "updated_at": now,
+            },
+            "$unset": {"review_reason": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.approve",
+        "campaign",
+        cid,
+        before={"status": CAMPAIGN_REVIEW_STATUS},
+        after={"status": status},
+        note=(payload.reason if payload else None),
+    )
+
+    title = updated.get("title") or "Your campaign"
+    delivery = await notify_over_utility_template(
+        campaign["brand_id"],
+        "campaign_approved",
+        title="Your campaign is live",
+        body=(
+            f"“{title}” is {'scheduled' if status == 'upcoming' else 'live'} — "
+            "creators can see it now."
+            if status == "open"
+            else f"“{title}” is approved and goes live on its start date."
+        ),
+        params=[title, status],
+        link=f"/brand/campaigns/{campaign_id}",
+    )
+    return {"id": campaign_id, "status": status, "notification": delivery}
+
+
+@admin_router.post("/campaigns/{campaign_id}/reject")
+async def reject_campaign(
+    campaign_id: str,
+    payload: DecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Send a submitted campaign back to the brand with a reason.
+
+    It returns to `draft` rather than dying: the brand fixes what we asked
+    about and submits again. The reason rides on the campaign so they are not
+    guessing at what to change.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Give a reason — the brand is told what to fix.",
+        )
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    current = campaign.get("status")
+    if current != CAMPAIGN_REVIEW_STATUS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This campaign is {current}, not awaiting review. To pull a live "
+                "campaign, close it instead."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": "draft",
+                "review_reason": reason,
+                "reviewed_at": now,
+                "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.reject",
+        "campaign",
+        cid,
+        before={"status": CAMPAIGN_REVIEW_STATUS},
+        after={"status": "draft"},
+        note=reason,
+    )
+
+    title = updated.get("title") or "Your campaign"
+    delivery = await notify_over_utility_template(
+        campaign["brand_id"],
+        "campaign_rejected",
+        title="Your campaign needs a change",
+        body=f"“{title}”: {reason}",
+        params=[title, reason],
+        link=f"/brand/campaigns/{campaign_id}",
+    )
+    return {
+        "id": campaign_id,
+        "status": "draft",
+        "review_reason": reason,
+        "notification": delivery,
+    }
+
+
+# Campaigns you can still usefully invite someone to. A finished campaign gives
+# the creator a brief they can never apply to; a draft or one still in review
+# gives them one they cannot even see, which would walk an unapproved brief
+# straight past the moderation gate over WhatsApp.
+INVITABLE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
 
 
 @admin_router.post("/campaigns/{campaign_id}/invite")
@@ -3982,6 +4370,80 @@ async def list_brands_for_review(
     return out
 
 
+@admin_router.get("/brands/pending")
+async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
+    """Brands waiting on us, with what they told us at signup.
+
+    Declared before any /brands/{user_id} route so the fixed path keeps
+    matching first. Rejected brands are included — a refusal is a decision the
+    admin may want to revisit, and hiding it makes the queue look emptier than
+    it is; `verification_state` says which is which.
+    """
+    profiles = (
+        await db.brand_profiles.find({"verified": False})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    if not profiles:
+        return []
+
+    user_ids = [p["user_id"] for p in profiles]
+    users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
+    users_by_id = {u["_id"]: u for u in users}
+
+    # How much they have already drafted — a brand with briefs waiting is a
+    # more urgent review than one that signed up and stopped.
+    drafts: dict = {}
+    async for row in db.campaigns.aggregate(
+        [
+            {"$match": {"brand_id": {"$in": user_ids}}},
+            {
+                "$group": {
+                    "_id": "$brand_id",
+                    "total": {"$sum": 1},
+                    "awaiting_review": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", CAMPAIGN_REVIEW_STATUS]}, 1, 0]
+                        }
+                    },
+                }
+            },
+        ]
+    ):
+        drafts[row["_id"]] = row
+
+    out = []
+    for p in profiles:
+        u = users_by_id.get(p["user_id"], {})
+        d = drafts.get(p["user_id"]) or {}
+        out.append(
+            {
+                "user_id": str(p["user_id"]),
+                "profile_id": str(p["_id"]),
+                "business_name": p.get("business_name"),
+                "category": p.get("category"),
+                "areas": p.get("areas") or [],
+                "verified": False,
+                # "pending" = never decided; "rejected" = we said no and why.
+                "verification_state": (
+                    "rejected" if p.get("verification_reason") else "pending"
+                ),
+                "verification_reason": p.get("verification_reason"),
+                "rejected_at": _iso(p.get("rejected_at")),
+                "name": u.get("name"),
+                "email": u.get("email"),
+                "phone": u.get("phone"),
+                "status": u.get("status"),
+                "terms_accepted_at": _iso(u.get("terms_accepted_at")),
+                "signed_up_at": _iso(u.get("created_at")),
+                "campaign_count": d.get("total", 0),
+                "campaigns_awaiting_review": d.get("awaiting_review", 0),
+                "created_at": _iso(p.get("created_at")),
+            }
+        )
+    return out
+
+
 @admin_router.post("/brands/{user_id}/verify")
 async def verify_brand(
     user_id: str,
@@ -3995,7 +4457,12 @@ async def verify_brand(
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
-        {"$set": {"verified": True, "verified_at": now, "updated_at": now}},
+        {
+            "$set": {"verified": True, "verified_at": now, "updated_at": now},
+            # Approving clears an earlier refusal; leaving it would keep telling
+            # the brand it was rejected.
+            "$unset": {"verification_reason": "", "rejected_at": ""},
+        },
         return_document=True,
     )
     if not result:
@@ -4009,7 +4476,94 @@ async def verify_brand(
         after={"verified": True},
         note=(payload.reason if payload else None),
     )
-    return _serialize_brand_profile(result)
+    name = result.get("business_name") or "your brand"
+    delivery = await notify_over_utility_template(
+        oid,
+        "brand_verified",
+        title="Your brand is verified",
+        body=f"{name} is verified. You can submit campaigns for review now.",
+        params=[name],
+        link="/brand/campaigns",
+    )
+    out = _serialize_brand_profile(result)
+    out["notification"] = delivery
+    return out
+
+
+@admin_router.post("/brands/{user_id}/reject")
+async def reject_brand(
+    user_id: str,
+    payload: DecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Refuse a brand, with the reason on the record.
+
+    Distinct from `unverify`, which takes an already-approved brand back out
+    without explaining itself. A rejection is a decision we have to be able to
+    tell the brand about, so the reason is required.
+    """
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Give a reason — the brand is told what to fix.",
+        )
+
+    now = datetime.now(timezone.utc)
+    result = await db.brand_profiles.find_one_and_update(
+        {"user_id": oid},
+        {
+            "$set": {
+                "verified": False,
+                "verification_reason": reason,
+                "rejected_at": now,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    # Their campaigns must not stay in the review queue behind a refused brand.
+    pulled = await db.campaigns.update_many(
+        {"brand_id": oid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": "draft",
+                "review_reason": f"Brand not verified: {reason}",
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "brand.reject",
+        "brand_profile",
+        result["_id"],
+        after={"verified": False, "campaigns_returned": pulled.modified_count},
+        note=reason,
+    )
+    name = result.get("business_name") or "your brand"
+    delivery = await notify_over_utility_template(
+        oid,
+        "brand_rejected",
+        title="We couldn't verify your brand yet",
+        body=f"{name}: {reason}",
+        params=[name, reason],
+        link="/brand/profile",
+    )
+    out = _serialize_brand_profile(result)
+    out["verification_reason"] = reason
+    out["campaigns_returned_to_draft"] = pulled.modified_count
+    out["notification"] = delivery
+    return out
 
 
 @admin_router.post("/brands/{user_id}/unverify")
@@ -4581,12 +5135,16 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         {"verification_status": "verified", "pending_review": True}
     )
     brands_unverified = await db.brand_profiles.count_documents({"verified": False})
+    campaigns_to_review = await db.campaigns.count_documents(
+        {"status": CAMPAIGN_REVIEW_STATUS}
+    )
     payouts_pending_count = int(pending_agg[0]["n"]) if pending_agg else 0
 
     awaiting = {
         "creators_to_review": creators_pending_review,
         "creator_edits_to_review": creators_changed,
         "brands_to_verify": brands_unverified,
+        "campaigns_to_review": campaigns_to_review,
         "applicants_to_verify": collab_action_counts["applied"],
         "fees_to_agree": collab_action_counts["accepted"],
         "slots_to_book": collab_action_counts["commercial_agreed"],
@@ -4610,6 +5168,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         "brand_receivable": float(receivable_agg[0]["total"]) if receivable_agg else 0.0,
         "campaigns_by_status": campaigns_by_status,
         "campaigns_total": sum(campaigns_by_status.values()),
+        "campaigns_pending_review": campaigns_to_review,
         "awaiting_admin_action": sum(awaiting.values()),
         "awaiting_breakdown": awaiting,
         # Kept for existing callers; the same numbers now appear in the

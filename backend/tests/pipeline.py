@@ -85,15 +85,59 @@ def verify_brand(admin_session, user_id):
     return r.json()
 
 
-def seed_open_campaign(brand_session, *, creators_needed=3, budget=5000):
-    brand_session.put(
+def user_id_of(session):
+    r = session.get(f"{BASE_URL}/auth/me")
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def setup_brand(brand_session, admin_session, *, business_name=None):
+    """Give a brand a profile and get it verified.
+
+    An unverified brand can only draft, so every test that needs a live campaign
+    needs this first.
+    """
+    r = brand_session.put(
         f"{BASE_URL}/brand/profile",
         json={
-            "business_name": f"Br-{uuid.uuid4().hex[:5]}",
+            "business_name": business_name or f"Br-{uuid.uuid4().hex[:5]}",
             "category": "fnb",
             "areas": ["Indiranagar"],
         },
     )
+    assert r.status_code == 200, r.text
+    uid = user_id_of(brand_session)
+    verify_brand(admin_session, uid)
+    return uid
+
+
+def submit_campaign(brand_session, campaign_id):
+    """Hand a draft to us for review. (The route is still called `publish`.)"""
+    r = brand_session.post(f"{BASE_URL}/brand/campaigns/{campaign_id}/publish")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "pending_review"
+    return r.json()
+
+
+def approve_campaign(admin_session, campaign_id):
+    """Publish a reviewed campaign. This is the only route to the creator feed."""
+    r = admin_session.post(f"{BASE_URL}/admin/campaigns/{campaign_id}/approve")
+    assert r.status_code == 200, r.text
+    return r.json()["status"]
+
+
+def seed_open_campaign(
+    brand_session, admin_session, *, creators_needed=3, budget=5000, brand_ready=False
+):
+    """A campaign creators can actually see, through the real gates.
+
+    Campaigns no longer go live because the payload said so: the brand drafts,
+    submits, and an admin approves. Pass `brand_ready=True` if the caller has
+    already set up and verified the brand.
+    """
+    if not brand_ready:
+        setup_brand(brand_session, admin_session)
+
     r = brand_session.post(
         f"{BASE_URL}/brand/campaigns",
         json={
@@ -104,14 +148,19 @@ def seed_open_campaign(brand_session, *, creators_needed=3, budget=5000):
             "category": "fnb",
             "area": "Indiranagar",
             "creators_needed": creators_needed,
+            # No start_date, so approval lands on "open" rather than "upcoming".
             # Far enough out that the expiry sweep leaves it alone.
-            "start_date": "2026-09-01T00:00:00Z",
             "end_date": "2027-01-01T00:00:00Z",
-            "status": "open",
+            "status": "draft",
         },
     )
     assert r.status_code == 200, r.text
-    return r.json()["id"]
+    campaign_id = r.json()["id"]
+
+    submit_campaign(brand_session, campaign_id)
+    status = approve_campaign(admin_session, campaign_id)
+    assert status == "open", f"expected an open campaign, got {status}"
+    return campaign_id
 
 
 def apply_to_campaign(creator_session, campaign_id, *, quoted_rate=5500):
@@ -208,7 +257,9 @@ def make_collab_in_state(
     pipeline to `target_state`. Returns (collab_id, campaign_id)."""
     complete_creator_profile(creator_session)
     verify_creator(admin_session, creator_user_id)
-    campaign_id = seed_open_campaign(brand_session, creators_needed=creators_needed)
+    campaign_id = seed_open_campaign(
+        brand_session, admin_session, creators_needed=creators_needed
+    )
     collab_id = apply_to_campaign(creator_session, campaign_id)
     if target_state != "applied":
         advance_to(

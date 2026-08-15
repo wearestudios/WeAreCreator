@@ -66,7 +66,7 @@ def _make_collab_in_state(admin_s, brand_tuple, creator_tuple, target_state):
     me = cs.get(f"{BASE_URL}/auth/me").json()
     pipeline.verify_creator(admin_s, me["id"])
 
-    cid = pipeline.seed_open_campaign(bs)
+    cid = pipeline.seed_open_campaign(bs, admin_s)
     collab_id = pipeline.apply_to_campaign(cs, cid)
     if target_state != "applied":
         pipeline.advance_to(admin_s, bs, cs, collab_id, target_state)

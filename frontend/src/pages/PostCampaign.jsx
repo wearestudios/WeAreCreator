@@ -177,10 +177,10 @@ export default function PostCampaign() {
             if (isEditing) {
                 const { status: _ignored, ...changes } = buildPayload(status);
                 await api.put(`/brand/campaigns/${editingId}`, changes);
-                // Saving an edit on a draft and choosing "Publish" should do both.
+                // Saving an edit on a draft and submitting should do both.
                 if (!isDraft && existing?.status === "draft") {
                     await api.post(`/brand/campaigns/${editingId}/publish`);
-                    toast.success("Campaign published — creators can see it now");
+                    toast.success("Sent for review — we'll publish it once we've read it");
                 } else {
                     toast.success("Campaign updated");
                 }
@@ -192,7 +192,7 @@ export default function PostCampaign() {
             toast.success(
                 isDraft
                     ? "Draft saved to your dashboard"
-                    : "Campaign published — creators can see it now",
+                    : "Sent for review — we'll publish it once we've read it",
             );
             navigate("/dashboard", { replace: true, state: { newCampaignId: data.id } });
         } catch (err) {
@@ -236,13 +236,13 @@ export default function PostCampaign() {
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
                     {isEditing
                         ? existing?.status === "draft"
-                            ? "This is still a draft — nobody can see it yet. Publish when you're ready."
+                            ? "This is still a draft — nobody can see it yet. Send it for review when you're ready."
                             : "This brief is live. Changes show up on the creator feed straight away."
-                        : "Publish it live and verified creators from across India start applying within hours. Save as a draft if you want to polish it first."}
+                        : "We read every brief before it goes out, usually the same day. Save as a draft if you want to polish it first."}
                 </p>
 
                 <form
-                    onSubmit={(e) => submit(e, "open")}
+                    onSubmit={(e) => submit(e, "pending_review")}
                     noValidate
                     className="mt-12 space-y-8"
                 >
@@ -472,16 +472,16 @@ export default function PostCampaign() {
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     {isEditing && existing?.status !== "draft"
                                         ? "Saving…"
-                                        : "Publishing…"}
+                                        : "Sending…"}
                                 </>
                             ) : (
                                 <>
                                     <Send className="mr-2 h-4 w-4" />
                                     {isEditing
                                         ? existing?.status === "draft"
-                                            ? "Publish campaign"
+                                            ? "Send for review"
                                             : "Save changes"
-                                        : "Publish campaign"}
+                                        : "Send for review"}
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                 </>
                             )}

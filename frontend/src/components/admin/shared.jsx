@@ -45,6 +45,10 @@ export const STATE_META = {
 
 export const CAMPAIGN_STATUS_META = {
     draft: { label: "Draft", tone: "bg-white/5 text-muted-foreground border-white/15" },
+    pending_review: {
+        label: "In review",
+        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    },
     upcoming: { label: "Upcoming", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     open: { label: "Open", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
     in_progress: { label: "In progress", tone: "bg-ember-500/15 text-ember-500 border-ember-500/30" },

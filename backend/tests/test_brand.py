@@ -127,30 +127,66 @@ class TestBrandProfile:
 # ---------- campaigns list & post ----------
 
 class TestBrandCampaigns:
-    def _seed_profile(self, s):
+    def _seed_profile(self, s, *, verify=True):
         r = s.put(f"{BASE_URL}/brand/profile", json={
             "business_name": "Brand X", "category": "fnb", "areas": ["Indiranagar"],
         })
         assert r.status_code == 200, r.text
+        if verify:
+            pipeline.verify_brand(_admin_session(), pipeline.user_id_of(s))
 
-    def test_post_campaign_open_returns_row(self, brand_session):
+    def _go_live(self, s, body):
+        """Draft, submit, approve — the only way a campaign reaches creators."""
+        r = s.post(f"{BASE_URL}/brand/campaigns", json={**body, "status": "draft"})
+        assert r.status_code == 200, r.text
+        cid = r.json()["id"]
+        pipeline.submit_campaign(s, cid)
+        status = pipeline.approve_campaign(_admin_session(), cid)
+        return cid, status
+
+    def test_post_campaign_cannot_go_live_straight_from_the_payload(self, brand_session):
+        # This used to work, and it was the hole: a brand could publish itself.
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        r = s.post(f"{BASE_URL}/brand/campaigns", json={
+            "title": "Straight to live", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 3, "status": "open",
+        })
+        assert r.status_code == 422, r.text
+        assert "review" in r.text.lower()
+
+    def test_post_campaign_submitted_for_review_returns_row(self, brand_session):
         s, _, _ = brand_session
         self._seed_profile(s)
         body = {
             "title": "Weekend Reel", "brief": "Shoot a warm reel at our cafe.",
             "deliverables": "1 reel, 3 stories", "budget_per_creator": 5000,
             "category": "fnb", "area": "Indiranagar", "creators_needed": 3,
-            "start_date": "2026-02-01T00:00:00Z", "end_date": "2026-02-15T00:00:00Z",
-            "status": "open",
+            "end_date": "2027-02-15T00:00:00Z",
+            "status": "pending_review",
         }
         r = s.post(f"{BASE_URL}/brand/campaigns", json=body)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["status"] == "open"
+        assert d["status"] == "pending_review"
+        assert d["awaiting_review"] is True
         assert d["applicant_count"] == 0
         assert d["title"] == "Weekend Reel"
         assert d["creators_needed"] == 3
         assert "id" in d
+
+    def test_a_draft_reaches_creators_only_after_approval(self, brand_session):
+        s, _, _ = brand_session
+        self._seed_profile(s)
+        cid, status = self._go_live(s, {
+            "title": "Reviewed Reel", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 3, "end_date": "2027-02-15T00:00:00Z",
+        })
+        assert status == "open"
+        row = next(c for c in s.get(f"{BASE_URL}/brand/campaigns").json() if c["id"] == cid)
+        assert row["status"] == "open"
 
     def test_post_campaign_draft_allowed(self, brand_session):
         s, _, _ = brand_session
@@ -169,7 +205,7 @@ class TestBrandCampaigns:
         r = s.post(f"{BASE_URL}/brand/campaigns", json={
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "tech", "area": "Indiranagar",
-            "creators_needed": 1, "status": "open",
+            "creators_needed": 1, "status": "draft",
         })
         assert r.status_code == 422
 
@@ -181,7 +217,7 @@ class TestBrandCampaigns:
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
             "creators_needed": 1,
             "start_date": "2026-02-15T00:00:00Z", "end_date": "2026-02-01T00:00:00Z",
-            "status": "open",
+            "status": "draft",
         })
         assert r.status_code == 422
         assert "End date cannot be before start date" in r.text
@@ -192,7 +228,7 @@ class TestBrandCampaigns:
         r = s.post(f"{BASE_URL}/brand/campaigns", json={
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
-            "creators_needed": 0, "status": "open",
+            "creators_needed": 0, "status": "draft",
         })
         assert r.status_code == 422
 
@@ -206,9 +242,9 @@ class TestBrandCampaigns:
         base = {"brief": "b", "deliverables": "d", "budget_per_creator": 100,
                 "category": "fnb", "area": "Indiranagar", "creators_needed": 1}
         r1 = s1.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "B1-first", "status": "draft"})
-        r2 = s1.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "B1-second", "status": "open"})
-        r3 = s2.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "B2-only", "status": "open"})
-        assert r1.status_code == r2.status_code == r3.status_code == 200
+        assert r1.status_code == 200, r1.text
+        self._go_live(s1, {**base, "title": "B1-second"})
+        self._go_live(s2, {**base, "title": "B2-only"})
 
         lst = s1.get(f"{BASE_URL}/brand/campaigns")
         assert lst.status_code == 200
@@ -234,7 +270,7 @@ class TestBrandCampaigns:
         r = s.post(f"{BASE_URL}/brand/campaigns", json={
             "title": "X", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
-            "creators_needed": 1, "status": "open",
+            "creators_needed": 1, "status": "draft",
         })
         assert r.status_code == 403
 
@@ -250,9 +286,12 @@ class TestBrandDashboard:
         })
         base = {"brief": "b", "deliverables": "d", "budget_per_creator": 100,
                 "category": "hospitality", "area": "Whitefield", "creators_needed": 1}
-        r_open = s.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "Open1", "status": "open"})
+        pipeline.verify_brand(_admin_session(), pipeline.user_id_of(s))
+        r_open = s.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "Open1", "status": "draft"})
         r_draft = s.post(f"{BASE_URL}/brand/campaigns", json={**base, "title": "Draft1", "status": "draft"})
         open_id = r_open.json()["id"]
+        pipeline.submit_campaign(s, open_id)
+        assert pipeline.approve_campaign(_admin_session(), open_id) == "open"
 
         # A creator applies to the open campaign → applicant_count should become 1
         cs, _, cuser = creator_session
@@ -293,14 +332,20 @@ class TestCrossVisibility:
         s.put(f"{BASE_URL}/brand/profile", json={
             "business_name": "Feed Brand", "category": "retail", "areas": ["HSR Layout"],
         })
+        pipeline.verify_brand(_admin_session(), pipeline.user_id_of(s))
         title = f"OpenFeed-{uuid.uuid4().hex[:6]}"
         r = s.post(f"{BASE_URL}/brand/campaigns", json={
             "title": title, "brief": "b", "deliverables": "d",
             "budget_per_creator": 200, "category": "retail", "area": "HSR Layout",
-            "creators_needed": 2, "status": "open",
+            "creators_needed": 2, "status": "draft",
         })
         assert r.status_code == 200
         cid = r.json()["id"]
+
+        # Not on the feed until it has been read.
+        assert title not in [c["title"] for c in creator_session[0].get(f"{BASE_URL}/campaigns").json()]
+        pipeline.submit_campaign(s, cid)
+        assert pipeline.approve_campaign(_admin_session(), cid) == "open"
 
         cs, _, _ = creator_session
         feed = cs.get(f"{BASE_URL}/campaigns")
@@ -357,10 +402,19 @@ class TestCrossVisibility:
 class TestCampaignLifecycle:
     """A draft used to be a trap door: no edit, no publish, no delete."""
 
-    def _seed_profile(self, s):
+    def _seed_profile(self, s, *, verify=True):
         s.put(f"{BASE_URL}/brand/profile", json={
             "business_name": "Lifecycle Co", "category": "fnb", "areas": ["Indiranagar"],
         })
+        if verify:
+            pipeline.verify_brand(_admin_session(), pipeline.user_id_of(s))
+
+    def _live(self, s, **overrides):
+        """A draft taken all the way live, through review."""
+        draft = self._draft(s, **overrides)
+        pipeline.submit_campaign(s, draft["id"])
+        pipeline.approve_campaign(_admin_session(), draft["id"])
+        return draft
 
     def _draft(self, s, **overrides):
         body = {
@@ -386,17 +440,21 @@ class TestCampaignLifecycle:
         assert r.json()["title"] == "Polished title"
         assert r.json()["budget_per_creator"] == 4500
 
+        # "Publish" now hands the brief to us rather than to creators.
         r = s.post(f"{BASE_URL}/brand/campaigns/{draft['id']}/publish")
         assert r.status_code == 200, r.text
-        assert r.json()["status"] in ("open", "upcoming")
+        assert r.json()["status"] == "pending_review"
 
-        # Publishing twice is refused.
+        # Submitting twice is refused.
         assert s.post(f"{BASE_URL}/brand/campaigns/{draft['id']}/publish").status_code == 409
+
+        # And it is an admin approval that puts it in front of creators.
+        assert pipeline.approve_campaign(_admin_session(), draft["id"]) in ("open", "upcoming")
 
     def test_live_campaign_can_be_corrected(self, brand_session):
         s, _, _ = brand_session
         self._seed_profile(s)
-        live = self._draft(s, status="open")
+        live = self._live(s)
         r = s.put(f"{BASE_URL}/brand/campaigns/{live['id']}", json={"deliverables": "2 reels"})
         assert r.status_code == 200, r.text
         assert r.json()["deliverables"] == "2 reels"
@@ -416,7 +474,7 @@ class TestCampaignLifecycle:
         assert s.delete(f"{BASE_URL}/brand/campaigns/{draft['id']}").status_code == 200
         assert s.get(f"{BASE_URL}/campaigns/{draft['id']}").status_code == 404
 
-        live = self._draft(s, status="open")
+        live = self._live(s)
         r = s.delete(f"{BASE_URL}/brand/campaigns/{live['id']}")
         assert r.status_code == 409
         assert "close" in r.json()["detail"].lower()
@@ -425,7 +483,7 @@ class TestCampaignLifecycle:
         s, _, _ = brand_session
         cs, _, cuser = creator_session
         self._seed_profile(s)
-        live = self._draft(s, status="open")
+        live = self._live(s)
 
         pipeline.complete_creator_profile(cs)
         pipeline.verify_creator(_admin_session(), cuser["id"])
@@ -464,7 +522,9 @@ class TestApplicantBoard:
         bs.put(f"{BASE_URL}/brand/profile", json={
             "business_name": "Board Co", "category": "fnb", "areas": ["Indiranagar"],
         })
-        cid = pipeline.seed_open_campaign(bs, creators_needed=creators_needed)
+        cid = pipeline.seed_open_campaign(
+            bs, _admin_session(), creators_needed=creators_needed
+        )
         pipeline.complete_creator_profile(cs)
         pipeline.verify_creator(_admin_session(), cuser["id"])
         collab_id = pipeline.apply_to_campaign(cs, cid)

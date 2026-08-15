@@ -799,3 +799,156 @@ class TestNotificationRecordSplit:
         src = inspect.getsource(server.record_notification)
         assert "aisensy" not in src.lower()
         assert "AISENSY_TEMPLATE" not in src
+
+
+# ---------------------------------------------------------------------------
+# Moderation gates. Two things used to reach the public with nobody's approval:
+# a brand that signed itself up, and a campaign whose payload said "open".
+# ---------------------------------------------------------------------------
+
+
+class TestCampaignReviewStatus:
+    def test_pending_review_is_a_real_campaign_status(self):
+        assert server.CAMPAIGN_REVIEW_STATUS == "pending_review"
+        assert server.CAMPAIGN_REVIEW_STATUS in server.CampaignStatus.__args__
+
+    def test_a_brief_nobody_has_read_is_not_on_the_feed(self):
+        # The whole point of the gate.
+        assert server.CAMPAIGN_REVIEW_STATUS not in server.LIVE_CAMPAIGN_STATUSES
+        assert server.CAMPAIGN_REVIEW_STATUS not in server._LIVE_STATUSES
+
+    def test_review_is_not_counted_as_a_running_campaign(self):
+        # It is waiting on us, not taking applications or in delivery.
+        assert server.CAMPAIGN_REVIEW_STATUS not in server.ACTIVE_CAMPAIGN_STATUSES
+
+    def test_a_brand_may_only_ask_for_draft_or_review(self):
+        assert server.BRAND_SETTABLE_CAMPAIGN_STATUSES == ("draft", "pending_review")
+        for forbidden in ("open", "upcoming", "in_progress", "completed", "closed"):
+            assert forbidden not in server.BRAND_SETTABLE_CAMPAIGN_STATUSES
+
+    def test_the_payload_still_accepts_open_so_it_can_be_explained(self):
+        # Refusing in the handler gives a sentence; refusing in the schema gives
+        # a pydantic error nobody can act on.
+        field = server.PostCampaignPayload.model_fields["status"]
+        assert "open" in field.annotation.__args__
+        assert field.default == "draft"
+
+    def test_the_handler_is_what_refuses_open(self):
+        import inspect
+
+        src = inspect.getsource(server.create_brand_campaign)
+        assert "BRAND_SETTABLE_CAMPAIGN_STATUSES" in src
+        assert "payload.status" in src
+
+    def test_invites_cannot_reach_an_unapproved_brief(self):
+        # Inviting to a draft or a brief in review would walk it past the gate
+        # over WhatsApp, to a campaign the creator cannot even open.
+        assert "draft" not in server.INVITABLE_CAMPAIGN_STATUSES
+        assert server.CAMPAIGN_REVIEW_STATUS not in server.INVITABLE_CAMPAIGN_STATUSES
+        assert "open" in server.INVITABLE_CAMPAIGN_STATUSES
+
+
+class TestModerationRoutes:
+    ROUTES = {
+        ("/api/admin/brands/pending", "GET"),
+        ("/api/admin/brands/{user_id}/verify", "POST"),
+        ("/api/admin/brands/{user_id}/reject", "POST"),
+        ("/api/admin/campaigns/pending", "GET"),
+        ("/api/admin/campaigns/{campaign_id}/approve", "POST"),
+        ("/api/admin/campaigns/{campaign_id}/reject", "POST"),
+    }
+
+    @pytest.mark.parametrize("path,method", sorted(ROUTES))
+    def test_the_gate_endpoints_exist(self, path, method):
+        matches = [r for r in server.app.routes if getattr(r, "path", "") == path]
+        assert matches, f"{path} is not mounted"
+        assert method in matches[0].methods
+
+    def test_the_fixed_queues_are_declared_before_the_parameterised_paths(self):
+        # /brands/pending must not be swallowed by /brands/{user_id}.
+        paths = [getattr(r, "path", "") for r in server.app.routes]
+        for fixed, param in (
+            ("/api/admin/brands/pending", "/api/admin/brands/{user_id}/verify"),
+            ("/api/admin/campaigns/pending", "/api/admin/campaigns/{campaign_id}/approve"),
+        ):
+            assert paths.index(fixed) < paths.index(param)
+
+    def test_every_moderation_decision_is_guarded_by_the_admin_role(self):
+        import inspect
+
+        for fn in (
+            server.list_pending_brands,
+            server.reject_brand,
+            server.list_campaigns_for_review,
+            server.approve_campaign,
+            server.reject_campaign,
+        ):
+            assert 'require_roles("admin")' in inspect.getsource(fn)
+
+
+class TestModerationNotifications:
+    @pytest.mark.parametrize(
+        "event",
+        ["brand_verified", "brand_rejected", "campaign_approved", "campaign_rejected"],
+    )
+    def test_each_decision_has_a_declared_event(self, event):
+        assert event in server.NOTIFY_EVENTS
+
+    def test_decisions_go_out_on_the_utility_sender(self):
+        # Which is the one with the simulation fallback; `_send_aisensy_template`
+        # fails silently when unconfigured, and a brand not being told is not a
+        # silent condition.
+        import inspect
+
+        src = inspect.getsource(server.notify_over_utility_template)
+        assert "_send_aisensy_utility" in src
+        assert "record_notification" in src
+
+    def test_a_failed_message_cannot_undo_the_decision(self):
+        import inspect
+
+        src = inspect.getsource(server.notify_over_utility_template)
+        assert "except HTTPException" in src, "a send failure must not 502 the decision"
+        assert "raise" not in src.split("except HTTPException")[1][:400]
+
+    @pytest.mark.parametrize(
+        "fn_name,event",
+        [
+            ("verify_brand", "brand_verified"),
+            ("reject_brand", "brand_rejected"),
+            ("approve_campaign", "campaign_approved"),
+            ("reject_campaign", "campaign_rejected"),
+        ],
+    )
+    def test_the_endpoint_sends_the_matching_event(self, fn_name, event):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert "notify_over_utility_template" in src
+        assert f'"{event}"' in src
+
+
+class TestRejectionsCarryAReason:
+    @pytest.mark.parametrize("fn_name", ["reject_brand", "reject_campaign"])
+    def test_a_reason_is_required_not_optional(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        # A refusal the brand can't act on is worse than no refusal.
+        assert "status_code=422" in src
+        assert "Give a reason" in src
+
+    def test_approval_writes_the_state_with_a_precondition(self):
+        import inspect
+
+        src = inspect.getsource(server.approve_campaign)
+        # Two admins working the queue must not both publish it.
+        assert '"status": CAMPAIGN_REVIEW_STATUS' in src
+        assert "409" in src
+
+    def test_a_rejected_campaign_goes_back_to_the_brand_not_to_a_dead_end(self):
+        import inspect
+
+        src = inspect.getsource(server.reject_campaign)
+        assert '"status": "draft"' in src
+        assert "review_reason" in src
