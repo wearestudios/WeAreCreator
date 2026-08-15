@@ -4,6 +4,8 @@ import { Menu } from "lucide-react";
 import { useAuth, homePathFor } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
+import { StudioEndorsement } from "@/components/StudioEndorsement";
+import { LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
 import {
     Sheet,
     SheetClose,
@@ -85,18 +87,29 @@ export const Navbar = () => {
             className="sticky top-0 z-40 w-full border-b border-white/10 bg-black/60 backdrop-blur-xl"
         >
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-                <Link
-                    to="/"
-                    data-testid="nav-logo"
-                    className="flex items-center gap-2 transition-colors duration-200 hover:text-ember-500"
-                >
-                    <span className="grid h-8 w-8 place-items-center rounded-md bg-ember-500 font-serif text-lg font-semibold text-black">
-                        W
-                    </span>
-                    <span className="font-serif text-xl tracking-tight">
-                        WeAre <span className="text-ember-500">Creators</span>
-                    </span>
-                </Link>
+                {/* Creators keeps the wordmark and the accent; the studio is
+                    credited beside it in small caps. An endorsement, not a
+                    co-brand — and outside the <Link>, so tapping the logo can
+                    only ever go to Creators' own home. */}
+                <div className="flex items-center gap-3">
+                    <Link
+                        to="/"
+                        data-testid="nav-logo"
+                        className="flex items-center gap-2 transition-colors duration-200 hover:text-ember-500"
+                    >
+                        <span className="grid h-8 w-8 place-items-center rounded-md bg-ember-500 font-serif text-lg font-semibold text-black">
+                            W
+                        </span>
+                        <span className="font-serif text-xl tracking-tight">
+                            WeAre <span className="text-ember-500">Creators</span>
+                        </span>
+                    </Link>
+                    <span aria-hidden className="hidden h-4 w-px bg-white/15 sm:block" />
+                    <StudioEndorsement
+                        testid={STUDIO_IDS.nav}
+                        className="hidden sm:block"
+                    />
+                </div>
 
                 <nav className="hidden items-center gap-8 md:flex">
                     {MARKETING_LINKS.map((l) =>
@@ -207,10 +220,11 @@ export const Navbar = () => {
                             <SheetTitle className="sr-only">Menu</SheetTitle>
 
                             <div className="flex h-full flex-col">
-                                <div className="border-b border-white/10 px-6 py-5">
+                                <div className="flex flex-col gap-1 border-b border-white/10 px-6 py-5">
                                     <span className="font-serif text-xl tracking-tight">
                                         WeAre <span className="text-ember-500">Creators</span>
                                     </span>
+                                    <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
 
                                 <nav className="flex-1 overflow-y-auto px-6 py-7">
