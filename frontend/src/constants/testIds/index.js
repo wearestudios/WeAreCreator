@@ -13,5 +13,6 @@
 
 export * from './admin';
 export * from './auth';
+export * from './creator';
 export * from './home';
 export * from './manager';

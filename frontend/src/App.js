@@ -8,6 +8,7 @@ import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import AdminLogin from "@/pages/AdminLogin";
 import Dashboard from "@/pages/Dashboard";
+import InstagramCallback from "@/pages/InstagramCallback";
 import CreatorOnboarding from "@/pages/CreatorOnboarding";
 import BrandOnboarding from "@/pages/BrandOnboarding";
 import PostCampaign from "@/pages/PostCampaign";
@@ -45,6 +46,16 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["creator"]}>
                                     <CreatorOnboarding />
+                                </ProtectedRoute>
+                            }
+                        />
+                        {/* Where Instagram redirects back to after OAuth.
+                            Must match INSTAGRAM_REDIRECT_URI on the server. */}
+                        <Route
+                            path="/onboarding/creator/instagram"
+                            element={
+                                <ProtectedRoute roles={["creator"]}>
+                                    <InstagramCallback />
                                 </ProtectedRoute>
                             }
                         />

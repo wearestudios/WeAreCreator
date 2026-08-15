@@ -4,12 +4,14 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import asyncio
 import csv
 import io
 import os
 import re
 import logging
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 from typing import Optional, Literal, Annotated
 
 import bcrypt
@@ -218,16 +220,45 @@ CATEGORY_LITERAL = Literal[
 ]
 
 
-class CreatorProfileUpdate(BaseModel):
-    """Payload for creator onboarding / profile edits."""
+# Where a creator actually publishes. Deliberately a closed list: "youtube"
+# and "YT" in the same column makes the directory unsearchable.
+CreatorPlatform = Literal["instagram", "youtube"]
+CREATOR_PLATFORMS = ("instagram", "youtube")
 
-    name: str = Field(min_length=1, max_length=120)
-    instagram_handle: str = Field(min_length=1, max_length=60)
-    instagram_profile_url: str = Field(min_length=1, max_length=300)
-    email: EmailStr
+
+class CreatorProfileUpdate(BaseModel):
+    """Payload for the creator profile builder.
+
+    Every field is optional, and only the keys actually present in the request
+    body are written. Signup asks for a name and a number and nothing else, so
+    the profile is built up over however many sittings it takes — a save that
+    demanded the whole thing at once would just mean nobody ever saved.
+
+    That makes an omitted key mean "leave it alone" and an explicit null mean
+    "clear it", which are genuinely different intentions on a form somebody is
+    filling in a bit at a time.
+    """
+
+    name: Optional[str] = Field(default=None, max_length=120)
+    instagram_handle: Optional[str] = Field(default=None, max_length=60)
+    instagram_profile_url: Optional[str] = Field(default=None, max_length=300)
+    # Where the channel actually lives. Kept separate from the Instagram pair
+    # rather than a generic "links" bag, because completeness has to be able to
+    # ask for the one that matches a platform they said they post on.
+    youtube_url: Optional[str] = Field(default=None, max_length=300)
+    email: Optional[EmailStr] = None
     city: Optional[str] = Field(default=None, max_length=80)
-    address: str = Field(min_length=1, max_length=500)
+    # `address` is the neighbourhood a brand filters on ("Indiranagar");
+    # `full_address` is where post actually goes. Two different questions, so
+    # two fields rather than one overloaded one.
+    address: Optional[str] = Field(default=None, max_length=500)
+    full_address: Optional[str] = Field(default=None, max_length=500)
     niches: list[str] = Field(default_factory=list, max_length=25)
+    # What they make (food, travel, comedy) as opposed to `niches`, which is
+    # what they cover for a brand (cafe, brunch). Kept apart because a brand
+    # searches on one and briefs on the other.
+    genres: list[str] = Field(default_factory=list, max_length=25)
+    platforms: list[CreatorPlatform] = Field(default_factory=list, max_length=5)
     base_rate: Optional[float] = Field(default=None, ge=0)
     follower_count: Optional[int] = Field(default=None, ge=0)
     # Payout identity. Optional at onboarding, required before payment.
@@ -412,6 +443,27 @@ class ReschedulePayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class CreatorBookSlotPayload(BaseModel):
+    """A creator taking a place on a slot.
+
+    `preferred_time` only means anything on a personal table, where the slot is
+    a window of availability rather than a fixed sitting. On a launch or a
+    group event everyone arrives together and the field is refused, so a
+    stray value can't quietly put one creator at the venue on their own.
+    """
+
+    slot_id: str
+    preferred_time: Optional[datetime] = None
+
+
+class CreatorCancelSlotPayload(BaseModel):
+    """Handing a booked slot back. The reason is optional — we would rather
+    know early without one than have the seat held because a form asked a
+    question the creator didn't want to answer."""
+
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class BroadcastPayload(BaseModel):
     """One WhatsApp message to everyone confirmed on a campaign."""
 
@@ -581,6 +633,40 @@ BRAND_SETTABLE_CAMPAIGN_STATUSES = ("draft", "pending_review")
 CAMPAIGN_REVIEW_STATUS = "pending_review"
 
 
+# How a connection can be. `stale` is recoverable by reconnecting; it is not
+# the same as disconnected, and the difference is what the UI needs to say.
+InstagramConnectionStatus = Literal["connected", "stale"]
+
+
+class InstagramConnection(BaseModel):
+    """Collection: instagram_connections (1:1 with creators who connected).
+
+    Kept out of `creator_profiles` on purpose. The access token is the most
+    sensitive thing we hold about a creator, and a separate collection means
+    no profile serializer can leak it by accident — there is simply no branch
+    where the field is in scope.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    user_id: PyObjectId
+    ig_user_id: str
+    username: Optional[str] = None
+    # BUSINESS or MEDIA_CREATOR. A personal account can't authorise this API.
+    account_type: Optional[str] = None
+    # Fernet ciphertext over INSTAGRAM_TOKEN_KEY. Never returned by any route.
+    access_token: Optional[str] = None
+    token_expires_at: Optional[datetime] = None
+    scopes: list[str] = Field(default_factory=list)
+    status: InstagramConnectionStatus = "connected"
+    # Why it went stale, in words a creator can act on.
+    stale_reason: Optional[str] = None
+    stats: Optional[dict] = None
+    stats_fetched_at: Optional[datetime] = None
+    connected_at: Optional[datetime] = None
+    last_refreshed_at: Optional[datetime] = None
+
+
 class CreatorProfile(BaseModel):
     """Collection: creator_profiles (1:1 with users where role='creator')."""
 
@@ -590,18 +676,33 @@ class CreatorProfile(BaseModel):
     name: str
     instagram_handle: Optional[str] = None
     instagram_profile_url: Optional[str] = None
+    youtube_url: Optional[str] = None
     # Set by the upload endpoint, not by the profile PUT — see upload_profile_image.
     profile_image_url: Optional[str] = None
     email: Optional[EmailStr] = None
     city: Optional[str] = None
     address: Optional[str] = None
     niches: list[str] = Field(default_factory=list)
+    genres: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    full_address: Optional[str] = None
     base_rate: Optional[float] = None
     follower_count: Optional[int] = None
+    # Where that number came from. "instagram_verified" while an Instagram
+    # connection is live, "self_reported" otherwise; the figure they typed is
+    # kept alongside so disconnecting falls back to it rather than to nothing.
+    follower_count_source: Literal["self_reported", "instagram_verified"] = "self_reported"
+    follower_count_self_reported: Optional[int] = None
+    follower_count_verified_at: Optional[datetime] = None
     verification_status: VerificationStatus = "pending"
     # True when an already-verified creator edits something material. They stay
     # verified (and visible to brands) but surface in a separate admin queue.
     pending_review: bool = False
+    # When the creator asked us to look, via /creator/profile/submit-for-review.
+    # This — not a stub row or a stray handle — is what puts them in the queue.
+    submitted_for_review_at: Optional[datetime] = None
+    # Set once by the 3-day nudge, so nobody gets chased twice.
+    onboarding_nudge_sent_at: Optional[datetime] = None
     # Payout identity — required before a collaboration can enter payment.
     payout_upi: Optional[str] = None
     payout_account_name: Optional[str] = None
@@ -818,6 +919,9 @@ NOTIFY_EVENTS = {
     "manager_slot_booked": "A creator booked a slot",
     "manager_slot_released": "A creator gave up a slot",
     "campaign_broadcast": "A message from your campaign manager",
+    "profile_submitted": "Your profile is with the team",
+    "profile_nudge": "Your profile is still half-finished",
+    "instagram_disconnected": "Reconnect Instagram to keep your verified stats",
 }
 
 
@@ -1705,14 +1809,23 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
                 {
                     "user_id": user_id,
                     "name": signup_name,
+                    # Signup asks for a name and a number. Everything else is
+                    # the profile builder's job, so the stub is deliberately
+                    # empty rather than half-guessed.
                     "instagram_handle": None,
                     "instagram_profile_url": None,
+                    "youtube_url": None,
                     "email": None,
+                    "city": None,
                     "address": None,
+                    "full_address": None,
                     "niches": [],
+                    "genres": [],
+                    "platforms": [],
                     "base_rate": None,
                     "follower_count": None,
                     "verification_status": "pending",
+                    "pending_review": False,
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -1766,13 +1879,18 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "name": doc.get("name"),
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
+        "youtube_url": doc.get("youtube_url"),
         "profile_image_url": doc.get("profile_image_url"),
         "email": doc.get("email"),
         "city": doc.get("city"),
         "address": doc.get("address"),
+        "full_address": doc.get("full_address"),
         "niches": doc.get("niches") or [],
+        "genres": doc.get("genres") or [],
+        "platforms": doc.get("platforms") or [],
         "base_rate": doc.get("base_rate"),
         "follower_count": doc.get("follower_count"),
+        **_follower_provenance(doc),
         "verification_status": doc.get("verification_status", "pending"),
         "pending_review": bool(doc.get("pending_review", False)),
         "payout_upi": doc.get("payout_upi"),
@@ -1793,13 +1911,47 @@ def payout_ready(profile: dict) -> bool:
     return bool(profile.get("payout_upi")) and bool(profile.get("pan"))
 
 
-def _clean_payout_fields(payload) -> dict:
-    """Normalise and validate the payout identity fields. Each is optional, but
-    anything supplied has to be well-formed — a typo'd UPI ID is a lost payout."""
+YOUTUBE_URL_RE = re.compile(
+    r"^https?://(www\.|m\.)?(youtube\.com/(channel/|c/|user/|@)?[\w\-.]+|youtu\.be/[\w\-]+)/?",
+    re.IGNORECASE,
+)
+
+
+def _clean_youtube_url(raw: Optional[str]) -> Optional[str]:
+    """Normalise a YouTube channel link, or refuse it.
+
+    Checked rather than stored blind because this is what a brand clicks to
+    decide whether to book somebody — a link that goes nowhere costs the
+    creator the booking, and they never find out why.
+    """
+    url = (raw or "").strip()
+    if not url:
+        return None
+    if not url.lower().startswith(("http://", "https://")):
+        url = f"https://{url}"
+    if not YOUTUBE_URL_RE.match(url):
+        raise HTTPException(
+            status_code=422,
+            detail="That doesn't look like a YouTube channel link, e.g. https://youtube.com/@yourchannel.",
+        )
+    return url
+
+
+def _clean_payout_fields(payload, only: Optional[set] = None) -> dict:
+    """Normalise and validate the payout identity fields.
+
+    Each is optional, but anything supplied has to be well-formed — a typo'd
+    UPI ID is a lost payout. `only` limits the result to the keys the caller
+    actually sent, so a partial save leaves the rest of the payout identity
+    where it was.
+    """
     out: dict = {}
+    wanted = (lambda key: True) if only is None else (lambda key: key in only)
 
     upi = (payload.payout_upi or "").strip()
-    if upi:
+    if not wanted("payout_upi"):
+        pass
+    elif upi:
         if not UPI_RE.match(upi):
             raise HTTPException(
                 status_code=422,
@@ -1809,10 +1961,13 @@ def _clean_payout_fields(payload) -> dict:
     else:
         out["payout_upi"] = None
 
-    out["payout_account_name"] = (payload.payout_account_name or "").strip() or None
+    if wanted("payout_account_name"):
+        out["payout_account_name"] = (payload.payout_account_name or "").strip() or None
 
     pan = (payload.pan or "").strip().upper()
-    if pan:
+    if not wanted("pan"):
+        pass
+    elif pan:
         if not PAN_RE.match(pan):
             raise HTTPException(
                 status_code=422,
@@ -1823,7 +1978,9 @@ def _clean_payout_fields(payload) -> dict:
         out["pan"] = None
 
     gstin = (payload.gstin or "").strip().upper()
-    if gstin:
+    if not wanted("gstin"):
+        pass
+    elif gstin:
         if not GSTIN_RE.match(gstin):
             raise HTTPException(
                 status_code=422,
@@ -1881,13 +2038,631 @@ async def delete_profile_image(user: dict = Depends(require_roles("creator"))):
     return {"profile_image_url": None}
 
 
+# ---------------------------------------------------------------------------
+# Instagram — official stats, via "Instagram API with Instagram Login"
+# ---------------------------------------------------------------------------
+#
+# Deliberately the Instagram-Login flow and not the Facebook-Login one. The
+# Facebook route requires every creator to have a Facebook Page linked to their
+# account, which most of ours do not and should not have to create. This flow
+# authorises against the Instagram account itself.
+#
+# Two scopes only, and both are read: `instagram_business_basic` for the
+# profile and `instagram_business_manage_insights` for reach and interactions.
+# Nothing here can post, reply or change anything on a creator's account, and
+# asking for a scope we don't use would be asking for trust we don't need.
+#
+# The predecessor to this was an Apify scraper, which breached Instagram's
+# terms and put the connected Meta Business account at risk. It was removed,
+# follower counts fell back to self-reported, and this is the sanctioned way
+# to get the real number back.
+
+INSTAGRAM_AUTH_URL = "https://www.instagram.com/oauth/authorize"
+INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
+INSTAGRAM_GRAPH = "https://graph.instagram.com"
+INSTAGRAM_SCOPES = ("instagram_business_basic", "instagram_business_manage_insights")
+
+# Only a Professional account (Business or Creator) can authorise this API at
+# all. Meta has used both spellings for the creator variant over time, so both
+# are accepted rather than locking somebody out over a rename.
+INSTAGRAM_PROFESSIONAL_TYPES = ("BUSINESS", "MEDIA_CREATOR", "CREATOR")
+
+# A long-lived token is good for 60 days and can be refreshed once it is at
+# least 24 hours old. Refreshing a week out leaves room for the job to be down
+# for a few days without anybody silently falling off.
+INSTAGRAM_TOKEN_TTL_DAYS = 60
+INSTAGRAM_REFRESH_WINDOW_DAYS = 7
+
+def _instagram_stats_ttl_hours() -> int:
+    """How long a cached reading counts as current.
+
+    Twelve hours by design: the ceiling is 200 calls per user per hour and a
+    refresh costs three, so a dashboard-load refresh would burn the budget of
+    a creator who simply opened the app a lot, for numbers that move slowly.
+    """
+    try:
+        return max(1, int(os.environ.get("INSTAGRAM_STATS_TTL_HOURS", "12")))
+    except ValueError:
+        return 12
+
+
+def _instagram_job_interval_seconds() -> int:
+    """How often the refresh loop wakes. Zero disables it."""
+    try:
+        return max(0, int(os.environ.get("INSTAGRAM_JOB_INTERVAL_SECONDS", "1800")))
+    except ValueError:
+        return 1800
+
+
+def _instagram_config() -> Optional[dict]:
+    """The Meta app credentials, or None while they're absent.
+
+    Absent is a normal state, not an error: the app is in review, and every
+    other part of the product has to keep working meanwhile. Everything below
+    checks this and degrades rather than raising at import or startup.
+    """
+    app_id = os.environ.get("INSTAGRAM_APP_ID", "").strip()
+    app_secret = os.environ.get("INSTAGRAM_APP_SECRET", "").strip()
+    redirect_uri = os.environ.get("INSTAGRAM_REDIRECT_URI", "").strip()
+    if not (app_id and app_secret and redirect_uri):
+        return None
+    # No key means no way to store the token safely, and a token at rest in
+    # plaintext is worse than the feature being off.
+    if not os.environ.get("INSTAGRAM_TOKEN_KEY", "").strip():
+        logger.warning(
+            "Instagram app credentials are set but INSTAGRAM_TOKEN_KEY is not. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())\""
+        )
+        return None
+    return {"app_id": app_id, "app_secret": app_secret, "redirect_uri": redirect_uri}
+
+
+def instagram_configured() -> bool:
+    return _instagram_config() is not None
+
+
+def _instagram_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=(
+            "Instagram connection isn't switched on yet — our Meta app is still "
+            "in review. Your self-reported follower count is fine in the meantime."
+        ),
+    )
+
+
+def _token_cipher():
+    """Fernet over INSTAGRAM_TOKEN_KEY.
+
+    Imported here rather than at module scope so the app (and CI, which
+    installs a minimal dependency set) still imports without `cryptography`
+    present. It is in requirements.txt; this only keeps its absence from
+    taking down everything else.
+    """
+    key = os.environ.get("INSTAGRAM_TOKEN_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError:  # pragma: no cover - present in requirements.txt
+        logger.error("cryptography is not installed; Instagram tokens cannot be stored.")
+        return None
+    try:
+        return Fernet(key.encode())
+    except Exception as exc:
+        logger.error("INSTAGRAM_TOKEN_KEY is not a valid Fernet key: %s", exc)
+        return None
+
+
+def _encrypt_token(raw: str) -> str:
+    cipher = _token_cipher()
+    if not cipher:
+        # Refuse rather than fall back to plaintext. A token that can read a
+        # creator's insights is not something to store in the clear because a
+        # config value was missing.
+        raise _instagram_unavailable()
+    return cipher.encrypt(raw.encode()).decode()
+
+
+def _decrypt_token(blob: Optional[str]) -> Optional[str]:
+    cipher = _token_cipher()
+    if not cipher or not blob:
+        return None
+    try:
+        return cipher.decrypt(blob.encode()).decode()
+    except Exception as exc:
+        # A rotated key makes every stored token unreadable. Say so once per
+        # call site rather than presenting it as the creator revoking access.
+        logger.error("Could not decrypt a stored Instagram token: %s", exc)
+        return None
+
+
+class InstagramCallbackPayload(BaseModel):
+    """What the frontend hands back after Instagram redirects to it."""
+
+    code: str = Field(min_length=1, max_length=1000)
+    state: str = Field(min_length=1, max_length=200)
+
+
+def _serialize_instagram(doc: Optional[dict], *, configured: Optional[bool] = None) -> dict:
+    """The connection as the creator's own UI sees it.
+
+    The token is not in here, and there is no branch that could put it there —
+    which is the point of keeping connections in their own collection rather
+    than as fields on the profile that every serializer walks.
+    """
+    if configured is None:
+        configured = instagram_configured()
+    if not doc:
+        return {
+            "configured": configured,
+            "connected": False,
+            "status": None,
+            "username": None,
+            "account_type": None,
+            "connected_at": None,
+            "stats": None,
+            "stats_fetched_at": None,
+            "stale_reason": None,
+        }
+    stats = doc.get("stats") or None
+    return {
+        "configured": configured,
+        "connected": doc.get("status") == "connected",
+        "status": doc.get("status"),
+        "username": doc.get("username"),
+        "account_type": doc.get("account_type"),
+        "connected_at": _iso(doc.get("connected_at")),
+        "last_refreshed_at": _iso(doc.get("last_refreshed_at")),
+        "token_expires_at": _iso(doc.get("token_expires_at")),
+        "stats": stats,
+        "stats_fetched_at": _iso(doc.get("stats_fetched_at")),
+        "stale_reason": doc.get("stale_reason"),
+    }
+
+
+async def _instagram_get(path: str, params: dict) -> dict:
+    """One GET against the Instagram Graph, with the errors translated.
+
+    Meta returns 200 with an `error` body about as often as it returns a 4xx,
+    so both shapes are checked here rather than at every call site.
+    """
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as http:
+        resp = await http.get(f"{INSTAGRAM_GRAPH}{path}", params=params)
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Instagram returned something we couldn't read.")
+    if isinstance(data, dict) and data.get("error"):
+        err = data["error"]
+        raise HTTPException(
+            status_code=502,
+            detail=err.get("message") or "Instagram refused the request.",
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail="Instagram refused the request.")
+    return data
+
+
+def _is_revoked(detail: str) -> bool:
+    """Whether an Instagram error means the creator took access away.
+
+    Matched on the message because the Graph reuses code 190 for everything
+    from a revoked token to an expired one, and both mean the same thing to
+    us: stop trying, ask them to reconnect.
+    """
+    lowered = (detail or "").lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "expired",
+            "revoked",
+            "invalid oauth",
+            "session has been invalidated",
+            "not authorized",
+            "cannot parse access token",
+        )
+    )
+
+
+async def _mark_connection_stale(doc: dict, reason: str) -> None:
+    """Keep the row, drop the token, tell the creator.
+
+    Deleting the connection would lose the fact that they once had one, and a
+    creator who sees a plain "connect" button after their token expired has no
+    idea anything happened. `stale` says it out loud and asks for one tap.
+    """
+    if doc.get("status") == "stale" and doc.get("stale_reason") == reason:
+        return  # already said; don't notify twice
+    await db.instagram_connections.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "status": "stale",
+                "stale_reason": reason,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            # The token is no good and is the most sensitive thing we hold.
+            "$unset": {"access_token": ""},
+        },
+    )
+    await notify(
+        doc["user_id"],
+        "instagram_disconnected",
+        title="Reconnect Instagram",
+        body=f"{reason} Reconnect to keep your verified follower count.",
+        link="/onboarding/creator",
+    )
+
+
+async def _fetch_instagram_stats(ig_user_id: str, token: str) -> dict:
+    """Profile counts plus insights, as one cached snapshot.
+
+    Three calls per creator per refresh, against a limit of 200 per user per
+    hour — which is why this is on a 12-hour schedule and never on a dashboard
+    load. Insights are best-effort: a brand-new account with no activity has
+    no reach to report, and that must not cost us the follower count too.
+    """
+    profile = await _instagram_get(
+        "/me",
+        {
+            "fields": "user_id,username,account_type,media_count,followers_count",
+            "access_token": token,
+        },
+    )
+
+    async def _insight(metric: str) -> Optional[int]:
+        try:
+            data = await _instagram_get(
+                f"/{ig_user_id}/insights",
+                {
+                    "metric": metric,
+                    "period": "day",
+                    "metric_type": "total_value",
+                    "access_token": token,
+                },
+            )
+        except HTTPException as exc:
+            logger.info("Instagram %s unavailable for %s: %s", metric, ig_user_id, exc.detail)
+            return None
+        rows = data.get("data") or []
+        if not rows:
+            return None
+        value = (rows[0].get("total_value") or {}).get("value")
+        return int(value) if isinstance(value, (int, float)) else None
+
+    reach = await _insight("reach")
+    engagement = await _insight("total_interactions")
+
+    return {
+        "username": profile.get("username"),
+        "account_type": profile.get("account_type"),
+        "followers_count": profile.get("followers_count"),
+        "media_count": profile.get("media_count"),
+        "reach": reach,
+        "engagement": engagement,
+    }
+
+
+async def _store_instagram_stats(doc: dict, stats: dict) -> dict:
+    """Write a snapshot, and mirror the follower count onto the profile.
+
+    The mirror is what lets the brand directory sort and filter on a real
+    number without a join on every query. `follower_count_self_reported` keeps
+    what the creator told us, so disconnecting falls back to it rather than to
+    nothing.
+    """
+    now = datetime.now(timezone.utc)
+    await db.instagram_connections.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "stats": {
+                    "followers_count": stats.get("followers_count"),
+                    "media_count": stats.get("media_count"),
+                    "reach": stats.get("reach"),
+                    "engagement": stats.get("engagement"),
+                },
+                "stats_fetched_at": now,
+                "username": stats.get("username") or doc.get("username"),
+                "account_type": stats.get("account_type") or doc.get("account_type"),
+                "status": "connected",
+                "stale_reason": None,
+                "updated_at": now,
+            }
+        },
+    )
+    followers = stats.get("followers_count")
+    if isinstance(followers, int):
+        profile = await db.creator_profiles.find_one({"user_id": doc["user_id"]})
+        update = {
+            "follower_count": followers,
+            "follower_count_source": "instagram_verified",
+            "follower_count_verified_at": now,
+            "updated_at": now,
+        }
+        if profile and profile.get("follower_count_self_reported") is None:
+            update["follower_count_self_reported"] = profile.get("follower_count")
+        await db.creator_profiles.update_one({"user_id": doc["user_id"]}, {"$set": update})
+    return stats
+
+
+def _follower_provenance(profile: Optional[dict]) -> dict:
+    """Where a follower count came from.
+
+    Returned as a block rather than a bare string so every surface that shows
+    the number shows its provenance with it. A measured figure and a
+    self-reported one are worth different amounts to a brand, and presenting
+    them identically is how the scraped numbers got trusted in the first place.
+    """
+    source = (profile or {}).get("follower_count_source") or "self_reported"
+    verified = source == "instagram_verified"
+    return {
+        "follower_count_source": source,
+        "follower_count_verified": verified,
+        "follower_count_verified_at": _iso((profile or {}).get("follower_count_verified_at")),
+        "follower_count_self_reported": (profile or {}).get("follower_count_self_reported"),
+        "verified_stats_available": verified,
+    }
+
+
+@creator_router.get("/instagram")
+async def get_instagram_connection(user: dict = Depends(require_roles("creator"))):
+    """Where this creator's Instagram connection stands. Never the token."""
+    doc = await db.instagram_connections.find_one({"user_id": ObjectId(user["_id"])})
+    return _serialize_instagram(doc)
+
+
+@creator_router.post("/instagram/connect")
+async def start_instagram_connect(user: dict = Depends(require_roles("creator"))):
+    """Hand back the URL to send the creator to, and remember why.
+
+    The state is single-use and stored server-side rather than signed and
+    trusted, so a callback can only ever be spent once and only by the account
+    that started it.
+    """
+    config = _instagram_config()
+    if not config:
+        raise _instagram_unavailable()
+
+    state = _secrets.token_urlsafe(24)
+    now = datetime.now(timezone.utc)
+    await db.instagram_oauth_states.insert_one(
+        {
+            "state": state,
+            "user_id": ObjectId(user["_id"]),
+            "created_at": now,
+            "expires_at": now + timedelta(minutes=15),
+        }
+    )
+    params = {
+        "client_id": config["app_id"],
+        "redirect_uri": config["redirect_uri"],
+        "response_type": "code",
+        "scope": ",".join(INSTAGRAM_SCOPES),
+        "state": state,
+    }
+    return {
+        "authorize_url": f"{INSTAGRAM_AUTH_URL}?{urlencode(params)}",
+        "state": state,
+        "scopes": list(INSTAGRAM_SCOPES),
+    }
+
+
+@creator_router.post("/instagram/callback")
+async def finish_instagram_connect(
+    payload: InstagramCallbackPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Exchange the code, keep the long-lived token, take a first reading."""
+    config = _instagram_config()
+    if not config:
+        raise _instagram_unavailable()
+
+    creator_oid = ObjectId(user["_id"])
+    now = datetime.now(timezone.utc)
+    consumed = await db.instagram_oauth_states.find_one_and_delete(
+        {"state": payload.state, "user_id": creator_oid}
+    )
+    if not consumed:
+        raise HTTPException(
+            status_code=400,
+            detail="That Instagram link has already been used or has expired. Start again.",
+        )
+    expires_at = consumed.get("expires_at")
+    if expires_at and _as_utc(expires_at) < now:
+        raise HTTPException(status_code=400, detail="That Instagram link expired. Start again.")
+
+    # 1. Code -> short-lived token (one hour).
+    async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as http:
+        resp = await http.post(
+            INSTAGRAM_TOKEN_URL,
+            data={
+                "client_id": config["app_id"],
+                "client_secret": config["app_secret"],
+                "grant_type": "authorization_code",
+                "redirect_uri": config["redirect_uri"],
+                "code": payload.code,
+            },
+        )
+    try:
+        token_body = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Instagram returned something we couldn't read.")
+    if resp.status_code >= 400 or token_body.get("error_type") or token_body.get("error"):
+        message = (
+            token_body.get("error_message")
+            or (token_body.get("error") or {}).get("message")
+            if isinstance(token_body.get("error"), dict)
+            else token_body.get("error_message")
+        ) or "Instagram wouldn't complete the connection."
+        raise HTTPException(status_code=400, detail=message)
+
+    short_token = token_body.get("access_token")
+    ig_user_id = str(token_body.get("user_id") or "")
+    if not short_token or not ig_user_id:
+        raise HTTPException(status_code=502, detail="Instagram didn't return an account to connect.")
+
+    # 2. Short-lived -> long-lived (60 days).
+    long_body = await _instagram_get(
+        "/access_token",
+        {
+            "grant_type": "ig_exchange_token",
+            "client_secret": config["app_secret"],
+            "access_token": short_token,
+        },
+    )
+    token = long_body.get("access_token") or short_token
+    expires_in = int(long_body.get("expires_in") or INSTAGRAM_TOKEN_TTL_DAYS * 86400)
+
+    # 3. First reading — and the only reliable way to find out whether this is
+    #    a Professional account, which is the one thing this API needs.
+    try:
+        stats = await _fetch_instagram_stats(ig_user_id, token)
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Connected, but Instagram wouldn't give us your stats: {exc.detail}",
+        )
+
+    account_type = (stats.get("account_type") or "").upper()
+    if account_type and account_type not in INSTAGRAM_PROFESSIONAL_TYPES:
+        # The single most common failure, and the one people get stuck on.
+        # It is fixable in about thirty seconds if somebody says where to tap.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "not_professional",
+                "message": (
+                    "Instagram only shares stats with Professional accounts, and yours "
+                    "is still a personal one. In Instagram: Settings → Account type and "
+                    "tools → Switch to professional account → pick Creator. It's free, "
+                    "it keeps your account public and nothing about your posts changes. "
+                    "Then come back and connect again."
+                ),
+                "account_type": account_type,
+            },
+        )
+
+    doc = await db.instagram_connections.find_one_and_update(
+        {"user_id": creator_oid},
+        {
+            "$set": {
+                "ig_user_id": ig_user_id,
+                "username": stats.get("username"),
+                "account_type": stats.get("account_type"),
+                "access_token": _encrypt_token(token),
+                "token_expires_at": now + timedelta(seconds=expires_in),
+                "last_refreshed_at": now,
+                "scopes": list(INSTAGRAM_SCOPES),
+                "status": "connected",
+                "stale_reason": None,
+                "updated_at": now,
+            },
+            "$setOnInsert": {"user_id": creator_oid, "connected_at": now, "created_at": now},
+        },
+        upsert=True,
+        return_document=True,
+    )
+    await _store_instagram_stats(doc, stats)
+
+    await audit(
+        user,
+        "creator.instagram_connect",
+        "creator_profile",
+        creator_oid,
+        after={"ig_user_id": ig_user_id, "username": stats.get("username")},
+    )
+    fresh = await db.instagram_connections.find_one({"_id": doc["_id"]})
+    return _serialize_instagram(fresh)
+
+
+@creator_router.delete("/instagram")
+async def disconnect_instagram(user: dict = Depends(require_roles("creator"))):
+    """Hand access back. The row goes, and so does the token with it."""
+    creator_oid = ObjectId(user["_id"])
+    existing = await db.instagram_connections.find_one_and_delete({"user_id": creator_oid})
+    if not existing:
+        return _serialize_instagram(None)
+
+    now = datetime.now(timezone.utc)
+    profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+    # Back to whatever they told us themselves, which is why it was kept.
+    await db.creator_profiles.update_one(
+        {"user_id": creator_oid},
+        {
+            "$set": {
+                "follower_count": (profile or {}).get("follower_count_self_reported"),
+                "follower_count_source": "self_reported",
+                "follower_count_verified_at": None,
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "creator.instagram_disconnect",
+        "creator_profile",
+        creator_oid,
+        before={"ig_user_id": existing.get("ig_user_id")},
+    )
+    return _serialize_instagram(None)
+
+
+@creator_router.post("/instagram/refresh")
+async def refresh_instagram_now(user: dict = Depends(require_roles("creator"))):
+    """Pull a fresh reading on demand, within the cache window.
+
+    The scheduled job is the normal path. This exists for the creator who has
+    just connected and wants to see the number move — and it still refuses
+    inside the cache window, because 200 calls per user per hour is a budget
+    somebody hammering a button would spend for no benefit.
+    """
+    doc = await db.instagram_connections.find_one({"user_id": ObjectId(user["_id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="No Instagram account connected.")
+    if doc.get("status") != "connected":
+        raise HTTPException(
+            status_code=409,
+            detail="Your Instagram connection needs renewing — reconnect and we'll pick up again.",
+        )
+
+    fetched_at = _as_utc(doc.get("stats_fetched_at"))
+    now = datetime.now(timezone.utc)
+    if fetched_at and now - fetched_at < timedelta(hours=_instagram_stats_ttl_hours()):
+        # Not an error — they already have the current numbers.
+        return _serialize_instagram(doc)
+
+    token = _decrypt_token(doc.get("access_token"))
+    if not token:
+        await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+        raise HTTPException(status_code=409, detail="Reconnect Instagram to refresh your stats.")
+
+    try:
+        stats = await _fetch_instagram_stats(doc["ig_user_id"], token)
+    except HTTPException as exc:
+        if _is_revoked(str(exc.detail)):
+            await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+            raise HTTPException(status_code=409, detail="Reconnect Instagram to refresh your stats.")
+        raise
+    await _store_instagram_stats(doc, stats)
+    return _serialize_instagram(await db.instagram_connections.find_one({"_id": doc["_id"]}))
+
+
 @creator_router.get("/profile")
 async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     doc = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not doc:
         # Shouldn't happen (stub created at signup), but handle gracefully.
         raise HTTPException(status_code=404, detail="Creator profile not found")
-    return _serialize_creator_profile(doc)
+    # Completeness rides along so the builder never has to re-implement the
+    # rule that decides whether its submit button works. One definition, and
+    # the client and the server can't disagree about what "done" means.
+    return {
+        **_serialize_creator_profile(doc),
+        "profile_completeness": _profile_completeness(doc),
+    }
 
 
 @creator_router.put("/profile")
@@ -1895,49 +2670,83 @@ async def update_creator_profile(
     payload: CreatorProfileUpdate,
     user: dict = Depends(require_roles("creator")),
 ):
-    # Normalise Instagram handle (strip leading @, lowercase, no whitespace).
-    # Accepts "@name", "name" or a pasted profile URL and stores the bare handle.
-    handle = _extract_ig_handle(payload.instagram_handle)
-    if not handle:
-        raise HTTPException(
-            status_code=422,
-            detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
-        )
-
     existing = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not existing:
         raise HTTPException(status_code=404, detail="Creator profile not found")
 
+    sent = payload.model_fields_set
     now = datetime.now(timezone.utc)
-    update = {
-        "name": payload.name.strip(),
-        "instagram_handle": handle,
-        "instagram_profile_url": payload.instagram_profile_url.strip(),
-        "email": payload.email.lower().strip(),
-        "city": (payload.city or "").strip() or None,
-        "address": payload.address.strip(),
-        "niches": [n.strip().lower() for n in payload.niches if n and n.strip()],
-        "base_rate": payload.base_rate,
-        "follower_count": payload.follower_count,
-        "updated_at": now,
-        **_clean_payout_fields(payload),
-    }
+    update: dict = {"updated_at": now}
+
+    # Only what the request actually named. A builder that saves one step at a
+    # time would otherwise blank every field the current step doesn't show.
+    if "name" in sent:
+        update["name"] = (payload.name or "").strip() or None
+    if "instagram_handle" in sent:
+        raw = (payload.instagram_handle or "").strip()
+        if raw:
+            # Accepts "@name", "name" or a pasted profile URL; stores the bare
+            # handle so the directory has one shape to search.
+            handle = _extract_ig_handle(raw)
+            if not handle:
+                raise HTTPException(
+                    status_code=422,
+                    detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
+                )
+            update["instagram_handle"] = handle
+        else:
+            update["instagram_handle"] = None
+    if "instagram_profile_url" in sent:
+        update["instagram_profile_url"] = (payload.instagram_profile_url or "").strip() or None
+    if "youtube_url" in sent:
+        update["youtube_url"] = _clean_youtube_url(payload.youtube_url)
+    if "email" in sent:
+        update["email"] = (payload.email or "").lower().strip() or None
+    if "city" in sent:
+        update["city"] = (payload.city or "").strip() or None
+    if "address" in sent:
+        update["address"] = (payload.address or "").strip() or None
+    if "full_address" in sent:
+        update["full_address"] = (payload.full_address or "").strip() or None
+    if "niches" in sent:
+        update["niches"] = [n.strip().lower() for n in payload.niches if n and n.strip()]
+    if "genres" in sent:
+        update["genres"] = [g.strip().lower() for g in payload.genres if g and g.strip()]
+    if "platforms" in sent:
+        # Deduped, order kept, so the list reads the way they entered it.
+        update["platforms"] = list(dict.fromkeys(payload.platforms))
+    if "base_rate" in sent:
+        update["base_rate"] = payload.base_rate
+    if "follower_count" in sent:
+        # While Instagram is connected the live figure wins, and what they
+        # type goes to the self-reported field instead. Otherwise saving any
+        # other part of the form would quietly replace a measured number with
+        # a remembered one, and nothing on screen would say it had happened.
+        if existing.get("follower_count_source") == "instagram_verified":
+            update["follower_count_self_reported"] = payload.follower_count
+        else:
+            update["follower_count"] = payload.follower_count
+            update["follower_count_self_reported"] = payload.follower_count
+    update.update(_clean_payout_fields(payload, only=sent))
 
     # A verified creator who fixes a typo should not fall out of the directory.
     # Only a material change (who they are, or where their audience is) needs a
     # second look, and even then they stay live while we look.
     material_fields = ("name", "instagram_handle", "city")
     changed_material = any(
-        (existing.get(f) or None) != (update.get(f) or None) for f in material_fields
+        f in update and (existing.get(f) or None) != (update.get(f) or None)
+        for f in material_fields
     )
     if existing.get("verification_status") == "verified":
         update["pending_review"] = changed_material or bool(
             existing.get("pending_review")
         )
     else:
-        # Still pending, or previously rejected — this is a (re)submission.
-        update["verification_status"] = "pending"
-        update["pending_review"] = False
+        # Editing is no longer the act that asks us to look — that is
+        # `/profile/submit-for-review`, which only opens at 100%. Saving a
+        # half-built profile must not put anybody in the queue, and a rejected
+        # creator stays rejected until they actually resubmit.
+        update["pending_review"] = bool(existing.get("submitted_for_review_at"))
 
     result = await db.creator_profiles.find_one_and_update(
         {"user_id": ObjectId(user["_id"])},
@@ -1948,7 +2757,7 @@ async def update_creator_profile(
         raise HTTPException(status_code=404, detail="Creator profile not found")
 
     # Also mirror the display name onto the user document so it stays in sync.
-    if update["name"] != user.get("name"):
+    if update.get("name") and update["name"] != user.get("name"):
         await db.users.update_one(
             {"_id": ObjectId(user["_id"])}, {"$set": {"name": update["name"]}}
         )
@@ -2008,6 +2817,253 @@ def _serialize_collab_row(
     }
 
 
+# What the profile builder asks for, and what each field is called on screen.
+# Weighted equally on purpose: a percentage that quietly counts PAN for three
+# points and a city for one is a number nobody can act on. Ordered the way the
+# builder asks, so "what's missing" reads top to bottom.
+#
+# Payout details (UPI, PAN) are deliberately absent. They are needed before we
+# can pay somebody, not before we can look at them, and putting them here would
+# make bank details the price of being reviewed at all.
+_PROFILE_COMPLETENESS_FIELDS = (
+    ("genres", "What you make"),
+    ("platforms", "Where you post"),
+    ("city", "City"),
+    ("full_address", "Full address"),
+    ("email", "Email address"),
+    ("niches", "What you cover for brands"),
+    ("base_rate", "Your usual rate"),
+    ("profile_image_url", "Profile photo"),
+)
+
+# Asked for only when the creator says they post there. An Instagram-only
+# creator who could never reach 100% could never submit for review at all, so
+# a channel is required per platform rather than across the board.
+_PLATFORM_COMPLETENESS_FIELDS = {
+    "instagram": (
+        ("instagram_handle", "Instagram handle"),
+        ("instagram_profile_url", "Instagram profile link"),
+    ),
+    "youtube": (("youtube_url", "YouTube channel link"),),
+}
+
+
+def _completeness_fields_for(profile: dict) -> tuple:
+    """The fields this particular creator is being asked for."""
+    fields = list(_PROFILE_COMPLETENESS_FIELDS)
+    for platform in (profile or {}).get("platforms") or []:
+        fields.extend(_PLATFORM_COMPLETENESS_FIELDS.get(platform, ()))
+    return tuple(fields)
+
+
+def _profile_completeness(profile: dict) -> dict:
+    """How much of the profile is filled in, and what is left.
+
+    A brand shortlists off this, so an empty field is a real cost to the
+    creator rather than a cosmetic one. The list is also the gate on
+    submitting for review, which is why it names fields rather than just
+    returning a number.
+    """
+    fields = _completeness_fields_for(profile)
+    missing = [
+        {"field": field, "label": label}
+        for field, label in fields
+        if not (profile or {}).get(field)
+    ]
+    total = len(fields)
+    filled = total - len(missing)
+    return {
+        "percent": round(filled * 100 / total) if total else 0,
+        "filled": filled,
+        "total": total,
+        "complete": not missing,
+        "missing": missing,
+    }
+
+
+@creator_router.post("/profile/submit-for-review")
+async def submit_profile_for_review(user: dict = Depends(require_roles("creator"))):
+    """Hand a finished profile to the team.
+
+    Saving and submitting are separate acts. A stub row exists from the moment
+    somebody signs up, so if saving were the trigger the vetting queue would
+    fill with half-built profiles nobody could make a decision about — which is
+    exactly what it used to do. This is the only thing that puts a creator in
+    front of an admin.
+    """
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    status = profile.get("verification_status", "pending")
+    if status == "verified":
+        raise HTTPException(
+            status_code=409,
+            detail="You're already verified. Edits go for a second look on their own.",
+        )
+
+    completeness = _profile_completeness(profile)
+    if not completeness["complete"]:
+        # Name what is missing rather than just refusing — this is the whole
+        # reason completeness returns fields and not only a percentage.
+        outstanding = ", ".join(row["label"] for row in completeness["missing"])
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your profile is {completeness['percent']}% done. Still needed: {outstanding}.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.creator_profiles.find_one_and_update(
+        {"user_id": oid},
+        {
+            "$set": {
+                "verification_status": "pending",
+                "pending_review": True,
+                "submitted_for_review_at": now,
+                # A resubmission after a rejection starts clean; leaving the old
+                # reason on screen would read as a fresh verdict.
+                "verification_reason": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "creator.submit_for_review",
+        "creator_profile",
+        profile["_id"],
+        before={"verification_status": status},
+        after={"verification_status": "pending", "submitted_for_review_at": _iso(now)},
+    )
+    await notify(
+        oid,
+        "profile_submitted",
+        title="Profile submitted",
+        body="Your profile is with the WeAre team. Reviews usually finish within 48 hours.",
+        link="/dashboard",
+    )
+    return {
+        "verification_status": "pending",
+        "submitted_for_review_at": _iso(now),
+        "profile_completeness": _profile_completeness(updated or profile),
+    }
+
+
+# Collaborations the creator is actually on, as the dashboard groups them.
+# `content_approved` and `in_payment` sit here rather than under completed:
+# the work is done but the money isn't in, and a creator waiting to be paid is
+# not finished with us.
+_CREATOR_ACTIVE_STATES = COLLAB_GROUP_ONGOING
+
+
+def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bool) -> dict:
+    """The one thing this creator has to do next, or who they're waiting on.
+
+    Named from the creator's side: "book your slot", not "awaiting slot". Half
+    of these are deliberately "nothing" — telling someone plainly that the ball
+    is not in their court is worth as much as telling them it is.
+    """
+    state = collab.get("state")
+    if state == "accepted":
+        return {"action": None, "label": "We're agreeing your fee with the brand.", "waiting_on": "weare"}
+    if state == "commercial_agreed":
+        kind = (campaign or {}).get("campaign_type")
+        return {
+            "action": "book_slot",
+            "label": (
+                "Pick a time inside the window."
+                if kind == "personal_table"
+                else "Book your slot."
+            ),
+            "waiting_on": "you",
+        }
+    if state == "slot_booked":
+        return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
+    if state == "attended":
+        return {"action": "submit_content", "label": "Submit your content.", "waiting_on": "you"}
+    if state == "content_submitted":
+        return {
+            "action": "resubmit_content",
+            "label": "The brand is reviewing your content. You can still replace it.",
+            "waiting_on": "brand",
+        }
+    if state in ("content_approved", "in_payment"):
+        # The payout gate is the one place a creator can be blocking their own
+        # money without being told, so it outranks the reassuring message.
+        if not can_be_paid:
+            return {
+                "action": "add_payout_details",
+                "label": "Add your UPI ID and PAN so we can pay you.",
+                "waiting_on": "you",
+            }
+        return {"action": None, "label": "Payment is being processed.", "waiting_on": "weare"}
+    return {"action": None, "label": None, "waiting_on": None}
+
+
+async def _suggested_campaigns(
+    profile: dict, exclude_ids: set, limit: int = 6
+) -> list[dict]:
+    """Open campaigns that look like this creator's work, minus the ones they
+    are already on.
+
+    Matched in Python rather than in the query: the reason shown to the creator
+    has to name which of their niches, genres or neighbourhood it matched, and
+    a `$in` that only answers yes or no can't produce that sentence.
+    """
+    niches = {n.lower() for n in (profile or {}).get("niches") or [] if n}
+    genres = {g.lower() for g in (profile or {}).get("genres") or [] if g}
+    places = {
+        p.lower().strip()
+        for p in ((profile or {}).get("city"), (profile or {}).get("address"))
+        if p and p.strip()
+    }
+    if not (niches or genres or places):
+        return []
+
+    docs = (
+        await db.campaigns.find(
+            {
+                "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
+                "_id": {"$nin": list(exclude_ids)},
+            }
+        )
+        .sort("created_at", -1)
+        .to_list(length=200)
+    )
+    if not docs:
+        return []
+
+    scored = []
+    for doc in docs:
+        category = (doc.get("category") or "").lower().strip()
+        area = (doc.get("area") or "").lower().strip()
+        reasons = []
+        if category and category in niches:
+            reasons.append(f"You cover {doc['category']}")
+        if category and category in genres:
+            reasons.append(f"You make {doc['category']} content")
+        # A neighbourhood match is worth saying out loud — most of these are
+        # in-person, and a creator won't cross a city for one table.
+        if area and area in places:
+            reasons.append(f"In {doc['area']}, where you're based")
+        if reasons:
+            scored.append((len(reasons), doc, reasons))
+
+    scored.sort(key=lambda row: row[0], reverse=True)
+    top = scored[:limit]
+    brand_map = await _load_brand_map([doc["brand_id"] for _, doc, _ in top])
+    return [
+        {
+            **_serialize_campaign(doc, brand_map.get(doc["brand_id"])),
+            "match_reason": " · ".join(reasons),
+            "match_score": score,
+        }
+        for score, doc, reasons in top
+    ]
+
+
 @creator_router.get("/dashboard")
 async def get_creator_dashboard(
     user: dict = Depends(require_roles("creator")),
@@ -2020,19 +3076,34 @@ async def get_creator_dashboard(
         "name": (profile or {}).get("name") or user.get("name"),
         "instagram_handle": (profile or {}).get("instagram_handle"),
         "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+        "youtube_url": (profile or {}).get("youtube_url"),
         "profile_image_url": (profile or {}).get("profile_image_url"),
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
+        # Whether they have actually asked us to look. Without this the UI
+        # can't tell "still building" from "waiting on us".
+        "submitted_for_review_at": _iso((profile or {}).get("submitted_for_review_at")),
         "niches": (profile or {}).get("niches") or [],
+        "genres": (profile or {}).get("genres") or [],
+        "platforms": (profile or {}).get("platforms") or [],
+        # Their own email, on their own dashboard — it was only ever visible to
+        # us, which made "is this the right account?" unanswerable for them.
+        "email": (profile or {}).get("email") or user.get("email"),
+        "phone": user.get("phone"),
+        "city": (profile or {}).get("city"),
+        "address": (profile or {}).get("address"),
+        "full_address": (profile or {}).get("full_address"),
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
-        # Follower counts are the creator's own figure. The scraped source was
-        # removed — it breached Instagram's terms — so the number is labelled
-        # honestly rather than presented as measured.
-        "follower_count_source": "self_reported",
-        "verified_stats_available": False,
+        # Where the follower number came from, said out loud. It is measured
+        # while Instagram is connected and self-reported otherwise, and the
+        # two are never presented as the same thing.
+        **_follower_provenance(profile),
     }
+    profile_summary["instagram"] = _serialize_instagram(
+        await db.instagram_connections.find_one({"user_id": creator_oid})
+    )
 
     # All of this creator's collaborations, newest first.
     collabs = (
@@ -2094,16 +3165,123 @@ async def get_creator_dashboard(
         r for r in applications if r["state"] in _PAYMENT_STATES
     ]
 
+    # --- Earnings ----------------------------------------------------------
+    #
+    # Both figures are what actually reaches the creator — net of the platform
+    # fee — because a dashboard that quotes the gross and then pays less is a
+    # dashboard nobody trusts twice. Where a payment row exists it is the
+    # authority; where one doesn't yet, the fee is computed the same way the
+    # payment row will compute it.
+    payment_by_collab = {p["collaboration_id"]: p for p in payment_docs}
+    lifetime_earned = 0.0
+    pending_earnings = 0.0
+    for p in payment_docs:
+        net = p.get("creator_payout")
+        if net is None:
+            net = float(p.get("agreed_amount") or 0) - float(p.get("platform_fee") or 0)
+        if p.get("state") == "paid":
+            lifetime_earned += float(net or 0)
+        elif p.get("state") == "pending":
+            pending_earnings += float(net or 0)
+        # "cancelled" and "refunded" are money that will not arrive. Counting
+        # them anywhere would have the creator waiting on nothing.
+
+    for c in collabs:
+        if c["_id"] in payment_by_collab or c.get("state") in COLLAB_GROUP_ENDED:
+            continue
+        agreed = c.get("agreed_amount")
+        if agreed:
+            pending_earnings += float(agreed) - compute_fee(float(agreed))
+
+    campaigns_completed = sum(
+        1 for c in collabs if c.get("state") in COLLAB_GROUP_COMPLETED
+    )
+
+    # --- Grouped collaborations -------------------------------------------
+    #
+    # Every state lands in exactly one bucket, so nothing can drop out of a
+    # creator's own record.
+    row_by_id = {r["id"]: r for r in applications}
+    grouped: dict = {"active": [], "completed": [], "applied": [], "declined": []}
+    for c in collabs:
+        state = c.get("state")
+        if state in _CREATOR_ACTIVE_STATES:
+            grouped["active"].append(c)
+        elif state in COLLAB_GROUP_COMPLETED:
+            grouped["completed"].append(row_by_id[str(c["_id"])])
+        elif state in COLLAB_GROUP_ENDED:
+            grouped["declined"].append(row_by_id[str(c["_id"])])
+        else:
+            grouped["applied"].append(row_by_id[str(c["_id"])])
+
+    # Active rows carry everything needed to turn up: who to call, where to go,
+    # when they're expected, and what they have to do next. This is the view a
+    # creator opens on the way to a venue, so it can't require another request.
+    slot_ids = [c["slot_id"] for c in grouped["active"] if c.get("slot_id")]
+    slot_map: dict = {}
+    if slot_ids:
+        slot_docs = await db.campaign_slots.find(
+            {"_id": {"$in": list({s for s in slot_ids})}}
+        ).to_list(length=len(slot_ids))
+        slot_map = {d["_id"]: d for d in slot_docs}
+
+    can_be_paid = payout_ready(profile or {})
+    active_rows = []
+    for c in grouped["active"]:
+        camp = campaign_map.get(c["campaign_id"]) or {}
+        slot = slot_map.get(c.get("slot_id")) if c.get("slot_id") else None
+        active_rows.append(
+            {
+                **row_by_id[str(c["_id"])],
+                "campaign": _serialize_campaign(
+                    camp, brand_map.get(camp.get("brand_id"))
+                )
+                if camp
+                else None,
+                "manager": {
+                    "name": camp.get("manager_name"),
+                    "phone": camp.get("manager_phone"),
+                },
+                "venue": {
+                    "area": camp.get("area"),
+                    "address": camp.get("venue_address"),
+                    "instructions": camp.get("venue_instructions"),
+                },
+                "slot": _serialize_slot(slot) if slot else None,
+                "slot_starts_at": _iso(c.get("scheduled_at")),
+                "can_cancel_slot": bool(c.get("slot_id")),
+                "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+                "next_action": _creator_next_action(c, camp, can_be_paid),
+            }
+        )
+    grouped["active"] = active_rows
+
+    completeness = _profile_completeness(profile or {})
+    suggestions = await _suggested_campaigns(
+        profile or {}, {c["campaign_id"] for c in collabs}
+    )
+
     return {
         "profile": profile_summary,
+        "profile_completeness": completeness,
         "applications": applications,
+        "collaborations": grouped,
         "upcoming": upcoming,
         "payments": payments,
         "in_payment_collaborations": in_payment_collabs,
+        "earnings": {
+            "lifetime_earned": round(lifetime_earned, 2),
+            "pending_earnings": round(pending_earnings, 2),
+            "campaigns_completed": campaigns_completed,
+        },
+        "suggested_campaigns": suggestions,
         "totals": {
             "applications": len(applications),
             "upcoming": len(upcoming),
             "payments": len(payments) + len(in_payment_collabs),
+            "active": len(grouped["active"]),
+            "completed": len(grouped["completed"]),
+            "declined": len(grouped["declined"]),
         },
     }
 
@@ -2220,6 +3398,254 @@ async def submit_collab_content(
     }
 
 
+# --- Creator-side slot booking ---------------------------------------------
+#
+# The atomic claim itself lives in `_claim_slot`, next to the campaigns-router
+# booking route, so there is exactly one implementation of it. What lives here
+# is the creator's own view of it: their collaborations, addressed by
+# collaboration id rather than by slot id, which is what the creator app holds.
+
+
+# How close to their slot a creator can still hand it back. A venue plans
+# staffing and stock off the day's bookings, so a walk-away an hour before is
+# the manager's problem, not a self-service action.
+SLOT_CANCEL_CUTOFF_HOURS = 24
+
+
+async def _own_collab_or_404(collab_id: str, user: dict) -> dict:
+    """Load a collaboration belonging to the caller.
+
+    Someone else's collaboration is a 404, not a 403 — the same rule the brand
+    and manager scopes follow, so an id can't be probed for existence.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    return collab
+
+
+def _slot_window_note(campaign: dict) -> Optional[str]:
+    """What the creator is actually choosing, in their own words.
+
+    A launch has a start time everyone shares; a personal table is a window the
+    creator picks a time inside. The distinction changes what the form asks
+    for, so the API says which it is rather than leaving the UI to infer it.
+    """
+    if campaign.get("campaign_type") == "personal_table":
+        return "Pick the time inside the window that suits you."
+    return "The time is fixed by the campaign manager."
+
+
+@creator_router.get("/campaigns/{campaign_id}/slots")
+async def list_creator_slots(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The slots this creator can actually take a place on.
+
+    Gated on being on the campaign, not on having heard of it: a slot list
+    names dates, capacity and the rhythm of a venue, which is not an
+    applicant's to read. Slots with no room left are still returned, marked
+    full — hiding them makes a half-empty schedule look broken.
+    """
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    collab = await db.collaborations.find_one(
+        {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
+    )
+    if not collab or collab.get("state") not in _ONBOARD_COLLAB_STATES:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # An invitation isn't required to book — a creator who applied off the open
+    # list is just as much on the campaign — but where one exists it is the
+    # reason they are here, so it comes back with the schedule.
+    invitation = await db.campaign_invitations.find_one(
+        {"campaign_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+
+    docs = (
+        await db.campaign_slots.find({"campaign_id": oid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    booked_id = collab.get("slot_id")
+    slots = []
+    for d in docs:
+        row = _serialize_slot(d)
+        row["is_mine"] = bool(booked_id) and d["_id"] == booked_id
+        row["is_full"] = row["spots_left"] <= 0 and not row["is_mine"]
+        slots.append(row)
+
+    return {
+        "campaign_id": campaign_id,
+        "campaign_title": campaign.get("title"),
+        "campaign_type": campaign.get("campaign_type"),
+        "collaboration_id": str(collab["_id"]),
+        "state": collab.get("state"),
+        # Booking is the step out of commercial_agreed; the flag saves the UI
+        # re-deriving the state machine to decide whether to show the button.
+        "can_book": collab.get("state") == "commercial_agreed",
+        "picks_own_time": campaign.get("campaign_type") == "personal_table",
+        "how_it_works": _slot_window_note(campaign),
+        "booked_slot_id": str(booked_id) if booked_id else None,
+        "scheduled_at": _iso(collab.get("scheduled_at")),
+        "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+        "invited": bool(invitation),
+        "invitation_note": (invitation or {}).get("note"),
+        "slots": slots,
+    }
+
+
+@creator_router.post("/collaborations/{collab_id}/book-slot")
+async def creator_book_slot(
+    collab_id: str,
+    payload: CreatorBookSlotPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Take a place on a slot on one of my collaborations."""
+    collab = await _own_collab_or_404(collab_id, user)
+    state = collab.get("state")
+    if state == "slot_booked":
+        raise HTTPException(status_code=409, detail="You already have a slot booked.")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Booking opens once your fee is agreed."
+                if state in ("applied", "verified", "accepted")
+                else f"Your collaboration is {state} — there's nothing to book."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign or campaign.get("status") not in ACTIVE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409, detail="This campaign isn't taking bookings right now."
+        )
+
+    try:
+        soid = ObjectId(payload.slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    # Another campaign's slot is not a slot as far as this collaboration goes.
+    if not slot or slot["campaign_id"] != collab["campaign_id"]:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    preferred = None
+    if campaign.get("campaign_type") == "personal_table":
+        if payload.preferred_time is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Pick the time you want inside the window.",
+            )
+        preferred = _as_utc(payload.preferred_time)
+        starts, ends = _as_utc(slot.get("starts_at")), _as_utc(slot.get("ends_at"))
+        if (starts and preferred < starts) or (ends and preferred > ends):
+            raise HTTPException(
+                status_code=422,
+                detail="That time is outside the window you picked.",
+            )
+    elif payload.preferred_time is not None:
+        # Everyone arrives together on a launch or a group event; letting one
+        # creator write their own time would put them at the venue alone.
+        raise HTTPException(
+            status_code=422,
+            detail="The time on this campaign is set by the manager — you can't choose one.",
+        )
+
+    return await _claim_slot(user, collab, campaign, slot, preferred_time=preferred)
+
+
+@creator_router.post("/collaborations/{collab_id}/cancel-slot")
+async def creator_cancel_slot(
+    collab_id: str,
+    payload: CreatorCancelSlotPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Hand a booked slot back, up to the cutoff.
+
+    This returns the collaboration to `commercial_agreed` rather than ending
+    it: the creator is still on the campaign and still owed a place, they just
+    aren't on that one any more. Walking away from the campaign entirely is a
+    different decision, and stays with the team.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    if collab.get("state") != "slot_booked" or not collab.get("slot_id"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your collaboration is {collab.get('state')} — there's no booking to cancel.",
+        )
+
+    when = _as_utc(collab.get("scheduled_at"))
+    now = datetime.now(timezone.utc)
+    if when and when - now < timedelta(hours=SLOT_CANCEL_CUTOFF_HOURS):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"It's inside {SLOT_CANCEL_CUTOFF_HOURS} hours of your slot — "
+                "message the campaign manager instead."
+            ),
+        )
+
+    slot_oid = collab["slot_id"]
+    # The collaboration moves first. If the seat were released first and this
+    # write then lost a race, the place would be on sale while the creator
+    # still held it.
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "slot_booked", "slot_id": slot_oid},
+        {
+            "$set": {
+                "state": "commercial_agreed",
+                "updated_at": now,
+                "slot_cancelled_at": now,
+                "slot_cancel_reason": (payload.reason or "").strip() or None,
+            },
+            "$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="This just changed — reload and try again."
+        )
+
+    await db.campaign_slots.update_one(
+        {"_id": slot_oid, "booked_count": {"$gt": 0}},
+        {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+    )
+
+    await audit(
+        user,
+        "collaboration.cancel_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "slot_booked", "slot_id": str(slot_oid), "scheduled_at": _iso(when)},
+        after={"state": "commercial_agreed"},
+        note=(payload.reason or "").strip() or None,
+    )
+    # The manager is the one who has to fill the seat or re-plan the day.
+    await _tell_manager_a_seat_freed(collab, "cancelled by the creator")
+
+    return {
+        "id": collab_id,
+        "state": "commercial_agreed",
+        "slot_id": None,
+        "scheduled_at": None,
+        "next_step": "Pick another slot when you're ready.",
+    }
 
 
 
@@ -3207,10 +4633,12 @@ def _serialize_directory_creator(profile: dict) -> dict:
         "name": profile.get("name"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "youtube_url": profile.get("youtube_url"),
         "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "niches": profile.get("niches") or [],
         "follower_count": profile.get("follower_count"),
+        **_follower_provenance(profile),
         "base_rate": profile.get("base_rate"),
         # Intentionally omitted: email, address, phone — brands see them
         # only after inviting/accepting a collaboration.
@@ -3355,8 +4783,12 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "city": profile.get("city"),
         "address": profile.get("address"),
         "niches": profile.get("niches") or [],
+        "genres": profile.get("genres") or [],
+        "platforms": profile.get("platforms") or [],
+        "full_address": profile.get("full_address"),
         "base_rate": profile.get("base_rate"),
         "follower_count": profile.get("follower_count"),
+        **_follower_provenance(profile),
         "verification_status": profile.get("verification_status", "pending"),
         "created_at": profile["created_at"].isoformat()
         if isinstance(profile.get("created_at"), datetime)
@@ -3605,22 +5037,28 @@ async def list_all_creators(
     }
 
 
+# Who is actually waiting on a decision. Defined once because it feeds three
+# places — the queue itself, the tab badge and the dashboard facet — and the
+# last time they disagreed the badge counted people the queue never showed.
+_AWAITING_REVIEW_QUERY = {
+    "verification_status": "pending",
+    "submitted_for_review_at": {"$ne": None, "$exists": True},
+}
+
+
 @admin_router.get("/creators/pending")
 async def list_pending_creators(user: dict = Depends(require_roles("admin"))):
     """Creators actually waiting on us.
 
     A profile stub is created at signup, so filtering on `pending` alone fills
-    the queue with people who never finished onboarding. Requiring an Instagram
-    handle is what separates "waiting on us" from "never applied".
+    the queue with people who never finished onboarding. The submission
+    timestamp is what separates "waiting on us" from "still building" — it is
+    only set by /creator/profile/submit-for-review, which in turn only opens at
+    100% completeness, so every row here is a profile that can be decided on.
     """
     profiles = (
-        await db.creator_profiles.find(
-            {
-                "verification_status": "pending",
-                "instagram_handle": {"$type": "string", "$ne": ""},
-            }
-        )
-        .sort("created_at", -1)
+        await db.creator_profiles.find(_AWAITING_REVIEW_QUERY)
+        .sort("submitted_for_review_at", 1)  # longest wait first
         .to_list(length=500)
     )
     return await _hydrate_creator_rows(profiles)
@@ -6080,7 +7518,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         collab_action_counts[row["_id"]] = row["n"]
 
     creators_pending_review = await db.creator_profiles.count_documents(
-        {"verification_status": "pending", "instagram_handle": {"$type": "string", "$ne": ""}}
+        _AWAITING_REVIEW_QUERY
     )
     creators_changed = await db.creator_profiles.count_documents(
         {"verification_status": "verified", "pending_review": True}
@@ -6127,6 +7565,391 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         "creators_pending_review": creators_pending_review,
         "brands_unverified": brands_unverified,
         "applicants_awaiting_verification": collab_action_counts["applied"],
+    }
+
+
+# The three buckets an applicant can be in, from the console's point of view.
+# "approved" is accepted and beyond — once the brand takes somebody on, every
+# later state is still a yes, including a finished one.
+_APPLICANT_APPROVED_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+_APPLICANT_BUCKETS = (
+    ("applied", COLLAB_GROUP_APPLIED),
+    ("approved", _APPLICANT_APPROVED_STATES),
+    ("rejected", COLLAB_GROUP_ENDED),
+)
+
+
+def _bucket_counts_expr() -> dict:
+    """$sum/$cond accumulators counting each applicant bucket in one pass."""
+    out = {
+        name: {"$sum": {"$cond": [{"$in": ["$state", list(states)]}, 1, 0]}}
+        for name, states in _APPLICANT_BUCKETS
+    }
+    # Completed is a subset of approved, reported separately because "how many
+    # actually finished" is a different question from "how many were taken on".
+    out["completed"] = {
+        "$sum": {"$cond": [{"$in": ["$state", list(COLLAB_GROUP_COMPLETED)]}, 1, 0]}
+    }
+    return out
+
+
+@admin_router.get("/dashboard")
+async def admin_dashboard(
+    campaign_id: Optional[str] = None,
+    limit: int = 50,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Everything the console's landing view needs, in one call.
+
+    Five separate requests used to fill this screen, which meant five spinners
+    and five chances for one slow query to make the page look broken. Each
+    block below is a single aggregation — `$facet` where one collection answers
+    several questions, `$group` where it answers one — so this is a fixed
+    number of round trips whatever the data looks like.
+
+    `campaign_id` scopes every number to one campaign, for the same screen
+    zoomed in on a single brief.
+    """
+    await _expire_stale_campaigns()
+
+    limit = max(1, min(int(limit or 50), 200))
+    scoped_oid = None
+    if campaign_id:
+        try:
+            scoped_oid = ObjectId(campaign_id)
+        except Exception:
+            raise HTTPException(status_code=422, detail="campaign_id is not a valid id.")
+        if not await db.campaigns.find_one({"_id": scoped_oid}):
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign_match = {"_id": scoped_oid} if scoped_oid else {}
+    collab_match = {"campaign_id": scoped_oid} if scoped_oid else {}
+
+    # --- campaigns: statuses, the summary rows, and the active-brand count ---
+    campaign_facet = await db.campaigns.aggregate(
+        ([{"$match": campaign_match}] if campaign_match else [])
+        + [
+            {
+                "$facet": {
+                    "by_status": [{"$group": {"_id": "$status", "n": {"$sum": 1}}}],
+                    "active_brands": [
+                        {"$match": {"status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)}}},
+                        {"$group": {"_id": "$brand_id"}},
+                        {"$count": "n"},
+                    ],
+                    "rows": [
+                        {"$sort": {"created_at": -1}},
+                        {"$limit": limit},
+                        {
+                            "$lookup": {
+                                "from": "brand_profiles",
+                                "localField": "brand_id",
+                                "foreignField": "user_id",
+                                "as": "brand",
+                            }
+                        },
+                        {"$addFields": {"brand": {"$arrayElemAt": ["$brand", 0]}}},
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    facet = campaign_facet[0] if campaign_facet else {}
+
+    campaigns_by_status = {s: 0 for s in CampaignStatus.__args__}
+    for row in facet.get("by_status") or []:
+        if row["_id"]:
+            campaigns_by_status[row["_id"]] = row["n"]
+
+    active_brands_rows = facet.get("active_brands") or []
+    active_brands = active_brands_rows[0]["n"] if active_brands_rows else 0
+
+    docs = facet.get("rows") or []
+
+    # --- collaborations: per-campaign buckets and the queue counts, one pass ---
+    collab_facet = await db.collaborations.aggregate(
+        ([{"$match": collab_match}] if collab_match else [])
+        + [
+            {
+                "$facet": {
+                    "per_campaign": [
+                        {"$group": {"_id": "$campaign_id", **_bucket_counts_expr()}}
+                    ],
+                    "by_state": [{"$group": {"_id": "$state", "n": {"$sum": 1}}}],
+                    # Distinct creators with work in flight or finished — the
+                    # honest reading of "active", rather than "signed up once".
+                    "active_creators": [
+                        {"$match": {"state": {"$in": list(_APPLICANT_APPROVED_STATES)}}},
+                        {"$group": {"_id": "$creator_id"}},
+                        {"$count": "n"},
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    cfacet = collab_facet[0] if collab_facet else {}
+
+    per_campaign = {r["_id"]: r for r in (cfacet.get("per_campaign") or [])}
+    collab_by_state = {r["_id"]: r["n"] for r in (cfacet.get("by_state") or [])}
+    active_creator_rows = cfacet.get("active_creators") or []
+    active_creators = active_creator_rows[0]["n"] if active_creator_rows else 0
+
+    # --- money: settled and outstanding, one pass -------------------------
+    payment_match: dict = {}
+    if scoped_oid:
+        # Payments hang off collaborations, so scoping to a campaign means
+        # naming that campaign's collaborations first.
+        ids = await db.collaborations.find(
+            {"campaign_id": scoped_oid}, {"_id": 1}
+        ).to_list(length=1000)
+        payment_match = {"collaboration_id": {"$in": [d["_id"] for d in ids]}}
+
+    money = await db.payments.aggregate(
+        ([{"$match": payment_match}] if payment_match else [])
+        + [
+            {
+                "$facet": {
+                    "paid": [
+                        {"$match": {"state": "paid"}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "payout": {"$sum": "$creator_payout"},
+                                "fees": {"$sum": "$platform_fee"},
+                                "n": {"$sum": 1},
+                            }
+                        },
+                    ],
+                    "pending": [
+                        {"$match": {"state": "pending"}},
+                        {
+                            "$group": {
+                                "_id": None,
+                                "total": {"$sum": "$creator_payout"},
+                                "n": {"$sum": 1},
+                            }
+                        },
+                    ],
+                }
+            }
+        ]
+    ).to_list(length=1)
+    mfacet = money[0] if money else {}
+    paid_rows = mfacet.get("paid") or []
+    pending_rows = mfacet.get("pending") or []
+    total_paid = float(paid_rows[0]["payout"]) if paid_rows else 0.0
+    platform_revenue = float(paid_rows[0]["fees"]) if paid_rows else 0.0
+    payouts_pending_count = int(pending_rows[0]["n"]) if pending_rows else 0
+    payouts_pending = float(pending_rows[0]["total"]) if pending_rows else 0.0
+
+    # --- the review queues -------------------------------------------------
+    # Creator and brand vetting are platform-wide: they are not about any one
+    # campaign, so they read zero when the view is scoped to one.
+    if scoped_oid:
+        creators_to_review = 0
+        creator_edits = 0
+        brands_to_verify = 0
+        verified_creators = 0
+    else:
+        creator_facet = await db.creator_profiles.aggregate(
+            [
+                {
+                    "$facet": {
+                        "pending": [
+                            {"$match": _AWAITING_REVIEW_QUERY},
+                            {"$count": "n"},
+                        ],
+                        "changed": [
+                            {
+                                "$match": {
+                                    "verification_status": "verified",
+                                    "pending_review": True,
+                                }
+                            },
+                            {"$count": "n"},
+                        ],
+                        "verified": [
+                            {"$match": {"verification_status": "verified"}},
+                            {"$count": "n"},
+                        ],
+                    }
+                }
+            ]
+        ).to_list(length=1)
+        cf = creator_facet[0] if creator_facet else {}
+        first = lambda rows: rows[0]["n"] if rows else 0  # noqa: E731
+        creators_to_review = first(cf.get("pending") or [])
+        creator_edits = first(cf.get("changed") or [])
+        verified_creators = first(cf.get("verified") or [])
+        brands_to_verify = await db.brand_profiles.count_documents({"verified": False})
+
+    awaiting = {
+        "creators_to_review": creators_to_review,
+        "creator_edits_to_review": creator_edits,
+        "brands_to_verify": brands_to_verify,
+        "campaigns_to_review": campaigns_by_status.get(CAMPAIGN_REVIEW_STATUS, 0),
+        "collaborations_to_move": sum(
+            collab_by_state.get(s, 0) for s in ADMIN_ACTION_STATES
+        ),
+        "payouts_to_record": payouts_pending_count,
+    }
+
+    # --- the per-campaign summary -----------------------------------------
+    summary = []
+    for d in docs:
+        counts = per_campaign.get(d["_id"]) or {}
+        brand = d.get("brand") or {}
+        summary.append(
+            {
+                "id": str(d["_id"]),
+                "title": d.get("title"),
+                "brand_id": str(d["brand_id"]),
+                "brand_name": brand.get("business_name"),
+                "campaign_type": d.get("campaign_type"),
+                "status": d.get("status"),
+                # One date or two, depending on what the type actually carries.
+                "event_date": _iso(d.get("event_date")),
+                "start_date": _iso(d.get("start_date")),
+                "end_date": _iso(d.get("end_date")),
+                "creators_needed": d.get("creators_needed"),
+                # Keyed off the bucket definitions rather than spelled out, so
+                # the summary can never drift from what was counted.
+                **{key: counts.get(key, 0) for key in _bucket_counts_expr()},
+            }
+        )
+
+    return {
+        "scoped_to_campaign": campaign_id,
+        "campaigns": {
+            **campaigns_by_status,
+            # The feed's word for it, so the console and the creator app agree.
+            "live": campaigns_by_status.get("open", 0),
+            "total": sum(campaigns_by_status.values()),
+        },
+        "awaiting": awaiting,
+        "awaiting_total": sum(awaiting.values()),
+        "totals": {
+            "gmv": round(total_paid + platform_revenue, 2),
+            "total_paid_out": round(total_paid, 2),
+            "platform_revenue": round(platform_revenue, 2),
+            "payouts_pending": round(payouts_pending, 2),
+            "collaborations_paid": int(paid_rows[0]["n"]) if paid_rows else 0,
+            # Creators with work in flight or behind them, not everyone who
+            # ever signed up.
+            "active_creators": active_creators,
+            "verified_creators": verified_creators,
+            "active_brands": active_brands,
+        },
+        "campaign_summary": summary,
+        "summary_truncated": len(docs) >= limit,
+    }
+
+
+@admin_router.get("/campaigns/{campaign_id}/applicants")
+async def admin_campaign_applicants(
+    campaign_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Everyone who ever applied to one campaign, in three groups.
+
+    The brand's own applicant board shows the same people but answers a
+    different question — it is a decision screen, and it stops at the brand's
+    own campaigns. This is the admin's read of any campaign, including the ones
+    that ended.
+
+    One pipeline with the three joins; the bucketing is done here because
+    splitting a list already in memory is cheaper than three more passes.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": campaign["_id"]}},
+            {"$sort": {"created_at": -1}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "creator_id",
+                    "foreignField": "_id",
+                    "as": "user",
+                }
+            },
+            {"$addFields": {"user": {"$arrayElemAt": ["$user", 0]}}},
+            {
+                "$lookup": {
+                    "from": "creator_profiles",
+                    "localField": "creator_id",
+                    "foreignField": "user_id",
+                    "as": "profile",
+                }
+            },
+            {"$addFields": {"profile": {"$arrayElemAt": ["$profile", 0]}}},
+            {
+                "$lookup": {
+                    "from": "payments",
+                    "localField": "_id",
+                    "foreignField": "collaboration_id",
+                    "as": "payment",
+                }
+            },
+            {"$addFields": {"payment": {"$arrayElemAt": ["$payment", 0]}}},
+        ]
+    ).to_list(length=1000)
+
+    groups = {name: [] for name, _ in _APPLICANT_BUCKETS}
+    for r in rows:
+        profile = r.get("profile") or {}
+        account = r.get("user") or {}
+        payment = r.get("payment") or {}
+        state = r.get("state")
+        entry = {
+            "collaboration_id": str(r["_id"]),
+            "creator_id": str(r["creator_id"]),
+            "name": profile.get("name") or account.get("name"),
+            "profile_image_url": profile.get("profile_image_url"),
+            "instagram_handle": profile.get("instagram_handle"),
+            "instagram_profile_url": profile.get("instagram_profile_url"),
+            "follower_count": profile.get("follower_count"),
+            "verification_status": profile.get("verification_status"),
+            "quoted_rate": r.get("quoted_rate"),
+            "agreed_amount": r.get("agreed_amount"),
+            "state": state,
+            "pitch": r.get("pitch"),
+            "scheduled_at": _iso(r.get("scheduled_at")),
+            "exit_reason": r.get("exit_reason"),
+            "payment_state": payment.get("state"),
+            "created_at": _iso(r.get("created_at")),
+            "updated_at": _iso(r.get("updated_at")),
+        }
+        for name, states in _APPLICANT_BUCKETS:
+            if state in states:
+                groups[name].append(entry)
+                break
+
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([campaign["_id"]])).get(campaign["_id"], 0)
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+
+    return {
+        "campaign": {
+            "id": campaign_id,
+            "title": campaign.get("title"),
+            "brand_id": str(campaign["brand_id"]),
+            "brand_name": brand.get("business_name") or brand.get("name"),
+            "campaign_type": campaign.get("campaign_type"),
+            "status": campaign.get("status"),
+            "budget_per_creator": campaign.get("budget_per_creator"),
+            "event_date": _iso(campaign.get("event_date")),
+            "start_date": _iso(campaign.get("start_date")),
+            "end_date": _iso(campaign.get("end_date")),
+            "creators_needed": needed,
+            "filled_slots": filled,
+            "spots_left": max(0, needed - filled),
+        },
+        "counts": {name: len(rows_) for name, rows_ in groups.items()},
+        "total": len(rows),
+        **groups,
     }
 
 
@@ -6351,6 +8174,296 @@ async def assign_campaign_manager(
         "manager_email": manager.get("email"),
         "reassigned_from": previous,
     }
+
+
+# ---------------------------------------------------------------------------
+# Scheduled job: chase half-finished creator profiles
+# ---------------------------------------------------------------------------
+
+
+def _nudge_after_days() -> int:
+    """How long to leave somebody alone before chasing them."""
+    try:
+        return max(1, int(os.environ.get("PROFILE_NUDGE_AFTER_DAYS", "3")))
+    except ValueError:
+        logger.warning("PROFILE_NUDGE_AFTER_DAYS is not a number — using 3")
+        return 3
+
+
+def _nudge_interval_seconds() -> int:
+    """How often the loop wakes. Zero disables it entirely."""
+    try:
+        return max(0, int(os.environ.get("PROFILE_NUDGE_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600
+
+
+async def nudge_stale_creator_profiles(limit: int = 200) -> dict:
+    """WhatsApp the creators who signed up, started a profile and stopped.
+
+    Exactly once each, ever. The claim is the write: the profile is stamped
+    with `onboarding_nudge_sent_at` under a filter that only matches while it
+    is absent, so two workers racing produce one message, and a send that
+    fails afterwards still counts as used up. Chasing somebody twice about the
+    same unfinished form is how a marketplace teaches people to mute it.
+
+    Idempotent and safe to call by hand — it is wired to a loop below and to
+    POST /admin/jobs/creator-nudges, because this deployment has no external
+    scheduler to hang it off.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=_nudge_after_days())
+    template = os.environ.get("AISENSY_TEMPLATE_PROFILE_NUDGE", "").strip()
+
+    # Old enough to have gone quiet, not yet chased, not yet decided on.
+    candidates = (
+        await db.creator_profiles.find(
+            {
+                "created_at": {"$lte": cutoff},
+                "onboarding_nudge_sent_at": {"$exists": False},
+                "verification_status": "pending",
+                "submitted_for_review_at": {"$in": [None, False]},
+            }
+        )
+        .sort("created_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(candidates), "sent": 0, "skipped": 0, "failed": 0}
+    for profile in candidates:
+        completeness = _profile_completeness(profile)
+        if completeness["complete"]:
+            # Finished but not submitted. That is a different message and a
+            # different problem, so leave them for it rather than spending the
+            # one nudge here.
+            report["skipped"] += 1
+            continue
+
+        claimed = await db.creator_profiles.find_one_and_update(
+            {"_id": profile["_id"], "onboarding_nudge_sent_at": {"$exists": False}},
+            {"$set": {"onboarding_nudge_sent_at": now}},
+        )
+        if not claimed:
+            report["skipped"] += 1
+            continue
+
+        account = await db.users.find_one({"_id": profile["user_id"]})
+        name = profile.get("name") or (account or {}).get("name") or "there"
+        outstanding = ", ".join(row["label"] for row in completeness["missing"][:3])
+        body = (
+            f"Your WeAre profile is {completeness['percent']}% done. "
+            f"Still needed: {outstanding}. Finish it and brands can start booking you."
+        )
+        delivered = False
+        mode = None
+        phone = (account or {}).get("phone")
+        if phone:
+            try:
+                mode = await _send_aisensy_utility(
+                    phone, name, template, [name, str(completeness["percent"]), outstanding]
+                )
+                delivered = mode == "aisensy"
+            except HTTPException as exc:
+                logger.warning("profile nudge to %s failed: %s", phone, exc.detail)
+            except Exception as exc:  # a bad send must not stop the batch
+                logger.error("profile nudge to %s failed: %s", phone, exc)
+
+        await record_notification(
+            profile["user_id"],
+            "profile_nudge",
+            title="Finish your profile",
+            body=body,
+            link="/onboarding/creator",
+            delivered=delivered,
+        )
+        report["sent" if delivered or mode == "simulation" else "failed"] += 1
+
+    if report["sent"]:
+        logger.info("profile nudge: %s", report)
+    return report
+
+
+async def _nudge_loop() -> None:
+    """Drive the nudge on a timer, since there is no external scheduler here."""
+    interval = _nudge_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await nudge_stale_creator_profiles()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A failed pass must never take the loop — or the app — down.
+            logger.error("profile nudge pass failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Scheduled jobs: keep Instagram tokens alive and the stats current
+# ---------------------------------------------------------------------------
+
+
+async def refresh_instagram_tokens(limit: int = 200) -> dict:
+    """Renew long-lived tokens before they lapse.
+
+    A long-lived token is good for 60 days and can be exchanged for a fresh 60
+    from 24 hours old. We renew a week out, so the job can be down for days
+    without anybody quietly falling off — and when Instagram refuses, the
+    connection goes stale and the creator is asked to reconnect rather than
+    the number silently freezing at whatever it last was.
+    """
+    if not instagram_configured():
+        return {"considered": 0, "refreshed": 0, "stale": 0, "skipped": "not configured"}
+
+    now = datetime.now(timezone.utc)
+    due = now + timedelta(days=INSTAGRAM_REFRESH_WINDOW_DAYS)
+    docs = (
+        await db.instagram_connections.find(
+            {"status": "connected", "token_expires_at": {"$lte": due}}
+        )
+        .sort("token_expires_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(docs), "refreshed": 0, "stale": 0}
+    for doc in docs:
+        token = _decrypt_token(doc.get("access_token"))
+        if not token:
+            await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+            report["stale"] += 1
+            continue
+        try:
+            body = await _instagram_get(
+                "/refresh_access_token",
+                {"grant_type": "ig_refresh_token", "access_token": token},
+            )
+        except HTTPException as exc:
+            detail = str(exc.detail)
+            if _is_revoked(detail):
+                await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+                report["stale"] += 1
+            else:
+                # A transient Graph error is not a revocation. Leave it
+                # connected and try again next pass rather than sending
+                # somebody a reconnect prompt over a blip.
+                logger.warning("Instagram token refresh deferred for %s: %s", doc.get("username"), detail)
+            continue
+
+        fresh = body.get("access_token")
+        expires_in = int(body.get("expires_in") or INSTAGRAM_TOKEN_TTL_DAYS * 86400)
+        if not fresh:
+            logger.warning("Instagram refresh returned no token for %s", doc.get("username"))
+            continue
+        await db.instagram_connections.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "access_token": _encrypt_token(fresh),
+                    "token_expires_at": now + timedelta(seconds=expires_in),
+                    "last_refreshed_at": now,
+                    "status": "connected",
+                    "stale_reason": None,
+                    "updated_at": now,
+                }
+            },
+        )
+        report["refreshed"] += 1
+
+    if report["refreshed"] or report["stale"]:
+        logger.info("Instagram token refresh: %s", report)
+    return report
+
+
+async def refresh_instagram_stats(limit: int = 200) -> dict:
+    """Pull follower count, media count, reach and engagement on a schedule.
+
+    Never on a dashboard load. The ceiling is 200 calls per user per hour and
+    a reading costs three, so a creator who opens the app twenty times a day
+    would spend that budget on numbers that barely move. Cached for
+    INSTAGRAM_STATS_TTL_HOURS (12) and read from the cache everywhere else.
+    """
+    if not instagram_configured():
+        return {"considered": 0, "updated": 0, "stale": 0, "skipped": "not configured"}
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=_instagram_stats_ttl_hours())
+    docs = (
+        await db.instagram_connections.find(
+            {
+                "status": "connected",
+                "$or": [
+                    {"stats_fetched_at": {"$lte": cutoff}},
+                    {"stats_fetched_at": {"$exists": False}},
+                ],
+            }
+        )
+        .sort("stats_fetched_at", 1)
+        .to_list(length=limit)
+    )
+
+    report = {"considered": len(docs), "updated": 0, "stale": 0, "failed": 0}
+    for doc in docs:
+        token = _decrypt_token(doc.get("access_token"))
+        if not token:
+            await _mark_connection_stale(doc, "We lost access to your Instagram connection.")
+            report["stale"] += 1
+            continue
+        try:
+            stats = await _fetch_instagram_stats(doc["ig_user_id"], token)
+        except HTTPException as exc:
+            if _is_revoked(str(exc.detail)):
+                await _mark_connection_stale(doc, "Instagram access was withdrawn or expired.")
+                report["stale"] += 1
+            else:
+                logger.warning("Instagram stats deferred for %s: %s", doc.get("username"), exc.detail)
+                report["failed"] += 1
+            continue
+        except Exception as exc:  # one bad account must not stop the batch
+            logger.error("Instagram stats failed for %s: %s", doc.get("username"), exc)
+            report["failed"] += 1
+            continue
+        await _store_instagram_stats(doc, stats)
+        report["updated"] += 1
+
+    if report["updated"] or report["stale"]:
+        logger.info("Instagram stats refresh: %s", report)
+    return report
+
+
+async def _instagram_loop() -> None:
+    """Drive both Instagram jobs on a timer, since there is no scheduler here."""
+    interval = _instagram_job_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await refresh_instagram_tokens()
+            await refresh_instagram_stats()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # A failed pass must never take the loop — or the app — down.
+            logger.error("Instagram job pass failed: %s", exc)
+
+
+@admin_router.post("/jobs/instagram")
+async def run_instagram_jobs(user: dict = Depends(require_roles("admin"))):
+    """Run both Instagram passes now. Same functions the timer calls, same
+    cache window, so a manual run can't blow the rate limit."""
+    tokens = await refresh_instagram_tokens()
+    stats = await refresh_instagram_stats()
+    report = {"tokens": tokens, "stats": stats}
+    await audit(user, "job.instagram_refresh", "job", "instagram", after=report)
+    return report
+
+
+@admin_router.post("/jobs/creator-nudges")
+async def run_creator_nudges(user: dict = Depends(require_roles("admin"))):
+    """Run the nudge pass now. Same function the timer calls, same once-only
+    guarantee, so a manual run can't double-message anybody."""
+    report = await nudge_stale_creator_profiles()
+    # A manual run puts messages on real phones, so it belongs in the log next
+    # to every other admin action that reaches somebody.
+    await audit(user, "job.creator_nudges", "job", "creator_nudges", after=report)
+    return report
 
 
 api_router.include_router(admin_router)
@@ -7461,6 +9574,36 @@ async def get_campaign(
     return payload
 
 
+def _why_you_cannot_apply(profile: Optional[dict]) -> str:
+    """Why this creator can't pitch yet, and what to do about it.
+
+    "Not verified" on its own sends people to support. Whether they are still
+    building, waiting on us, or were turned down are three different problems
+    with three different next steps, so the message says which one it is and
+    names the fields when the answer is "finish your profile".
+    """
+    status = (profile or {}).get("verification_status", "pending")
+    if status == "rejected":
+        reason = (profile or {}).get("verification_reason")
+        return (
+            f"Your profile wasn't approved: {reason} Update it and submit it again."
+            if reason
+            else "Your profile wasn't approved. Update it and submit it again to be reviewed."
+        )
+    if (profile or {}).get("submitted_for_review_at"):
+        return (
+            "Your profile is with the WeAre team — you can pitch on briefs as soon "
+            "as it's approved. Reviews usually finish within 48 hours."
+        )
+    completeness = _profile_completeness(profile or {})
+    outstanding = ", ".join(row["label"] for row in completeness["missing"])
+    return (
+        f"Finish your profile before pitching — it's {completeness['percent']}% done. "
+        f"Still needed: {outstanding}. Submit it for review and we'll get back to you "
+        "within 48 hours."
+    )
+
+
 @campaigns_router.post("/{campaign_id}/apply")
 async def apply_to_campaign(
     campaign_id: str,
@@ -7479,18 +9622,13 @@ async def apply_to_campaign(
     creator_oid = ObjectId(user["_id"])
 
     # Verification has to gate something, or the 48-hour review is decoration.
+    # Browsing stays open to everyone — a creator deciding whether this is worth
+    # finishing a profile for needs to see what is on offer — but pitching does
+    # not, and the check lives here rather than in the UI so it holds whatever
+    # the request came from.
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
-    verification = (profile or {}).get("verification_status", "pending")
-    if verification != "verified":
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Your profile is still with the WeAre team — you can apply to briefs "
-                "as soon as it's approved."
-                if verification == "pending"
-                else "Your profile wasn't approved. Update it to be reviewed again."
-            ),
-        )
+    if (profile or {}).get("verification_status") != "verified":
+        raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
 
     # Don't take a pitch for a slot that's already gone.
     needed = int(campaign.get("creators_needed") or 1)
@@ -7545,6 +9683,99 @@ async def apply_to_campaign(
 # States from which a creator is actually on the campaign — what unlocks the
 # venue details and the manager's number. Applying is not being on it.
 _ONBOARD_COLLAB_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+
+
+async def _claim_slot(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    slot: dict,
+    preferred_time: Optional[datetime] = None,
+) -> dict:
+    """Take a place on a slot and move the collaboration onto it.
+
+    One implementation behind both booking routes, because a second copy of an
+    atomic claim is a second chance to get it subtly wrong.
+
+    The seat is claimed with a conditional increment — the filter only matches
+    while booked_count is under capacity, so two creators after the last place
+    resolve inside the database and exactly one wins. If the collaboration then
+    moves under us, the seat is handed straight back rather than held for
+    somebody who no longer has it.
+    """
+    soid = slot["_id"]
+    now = datetime.now(timezone.utc)
+
+    claimed = await db.campaign_slots.find_one_and_update(
+        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
+        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    if not claimed:
+        raise HTTPException(
+            status_code=409, detail="That slot just filled up. Pick another."
+        )
+
+    update = {
+        "state": "slot_booked",
+        "scheduled_at": slot["starts_at"],
+        "slot_id": soid,
+        "updated_at": now,
+    }
+    # A personal-table window is an availability range, so the creator can name
+    # the time inside it they actually want. The seat is still the window's —
+    # that is what carries the capacity.
+    if preferred_time is not None:
+        update["scheduled_at"] = preferred_time
+        update["preferred_time"] = preferred_time
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {"$set": update},
+        return_document=True,
+    )
+    if not updated:
+        await db.campaign_slots.update_one(
+            {"_id": soid, "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}},
+        )
+        raise HTTPException(
+            status_code=409, detail="Your collaboration just changed — reload and try again."
+        )
+
+    when = update["scheduled_at"]
+    await audit(
+        user,
+        "collaboration.book_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "slot_booked", "slot_id": str(soid), "scheduled_at": _iso(when)},
+    )
+    await notify(
+        collab["creator_id"],
+        "slot_confirmed",
+        title="Slot booked",
+        body=f"{campaign.get('title')} — "
+        f"{when.strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
+        link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    # The manager is the one who has to plan around it.
+    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    creator_name = (creator_profile or {}).get("name") or "A creator"
+    await notify_campaign_manager(
+        campaign,
+        "manager_slot_booked",
+        title="A creator booked a slot",
+        body=f"{creator_name} booked "
+        f"{when.strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
+    )
+    return {
+        "collaboration_id": str(collab["_id"]),
+        "state": "slot_booked",
+        "slot": _serialize_slot(claimed),
+        "scheduled_at": _iso(when),
+    }
 
 
 @campaigns_router.get("/{campaign_id}/slots")
@@ -7639,74 +9870,7 @@ async def book_slot(
             ),
         )
 
-    now = datetime.now(timezone.utc)
-    # The atomic claim. $expr keeps the check and the increment in one
-    # operation — there is no window where both readers saw a free seat.
-    claimed = await db.campaign_slots.find_one_and_update(
-        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
-        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
-        return_document=True,
-    )
-    if not claimed:
-        raise HTTPException(
-            status_code=409, detail="That slot just filled up. Pick another."
-        )
-
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": "commercial_agreed"},
-        {
-            "$set": {
-                "state": "slot_booked",
-                "scheduled_at": slot["starts_at"],
-                "slot_id": soid,
-                "updated_at": now,
-            }
-        },
-        return_document=True,
-    )
-    if not updated:
-        # The collaboration moved while we held the seat — give it back.
-        await db.campaign_slots.update_one(
-            {"_id": soid, "booked_count": {"$gt": 0}},
-            {"$inc": {"booked_count": -1}},
-        )
-        raise HTTPException(
-            status_code=409, detail="Your collaboration just changed — reload and try again."
-        )
-
-    await audit(
-        user,
-        "collaboration.book_slot",
-        "collaboration",
-        collab["_id"],
-        before={"state": "commercial_agreed"},
-        after={"state": "slot_booked", "slot_id": str(soid),
-               "scheduled_at": _iso(slot["starts_at"])},
-    )
-    await notify(
-        collab["creator_id"],
-        "slot_confirmed",
-        title="Slot booked",
-        body=f"{campaign.get('title')} — "
-        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
-        link=f"/campaigns/{str(campaign['_id'])}",
-    )
-    # The manager is the one who has to plan around it.
-    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
-    creator_name = (creator_profile or {}).get("name") or "A creator"
-    await notify_campaign_manager(
-        campaign,
-        "manager_slot_booked",
-        title="A creator booked a slot",
-        body=f"{creator_name} booked "
-        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
-    )
-    return {
-        "collaboration_id": str(collab["_id"]),
-        "state": "slot_booked",
-        "slot": _serialize_slot(claimed),
-        "scheduled_at": _iso(slot["starts_at"]),
-    }
+    return await _claim_slot(user, collab, campaign, slot)
 
 
 api_router.include_router(campaigns_router)
@@ -7924,6 +10088,23 @@ async def _startup():
     # creator_profiles (1:1 with users)
     await db.creator_profiles.create_index("user_id", unique=True)
     await db.creator_profiles.create_index("verification_status")
+    # The vetting queue reads these together; the nudge job reads the second.
+    await db.creator_profiles.create_index(
+        [("verification_status", 1), ("submitted_for_review_at", 1)]
+    )
+    await db.creator_profiles.create_index(
+        [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
+    )
+
+    # Instagram connections — one per creator, read by the two refresh jobs in
+    # expiry and staleness order.
+    await db.instagram_connections.create_index("user_id", unique=True)
+    await db.instagram_connections.create_index([("status", 1), ("token_expires_at", 1)])
+    await db.instagram_connections.create_index([("status", 1), ("stats_fetched_at", 1)])
+    # OAuth states are single-use and short-lived; Mongo expires the leftovers
+    # from journeys nobody finished.
+    await db.instagram_oauth_states.create_index("state", unique=True)
+    await db.instagram_oauth_states.create_index("expires_at", expireAfterSeconds=0)
     await db.creator_profiles.create_index("niches")
 
     # brand_profiles (1:1 with users)
@@ -8058,6 +10239,65 @@ async def _startup():
     await db.creator_profiles.update_many(
         {"pending_review": {"$exists": False}}, {"$set": {"pending_review": False}}
     )
+
+    # 5. The vetting queue used to be "pending, and has an Instagram handle",
+    #    which was a guess at who had finished onboarding. It is now an
+    #    explicit submission timestamp. Backfill it from the old heuristic so
+    #    nobody who was already waiting on us silently drops out of the queue
+    #    on deploy; `updated_at` is the closest thing we have to when they
+    #    finished.
+    backfilled = 0
+    async for doc in db.creator_profiles.find(
+        {
+            "verification_status": "pending",
+            "submitted_for_review_at": {"$exists": False},
+            "instagram_handle": {"$type": "string", "$ne": ""},
+        }
+    ):
+        await db.creator_profiles.update_one(
+            {"_id": doc["_id"]},
+            {
+                "$set": {
+                    "submitted_for_review_at": doc.get("updated_at")
+                    or doc.get("created_at")
+                    or datetime.now(timezone.utc)
+                }
+            },
+        )
+        backfilled += 1
+    if backfilled:
+        logger.info(
+            "Backfilled submitted_for_review_at on %d creator profile(s) already "
+            "waiting in the vetting queue",
+            backfilled,
+        )
+
+    # The nudge loop. Off entirely when the interval is zero, so a deployment
+    # that has its own scheduler can drive POST /admin/jobs/creator-nudges
+    # instead without two things chasing the same people.
+    if _nudge_interval_seconds() > 0:
+        app.state.nudge_task = asyncio.create_task(_nudge_loop())
+        logger.info(
+            "Creator profile nudges on: every %ds, %d day(s) after signup",
+            _nudge_interval_seconds(),
+            _nudge_after_days(),
+        )
+
+    # Instagram token renewal and stats caching. Off when the Meta app isn't
+    # configured yet, which is the normal state during app review — the rest
+    # of the product carries on with self-reported numbers.
+    if instagram_configured() and _instagram_job_interval_seconds() > 0:
+        app.state.instagram_task = asyncio.create_task(_instagram_loop())
+        logger.info(
+            "Instagram refresh on: every %ds, stats cached for %dh",
+            _instagram_job_interval_seconds(),
+            _instagram_stats_ttl_hours(),
+        )
+    elif not instagram_configured():
+        logger.info(
+            "Instagram stats are off — set INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, "
+            "INSTAGRAM_REDIRECT_URI and INSTAGRAM_TOKEN_KEY to switch them on."
+        )
 
     # The Apify scraper is gone, so nothing writes or reads this cache any more.
     # It holds scraped Instagram data, which is exactly what we no longer want
@@ -8365,6 +10605,10 @@ async def _seed_demo_campaigns() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown():
+    for name in ("nudge_task", "instagram_task"):
+        task = getattr(app.state, name, None)
+        if task:
+            task.cancel()
     client.close()
 
 

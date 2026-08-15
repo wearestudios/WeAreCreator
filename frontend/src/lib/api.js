@@ -31,5 +31,14 @@ export function formatApiError(err) {
             .map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e)))
             .join(" ");
     if (detail && typeof detail.msg === "string") return detail.msg;
+    // Structured refusals carry a machine-readable code alongside prose we
+    // wrote for the person reading it — show the prose, not "[object Object]".
+    if (detail && typeof detail.message === "string") return detail.message;
     return String(detail);
+}
+
+/** The `code` on a structured refusal, when the server sent one. */
+export function apiErrorCode(err) {
+    const detail = err?.response?.data?.detail;
+    return detail && typeof detail.code === "string" ? detail.code : null;
 }

@@ -1,205 +1,202 @@
-// The admin console: a left nav and five working surfaces. The action queue is
-// the landing view — one prioritised list of everything waiting on us — and the
-// other four are for looking things up and acting on them in place.
+// The admin console.
 //
-// Anything destructive or reversible (reject, cancel, revert, refund, pause,
-// close) goes through a confirmation dialog with a required reason, and that
-// reason surfaces again in the audit section.
-import React, { useCallback, useEffect, useState } from "react";
+// Tabs rather than a single scrolling page: the console does two different
+// jobs, and mixing them meant scrolling past the ones you weren't doing.
+// Overview is for looking at the business; the three review tabs are for
+// clearing a queue; the last four are for looking things up.
+//
+// Every rejection anywhere in here opens a dialog and requires a reason,
+// because the person on the other end is told what it said. Approvals are
+// optimistic — the row leaves the list on the tap and comes back if the
+// request fails.
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+    BadgeCheck,
     Building2,
     Inbox,
-    Menu,
+    LayoutDashboard,
     ScrollText,
     Sparkles,
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { api } from "@/lib/api";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { ADMIN_SHELL as IDS } from "@/constants/testIds";
+import { ADMIN_SHELL as SHELL_IDS, ADMIN_TABS as IDS } from "@/constants/testIds";
+import Overview from "@/components/admin/Overview";
+import { BrandReviews, CampaignReviews, CreatorReviews } from "@/components/admin/Reviews";
 import ActionQueue from "@/components/admin/ActionQueue";
 import AdminCreators from "@/components/admin/AdminCreators";
 import AdminCampaigns from "@/components/admin/AdminCampaigns";
 import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
 
-const SECTIONS = [
-    { key: "queue", label: "Action queue", Icon: Inbox },
+// `badge` names which count from /admin/dashboard sits on the tab.
+const TABS = [
+    { key: "overview", label: "Overview", Icon: LayoutDashboard },
+    {
+        key: "creator-reviews",
+        label: "Creator reviews",
+        Icon: BadgeCheck,
+        badge: "creators_to_review",
+    },
+    {
+        key: "campaign-reviews",
+        label: "Campaign reviews",
+        Icon: Sparkles,
+        badge: "campaigns_to_review",
+    },
+    {
+        key: "brand-reviews",
+        label: "Brand reviews",
+        Icon: Building2,
+        badge: "brands_to_verify",
+    },
+    // Not in the original five, but collaborations mid-pipeline and payouts
+    // waiting to be released have no other home, and dropping the queue would
+    // leave money with nowhere to be actioned from.
+    { key: "queue", label: "Queue", Icon: Inbox, badge: "queue_rest" },
     { key: "creators", label: "Creators", Icon: Users },
     { key: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", label: "Brands", Icon: Building2 },
     { key: "audit", label: "Audit log", Icon: ScrollText },
 ];
 
-function NavItems({ active, badge, onSelect }) {
-    return (
-        <nav className="flex flex-col gap-1">
-            {SECTIONS.map(({ key, label, Icon }) => {
-                const on = active === key;
-                return (
-                    <button
-                        key={key}
-                        type="button"
-                        aria-current={on ? "page" : undefined}
-                        onClick={() => onSelect(key)}
-                        data-testid={IDS.navItem(key)}
-                        className={
-                            "flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors duration-200 " +
-                            (on
-                                ? "bg-ember-500/10 text-ember-500"
-                                : "text-muted-foreground hover:bg-white/5 hover:text-foreground")
-                        }
-                    >
-                        <Icon className="h-4 w-4 flex-none" />
-                        <span className="flex-1">{label}</span>
-                        {key === "queue" && badge > 0 && (
-                            <span
-                                data-testid={IDS.navBadge(key)}
-                                className="grid h-5 min-w-[1.25rem] flex-none place-items-center rounded-full bg-ember-500 px-1.5 text-[10px] font-medium text-black"
-                            >
-                                {badge > 99 ? "99+" : badge}
-                            </span>
-                        )}
-                    </button>
-                );
-            })}
-        </nav>
-    );
-}
-
 export default function AdminConsole() {
-    const [active, setActive] = useState("queue");
-    const [mobileNavOpen, setMobileNavOpen] = useState(false);
-    const [pendingCount, setPendingCount] = useState(0);
+    const [active, setActive] = useState("overview");
+    const [counts, setCounts] = useState(null);
     const [feePercent, setFeePercent] = useState(null);
-    // Set when the Brands section hands off to Campaigns filtered to one brand.
+    // Set when the Brands tab hands off to Campaigns filtered to one brand.
     const [brandFilter, setBrandFilter] = useState("");
+    const navRef = useRef(null);
 
-    // One metrics call feeds the queue badge and the fee preview. Refreshed
-    // after any action, so the badge tracks what's actually left.
-    const loadMetrics = useCallback(async () => {
+    // One dashboard call feeds every badge, refreshed after any action so a
+    // badge always matches what is actually left in its tab.
+    const loadCounts = useCallback(async () => {
         try {
-            const { data } = await api.get("/admin/metrics");
-            setPendingCount(data.awaiting_admin_action ?? 0);
-            setFeePercent(data.platform_fee_percent);
+            const [{ data }, metrics] = await Promise.all([
+                api.get("/admin/dashboard", { params: { limit: 1 } }),
+                api.get("/admin/metrics"),
+            ]);
+            const awaiting = data.awaiting || {};
+            setCounts({
+                ...awaiting,
+                // What the queue tab holds that the review tabs don't.
+                queue_rest:
+                    (awaiting.collaborations_to_move || 0) +
+                    (awaiting.payouts_to_record || 0),
+            });
+            setFeePercent(metrics.data.platform_fee_percent);
         } catch {
-            /* the badge is a convenience, not a feature that may fail loudly */
+            // Badges are a convenience; the tabs work without them.
+            setCounts({});
         }
     }, []);
 
     useEffect(() => {
-        loadMetrics();
-    }, [loadMetrics]);
+        loadCounts();
+    }, [loadCounts]);
 
-    const select = (key) => {
-        setActive(key);
-        setMobileNavOpen(false);
-        if (key !== "campaigns") setBrandFilter("");
-    };
-
-    const viewBrandCampaigns = (brandId) => {
+    const goToBrandCampaigns = (brandId) => {
         setBrandFilter(brandId);
         setActive("campaigns");
     };
 
-    const activeMeta = SECTIONS.find((s) => s.key === active);
+    const select = (key) => {
+        setActive(key);
+        // Keep the chosen tab in view on a phone, where the strip scrolls.
+        navRef.current
+            ?.querySelector(`[data-testid="${IDS.tab(key)}"]`)
+            ?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    };
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={SHELL_IDS.page} className="min-h-screen bg-background">
             <Navbar />
-            <div className="mx-auto flex max-w-7xl gap-10 px-6 py-10 md:py-14">
-                {/* Desktop nav */}
-                <aside
-                    data-testid={IDS.nav}
-                    className="hidden w-52 flex-none md:block"
+
+            <main className="mx-auto max-w-7xl px-5 py-8 md:px-6 md:py-12">
+                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    WeAre · Admin console
+                </p>
+                <h1
+                    data-testid={SHELL_IDS.heading}
+                    className="mt-2 font-serif text-3xl leading-none tracking-tight md:text-4xl"
                 >
-                    <p className="px-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                        Admin
-                    </p>
-                    <h1
-                        data-testid={IDS.heading}
-                        className="mt-2 px-3 font-serif text-2xl leading-tight tracking-tight"
-                    >
-                        Console
-                    </h1>
-                    <div className="mt-8">
-                        <NavItems active={active} badge={pendingCount} onSelect={select} />
-                    </div>
-                </aside>
+                    Everything, and what needs you.
+                </h1>
 
-                <main className="min-w-0 flex-1">
-                    {/* Mobile: current section + a hamburger opening the nav */}
-                    <div className="mb-8 flex items-center justify-between md:hidden">
-                        <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                Admin console
-                            </p>
-                            <h1 className="mt-1 font-serif text-2xl leading-tight tracking-tight">
-                                {activeMeta?.label}
-                            </h1>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setMobileNavOpen(true)}
-                            aria-label="Open sections"
-                            data-testid={IDS.mobileNavOpen}
-                            className="relative grid h-10 w-10 place-items-center rounded-md border border-white/10 bg-card text-foreground transition-colors duration-200 hover:border-white/25"
-                        >
-                            <Menu className="h-4 w-4" />
-                            {pendingCount > 0 && active !== "queue" && (
-                                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-ember-500" />
-                            )}
-                        </button>
-                    </div>
+                {/* A scrolling strip rather than a wrapping grid: nine tabs
+                    wrapping to three rows on a phone pushes the content off
+                    the screen entirely. */}
+                <nav
+                    ref={navRef}
+                    data-testid={IDS.nav}
+                    className="-mx-5 mt-8 flex gap-2 overflow-x-auto px-5 pb-2 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+                >
+                    {TABS.map(({ key, label, Icon, badge }) => {
+                        const on = active === key;
+                        const count = badge ? counts?.[badge] ?? 0 : 0;
+                        return (
+                            <button
+                                key={key}
+                                type="button"
+                                aria-current={on ? "page" : undefined}
+                                onClick={() => select(key)}
+                                data-testid={IDS.tab(key)}
+                                className={
+                                    "inline-flex flex-none items-center gap-2 whitespace-nowrap rounded-md border px-4 py-2.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                    (on
+                                        ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                        : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
+                                }
+                            >
+                                <Icon className="h-3.5 w-3.5" />
+                                {label}
+                                {count > 0 && (
+                                    <span
+                                        data-testid={IDS.badge(key)}
+                                        className={
+                                            "grid h-5 min-w-[1.25rem] place-items-center rounded-full px-1.5 text-[10px] font-medium " +
+                                            (on
+                                                ? "bg-ember-500 text-black"
+                                                : "bg-white/10 text-foreground")
+                                        }
+                                    >
+                                        {count > 99 ? "99+" : count}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </nav>
 
-                    <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                        <SheetContent
-                            side="left"
-                            data-testid={IDS.mobileNav}
-                            className="w-64 border-r border-white/10 bg-background p-6"
-                        >
-                            <SheetTitle className="sr-only">Console sections</SheetTitle>
-                            <SheetDescription className="sr-only">
-                                Switch between the admin console's sections.
-                            </SheetDescription>
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                Admin console
-                            </p>
-                            <div className="mt-6">
-                                <NavItems
-                                    active={active}
-                                    badge={pendingCount}
-                                    onSelect={select}
-                                />
-                            </div>
-                        </SheetContent>
-                    </Sheet>
-
-                    {/* Sections stay mounted-on-demand: each loads its own data
-                        when shown, and actions bump the shared badge. */}
-                    <div data-testid={IDS.section(active)}>
-                        {active === "queue" && (
-                            <ActionQueue onChanged={loadMetrics} feePercent={feePercent} />
-                        )}
-                        {active === "creators" && <AdminCreators />}
-                        {active === "campaigns" && (
-                            <AdminCampaigns
-                                brandFilter={brandFilter}
-                                onClearBrand={() => setBrandFilter("")}
-                                onChanged={loadMetrics}
-                            />
-                        )}
-                        {active === "brands" && (
-                            <AdminBrands
-                                onChanged={loadMetrics}
-                                onViewCampaigns={viewBrandCampaigns}
-                            />
-                        )}
-                        {active === "audit" && <AdminAudit />}
-                    </div>
-                </main>
-            </div>
+                <div
+                    data-testid={SHELL_IDS.section(active)}
+                    className="mt-10"
+                >
+                    {active === "overview" && <Overview onChanged={loadCounts} />}
+                    {active === "creator-reviews" && <CreatorReviews onChanged={loadCounts} />}
+                    {active === "campaign-reviews" && <CampaignReviews onChanged={loadCounts} />}
+                    {active === "brand-reviews" && <BrandReviews onChanged={loadCounts} />}
+                    {active === "queue" && (
+                        <ActionQueue onChanged={loadCounts} feePercent={feePercent} />
+                    )}
+                    {active === "creators" && <AdminCreators />}
+                    {active === "campaigns" && (
+                        <AdminCampaigns
+                            brandFilter={brandFilter}
+                            onClearBrand={() => setBrandFilter("")}
+                            onChanged={loadCounts}
+                        />
+                    )}
+                    {active === "brands" && (
+                        <AdminBrands
+                            onChanged={loadCounts}
+                            onViewCampaigns={goToBrandCampaigns}
+                        />
+                    )}
+                    {active === "audit" && <AdminAudit />}
+                </div>
+            </main>
         </div>
     );
 }

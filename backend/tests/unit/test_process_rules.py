@@ -57,7 +57,18 @@ class TestVerificationStatusIsOneWord:
                     continue
                 assert any(
                     marker in line
-                    for marker in ("for legacy in", '"state": "vetted"', "#", "Migrated")
+                    for marker in (
+                        "for legacy in",
+                        '"state": "vetted"',
+                        "#",
+                        "Migrated",
+                        # The admin console groups applicants into applied /
+                        # approved / rejected. That "approved" is a bucket of
+                        # collaboration states, never a verification_status
+                        # value, so it cannot cause the mismatch this guard is
+                        # about — the marker keeps the exemption that narrow.
+                        "_APPLICANT",
+                    )
                 ), f"stray legacy status {legacy} outside the migration: {line.strip()}"
 
     def test_the_migration_covers_every_legacy_value(self):
@@ -1501,9 +1512,11 @@ class TestSlots:
     def test_booking_claims_the_seat_atomically(self):
         # The check and the increment are one operation, so two creators after
         # the last place resolve inside the database rather than both winning.
+        # Read off `_claim_slot`: both booking routes go through it, so there
+        # is one atomic claim rather than one per entry point.
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert "find_one_and_update" in src
         assert '"$expr": {"$lt": ["$booked_count", "$capacity"]}' in src
         assert '"$inc": {"booked_count": 1}' in src
@@ -1511,19 +1524,19 @@ class TestSlots:
     def test_a_lost_race_is_a_409_not_a_double_booking(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert "just filled up" in src
 
     def test_a_claimed_seat_is_given_back_if_the_collaboration_moved(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server._claim_slot)
         assert '"$inc": {"booked_count": -1}' in src
 
     def test_booking_is_the_step_out_of_commercial_agreed(self):
         import inspect
 
-        src = inspect.getsource(server.book_slot)
+        src = inspect.getsource(server.book_slot) + inspect.getsource(server._claim_slot)
         assert '"commercial_agreed"' in src
         assert '"slot_booked"' in src
 
@@ -1886,7 +1899,7 @@ class TestManagerNotifications:
     def test_booking_tells_the_manager(self):
         import inspect
 
-        assert "notify_campaign_manager" in inspect.getsource(server.book_slot)
+        assert "notify_campaign_manager" in inspect.getsource(server._claim_slot)
 
     @pytest.mark.parametrize(
         "fn_name", ["revert_collaboration", "cancel_collaboration"]
@@ -1904,3 +1917,1418 @@ class TestManagerNotifications:
         src = inspect.getsource(server.notify_campaign_manager)
         assert "if not manager_id:" in src
         assert "return" in src
+
+
+# ---------------------------------------------------------------------------
+# Dashboard aggregation. Five requests used to fill the console's landing view,
+# which meant five spinners and five chances for one slow query to make the
+# page look broken.
+# ---------------------------------------------------------------------------
+
+
+class TestApplicantBuckets:
+    def test_every_collaboration_state_lands_in_exactly_one_bucket(self):
+        seen = []
+        for _, states in server._APPLICANT_BUCKETS:
+            seen.extend(states)
+        every = set(server.COLLAB_STATE_ORDER) | set(server.TERMINAL_COLLAB_STATES)
+        assert set(seen) == every, "a state in no bucket disappears from the console"
+        assert len(seen) == len(set(seen)), "a state in two buckets is double-counted"
+
+    def test_approved_means_accepted_and_beyond(self):
+        approved = set(server._APPLICANT_APPROVED_STATES)
+        assert "accepted" in approved
+        # A finished collaboration is still a yes.
+        assert "closed" in approved
+        for not_yet in ("applied", "verified"):
+            assert not_yet not in approved
+
+    def test_rejected_covers_both_exits(self):
+        rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
+        assert set(rejected) == {"declined", "cancelled"}
+
+    def test_completed_is_reported_separately_from_approved(self):
+        # "How many finished" is a different question from "how many were
+        # taken on", so it is its own accumulator even though it is a subset.
+        expr = server._bucket_counts_expr()
+        assert set(expr) == {"applied", "approved", "rejected", "completed"}
+
+    def test_the_counters_are_aggregation_accumulators_not_python_loops(self):
+        expr = server._bucket_counts_expr()
+        for value in expr.values():
+            assert "$sum" in value
+            assert "$cond" in value["$sum"]
+
+
+class TestDashboardEndpoint:
+    def test_it_is_admin_only(self):
+        import inspect
+
+        for fn in (server.admin_dashboard, server.admin_campaign_applicants):
+            assert 'require_roles("admin")' in inspect.getsource(fn)
+
+    def test_it_takes_an_optional_campaign_scope(self):
+        params = __import__("inspect").signature(server.admin_dashboard).parameters
+        assert "campaign_id" in params
+        assert params["campaign_id"].default is None
+
+    def test_a_bad_campaign_id_is_a_422_and_a_missing_one_a_404(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "422" in src and "404" in src
+
+    def test_the_collections_are_read_with_facets_not_loops(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        # One aggregation per collection, each answering several questions.
+        assert src.count('"$facet"') >= 3
+        assert "find_one({" not in src.replace(
+            'if not await db.campaigns.find_one({"_id": scoped_oid}):', ""
+        ), "the scope check is the only single-document read"
+
+    def test_there_is_no_per_campaign_query(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        # The per-campaign counts come from one grouped pass, keyed afterwards.
+        assert '"$group": {"_id": "$campaign_id"' in src
+        assert "per_campaign.get(" in src
+
+    def test_campaign_statuses_are_zero_filled(self):
+        # A caller must never have to guard for a missing key.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "{s: 0 for s in CampaignStatus.__args__}" in src
+
+    def test_live_is_an_alias_for_open(self):
+        # The creator feed calls it live; the console should agree.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"live": campaigns_by_status.get("open", 0)' in src
+
+    def test_every_queue_the_console_shows_is_counted(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        for queue in (
+            "creators_to_review",
+            "campaigns_to_review",
+            "brands_to_verify",
+            "collaborations_to_move",
+            "payouts_to_record",
+        ):
+            assert f'"{queue}"' in src
+
+    def test_the_headline_number_is_the_sum_of_the_queues(self):
+        # So it can always be explained by pointing at a row.
+        import inspect
+
+        assert '"awaiting_total": sum(awaiting.values())' in inspect.getsource(
+            server.admin_dashboard
+        )
+
+    def test_active_creators_means_working_not_signed_up(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"active_creators"' in src
+        assert "_APPLICANT_APPROVED_STATES" in src
+
+    def test_active_brands_means_running_something(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "ACTIVE_CAMPAIGN_STATUSES" in src
+        assert '"$group": {"_id": "$brand_id"}' in src
+
+    def test_gmv_is_payouts_plus_our_margin(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"gmv": round(total_paid + platform_revenue, 2)' in src
+
+    def test_refunded_money_is_not_counted_as_paid(self):
+        # The facet matches "paid" exactly, so a clawed-back payout drops out.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '{"$match": {"state": "paid"}}' in src
+
+    def test_scoping_narrows_the_money_through_the_collaborations(self):
+        # Payments hang off collaborations, not campaigns, so a campaign scope
+        # has to name that campaign's collaborations first.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"collaboration_id": {"$in":' in src
+
+    def test_platform_wide_queues_read_zero_when_scoped(self):
+        # Creator and brand vetting are not about any one campaign; reporting
+        # the global number next to one campaign's stats would be a lie.
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert "if scoped_oid:" in src
+        assert "creators_to_review = 0" in src
+
+    def test_the_summary_list_is_bounded_and_says_so(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        assert '"$limit": limit' in src
+        assert '"summary_truncated"' in src
+
+    def test_the_summary_carries_whichever_dates_the_type_has(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_dashboard)
+        for field in ("event_date", "start_date", "end_date", "campaign_type"):
+            assert f'"{field}"' in src
+
+
+class TestAdminApplicantsEndpoint:
+    def test_it_is_one_pipeline_with_the_joins(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert src.count("$lookup") == 3
+        assert src.count("db.collaborations.aggregate") == 1
+
+    def test_it_groups_into_the_three_buckets(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert "_APPLICANT_BUCKETS" in src
+        assert "break" in src, "a collaboration lands in the first matching bucket only"
+
+    def test_each_entry_carries_what_the_console_renders(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        for field in (
+            "profile_image_url",
+            "instagram_handle",
+            "follower_count",
+            "quoted_rate",
+            "agreed_amount",
+            "state",
+        ):
+            assert f'"{field}"' in src
+
+    def test_it_reaches_any_campaign_not_just_one_brands(self):
+        # The brand's own board stops at its own campaigns; this is the admin's
+        # read of anything, including campaigns that ended.
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert "_admin_campaign_or_404" in src
+        assert "_own_campaign_or_404" not in src
+
+    def test_the_counts_match_the_lists(self):
+        import inspect
+
+        src = inspect.getsource(server.admin_campaign_applicants)
+        assert '"counts": {name: len(rows_) for name, rows_ in groups.items()}' in src
+
+
+# ---------------------------------------------------------------------------
+# The creator's own side: their profile, their slots, their dashboard. Slots
+# and the manager tooling shipped before the creator could see either, so a
+# creator sat at commercial_agreed with no way forward — these guard the route
+# out of it.
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorProfileFields:
+    def test_genres_and_niches_are_separate_questions(self):
+        # A brand filters the directory on niches and briefs against genres.
+        # Collapsing them into one list breaks whichever of the two it isn't.
+        fields = server.CreatorProfileUpdate.model_fields
+        assert "niches" in fields and "genres" in fields
+
+    def test_the_neighbourhood_and_the_postal_address_are_separate(self):
+        fields = server.CreatorProfileUpdate.model_fields
+        assert "address" in fields and "full_address" in fields
+
+    def test_nothing_is_required_to_save(self):
+        # The builder is filled in over several sittings, so a save that
+        # demanded the whole thing would mean nobody ever saved.
+        for name, field in server.CreatorProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
+
+    def test_platforms_is_a_closed_list(self):
+        assert set(server.CreatorPlatform.__args__) == {"instagram", "youtube"}
+
+    def test_a_platform_we_do_not_run_on_is_refused(self):
+        with pytest.raises(Exception):
+            server.CreatorProfileUpdate(
+                name="A",
+                instagram_handle="a",
+                instagram_profile_url="https://instagram.com/a",
+                email="a@b.com",
+                address="Indiranagar",
+                platforms=["tiktok"],
+            )
+
+    def test_the_profile_response_carries_the_new_fields(self):
+        import inspect
+
+        src = inspect.getsource(server._serialize_creator_profile)
+        for field in ("genres", "platforms", "full_address"):
+            assert f'"{field}"' in src
+
+    def test_the_dashboard_shows_a_creator_their_own_email(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '"email"' in src
+
+    def test_platforms_are_deduped_on_write(self):
+        import inspect
+
+        assert "dict.fromkeys(payload.platforms)" in inspect.getsource(
+            server.update_creator_profile
+        )
+
+    def test_genres_are_stored_lowercase_like_niches(self):
+        # Matching is done on these, and "Food" never matching "food" would
+        # quietly empty every suggestion list.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "g.strip().lower() for g in payload.genres" in src
+
+
+class TestProfileCompleteness:
+    def test_an_empty_profile_is_zero_and_lists_everything(self):
+        result = server._profile_completeness({})
+        assert result["percent"] == 0
+        assert len(result["missing"]) == result["total"]
+        assert result["complete"] is False
+
+    def test_a_full_profile_is_a_hundred_with_nothing_missing(self):
+        profile = {field: "x" for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        result = server._profile_completeness(profile)
+        assert result["percent"] == 100
+        assert result["missing"] == []
+        assert result["complete"] is True
+
+    def test_an_empty_list_counts_as_missing(self):
+        # `niches: []` is not an answer, and treating it as one would tell a
+        # creator they were done while brands couldn't find them.
+        result = server._profile_completeness({"niches": [], "genres": []})
+        missing = {row["field"] for row in result["missing"]}
+        assert {"niches", "genres"} <= missing
+
+    def test_every_missing_entry_names_a_field_and_a_label(self):
+        for row in server._profile_completeness({})["missing"]:
+            assert row["field"] and row["label"]
+
+    def test_the_payout_fields_are_not_counted(self):
+        # Bank details are needed before we can pay somebody, not before we can
+        # look at them. Counting them here would make a PAN the price of being
+        # reviewed at all, since submitting for review requires 100%.
+        fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        assert not ({"payout_upi", "pan", "gstin"} & fields)
+
+    def test_the_new_profile_fields_are_counted(self):
+        fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        assert {"genres", "platforms", "full_address"} <= fields
+
+
+class TestCreatorNextAction:
+    def test_an_agreed_fee_puts_the_ball_with_the_creator(self):
+        action = server._creator_next_action(
+            {"state": "commercial_agreed"}, {"campaign_type": "launch"}, True
+        )
+        assert action["action"] == "book_slot"
+        assert action["waiting_on"] == "you"
+
+    def test_a_personal_table_asks_for_a_time_not_a_slot(self):
+        action = server._creator_next_action(
+            {"state": "commercial_agreed"}, {"campaign_type": "personal_table"}, True
+        )
+        assert "window" in action["label"]
+
+    @pytest.mark.parametrize(
+        "state,expected",
+        [
+            ("slot_booked", "attend"),
+            ("attended", "submit_content"),
+            ("content_submitted", "resubmit_content"),
+        ],
+    )
+    def test_each_step_names_what_the_creator_does(self, state, expected):
+        assert server._creator_next_action({"state": state}, {}, True)["action"] == expected
+
+    def test_waiting_on_us_is_said_plainly(self):
+        action = server._creator_next_action({"state": "accepted"}, {}, True)
+        assert action["action"] is None
+        assert action["waiting_on"] == "weare"
+
+    def test_missing_payout_details_outrank_the_reassuring_message(self):
+        # This is the one place a creator blocks their own money without being
+        # told, so it has to win over "payment is being processed".
+        action = server._creator_next_action({"state": "in_payment"}, {}, False)
+        assert action["action"] == "add_payout_details"
+        assert action["waiting_on"] == "you"
+
+    def test_with_payout_details_there_is_nothing_to_do(self):
+        action = server._creator_next_action({"state": "content_approved"}, {}, True)
+        assert action["action"] is None
+
+    def test_every_active_state_gets_an_answer(self):
+        for state in server._CREATOR_ACTIVE_STATES:
+            action = server._creator_next_action({"state": state}, {}, True)
+            assert action["label"], f"{state} leaves the creator with no next step"
+
+
+class TestCreatorSlotBooking:
+    def test_the_creator_route_reuses_the_shared_claim(self):
+        # A second copy of an atomic claim is a second chance to get it wrong.
+        import inspect
+
+        assert "_claim_slot" in inspect.getsource(server.creator_book_slot)
+        assert "find_one_and_update" not in inspect.getsource(server.creator_book_slot)
+
+    def test_booking_opens_only_once_the_fee_is_agreed(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert '"commercial_agreed"' in src
+        assert "409" in src
+
+    def test_another_campaigns_slot_is_not_a_slot(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert 'slot["campaign_id"] != collab["campaign_id"]' in src
+
+    def test_a_personal_table_requires_a_time_inside_the_window(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert '"personal_table"' in src
+        assert "preferred < starts" in src and "preferred > ends" in src
+
+    def test_a_fixed_time_campaign_refuses_a_chosen_time(self):
+        # Everyone arrives together on a launch; one creator writing their own
+        # time would put them at the venue alone.
+        import inspect
+
+        src = inspect.getsource(server.creator_book_slot)
+        assert "elif payload.preferred_time is not None:" in src
+
+    def test_somebody_elses_collaboration_is_a_404(self):
+        import inspect
+
+        src = inspect.getsource(server._own_collab_or_404)
+        assert '"creator_id": ObjectId(user["_id"])' in src
+        # Only the raises, not the docstring — which explains why it is not a 403.
+        codes = [ln for ln in src.splitlines() if "status_code=" in ln]
+        assert codes and all("404" in ln for ln in codes)
+
+    def test_the_slot_list_is_gated_on_being_on_the_campaign(self):
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert "_ONBOARD_COLLAB_STATES" in src
+        assert 'detail="Campaign not found"' in src
+
+    def test_the_slot_list_says_which_one_is_theirs(self):
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert '"is_mine"' in src
+        assert '"booked_slot_id"' in src
+
+    def test_an_invitation_is_surfaced_but_not_required(self):
+        # A creator who applied off the open list is just as much on the
+        # campaign as one who was invited.
+        import inspect
+
+        src = inspect.getsource(server.list_creator_slots)
+        assert "campaign_invitations" in src
+        assert '"invited"' in src
+
+    def test_a_full_slot_is_marked_rather_than_hidden(self):
+        import inspect
+
+        assert '"is_full"' in inspect.getsource(server.list_creator_slots)
+
+
+class TestCreatorSlotCancellation:
+    def test_there_is_a_cutoff(self):
+        assert server.SLOT_CANCEL_CUTOFF_HOURS > 0
+
+    def test_inside_the_cutoff_is_a_409(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert "SLOT_CANCEL_CUTOFF_HOURS" in src
+        assert "409" in src
+
+    def test_cancelling_returns_them_to_commercial_agreed(self):
+        # They are still on the campaign and still owed a place — just not
+        # that one. Leaving the campaign is a different decision.
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"state": "commercial_agreed"' in src
+
+    def test_the_booking_is_cleared_not_left_dangling(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""}' in src
+
+    def test_the_collaboration_moves_before_the_seat_is_released(self):
+        # The other order would put the place on sale while the creator still
+        # held it.
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert src.index("db.collaborations.find_one_and_update") < src.index(
+            "db.campaign_slots.update_one"
+        )
+
+    def test_the_release_is_written_with_a_precondition(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"state": "slot_booked", "slot_id": slot_oid' in src
+        assert '{"$gt": 0}' in src
+
+    def test_the_manager_is_told(self):
+        import inspect
+
+        assert "_tell_manager_a_seat_freed" in inspect.getsource(server.creator_cancel_slot)
+
+    def test_it_is_audited(self):
+        import inspect
+
+        src = inspect.getsource(server.creator_cancel_slot)
+        assert '"collaboration.cancel_slot"' in src
+
+
+class TestCreatorDashboardEarnings:
+    def test_refunded_and_cancelled_money_is_counted_nowhere(self):
+        # "cancelled" is a payout that never happens; "refunded" is one clawed
+        # back. Either one in a total has the creator waiting on nothing.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert 'p.get("state") == "paid"' in src
+        assert 'p.get("state") == "pending"' in src
+
+    def test_both_figures_are_net_of_the_platform_fee(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "creator_payout" in src
+        assert "compute_fee(float(agreed))" in src
+
+    def test_an_agreed_fee_with_no_payment_row_yet_still_counts_as_pending(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "if c[\"_id\"] in payment_by_collab" in src
+
+    def test_an_ended_collaboration_is_not_pending_money(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert 'c.get("state") in COLLAB_GROUP_ENDED' in src
+
+    def test_campaigns_completed_means_closed(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "COLLAB_GROUP_COMPLETED" in src
+
+
+class TestCreatorDashboardGrouping:
+    def test_every_state_lands_in_exactly_one_group(self):
+        # Nothing may drop out of a creator's own record.
+        groups = (
+            set(server._CREATOR_ACTIVE_STATES)
+            | set(server.COLLAB_GROUP_COMPLETED)
+            | set(server.COLLAB_GROUP_ENDED)
+            | set(server.COLLAB_GROUP_APPLIED)
+        )
+        assert groups == set(server.COLLAB_STATE_ORDER) | set(server.COLLAB_GROUP_ENDED)
+
+    def test_waiting_to_be_paid_is_active_not_completed(self):
+        assert "in_payment" in server._CREATOR_ACTIVE_STATES
+        assert "in_payment" not in server.COLLAB_GROUP_COMPLETED
+
+    def test_an_active_row_carries_the_venue_and_the_manager(self):
+        # This is the view a creator opens on the way to a venue, so it cannot
+        # need a second request to be useful.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        for field in ("manager_name", "manager_phone", "venue_address", "venue_instructions"):
+            assert f'"{field}"' in src
+
+    def test_an_active_row_carries_the_booked_time_and_the_next_step(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '"slot_starts_at"' in src
+        assert "_creator_next_action" in src
+
+
+class TestSuggestedCampaigns:
+    def test_only_live_campaigns_are_suggested(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "LIVE_CAMPAIGN_STATUSES" in src
+
+    def test_campaigns_already_applied_to_are_excluded(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert '"_id": {"$nin": list(exclude_ids)}' in src
+
+    def test_the_exclusion_covers_every_collaboration_not_just_open_ones(self):
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert '{c["campaign_id"] for c in collabs}' in src
+
+    def test_a_blank_profile_gets_no_suggestions_rather_than_random_ones(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "if not (niches or genres or places):" in src
+
+    def test_every_suggestion_says_why(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert '"match_reason"' in src
+        assert "reasons.append" in src
+
+    def test_a_campaign_matching_nothing_is_not_suggested(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "if reasons:" in src
+
+    def test_niches_genres_and_place_are_all_matched(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "in niches" in src and "in genres" in src and "in places" in src
+
+    def test_the_list_is_bounded(self):
+        import inspect
+
+        src = inspect.getsource(server._suggested_campaigns)
+        assert "scored[:limit]" in src
+
+
+# ---------------------------------------------------------------------------
+# Onboarding. Signup used to ask for a profile's worth of detail before anyone
+# had seen the product, and the vetting queue filled with stubs nobody could
+# decide on. Signup is now a name and a number; the profile is built after, at
+# whatever pace, and an explicit submission is what asks us to look.
+# ---------------------------------------------------------------------------
+
+
+class TestSignupAsksForAlmostNothing:
+    def test_the_signup_payloads_carry_only_identity(self):
+        # role picks which product you get and accept_terms is consent we have
+        # to be able to evidence. Anything else belongs in the profile builder.
+        allowed = {"phone", "purpose", "name", "role", "accept_terms", "code"}
+        for model in (server.OtpRequestInput, server.OtpVerifyInput):
+            assert set(model.model_fields) <= allowed, sorted(set(model.model_fields) - allowed)
+
+    def test_signup_needs_a_name_and_a_role_and_nothing_more(self):
+        import inspect
+
+        src = inspect.getsource(server.request_otp)
+        assert "Name and role are required to sign up." in src
+
+    def test_the_profile_stub_starts_empty(self):
+        # A half-guessed stub would show up as progress the creator never made.
+        import inspect
+
+        src = inspect.getsource(server.verify_otp)
+        start = src.index("db.creator_profiles.insert_one")
+        block = src[start : start + 1200]
+        for field in ("instagram_handle", "email", "city", "genres", "platforms"):
+            assert f'"{field}"' in block
+        assert '"verification_status": "pending"' in block
+
+
+class TestProfileSavesPartially:
+    def test_every_field_is_optional(self):
+        for name, field in server.CreatorProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
+
+    def test_only_the_keys_that_were_sent_are_written(self):
+        # An omitted key means "leave it alone"; an explicit null means "clear
+        # it". A builder saving one step at a time depends on the difference.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "payload.model_fields_set" in src
+        assert src.count('in sent:') >= 10
+
+    def test_payout_fields_respect_a_partial_save_too(self):
+        import inspect
+
+        src = inspect.getsource(server._clean_payout_fields)
+        assert "only" in src and "wanted(" in src
+
+    def test_saving_no_longer_puts_anybody_in_the_queue(self):
+        # This is the whole point: saving and submitting are separate acts.
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert 'update["pending_review"] = bool(existing.get("submitted_for_review_at"))' in src
+
+    def test_a_verified_creator_still_stays_live_while_edits_are_reviewed(self):
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "material_fields" in src
+        assert '"name", "instagram_handle", "city"' in src
+
+
+class TestYoutubeLink:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "https://youtube.com/@someone",
+            "https://www.youtube.com/channel/UCabc123",
+            "youtube.com/c/SomeChannel",
+            "https://youtu.be/abc123",
+        ],
+    )
+    def test_a_real_channel_link_is_kept(self, raw):
+        assert server._clean_youtube_url(raw)
+
+    def test_a_bare_link_gets_a_scheme(self):
+        assert server._clean_youtube_url("youtube.com/@someone").startswith("https://")
+
+    @pytest.mark.parametrize("raw", ["https://vimeo.com/someone", "not a url", "https://youtube.evil.com/@x"])
+    def test_anything_else_is_refused(self, raw):
+        # A brand clicks this to decide whether to book somebody; a link that
+        # goes nowhere costs the creator the booking and they never find out.
+        with pytest.raises(HTTPException) as exc:
+            server._clean_youtube_url(raw)
+        assert exc.value.status_code == 422
+
+    def test_blank_clears_it(self):
+        assert server._clean_youtube_url("") is None
+        assert server._clean_youtube_url(None) is None
+
+
+class TestCompletenessFollowsThePlatforms:
+    def _full(self, platforms):
+        profile = {field: "x" for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        profile["platforms"] = platforms
+        for p in platforms:
+            for field, _ in server._PLATFORM_COMPLETENESS_FIELDS[p]:
+                profile[field] = "x"
+        return profile
+
+    def test_an_instagram_creator_is_never_asked_for_a_youtube_link(self):
+        # Otherwise they could never reach 100%, and so could never submit for
+        # review at all.
+        result = server._profile_completeness(self._full(["instagram"]))
+        assert result["complete"] is True
+        assert result["percent"] == 100
+
+    def test_a_youtube_creator_is_asked_for_the_channel(self):
+        profile = self._full(["youtube"])
+        profile.pop("youtube_url")
+        missing = {r["field"] for r in server._profile_completeness(profile)["missing"]}
+        assert "youtube_url" in missing
+
+    def test_someone_on_both_is_asked_for_both(self):
+        fields = {f for f, _ in server._completeness_fields_for({"platforms": ["instagram", "youtube"]})}
+        assert {"instagram_handle", "instagram_profile_url", "youtube_url"} <= fields
+
+    def test_naming_no_platform_can_never_be_complete(self):
+        # platforms is itself a required field, so an empty list is missing one.
+        result = server._profile_completeness({})
+        assert result["complete"] is False
+        assert "platforms" in {r["field"] for r in result["missing"]}
+
+    def test_the_percentage_is_out_of_what_this_creator_was_asked(self):
+        profile = self._full(["instagram"])
+        profile.pop("city")
+        result = server._profile_completeness(profile)
+        assert result["total"] == len(server._PROFILE_COMPLETENESS_FIELDS) + 2
+        assert result["filled"] == result["total"] - 1
+
+
+class TestTheBuilderIsToldWhereItStands:
+    def test_the_profile_read_carries_completeness(self):
+        # So the builder's submit button and the server's gate can never
+        # disagree about what "done" means.
+        import inspect
+
+        assert "_profile_completeness" in inspect.getsource(server.get_creator_profile)
+
+
+class TestSubmitForReview:
+    def test_it_is_the_only_creator_path_that_stamps_the_submission(self):
+        # Writes only — a query filtering on the field is not a write. If a
+        # second path could stamp it, a half-built profile could reach the
+        # vetting queue again, which is the thing this restructure removes.
+        import inspect
+
+        src = server.ROOT_DIR.joinpath("server.py").read_text()
+        writers = [
+            line.strip()
+            for line in src.splitlines()
+            if '"submitted_for_review_at": now' in line
+        ]
+        # This endpoint, and the campaign-review equivalent on brands.
+        assert len(writers) == 2, writers
+        assert '"submitted_for_review_at": now' in inspect.getsource(
+            server.submit_profile_for_review
+        )
+
+    def test_it_refuses_an_unfinished_profile(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'completeness["complete"]' in src
+        assert "409" in src
+
+    def test_the_refusal_names_what_is_missing(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'row["label"] for row in completeness["missing"]' in src
+
+    def test_an_already_verified_creator_is_refused(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert 'status == "verified"' in src
+
+    def test_a_resubmission_clears_the_old_rejection_reason(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert '"verification_reason": None' in src
+
+    def test_it_is_audited_and_confirmed_to_the_creator(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_profile_for_review)
+        assert '"creator.submit_for_review"' in src
+        assert "notify(" in src
+
+
+class TestVettingQueueShowsOnlySubmittedProfiles:
+    def test_the_queue_reads_the_shared_query(self):
+        import inspect
+
+        assert "_AWAITING_REVIEW_QUERY" in inspect.getsource(server.list_pending_creators)
+
+    def test_the_query_is_submission_not_a_guess_at_one(self):
+        assert server._AWAITING_REVIEW_QUERY["verification_status"] == "pending"
+        assert "submitted_for_review_at" in server._AWAITING_REVIEW_QUERY
+        assert "instagram_handle" not in server._AWAITING_REVIEW_QUERY
+
+    def test_the_badge_counts_the_same_rows_the_queue_shows(self):
+        import inspect
+
+        for fn in (server.admin_metrics, server.admin_dashboard):
+            assert "_AWAITING_REVIEW_QUERY" in inspect.getsource(fn)
+
+    def test_the_longest_wait_is_first(self):
+        import inspect
+
+        assert '.sort("submitted_for_review_at", 1)' in inspect.getsource(
+            server.list_pending_creators
+        )
+
+
+class TestApplyingIsGatedServerSide:
+    def test_the_endpoint_checks_verification_itself(self):
+        import inspect
+
+        src = inspect.getsource(server.apply_to_campaign)
+        assert 'verification_status") != "verified"' in src
+        assert "403" in src
+
+    def test_browsing_is_not_gated(self):
+        # A creator deciding whether this is worth finishing a profile for has
+        # to be able to see what is on offer.
+        import inspect
+
+        src = inspect.getsource(server.list_campaigns)
+        assert "verification_status" not in src
+
+    def test_someone_still_building_is_told_what_is_left(self):
+        message = server._why_you_cannot_apply({"platforms": ["instagram"]})
+        assert "Finish your profile" in message
+        assert "Instagram handle" in message
+
+    def test_someone_waiting_on_us_is_told_that_instead(self):
+        message = server._why_you_cannot_apply(
+            {"verification_status": "pending", "submitted_for_review_at": "2026-08-01T00:00:00Z"}
+        )
+        assert "with the WeAre team" in message
+        assert "Finish your profile" not in message
+
+    def test_a_rejected_creator_gets_the_reason_back(self):
+        message = server._why_you_cannot_apply(
+            {"verification_status": "rejected", "verification_reason": "Handle didn't match."}
+        )
+        assert "Handle didn't match." in message
+        assert "submit it again" in message
+
+    def test_a_rejection_with_no_reason_still_says_what_to_do(self):
+        message = server._why_you_cannot_apply({"verification_status": "rejected"})
+        assert "submit it again" in message
+
+
+class TestProfileNudge:
+    def test_it_waits_three_days_by_default(self, monkeypatch):
+        monkeypatch.delenv("PROFILE_NUDGE_AFTER_DAYS", raising=False)
+        assert server._nudge_after_days() == 3
+
+    def test_the_wait_is_configurable_and_never_zero(self, monkeypatch):
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "7")
+        assert server._nudge_after_days() == 7
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "0")
+        assert server._nudge_after_days() == 1
+
+    def test_nonsense_falls_back_rather_than_crashing_startup(self, monkeypatch):
+        monkeypatch.setenv("PROFILE_NUDGE_AFTER_DAYS", "soon")
+        assert server._nudge_after_days() == 3
+
+    def test_the_loop_can_be_turned_off(self, monkeypatch):
+        # So a deployment with its own scheduler can drive the endpoint instead
+        # without two things chasing the same people.
+        monkeypatch.setenv("PROFILE_NUDGE_INTERVAL_SECONDS", "0")
+        assert server._nudge_interval_seconds() == 0
+
+    def test_the_send_is_claimed_before_it_is_made(self):
+        # The stamp is the claim, under a filter that only matches while it is
+        # absent — so a race produces one message and a failed send still counts
+        # as used up. Chasing twice is how you get muted.
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert '"onboarding_nudge_sent_at": {"$exists": False}' in src
+        assert "find_one_and_update" in src
+        claim = src.index("find_one_and_update")
+        assert src.index("_send_aisensy_utility") > claim
+
+    def test_it_only_chases_people_who_actually_stalled(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert '"created_at": {"$lte": cutoff}' in src
+        assert '"verification_status": "pending"' in src
+        assert '"submitted_for_review_at": {"$in": [None, False]}' in src
+
+    def test_a_finished_but_unsubmitted_profile_is_left_alone(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert 'completeness["complete"]' in src
+        assert "continue" in src
+
+    def test_it_reuses_the_utility_helper_and_its_simulation_fallback(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "_send_aisensy_utility" in src
+        assert 'mode == "simulation"' in src
+
+    def test_one_bad_send_does_not_take_the_batch(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "except HTTPException" in src and "except Exception" in src
+
+    def test_a_failed_pass_never_kills_the_loop(self):
+        import inspect
+
+        src = inspect.getsource(server._nudge_loop)
+        assert "except asyncio.CancelledError" in src
+        assert "raise" in src
+        assert "except Exception" in src
+
+    def test_the_message_names_what_is_missing(self):
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert 'completeness["missing"][:3]' in src
+
+    def test_it_lands_in_the_creators_notifications_too(self):
+        # WhatsApp can fail; the in-app record is what survives it.
+        import inspect
+
+        src = inspect.getsource(server.nudge_stale_creator_profiles)
+        assert "record_notification" in src
+        assert '"profile_nudge"' in src
+
+    def test_the_event_is_declared(self):
+        assert "profile_nudge" in server.NOTIFY_EVENTS
+        assert "profile_submitted" in server.NOTIFY_EVENTS
+
+    def test_a_manual_run_goes_through_the_same_function(self):
+        import inspect
+
+        src = inspect.getsource(server.run_creator_nudges)
+        assert "nudge_stale_creator_profiles()" in src
+        assert "audit(" in src
+
+
+# ---------------------------------------------------------------------------
+# Instagram, the sanctioned way. The scraper that used to sit here breached
+# Instagram's terms and risked the Meta Business account; these rules exist so
+# its replacement stays inside the lines — the right login flow, the narrowest
+# scopes, a token that is never readable by anything but the server, and a call
+# budget that a busy creator can't spend by refreshing a page.
+# ---------------------------------------------------------------------------
+
+
+class TestInstagramUsesTheRightFlow:
+    def test_it_is_the_instagram_login_flow_not_the_facebook_one(self):
+        # The Facebook route would make every creator link a Facebook Page,
+        # which most of ours don't have and shouldn't have to create.
+        assert server.INSTAGRAM_AUTH_URL.startswith("https://www.instagram.com/oauth/authorize")
+        assert server.INSTAGRAM_TOKEN_URL.startswith("https://api.instagram.com/oauth/access_token")
+        assert server.INSTAGRAM_GRAPH == "https://graph.instagram.com"
+
+    def test_no_facebook_graph_host_anywhere(self):
+        src = (server.ROOT_DIR / "server.py").read_text()
+        assert "graph.facebook.com" not in src
+
+    def test_only_the_two_read_scopes_are_asked_for(self):
+        # Anything wider would be asking for trust we have no use for.
+        assert set(server.INSTAGRAM_SCOPES) == {
+            "instagram_business_basic",
+            "instagram_business_manage_insights",
+        }
+
+    def test_the_authorize_url_carries_exactly_those_scopes(self):
+        import inspect
+
+        src = inspect.getsource(server.start_instagram_connect)
+        assert '",".join(INSTAGRAM_SCOPES)' in src
+        assert '"response_type": "code"' in src
+
+    def test_the_scopes_reach_the_creator_so_they_know_what_they_gave(self):
+        import inspect
+
+        assert '"scopes": list(INSTAGRAM_SCOPES)' in inspect.getsource(
+            server.start_instagram_connect
+        )
+
+
+class TestInstagramWorksWithoutCredentials:
+    def test_it_is_off_when_nothing_is_configured(self, monkeypatch):
+        # The normal state during app review. Everything else must keep working.
+        for key in ("INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET", "INSTAGRAM_REDIRECT_URI"):
+            monkeypatch.delenv(key, raising=False)
+        assert server.instagram_configured() is False
+        assert server._instagram_config() is None
+
+    def test_credentials_without_an_encryption_key_stay_off(self, monkeypatch):
+        # A token at rest in plaintext is worse than the feature being off.
+        monkeypatch.setenv("INSTAGRAM_APP_ID", "123")
+        monkeypatch.setenv("INSTAGRAM_APP_SECRET", "shh")
+        monkeypatch.setenv("INSTAGRAM_REDIRECT_URI", "https://weare.example/ig")
+        monkeypatch.delenv("INSTAGRAM_TOKEN_KEY", raising=False)
+        assert server.instagram_configured() is False
+
+    def test_the_full_set_switches_it_on(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_APP_ID", "123")
+        monkeypatch.setenv("INSTAGRAM_APP_SECRET", "shh")
+        monkeypatch.setenv("INSTAGRAM_REDIRECT_URI", "https://weare.example/ig")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", "x" * 44)
+        assert server.instagram_configured() is True
+
+    def test_the_status_endpoint_says_so_rather_than_failing(self):
+        # The UI needs to disable a button, not handle an error.
+        assert server._serialize_instagram(None, configured=False) == {
+            "configured": False,
+            "connected": False,
+            "status": None,
+            "username": None,
+            "account_type": None,
+            "connected_at": None,
+            "stats": None,
+            "stats_fetched_at": None,
+            "stale_reason": None,
+        }
+
+    def test_connecting_while_off_is_a_503_that_explains_itself(self):
+        exc = server._instagram_unavailable()
+        assert exc.status_code == 503
+        assert "review" in exc.detail
+        assert "self-reported" in exc.detail
+
+    def test_the_jobs_no_op_rather_than_erroring(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            src = inspect.getsource(fn)
+            assert "if not instagram_configured():" in src
+            assert '"not configured"' in src
+
+    def test_the_loop_is_not_started_when_it_is_off(self):
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert "if instagram_configured() and _instagram_job_interval_seconds() > 0:" in src
+
+
+class TestInstagramTokensNeverLeave:
+    def test_the_token_is_encrypted_before_it_is_stored(self):
+        import inspect
+
+        for fn in (server.finish_instagram_connect, server.refresh_instagram_tokens):
+            assert "_encrypt_token(" in inspect.getsource(fn)
+
+    def test_encryption_refuses_rather_than_falling_back_to_plaintext(self, monkeypatch):
+        monkeypatch.delenv("INSTAGRAM_TOKEN_KEY", raising=False)
+        with pytest.raises(HTTPException) as exc:
+            server._encrypt_token("a-real-token")
+        assert exc.value.status_code == 503
+
+    def test_a_bad_key_does_not_crash_the_process(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", "not-a-fernet-key")
+        assert server._token_cipher() is None
+
+    def test_an_undecryptable_token_reads_as_absent(self, monkeypatch):
+        # A rotated key must degrade to "reconnect", not to a 500.
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        assert server._decrypt_token("garbage") is None
+        assert server._decrypt_token(None) is None
+
+    def test_a_token_survives_a_round_trip(self, monkeypatch):
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        blob = server._encrypt_token("IGAA-long-lived-token")
+        assert "IGAA-long-lived-token" not in blob
+        assert server._decrypt_token(blob) == "IGAA-long-lived-token"
+
+    def test_a_token_written_under_a_different_key_is_not_readable(self, monkeypatch):
+        # Key rotation reads as "reconnect", which is recoverable, rather than
+        # as a decryption error nobody can act on.
+        fernet = pytest.importorskip("cryptography.fernet")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        blob = server._encrypt_token("IGAA-token")
+        monkeypatch.setenv("INSTAGRAM_TOKEN_KEY", fernet.Fernet.generate_key().decode())
+        assert server._decrypt_token(blob) is None
+
+    def test_the_serializer_cannot_return_the_token(self):
+        doc = {
+            "user_id": "u", "ig_user_id": "1", "username": "someone",
+            "access_token": "SECRET-TOKEN-VALUE", "status": "connected",
+            "stats": {"followers_count": 10}, "account_type": "MEDIA_CREATOR",
+        }
+        assert "SECRET-TOKEN-VALUE" not in str(server._serialize_instagram(doc))
+        assert "access_token" not in server._serialize_instagram(doc)
+
+    def test_connections_live_in_their_own_collection(self):
+        # So no creator-profile serializer can leak the token by accident —
+        # the field is never in scope.
+        src = (server.ROOT_DIR / "server.py").read_text()
+        assert "db.instagram_connections" in src
+        import inspect
+
+        assert "access_token" not in inspect.getsource(server._serialize_creator_profile)
+        assert "access_token" not in inspect.getsource(server._serialize_admin_creator)
+
+    def test_no_route_returns_the_raw_token(self):
+        import inspect
+
+        for fn in (
+            server.get_instagram_connection,
+            server.finish_instagram_connect,
+            server.disconnect_instagram,
+            server.refresh_instagram_now,
+        ):
+            src = inspect.getsource(fn)
+            assert "_serialize_instagram" in src
+            assert "_decrypt_token" not in src or "return _decrypt_token" not in src
+
+
+class TestInstagramOauthState:
+    def test_the_state_is_single_use_and_server_side(self):
+        import inspect
+
+        assert "db.instagram_oauth_states.insert_one" in inspect.getsource(
+            server.start_instagram_connect
+        )
+        # find_one_and_delete: spending it and consuming it are one operation,
+        # so a replayed callback finds nothing.
+        assert "find_one_and_delete" in inspect.getsource(server.finish_instagram_connect)
+
+    def test_it_is_bound_to_the_creator_who_started_it(self):
+        import inspect
+
+        assert '{"state": payload.state, "user_id": creator_oid}' in inspect.getsource(
+            server.finish_instagram_connect
+        )
+
+    def test_it_expires(self):
+        import inspect
+
+        assert "expires_at" in inspect.getsource(server.start_instagram_connect)
+        assert "expireAfterSeconds=0" in inspect.getsource(server._startup)
+
+
+class TestInstagramProfessionalAccountsOnly:
+    def test_both_professional_spellings_are_accepted(self):
+        # Meta has renamed the creator variant; locking somebody out over that
+        # would be our bug, not theirs.
+        assert {"BUSINESS", "MEDIA_CREATOR"} <= set(server.INSTAGRAM_PROFESSIONAL_TYPES)
+
+    def test_a_personal_account_is_refused_with_a_code_the_ui_can_switch_on(self):
+        import inspect
+
+        src = inspect.getsource(server.finish_instagram_connect)
+        assert '"code": "not_professional"' in src
+        assert "409" in src
+
+    def test_the_refusal_says_where_to_tap(self):
+        import inspect
+
+        src = inspect.getsource(server.finish_instagram_connect)
+        assert "Settings" in src and "Switch to professional account" in src
+        # And that it costs them nothing, which is the actual worry.
+        assert "free" in src
+
+
+class TestInstagramCaching:
+    def test_stats_are_cached_for_twelve_hours_by_default(self, monkeypatch):
+        monkeypatch.delenv("INSTAGRAM_STATS_TTL_HOURS", raising=False)
+        assert server._instagram_stats_ttl_hours() == 12
+
+    def test_the_window_is_configurable_and_never_zero(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_STATS_TTL_HOURS", "6")
+        assert server._instagram_stats_ttl_hours() == 6
+        monkeypatch.setenv("INSTAGRAM_STATS_TTL_HOURS", "0")
+        assert server._instagram_stats_ttl_hours() == 1
+
+    def test_nothing_fetches_on_a_dashboard_load(self):
+        # The whole point of the cache: 200 calls per user per hour, three per
+        # reading, and a creator who opens the app a lot must not spend it.
+        import inspect
+
+        src = inspect.getsource(server.get_creator_dashboard)
+        assert "_fetch_instagram_stats" not in src
+        assert "_serialize_instagram" in src
+
+    def test_the_manual_refresh_still_respects_the_window(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_now)
+        assert "_instagram_stats_ttl_hours()" in src
+
+    def test_the_scheduled_pass_only_takes_stale_rows(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_stats)
+        assert '{"stats_fetched_at": {"$lte": cutoff}}' in src
+        assert '{"stats_fetched_at": {"$exists": False}}' in src
+
+    def test_all_four_numbers_are_pulled(self):
+        import inspect
+
+        src = inspect.getsource(server._fetch_instagram_stats)
+        for field in ("followers_count", "media_count", "reach", "engagement"):
+            assert f'"{field}"' in src
+
+    def test_insights_are_best_effort(self):
+        # A new account with no activity has no reach to report, and that must
+        # not cost us the follower count as well.
+        import inspect
+
+        src = inspect.getsource(server._fetch_instagram_stats)
+        assert "except HTTPException" in src
+        assert "return None" in src
+
+
+class TestInstagramTokenRefresh:
+    def test_it_renews_before_expiry_not_after(self):
+        assert server.INSTAGRAM_REFRESH_WINDOW_DAYS > 0
+        assert server.INSTAGRAM_REFRESH_WINDOW_DAYS < server.INSTAGRAM_TOKEN_TTL_DAYS
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert '"token_expires_at": {"$lte": due}' in src
+
+    def test_it_uses_the_documented_refresh_grant(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert '"grant_type": "ig_refresh_token"' in src
+
+    def test_the_connect_exchange_asks_for_a_long_lived_token(self):
+        import inspect
+
+        assert '"grant_type": "ig_exchange_token"' in inspect.getsource(
+            server.finish_instagram_connect
+        )
+
+    def test_a_withdrawn_token_goes_stale_rather_than_silently_freezing(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            src = inspect.getsource(fn)
+            assert "_is_revoked(" in src
+            assert "_mark_connection_stale(" in src
+
+    def test_a_transient_error_is_not_treated_as_a_revocation(self):
+        # Sending a reconnect prompt over a Graph blip trains people to ignore
+        # them.
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_tokens)
+        assert "deferred" in src
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Error validating access token: Session has been invalidated",
+            "The access token has expired",
+            "Invalid OAuth access token",
+            "The user has not authorized application",
+        ],
+    )
+    def test_revocation_is_recognised_from_the_message(self, message):
+        assert server._is_revoked(message) is True
+
+    def test_an_unrelated_error_is_not(self):
+        assert server._is_revoked("Please reduce the amount of data you're asking for") is False
+
+    def test_going_stale_drops_the_token_and_asks_for_a_reconnect(self):
+        import inspect
+
+        src = inspect.getsource(server._mark_connection_stale)
+        assert '"$unset": {"access_token": ""}' in src
+        assert "notify(" in src
+        assert '"status": "stale"' in src
+
+    def test_it_does_not_nag_about_the_same_thing_twice(self):
+        import inspect
+
+        src = inspect.getsource(server._mark_connection_stale)
+        assert 'doc.get("status") == "stale"' in src
+        assert "return" in src
+
+    def test_stale_is_not_the_same_as_disconnected(self):
+        # One needs a tap; the other means they chose to leave.
+        assert set(server.InstagramConnectionStatus.__args__) == {"connected", "stale"}
+
+    def test_the_disconnect_event_is_declared(self):
+        assert "instagram_disconnected" in server.NOTIFY_EVENTS
+
+
+class TestVerifiedFollowerCount:
+    def test_a_connected_creator_reads_as_verified(self):
+        result = server._follower_provenance({"follower_count_source": "instagram_verified"})
+        assert result["follower_count_source"] == "instagram_verified"
+        assert result["follower_count_verified"] is True
+        assert result["verified_stats_available"] is True
+
+    def test_the_default_is_self_reported(self):
+        result = server._follower_provenance({})
+        assert result["follower_count_source"] == "self_reported"
+        assert result["follower_count_verified"] is False
+
+    def test_provenance_travels_with_the_number_everywhere_it_is_shown(self):
+        # Presenting a measured figure and a remembered one identically is how
+        # the scraped numbers got trusted in the first place.
+        import inspect
+
+        for fn in (
+            server._serialize_creator_profile,
+            server._serialize_admin_creator,
+            server._serialize_directory_creator,
+            server.get_creator_dashboard,
+        ):
+            assert "_follower_provenance" in inspect.getsource(fn)
+
+    def test_the_self_reported_figure_is_kept_as_a_fallback(self):
+        import inspect
+
+        src = inspect.getsource(server._store_instagram_stats)
+        assert '"follower_count_self_reported"' in src
+
+    def test_disconnecting_falls_back_to_it(self):
+        import inspect
+
+        src = inspect.getsource(server.disconnect_instagram)
+        assert 'get("follower_count_self_reported")' in src
+        assert '"follower_count_source": "self_reported"' in src
+
+    def test_a_typed_number_cannot_overwrite_a_verified_one(self):
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert 'existing.get("follower_count_source") == "instagram_verified"' in src
+
+    def test_the_live_number_is_mirrored_onto_the_profile(self):
+        # So the brand directory can sort and filter on a real figure without
+        # a join on every query.
+        import inspect
+
+        src = inspect.getsource(server._store_instagram_stats)
+        assert "db.creator_profiles.update_one" in src
+        assert '"follower_count_source": "instagram_verified"' in src
+
+
+class TestInstagramJobsAreSafeToRun:
+    def test_a_failed_pass_never_kills_the_loop(self):
+        import inspect
+
+        src = inspect.getsource(server._instagram_loop)
+        assert "except asyncio.CancelledError" in src
+        assert "except Exception" in src
+
+    def test_one_bad_account_does_not_stop_the_batch(self):
+        import inspect
+
+        src = inspect.getsource(server.refresh_instagram_stats)
+        assert "except Exception as exc:" in src
+        assert "continue" in src
+
+    def test_both_passes_are_bounded(self):
+        import inspect
+
+        for fn in (server.refresh_instagram_tokens, server.refresh_instagram_stats):
+            assert "to_list(length=limit)" in inspect.getsource(fn)
+
+    def test_a_manual_run_goes_through_the_same_functions_and_is_audited(self):
+        import inspect
+
+        src = inspect.getsource(server.run_instagram_jobs)
+        assert "refresh_instagram_tokens()" in src
+        assert "refresh_instagram_stats()" in src
+        assert "audit(" in src
+
+    def test_the_loop_can_be_turned_off(self, monkeypatch):
+        monkeypatch.setenv("INSTAGRAM_JOB_INTERVAL_SECONDS", "0")
+        assert server._instagram_job_interval_seconds() == 0
+
+    def test_both_tasks_are_cancelled_on_shutdown(self):
+        import inspect
+
+        src = inspect.getsource(server._shutdown)
+        assert "nudge_task" in src and "instagram_task" in src

@@ -150,6 +150,10 @@ Two things to try breaking on purpose:
 | `ADMIN_PASSWORD_RESET` | Set true for one boot to overwrite an existing admin password. Seeding is otherwise create-only. |
 | `TERMS_VERSION` | Stamped onto accounts at signup. Bump it when the terms change. |
 | `AISENSY_TEMPLATE_<EVENT>` | Per-event WhatsApp template. Events without one are still recorded in-app. |
+| `INSTAGRAM_APP_ID` / `_SECRET` / `_REDIRECT_URI` | Meta app for official Instagram stats. All blank = feature off, connect button clearly disabled, counts stay self-reported. |
+| `INSTAGRAM_TOKEN_KEY` | Fernet key encrypting access tokens at rest. Absent = feature stays off rather than storing tokens in the clear. |
+| `INSTAGRAM_STATS_TTL_HOURS` | How long a cached reading counts as current. Default 12; never fetched on page load. |
+| `PROFILE_NUDGE_AFTER_DAYS` | How long before an unfinished creator profile gets its one WhatsApp chase. Default 3. |
 
 Full list with comments: `backend/.env.example`.
 

@@ -1,17 +1,38 @@
+// The creator profile builder.
+//
+// Signup asks for a name and a WhatsApp number and stops. Everything a brand
+// actually shortlists on gets built here instead, and the two rules that shape
+// this page follow from that:
+//
+//   1. Nothing is required to save. Somebody filling this in on a phone
+//      between two things should be able to put down what they have and come
+//      back — a form that refuses half an answer just gets abandoned with
+//      nothing saved at all.
+//   2. Saving is not submitting. The team only sees a profile when the creator
+//      says it's ready, which the server only allows at 100%. That is why the
+//      progress ring is the loudest thing on the page: it is the actual gate,
+//      not decoration.
+//
+// The percentage and the missing list both come from the server, so the submit
+// button and the rule behind it can never disagree.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { motion, useReducedMotion } from "framer-motion";
 import {
     ArrowRight,
+    Check,
     Instagram,
     Loader2,
     MapPin,
-    Users,
-    IndianRupee,
-    X,
+    Save,
     ShieldCheck,
-    Wallet,
     Upload,
+    Users,
+    Wallet,
+    X,
+    Youtube,
+    IndianRupee,
     Image as ImageIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -20,38 +41,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Navbar } from "@/components/Navbar";
+import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
+import InstagramConnect from "@/components/creator/InstagramConnect";
 
 const SUGGESTED_NICHES = [
-    "cafe",
-    "brunch",
-    "bakery",
-    "fine dining",
-    "lifestyle",
-    "coffee",
-    "dessert",
-    "brewery",
-    "cocktails",
-    "home chef",
-    "healthy",
-    "street food",
-    "fashion",
-    "wellness",
+    "cafe", "brunch", "bakery", "fine dining", "coffee", "dessert",
+    "brewery", "cocktails", "home chef", "healthy", "street food",
+];
+
+// What they make, as opposed to what they cover for a brand.
+const SUGGESTED_GENRES = [
+    "food", "travel", "lifestyle", "fashion", "comedy", "fitness",
+    "beauty", "tech", "parenting", "music",
 ];
 
 const SUGGESTED_CITIES = [
-    "Bengaluru",
-    "Mumbai",
-    "Delhi NCR",
-    "Hyderabad",
-    "Pune",
-    "Chennai",
-    "Kolkata",
-    "Goa",
-    "Ahmedabad",
-    "Jaipur",
-    "Chandigarh",
-    "Kochi",
+    "Bengaluru", "Mumbai", "Delhi NCR", "Hyderabad", "Pune", "Chennai",
+    "Kolkata", "Goa", "Ahmedabad", "Jaipur", "Chandigarh", "Kochi",
+];
+
+const PLATFORMS = [
+    { value: "instagram", label: "Instagram", Icon: Instagram },
+    { value: "youtube", label: "YouTube", Icon: Youtube },
 ];
 
 const normalise = (v) => v.trim().toLowerCase().replace(/\s+/g, " ");
@@ -59,66 +72,225 @@ const normalise = (v) => v.trim().toLowerCase().replace(/\s+/g, " ");
 // Mirrors MAX_UPLOAD_MB on the server; checked here only to fail fast.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+// ---------------------------------------------------------------------------
+// Pieces
+// ---------------------------------------------------------------------------
+
+const RADIUS = 26;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+const Ring = ({ percent }) => {
+    const still = useReducedMotion();
+    const offset = CIRCUMFERENCE * (1 - Math.max(0, Math.min(100, percent)) / 100);
+    return (
+        <div
+            data-testid={IDS.ring}
+            role="img"
+            aria-label={`Profile ${percent}% complete`}
+            className="relative h-16 w-16 flex-none"
+        >
+            <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
+                <circle cx="32" cy="32" r={RADIUS} fill="none" strokeWidth="3" className="stroke-white/10" />
+                <motion.circle
+                    cx="32"
+                    cy="32"
+                    r={RADIUS}
+                    fill="none"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeDasharray={CIRCUMFERENCE}
+                    className="stroke-ember-500"
+                    initial={false}
+                    animate={{ strokeDashoffset: offset }}
+                    transition={{ duration: still ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
+                />
+            </svg>
+            <span
+                data-testid={IDS.percent}
+                className="absolute inset-0 grid place-items-center font-serif text-base"
+            >
+                {percent}%
+            </span>
+        </div>
+    );
+};
+
+const Section = ({ id, title, note, children }) => (
+    <section data-testid={IDS.section(id)} className="space-y-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
+            {note && <span className="text-xs text-muted-foreground/80">{note}</span>}
+        </div>
+        {children}
+    </section>
+);
+
+/** A chip editor for a free-text list with suggestions under it. */
+const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, suggestId, placeholder }) => {
+    const [draft, setDraft] = useState("");
+
+    const add = (raw) => {
+        const value = normalise(raw);
+        if (!value) return;
+        if (!values.includes(value)) onChange([...values, value]);
+        setDraft("");
+    };
+    const remove = (value) => onChange(values.filter((v) => v !== value));
+
+    const onKeyDown = (e) => {
+        if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            add(draft);
+        } else if (e.key === "Backspace" && draft === "" && values.length > 0) {
+            remove(values[values.length - 1]);
+        }
+    };
+
+    const remaining = suggestions.filter((s) => !values.includes(s));
+
+    return (
+        <div className="space-y-3">
+            <div
+                data-testid={editorId}
+                className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-ember-500/50"
+            >
+                <div className="flex flex-wrap gap-2">
+                    {values.map((v) => (
+                        <span
+                            key={v}
+                            data-testid={chipId(v)}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-ember-500/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-ember-500"
+                        >
+                            {v}
+                            <button
+                                type="button"
+                                onClick={() => remove(v)}
+                                aria-label={`Remove ${v}`}
+                                className="rounded-full p-0.5 opacity-70 transition-opacity duration-200 hover:opacity-100"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                        </span>
+                    ))}
+                    <input
+                        data-testid={inputId}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={onKeyDown}
+                        onBlur={() => draft.trim() && add(draft)}
+                        className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+                        placeholder={values.length === 0 ? placeholder : "Add another…"}
+                    />
+                </div>
+            </div>
+            {remaining.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {remaining.map((s) => (
+                        <button
+                            type="button"
+                            key={s}
+                            onClick={() => add(s)}
+                            data-testid={suggestId(s.replace(/\s+/g, "-"))}
+                            className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                        >
+                            + {s}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const Field = ({ id, label, hint, children }) => (
+    <div>
+        <Label htmlFor={id} className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+            {label}
+        </Label>
+        {children}
+        {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
+    </div>
+);
+
+const inputClass = "mt-2 h-12 border-white/10 bg-card/60 focus-visible:ring-ember-500";
+
+// ---------------------------------------------------------------------------
+
 export default function CreatorOnboarding() {
     const { user, refresh } = useAuth();
     const navigate = useNavigate();
+    const still = useReducedMotion();
 
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
+    const [completeness, setCompleteness] = useState(null);
+    const [verificationStatus, setVerificationStatus] = useState("pending");
+    const [submittedAt, setSubmittedAt] = useState(null);
 
-    const [name, setName] = useState("");
-    const [instagramHandle, setInstagramHandle] = useState("");
-    const [instagramUrl, setInstagramUrl] = useState("");
-    const [email, setEmail] = useState("");
-    const [city, setCity] = useState("");
-    const [address, setAddress] = useState("");
-    const [niches, setNiches] = useState([]);
-    const [nicheInput, setNicheInput] = useState("");
-    const [baseRate, setBaseRate] = useState("");
-    const [followerCount, setFollowerCount] = useState("");
-    const [payoutUpi, setPayoutUpi] = useState("");
-    const [payoutAccountName, setPayoutAccountName] = useState("");
-    const [pan, setPan] = useState("");
-    const [gstin, setGstin] = useState("");
+    const [form, setForm] = useState({
+        name: "",
+        email: "",
+        city: "",
+        address: "",
+        full_address: "",
+        genres: [],
+        niches: [],
+        platforms: [],
+        instagram_handle: "",
+        instagram_profile_url: "",
+        youtube_url: "",
+        base_rate: "",
+        follower_count: "",
+        payout_upi: "",
+        payout_account_name: "",
+        pan: "",
+        gstin: "",
+    });
+    const set = (key) => (value) => setForm((f) => ({ ...f, [key]: value }));
+    const setText = (key) => (e) => set(key)(e.target.value);
+
     const [profileImageUrl, setProfileImageUrl] = useState(null);
     const [imageBusy, setImageBusy] = useState(false);
     const [imageError, setImageError] = useState("");
     const fileInputRef = useRef(null);
-    const [verificationStatus, setVerificationStatus] = useState("pending");
 
-    // Prefill from the existing stub / previous submission.
+    const applyProfile = useCallback((data) => {
+        setForm({
+            name: data.name || "",
+            email: data.email || "",
+            city: data.city || "",
+            address: data.address || "",
+            full_address: data.full_address || "",
+            genres: data.genres || [],
+            niches: data.niches || [],
+            platforms: data.platforms || [],
+            instagram_handle: data.instagram_handle || "",
+            instagram_profile_url: data.instagram_profile_url || "",
+            youtube_url: data.youtube_url || "",
+            base_rate: data.base_rate ?? "",
+            follower_count: data.follower_count ?? "",
+            payout_upi: data.payout_upi || "",
+            payout_account_name: data.payout_account_name || "",
+            pan: data.pan || "",
+            gstin: data.gstin || "",
+        });
+        setProfileImageUrl(data.profile_image_url || null);
+        setVerificationStatus(data.verification_status || "pending");
+        setSubmittedAt(data.submitted_for_review_at || null);
+        setCompleteness(data.profile_completeness || null);
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
                 const { data } = await api.get("/creator/profile");
                 if (cancelled) return;
-                setName(data.name || user?.name || "");
-                setInstagramHandle(data.instagram_handle || "");
-                setInstagramUrl(data.instagram_profile_url || "");
-                setEmail(data.email || user?.email || "");
-                setCity(data.city || "");
-                setAddress(data.address || "");
-                setNiches(data.niches || []);
-                setBaseRate(
-                    data.base_rate === null || data.base_rate === undefined
-                        ? ""
-                        : String(data.base_rate),
-                );
-                setFollowerCount(
-                    data.follower_count === null || data.follower_count === undefined
-                        ? ""
-                        : String(data.follower_count),
-                );
-                setPayoutUpi(data.payout_upi || "");
-                setPayoutAccountName(data.payout_account_name || "");
-                setPan(data.pan || "");
-                setGstin(data.gstin || "");
-                setVerificationStatus(data.verification_status || "pending");
-                setProfileImageUrl(data.profile_image_url || null);
+                applyProfile({ ...data, name: data.name || user?.name || "" });
             } catch (e) {
-                setError(formatApiError(e));
+                if (!cancelled) setError(formatApiError(e));
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -126,47 +298,24 @@ export default function CreatorOnboarding() {
         return () => {
             cancelled = true;
         };
-    }, [user]);
-
-    const addNiche = useCallback(
-        (raw) => {
-            const value = normalise(raw);
-            if (!value) return;
-            setNiches((prev) => (prev.includes(value) ? prev : [...prev, value]));
-            setNicheInput("");
-        },
-        [],
-    );
-
-    const removeNiche = (value) =>
-        setNiches((prev) => prev.filter((n) => n !== value));
-
-    const onNicheKeyDown = (e) => {
-        if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            addNiche(nicheInput);
-        } else if (
-            e.key === "Backspace" &&
-            nicheInput === "" &&
-            niches.length > 0
-        ) {
-            removeNiche(niches[niches.length - 1]);
-        }
-    };
-
-    const remainingSuggestions = useMemo(
-        () => SUGGESTED_NICHES.filter((s) => !niches.includes(s)),
-        [niches],
-    );
+    }, [user, applyProfile]);
 
     // The photo saves on its own, not with the form — a file upload is a
     // different kind of write, and it shouldn't be lost if the form is
-    // abandoned or fails validation.
+    // abandoned. It counts towards completeness, so re-read after it lands.
+    const refreshCompleteness = useCallback(async () => {
+        try {
+            const { data } = await api.get("/creator/profile");
+            setCompleteness(data.profile_completeness || null);
+        } catch {
+            // The ring going stale is not worth an error message.
+        }
+    }, []);
+
     const onPickImage = async (e) => {
         const file = e.target.files?.[0];
         e.target.value = ""; // let the same file be re-picked after an error
         if (!file) return;
-
         setImageError("");
         if (!file.type.startsWith("image/")) {
             setImageError("Please choose an image file.");
@@ -176,17 +325,16 @@ export default function CreatorOnboarding() {
             setImageError("That image is over 5MB. Try a smaller one.");
             return;
         }
-
         const body = new FormData();
         body.append("file", file);
         setImageBusy(true);
         try {
-            // Let the browser set the multipart boundary.
             const { data } = await api.post("/creator/profile/image", body, {
                 headers: { "Content-Type": undefined },
             });
             setProfileImageUrl(data.profile_image_url);
             toast.success("Photo updated");
+            refreshCompleteness();
         } catch (err) {
             setImageError(formatApiError(err));
         } finally {
@@ -200,6 +348,7 @@ export default function CreatorOnboarding() {
         try {
             await api.delete("/creator/profile/image");
             setProfileImageUrl(null);
+            refreshCompleteness();
         } catch (err) {
             setImageError(formatApiError(err));
         } finally {
@@ -207,62 +356,98 @@ export default function CreatorOnboarding() {
         }
     };
 
-    const onSubmit = async (e) => {
-        e.preventDefault();
+    /** Everything on the form, as the API wants it. Blanks are explicit nulls
+     *  so clearing a field actually clears it. */
+    const payload = useMemo(
+        () => ({
+            name: form.name.trim() || null,
+            email: form.email.trim() || null,
+            city: form.city.trim() || null,
+            address: form.address.trim() || null,
+            full_address: form.full_address.trim() || null,
+            genres: form.genres,
+            niches: form.niches,
+            platforms: form.platforms,
+            instagram_handle: form.instagram_handle.trim() || null,
+            instagram_profile_url: form.instagram_profile_url.trim() || null,
+            youtube_url: form.youtube_url.trim() || null,
+            base_rate: form.base_rate === "" ? null : Number(form.base_rate),
+            follower_count: form.follower_count === "" ? null : Number(form.follower_count),
+            payout_upi: form.payout_upi.trim() || null,
+            payout_account_name: form.payout_account_name.trim() || null,
+            pan: form.pan.trim() || null,
+            gstin: form.gstin.trim() || null,
+        }),
+        [form],
+    );
+
+    const save = async ({ quiet = false } = {}) => {
         setError("");
-        if (niches.length === 0) {
-            setError("Please add at least one niche so brands can find you.");
-            return;
-        }
-        setSubmitting(true);
+        setSaving(true);
         try {
-            await api.put("/creator/profile", {
-                name,
-                instagram_handle: instagramHandle,
-                instagram_profile_url: instagramUrl,
-                email,
-                city: city.trim() || null,
-                address,
-                niches,
-                base_rate: baseRate === "" ? null : Number(baseRate),
-                follower_count:
-                    followerCount === "" ? null : Number(followerCount),
-                payout_upi: payoutUpi.trim() || null,
-                payout_account_name: payoutAccountName.trim() || null,
-                pan: pan.trim() || null,
-                gstin: gstin.trim() || null,
-            });
-            await refresh(); // pick up any name change
-            toast.success(
-                verificationStatus === "verified"
-                    ? "Profile updated"
-                    : "Profile submitted for review",
-            );
+            const { data } = await api.put("/creator/profile", payload);
+            applyProfile({ ...data, profile_image_url: data.profile_image_url ?? profileImageUrl });
+            await refresh(); // pick up any name change in the navbar
+            if (!quiet) toast.success("Saved — come back any time");
+            return true;
+        } catch (err) {
+            setError(formatApiError(err));
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const submit = async () => {
+        // Save first: submitting what's on screen rather than what was last
+        // written is the only behaviour that isn't a trap.
+        if (!(await save({ quiet: true }))) return;
+        setSubmitting(true);
+        setError("");
+        try {
+            await api.post("/creator/profile/submit-for-review");
+            toast.success("Sent to the WeAre team — we'll come back within 48 hours");
             navigate("/dashboard", { replace: true, state: { justOnboarded: true } });
         } catch (err) {
             setError(formatApiError(err));
+            refreshCompleteness();
         } finally {
             setSubmitting(false);
         }
     };
 
+    const percent = completeness?.percent ?? 0;
+    const missing = completeness?.missing || [];
+    const canSubmit = Boolean(completeness?.complete) && verificationStatus !== "verified";
+    const onInstagram = form.platforms.includes("instagram");
+    const onYouTube = form.platforms.includes("youtube");
+
     if (loading) {
         return (
-            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
+            <div data-testid={IDS.page} className="min-h-screen bg-background">
+                <Navbar />
+                <main data-testid={IDS.skeleton} className="mx-auto max-w-3xl space-y-8 px-5 py-12 md:px-6 md:py-16">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-10 w-2/3" />
+                    <Skeleton className="h-24 w-full rounded-md" />
+                    {[0, 1, 2].map((i) => (
+                        <div key={i} className="space-y-3">
+                            <Skeleton className="h-3 w-24" />
+                            <Skeleton className="h-12 w-full rounded-md" />
+                            <Skeleton className="h-12 w-full rounded-md" />
+                        </div>
+                    ))}
+                </main>
             </div>
         );
     }
 
     return (
-        <div
-            data-testid="creator-onboarding-page"
-            className="min-h-screen bg-background"
-        >
+        <div data-testid={IDS.page} className="min-h-screen bg-background">
             <Navbar />
-            <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
+            <main className="mx-auto max-w-3xl px-5 py-12 md:px-6 md:py-16">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    Creator · Onboarding
+                    Creator · Your profile
                 </p>
                 <h1 className="mt-4 font-serif text-4xl leading-none tracking-tight md:text-5xl">
                     Tell us about you.
@@ -270,28 +455,63 @@ export default function CreatorOnboarding() {
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
                     {verificationStatus === "verified"
                         ? "You're verified, so you stay live while you edit. Changing your name, handle or city means we'll take another look — you won't drop off the directory in the meantime."
-                        : "This becomes your creator profile on WeAre. The team reviews it — usually within 48 hours — and you can pitch on briefs as soon as you're approved."}
+                        : "Fill in as much as you like and save. Nothing here is required to save, and nobody sees it until you send it to us."}
                 </p>
 
-                <form onSubmit={onSubmit} className="mt-12 space-y-8">
-                    {/* Basics */}
-                    <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Basics
-                        </p>
+                {/* The gate, made visible. The ring is what decides whether the
+                    submit button works, so it sits above the form rather than
+                    at the end of it. */}
+                <div className="mt-10 flex flex-col gap-5 rounded-md border border-white/10 bg-card p-6 sm:flex-row sm:items-center">
+                    <Ring percent={percent} />
+                    <div className="min-w-0 flex-1">
+                        {completeness?.complete ? (
+                            <p className="font-serif text-xl leading-tight">
+                                That's everything — send it over when you're ready.
+                            </p>
+                        ) : (
+                            <>
+                                <p className="font-serif text-xl leading-tight">
+                                    {percent === 0
+                                        ? "Let's get you on the directory."
+                                        : "Nearly there."}
+                                </p>
+                                <ul data-testid={IDS.missing} className="mt-3 flex flex-wrap gap-2">
+                                    {missing.map((row) => (
+                                        <li
+                                            key={row.field}
+                                            data-testid={IDS.missingItem(row.field)}
+                                            className="rounded-full border border-white/10 bg-background/60 px-3 py-1 text-xs text-muted-foreground"
+                                        >
+                                            {row.label}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </>
+                        )}
+                        {submittedAt && verificationStatus === "pending" && (
+                            <p data-testid={IDS.statusNote} className="mt-3 text-xs text-ember-500">
+                                Already with the team — reviews usually finish within 48 hours.
+                            </p>
+                        )}
+                    </div>
+                </div>
 
-                        {/* Photo — saves immediately, separate from the form. */}
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        save();
+                    }}
+                    noValidate
+                    className="mt-12 space-y-12"
+                >
+                    <Section id="you" title="You">
                         <div className="flex flex-wrap items-center gap-5">
                             <div
-                                data-testid="onboarding-photo-preview"
+                                data-testid={IDS.photoPreview}
                                 className="grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-white/10 bg-card/60"
                             >
                                 {profileImageUrl ? (
-                                    <img
-                                        src={mediaUrl(profileImageUrl)}
-                                        alt="Your profile"
-                                        className="h-full w-full object-cover"
-                                    />
+                                    <img src={mediaUrl(profileImageUrl)} alt="Your profile" className="h-full w-full object-cover" />
                                 ) : (
                                     <ImageIcon className="h-6 w-6 text-muted-foreground" />
                                 )}
@@ -306,16 +526,16 @@ export default function CreatorOnboarding() {
                                         type="file"
                                         accept="image/jpeg,image/png,image/webp,image/gif"
                                         onChange={onPickImage}
-                                        data-testid="onboarding-photo-input"
+                                        data-testid={IDS.photoInput}
                                         className="hidden"
                                     />
                                     <Button
                                         type="button"
                                         variant="outline"
                                         disabled={imageBusy}
-                                        data-testid="onboarding-photo-upload-btn"
+                                        data-testid={IDS.photoUpload}
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                        className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
                                     >
                                         {imageBusy ? (
                                             <>
@@ -334,7 +554,7 @@ export default function CreatorOnboarding() {
                                             type="button"
                                             disabled={imageBusy}
                                             onClick={onRemoveImage}
-                                            data-testid="onboarding-photo-remove-btn"
+                                            data-testid={IDS.photoRemove}
                                             className="text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-red-300 disabled:opacity-40"
                                         >
                                             Remove
@@ -342,99 +562,53 @@ export default function CreatorOnboarding() {
                                     )}
                                 </div>
                                 <p className="mt-2 text-xs text-muted-foreground">
-                                    JPEG, PNG, WebP or GIF, up to 5MB. Brands see this on
-                                    your card in the directory.
+                                    JPEG, PNG, WebP or GIF, up to 5MB. Saves on its own.
                                 </p>
                                 {imageError && (
-                                    <p
-                                        data-testid="onboarding-photo-error"
-                                        className="mt-2 text-xs text-destructive"
-                                    >
+                                    <p data-testid={IDS.photoError} className="mt-2 text-xs text-destructive">
                                         {imageError}
                                     </p>
                                 )}
                             </div>
                         </div>
 
-                        <div>
-                            <Label htmlFor="name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                Full name
-                            </Label>
-                            <Input
-                                id="name"
-                                data-testid="onboarding-name-input"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                required
-                                maxLength={120}
-                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="e.g. Priya Rao"
-                            />
-                        </div>
                         <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="ig-handle" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Instagram handle
-                                </Label>
-                                <div className="relative mt-2">
-                                    <Instagram className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="ig-handle"
-                                        data-testid="onboarding-ig-handle-input"
-                                        value={instagramHandle}
-                                        onChange={(e) => setInstagramHandle(e.target.value)}
-                                        required
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                        placeholder="@your.handle"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <Label htmlFor="ig-url" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Instagram profile URL
-                                </Label>
+                            <Field id="name" label="Full name">
                                 <Input
-                                    id="ig-url"
-                                    data-testid="onboarding-ig-url-input"
-                                    type="url"
-                                    value={instagramUrl}
-                                    onChange={(e) => setInstagramUrl(e.target.value)}
-                                    required
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                    placeholder="https://instagram.com/…"
+                                    id="name"
+                                    data-testid={IDS.name}
+                                    value={form.name}
+                                    onChange={setText("name")}
+                                    maxLength={120}
+                                    className={inputClass}
+                                    placeholder="e.g. Priya Rao"
                                 />
-                            </div>
-                        </div>
-
-                        <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="email" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Email
-                                </Label>
+                            </Field>
+                            <Field id="email" label="Email">
                                 <Input
                                     id="email"
-                                    data-testid="onboarding-email-input"
+                                    data-testid={IDS.email}
                                     type="email"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    required
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    value={form.email}
+                                    onChange={setText("email")}
+                                    className={inputClass}
                                     placeholder="you@studio.in"
                                 />
-                            </div>
-                            <div>
-                                <Label htmlFor="city" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    City
-                                </Label>
+                            </Field>
+                        </div>
+                    </Section>
+
+                    <Section id="where" title="Where you are">
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <Field id="city" label="City">
                                 <Input
                                     id="city"
-                                    data-testid="onboarding-city-input"
+                                    data-testid={IDS.city}
                                     list="city-suggestions"
-                                    value={city}
-                                    onChange={(e) => setCity(e.target.value)}
-                                    required
+                                    value={form.city}
+                                    onChange={setText("city")}
                                     maxLength={80}
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    className={inputClass}
                                     placeholder="e.g. Bengaluru"
                                 />
                                 <datalist id="city-suggestions">
@@ -442,264 +616,346 @@ export default function CreatorOnboarding() {
                                         <option value={c} key={c} />
                                     ))}
                                 </datalist>
-                            </div>
+                            </Field>
+                            <Field
+                                id="address"
+                                label="Neighbourhood"
+                                hint="What brands filter on when they're planning a visit."
+                            >
+                                <div className="relative mt-2">
+                                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="address"
+                                        data-testid={IDS.address}
+                                        value={form.address}
+                                        onChange={setText("address")}
+                                        maxLength={500}
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        placeholder="e.g. Indiranagar"
+                                    />
+                                </div>
+                            </Field>
                         </div>
-
-                        <div>
-                            <Label htmlFor="address" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                Neighbourhood / address
-                            </Label>
-                            <div className="relative mt-2">
-                                <MapPin className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-                                <Textarea
-                                    id="address"
-                                    data-testid="onboarding-address-input"
-                                    value={address}
-                                    onChange={(e) => setAddress(e.target.value)}
-                                    required
-                                    rows={2}
-                                    className="min-h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                    placeholder="Neighbourhood or short address so brands can plan visits"
-                                />
-                            </div>
-                        </div>
-                    </section>
-
-                    {/* Niches */}
-                    <section className="space-y-4">
-                        <div className="flex items-baseline justify-between">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                Your niches
-                            </p>
-                            <span className="text-xs text-muted-foreground">
-                                Pick or type — add several
-                            </span>
-                        </div>
-                        <div
-                            data-testid="onboarding-niches-editor"
-                            className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-ember-500/50"
+                        <Field
+                            id="full-address"
+                            label="Full address"
+                            hint="Where product actually gets sent. Only the WeAre team sees this."
                         >
-                            <div className="flex flex-wrap gap-2">
-                                {niches.map((n) => (
-                                    <span
-                                        key={n}
-                                        data-testid={`niche-chip-${n}`}
-                                        className="group inline-flex items-center gap-1.5 rounded-full bg-ember-500/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-ember-500"
-                                    >
-                                        {n}
-                                        <button
-                                            type="button"
-                                            onClick={() => removeNiche(n)}
-                                            aria-label={`Remove ${n}`}
-                                            className="rounded-full p-0.5 opacity-70 transition-opacity duration-200 hover:opacity-100"
-                                        >
-                                            <X className="h-3 w-3" />
-                                        </button>
-                                    </span>
-                                ))}
-                                <input
-                                    data-testid="onboarding-niches-input"
-                                    value={nicheInput}
-                                    onChange={(e) => setNicheInput(e.target.value)}
-                                    onKeyDown={onNicheKeyDown}
-                                    onBlur={() => {
-                                        if (nicheInput.trim()) addNiche(nicheInput);
-                                    }}
-                                    className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
-                                    placeholder={
-                                        niches.length === 0
-                                            ? "e.g. cafe, brunch — press Enter"
-                                            : "Add another…"
-                                    }
-                                />
-                            </div>
-                        </div>
-                        {remainingSuggestions.length > 0 && (
-                            <div className="flex flex-wrap gap-2">
-                                {remainingSuggestions.map((s) => (
+                            <Textarea
+                                id="full-address"
+                                data-testid={IDS.fullAddress}
+                                value={form.full_address}
+                                onChange={setText("full_address")}
+                                rows={2}
+                                maxLength={500}
+                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                placeholder="Flat, street, area, city, PIN"
+                            />
+                        </Field>
+                    </Section>
+
+                    <Section id="make" title="What you make" note="Your own work">
+                        <ChipList
+                            values={form.genres}
+                            onChange={set("genres")}
+                            suggestions={SUGGESTED_GENRES}
+                            editorId={IDS.genres}
+                            inputId={IDS.genresInput}
+                            chipId={IDS.genreChip}
+                            suggestId={IDS.genreSuggest}
+                            placeholder="e.g. food, travel — press Enter"
+                        />
+                    </Section>
+
+                    <Section id="cover" title="What you cover for brands" note="How briefs find you">
+                        <ChipList
+                            values={form.niches}
+                            onChange={set("niches")}
+                            suggestions={SUGGESTED_NICHES}
+                            editorId={IDS.niches}
+                            inputId={IDS.nichesInput}
+                            chipId={IDS.nicheChip}
+                            suggestId={IDS.nicheSuggest}
+                            placeholder="e.g. cafe, brunch — press Enter"
+                        />
+                    </Section>
+
+                    <Section id="platforms" title="Where you post">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {PLATFORMS.map(({ value, label, Icon }) => {
+                                const on = form.platforms.includes(value);
+                                return (
                                     <button
                                         type="button"
-                                        key={s}
-                                        onClick={() => addNiche(s)}
-                                        data-testid={`niche-suggest-${s.replace(/\s+/g, "-")}`}
-                                        className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                                        key={value}
+                                        data-testid={IDS.platform(value)}
+                                        aria-pressed={on}
+                                        onClick={() =>
+                                            set("platforms")(
+                                                on
+                                                    ? form.platforms.filter((p) => p !== value)
+                                                    : [...form.platforms, value],
+                                            )
+                                        }
+                                        className={
+                                            "flex min-h-[3.5rem] items-center gap-3 rounded-md border px-4 text-left transition-colors duration-200 " +
+                                            (on
+                                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
+                                        }
                                     >
-                                        + {s}
+                                        <Icon className="h-4 w-4 flex-none" />
+                                        <span className="text-sm">{label}</span>
+                                        {on && <Check className="ml-auto h-4 w-4 flex-none" />}
                                     </button>
-                                ))}
-                            </div>
-                        )}
-                    </section>
+                                );
+                            })}
+                        </div>
 
-                    {/* Optional */}
-                    <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            Optional — helps brands price fairly
-                        </p>
+                        {/* Only the channels they actually picked get asked for.
+                            Demanding a YouTube link from somebody who only posts
+                            on Instagram would put 100% permanently out of reach,
+                            and with it the ability to submit at all. */}
+                        {onInstagram && (
+                            <motion.div
+                                initial={still ? false : { opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25 }}
+                                className="grid gap-5 md:grid-cols-2"
+                            >
+                                <Field id="ig-handle" label="Instagram handle">
+                                    <div className="relative mt-2">
+                                        <Instagram className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="ig-handle"
+                                            data-testid={IDS.igHandle}
+                                            value={form.instagram_handle}
+                                            onChange={setText("instagram_handle")}
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            placeholder="@your.handle"
+                                        />
+                                    </div>
+                                </Field>
+                                <Field id="ig-url" label="Instagram profile link">
+                                    <Input
+                                        id="ig-url"
+                                        data-testid={IDS.igUrl}
+                                        type="url"
+                                        value={form.instagram_profile_url}
+                                        onChange={setText("instagram_profile_url")}
+                                        className={inputClass}
+                                        placeholder="https://instagram.com/…"
+                                    />
+                                </Field>
+                            </motion.div>
+                        )}
+
+                        {/* Official stats, when Instagram is one of them. The
+                            self-reported figure below stays as the fallback. */}
+                        {onInstagram && (
+                            <InstagramConnect onChanged={refreshCompleteness} />
+                        )}
+
+                        {onYouTube && (
+                            <motion.div
+                                initial={still ? false : { opacity: 0, y: -6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.25 }}
+                            >
+                                <Field id="yt-url" label="YouTube channel link">
+                                    <div className="relative mt-2">
+                                        <Youtube className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="yt-url"
+                                            data-testid={IDS.youtube}
+                                            type="url"
+                                            value={form.youtube_url}
+                                            onChange={setText("youtube_url")}
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            placeholder="https://youtube.com/@yourchannel"
+                                        />
+                                    </div>
+                                </Field>
+                            </motion.div>
+                        )}
+                    </Section>
+
+                    <Section id="rates" title="Your rate">
                         <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="base-rate" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Base rate per collab
-                                </Label>
+                            <Field id="base-rate" label="Base rate per collab">
                                 <div className="relative mt-2">
                                     <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                     <Input
                                         id="base-rate"
-                                        data-testid="onboarding-base-rate-input"
+                                        data-testid={IDS.baseRate}
                                         type="number"
                                         min="0"
                                         step="100"
-                                        value={baseRate}
-                                        onChange={(e) => setBaseRate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        value={form.base_rate}
+                                        onChange={setText("base_rate")}
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
                                         placeholder="e.g. 5000"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <Label htmlFor="followers" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Instagram followers (self-reported)
-                                </Label>
+                            </Field>
+                            <Field
+                                id="followers"
+                                label="Followers"
+                                hint="Your own figure. Connect Instagram above and the real one takes over — this stays as the fallback."
+                            >
                                 <div className="relative mt-2">
                                     <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                     <Input
                                         id="followers"
-                                        data-testid="onboarding-followers-input"
+                                        data-testid={IDS.followers}
                                         type="number"
                                         min="0"
                                         step="100"
-                                        value={followerCount}
-                                        onChange={(e) => setFollowerCount(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        value={form.follower_count}
+                                        onChange={setText("follower_count")}
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
                                         placeholder="e.g. 12400"
                                     />
                                 </div>
-                            </div>
+                            </Field>
                         </div>
-                    </section>
+                    </Section>
 
-                    {/* Payout — asked for here so the money can actually move later */}
-                    <section className="space-y-5">
-                        <div className="flex items-baseline justify-between">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                Getting paid
-                            </p>
-                            <span className="text-xs text-muted-foreground">
-                                Needed before your first payout
-                            </span>
-                        </div>
+                    <Section id="payout" title="Getting paid" note="Not needed to be reviewed">
                         <p className="text-sm leading-relaxed text-muted-foreground">
-                            You can add these later, but we can't release a payment
-                            without them. Only the WeAre team ever sees this — brands
-                            never do.
+                            {/* Said plainly so nobody thinks bank details are the
+                                price of being looked at. They aren't. */}
+                            We can't release a payment without these, but you don't
+                            need them to submit your profile. Only the WeAre team ever
+                            sees this — brands never do.
                         </p>
                         <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="payout-upi" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    UPI ID
-                                </Label>
+                            <Field id="payout-upi" label="UPI ID">
                                 <div className="relative mt-2">
                                     <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                     <Input
                                         id="payout-upi"
-                                        data-testid="onboarding-upi-input"
-                                        value={payoutUpi}
-                                        onChange={(e) => setPayoutUpi(e.target.value)}
+                                        data-testid={IDS.upi}
+                                        value={form.payout_upi}
+                                        onChange={setText("payout_upi")}
                                         maxLength={120}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
                                         placeholder="e.g. priya@okhdfcbank"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <Label htmlFor="payout-name" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Name on the account
-                                </Label>
+                            </Field>
+                            <Field id="payout-name" label="Name on the account">
                                 <Input
                                     id="payout-name"
-                                    data-testid="onboarding-payout-name-input"
-                                    value={payoutAccountName}
-                                    onChange={(e) => setPayoutAccountName(e.target.value)}
+                                    data-testid={IDS.payoutName}
+                                    value={form.payout_account_name}
+                                    onChange={setText("payout_account_name")}
                                     maxLength={140}
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    className={inputClass}
                                     placeholder="As it appears on your bank account"
                                 />
-                            </div>
+                            </Field>
                         </div>
                         <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="payout-pan" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    PAN
-                                </Label>
+                            <Field id="payout-pan" label="PAN" hint="Required for TDS on your payout.">
                                 <Input
                                     id="payout-pan"
-                                    data-testid="onboarding-pan-input"
-                                    value={pan}
-                                    onChange={(e) => setPan(e.target.value.toUpperCase())}
+                                    data-testid={IDS.pan}
+                                    value={form.pan}
+                                    onChange={(e) => set("pan")(e.target.value.toUpperCase())}
                                     maxLength={10}
-                                    className="mt-2 h-11 border-white/10 bg-card/60 uppercase focus-visible:ring-ember-500"
+                                    className={inputClass + " uppercase"}
                                     placeholder="ABCDE1234F"
                                 />
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    Required for TDS on your payout.
-                                </p>
-                            </div>
-                            <div>
-                                <Label htmlFor="payout-gstin" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    GSTIN (optional)
-                                </Label>
+                            </Field>
+                            <Field id="payout-gstin" label="GSTIN" hint="Only if you're GST-registered.">
                                 <Input
                                     id="payout-gstin"
-                                    data-testid="onboarding-gstin-input"
-                                    value={gstin}
-                                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                                    data-testid={IDS.gstin}
+                                    value={form.gstin}
+                                    onChange={(e) => set("gstin")(e.target.value.toUpperCase())}
                                     maxLength={15}
-                                    className="mt-2 h-11 border-white/10 bg-card/60 uppercase focus-visible:ring-ember-500"
+                                    className={inputClass + " uppercase"}
                                     placeholder="29ABCDE1234F1Z5"
                                 />
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    Only if you're GST-registered.
-                                </p>
-                            </div>
+                            </Field>
                         </div>
-                    </section>
+                    </Section>
 
                     {error && (
-                        <p
-                            data-testid="onboarding-error"
-                            className="text-sm text-destructive"
-                        >
+                        <p data-testid={IDS.error} className="text-sm text-destructive">
                             {error}
                         </p>
                     )}
 
-                    <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-4 border-t border-white/10 pt-8">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <ShieldCheck className="h-4 w-4 text-ember-500" />
+                            <ShieldCheck className="h-4 w-4 flex-none text-ember-500" />
                             {verificationStatus === "verified"
                                 ? "You stay live while we review any changes."
-                                : "Your profile is reviewed by the WeAre team before going live."}
+                                : "Nothing is shared with brands until the team has reviewed your profile."}
                         </div>
-                        <Button
-                            type="submit"
-                            data-testid="onboarding-submit-btn"
-                            disabled={submitting}
-                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
-                        >
-                            {submitting ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Submitting…
-                                </>
-                            ) : (
-                                <>
-                                    {verificationStatus === "verified"
-                                        ? "Save changes"
-                                        : "Submit for review"}
-                                    <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                </>
+
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <Button
+                                type="submit"
+                                variant="outline"
+                                data-testid={IDS.save}
+                                disabled={saving || submitting}
+                                className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            >
+                                {saving ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Saving…
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="mr-2 h-4 w-4" />
+                                        Save progress
+                                    </>
+                                )}
+                            </Button>
+
+                            {verificationStatus !== "verified" && (
+                                <Button
+                                    type="button"
+                                    onClick={submit}
+                                    data-testid={IDS.submit}
+                                    disabled={!canSubmit || saving || submitting}
+                                    className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 disabled:opacity-40"
+                                >
+                                    {submitting ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Sending…
+                                        </>
+                                    ) : (
+                                        <>
+                                            {submittedAt ? "Send again" : "Submit for review"}
+                                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                                        </>
+                                    )}
+                                </Button>
                             )}
-                        </Button>
+
+                            <Link
+                                to="/dashboard"
+                                data-testid={IDS.later}
+                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                            >
+                                Finish later
+                            </Link>
+                        </div>
+
+                        {!canSubmit && verificationStatus !== "verified" && (
+                            <p data-testid={IDS.submitBlocked} className="text-xs text-muted-foreground">
+                                {/* The button being dead needs a reason next to
+                                    it, or it just reads as broken. */}
+                                {missing.length} still to go before you can send this
+                                over: {missing.map((m) => m.label).join(", ")}.
+                            </p>
+                        )}
                     </div>
                 </form>
             </main>
