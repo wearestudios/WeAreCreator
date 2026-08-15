@@ -3,9 +3,11 @@
 Every test here maps to a specific defect found in the process review, so a
 regression re-breaks a named flow rather than an anonymous assertion.
 """
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -623,3 +625,177 @@ class TestNoInstagramScraper:
     def test_follower_counts_are_labelled_self_reported(self):
         # A number presented without provenance reads as measured. It isn't.
         assert '"follower_count_source": "self_reported"' in self.SOURCE
+
+
+# ---------------------------------------------------------------------------
+# Campaign invites. Sourcing is manual, so an admin picks creators and asks
+# them over WhatsApp. The rules that matter: nobody is asked twice, and a
+# partial send is reported as a partial send rather than rounded to success.
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeClient:
+    """Stands in for httpx.AsyncClient. Records the call, returns or raises."""
+
+    calls = []
+
+    def __init__(self, result):
+        self._result = result
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        type(self).calls.append({"url": url, "json": json, "headers": headers})
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
+
+
+def _patch_client(monkeypatch, result):
+    _FakeClient.calls = []
+    monkeypatch.setattr(server.httpx, "AsyncClient", _FakeClient(result))
+    return _FakeClient.calls
+
+
+class TestUtilityWhatsAppSender:
+    """`_send_aisensy_utility` mirrors the OTP sender, minus the OTP."""
+
+    def _send(self, template="invite_v1", params=("Camp", "Brand", "₹5,000")):
+        return asyncio.run(
+            server._send_aisensy_utility("+919876543210", "Priya", template, list(params))
+        )
+
+    def test_simulates_when_credentials_are_missing_in_dev(self, monkeypatch):
+        monkeypatch.delenv("AISENSY_API_KEY", raising=False)
+        monkeypatch.setenv("ALLOW_OTP_SIMULATION", "true")
+        assert self._send() == "simulation"
+
+    def test_refuses_to_pretend_outside_dev(self, monkeypatch):
+        # Reporting a send that never happened is worse than a visible failure.
+        monkeypatch.delenv("AISENSY_API_KEY", raising=False)
+        monkeypatch.setenv("ALLOW_OTP_SIMULATION", "false")
+        monkeypatch.setenv("APP_ENV", "production")
+        with pytest.raises(HTTPException) as exc:
+            self._send()
+        assert exc.value.status_code == 503
+
+    def test_a_configured_key_with_no_template_is_still_not_a_send(self, monkeypatch):
+        monkeypatch.setenv("AISENSY_API_KEY", "key-123")
+        monkeypatch.setenv("ALLOW_OTP_SIMULATION", "false")
+        monkeypatch.setenv("APP_ENV", "production")
+        with pytest.raises(HTTPException) as exc:
+            self._send(template="")
+        assert exc.value.status_code == 503
+
+    def test_posts_the_template_params_in_order(self, monkeypatch):
+        monkeypatch.setenv("AISENSY_API_KEY", "key-123")
+        calls = _patch_client(monkeypatch, _FakeResponse(200))
+        assert self._send(params=("Diwali brief", "The Permit Room", "₹5,000")) == "aisensy"
+        assert len(calls) == 1
+        body = calls[0]["json"]
+        assert calls[0]["url"] == "https://backend.aisensy.com/campaign/t1/api/v2"
+        assert body["campaignName"] == "invite_v1"
+        assert body["destination"] == "+919876543210"
+        assert body["userName"] == "Priya"
+        # Campaign title, brand, budget — the order the template expects.
+        assert body["templateParams"] == ["Diwali brief", "The Permit Room", "₹5,000"]
+
+    def test_does_not_leak_the_api_key_into_the_template_params(self, monkeypatch):
+        monkeypatch.setenv("AISENSY_API_KEY", "key-123")
+        calls = _patch_client(monkeypatch, _FakeResponse(200))
+        self._send()
+        assert "key-123" not in " ".join(calls[0]["json"]["templateParams"])
+
+    @pytest.mark.parametrize("status,expected", [(429, 503), (500, 503), (503, 503), (400, 502), (401, 502)])
+    def test_maps_provider_failures_to_retryable_and_not(
+        self, monkeypatch, status, expected
+    ):
+        monkeypatch.setenv("AISENSY_API_KEY", "key-123")
+        _patch_client(monkeypatch, _FakeResponse(status, "nope"))
+        with pytest.raises(HTTPException) as exc:
+            self._send()
+        assert exc.value.status_code == expected
+
+    def test_a_network_error_is_a_failure_not_a_crash(self, monkeypatch):
+        monkeypatch.setenv("AISENSY_API_KEY", "key-123")
+        _patch_client(monkeypatch, httpx.ConnectError("boom"))
+        with pytest.raises(HTTPException) as exc:
+            self._send()
+        assert exc.value.status_code == 503
+
+    def test_it_is_a_separate_function_from_the_otp_sender(self):
+        # The OTP sender reads AISENSY_CAMPAIGN_NAME and logs a live code; the
+        # utility sender must not be quietly re-pointed at it.
+        assert server._send_aisensy_utility is not server._send_aisensy_otp
+        import inspect
+
+        # The docstring names it to explain the difference; the code must not
+        # read it, or every invite would go out on the OTP template.
+        code = [
+            line
+            for line in inspect.getsource(server._send_aisensy_utility).splitlines()
+            if "os.environ" in line
+        ]
+        assert code, "the sender no longer reads any configuration"
+        assert not any("AISENSY_CAMPAIGN_NAME" in line for line in code)
+
+
+class TestInviteEndpointShape:
+    def test_the_route_exists_and_is_a_post(self):
+        routes = [
+            r for r in server.app.routes
+            if getattr(r, "path", "") == "/api/admin/campaigns/{campaign_id}/invite"
+        ]
+        assert routes, "the invite route is not mounted"
+        assert routes[0].methods == {"POST"}
+
+    def test_it_takes_a_list_of_creator_ids(self):
+        fields = server.CampaignInvitePayload.model_fields
+        assert "creator_ids" in fields
+        with pytest.raises(Exception):
+            server.CampaignInvitePayload(creator_ids=[])  # an empty ask is a mistake
+
+    def test_a_batch_is_bounded(self):
+        # 100 invites is a big manual sourcing push; 10,000 is an accident.
+        with pytest.raises(Exception):
+            server.CampaignInvitePayload(creator_ids=[str(n) for n in range(101)])
+
+    def test_finished_campaigns_cannot_be_invited_to(self):
+        # An invite to a closed brief is one the creator can never take up.
+        assert "completed" not in server.INVITABLE_CAMPAIGN_STATUSES
+        assert "closed" not in server.INVITABLE_CAMPAIGN_STATUSES
+        assert "open" in server.INVITABLE_CAMPAIGN_STATUSES
+
+    def test_the_invite_is_a_known_notification_event(self):
+        assert "campaign_invite" in server.NOTIFY_EVENTS
+
+    def test_the_duplicate_guard_is_in_the_database_not_just_the_check(self):
+        # Two admins clicking at once must not double-message a creator, and a
+        # pre-check alone cannot promise that.
+        source = (server.ROOT_DIR / "server.py").read_text()
+        assert "one_invite_per_creator" in source
+        assert "DuplicateKeyError" in source.split("def invite_creators_to_campaign")[1][:6000]
+
+
+class TestNotificationRecordSplit:
+    def test_the_record_writer_never_sends_whatsapp(self):
+        # The invite sends its own utility message; going back through notify()
+        # would message the creator twice.
+        import inspect
+
+        src = inspect.getsource(server.record_notification)
+        assert "aisensy" not in src.lower()
+        assert "AISENSY_TEMPLATE" not in src

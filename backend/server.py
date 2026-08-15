@@ -292,6 +292,13 @@ class UpdateCampaignPayload(BaseModel):
     end_date: Optional[datetime] = None
 
 
+class CampaignInvitePayload(BaseModel):
+    """Payload for inviting a hand-picked set of creators to a campaign."""
+
+    creator_ids: list[str] = Field(min_length=1, max_length=100)
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
 class DecisionPayload(BaseModel):
     """Payload for a decision that ends or redirects a collaboration."""
 
@@ -611,6 +618,7 @@ NOTIFY_EVENTS = {
     "new_applicant": "A creator applied to your campaign",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
+    "campaign_invite": "A brand invited you to a campaign",
 }
 
 
@@ -647,6 +655,44 @@ async def _send_aisensy_template(
     return True
 
 
+async def record_notification(
+    user_id,
+    event: str,
+    *,
+    title: str,
+    body: str,
+    link: Optional[str] = None,
+    delivered: bool = False,
+) -> None:
+    """Write the in-app notification row, without touching WhatsApp.
+
+    Split out of `notify` so a caller that has already sent its own WhatsApp
+    message — the campaign invite uses a utility template of its own — still
+    leaves the same in-app trail, and does not send a second message by going
+    back through `notify`. Never raises.
+    """
+    try:
+        oid = user_id if isinstance(user_id, ObjectId) else ObjectId(str(user_id))
+    except Exception:
+        logger.error("record_notification called with unusable user_id %r", user_id)
+        return
+    try:
+        await db.notifications.insert_one(
+            {
+                "user_id": oid,
+                "event": event,
+                "title": title,
+                "body": body,
+                "link": link,
+                "read": False,
+                "delivered_on_whatsapp": delivered,
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+    except Exception as exc:
+        logger.error("notification write failed for %s/%s: %s", event, user_id, exc)
+
+
 async def notify(
     user_id,
     event: str,
@@ -665,7 +711,6 @@ async def notify(
         logger.error("notify called with unusable user_id %r", user_id)
         return
 
-    now = datetime.now(timezone.utc)
     delivered = False
     try:
         user = await db.users.find_one({"_id": oid})
@@ -674,20 +719,12 @@ async def notify(
             delivered = await _send_aisensy_template(
                 user["phone"], user.get("name") or "there", template, params or [body]
             )
-        await db.notifications.insert_one(
-            {
-                "user_id": oid,
-                "event": event,
-                "title": title,
-                "body": body,
-                "link": link,
-                "read": False,
-                "delivered_on_whatsapp": delivered,
-                "created_at": now,
-            }
-        )
     except Exception as exc:
         logger.error("notify failed for %s/%s: %s", event, user_id, exc)
+
+    await record_notification(
+        oid, event, title=title, body=body, link=link, delivered=delivered
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1116,6 +1153,88 @@ async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
     raise HTTPException(
         status_code=502,
         detail="WhatsApp delivery failed. Please resend or try a different number.",
+    )
+
+
+async def _send_aisensy_utility(
+    phone: str, name: str, template: str, params: list[str]
+) -> str:
+    """Send a utility-template WhatsApp message via AiSensy.
+
+    Same provider, endpoint and payload shape as `_send_aisensy_otp`, and the
+    same simulation fallback when credentials are missing — but for the utility
+    templates that carry campaign information rather than a login code, so the
+    template name is passed in rather than read from AISENSY_CAMPAIGN_NAME.
+
+    Returns the mode ("aisensy" or "simulation"). Raises HTTPException when the
+    provider refuses, so a batch caller can record one failure and carry on
+    rather than losing the whole send.
+    """
+    api_key = os.environ.get("AISENSY_API_KEY", "").strip()
+
+    if not api_key or not template:
+        # Simulation is gated exactly as it is for OTP. An invite carries no
+        # secret, but silently "sending" nothing in production would report
+        # success to an admin while no creator was ever messaged — a louder
+        # failure is the safer one.
+        if not _simulation_allowed():
+            logger.error(
+                "utility message requested but AiSensy is not configured. Set "
+                "AISENSY_API_KEY and the template name, or set "
+                "ALLOW_OTP_SIMULATION=true for local dev."
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="WhatsApp messaging is unavailable right now. Please try again shortly.",
+            )
+        logger.warning(
+            "AISENSY simulation mode — utility message to %s (%s): %s",
+            phone,
+            template or "no template configured",
+            params,
+        )
+        return "simulation"
+
+    payload = {
+        "apiKey": api_key,
+        "campaignName": template,
+        "destination": phone,
+        "userName": name or "User",
+        "templateParams": params,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client_http:
+            resp = await client_http.post(
+                "https://backend.aisensy.com/campaign/t1/api/v2",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.error("AiSensy utility request failed (%s): %s", template, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not reach WhatsApp right now. Please try again.",
+        )
+
+    if resp.status_code == 200:
+        return "aisensy"
+
+    logger.error(
+        "AiSensy rejected utility message for %s (%s) — status=%s body=%s",
+        phone,
+        template,
+        resp.status_code,
+        resp.text[:400],
+    )
+    if resp.status_code in (408, 425, 429) or resp.status_code >= 500:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp delivery is temporarily unavailable. Please try again.",
+        )
+    raise HTTPException(
+        status_code=502,
+        detail="WhatsApp delivery failed for this number.",
     )
 
 
@@ -3498,6 +3617,236 @@ async def list_all_campaigns(
     }
 
 
+# Campaigns you can still usefully invite someone to. Inviting a creator to a
+# finished campaign gives them a brief they can never apply to.
+INVITABLE_CAMPAIGN_STATUSES = ("draft", "upcoming", "open", "in_progress")
+
+
+@admin_router.post("/campaigns/{campaign_id}/invite")
+async def invite_creators_to_campaign(
+    campaign_id: str,
+    payload: CampaignInvitePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Invite hand-picked creators to a campaign over WhatsApp.
+
+    Sourcing is a manual job — someone reads the brief, picks creators who fit
+    and asks them. This is that ask, made once per creator so a partial send is
+    reportable rather than an all-or-nothing guess.
+
+    Every creator gets an invitation row whether or not the message lands, so a
+    failed send can be retried against a record that already exists, and the
+    per-creator result says which is which. Duplicate invites are refused by a
+    unique index on (campaign_id, creator_id), not just by the pre-check — two
+    admins clicking at once must not send the same creator two messages.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    status = campaign.get("status")
+    if status not in INVITABLE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {status} — creators can no longer be invited to it.",
+        )
+
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+    brand_name = brand.get("business_name") or brand.get("name") or "a WeAre brand"
+    title = campaign.get("title") or "a campaign"
+    budget = float(campaign.get("budget_per_creator") or 0)
+    budget_text = f"₹{budget:,.0f}"
+    template = os.environ.get("AISENSY_TEMPLATE_CAMPAIGN_INVITE", "").strip()
+
+    # De-duplicate the request itself — a UI multi-select can repeat an id, and
+    # that must not turn into two messages. Order is kept so the response reads
+    # the way the admin selected.
+    requested: list[str] = []
+    for raw in payload.creator_ids:
+        raw = (raw or "").strip()
+        if raw and raw not in requested:
+            requested.append(raw)
+
+    # Resolve every id in two queries rather than two per creator.
+    wanted_oids = []
+    oid_by_raw: dict = {}
+    results: dict = {}
+    for raw in requested:
+        try:
+            oid = ObjectId(raw)
+        except Exception:
+            results[raw] = {"status": "failed", "reason": "That is not a valid creator id."}
+            continue
+        oid_by_raw[raw] = oid
+        wanted_oids.append(oid)
+
+    accounts_by_id: dict = {}
+    profiles_by_user: dict = {}
+    invited_already: set = set()
+    if wanted_oids:
+        accounts = await db.users.find(
+            {"_id": {"$in": wanted_oids}, "role": "creator"}
+        ).to_list(length=len(wanted_oids))
+        accounts_by_id = {a["_id"]: a for a in accounts}
+        profiles = await db.creator_profiles.find(
+            {"user_id": {"$in": wanted_oids}}
+        ).to_list(length=len(wanted_oids))
+        profiles_by_user = {p["user_id"]: p for p in profiles}
+        invited_already = {
+            row["creator_id"]
+            async for row in db.campaign_invitations.find(
+                {"campaign_id": cid, "creator_id": {"$in": wanted_oids}},
+                {"creator_id": 1},
+            )
+        }
+
+    now = datetime.now(timezone.utc)
+    sent = 0
+    for raw in requested:
+        if raw in results:  # already rejected as an unusable id
+            continue
+        oid = oid_by_raw[raw]
+        account = accounts_by_id.get(oid)
+        profile = profiles_by_user.get(oid) or {}
+        name = profile.get("name") or (account or {}).get("name") or "there"
+
+        if not account:
+            results[raw] = {"status": "failed", "reason": "No creator account with that id."}
+            continue
+        if oid in invited_already:
+            # Not a failure — the admin asked for something already true.
+            results[raw] = {
+                "status": "already_invited",
+                "name": name,
+                "reason": "This creator has already been invited to this campaign.",
+            }
+            continue
+        if profile.get("verification_status") != "verified":
+            # Only verified creators can apply, so an invite to anyone else is
+            # a brief they would be blocked from taking up.
+            results[raw] = {
+                "status": "failed",
+                "name": name,
+                "reason": "This creator isn't verified yet, so they can't apply.",
+            }
+            continue
+
+        phone = account.get("phone")
+
+        try:
+            invitation = await db.campaign_invitations.insert_one(
+                {
+                    "campaign_id": cid,
+                    "creator_id": oid,
+                    "brand_id": campaign["brand_id"],
+                    "invited_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                    "note": payload.note,
+                    "state": "sent",
+                    "delivered_on_whatsapp": False,
+                    "whatsapp_mode": None,
+                    "error": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        except DuplicateKeyError:
+            # Another admin got there between the pre-check and the write.
+            results[raw] = {
+                "status": "already_invited",
+                "name": name,
+                "reason": "This creator has already been invited to this campaign.",
+            }
+            continue
+
+        invitation_id = invitation.inserted_id
+
+        delivered = False
+        mode = None
+        reason = None
+        if not phone:
+            reason = "No WhatsApp number on file for this creator."
+        else:
+            try:
+                mode = await _send_aisensy_utility(
+                    phone, name, template, [title, brand_name, budget_text]
+                )
+                delivered = mode == "aisensy"
+            except HTTPException as exc:
+                reason = exc.detail
+
+        await db.campaign_invitations.update_one(
+            {"_id": invitation_id},
+            {
+                "$set": {
+                    "state": "sent" if (delivered or mode) else "send_failed",
+                    "delivered_on_whatsapp": delivered,
+                    "whatsapp_mode": mode,
+                    "error": reason,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+        # The in-app record goes in either way — the invite is real even when
+        # WhatsApp is not reachable, and this is where the creator finds it.
+        await record_notification(
+            oid,
+            "campaign_invite",
+            title="You've been invited to a campaign",
+            body=f"{brand_name} would like you on “{title}” — {budget_text} per creator.",
+            link=f"/campaigns/{campaign_id}",
+            delivered=delivered,
+        )
+
+        if reason:
+            results[raw] = {
+                "status": "failed",
+                "name": name,
+                "invitation_id": str(invitation_id),
+                "reason": reason,
+            }
+        else:
+            sent += 1
+            results[raw] = {
+                "status": "invited",
+                "name": name,
+                "invitation_id": str(invitation_id),
+                "delivered_on_whatsapp": delivered,
+                "whatsapp_mode": mode,
+            }
+
+    rows = [{"creator_id": raw, **results[raw]} for raw in requested]
+    failed = sum(1 for r in rows if r["status"] == "failed")
+    skipped = sum(1 for r in rows if r["status"] == "already_invited")
+
+    await audit(
+        user,
+        "campaign.invite",
+        "campaign",
+        cid,
+        after={"invited": sent, "failed": failed, "already_invited": skipped},
+        note=payload.note,
+    )
+
+    # 200 even when nothing sent: the per-creator rows are the answer, and the
+    # UI reports a partial send from them.
+    return {
+        "campaign_id": campaign_id,
+        "campaign_title": title,
+        "brand_name": brand_name,
+        "invited": sent,
+        "failed": failed,
+        "already_invited": skipped,
+        "results": rows,
+    }
+
+
 async def _brand_spend_map(brand_ids: list) -> dict:
     """What each brand has actually paid, in one round trip.
 
@@ -4921,6 +5270,15 @@ async def _startup():
         partialFilterExpression={"active": True},
         name="one_live_application",
     )
+
+    # campaign invitations — one per creator per campaign, enforced in the
+    # database so two admins inviting at once can't double-message anyone.
+    await db.campaign_invitations.create_index(
+        [("campaign_id", 1), ("creator_id", 1)],
+        unique=True,
+        name="one_invite_per_creator",
+    )
+    await db.campaign_invitations.create_index([("creator_id", 1), ("created_at", -1)])
 
     # payments (one per collaboration)
     await db.payments.create_index("collaboration_id", unique=True)

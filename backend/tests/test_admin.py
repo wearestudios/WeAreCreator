@@ -1124,3 +1124,211 @@ class TestBrandOversight:
         before = active()
         bs.post(f"{BASE_URL}/brand/campaigns/{c['id']}/close", json={})
         assert active() == before - 1
+
+
+# ---------- 8. Campaign invites ----------
+class TestCampaignInvites:
+    """POST /admin/campaigns/{id}/invite — sourcing is manual, so an admin picks
+    creators and asks them. Nobody gets asked twice, and a partial send reads as
+    a partial send."""
+
+    def _campaign(self, bs, **overrides):
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": f"Invite-Br-{uuid.uuid4().hex[:5]}",
+            "category": "fnb", "areas": ["Indiranagar"],
+        })
+        body = {
+            "title": f"Invite-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 7500, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 3, "status": "open",
+        }
+        body.update(overrides)
+        r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def _verified_creator(self, admin):
+        s = requests.Session()
+        email, _ = _register(s, "creator")
+        _complete_creator(s)
+        uid = _vet(admin, email)
+        return s, uid
+
+    def _invite(self, admin, campaign_id, creator_ids, **body):
+        return admin.post(
+            f"{BASE_URL}/admin/campaigns/{campaign_id}/invite",
+            json={"creator_ids": creator_ids, **body},
+        )
+
+    def test_admin_only(self, admin, brand, creator, anon):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        c = self._campaign(bs)
+        path = f"{BASE_URL}/admin/campaigns/{c['id']}/invite"
+        body = {"creator_ids": [cuid]}
+        assert anon.post(path, json=body).status_code == 401
+        assert cs.post(path, json=body).status_code == 403
+        # The brand owns the campaign and still cannot send on our behalf.
+        assert bs.post(path, json=body).status_code == 403
+
+    def test_invites_a_creator_and_records_it(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        cs, uid = self._verified_creator(admin)
+
+        r = self._invite(admin, c["id"], [uid], note="Great fit for this one")
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert out["campaign_id"] == c["id"]
+        assert len(out["results"]) == 1
+        row = out["results"][0]
+        assert row["creator_id"] == uid
+        assert row["status"] in ("invited", "failed")
+        # Either way the invitation exists — a failed send must be retryable
+        # against a record, not vanish.
+        assert row.get("invitation_id")
+
+    def test_the_creator_sees_the_invite_in_app(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, budget_per_creator=7500)
+        cs, uid = self._verified_creator(admin)
+
+        self._invite(admin, c["id"], [uid])
+
+        notes = cs.get(f"{BASE_URL}/notifications").json()["notifications"]
+        invite = next((n for n in notes if n["event"] == "campaign_invite"), None)
+        assert invite, "the invite has to reach the creator even if WhatsApp doesn't"
+        assert c["title"] in invite["body"]
+        assert "7,500" in invite["body"], "the creator is told what it pays"
+        assert invite["link"] == f"/campaigns/{c['id']}"
+
+    def test_the_same_creator_is_never_invited_twice(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        cs, uid = self._verified_creator(admin)
+
+        first = self._invite(admin, c["id"], [uid]).json()
+        assert first["results"][0]["status"] != "already_invited"
+
+        second = self._invite(admin, c["id"], [uid]).json()
+        assert second["results"][0]["status"] == "already_invited"
+        assert second["already_invited"] == 1
+        assert second["invited"] == 0
+
+        # And no second notification was raised.
+        events = [
+            n for n in cs.get(f"{BASE_URL}/notifications").json()["notifications"]
+            if n["event"] == "campaign_invite"
+        ]
+        assert len(events) == 1
+
+    def test_a_repeated_id_in_one_request_is_one_invite(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        cs, uid = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [uid, uid, uid]).json()
+        assert len(out["results"]) == 1, "a multi-select repeat must not multi-send"
+
+    def test_the_same_creator_can_be_invited_to_a_different_campaign(self, admin, brand):
+        bs, _ = brand
+        one = self._campaign(bs)
+        two = self._campaign(bs)
+        cs, uid = self._verified_creator(admin)
+
+        self._invite(admin, one["id"], [uid])
+        out = self._invite(admin, two["id"], [uid]).json()
+        assert out["results"][0]["status"] != "already_invited"
+
+    def test_unverified_creators_are_refused_with_a_reason(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        s = requests.Session()
+        _register(s, "creator")
+        _complete_creator(s)
+        uid = s.get(f"{BASE_URL}/auth/me").json()["id"]
+
+        out = self._invite(admin, c["id"], [uid]).json()
+        row = out["results"][0]
+        assert row["status"] == "failed"
+        # Only verified creators can apply, so the invite would be a dead end.
+        assert "verified" in row["reason"].lower()
+        assert out["invited"] == 0
+
+    def test_a_brand_account_is_not_a_creator(self, admin, brand, brand_2):
+        bs, _ = brand
+        bs2, _ = brand_2
+        c = self._campaign(bs)
+        their_id = bs2.get(f"{BASE_URL}/auth/me").json()["id"]
+
+        row = self._invite(admin, c["id"], [their_id]).json()["results"][0]
+        assert row["status"] == "failed"
+
+    def test_a_partial_send_is_reported_per_creator(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        cs, good = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [good, "not-an-object-id"]).json()
+        assert len(out["results"]) == 2
+        by_id = {r["creator_id"]: r for r in out["results"]}
+        assert by_id["not-an-object-id"]["status"] == "failed"
+        assert out["failed"] >= 1
+        # The bad id must not have cost the good one its invite.
+        assert by_id[good]["status"] in ("invited", "failed")
+        assert by_id[good].get("invitation_id")
+
+    def test_results_come_back_in_the_order_they_were_asked_for(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        _, a = self._verified_creator(admin)
+        _, b = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [b, a]).json()
+        assert [r["creator_id"] for r in out["results"]] == [b, a]
+
+    def test_counts_add_up_to_the_batch(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        _, a = self._verified_creator(admin)
+        _, b = self._verified_creator(admin)
+        self._invite(admin, c["id"], [b])  # b is already in
+
+        out = self._invite(admin, c["id"], [a, b, "nonsense"]).json()
+        assert out["invited"] + out["failed"] + out["already_invited"] == len(out["results"])
+        assert out["already_invited"] == 1
+
+    def test_unknown_campaign_is_404(self, admin, brand):
+        _, uid = self._verified_creator(admin)
+        assert self._invite(admin, "64b7f9a2c3d4e5f6a7b8c9d0", [uid]).status_code == 404
+        assert self._invite(admin, "not-an-id", [uid]).status_code == 404
+
+    def test_a_closed_campaign_cannot_be_invited_to(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        _, uid = self._verified_creator(admin)
+        bs.post(f"{BASE_URL}/brand/campaigns/{c['id']}/close", json={"reason": "done"})
+
+        r = self._invite(admin, c["id"], [uid])
+        assert r.status_code == 409, r.text
+
+    def test_an_empty_ask_is_rejected(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        assert self._invite(admin, c["id"], []).status_code == 422
+
+    def test_the_invite_is_written_to_the_audit_log(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs)
+        _, uid = self._verified_creator(admin)
+        self._invite(admin, c["id"], [uid], note="hand-picked")
+
+        entries = admin.get(
+            f"{BASE_URL}/admin/audit", params={"subject_type": "campaign", "limit": 200}
+        ).json()
+        mine = [
+            e for e in entries
+            if e["action"] == "campaign.invite" and e["subject_id"] == c["id"]
+        ]
+        assert mine, "a message sent to creators needs an author"
+        assert mine[0]["note"] == "hand-picked"
