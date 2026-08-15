@@ -4,11 +4,35 @@
 // Ids that identify a specific row carry the record id, so they are exported as
 // builder functions rather than strings — the value shape is the same either
 // way, e.g. `admin-creator-tile-64b7f9a2c3d4e5f6a7b8c9d0`.
-//
-// The older sections of AdminConsole.jsx (verification queue, brand queue,
-// collaborations board, audit trail) still use inline literals. Their ids are
-// already wired into the automated test agent, so they were left alone rather
-// than churned for consistency.
+
+export const ADMIN_SHELL = {
+	page: 'admin-console-page',
+	heading: 'admin-heading',
+	nav: 'admin-nav',
+	navItem: (key) => `admin-nav-${key}`,
+	navBadge: (key) => `admin-nav-badge-${key}`,
+	mobileNavOpen: 'admin-nav-mobile-open',
+	mobileNav: 'admin-nav-mobile',
+	section: (key) => `admin-section-${key}`,
+};
+
+export const ADMIN_QUEUE = {
+	section: 'admin-queue-section',
+	refresh: 'admin-queue-refresh',
+	skeleton: 'admin-queue-skeleton',
+	empty: 'admin-queue-empty',
+	list: 'admin-queue-list',
+	count: 'admin-queue-count',
+	stats: 'admin-queue-stats',
+	filter: (kind) => `admin-queue-filter-${kind}`,
+	showWaiting: 'admin-queue-show-waiting',
+	waitingList: 'admin-queue-waiting-list',
+	row: (id) => `admin-queue-row-${id}`,
+	rowKind: (id) => `admin-queue-kind-${id}`,
+	rowAge: (id) => `admin-queue-age-${id}`,
+	rowPrimary: (id) => `admin-queue-primary-${id}`,
+	rowSecondary: (id) => `admin-queue-secondary-${id}`,
+};
 
 export const ADMIN_CREATORS = {
 	section: 'admin-creators-section',
@@ -68,17 +92,84 @@ export const ADMIN_CAMPAIGNS = {
 	creatorRow: (id) => `admin-campaign-creator-${id}`,
 	creatorsEmpty: (id) => `admin-campaign-creators-empty-${id}`,
 	inviteOpen: (id) => `admin-campaign-invite-${id}`,
+	approve: (id) => `admin-campaign-approve-${id}`,
+	reject: (id) => `admin-campaign-reject-${id}`,
+	pause: (id) => `admin-campaign-pause-${id}`,
+	resume: (id) => `admin-campaign-resume-${id}`,
+	close: (id) => `admin-campaign-close-${id}`,
+	edit: (id) => `admin-campaign-edit-${id}`,
+	reviewReason: (id) => `admin-campaign-review-reason-${id}`,
 };
 
-export const ADMIN_BRANDS_VIEW = {
-	section: 'admin-brands-view-section',
-	refresh: 'admin-brands-view-refresh',
-	list: 'admin-brands-view-list',
-	empty: 'admin-brands-view-empty',
-	skeleton: 'admin-brands-view-skeleton',
-	clear: 'admin-brands-view-clear',
-	row: (id) => `admin-brand-card-${id}`,
+export const ADMIN_CAMPAIGN_EDIT = {
+	dialog: 'admin-campaign-edit-dialog',
+	title: 'admin-campaign-edit-title',
+	budget: 'admin-campaign-edit-budget',
+	creatorsNeeded: 'admin-campaign-edit-creators-needed',
+	deliverables: 'admin-campaign-edit-deliverables',
+	error: 'admin-campaign-edit-error',
+	submit: 'admin-campaign-edit-submit',
+	cancel: 'admin-campaign-edit-cancel',
+};
+
+export const ADMIN_BRANDS = {
+	section: 'admin-brands-section',
+	refresh: 'admin-brands-refresh',
+	search: 'admin-brands-search',
+	filterStatus: 'admin-brands-filter-status',
+	list: 'admin-brands-list',
+	empty: 'admin-brands-empty',
+	skeleton: 'admin-brands-skeleton',
+	count: 'admin-brands-count',
+	row: (id) => `admin-brand-row-${id}`,
 	rowSpend: (id) => `admin-brand-spend-${id}`,
+	rowStatus: (id) => `admin-brand-status-${id}`,
+	rowReason: (id) => `admin-brand-reason-${id}`,
+	verify: (id) => `admin-brand-verify-${id}`,
+	reject: (id) => `admin-brand-reject-${id}`,
+	unverify: (id) => `admin-brand-unverify-${id}`,
+	viewCampaigns: (id) => `admin-brand-campaigns-${id}`,
+};
+
+export const ADMIN_AUDIT = {
+	section: 'admin-audit-section',
+	refresh: 'admin-audit-refresh',
+	filterAction: 'admin-audit-filter-action',
+	filterActor: 'admin-audit-filter-actor',
+	filterDateFrom: 'admin-audit-filter-date-from',
+	filterDateTo: 'admin-audit-filter-date-to',
+	filterClear: 'admin-audit-filter-clear',
+	table: 'admin-audit-table',
+	skeleton: 'admin-audit-skeleton',
+	empty: 'admin-audit-empty',
+	count: 'admin-audit-count',
+	row: (id) => `admin-audit-row-${id}`,
+	rowAction: (id) => `admin-audit-action-${id}`,
+	rowActor: (id) => `admin-audit-actor-${id}`,
+	rowReason: (id) => `admin-audit-reason-${id}`,
+	rowChange: (id) => `admin-audit-change-${id}`,
+};
+
+export const ADMIN_CONFIRM = {
+	dialog: 'admin-confirm-dialog',
+	title: 'admin-confirm-title',
+	reason: 'admin-confirm-reason',
+	extra: 'admin-confirm-extra',
+	error: 'admin-confirm-error',
+	submit: 'admin-confirm-submit',
+	cancel: 'admin-confirm-cancel',
+};
+
+export const ADMIN_ADVANCE = {
+	dialog: 'admin-advance-dialog',
+	amount: 'admin-advance-amount-input',
+	slot: 'admin-advance-slot-input',
+	location: 'admin-advance-location-input',
+	fee: 'admin-advance-fee-input',
+	feeOverride: 'admin-advance-fee-override',
+	error: 'admin-advance-error',
+	submit: 'admin-advance-submit',
+	cancel: 'admin-advance-cancel',
 };
 
 export const ADMIN_INVITE = {

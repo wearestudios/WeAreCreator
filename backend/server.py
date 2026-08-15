@@ -3790,6 +3790,10 @@ async def list_all_campaigns(
                                 "agreed_amount": "$agreed_amount",
                                 "scheduled_at": "$scheduled_at",
                                 "payment_state": "$payment.state",
+                                # So the console can refund a paid payout from
+                                # the row without a second lookup.
+                                "payment_id": "$payment._id",
+                                "creator_payout": "$payment.creator_payout",
                             }
                         },
                     }
@@ -3813,6 +3817,8 @@ async def list_all_campaigns(
                 "agreed_amount": c.get("agreed_amount"),
                 "scheduled_at": _iso(c.get("scheduled_at")),
                 "payment_state": c.get("payment_state"),
+                "payment_id": str(c["payment_id"]) if c.get("payment_id") else None,
+                "creator_payout": c.get("creator_payout"),
             }
             for c in rows
         ]

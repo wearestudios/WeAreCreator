@@ -427,9 +427,9 @@ export default function AdminCreators() {
     }, [data, page]);
 
     return (
-        <section data-testid={IDS.section} className="mt-16">
+        <section data-testid={IDS.section}>
             <SectionHeader
-                kicker="Section 4"
+                kicker="Creators"
                 title="Creator roster"
                 blurb="Everyone signed up, whatever their status. Open a creator to see what they've earned and everything they're on."
                 onRefresh={load}
