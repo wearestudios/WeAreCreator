@@ -12,7 +12,7 @@ import {
     Sparkles,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -72,8 +72,19 @@ const CreatorCard = ({ c, index }) => {
             <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
 
             <div className="flex items-start gap-4">
-                <div className="grid h-14 w-14 flex-none place-items-center rounded-full border border-white/10 bg-ember-500/10 font-serif text-2xl text-ember-500">
-                    {(c.name || "?").slice(0, 1).toUpperCase()}
+                {/* The initial is the fallback, not the default — a real photo
+                    is what a brand actually wants to see here. */}
+                <div className="grid h-14 w-14 flex-none place-items-center overflow-hidden rounded-full border border-white/10 bg-ember-500/10 font-serif text-2xl text-ember-500">
+                    {c.profile_image_url ? (
+                        <img
+                            src={mediaUrl(c.profile_image_url)}
+                            alt=""
+                            data-testid={`creator-photo-${c.id}`}
+                            className="h-full w-full object-cover"
+                        />
+                    ) : (
+                        (c.name || "?").slice(0, 1).toUpperCase()
+                    )}
                 </div>
                 <div className="min-w-0 flex-1">
                     <h3 className="truncate font-serif text-[22px] leading-tight tracking-tight">

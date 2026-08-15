@@ -332,6 +332,7 @@ def test_brand_cannot_read_another_brands_brief(brand_session, creator_session):
         "title": f"Own-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
         "budget_per_creator": 4000, "category": "fnb", "area": "Indiranagar",
         "creators_needed": 1, "status": "draft",
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }).json()
     assert s_b.get(f"{BASE_URL}/campaigns/{own['id']}").status_code == 200
 

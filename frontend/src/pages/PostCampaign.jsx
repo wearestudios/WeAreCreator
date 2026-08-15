@@ -63,8 +63,14 @@ export default function PostCampaign() {
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
+    // The type decides which date fields exist — see the server's validator.
+    const [campaignType, setCampaignType] = useState("personal_table");
+    const [eventDate, setEventDate] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    const [venueAddress, setVenueAddress] = useState("");
+    const [venueInstructions, setVenueInstructions] = useState("");
+    const [onSiteContact, setOnSiteContact] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const [error, setError] = useState("");
@@ -101,6 +107,8 @@ export default function PostCampaign() {
                     setCategory(data.category || "");
                     setArea(data.area || "");
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
+                    setCampaignType(data.campaign_type || "personal_table");
+                    setEventDate(toDateInput(data.event_date));
                     setStartDate(toDateInput(data.start_date));
                     setEndDate(toDateInput(data.end_date));
                 } catch (err) {
@@ -145,8 +153,14 @@ export default function PostCampaign() {
         const needed = Number(creatorsNeeded);
         if (!Number.isFinite(needed) || needed < 1)
             return "How many creators do you need?";
-        if (startDate && endDate && new Date(endDate) < new Date(startDate))
-            return "End date cannot be before the start date.";
+        if (campaignType === "personal_table") {
+            if (!startDate || !endDate)
+                return "A personal table runs over a window — pick both dates.";
+            if (new Date(endDate) < new Date(startDate))
+                return "End date cannot be before the start date.";
+        } else if (!eventDate) {
+            return "Pick the day the event happens.";
+        }
         return null;
     };
 
@@ -158,8 +172,22 @@ export default function PostCampaign() {
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
-        start_date: startDate ? new Date(startDate).toISOString() : null,
-        end_date: endDate ? new Date(endDate).toISOString() : null,
+        campaign_type: campaignType,
+        event_date:
+            campaignType !== "personal_table" && eventDate
+                ? new Date(eventDate).toISOString()
+                : null,
+        start_date:
+            campaignType === "personal_table" && startDate
+                ? new Date(startDate).toISOString()
+                : null,
+        end_date:
+            campaignType === "personal_table" && endDate
+                ? new Date(endDate).toISOString()
+                : null,
+        venue_address: venueAddress.trim() || null,
+        venue_instructions: venueInstructions.trim() || null,
+        on_site_contact: onSiteContact.trim() || null,
         status,
     });
 
@@ -175,12 +203,13 @@ export default function PostCampaign() {
         (isDraft ? setSavingDraft : setSubmitting)(true);
         try {
             if (isEditing) {
-                const { status: _ignored, ...changes } = buildPayload(status);
+                const { status: _ignored, campaign_type: _fixed, ...changes } =
+                    buildPayload(status);
                 await api.put(`/brand/campaigns/${editingId}`, changes);
-                // Saving an edit on a draft and choosing "Publish" should do both.
+                // Saving an edit on a draft and submitting should do both.
                 if (!isDraft && existing?.status === "draft") {
                     await api.post(`/brand/campaigns/${editingId}/publish`);
-                    toast.success("Campaign published — creators can see it now");
+                    toast.success("Sent for review — we'll publish it once we've read it");
                 } else {
                     toast.success("Campaign updated");
                 }
@@ -192,7 +221,7 @@ export default function PostCampaign() {
             toast.success(
                 isDraft
                     ? "Draft saved to your dashboard"
-                    : "Campaign published — creators can see it now",
+                    : "Sent for review — we'll publish it once we've read it",
             );
             navigate("/dashboard", { replace: true, state: { newCampaignId: data.id } });
         } catch (err) {
@@ -236,16 +265,136 @@ export default function PostCampaign() {
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
                     {isEditing
                         ? existing?.status === "draft"
-                            ? "This is still a draft — nobody can see it yet. Publish when you're ready."
+                            ? "This is still a draft — nobody can see it yet. Send it for review when you're ready."
                             : "This brief is live. Changes show up on the creator feed straight away."
-                        : "Publish it live and verified creators from across India start applying within hours. Save as a draft if you want to polish it first."}
+                        : "We read every brief before it goes out, usually the same day. Save as a draft if you want to polish it first."}
                 </p>
 
                 <form
-                    onSubmit={(e) => submit(e, "open")}
+                    onSubmit={(e) => submit(e, "pending_review")}
                     noValidate
                     className="mt-12 space-y-8"
                 >
+                    <section className="space-y-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            What kind of campaign
+                        </p>
+                        <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-3">
+                            {[
+                                {
+                                    value: "launch",
+                                    label: "Launch",
+                                    blurb: "One day. Everyone comes at once.",
+                                },
+                                {
+                                    value: "group_event",
+                                    label: "Group event",
+                                    blurb: "One day, in timed groups.",
+                                },
+                                {
+                                    value: "personal_table",
+                                    label: "Personal table",
+                                    blurb: "A window creators book into.",
+                                },
+                            ].map((opt) => {
+                                const on = campaignType === opt.value;
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        aria-pressed={on}
+                                        disabled={isEditing}
+                                        data-testid={`pc-type-${opt.value}`}
+                                        onClick={() => setCampaignType(opt.value)}
+                                        className={
+                                            "rounded-md border p-5 text-left transition-colors duration-200 disabled:opacity-50 " +
+                                            (on
+                                                ? "border-ember-500 bg-ember-500/10"
+                                                : "border-white/10 bg-card/60 hover:border-white/25")
+                                        }
+                                    >
+                                        <span
+                                            className={
+                                                "block text-sm " +
+                                                (on ? "text-ember-500" : "text-foreground")
+                                            }
+                                        >
+                                            {opt.label}
+                                        </span>
+                                        <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                            {opt.blurb}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {isEditing && (
+                            <p className="text-xs text-muted-foreground">
+                                The type is fixed once a campaign exists — it decides which
+                                dates the brief carries.
+                            </p>
+                        )}
+
+                        {/* Only the dates this type actually has. */}
+                        {campaignType === "personal_table" ? (
+                            <div className="grid gap-5 md:grid-cols-2">
+                                <div>
+                                    <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        Bookable from
+                                    </Label>
+                                    <div className="relative mt-2">
+                                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="pc-start"
+                                            data-testid="pc-start-input"
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        Until
+                                    </Label>
+                                    <div className="relative mt-2">
+                                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="pc-end"
+                                            data-testid="pc-end-input"
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="md:max-w-xs">
+                                <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Which day
+                                </Label>
+                                <div className="relative mt-2">
+                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="pc-event"
+                                        data-testid="pc-event-input"
+                                        type="date"
+                                        value={eventDate}
+                                        onChange={(e) => setEventDate(e.target.value)}
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                    />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Your campaign manager sets the individual time slots once
+                                    the brief is approved.
+                                </p>
+                            </div>
+                        )}
+                    </section>
+
                     <section className="space-y-5">
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             The brief
@@ -395,36 +544,51 @@ export default function PostCampaign() {
                             </div>
                         </div>
 
-                        <div className="grid gap-5 md:grid-cols-2">
+                        <div className="space-y-5 border-t border-white/10 pt-6">
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                The venue (optional for now)
+                            </p>
                             <div>
-                                <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Start date
+                                <Label htmlFor="pc-venue" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Address
                                 </Label>
-                                <div className="relative mt-2">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    id="pc-venue"
+                                    data-testid="pc-venue-input"
+                                    value={venueAddress}
+                                    onChange={(e) => setVenueAddress(e.target.value)}
+                                    maxLength={500}
+                                    placeholder="Where creators should show up"
+                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                />
+                            </div>
+                            <div className="grid gap-5 md:grid-cols-2">
+                                <div>
+                                    <Label htmlFor="pc-venue-notes" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        Arrival instructions
+                                    </Label>
                                     <Input
-                                        id="pc-start"
-                                        data-testid="pc-start-input"
-                                        type="date"
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        id="pc-venue-notes"
+                                        data-testid="pc-venue-instructions-input"
+                                        value={venueInstructions}
+                                        onChange={(e) => setVenueInstructions(e.target.value)}
+                                        maxLength={1000}
+                                        placeholder="e.g. Ask for the events desk"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    End date
-                                </Label>
-                                <div className="relative mt-2">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <div>
+                                    <Label htmlFor="pc-onsite" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        On-site contact
+                                    </Label>
                                     <Input
-                                        id="pc-end"
-                                        data-testid="pc-end-input"
-                                        type="date"
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        id="pc-onsite"
+                                        data-testid="pc-onsite-contact-input"
+                                        value={onSiteContact}
+                                        onChange={(e) => setOnSiteContact(e.target.value)}
+                                        maxLength={200}
+                                        placeholder="Name and number at the venue"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
                                     />
                                 </div>
                             </div>
@@ -472,16 +636,16 @@ export default function PostCampaign() {
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     {isEditing && existing?.status !== "draft"
                                         ? "Saving…"
-                                        : "Publishing…"}
+                                        : "Sending…"}
                                 </>
                             ) : (
                                 <>
                                     <Send className="mr-2 h-4 w-4" />
                                     {isEditing
                                         ? existing?.status === "draft"
-                                            ? "Publish campaign"
+                                            ? "Send for review"
                                             : "Save changes"
-                                        : "Publish campaign"}
+                                        : "Send for review"}
                                     <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                 </>
                             )}

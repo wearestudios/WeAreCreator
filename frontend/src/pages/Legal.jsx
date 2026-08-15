@@ -183,9 +183,9 @@ export function Privacy() {
 
             <Section title="Who we share it with">
                 <p>
-                    WhatsApp messages are delivered through AiSensy. Public Instagram
-                    statistics are fetched through Apify. We share what is necessary with
-                    tax authorities and our payment providers. Nobody else.
+                    WhatsApp messages are delivered through AiSensy. We share what is
+                    necessary with tax authorities and our payment providers. Nobody
+                    else.
                 </p>
             </Section>
 

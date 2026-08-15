@@ -1,7 +1,8 @@
 # WeAre Creators
 
 Two-sided marketplace connecting verified creators with brands running paid
-campaigns across India. Roles: `creator`, `brand`, `admin`.
+campaigns across India. Roles: `creator`, `brand`, `admin`, `campaign_manager`
+(staff, assigned per campaign — sees only what they're assigned to).
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
   JWT in httpOnly cookies (`access_token` / `refresh_token`).
@@ -14,7 +15,8 @@ campaigns across India. Roles: `creator`, `brand`, `admin`.
 All routes mount under `/api` (`api_router`), with sub-routers by audience:
 `/auth` and `/public` (unauthenticated), `/creator`, `/brand` (some endpoints also
 allow `admin`), `/admin`, `/campaigns` (creator + admin; detail also the owning
-brand), and `/notifications` (any signed-in user).
+brand), and `/notifications` (any signed-in user), and `/manager` (campaign_manager + admin,
+scoped to assigned campaigns via `_managed_campaign_or_404`).
 
 Guard every non-public endpoint with the `require_roles` dependency factory:
 

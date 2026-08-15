@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import csv
+import io
 import os
 import re
 import logging
@@ -14,11 +16,21 @@ import bcrypt
 import httpx
 import jwt
 from bson import ObjectId
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
+from fastapi import (
+    FastAPI,
+    APIRouter,
+    HTTPException,
+    Depends,
+    File,
+    Request,
+    Response,
+    UploadFile,
+)
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict, model_validator
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -38,7 +50,9 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MIN = 60 * 24  # 1 day
 REFRESH_TOKEN_DAYS = 7
 
-Role = Literal["creator", "brand", "admin"]
+# campaign_manager is staff: created by an admin, signs in with email +
+# password, and sees only the campaigns they are assigned to.
+Role = Literal["creator", "brand", "admin", "campaign_manager"]
 
 
 def _pyobjectid_validator(v):
@@ -252,6 +266,14 @@ class BrandProfileUpdate(BaseModel):
     areas: list[str] = Field(default_factory=list, max_length=30)
 
 
+# The shape of the work decides the shape of the dates. A launch or a group
+# event happens on one day; a personal table runs over a window a creator books
+# into. Storing both shapes on every campaign and trusting the UI to fill the
+# right ones is how a brief ends up with an event date *and* a window.
+CampaignType = Literal["launch", "group_event", "personal_table"]
+EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
@@ -262,9 +284,47 @@ class PostCampaignPayload(BaseModel):
     category: CATEGORY_LITERAL
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
+    campaign_type: CampaignType
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    status: Literal["draft", "open"] = "open"
+    # Where creators actually show up. Optional at draft time — a brand can
+    # brief before the venue is confirmed — but part of the campaign, not the
+    # chat thread it would otherwise live in.
+    venue_address: Optional[str] = Field(default=None, max_length=500)
+    venue_instructions: Optional[str] = Field(default=None, max_length=1000)
+    on_site_contact: Optional[str] = Field(default=None, max_length=200)
+    # "open" is accepted by the schema only so the handler can explain why it is
+    # refused. A brand saves a draft or submits for review; an admin publishes.
+    status: Literal["draft", "pending_review", "open"] = "draft"
+
+    @model_validator(mode="after")
+    def _dates_match_the_type(self):
+        if self.campaign_type in EVENT_CAMPAIGN_TYPES:
+            if self.event_date is None:
+                raise ValueError(
+                    f"A {self.campaign_type.replace('_', ' ')} happens on a day — "
+                    "event_date is required."
+                )
+            if self.start_date is not None or self.end_date is not None:
+                raise ValueError(
+                    "An event campaign has an event_date, not a start/end window. "
+                    "Leave start_date and end_date out."
+                )
+        else:  # personal_table
+            if self.start_date is None or self.end_date is None:
+                raise ValueError(
+                    "A personal table runs over a window — start_date and "
+                    "end_date are both required."
+                )
+            if self.event_date is not None:
+                raise ValueError(
+                    "A personal table has a booking window, not an event_date. "
+                    "Leave event_date out."
+                )
+            if self.end_date < self.start_date:
+                raise ValueError("End date cannot be before start date")
+        return self
 
 
 class UpdateCampaignPayload(BaseModel):
@@ -278,8 +338,91 @@ class UpdateCampaignPayload(BaseModel):
     category: Optional[CATEGORY_LITERAL] = None
     area: Optional[str] = Field(default=None, min_length=1, max_length=80)
     creators_needed: Optional[int] = Field(default=None, ge=1, le=100)
+    # campaign_type is deliberately absent: the type decides which date fields
+    # exist, so changing it mid-flight would orphan whichever dates were set.
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    venue_address: Optional[str] = Field(default=None, max_length=500)
+    venue_instructions: Optional[str] = Field(default=None, max_length=1000)
+    on_site_contact: Optional[str] = Field(default=None, max_length=200)
+
+
+class CreateManagerPayload(BaseModel):
+    """An admin creating a campaign-manager account. Staff, so email+password."""
+
+    name: str = Field(min_length=1, max_length=140)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    phone: Optional[str] = Field(default=None, max_length=20)
+
+
+class AssignManagerPayload(BaseModel):
+    """Point a campaign at the manager who runs it."""
+
+    manager_user_id: str
+
+
+class SlotPayload(BaseModel):
+    """One bookable slot (or window) on a campaign.
+
+    For launch/group_event this is a time on the event day; for personal_table
+    it is an availability window, so ends_at is required there and optional
+    otherwise — the handler enforces the per-type rule since it knows the
+    campaign.
+    """
+
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    capacity: int = Field(ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _window_runs_forward(self):
+        if self.ends_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("A slot has to end after it starts.")
+        return self
+
+
+class CreateSlotPayload(SlotPayload):
+    """A slot created against a campaign named in the body."""
+
+    campaign_id: str
+
+
+class UpdateSlotPayload(BaseModel):
+    """Move a slot or resize it. Every field optional — a manager usually
+    changes one thing."""
+
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    capacity: Optional[int] = Field(default=None, ge=1, le=500)
+
+
+class NoShowPayload(BaseModel):
+    """A creator who didn't turn up. The note is what the admin reads when
+    deciding whether anything is owed, so it is required."""
+
+    note: str = Field(min_length=3, max_length=500)
+
+
+class ReschedulePayload(BaseModel):
+    """Move a creator to a different slot on the same campaign."""
+
+    slot_id: str
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class BroadcastPayload(BaseModel):
+    """One WhatsApp message to everyone confirmed on a campaign."""
+
+    message: str = Field(min_length=3, max_length=1000)
+
+
+class CampaignInvitePayload(BaseModel):
+    """Payload for inviting a hand-picked set of creators to a campaign."""
+
+    creator_ids: list[str] = Field(min_length=1, max_length=100)
+    note: Optional[str] = Field(default=None, max_length=500)
 
 
 class DecisionPayload(BaseModel):
@@ -303,10 +446,41 @@ class ScheduleSlotPayload(BaseModel):
     location_note: Optional[str] = Field(default=None, max_length=300)
 
 
+# Why a collaboration ended. Recorded separately from the free-text reason so
+# no-shows can be counted rather than read.
+CANCELLATION_TYPES = ("creator_no_show", "brand_cancelled", "admin_cancelled")
+CancellationType = Literal["creator_no_show", "brand_cancelled", "admin_cancelled"]
+
+
 class MarkPaidPayload(BaseModel):
     """Payload recording an actual payout that happened outside the platform."""
 
     payment_reference: str = Field(min_length=1, max_length=140)
+
+
+class ReasonPayload(BaseModel):
+    """A decision somebody has to be able to explain afterwards.
+
+    Distinct from `DecisionPayload`, where the reason is optional: these are the
+    actions that undo, stop or claw back something, and an unexplained one is
+    unreadable a week later.
+    """
+
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class CancelCollabPayload(ReasonPayload):
+    """Why a collaboration ended, in both a countable and a readable form."""
+
+    # Defaults to the admin doing it, which is true whenever nobody says
+    # otherwise, and keeps older callers working.
+    cancellation_type: CancellationType = "admin_cancelled"
+
+
+class RefundPayload(ReasonPayload):
+    """A payout being clawed back. The reference is how it reconciles."""
+
+    refund_reference: Optional[str] = Field(default=None, max_length=140)
 
 
 # --- Domain models (schema-only; used for validation & docs) ---------------
@@ -314,7 +488,16 @@ class MarkPaidPayload(BaseModel):
 UserStatus = Literal["pending", "active", "suspended"]
 VerificationStatus = Literal["pending", "verified", "rejected"]
 CampaignStatus = Literal[
-    "draft", "upcoming", "open", "in_progress", "completed", "closed"
+    "draft",
+    "pending_review",
+    "upcoming",
+    "open",
+    "in_progress",
+    # Off the feed but not over: work already under way carries on, and it can
+    # be resumed. A campaign we had to stop is not the same as one that ended.
+    "paused",
+    "completed",
+    "closed",
 ]
 CollabState = Literal[
     "applied",
@@ -331,8 +514,10 @@ CollabState = Literal[
     "declined",
     "cancelled",
 ]
-PaymentState = Literal["pending", "paid"]
-BrandInvoiceState = Literal["pending", "sent", "settled"]
+# "cancelled" is a payout that will never happen; "refunded" is one that
+# happened and was clawed back. Reporting has to be able to tell them apart.
+PaymentState = Literal["pending", "paid", "cancelled", "refunded"]
+BrandInvoiceState = Literal["pending", "sent", "settled", "void"]
 
 # The happy path, in order. `declined` / `cancelled` are exits, not steps, so
 # they deliberately do not appear here.
@@ -380,11 +565,20 @@ ADMIN_ACTION_STATES = (
 )
 
 # A campaign in one of these states is visible on the creator feed.
+# `pending_review` is deliberately absent: a brief nobody has read yet must
+# never reach a creator.
 LIVE_CAMPAIGN_STATUSES = ("open", "upcoming")
 
 # Still running, from the brand's point of view: taking applications or
 # mid-delivery. Wider than LIVE_CAMPAIGN_STATUSES, which is about the feed.
 ACTIVE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
+
+# What a brand may ask for when it creates a campaign. Going live is not on the
+# list — that is the admin's call, made in `approve_campaign`.
+BRAND_SETTABLE_CAMPAIGN_STATUSES = ("draft", "pending_review")
+
+# Waiting on us to read it.
+CAMPAIGN_REVIEW_STATUS = "pending_review"
 
 
 class CreatorProfile(BaseModel):
@@ -396,6 +590,8 @@ class CreatorProfile(BaseModel):
     name: str
     instagram_handle: Optional[str] = None
     instagram_profile_url: Optional[str] = None
+    # Set by the upload endpoint, not by the profile PUT — see upload_profile_image.
+    profile_image_url: Optional[str] = None
     email: Optional[EmailStr] = None
     city: Optional[str] = None
     address: Optional[str] = None
@@ -442,8 +638,21 @@ class Campaign(BaseModel):
     category: Optional[str] = None
     area: Optional[str] = None
     creators_needed: int = Field(ge=1, default=1)
+    # launch / group_event carry event_date; personal_table carries the window.
+    campaign_type: Optional[CampaignType] = None  # None on pre-types documents
+    event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    venue_address: Optional[str] = None
+    venue_instructions: Optional[str] = None
+    on_site_contact: Optional[str] = None
+    # The assigned campaign manager — differs across concurrent campaigns, so
+    # it lives here and not on the brand. Snapshot of the manager user at
+    # assignment time, plus the linking id for RBAC.
+    manager_id: Optional[PyObjectId] = None
+    manager_name: Optional[str] = None
+    manager_phone: Optional[str] = None
+    manager_email: Optional[str] = None
     status: CampaignStatus = "draft"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -599,6 +808,16 @@ NOTIFY_EVENTS = {
     "new_applicant": "A creator applied to your campaign",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
+    "campaign_invite": "A brand invited you to a campaign",
+    "brand_verified": "Your brand is verified",
+    "brand_rejected": "We couldn't verify your brand yet",
+    "campaign_approved": "Your campaign is live",
+    "campaign_rejected": "Your campaign needs a change before it goes live",
+    "manager_assigned": "You've been assigned a campaign",
+    "slot_confirmed": "Your slot is booked",
+    "manager_slot_booked": "A creator booked a slot",
+    "manager_slot_released": "A creator gave up a slot",
+    "campaign_broadcast": "A message from your campaign manager",
 }
 
 
@@ -635,6 +854,44 @@ async def _send_aisensy_template(
     return True
 
 
+async def record_notification(
+    user_id,
+    event: str,
+    *,
+    title: str,
+    body: str,
+    link: Optional[str] = None,
+    delivered: bool = False,
+) -> None:
+    """Write the in-app notification row, without touching WhatsApp.
+
+    Split out of `notify` so a caller that has already sent its own WhatsApp
+    message — the campaign invite uses a utility template of its own — still
+    leaves the same in-app trail, and does not send a second message by going
+    back through `notify`. Never raises.
+    """
+    try:
+        oid = user_id if isinstance(user_id, ObjectId) else ObjectId(str(user_id))
+    except Exception:
+        logger.error("record_notification called with unusable user_id %r", user_id)
+        return
+    try:
+        await db.notifications.insert_one(
+            {
+                "user_id": oid,
+                "event": event,
+                "title": title,
+                "body": body,
+                "link": link,
+                "read": False,
+                "delivered_on_whatsapp": delivered,
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+    except Exception as exc:
+        logger.error("notification write failed for %s/%s: %s", event, user_id, exc)
+
+
 async def notify(
     user_id,
     event: str,
@@ -653,7 +910,6 @@ async def notify(
         logger.error("notify called with unusable user_id %r", user_id)
         return
 
-    now = datetime.now(timezone.utc)
     delivered = False
     try:
         user = await db.users.find_one({"_id": oid})
@@ -662,25 +918,129 @@ async def notify(
             delivered = await _send_aisensy_template(
                 user["phone"], user.get("name") or "there", template, params or [body]
             )
-        await db.notifications.insert_one(
-            {
-                "user_id": oid,
-                "event": event,
-                "title": title,
-                "body": body,
-                "link": link,
-                "read": False,
-                "delivered_on_whatsapp": delivered,
-                "created_at": now,
-            }
-        )
     except Exception as exc:
         logger.error("notify failed for %s/%s: %s", event, user_id, exc)
+
+    await record_notification(
+        oid, event, title=title, body=body, link=link, delivered=delivered
+    )
 
 
 # ---------------------------------------------------------------------------
 # Pricing
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Uploads
+# ---------------------------------------------------------------------------
+
+# Where uploaded files land. Served back out at /uploads by the static mount.
+# NOTE: this is local disk. On an ephemeral container it does not survive a
+# restart — point UPLOAD_DIR at a mounted volume, or swap _store_upload for
+# object storage, before relying on it in production.
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
+UPLOAD_URL_PREFIX = "/uploads"
+
+# Declared content types are client-controlled, so these are matched against
+# the file's actual leading bytes rather than the header.
+_IMAGE_SIGNATURES = (
+    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
+    (b"GIF87a", "image/gif", ".gif"),
+    (b"GIF89a", "image/gif", ".gif"),
+)
+
+
+def max_upload_bytes() -> int:
+    try:
+        mb = float(os.environ.get("MAX_UPLOAD_MB", "5"))
+    except ValueError:
+        mb = 5.0
+    return int(max(0.1, min(mb, 25)) * 1024 * 1024)
+
+
+def sniff_image_type(head: bytes) -> Optional[tuple]:
+    """Identify an image from its leading bytes.
+
+    Returns (mime, extension) or None. WebP needs a two-part check: 'RIFF'
+    at 0 and 'WEBP' at 8.
+    """
+    for magic, mime, ext in _IMAGE_SIGNATURES:
+        if head.startswith(magic):
+            return mime, ext
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
+
+
+async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
+    """Validate and write an uploaded image. Returns (public_url, disk_path).
+
+    Reads in chunks so an oversized upload is rejected without first pulling the
+    whole thing into memory.
+    """
+    limit = max_upload_bytes()
+    chunk_size = 64 * 1024
+
+    first = await file.read(chunk_size)
+    if not first:
+        raise HTTPException(status_code=422, detail="That file is empty.")
+
+    sniffed = sniff_image_type(first)
+    if not sniffed:
+        raise HTTPException(
+            status_code=422,
+            detail="Please upload a JPEG, PNG, WebP or GIF image.",
+        )
+    mime, ext = sniffed
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    # The client's filename is never trusted — the extension comes from the
+    # bytes, and the stem is random so uploads can't be guessed or overwritten.
+    filename = f"{prefix}-{_secrets.token_urlsafe(16)}{ext}"
+    path = UPLOAD_DIR / filename
+
+    written = 0
+    try:
+        with open(path, "wb") as out:
+            chunk = first
+            while chunk:
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Images must be under {limit // (1024 * 1024)}MB.",
+                    )
+                out.write(chunk)
+                chunk = await file.read(chunk_size)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        path.unlink(missing_ok=True)
+        logger.error("upload write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save that image.")
+    finally:
+        await file.close()
+
+    logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
+    return f"{UPLOAD_URL_PREFIX}/{filename}", path
+
+
+def _delete_upload(public_url: Optional[str]) -> None:
+    """Remove a previously stored upload. Never raises — a leftover file is a
+    smaller problem than a failed request."""
+    if not public_url or not public_url.startswith(f"{UPLOAD_URL_PREFIX}/"):
+        return
+    name = public_url.rsplit("/", 1)[-1]
+    # Defend the directory boundary even though the name is generated by us.
+    if "/" in name or "\\" in name or name in ("", ".", ".."):
+        return
+    try:
+        (UPLOAD_DIR / name).unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("could not delete upload %s: %s", name, exc)
 
 
 def platform_fee_percent() -> float:
@@ -810,7 +1170,8 @@ async def login(payload: LoginInput, response: Response):
     if not user or not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if user.get("role") != "admin":
+    # Staff sign in here; creators and brands use WhatsApp OTP.
+    if user.get("role") not in ("admin", "campaign_manager"):
         raise HTTPException(
             status_code=403,
             detail="Please sign in with your WhatsApp number.",
@@ -992,6 +1353,174 @@ async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
     raise HTTPException(
         status_code=502,
         detail="WhatsApp delivery failed. Please resend or try a different number.",
+    )
+
+
+async def _send_aisensy_utility(
+    phone: str, name: str, template: str, params: list[str]
+) -> str:
+    """Send a utility-template WhatsApp message via AiSensy.
+
+    Same provider, endpoint and payload shape as `_send_aisensy_otp`, and the
+    same simulation fallback when credentials are missing — but for the utility
+    templates that carry campaign information rather than a login code, so the
+    template name is passed in rather than read from AISENSY_CAMPAIGN_NAME.
+
+    Returns the mode ("aisensy" or "simulation"). Raises HTTPException when the
+    provider refuses, so a batch caller can record one failure and carry on
+    rather than losing the whole send.
+    """
+    api_key = os.environ.get("AISENSY_API_KEY", "").strip()
+
+    if not api_key or not template:
+        # Simulation is gated exactly as it is for OTP. An invite carries no
+        # secret, but silently "sending" nothing in production would report
+        # success to an admin while no creator was ever messaged — a louder
+        # failure is the safer one.
+        if not _simulation_allowed():
+            logger.error(
+                "utility message requested but AiSensy is not configured. Set "
+                "AISENSY_API_KEY and the template name, or set "
+                "ALLOW_OTP_SIMULATION=true for local dev."
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="WhatsApp messaging is unavailable right now. Please try again shortly.",
+            )
+        logger.warning(
+            "AISENSY simulation mode — utility message to %s (%s): %s",
+            phone,
+            template or "no template configured",
+            params,
+        )
+        return "simulation"
+
+    payload = {
+        "apiKey": api_key,
+        "campaignName": template,
+        "destination": phone,
+        "userName": name or "User",
+        "templateParams": params,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client_http:
+            resp = await client_http.post(
+                "https://backend.aisensy.com/campaign/t1/api/v2",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.error("AiSensy utility request failed (%s): %s", template, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not reach WhatsApp right now. Please try again.",
+        )
+
+    if resp.status_code == 200:
+        return "aisensy"
+
+    logger.error(
+        "AiSensy rejected utility message for %s (%s) — status=%s body=%s",
+        phone,
+        template,
+        resp.status_code,
+        resp.text[:400],
+    )
+    if resp.status_code in (408, 425, 429) or resp.status_code >= 500:
+        raise HTTPException(
+            status_code=503,
+            detail="WhatsApp delivery is temporarily unavailable. Please try again.",
+        )
+    raise HTTPException(
+        status_code=502,
+        detail="WhatsApp delivery failed for this number.",
+    )
+
+
+async def notify_over_utility_template(
+    user_id,
+    event: str,
+    *,
+    title: str,
+    body: str,
+    params: list[str],
+    link: Optional[str] = None,
+) -> dict:
+    """Send a moderation decision over WhatsApp and record it in-app.
+
+    The WhatsApp side goes through `_send_aisensy_utility` (its own template,
+    its own simulation fallback) rather than `notify`, because `notify` picks
+    its template from the event name and would send a second message.
+
+    Never raises: a decision that has already been written to the database must
+    not be undone by a messaging failure. Returns what happened, so the endpoint
+    can tell the admin whether the brand was actually reached.
+    """
+    template = os.environ.get(f"AISENSY_TEMPLATE_{event.upper()}", "").strip()
+    delivered = False
+    mode = None
+    error = None
+
+    try:
+        oid = user_id if isinstance(user_id, ObjectId) else ObjectId(str(user_id))
+    except Exception:
+        logger.error("notify_over_utility_template got an unusable user_id %r", user_id)
+        return {"delivered": False, "mode": None, "error": "Unusable user id."}
+
+    account = await db.users.find_one({"_id": oid})
+    phone = (account or {}).get("phone")
+    if not phone:
+        error = "No WhatsApp number on file."
+    else:
+        try:
+            mode = await _send_aisensy_utility(
+                phone, (account or {}).get("name") or "there", template, params
+            )
+            delivered = mode == "aisensy"
+        except HTTPException as exc:
+            error = exc.detail
+        except Exception as exc:  # never let a send break the decision
+            logger.error("utility notify failed for %s: %s", event, exc)
+            error = "WhatsApp delivery failed."
+
+    await record_notification(
+        oid, event, title=title, body=body, link=link, delivered=delivered
+    )
+    return {"delivered": delivered, "mode": mode, "error": error}
+
+
+async def _tell_manager_a_seat_freed(collab: dict, how: str) -> None:
+    """A seat coming back on sale is the manager's problem, not the admin's —
+    they are the one who has to fill it or re-plan the day."""
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        return
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    name = (profile or {}).get("name") or "A creator"
+    await notify_campaign_manager(
+        campaign,
+        "manager_slot_released",
+        title="A slot opened up",
+        body=f"{name}'s booking on {campaign.get('title')} was {how} — their place is free again.",
+    )
+
+
+async def notify_campaign_manager(campaign: dict, event: str, *, title: str, body: str) -> None:
+    """Tell the assigned manager something changed on their campaign.
+
+    Silent when nobody is assigned yet — a campaign without a manager has no
+    one to tell, and that is not an error worth failing a booking over.
+    """
+    manager_id = (campaign or {}).get("manager_id")
+    if not manager_id:
+        return
+    await notify(
+        manager_id,
+        event,
+        title=title,
+        body=body,
+        link=f"/manager/campaigns/{str(campaign['_id'])}",
     )
 
 
@@ -1237,6 +1766,7 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "name": doc.get("name"),
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
+        "profile_image_url": doc.get("profile_image_url"),
         "email": doc.get("email"),
         "city": doc.get("city"),
         "address": doc.get("address"),
@@ -1306,6 +1836,51 @@ def _clean_payout_fields(payload) -> dict:
     return out
 
 
+@creator_router.post("/profile/image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles("creator")),
+):
+    """Upload the creator's profile photo.
+
+    Deliberately separate from PUT /profile: the field holds a path we issued,
+    so it is set by storing a file rather than by accepting a URL from the
+    client. Replacing a photo removes the old file.
+    """
+    profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    public_url, _path = await _store_upload(file, prefix=f"creator-{user['_id']}")
+
+    previous = profile.get("profile_image_url")
+    now = datetime.now(timezone.utc)
+    await db.creator_profiles.update_one(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": {"profile_image_url": public_url, "updated_at": now}},
+    )
+    # Only once the new one is safely recorded.
+    if previous and previous != public_url:
+        _delete_upload(previous)
+
+    return {"profile_image_url": public_url}
+
+
+@creator_router.delete("/profile/image")
+async def delete_profile_image(user: dict = Depends(require_roles("creator"))):
+    profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    previous = profile.get("profile_image_url")
+    await db.creator_profiles.update_one(
+        {"user_id": ObjectId(user["_id"])},
+        {"$set": {"profile_image_url": None, "updated_at": datetime.now(timezone.utc)}},
+    )
+    _delete_upload(previous)
+    return {"profile_image_url": None}
+
+
 @creator_router.get("/profile")
 async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     doc = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
@@ -1321,9 +1896,13 @@ async def update_creator_profile(
     user: dict = Depends(require_roles("creator")),
 ):
     # Normalise Instagram handle (strip leading @, lowercase, no whitespace).
-    handle = payload.instagram_handle.strip().lstrip("@").lower()
+    # Accepts "@name", "name" or a pasted profile URL and stores the bare handle.
+    handle = _extract_ig_handle(payload.instagram_handle)
     if not handle:
-        raise HTTPException(status_code=422, detail="Instagram handle is required")
+        raise HTTPException(
+            status_code=422,
+            detail="That doesn't look like an Instagram handle. Use letters, numbers, dots or underscores.",
+        )
 
     existing = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
     if not existing:
@@ -1441,19 +2020,19 @@ async def get_creator_dashboard(
         "name": (profile or {}).get("name") or user.get("name"),
         "instagram_handle": (profile or {}).get("instagram_handle"),
         "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+        "profile_image_url": (profile or {}).get("profile_image_url"),
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
         "niches": (profile or {}).get("niches") or [],
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
+        # Follower counts are the creator's own figure. The scraped source was
+        # removed — it breached Instagram's terms — so the number is labelled
+        # honestly rather than presented as measured.
+        "follower_count_source": "self_reported",
+        "verified_stats_available": False,
     }
-
-    # Attach cached Instagram stats if we have any for this handle.
-    ig_handle = _extract_ig_handle((profile or {}).get("instagram_handle") or "")
-    profile_summary["instagram_stats"] = (
-        await _load_cached_ig_stats(ig_handle) if ig_handle else None
-    )
 
     # All of this creator's collaborations, newest first.
     collabs = (
@@ -1645,17 +2224,19 @@ async def submit_collab_content(
 
 
 # ---------------------------------------------------------------------------
-# Instagram stats via Apify (server-only)
+# Instagram handle parsing
 # ---------------------------------------------------------------------------
-
-APIFY_ACTOR = "apify~instagram-profile-scraper"
-INSTAGRAM_STATS_TTL_SECONDS = 6 * 3600
-_HANDLE_URL_RE = re.compile(
-    r"(?:instagram\.com/)?@?([A-Za-z0-9._]{1,60})/?", re.IGNORECASE
-)
+#
+# The Apify Instagram scraper that used to live here has been removed: scraping
+# Instagram breaches their terms of service and put the connected Meta Business
+# account at risk. Follower counts are self-reported until an officially
+# permitted source is wired up.
+#
+# What survives is handle parsing, which is ours and touches no third party.
 
 
 def _extract_ig_handle(raw: str) -> Optional[str]:
+    """Normalise a pasted handle or profile URL down to the bare handle."""
     if not raw:
         return None
     raw = raw.strip().split("?")[0].rstrip("/")
@@ -1670,147 +2251,6 @@ def _extract_ig_handle(raw: str) -> Optional[str]:
     if not re.fullmatch(r"[a-z0-9._]{1,60}", raw):
         return None
     return raw
-
-
-def _apify_token() -> Optional[str]:
-    tok = os.environ.get("APIFY_API_TOKEN", "").strip()
-    return tok or None
-
-
-async def _fetch_instagram_from_apify(handle: str) -> dict:
-    """Call the Apify Instagram Profile Scraper actor synchronously."""
-    token = _apify_token()
-    if not token:
-        raise HTTPException(
-            status_code=503,
-            detail="Instagram stats aren't configured on this server yet.",
-        )
-    url = (
-        f"https://api.apify.com/v2/acts/{APIFY_ACTOR}"
-        f"/run-sync-get-dataset-items?token={token}&timeout=60"
-    )
-    payload = {"usernames": [handle]}
-    try:
-        async with httpx.AsyncClient(timeout=75.0) as client:
-            resp = await client.post(url, json=payload)
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="Instagram fetch timed out. Please try again in a moment.",
-        )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=502, detail=f"Could not reach Instagram provider: {e}"
-        )
-
-    if resp.status_code == 401:
-        raise HTTPException(
-            status_code=500, detail="Invalid Instagram provider token."
-        )
-    if resp.status_code == 402:
-        raise HTTPException(
-            status_code=402,
-            detail="Instagram stats provider is out of credits. Please recharge.",
-        )
-    if resp.status_code == 429:
-        raise HTTPException(
-            status_code=429,
-            detail="Instagram stats provider rate limit hit. Try again shortly.",
-        )
-    if resp.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Instagram provider error ({resp.status_code}).",
-        )
-
-    try:
-        data = resp.json()
-    except Exception:
-        raise HTTPException(status_code=502, detail="Invalid response from Instagram provider.")
-
-    if not isinstance(data, list) or not data:
-        raise HTTPException(
-            status_code=404,
-            detail="No public Instagram profile found for that handle.",
-        )
-
-    item = data[0]
-    # Apify sometimes returns an error item — flag it.
-    if isinstance(item, dict) and item.get("error"):
-        raise HTTPException(status_code=404, detail="Instagram profile not found or is private.")
-
-    return {
-        "handle": (item.get("username") or handle).lower(),
-        "full_name": item.get("fullName") or None,
-        "biography": item.get("biography") or None,
-        "profile_pic_url": item.get("profilePicUrlHD") or item.get("profilePicUrl"),
-        "followers_count": item.get("followersCount"),
-        "following_count": item.get("followsCount"),
-        "posts_count": item.get("postsCount"),
-        "verified": bool(item.get("verified", False)),
-        "is_private": bool(item.get("private", False)),
-        "business_category": item.get("businessCategoryName"),
-        "external_url": item.get("externalUrl"),
-    }
-
-
-async def _load_cached_ig_stats(handle: str) -> Optional[dict]:
-    doc = await db.instagram_stats_cache.find_one({"handle": handle})
-    if not doc:
-        return None
-    updated = doc.get("updated_at")
-    age = None
-    if isinstance(updated, datetime):
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=timezone.utc)
-        age = (datetime.now(timezone.utc) - updated).total_seconds()
-        doc["updated_at"] = updated.isoformat()
-    doc["_age_seconds"] = age
-    doc.pop("_id", None)
-    return doc
-
-
-async def _save_ig_stats(handle: str, stats: dict) -> dict:
-    now = datetime.now(timezone.utc)
-    doc = {**stats, "handle": handle, "updated_at": now}
-    await db.instagram_stats_cache.update_one(
-        {"handle": handle}, {"$set": doc}, upsert=True
-    )
-    doc["updated_at"] = now.isoformat()
-    doc["_age_seconds"] = 0
-    return doc
-
-
-async def _get_or_refresh_ig(handle: str, force: bool = False) -> dict:
-    if not force:
-        cached = await _load_cached_ig_stats(handle)
-        if cached and (cached.get("_age_seconds") or 0) < INSTAGRAM_STATS_TTL_SECONDS:
-            cached["from_cache"] = True
-            return cached
-    stats = await _fetch_instagram_from_apify(handle)
-    saved = await _save_ig_stats(handle, stats)
-    saved["from_cache"] = False
-    return saved
-
-
-@creator_router.get("/instagram-stats")
-async def get_instagram_stats(
-    refresh: bool = False,
-    user: dict = Depends(require_roles("creator")),
-):
-    profile = await db.creator_profiles.find_one(
-        {"user_id": ObjectId(user["_id"])}
-    )
-    raw = (profile or {}).get("instagram_handle") or (profile or {}).get(
-        "instagram_profile_url"
-    )
-    handle = _extract_ig_handle(raw or "")
-    if not handle:
-        raise HTTPException(
-            status_code=400,
-            detail="Add your Instagram handle on your profile first.",
-        )
-    return await _get_or_refresh_ig(handle, force=refresh)
 
 
 
@@ -1833,6 +2273,8 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
         "verified": bool(doc.get("verified", False)),
+        # Set when we refuse a brand, so it can be shown rather than guessed at.
+        "verification_reason": doc.get("verification_reason"),
         "created_at": doc["created_at"].isoformat()
         if isinstance(doc.get("created_at"), datetime)
         else doc.get("created_at"),
@@ -1856,8 +2298,17 @@ def _serialize_brand_campaign(
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": needed,
+        "campaign_type": doc.get("campaign_type"),
+        "event_date": _iso(doc.get("event_date")),
         "start_date": _iso(doc.get("start_date")),
         "end_date": _iso(doc.get("end_date")),
+        "venue_address": doc.get("venue_address"),
+        "venue_instructions": doc.get("venue_instructions"),
+        "on_site_contact": doc.get("on_site_contact"),
+        # Who runs it day to day. The brand talks to them, so name and phone
+        # are theirs to see; assignment itself is the admin's.
+        "manager_name": doc.get("manager_name"),
+        "manager_phone": doc.get("manager_phone"),
         "status": status,
         "created_at": _iso(doc.get("created_at")),
         "applicant_count": applicant_count,
@@ -1866,9 +2317,21 @@ def _serialize_brand_campaign(
         # How many applicants are sitting with the brand right now. This is the
         # number that should make somebody act.
         "awaiting_decision": awaiting,
-        "can_edit": status in ("draft", "upcoming", "open"),
+        # Why we sent it back, so the brand can fix the thing we asked about
+        # rather than guessing.
+        "review_reason": doc.get("review_reason"),
+        "submitted_for_review_at": _iso(doc.get("submitted_for_review_at")),
+        "reviewed_at": _iso(doc.get("reviewed_at")),
+        # Why it is off the feed, when an admin took it off.
+        "pause_reason": doc.get("pause_reason"),
+        "paused": status == "paused",
+        "can_edit": status
+        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "paused"),
+        # "Publish" now means "submit for review" — see publish_brand_campaign.
         "can_publish": status == "draft",
-        "can_close": status in ("draft", "upcoming", "open", "in_progress"),
+        "awaiting_review": status == CAMPAIGN_REVIEW_STATUS,
+        "can_close": status
+        in ("draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "in_progress", "paused"),
         "can_delete": status == "draft" and applicant_count == 0,
     }
 
@@ -1885,6 +2348,69 @@ async def _awaiting_brand_counts(campaign_ids: list) -> dict:
         ]
     ).to_list(length=len(unique))
     return {r["_id"]: r["n"] for r in rows}
+
+
+async def _verified_brand_or_403(user: dict) -> dict:
+    """Assert the caller's brand has been verified by us.
+
+    Drafting is open to anyone who signs up — writing a brief costs nobody
+    anything. Putting one in front of creators is what needs a real business
+    behind it, so that is where the gate sits.
+    """
+    if user.get("role") == "admin":
+        return {}
+    profile = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    if not profile:
+        raise HTTPException(
+            status_code=403,
+            detail="Finish your brand profile before submitting a campaign.",
+        )
+    if not profile.get("verified", False):
+        reason = profile.get("verification_reason")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Your brand hasn't been verified yet: {reason}"
+                if reason
+                else (
+                    "Your brand is still being verified. You can keep drafting — "
+                    "we'll be in touch as soon as it's approved."
+                )
+            ),
+        )
+    return profile
+
+
+def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
+    """An edit must not hand a campaign the other type's date fields.
+
+    Creation validates the combination; without this, a PATCH could quietly give
+    a launch a booking window or a personal table an event day.
+    """
+    ctype = campaign.get("campaign_type")
+    if ctype in EVENT_CAMPAIGN_TYPES:
+        if update.get("start_date") is not None or update.get("end_date") is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"A {ctype.replace('_', ' ')} has an event_date, not a start/end window.",
+            )
+        if "event_date" in update and update["event_date"] is None:
+            raise HTTPException(
+                status_code=422,
+                detail="An event campaign needs its event_date — set a new one instead.",
+            )
+    elif ctype == "personal_table":
+        if update.get("event_date") is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="A personal table has a booking window, not an event_date.",
+            )
+        for field in ("start_date", "end_date"):
+            if field in update and update[field] is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="A personal table needs its window — set new dates instead.",
+                )
 
 
 async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
@@ -1980,14 +2506,21 @@ async def create_brand_campaign(
     payload: PostCampaignPayload,
     user: dict = Depends(require_roles("brand")),
 ):
-    if (
-        payload.start_date
-        and payload.end_date
-        and payload.end_date < payload.start_date
-    ):
+    # The type/date combinations are enforced by the payload model itself.
+
+    # The status used to come straight off the payload, which let a brand post
+    # itself live. Going live is a decision somebody makes about a brief, not a
+    # field on the request.
+    if payload.status not in BRAND_SETTABLE_CAMPAIGN_STATUSES:
         raise HTTPException(
-            status_code=422, detail="End date cannot be before start date"
+            status_code=422,
+            detail=(
+                "Campaigns go live after a WeAre review. Save it as a draft, or "
+                "submit it for review — you can't publish directly."
+            ),
         )
+    if payload.status == CAMPAIGN_REVIEW_STATUS:
+        await _verified_brand_or_403(user)
 
     now = datetime.now(timezone.utc)
     doc = {
@@ -1999,12 +2532,24 @@ async def create_brand_campaign(
         "category": payload.category,
         "area": payload.area.strip(),
         "creators_needed": int(payload.creators_needed),
+        "campaign_type": payload.campaign_type,
+        "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
+        "venue_address": (payload.venue_address or "").strip() or None,
+        "venue_instructions": (payload.venue_instructions or "").strip() or None,
+        "on_site_contact": (payload.on_site_contact or "").strip() or None,
+        # Assigned later by an admin — see assign_campaign_manager.
+        "manager_id": None,
+        "manager_name": None,
+        "manager_phone": None,
+        "manager_email": None,
         "status": payload.status,
         "created_at": now,
         "updated_at": now,
     }
+    if payload.status == CAMPAIGN_REVIEW_STATUS:
+        doc["submitted_for_review_at"] = now
     result = await db.campaigns.insert_one(doc)
     doc["_id"] = result.inserted_id
     await audit(user, "campaign.create", "campaign", result.inserted_id, after={"title": doc["title"], "status": doc["status"]})
@@ -2020,7 +2565,12 @@ async def update_brand_campaign(
     """Correct a brief. Allowed while a campaign is a draft or still live —
     once it's in progress the terms creators applied under are fixed."""
     doc = await _own_campaign_or_404(campaign_id, user)
-    if doc.get("status") not in ("draft", "upcoming", "open"):
+    # A campaign under review is editable: it isn't in front of anyone yet, and
+    # fixing what we asked about is the whole point of a rejection. So is a
+    # paused one — fixing it is often why it was paused.
+    if doc.get("status") not in (
+        "draft", CAMPAIGN_REVIEW_STATUS, "upcoming", "open", "paused",
+    ):
         raise HTTPException(
             status_code=409,
             detail="This campaign can no longer be edited — close it and post a new one.",
@@ -2038,6 +2588,7 @@ async def update_brand_campaign(
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
 
+    _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
     if start and end and end < start:
@@ -2084,10 +2635,27 @@ async def publish_brand_campaign(
     campaign_id: str,
     user: dict = Depends(require_roles("brand")),
 ):
-    """Take a draft live. Without this a saved draft is a trap door."""
+    """Submit a draft for review.
+
+    This used to take the draft straight live. It now hands it to us instead —
+    the campaign goes in front of creators when an admin approves it, not when
+    the brand clicks. The route keeps its name so existing clients keep working;
+    what changed is where the campaign lands.
+    """
     doc = await _own_campaign_or_404(campaign_id, user)
     if doc.get("status") != "draft":
-        raise HTTPException(status_code=409, detail="This campaign is already published.")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This campaign is already with us for review."
+                if doc.get("status") == CAMPAIGN_REVIEW_STATUS
+                else "This campaign is already published."
+            ),
+        )
+
+    # An unverified brand can draft all it likes; it cannot put a brief in the
+    # queue that ends with creators being asked to show up somewhere.
+    await _verified_brand_or_403(user)
 
     missing = [
         field
@@ -2097,17 +2665,38 @@ async def publish_brand_campaign(
     if missing:
         raise HTTPException(
             status_code=422,
-            detail=f"Finish the brief before publishing — missing: {', '.join(missing)}.",
+            detail=f"Finish the brief before submitting — missing: {', '.join(missing)}.",
         )
 
     now = datetime.now(timezone.utc)
-    status = "upcoming" if doc.get("start_date") and doc["start_date"] > now else "open"
-    await db.campaigns.update_one(
+    updated = await db.campaigns.update_one(
         {"_id": doc["_id"], "status": "draft"},
-        {"$set": {"status": status, "updated_at": now}},
+        {
+            "$set": {
+                "status": CAMPAIGN_REVIEW_STATUS,
+                "submitted_for_review_at": now,
+                "updated_at": now,
+            },
+            # A resubmission starts clean rather than carrying the last refusal.
+            "$unset": {"review_reason": "", "reviewed_at": ""},
+        },
     )
-    await audit(user, "campaign.publish", "campaign", doc["_id"], before={"status": "draft"}, after={"status": status})
-    return {"id": campaign_id, "status": status}
+    if not updated.modified_count:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.submit_for_review",
+        "campaign",
+        doc["_id"],
+        before={"status": "draft"},
+        after={"status": CAMPAIGN_REVIEW_STATUS},
+    )
+    return {
+        "id": campaign_id,
+        "status": CAMPAIGN_REVIEW_STATUS,
+        "message": "Submitted for review. We'll publish it once we've read it.",
+    }
 
 
 @brand_router.post("/campaigns/{campaign_id}/close")
@@ -2226,6 +2815,7 @@ def _serialize_applicant(
             "name": (profile or {}).get("name") or (creator_user or {}).get("name"),
             "instagram_handle": (profile or {}).get("instagram_handle"),
             "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
+            "profile_image_url": (profile or {}).get("profile_image_url"),
             "city": (profile or {}).get("city"),
             "niches": (profile or {}).get("niches") or [],
             "follower_count": (profile or {}).get("follower_count"),
@@ -2617,6 +3207,7 @@ def _serialize_directory_creator(profile: dict) -> dict:
         "name": profile.get("name"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "niches": profile.get("niches") or [],
         "follower_count": profile.get("follower_count"),
@@ -2707,9 +3298,29 @@ def _next_collab_state(current: str) -> Optional[str]:
     return COLLAB_STATE_ORDER[idx + 1]
 
 
+def _previous_collab_state(current: str) -> Optional[str]:
+    """The step before this one, or None at the start / on an exit state.
+
+    The mirror of `_next_collab_state`. Terminal exits are not on the ladder, so
+    they have no previous step either — coming back from one is a different
+    decision, not a step backwards.
+    """
+    try:
+        idx = COLLAB_STATE_ORDER.index(current)
+    except ValueError:
+        return None
+    if idx == 0:
+        return None
+    return COLLAB_STATE_ORDER[idx - 1]
+
+
 # Steps only the brand may take. The admin console shows them as waiting on the
 # brand rather than offering an Advance button that bypasses the buyer.
 _BRAND_OWNED_TRANSITIONS = {"accepted", "content_approved"}
+
+# States a collaboration can be declined from: before the brand has taken the
+# creator on. After that it is a cancellation, which is a different admission.
+_DECLINABLE_STATES = ("applied", "verified")
 
 
 class AdvanceCollabPayload(BaseModel):
@@ -2740,6 +3351,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "phone": user.get("phone"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "address": profile.get("address"),
         "niches": profile.get("niches") or [],
@@ -3400,6 +4012,10 @@ async def list_all_campaigns(
                                 "agreed_amount": "$agreed_amount",
                                 "scheduled_at": "$scheduled_at",
                                 "payment_state": "$payment.state",
+                                # So the console can refund a paid payout from
+                                # the row without a second lookup.
+                                "payment_id": "$payment._id",
+                                "creator_payout": "$payment.creator_payout",
                             }
                         },
                     }
@@ -3423,6 +4039,8 @@ async def list_all_campaigns(
                 "agreed_amount": c.get("agreed_amount"),
                 "scheduled_at": _iso(c.get("scheduled_at")),
                 "payment_state": c.get("payment_state"),
+                "payment_id": str(c["payment_id"]) if c.get("payment_id") else None,
+                "creator_payout": c.get("creator_payout"),
             }
             for c in rows
         ]
@@ -3439,6 +4057,10 @@ async def list_all_campaigns(
                 "budget_per_creator": d.get("budget_per_creator"),
                 "category": d.get("category"),
                 "area": d.get("area"),
+                "campaign_type": d.get("campaign_type"),
+                "event_date": _iso(d.get("event_date")),
+                "manager_id": str(d["manager_id"]) if d.get("manager_id") else None,
+                "manager_name": d.get("manager_name"),
                 "status": d.get("status"),
                 "creators_needed": needed,
                 "filled_slots": filled,
@@ -3457,6 +4079,728 @@ async def list_all_campaigns(
         "page_size": page_size,
         "total": total,
         "pages": (total + page_size - 1) // page_size if page_size else 0,
+    }
+
+
+@admin_router.get("/campaigns/pending")
+async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))):
+    """The review queue: briefs a brand has submitted and nobody has read yet.
+
+    Declared before /campaigns/{campaign_id}/... so the fixed path wins. Oldest
+    first — a queue people jump is not a queue.
+    """
+    docs = (
+        await db.campaigns.find({"status": CAMPAIGN_REVIEW_STATUS})
+        .sort("submitted_for_review_at", 1)
+        .to_list(length=500)
+    )
+    if not docs:
+        return []
+
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+    verified_brand_ids = {
+        p["user_id"]
+        for p in await db.brand_profiles.find(
+            {"user_id": {"$in": [d["brand_id"] for d in docs]}, "verified": True},
+            {"user_id": 1},
+        ).to_list(length=len(docs))
+    }
+
+    return [
+        {
+            "id": str(d["_id"]),
+            "brand_id": str(d["brand_id"]),
+            "brand_name": (brand_map.get(d["brand_id"]) or {}).get("business_name")
+            or (brand_map.get(d["brand_id"]) or {}).get("name"),
+            # A brief can be sitting here from a brand we since un-verified.
+            "brand_verified": d["brand_id"] in verified_brand_ids,
+            "title": d.get("title"),
+            "brief": d.get("brief"),
+            "deliverables": d.get("deliverables"),
+            "budget_per_creator": d.get("budget_per_creator"),
+            "category": d.get("category"),
+            "area": d.get("area"),
+            "creators_needed": d.get("creators_needed"),
+            "start_date": _iso(d.get("start_date")),
+            "end_date": _iso(d.get("end_date")),
+            "submitted_for_review_at": _iso(d.get("submitted_for_review_at")),
+            "created_at": _iso(d.get("created_at")),
+            # Present when this is a resubmission of something we sent back.
+            "previous_review_reason": d.get("review_reason"),
+        }
+        for d in docs
+    ]
+
+
+@admin_router.post("/campaigns/{campaign_id}/approve")
+async def approve_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Publish a reviewed campaign — this is the only route to the creator feed.
+
+    Whether it lands on `upcoming` or `open` is the start date's call, the same
+    rule the brand's own publish button used before review existed.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    current = campaign.get("status")
+    if current != CAMPAIGN_REVIEW_STATUS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This campaign is {current}, not awaiting review. Only a submitted "
+                "campaign can be approved."
+            ),
+        )
+
+    # Approving a brief from a brand we have not verified would walk straight
+    # past the gate the review exists to hold.
+    brand_profile = await db.brand_profiles.find_one({"user_id": campaign["brand_id"]})
+    if not brand_profile or not brand_profile.get("verified", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Verify the brand before publishing its campaigns.",
+        )
+
+    now = datetime.now(timezone.utc)
+    start = campaign.get("start_date")
+    if start is not None and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    status = "upcoming" if start and start > now else "open"
+
+    updated = await db.campaigns.find_one_and_update(
+        # from_state as a write precondition, as everywhere else — two admins
+        # in the queue must not both publish it.
+        {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": status,
+                "reviewed_at": now,
+                "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "updated_at": now,
+            },
+            "$unset": {"review_reason": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.approve",
+        "campaign",
+        cid,
+        before={"status": CAMPAIGN_REVIEW_STATUS},
+        after={"status": status},
+        note=(payload.reason if payload else None),
+    )
+
+    title = updated.get("title") or "Your campaign"
+    delivery = await notify_over_utility_template(
+        campaign["brand_id"],
+        "campaign_approved",
+        title="Your campaign is live",
+        body=(
+            f"“{title}” is {'scheduled' if status == 'upcoming' else 'live'} — "
+            "creators can see it now."
+            if status == "open"
+            else f"“{title}” is approved and goes live on its start date."
+        ),
+        params=[title, status],
+        link=f"/brand/campaigns/{campaign_id}",
+    )
+    return {"id": campaign_id, "status": status, "notification": delivery}
+
+
+@admin_router.post("/campaigns/{campaign_id}/reject")
+async def reject_campaign(
+    campaign_id: str,
+    payload: DecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Send a submitted campaign back to the brand with a reason.
+
+    It returns to `draft` rather than dying: the brand fixes what we asked
+    about and submits again. The reason rides on the campaign so they are not
+    guessing at what to change.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Give a reason — the brand is told what to fix.",
+        )
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    current = campaign.get("status")
+    if current != CAMPAIGN_REVIEW_STATUS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This campaign is {current}, not awaiting review. To pull a live "
+                "campaign, close it instead."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": "draft",
+                "review_reason": reason,
+                "reviewed_at": now,
+                "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.reject",
+        "campaign",
+        cid,
+        before={"status": CAMPAIGN_REVIEW_STATUS},
+        after={"status": "draft"},
+        note=reason,
+    )
+
+    title = updated.get("title") or "Your campaign"
+    delivery = await notify_over_utility_template(
+        campaign["brand_id"],
+        "campaign_rejected",
+        title="Your campaign needs a change",
+        body=f"“{title}”: {reason}",
+        params=[title, reason],
+        link=f"/brand/campaigns/{campaign_id}",
+    )
+    return {
+        "id": campaign_id,
+        "status": "draft",
+        "review_reason": reason,
+        "notification": delivery,
+    }
+
+
+# A campaign can be paused from any state where it is still running, and comes
+# back to whichever of those it was in.
+_PAUSABLE_STATUSES = ("upcoming", "open", "in_progress")
+_CLOSED_CAMPAIGN_STATUSES = ("completed", "closed")
+
+
+async def _admin_campaign_or_404(campaign_id: str) -> dict:
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    doc = await db.campaigns.find_one({"_id": cid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return doc
+
+
+@admin_router.post("/campaigns/{campaign_id}/pause")
+async def pause_campaign(
+    campaign_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take a live campaign off the feed without ending it.
+
+    Collaborations already under way are untouched — pausing stops new
+    applications, it does not cancel work somebody is mid-way through. The
+    status it was in is remembered so resuming puts it back rather than
+    guessing.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current == "paused":
+        raise HTTPException(status_code=409, detail="This campaign is already paused.")
+    if current not in _PAUSABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A campaign that is {current} isn't running, so there's nothing to pause.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": current},
+        {
+            "$set": {
+                "status": "paused",
+                "paused_at": now,
+                "paused_from_status": current,
+                "pause_reason": payload.reason,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.pause",
+        "campaign",
+        doc["_id"],
+        before={"status": current},
+        after={"status": "paused"},
+        note=payload.reason,
+    )
+    return {"id": campaign_id, "status": "paused", "paused_from_status": current}
+
+
+@admin_router.post("/campaigns/{campaign_id}/resume")
+async def resume_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Put a paused campaign back where it was.
+
+    Pause without this is a one-way door, which is the shape of problem the rest
+    of this change is about. The end date is re-checked on the way back, so a
+    campaign paused past its window returns as completed rather than quietly
+    reopening.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    if doc.get("status") != "paused":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {doc.get('status')}, not paused.",
+        )
+
+    now = datetime.now(timezone.utc)
+    back_to = doc.get("paused_from_status") or "open"
+    end = doc.get("end_date")
+    if end is not None and end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    if end and end < now:
+        back_to = "completed"
+
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": "paused"},
+        {
+            "$set": {"status": back_to, "resumed_at": now, "updated_at": now},
+            "$unset": {"paused_from_status": "", "pause_reason": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "campaign.resume",
+        "campaign",
+        doc["_id"],
+        before={"status": "paused"},
+        after={"status": back_to},
+        note=(payload.reason if payload else None),
+    )
+    # Re-check the fill: slots may have changed while it was off the feed.
+    await _sync_campaign_fill(doc["_id"])
+    return {"id": campaign_id, "status": back_to}
+
+
+@admin_router.post("/campaigns/{campaign_id}/close")
+async def admin_close_campaign(
+    campaign_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stop a campaign for good, and answer everyone still waiting on it.
+
+    The same shape as the brand's own close, but available to us when the brand
+    won't or can't: collaborations under way are left alone, and applications
+    nobody ever decided on are declined rather than left hanging forever.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current in _CLOSED_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409, detail=f"This campaign is already {current}."
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"], "status": current},
+        {
+            "$set": {
+                "status": "closed",
+                "closed_reason": payload.reason,
+                "closed_at": now,
+                "closed_by_admin": True,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    stale = await db.collaborations.find(
+        {"campaign_id": doc["_id"], "state": {"$in": list(_DECLINABLE_STATES)}}
+    ).to_list(length=500)
+    for collab in stale:
+        await db.collaborations.update_one(
+            {"_id": collab["_id"], "state": collab["state"]},
+            {
+                "$set": {
+                    "state": "declined",
+                    "active": False,
+                    "exit_reason": f"Campaign closed: {payload.reason}",
+                    "declined_at": now,
+                    "updated_at": now,
+                }
+            },
+        )
+        await notify(
+            collab["creator_id"],
+            "application_declined",
+            title="Campaign closed",
+            body=payload.reason,
+            link="/campaigns",
+        )
+
+    await audit(
+        user,
+        "campaign.close",
+        "campaign",
+        doc["_id"],
+        before={"status": current},
+        after={"status": "closed", "applications_closed": len(stale)},
+        note=payload.reason,
+    )
+    return {
+        "id": campaign_id,
+        "status": "closed",
+        "applications_closed": len(stale),
+    }
+
+
+@admin_router.patch("/campaigns/{campaign_id}")
+async def admin_update_campaign(
+    campaign_id: str,
+    payload: UpdateCampaignPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Correct a campaign, including a live one.
+
+    The brand's own edit stops once a campaign is finished; ours does too, for
+    the same reason — the terms creators applied under can't be rewritten after
+    the fact. What this adds is the ability to fix a live brief without going
+    through the brand, which is what support actually needs.
+    """
+    doc = await _admin_campaign_or_404(campaign_id)
+    current = doc.get("status")
+    if current in _CLOSED_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {current} and can no longer be edited.",
+        )
+
+    fields = payload.model_dump(exclude_unset=True)
+    update: dict = {}
+    for key, value in fields.items():
+        if value is None and key not in ("start_date", "end_date"):
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+        update[key] = value
+    if not update:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+
+    _refuse_dates_foreign_to_type(doc, update)
+    start = update.get("start_date", doc.get("start_date"))
+    end = update.get("end_date", doc.get("end_date"))
+    if start and end and end < start:
+        raise HTTPException(
+            status_code=422, detail="End date cannot be before start date"
+        )
+
+    # The same floor the brand's edit has: never shrink a brief below the
+    # creators already committed to it.
+    if "creators_needed" in update:
+        filled = (await _filled_counts_for([doc["_id"]])).get(doc["_id"], 0)
+        if int(update["creators_needed"]) < filled:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{filled} creator(s) are already confirmed on this campaign.",
+            )
+
+    before = {k: doc.get(k) for k in update}
+    update["updated_at"] = datetime.now(timezone.utc)
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": doc["_id"]}, {"$set": update}, return_document=True
+    )
+
+    await audit(
+        user,
+        "campaign.update",
+        "campaign",
+        doc["_id"],
+        before=before,
+        after={k: v for k, v in update.items() if k != "updated_at"},
+    )
+    await _sync_campaign_fill(doc["_id"])
+
+    counts = await _applicant_counts_for([doc["_id"]])
+    return _serialize_brand_campaign(updated, counts.get(doc["_id"], 0))
+
+
+# Campaigns you can still usefully invite someone to. A finished campaign gives
+# the creator a brief they can never apply to; a draft or one still in review
+# gives them one they cannot even see, which would walk an unapproved brief
+# straight past the moderation gate over WhatsApp.
+INVITABLE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
+
+
+@admin_router.post("/campaigns/{campaign_id}/invite")
+async def invite_creators_to_campaign(
+    campaign_id: str,
+    payload: CampaignInvitePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Invite hand-picked creators to a campaign over WhatsApp.
+
+    Sourcing is a manual job — someone reads the brief, picks creators who fit
+    and asks them. This is that ask, made once per creator so a partial send is
+    reportable rather than an all-or-nothing guess.
+
+    Every creator gets an invitation row whether or not the message lands, so a
+    failed send can be retried against a record that already exists, and the
+    per-creator result says which is which. Duplicate invites are refused by a
+    unique index on (campaign_id, creator_id), not just by the pre-check — two
+    admins clicking at once must not send the same creator two messages.
+    """
+    try:
+        cid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    campaign = await db.campaigns.find_one({"_id": cid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    status = campaign.get("status")
+    if status not in INVITABLE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This campaign is {status} — creators can no longer be invited to it.",
+        )
+
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+    brand_name = brand.get("business_name") or brand.get("name") or "a WeAre brand"
+    title = campaign.get("title") or "a campaign"
+    budget = float(campaign.get("budget_per_creator") or 0)
+    budget_text = f"₹{budget:,.0f}"
+    template = os.environ.get("AISENSY_TEMPLATE_CAMPAIGN_INVITE", "").strip()
+
+    # De-duplicate the request itself — a UI multi-select can repeat an id, and
+    # that must not turn into two messages. Order is kept so the response reads
+    # the way the admin selected.
+    requested: list[str] = []
+    for raw in payload.creator_ids:
+        raw = (raw or "").strip()
+        if raw and raw not in requested:
+            requested.append(raw)
+
+    # Resolve every id in two queries rather than two per creator.
+    wanted_oids = []
+    oid_by_raw: dict = {}
+    results: dict = {}
+    for raw in requested:
+        try:
+            oid = ObjectId(raw)
+        except Exception:
+            results[raw] = {"status": "failed", "reason": "That is not a valid creator id."}
+            continue
+        oid_by_raw[raw] = oid
+        wanted_oids.append(oid)
+
+    accounts_by_id: dict = {}
+    profiles_by_user: dict = {}
+    invited_already: set = set()
+    if wanted_oids:
+        accounts = await db.users.find(
+            {"_id": {"$in": wanted_oids}, "role": "creator"}
+        ).to_list(length=len(wanted_oids))
+        accounts_by_id = {a["_id"]: a for a in accounts}
+        profiles = await db.creator_profiles.find(
+            {"user_id": {"$in": wanted_oids}}
+        ).to_list(length=len(wanted_oids))
+        profiles_by_user = {p["user_id"]: p for p in profiles}
+        invited_already = {
+            row["creator_id"]
+            async for row in db.campaign_invitations.find(
+                {"campaign_id": cid, "creator_id": {"$in": wanted_oids}},
+                {"creator_id": 1},
+            )
+        }
+
+    now = datetime.now(timezone.utc)
+    sent = 0
+    for raw in requested:
+        if raw in results:  # already rejected as an unusable id
+            continue
+        oid = oid_by_raw[raw]
+        account = accounts_by_id.get(oid)
+        profile = profiles_by_user.get(oid) or {}
+        name = profile.get("name") or (account or {}).get("name") or "there"
+
+        if not account:
+            results[raw] = {"status": "failed", "reason": "No creator account with that id."}
+            continue
+        if oid in invited_already:
+            # Not a failure — the admin asked for something already true.
+            results[raw] = {
+                "status": "already_invited",
+                "name": name,
+                "reason": "This creator has already been invited to this campaign.",
+            }
+            continue
+        if profile.get("verification_status") != "verified":
+            # Only verified creators can apply, so an invite to anyone else is
+            # a brief they would be blocked from taking up.
+            results[raw] = {
+                "status": "failed",
+                "name": name,
+                "reason": "This creator isn't verified yet, so they can't apply.",
+            }
+            continue
+
+        phone = account.get("phone")
+
+        try:
+            invitation = await db.campaign_invitations.insert_one(
+                {
+                    "campaign_id": cid,
+                    "creator_id": oid,
+                    "brand_id": campaign["brand_id"],
+                    "invited_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                    "note": payload.note,
+                    "state": "sent",
+                    "delivered_on_whatsapp": False,
+                    "whatsapp_mode": None,
+                    "error": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        except DuplicateKeyError:
+            # Another admin got there between the pre-check and the write.
+            results[raw] = {
+                "status": "already_invited",
+                "name": name,
+                "reason": "This creator has already been invited to this campaign.",
+            }
+            continue
+
+        invitation_id = invitation.inserted_id
+
+        delivered = False
+        mode = None
+        reason = None
+        if not phone:
+            reason = "No WhatsApp number on file for this creator."
+        else:
+            try:
+                mode = await _send_aisensy_utility(
+                    phone, name, template, [title, brand_name, budget_text]
+                )
+                delivered = mode == "aisensy"
+            except HTTPException as exc:
+                reason = exc.detail
+
+        await db.campaign_invitations.update_one(
+            {"_id": invitation_id},
+            {
+                "$set": {
+                    "state": "sent" if (delivered or mode) else "send_failed",
+                    "delivered_on_whatsapp": delivered,
+                    "whatsapp_mode": mode,
+                    "error": reason,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+        # The in-app record goes in either way — the invite is real even when
+        # WhatsApp is not reachable, and this is where the creator finds it.
+        await record_notification(
+            oid,
+            "campaign_invite",
+            title="You've been invited to a campaign",
+            body=f"{brand_name} would like you on “{title}” — {budget_text} per creator.",
+            link=f"/campaigns/{campaign_id}",
+            delivered=delivered,
+        )
+
+        if reason:
+            results[raw] = {
+                "status": "failed",
+                "name": name,
+                "invitation_id": str(invitation_id),
+                "reason": reason,
+            }
+        else:
+            sent += 1
+            results[raw] = {
+                "status": "invited",
+                "name": name,
+                "invitation_id": str(invitation_id),
+                "delivered_on_whatsapp": delivered,
+                "whatsapp_mode": mode,
+            }
+
+    rows = [{"creator_id": raw, **results[raw]} for raw in requested]
+    failed = sum(1 for r in rows if r["status"] == "failed")
+    skipped = sum(1 for r in rows if r["status"] == "already_invited")
+
+    await audit(
+        user,
+        "campaign.invite",
+        "campaign",
+        cid,
+        after={"invited": sent, "failed": failed, "already_invited": skipped},
+        note=payload.note,
+    )
+
+    # 200 even when nothing sent: the per-creator rows are the answer, and the
+    # UI reports a partial send from them.
+    return {
+        "campaign_id": campaign_id,
+        "campaign_title": title,
+        "brand_name": brand_name,
+        "invited": sent,
+        "failed": failed,
+        "already_invited": skipped,
+        "results": rows,
     }
 
 
@@ -3595,6 +4939,80 @@ async def list_brands_for_review(
     return out
 
 
+@admin_router.get("/brands/pending")
+async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
+    """Brands waiting on us, with what they told us at signup.
+
+    Declared before any /brands/{user_id} route so the fixed path keeps
+    matching first. Rejected brands are included — a refusal is a decision the
+    admin may want to revisit, and hiding it makes the queue look emptier than
+    it is; `verification_state` says which is which.
+    """
+    profiles = (
+        await db.brand_profiles.find({"verified": False})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    if not profiles:
+        return []
+
+    user_ids = [p["user_id"] for p in profiles]
+    users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
+    users_by_id = {u["_id"]: u for u in users}
+
+    # How much they have already drafted — a brand with briefs waiting is a
+    # more urgent review than one that signed up and stopped.
+    drafts: dict = {}
+    async for row in db.campaigns.aggregate(
+        [
+            {"$match": {"brand_id": {"$in": user_ids}}},
+            {
+                "$group": {
+                    "_id": "$brand_id",
+                    "total": {"$sum": 1},
+                    "awaiting_review": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", CAMPAIGN_REVIEW_STATUS]}, 1, 0]
+                        }
+                    },
+                }
+            },
+        ]
+    ):
+        drafts[row["_id"]] = row
+
+    out = []
+    for p in profiles:
+        u = users_by_id.get(p["user_id"], {})
+        d = drafts.get(p["user_id"]) or {}
+        out.append(
+            {
+                "user_id": str(p["user_id"]),
+                "profile_id": str(p["_id"]),
+                "business_name": p.get("business_name"),
+                "category": p.get("category"),
+                "areas": p.get("areas") or [],
+                "verified": False,
+                # "pending" = never decided; "rejected" = we said no and why.
+                "verification_state": (
+                    "rejected" if p.get("verification_reason") else "pending"
+                ),
+                "verification_reason": p.get("verification_reason"),
+                "rejected_at": _iso(p.get("rejected_at")),
+                "name": u.get("name"),
+                "email": u.get("email"),
+                "phone": u.get("phone"),
+                "status": u.get("status"),
+                "terms_accepted_at": _iso(u.get("terms_accepted_at")),
+                "signed_up_at": _iso(u.get("created_at")),
+                "campaign_count": d.get("total", 0),
+                "campaigns_awaiting_review": d.get("awaiting_review", 0),
+                "created_at": _iso(p.get("created_at")),
+            }
+        )
+    return out
+
+
 @admin_router.post("/brands/{user_id}/verify")
 async def verify_brand(
     user_id: str,
@@ -3608,7 +5026,12 @@ async def verify_brand(
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
-        {"$set": {"verified": True, "verified_at": now, "updated_at": now}},
+        {
+            "$set": {"verified": True, "verified_at": now, "updated_at": now},
+            # Approving clears an earlier refusal; leaving it would keep telling
+            # the brand it was rejected.
+            "$unset": {"verification_reason": "", "rejected_at": ""},
+        },
         return_document=True,
     )
     if not result:
@@ -3622,7 +5045,94 @@ async def verify_brand(
         after={"verified": True},
         note=(payload.reason if payload else None),
     )
-    return _serialize_brand_profile(result)
+    name = result.get("business_name") or "your brand"
+    delivery = await notify_over_utility_template(
+        oid,
+        "brand_verified",
+        title="Your brand is verified",
+        body=f"{name} is verified. You can submit campaigns for review now.",
+        params=[name],
+        link="/brand/campaigns",
+    )
+    out = _serialize_brand_profile(result)
+    out["notification"] = delivery
+    return out
+
+
+@admin_router.post("/brands/{user_id}/reject")
+async def reject_brand(
+    user_id: str,
+    payload: DecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Refuse a brand, with the reason on the record.
+
+    Distinct from `unverify`, which takes an already-approved brand back out
+    without explaining itself. A rejection is a decision we have to be able to
+    tell the brand about, so the reason is required.
+    """
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Give a reason — the brand is told what to fix.",
+        )
+
+    now = datetime.now(timezone.utc)
+    result = await db.brand_profiles.find_one_and_update(
+        {"user_id": oid},
+        {
+            "$set": {
+                "verified": False,
+                "verification_reason": reason,
+                "rejected_at": now,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    # Their campaigns must not stay in the review queue behind a refused brand.
+    pulled = await db.campaigns.update_many(
+        {"brand_id": oid, "status": CAMPAIGN_REVIEW_STATUS},
+        {
+            "$set": {
+                "status": "draft",
+                "review_reason": f"Brand not verified: {reason}",
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "brand.reject",
+        "brand_profile",
+        result["_id"],
+        after={"verified": False, "campaigns_returned": pulled.modified_count},
+        note=reason,
+    )
+    name = result.get("business_name") or "your brand"
+    delivery = await notify_over_utility_template(
+        oid,
+        "brand_rejected",
+        title="We couldn't verify your brand yet",
+        body=f"{name}: {reason}",
+        params=[name, reason],
+        link="/brand/profile",
+    )
+    out = _serialize_brand_profile(result)
+    out["verification_reason"] = reason
+    out["campaigns_returned_to_draft"] = pulled.modified_count
+    out["notification"] = delivery
+    return out
 
 
 @admin_router.post("/brands/{user_id}/unverify")
@@ -3945,15 +5455,222 @@ async def advance_collaboration(
     }
 
 
+@admin_router.post("/collaborations/{collab_id}/revert")
+async def revert_collaboration(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Move a collaboration back one step.
+
+    The ladder used to only go up, so a fee agreed at the wrong number or a slot
+    booked on the wrong day had no fix short of cancelling the whole thing. This
+    is the step back; re-advancing then writes the corrected values over the old
+    ones.
+
+    Not a way out of a finished collaboration: `closed` means the creator has
+    been paid, and the exits are decisions rather than steps, so neither can be
+    walked back from here.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    current = collab.get("state", "applied")
+    if current == "closed":
+        raise HTTPException(
+            status_code=409,
+            detail="This collaboration is closed and paid. It can't be reverted.",
+        )
+    if current in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This collaboration is {current}, which is an exit rather than a "
+                "step. Reverting only walks back the pipeline."
+            ),
+        )
+
+    to_state = _previous_collab_state(current)
+    if not to_state:
+        raise HTTPException(
+            status_code=409,
+            detail="This collaboration is at the first step — there's nothing behind it.",
+        )
+
+    # A paid-out payout is money that left the bank. Undoing the state that
+    # produced it would strand the payment; refund is the route for that.
+    payment = await db.payments.find_one({"collaboration_id": oid})
+    if payment and payment.get("state") == "paid":
+        raise HTTPException(
+            status_code=409,
+            detail="This payout has already been paid. Refund it instead of reverting.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid, "state": current},  # precondition — never a blind write
+        {
+            "$set": {
+                "state": to_state,
+                "reverted_at": now,
+                "reverted_from": current,
+                "revert_reason": payload.reason,
+                "updated_at": now,
+            },
+            # Stepping back out of slot_booked gives the seat up; the slot link
+            # goes with it so a re-book claims fresh.
+            "$unset": {"slot_id": ""},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    # The seat itself: only when leaving slot_booked backwards, and floored at
+    # zero so a manual booking (no slot row) can't drive the count negative.
+    if current == "slot_booked" and collab.get("slot_id"):
+        await db.campaign_slots.update_one(
+            {"_id": collab["slot_id"], "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+        )
+        await _tell_manager_a_seat_freed(collab, "reverted")
+
+    # Stepping back out of `in_payment` must take the payable with it. The row
+    # is deleted rather than cancelled because `collaboration_id` is unique, so
+    # a cancelled one left behind would stop the payment being recreated when
+    # the collaboration advances again. The audit entry below is the record.
+    payment_removed = None
+    if payment and current == "in_payment":
+        await db.payments.delete_one({"_id": payment["_id"], "state": "pending"})
+        payment_removed = {
+            "payment_id": str(payment["_id"]),
+            "creator_payout": payment.get("creator_payout"),
+        }
+
+    await audit(
+        user,
+        "collaboration.revert",
+        "collaboration",
+        oid,
+        before={
+            "state": current,
+            # What the forward step had written, so the old numbers survive the
+            # overwrite that a re-advance performs.
+            "agreed_amount": collab.get("agreed_amount"),
+            "scheduled_at": collab.get("scheduled_at"),
+            "payment": payment_removed,
+        },
+        after={"state": to_state},
+        note=payload.reason,
+    )
+
+    # Coming back below `accepted` frees the slot on the campaign again.
+    await _sync_campaign_fill(collab["campaign_id"])
+
+    return {
+        "id": collab_id,
+        "state": to_state,
+        "reverted_from": current,
+        "payment_voided": payment_removed is not None,
+        "next_state": _next_collab_state(to_state),
+    }
+
+
+@admin_router.post("/collaborations/{collab_id}/decline")
+async def decline_applicant(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Turn down an applicant before anyone took them on.
+
+    Separate from `cancel`: nothing was agreed and nothing was owed, so this is
+    a "no thanks" rather than an admission that something fell through. Past
+    `verified` the brand has accepted them, and ending it there is a
+    cancellation.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    current = collab.get("state", "applied")
+    if current in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409, detail=f"This application is already {current}."
+        )
+    if current not in _DECLINABLE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This creator is already {current} on the campaign. Cancel the "
+                "collaboration instead of declining the application."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": oid, "state": current},
+        {
+            "$set": {
+                "state": "declined",
+                "active": False,
+                "exit_reason": payload.reason,
+                "declined_at": now,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.decline",
+        "collaboration",
+        oid,
+        before={"state": current},
+        after={"state": "declined"},
+        note=payload.reason,
+    )
+    await _sync_campaign_fill(collab["campaign_id"])
+    await notify(
+        collab["creator_id"],
+        "application_declined",
+        title="Your application wasn't taken forward",
+        body=payload.reason,
+        link="/campaigns",
+    )
+    return {"id": collab_id, "state": "declined"}
+
+
 @admin_router.post("/collaborations/{collab_id}/cancel")
 async def cancel_collaboration(
     collab_id: str,
-    payload: DecisionPayload,
+    payload: CancelCollabPayload,
     user: dict = Depends(require_roles("admin")),
 ):
     """End a collaboration that is already under way — a no-show, a pull-out, a
     brand cancelling the shoot. Without this the only exit was to leave the row
-    sitting mid-pipeline forever."""
+    sitting mid-pipeline forever.
+
+    The awkward case is a cancellation after the fee was agreed: no payment row
+    exists yet (one is only created at `in_payment`), so there is nothing to
+    refund, but there was a number both sides had accepted. That number is
+    recorded on the way out, and a cancellation after the creator has already
+    turned up is flagged for a settlement decision rather than silently dropped.
+    """
     try:
         oid = ObjectId(collab_id)
     except Exception:
@@ -3973,8 +5690,26 @@ async def cancel_collaboration(
     if payment and payment.get("state") == "paid":
         raise HTTPException(
             status_code=409,
-            detail="This collaboration has already been paid out and can't be cancelled.",
+            detail=(
+                "This collaboration has already been paid out. Refund the payment "
+                "instead — that cancels the collaboration with it."
+            ),
         )
+
+    # Was there a live commitment when it fell over, and had the creator already
+    # done the work? Both are facts, not policy — what to pay is a human call,
+    # so this flags it rather than deciding it.
+    order = COLLAB_STATE_ORDER
+    agreed_amount = collab.get("agreed_amount")
+    had_agreement = current in order and order.index(current) >= order.index(
+        "commercial_agreed"
+    )
+    creator_attended = current in order and order.index(current) >= order.index(
+        "attended"
+    )
+    settlement_review_needed = bool(
+        agreed_amount and creator_attended and payload.cancellation_type != "creator_no_show"
+    )
 
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
@@ -3984,6 +5719,14 @@ async def cancel_collaboration(
                 "state": "cancelled",
                 "active": False,
                 "exit_reason": payload.reason,
+                "cancellation_type": payload.cancellation_type,
+                "cancelled_at": now,
+                "cancelled_from_state": current,
+                # Kept so a dropped commitment is still readable after the
+                # collaboration leaves the "ongoing" group it was counted in.
+                "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
+                "creator_attended": creator_attended,
+                "settlement_review_needed": settlement_review_needed,
                 "updated_at": now,
             }
         },
@@ -3999,13 +5742,26 @@ async def cancel_collaboration(
             {"$set": {"state": "cancelled", "updated_at": now}},
         )
 
+    # And a seat it was holding goes back on sale — but only before the event:
+    # a no-show's seat was still consumed on the day.
+    if collab.get("slot_id") and current == "slot_booked":
+        await db.campaign_slots.update_one(
+            {"_id": collab["slot_id"], "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+        )
+        await _tell_manager_a_seat_freed(collab, "cancelled")
+
     await audit(
         user,
         "collaboration.cancel",
         "collaboration",
         oid,
-        before={"state": current},
-        after={"state": "cancelled"},
+        before={"state": current, "agreed_amount": agreed_amount},
+        after={
+            "state": "cancelled",
+            "cancellation_type": payload.cancellation_type,
+            "settlement_review_needed": settlement_review_needed,
+        },
         note=payload.reason,
     )
     await _sync_campaign_fill(collab["campaign_id"])
@@ -4013,10 +5769,19 @@ async def cancel_collaboration(
         collab["creator_id"],
         "application_declined",
         title="Collaboration cancelled",
-        body=payload.reason or "This collaboration was cancelled.",
+        body=payload.reason,
         link="/dashboard",
     )
-    return {"id": collab_id, "state": "cancelled"}
+    return {
+        "id": collab_id,
+        "state": "cancelled",
+        "cancellation_type": payload.cancellation_type,
+        "cancelled_from_state": current,
+        "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
+        # True when the creator had already turned up for work that was agreed:
+        # somebody has to decide what they are owed.
+        "settlement_review_needed": settlement_review_needed,
+    }
 
 
 @admin_router.post("/payments/{payment_id}/mark_paid")
@@ -4103,6 +5868,133 @@ async def mark_payment_paid(
         "paid_at": _iso(payment["paid_at"]),
         "payment_reference": payment.get("payment_reference"),
         "collaboration_id": str(payment["collaboration_id"]),
+    }
+
+
+@admin_router.post("/payments/{payment_id}/refund")
+async def refund_payment(
+    payment_id: str,
+    payload: RefundPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Claw back a payout that already went out, and end the collaboration.
+
+    Like `mark_paid`, this records something that happened in the bank rather
+    than moving money itself. `refunded` is deliberately a separate state from
+    `cancelled`: cancelled is a payout that never happened, refunded is one that
+    happened and came back, and every revenue figure has to be able to tell them
+    apart.
+
+    If we had already collected from the brand, the refund leaves us holding
+    their money — that is flagged rather than resolved, because paying a brand
+    back is a decision with an invoice attached.
+    """
+    try:
+        pid = ObjectId(payment_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    existing = await db.payments.find_one({"_id": pid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    state = existing.get("state")
+    if state == "refunded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This payout was already refunded on {_iso(existing.get('refunded_at'))}.",
+        )
+    if state != "paid":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This payout is {state}, so there is nothing to refund. Cancel the "
+                "collaboration instead."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    invoice_state = existing.get("brand_invoice_state")
+    brand_refund_due = invoice_state == "settled"
+
+    payment = await db.payments.find_one_and_update(
+        {"_id": pid, "state": "paid"},  # precondition, so a double-click is a no-op
+        {
+            "$set": {
+                "state": "refunded",
+                "refunded_at": now,
+                "refund_reason": payload.reason,
+                "refund_reference": (payload.refund_reference or "").strip() or None,
+                # Nothing is owed to us on a refunded collaboration. An invoice
+                # already settled is money we now hold for the brand, so that
+                # one is left alone and flagged instead of quietly voided.
+                "brand_invoice_state": invoice_state if brand_refund_due else "void",
+                "brand_refund_due": brand_refund_due,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not payment:
+        raise HTTPException(
+            status_code=409, detail="This payment just changed — reload and try again."
+        )
+
+    # The collaboration goes with it: work that was paid for and then unwound is
+    # not a closed collaboration.
+    collab_id = payment["collaboration_id"]
+    collab = await db.collaborations.find_one({"_id": collab_id})
+    previous_state = (collab or {}).get("state")
+    await db.collaborations.update_one(
+        {"_id": collab_id},
+        {
+            "$set": {
+                "state": "cancelled",
+                "active": False,
+                "cancellation_type": "admin_cancelled",
+                "exit_reason": payload.reason,
+                "cancelled_at": now,
+                "cancelled_from_state": previous_state,
+                "refunded": True,
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "payment.refund",
+        "payment",
+        pid,
+        before={"state": "paid", "creator_payout": payment.get("creator_payout")},
+        after={
+            "state": "refunded",
+            "refund_reference": payment.get("refund_reference"),
+            "collaboration_state": "cancelled",
+            "brand_refund_due": brand_refund_due,
+        },
+        note=payload.reason,
+    )
+
+    if collab:
+        await _sync_campaign_fill(collab["campaign_id"])
+        await notify(
+            collab["creator_id"],
+            "application_declined",
+            title="Collaboration reversed",
+            body=payload.reason,
+            link="/dashboard",
+        )
+
+    return {
+        "id": payment_id,
+        "state": "refunded",
+        "refunded_at": _iso(now),
+        "refund_reference": payment.get("refund_reference"),
+        "collaboration_id": str(collab_id),
+        "collaboration_state": "cancelled",
+        # True when the brand had already settled: we are holding their money.
+        "brand_refund_due": brand_refund_due,
     }
 
 
@@ -4194,12 +6086,16 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         {"verification_status": "verified", "pending_review": True}
     )
     brands_unverified = await db.brand_profiles.count_documents({"verified": False})
+    campaigns_to_review = await db.campaigns.count_documents(
+        {"status": CAMPAIGN_REVIEW_STATUS}
+    )
     payouts_pending_count = int(pending_agg[0]["n"]) if pending_agg else 0
 
     awaiting = {
         "creators_to_review": creators_pending_review,
         "creator_edits_to_review": creators_changed,
         "brands_to_verify": brands_unverified,
+        "campaigns_to_review": campaigns_to_review,
         "applicants_to_verify": collab_action_counts["applied"],
         "fees_to_agree": collab_action_counts["accepted"],
         "slots_to_book": collab_action_counts["commercial_agreed"],
@@ -4223,6 +6119,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         "brand_receivable": float(receivable_agg[0]["total"]) if receivable_agg else 0.0,
         "campaigns_by_status": campaigns_by_status,
         "campaigns_total": sum(campaigns_by_status.values()),
+        "campaigns_pending_review": campaigns_to_review,
         "awaiting_admin_action": sum(awaiting.values()),
         "awaiting_breakdown": awaiting,
         # Kept for existing callers; the same numbers now appear in the
@@ -4236,13 +6133,51 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
 @admin_router.get("/audit")
 async def list_audit_log(
     limit: int = 100,
+    actor_id: Optional[str] = None,
+    action: Optional[str] = None,
     subject_type: Optional[str] = None,
+    subject_id: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
     user: dict = Depends(require_roles("admin")),
 ):
-    """Who did what, most recent first."""
+    """Who did what, most recent first.
+
+    `action` matches a whole action ("payment.refund") or a prefix ("payment"),
+    because "everything that happened to money" is the question people actually
+    arrive with.
+    """
     query: dict = {}
     if subject_type:
         query["subject_type"] = subject_type
+    if subject_id:
+        # Subject ids are stored as ObjectId where we have one and as a string
+        # otherwise, so both shapes have to be matched.
+        candidates: list = [subject_id]
+        try:
+            candidates.append(ObjectId(subject_id))
+        except Exception:
+            pass
+        query["subject_id"] = {"$in": candidates}
+    if actor_id:
+        try:
+            query["actor_id"] = ObjectId(actor_id)
+        except Exception:
+            raise HTTPException(status_code=422, detail="actor_id is not a valid id.")
+    if action:
+        term = action.strip()[:80]
+        if "." in term:
+            query["action"] = term
+        else:
+            query["action"] = {"$regex": f"^{re.escape(term)}\\.", "$options": "i"}
+    if date_from or date_to:
+        window: dict = {}
+        if date_from:
+            window["$gte"] = date_from
+        if date_to:
+            window["$lte"] = date_to
+        query["created_at"] = window
+
     limit = max(1, min(int(limit or 100), 500))
     docs = (
         await db.audit_log.find(query)
@@ -4252,6 +6187,9 @@ async def list_audit_log(
     return [
         {
             "id": str(d["_id"]),
+            # The id, not just the name: names change, and "which admin" is the
+            # question an audit log exists to answer.
+            "actor_id": str(d["actor_id"]) if d.get("actor_id") else None,
             "actor_name": d.get("actor_name"),
             "actor_role": d.get("actor_role"),
             "action": d.get("action"),
@@ -4266,7 +6204,965 @@ async def list_audit_log(
     ]
 
 
+# --- Campaign managers -------------------------------------------------------
+
+
+@admin_router.post("/managers")
+async def create_manager_account(
+    payload: CreateManagerPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Create a campaign-manager account.
+
+    Managers are staff: an admin makes the account, and they sign in with email
+    and password like an admin does. There is deliberately no self-signup route
+    into this role — it can read creators' phone numbers.
+    """
+    email = payload.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="That email already has an account.")
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "email": email,
+        "name": payload.name.strip(),
+        "role": "campaign_manager",
+        "phone": (payload.phone or "").strip() or None,
+        "status": "active",
+        "password_hash": hash_password(payload.password),
+        "created_at": now,
+    }
+    result = await db.users.insert_one(doc)
+    await audit(
+        user,
+        "manager.create",
+        "user",
+        result.inserted_id,
+        after={"email": email, "role": "campaign_manager"},
+    )
+    return {
+        "id": str(result.inserted_id),
+        "name": doc["name"],
+        "email": email,
+        "phone": doc["phone"],
+        "role": "campaign_manager",
+    }
+
+
+@admin_router.get("/managers")
+async def list_managers(user: dict = Depends(require_roles("admin"))):
+    """Every manager, with how many campaigns each is currently carrying —
+    the number you look at before assigning them another one."""
+    managers = (
+        await db.users.find({"role": "campaign_manager"})
+        .sort("name", 1)
+        .to_list(length=200)
+    )
+    if not managers:
+        return []
+
+    load: dict = {}
+    async for row in db.campaigns.aggregate(
+        [
+            {
+                "$match": {
+                    "manager_id": {"$in": [m["_id"] for m in managers]},
+                    "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES) + ["paused"]},
+                }
+            },
+            {"$group": {"_id": "$manager_id", "n": {"$sum": 1}}},
+        ]
+    ):
+        load[row["_id"]] = row["n"]
+
+    return [
+        {
+            "id": str(m["_id"]),
+            "name": m.get("name"),
+            "email": m.get("email"),
+            "phone": m.get("phone"),
+            "active_campaigns": load.get(m["_id"], 0),
+        }
+        for m in managers
+    ]
+
+
+@admin_router.post("/campaigns/{campaign_id}/assign-manager")
+async def assign_campaign_manager(
+    campaign_id: str,
+    payload: AssignManagerPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Assign (or reassign) the manager who runs a campaign.
+
+    Name, phone and email are snapshotted onto the campaign: that is what the
+    brand and the accepted creators see, and it must not silently change if the
+    manager later edits their account mid-campaign.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+
+    try:
+        manager_oid = ObjectId(payload.manager_user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    manager = await db.users.find_one({"_id": manager_oid, "role": "campaign_manager"})
+    if not manager:
+        raise HTTPException(
+            status_code=404,
+            detail="No campaign manager with that id. Create the account first.",
+        )
+
+    previous = campaign.get("manager_name")
+    now = datetime.now(timezone.utc)
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {
+            "$set": {
+                "manager_id": manager_oid,
+                "manager_name": manager.get("name"),
+                "manager_phone": manager.get("phone"),
+                "manager_email": manager.get("email"),
+                "manager_assigned_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+
+    await audit(
+        user,
+        "campaign.assign_manager",
+        "campaign",
+        campaign["_id"],
+        before={"manager_name": previous},
+        after={"manager_name": manager.get("name")},
+    )
+    await notify(
+        manager_oid,
+        "manager_assigned",
+        title="You've been assigned a campaign",
+        body=f"“{campaign.get('title')}” is yours to run.",
+        link="/manager",
+    )
+    return {
+        "id": campaign_id,
+        "manager_id": str(manager_oid),
+        "manager_name": manager.get("name"),
+        "manager_phone": manager.get("phone"),
+        "manager_email": manager.get("email"),
+        "reassigned_from": previous,
+    }
+
+
 api_router.include_router(admin_router)
+
+
+# ---------------------------------------------------------------------------
+# Campaign manager router — scoped to assigned campaigns
+# ---------------------------------------------------------------------------
+
+manager_router = APIRouter(prefix="/manager", tags=["manager"])
+
+
+async def _managed_campaign_or_404(campaign_id: str, user: dict) -> dict:
+    """Load a campaign the caller is allowed to run.
+
+    A manager sees only what they are assigned to — 404 rather than 403, the
+    same shape as brand ownership, so the existence of other campaigns leaks
+    nothing. Admins pass on everything.
+    """
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    doc = await db.campaigns.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if user.get("role") != "admin" and doc.get("manager_id") != ObjectId(user["_id"]):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return doc
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Mongo hands back naive datetimes; comparisons need them aware."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _validate_slot_times(campaign: dict, starts_at: datetime, ends_at: Optional[datetime]):
+    """Check a slot's times against the campaign it belongs to.
+
+    Shared by create and edit, because a slot moved onto the wrong day is
+    exactly as wrong as one created there.
+    """
+    ctype = campaign.get("campaign_type")
+    if not ctype:
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign predates campaign types and can't take slots.",
+        )
+
+    starts = _as_utc(starts_at)
+    ends = _as_utc(ends_at)
+    if ends is not None and ends <= starts:
+        raise HTTPException(status_code=422, detail="A slot has to end after it starts.")
+
+    if ctype in EVENT_CAMPAIGN_TYPES:
+        event = _as_utc(campaign.get("event_date"))
+        if event and starts.date() != event.date():
+            raise HTTPException(
+                status_code=422,
+                detail=f"This {ctype.replace('_', ' ')} happens on "
+                f"{event.date().isoformat()} — slots have to be on that day.",
+            )
+    else:  # personal_table
+        if ends is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A personal-table window needs an end time.",
+            )
+        win_start = _as_utc(campaign.get("start_date"))
+        win_end = _as_utc(campaign.get("end_date"))
+        if (win_start and starts < win_start) or (win_end and ends > win_end):
+            raise HTTPException(
+                status_code=422,
+                detail="The window has to sit inside the campaign's dates.",
+            )
+    return starts, ends
+
+
+async def _slot_or_404(slot_id: str, user: dict):
+    """Load a slot, asserting the caller runs the campaign it belongs to."""
+    try:
+        oid = ObjectId(slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": oid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    campaign = await _managed_campaign_or_404(str(slot["campaign_id"]), user)
+    return slot, campaign
+
+
+async def _managed_collab_or_404(collab_id: str, user: dict):
+    """Load a collaboration on a campaign the caller runs.
+
+    Scope rides on the campaign: a manager touches a creator because they are
+    running the day that creator is booked onto, not because of anything about
+    the creator.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    campaign = await _managed_campaign_or_404(str(collab["campaign_id"]), user)
+    return collab, campaign
+
+
+def _serialize_slot(doc: dict) -> dict:
+    capacity = int(doc.get("capacity") or 0)
+    booked = int(doc.get("booked_count") or 0)
+    return {
+        "id": str(doc["_id"]),
+        "campaign_id": str(doc["campaign_id"]),
+        "starts_at": _iso(doc.get("starts_at")),
+        "ends_at": _iso(doc.get("ends_at")),
+        "capacity": capacity,
+        "booked_count": booked,
+        "spots_left": max(0, capacity - booked),
+        "created_at": _iso(doc.get("created_at")),
+    }
+
+
+@manager_router.get("/campaigns")
+async def list_managed_campaigns(
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The campaigns this manager runs. An admin calling it sees everything
+    assigned to anyone — the workload view."""
+    query: dict = (
+        {"manager_id": ObjectId(user["_id"])}
+        if user.get("role") == "campaign_manager"
+        else {"manager_id": {"$ne": None}}
+    )
+    docs = (
+        await db.campaigns.find(query).sort("created_at", -1).to_list(length=500)
+    )
+    if not docs:
+        return []
+
+    brand_map = await _load_brand_map([d["brand_id"] for d in docs])
+    filled = await _filled_counts_for([d["_id"] for d in docs])
+
+    # Slot totals per campaign, one pass.
+    slot_totals: dict = {}
+    async for row in db.campaign_slots.aggregate(
+        [
+            {"$match": {"campaign_id": {"$in": [d["_id"] for d in docs]}}},
+            {
+                "$group": {
+                    "_id": "$campaign_id",
+                    "slots": {"$sum": 1},
+                    "capacity": {"$sum": "$capacity"},
+                    "booked": {"$sum": "$booked_count"},
+                }
+            },
+        ]
+    ):
+        slot_totals[row["_id"]] = row
+
+    out = []
+    for d in docs:
+        brand = brand_map.get(d["brand_id"]) or {}
+        s = slot_totals.get(d["_id"]) or {}
+        out.append(
+            {
+                "id": str(d["_id"]),
+                "title": d.get("title"),
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "campaign_type": d.get("campaign_type"),
+                "status": d.get("status"),
+                "area": d.get("area"),
+                "event_date": _iso(d.get("event_date")),
+                "start_date": _iso(d.get("start_date")),
+                "end_date": _iso(d.get("end_date")),
+                "venue_address": d.get("venue_address"),
+                "venue_instructions": d.get("venue_instructions"),
+                "on_site_contact": d.get("on_site_contact"),
+                "creators_needed": d.get("creators_needed"),
+                "filled_slots": filled.get(d["_id"], 0),
+                "manager_name": d.get("manager_name"),
+                "slot_count": s.get("slots", 0),
+                "slot_capacity": s.get("capacity", 0),
+                "slot_booked": s.get("booked", 0),
+            }
+        )
+    return out
+
+
+@manager_router.get("/campaigns/{campaign_id}/slots")
+async def list_campaign_slots(
+    campaign_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    docs = (
+        await db.campaign_slots.find({"campaign_id": campaign["_id"]})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    return {
+        "campaign_id": campaign_id,
+        "campaign_type": campaign.get("campaign_type"),
+        "slots": [_serialize_slot(d) for d in docs],
+    }
+
+
+@manager_router.post("/campaigns/{campaign_id}/slots")
+async def create_campaign_slot(
+    campaign_id: str,
+    payload: SlotPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Add a bookable slot.
+
+    For launch/group_event the slot has to sit on the event day — a slot on
+    another date is a typo with real people showing up to it. For
+    personal_table it is an availability window inside the campaign's dates,
+    so ends_at is required there.
+    """
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    starts, ends = _validate_slot_times(campaign, payload.starts_at, payload.ends_at)
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "campaign_id": campaign["_id"],
+        "starts_at": starts,
+        "ends_at": ends,
+        "capacity": int(payload.capacity),
+        "booked_count": 0,
+        "created_by": ObjectId(user["_id"]),
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.campaign_slots.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit(
+        user,
+        "slot.create",
+        "campaign_slot",
+        result.inserted_id,
+        after={"campaign_id": str(campaign["_id"]), "starts_at": _iso(starts),
+               "capacity": payload.capacity},
+    )
+    return _serialize_slot(doc)
+
+
+@manager_router.delete("/slots/{slot_id}")
+async def delete_campaign_slot(
+    slot_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Remove an empty slot. One with bookings holds real people's plans —
+    those bookings have to be moved (revert and rebook) before it can go."""
+    try:
+        oid = ObjectId(slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": oid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    # Scope check rides on the campaign.
+    await _managed_campaign_or_404(str(slot["campaign_id"]), user)
+
+    # Precondition on emptiness, so a booking that lands mid-delete wins.
+    result = await db.campaign_slots.delete_one({"_id": oid, "booked_count": 0})
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Creators are booked on this slot — move them before deleting it.",
+        )
+    await audit(
+        user,
+        "slot.delete",
+        "campaign_slot",
+        oid,
+        before={"starts_at": _iso(slot.get("starts_at")), "capacity": slot.get("capacity")},
+    )
+    return {"id": slot_id, "deleted": True}
+
+
+@manager_router.post("/slots")
+async def create_slot(
+    payload: CreateSlotPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Create a slot, naming the campaign in the body.
+
+    The same operation as POST /manager/campaigns/{id}/slots, which stays for
+    callers already using it; both land here.
+    """
+    return await create_campaign_slot(
+        payload.campaign_id,
+        SlotPayload(
+            starts_at=payload.starts_at,
+            ends_at=payload.ends_at,
+            capacity=payload.capacity,
+        ),
+        user,
+    )
+
+
+@manager_router.patch("/slots/{slot_id}")
+async def update_slot(
+    slot_id: str,
+    payload: UpdateSlotPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Move a slot or resize it.
+
+    Capacity can go up freely and down only to what is already booked —
+    shrinking below that would leave creators holding places the slot says do
+    not exist. Moving the time takes the people booked on it with it, so their
+    collaborations are re-stamped rather than left pointing at the old hour.
+    """
+    slot, campaign = await _slot_or_404(slot_id, user)
+
+    fields = payload.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="Nothing to update")
+
+    booked = int(slot.get("booked_count") or 0)
+    new_capacity = fields.get("capacity", slot.get("capacity"))
+    if new_capacity is not None and int(new_capacity) < booked:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{booked} creator(s) are booked on this slot — capacity can't go below that.",
+        )
+
+    starts = fields.get("starts_at", slot.get("starts_at"))
+    # An explicit null clears the end time; anything else keeps or replaces it.
+    ends = fields["ends_at"] if "ends_at" in fields else slot.get("ends_at")
+    starts, ends = _validate_slot_times(campaign, starts, ends)
+
+    now = datetime.now(timezone.utc)
+    update = {"starts_at": starts, "ends_at": ends, "updated_at": now}
+    if "capacity" in fields:
+        update["capacity"] = int(fields["capacity"])
+
+    updated = await db.campaign_slots.find_one_and_update(
+        {"_id": slot["_id"]}, {"$set": update}, return_document=True
+    )
+
+    # Anyone booked on it is booked on the new time, not the old one.
+    moved = 0
+    if starts != _as_utc(slot.get("starts_at")):
+        result = await db.collaborations.update_many(
+            {"slot_id": slot["_id"], "state": "slot_booked"},
+            {"$set": {"scheduled_at": starts, "updated_at": now}},
+        )
+        moved = result.modified_count
+
+    await audit(
+        user,
+        "slot.update",
+        "campaign_slot",
+        slot["_id"],
+        before={
+            "starts_at": _iso(slot.get("starts_at")),
+            "capacity": slot.get("capacity"),
+        },
+        after={
+            "starts_at": _iso(starts),
+            "capacity": updated.get("capacity"),
+            "collaborations_moved": moved,
+        },
+    )
+    out = _serialize_slot(updated)
+    out["collaborations_moved"] = moved
+    return out
+
+
+# ---------------------------------------------------------------------------
+# On the day
+# ---------------------------------------------------------------------------
+
+# Who is actually coming. An applicant the brand hasn't taken isn't on the
+# roster, and someone who has been through it already isn't either.
+_ROSTER_STATES = (
+    "accepted",
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+    "closed",
+)
+
+
+async def _roster_rows(campaign: dict) -> list:
+    """Everyone confirmed on a campaign, with what the manager needs on the day.
+
+    One pipeline rather than a query per creator: a roster of forty would
+    otherwise be eighty round trips on a phone at a venue.
+    """
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": campaign["_id"], "state": {"$in": list(_ROSTER_STATES)}}},
+            {"$sort": {"scheduled_at": 1, "created_at": 1}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "creator_id",
+                    "foreignField": "_id",
+                    "as": "user",
+                }
+            },
+            {"$addFields": {"user": {"$arrayElemAt": ["$user", 0]}}},
+            {
+                "$lookup": {
+                    "from": "creator_profiles",
+                    "localField": "creator_id",
+                    "foreignField": "user_id",
+                    "as": "profile",
+                }
+            },
+            {"$addFields": {"profile": {"$arrayElemAt": ["$profile", 0]}}},
+            {
+                "$lookup": {
+                    "from": "campaign_slots",
+                    "localField": "slot_id",
+                    "foreignField": "_id",
+                    "as": "slot",
+                }
+            },
+            {"$addFields": {"slot": {"$arrayElemAt": ["$slot", 0]}}},
+        ]
+    ).to_list(length=1000)
+
+    out = []
+    for r in rows:
+        state = r.get("state")
+        profile = r.get("profile") or {}
+        account = r.get("user") or {}
+        slot = r.get("slot") or {}
+        out.append(
+            {
+                "collaboration_id": str(r["_id"]),
+                "creator_id": str(r["creator_id"]),
+                "name": profile.get("name") or account.get("name"),
+                # The manager rings these on the day — that is the whole job.
+                "phone": account.get("phone"),
+                "instagram_handle": profile.get("instagram_handle"),
+                "state": state,
+                "slot_id": str(r["slot_id"]) if r.get("slot_id") else None,
+                "slot_time": _iso(slot.get("starts_at") or r.get("scheduled_at")),
+                "slot_ends_at": _iso(slot.get("ends_at")),
+                # Three plain words rather than nine pipeline states: on the day
+                # the only question is whether they turned up.
+                "attendance": (
+                    "no_show"
+                    if state in ("declined", "cancelled")
+                    else "attended"
+                    if state in ("attended", "content_submitted", "content_approved",
+                                 "in_payment", "closed")
+                    else "expected"
+                ),
+                "booked": state != "accepted" and bool(r.get("slot_id")),
+                "agreed_amount": r.get("agreed_amount"),
+            }
+        )
+    return out
+
+
+@manager_router.get("/campaigns/{campaign_id}/roster")
+async def campaign_roster(
+    campaign_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Who is coming, when, and how to reach them."""
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    rows = await _roster_rows(campaign)
+    return {
+        "campaign_id": campaign_id,
+        "title": campaign.get("title"),
+        "campaign_type": campaign.get("campaign_type"),
+        "event_date": _iso(campaign.get("event_date")),
+        "venue_address": campaign.get("venue_address"),
+        "venue_instructions": campaign.get("venue_instructions"),
+        "on_site_contact": campaign.get("on_site_contact"),
+        "expected": sum(1 for r in rows if r["attendance"] == "expected"),
+        "attended": sum(1 for r in rows if r["attendance"] == "attended"),
+        "no_shows": sum(1 for r in rows if r["attendance"] == "no_show"),
+        "roster": rows,
+    }
+
+
+@manager_router.get("/campaigns/{campaign_id}/daysheet")
+async def campaign_daysheet(
+    campaign_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The roster as a CSV, for the clipboard at the door.
+
+    Written with the csv module rather than joined by hand: a creator called
+    "Priya, Rao" would otherwise silently become two columns.
+    """
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    rows = await _roster_rows(campaign)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Slot time", "Name", "Instagram", "Phone", "Attendance", "State"])
+    for r in rows:
+        writer.writerow(
+            [
+                r["slot_time"] or "",
+                r["name"] or "",
+                f"@{r['instagram_handle']}" if r.get("instagram_handle") else "",
+                r["phone"] or "",
+                r["attendance"],
+                r["state"],
+            ]
+        )
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (campaign.get("title") or "campaign").lower()).strip("-")
+    filename = f"daysheet-{slug or 'campaign'}-{datetime.now(timezone.utc).date()}.csv"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@manager_router.post("/collaborations/{collab_id}/check-in")
+async def check_in_creator(
+    collab_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Mark a creator as turned up.
+
+    The same transition the admin's advance makes, done by the person actually
+    standing there. Only from slot_booked — checking in somebody who never got
+    a slot would skip the booking the venue is counting on.
+    """
+    collab, campaign = await _managed_collab_or_404(collab_id, user)
+    current = collab.get("state")
+    if current == "attended":
+        raise HTTPException(status_code=409, detail="They're already checked in.")
+    if current != "slot_booked":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This collaboration is {current} — only a booked creator can be "
+                "checked in."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "slot_booked"},
+        {
+            "$set": {
+                "state": "attended",
+                "checked_in_at": now,
+                "checked_in_by": ObjectId(user["_id"]),
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.check_in",
+        "collaboration",
+        collab["_id"],
+        before={"state": "slot_booked"},
+        after={"state": "attended", "campaign_id": str(campaign["_id"])},
+    )
+    return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
+
+
+@manager_router.post("/collaborations/{collab_id}/no-show")
+async def mark_no_show(
+    collab_id: str,
+    payload: NoShowPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Record that a booked creator didn't turn up.
+
+    This deliberately does not cancel anything. A manager at a venue knows who
+    was in the room; whether the collaboration ends, and whether anything is
+    owed, is the admin's call with the money in front of them. So the flag is
+    raised here and the collaboration is left where it is, showing up on the
+    admin's desk with `no_show_reported` set and the note attached — which is
+    what the cancel endpoint reads when it is used (cancellation_type
+    creator_no_show suppresses the settlement flag).
+    """
+    collab, campaign = await _managed_collab_or_404(collab_id, user)
+    current = collab.get("state")
+    if current in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409, detail=f"This collaboration is already {current}."
+        )
+    if current != "slot_booked":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only a booked creator can be a no-show — "
+                f"this one is {current}."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "slot_booked"},
+        {
+            "$set": {
+                "no_show_reported": True,
+                "no_show_note": payload.note.strip(),
+                "no_show_reported_at": now,
+                "no_show_reported_by": ObjectId(user["_id"]),
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.no_show",
+        "collaboration",
+        collab["_id"],
+        before={"state": current},
+        after={"no_show_reported": True, "campaign_id": str(campaign["_id"])},
+        note=payload.note.strip(),
+    )
+    return {
+        "id": collab_id,
+        "state": current,
+        "no_show_reported": True,
+        "note": payload.note.strip(),
+        # What happens next is the admin's, and the UI should say so.
+        "next_step": (
+            "Flagged for the WeAre team. They'll cancel it as a no-show, and "
+            "refund the brand if anything was already paid."
+        ),
+    }
+
+
+@manager_router.post("/collaborations/{collab_id}/reschedule")
+async def reschedule_creator(
+    collab_id: str,
+    payload: ReschedulePayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Move a booked creator to a different slot on the same campaign.
+
+    The new seat is claimed before the old one is released, under the same
+    conditional increment booking uses — otherwise a reschedule into a full
+    slot would free the creator's original place and leave them with neither.
+    """
+    collab, campaign = await _managed_collab_or_404(collab_id, user)
+    if collab.get("state") != "slot_booked":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This collaboration is {collab.get('state')} — there's no booking to move.",
+        )
+
+    try:
+        target_oid = ObjectId(payload.slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if collab.get("slot_id") == target_oid:
+        raise HTTPException(status_code=409, detail="They're already on that slot.")
+
+    target = await db.campaign_slots.find_one({"_id": target_oid})
+    if not target or target["campaign_id"] != campaign["_id"]:
+        # Another campaign's slot is not a slot as far as this campaign goes.
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    now = datetime.now(timezone.utc)
+    claimed = await db.campaign_slots.find_one_and_update(
+        {"_id": target_oid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
+        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    if not claimed:
+        raise HTTPException(status_code=409, detail="That slot is full. Pick another.")
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "slot_booked", "slot_id": collab.get("slot_id")},
+        {
+            "$set": {
+                "slot_id": target_oid,
+                "scheduled_at": target["starts_at"],
+                "rescheduled_at": now,
+                "reschedule_reason": (payload.reason or "").strip() or None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        # Give the new seat back rather than holding one they never got.
+        await db.campaign_slots.update_one(
+            {"_id": target_oid, "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}},
+        )
+        raise HTTPException(
+            status_code=409, detail="This just moved — reload and try again."
+        )
+
+    # Only once the move is written does the old seat go back on sale.
+    if collab.get("slot_id"):
+        await db.campaign_slots.update_one(
+            {"_id": collab["slot_id"], "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}, "$set": {"updated_at": now}},
+        )
+
+    await audit(
+        user,
+        "collaboration.reschedule",
+        "collaboration",
+        collab["_id"],
+        before={"slot_id": str(collab.get("slot_id")) if collab.get("slot_id") else None},
+        after={"slot_id": str(target_oid), "scheduled_at": _iso(target["starts_at"])},
+        note=(payload.reason or "").strip() or None,
+    )
+    await notify(
+        collab["creator_id"],
+        "slot_booked",
+        title="Your slot moved",
+        body=(
+            f"{campaign.get('title')} — you're now at "
+            f"{target['starts_at'].strftime('%d %b, %I:%M %p')}."
+        ),
+        link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    return {
+        "id": collab_id,
+        "state": "slot_booked",
+        "slot": _serialize_slot(claimed),
+        "scheduled_at": _iso(target["starts_at"]),
+    }
+
+
+@manager_router.post("/campaigns/{campaign_id}/broadcast")
+async def broadcast_to_campaign(
+    campaign_id: str,
+    payload: BroadcastPayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Message everyone confirmed on the campaign.
+
+    Sent one at a time through the utility sender — the same helper, with the
+    same simulation fallback — so one unreachable number doesn't swallow the
+    rest, and the result says who actually got it. Everyone gets the in-app
+    copy either way.
+    """
+    campaign = await _managed_campaign_or_404(campaign_id, user)
+    rows = await _roster_rows(campaign)
+    # Somebody who has already been through it doesn't need today's briefing.
+    audience = [r for r in rows if r["attendance"] == "expected"]
+    if not audience:
+        raise HTTPException(
+            status_code=409,
+            detail="Nobody is confirmed on this campaign yet.",
+        )
+
+    message = payload.message.strip()
+    title = campaign.get("title") or "your campaign"
+    results = []
+    delivered = 0
+    for row in audience:
+        outcome = await notify_over_utility_template(
+            row["creator_id"],
+            "campaign_broadcast",
+            title=f"Message about {title}",
+            body=message,
+            params=[title, message],
+            link=f"/campaigns/{campaign_id}",
+        )
+        if outcome["delivered"]:
+            delivered += 1
+        results.append(
+            {
+                "creator_id": row["creator_id"],
+                "name": row["name"],
+                "delivered": outcome["delivered"],
+                "mode": outcome["mode"],
+                "error": outcome["error"],
+            }
+        )
+
+    await audit(
+        user,
+        "campaign.broadcast",
+        "campaign",
+        campaign["_id"],
+        after={"recipients": len(results), "delivered": delivered},
+        note=message,
+    )
+    return {
+        "campaign_id": campaign_id,
+        "recipients": len(results),
+        "delivered": delivered,
+        "failed": len(results) - delivered,
+        "results": results,
+    }
+
+
+api_router.include_router(manager_router)
 
 
 
@@ -4290,6 +7186,8 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": doc.get("creators_needed"),
+        "campaign_type": doc.get("campaign_type"),
+        "event_date": doc["event_date"].isoformat() if isinstance(doc.get("event_date"), datetime) else doc.get("event_date"),
         "start_date": doc["start_date"].isoformat() if isinstance(doc.get("start_date"), datetime) else doc.get("start_date"),
         "end_date": doc["end_date"].isoformat() if isinstance(doc.get("end_date"), datetime) else doc.get("end_date"),
         "status": doc.get("status"),
@@ -4309,7 +7207,12 @@ async def _expire_stale_campaigns() -> None:
         result = await db.campaigns.update_many(
             {
                 "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
-                "end_date": {"$ne": None, "$lt": now},
+                # A window that closed, or an event day that passed — either
+                # way the brief must stop collecting applications.
+                "$or": [
+                    {"end_date": {"$ne": None, "$lt": now}},
+                    {"event_date": {"$ne": None, "$lt": now}},
+                ],
             },
             {"$set": {"status": "completed", "updated_at": now}},
         )
@@ -4542,6 +7445,19 @@ async def get_campaign(
                 if isinstance(existing.get("created_at"), datetime)
                 else existing.get("created_at"),
             }
+
+        # The venue and the person running the campaign, for creators the brand
+        # has actually taken on. An applicant doesn't get a staff phone number.
+        payload["coordination"] = None
+        if existing and existing.get("state") in _ONBOARD_COLLAB_STATES:
+            payload["coordination"] = {
+                "manager_name": doc.get("manager_name"),
+                "manager_phone": doc.get("manager_phone"),
+                "venue_address": doc.get("venue_address"),
+                "venue_instructions": doc.get("venue_instructions"),
+                "on_site_contact": doc.get("on_site_contact"),
+                "event_date": _iso(doc.get("event_date")),
+            }
     return payload
 
 
@@ -4623,6 +7539,173 @@ async def apply_to_campaign(
         "pitch": payload.pitch.strip(),
         "quoted_rate": float(payload.quoted_rate),
         "created_at": now.isoformat(),
+    }
+
+
+# States from which a creator is actually on the campaign — what unlocks the
+# venue details and the manager's number. Applying is not being on it.
+_ONBOARD_COLLAB_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+
+
+@campaigns_router.get("/{campaign_id}/slots")
+async def list_slots_for_creator(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator", "admin")),
+):
+    """The bookable slots, as the creator sees them.
+
+    Only a creator who has been accepted onto the campaign sees the schedule —
+    a slot list names dates, a venue's rhythm and capacity, none of which
+    belongs to an applicant the brand hasn't taken."""
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    collab = None
+    if user["role"] == "creator":
+        collab = await db.collaborations.find_one(
+            {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
+        )
+        if not collab or collab.get("state") not in _ONBOARD_COLLAB_STATES:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    docs = (
+        await db.campaign_slots.find({"campaign_id": oid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+    return {
+        "campaign_id": campaign_id,
+        "campaign_type": campaign.get("campaign_type"),
+        # Booking is the step out of commercial_agreed; the flag saves the UI
+        # from re-deriving the state machine.
+        "can_book": bool(collab) and collab.get("state") == "commercial_agreed",
+        "booked_slot_id": str(collab["slot_id"]) if collab and collab.get("slot_id") else None,
+        "slots": [_serialize_slot(d) for d in docs],
+    }
+
+
+@campaigns_router.post("/slots/{slot_id}/book")
+async def book_slot(
+    slot_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """A creator taking a place on a slot.
+
+    The seat is claimed with a conditional increment — the filter only matches
+    while booked_count is under capacity, so two creators after the last place
+    resolve inside the database, and exactly one of them gets it. The other
+    sees a 409, not a double-booked table.
+    """
+    try:
+        soid = ObjectId(slot_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    campaign = await db.campaigns.find_one({"_id": slot["campaign_id"]})
+    if not campaign or campaign.get("status") not in (
+        tuple(ACTIVE_CAMPAIGN_STATUSES)
+    ):
+        raise HTTPException(
+            status_code=409, detail="This campaign isn't taking bookings right now."
+        )
+
+    collab = await db.collaborations.find_one(
+        {
+            "campaign_id": slot["campaign_id"],
+            "creator_id": ObjectId(user["_id"]),
+            "active": True,
+        }
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    state = collab.get("state")
+    if state == "slot_booked":
+        raise HTTPException(status_code=409, detail="You already have a slot booked.")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Booking opens once your fee is agreed."
+                if state in ("applied", "verified", "accepted")
+                else f"Your collaboration is {state} — there's nothing to book."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    # The atomic claim. $expr keeps the check and the increment in one
+    # operation — there is no window where both readers saw a free seat.
+    claimed = await db.campaign_slots.find_one_and_update(
+        {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
+        {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    if not claimed:
+        raise HTTPException(
+            status_code=409, detail="That slot just filled up. Pick another."
+        )
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {
+            "$set": {
+                "state": "slot_booked",
+                "scheduled_at": slot["starts_at"],
+                "slot_id": soid,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        # The collaboration moved while we held the seat — give it back.
+        await db.campaign_slots.update_one(
+            {"_id": soid, "booked_count": {"$gt": 0}},
+            {"$inc": {"booked_count": -1}},
+        )
+        raise HTTPException(
+            status_code=409, detail="Your collaboration just changed — reload and try again."
+        )
+
+    await audit(
+        user,
+        "collaboration.book_slot",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "slot_booked", "slot_id": str(soid),
+               "scheduled_at": _iso(slot["starts_at"])},
+    )
+    await notify(
+        collab["creator_id"],
+        "slot_confirmed",
+        title="Slot booked",
+        body=f"{campaign.get('title')} — "
+        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
+        link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    # The manager is the one who has to plan around it.
+    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    creator_name = (creator_profile or {}).get("name") or "A creator"
+    await notify_campaign_manager(
+        campaign,
+        "manager_slot_booked",
+        title="A creator booked a slot",
+        body=f"{creator_name} booked "
+        f"{slot['starts_at'].strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
+    )
+    return {
+        "collaboration_id": str(collab["_id"]),
+        "state": "slot_booked",
+        "slot": _serialize_slot(claimed),
+        "scheduled_at": _iso(slot["starts_at"]),
     }
 
 
@@ -4772,6 +7855,16 @@ async def admin_ping(user: dict = Depends(require_roles("admin"))):
 
 app.include_router(api_router)
 
+# Uploaded images are served straight off disk. Mounted outside /api because
+# these are plain files, not API responses — the frontend joins the backend
+# origin with the stored path.
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    UPLOAD_URL_PREFIX,
+    StaticFiles(directory=str(UPLOAD_DIR)),
+    name="uploads",
+)
+
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
@@ -4874,6 +7967,19 @@ async def _startup():
         name="one_live_application",
     )
 
+    # slots — read per campaign in time order; manager scoping reads by manager.
+    await db.campaign_slots.create_index([("campaign_id", 1), ("starts_at", 1)])
+    await db.campaigns.create_index("manager_id")
+
+    # campaign invitations — one per creator per campaign, enforced in the
+    # database so two admins inviting at once can't double-message anyone.
+    await db.campaign_invitations.create_index(
+        [("campaign_id", 1), ("creator_id", 1)],
+        unique=True,
+        name="one_invite_per_creator",
+    )
+    await db.campaign_invitations.create_index([("creator_id", 1), ("created_at", -1)])
+
     # payments (one per collaboration)
     await db.payments.create_index("collaboration_id", unique=True)
     await db.payments.create_index("state")
@@ -4882,6 +7988,10 @@ async def _startup():
     # audit log + notifications
     await db.audit_log.create_index([("created_at", -1)])
     await db.audit_log.create_index([("subject_type", 1), ("subject_id", 1)])
+    # "what did this admin do", and "everything that happened to money", both
+    # newest-first — the two ways the log is actually read.
+    await db.audit_log.create_index([("actor_id", 1), ("created_at", -1)])
+    await db.audit_log.create_index([("action", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("read", 1)])
 
@@ -4948,6 +8058,22 @@ async def _startup():
     await db.creator_profiles.update_many(
         {"pending_review": {"$exists": False}}, {"$set": {"pending_review": False}}
     )
+
+    # The Apify scraper is gone, so nothing writes or reads this cache any more.
+    # It holds scraped Instagram data, which is exactly what we no longer want
+    # to be storing — but dropping a collection is not something startup should
+    # decide on its own, so this only says so.
+    try:
+        if "instagram_stats_cache" in await db.list_collection_names():
+            stale = await db.instagram_stats_cache.estimated_document_count()
+            logger.warning(
+                "instagram_stats_cache still holds ~%d scraped profile(s). Nothing "
+                "reads it now the Apify integration is removed — drop it with: "
+                "db.instagram_stats_cache.drop()",
+                stale,
+            )
+    except Exception as exc:  # a diagnostic must never block startup
+        logger.debug("could not inspect instagram_stats_cache: %s", exc)
 
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower().strip()
     admin_password = os.environ.get("ADMIN_PASSWORD", "")

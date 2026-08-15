@@ -14,6 +14,8 @@ import PostCampaign from "@/pages/PostCampaign";
 import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
 import AdminConsole from "@/pages/AdminConsole";
+import ManagerHome from "@/pages/ManagerHome";
+import ManagerCampaign from "@/pages/ManagerCampaign";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
 import BrandCampaignApplicants from "@/pages/BrandCampaignApplicants";
 import { Terms, Privacy } from "@/pages/Legal";
@@ -99,6 +101,22 @@ function App() {
                             element={
                                 <ProtectedRoute roles={["creator", "brand", "admin"]}>
                                     <CampaignDetail />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/manager"
+                            element={
+                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                    <ManagerHome />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/manager/campaigns/:id"
+                            element={
+                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                    <ManagerCampaign />
                                 </ProtectedRoute>
                             }
                         />

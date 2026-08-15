@@ -182,21 +182,25 @@ class TestApproveReject:
 
 # ---------- 4. Collaborations list ----------
 
-def _seed_open_campaign(brand_session):
-    brand_session.put(f"{BASE_URL}/brand/profile", json={
-        "business_name": f"Br-{uuid.uuid4().hex[:5]}", "category": "fnb",
-        "areas": ["Indiranagar"],
-    })
+def _seed_open_campaign(brand_session, admin_session):
+    """A campaign creators can see. Goes through the real gates: the brand is
+    verified, it drafts, submits, and an admin approves."""
+    pipeline.setup_brand(brand_session, admin_session)
     body = {
         "title": f"Camp-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
         "budget_per_creator": 5000, "category": "fnb", "area": "Indiranagar",
         "creators_needed": 3,
-        "start_date": "2026-02-01T00:00:00Z", "end_date": "2026-03-01T00:00:00Z",
-        "status": "open",
+        "campaign_type": "personal_table",
+        "start_date": "2025-03-01T00:00:00Z",
+        "end_date": "2027-03-01T00:00:00Z",
+        "status": "draft",
     }
     r = brand_session.post(f"{BASE_URL}/brand/campaigns", json=body)
     assert r.status_code == 200, r.text
-    return r.json()["id"], body["title"]
+    cid = r.json()["id"]
+    pipeline.submit_campaign(brand_session, cid)
+    assert pipeline.approve_campaign(admin_session, cid) == "open"
+    return cid, body["title"]
 
 
 class TestCollabList:
@@ -205,7 +209,7 @@ class TestCollabList:
         cs, _, cemail = creator
         _complete_creator(cs)
         _vet(admin, cemail)
-        cid, _ = _seed_open_campaign(bs)
+        cid, _ = _seed_open_campaign(bs, admin)
         ar = cs.post(f"{BASE_URL}/campaigns/{cid}/apply", json={
             "pitch": "hi there really keen", "quoted_rate": 5500,
         })
@@ -263,7 +267,7 @@ class TestStateMachine:
         cs, cuid, cemail = creator
         _complete_creator(cs)
         pipeline.verify_creator(admin, cuid)
-        cid, _ = _seed_open_campaign(bs)
+        cid, _ = _seed_open_campaign(bs, admin)
         collab_id = pipeline.apply_to_campaign(cs, cid, quoted_rate=6000)
 
         # applied -> verified (admin)
@@ -382,7 +386,7 @@ class TestStateMachine:
         # Same setup, minus the payout fields.
         pipeline.complete_creator_profile(cs, with_payout=False)
         pipeline.verify_creator(admin, cuid)
-        cid, _ = _seed_open_campaign(bs)
+        cid, _ = _seed_open_campaign(bs, admin)
         collab_id = pipeline.apply_to_campaign(cs, cid)
         for state in ["verified", "accepted", "commercial_agreed", "slot_booked", "attended"]:
             pipeline.step(admin, bs, collab_id, state)
@@ -792,13 +796,13 @@ class TestCreatorDetail:
         )
 
         # …one mid-flight…
-        ongoing_campaign = pipeline.seed_open_campaign(bs)
+        ongoing_campaign = pipeline.seed_open_campaign(bs, admin)
         ongoing_id = pipeline.apply_to_campaign(cs, ongoing_campaign)
         pipeline.step(admin, bs, ongoing_id, "verified")
         pipeline.step(admin, bs, ongoing_id, "accepted", agreed_amount=4000)
 
         # …and one still waiting on a decision.
-        open_campaign = pipeline.seed_open_campaign(bs)
+        open_campaign = pipeline.seed_open_campaign(bs, admin)
         open_id = pipeline.apply_to_campaign(cs, open_campaign)
 
         r = admin.get(f"{BASE_URL}/admin/creators/{cuid}")
@@ -918,20 +922,31 @@ class TestCampaignOversight:
         assert cs.get(f"{BASE_URL}/admin/campaigns").status_code == 403
         assert bs.get(f"{BASE_URL}/admin/campaigns").status_code == 403
 
-    def _seed(self, bs, status="open", **overrides):
+    def _seed(self, bs, admin=None, status="open", **overrides):
         bs.put(f"{BASE_URL}/brand/profile", json={
             "business_name": f"Br-{uuid.uuid4().hex[:5]}",
             "category": "fnb", "areas": ["Indiranagar"],
         })
+        # A campaign only reaches "open" through review, so a live one needs a
+        # verified brand and an admin approval.
+        if status == "open":
+            assert admin is not None, "seeding an open campaign needs an admin session"
+            pipeline.verify_brand(admin, pipeline.user_id_of(bs))
         body = {
             "title": f"Oversight-{uuid.uuid4().hex[:6]}", "brief": "b",
             "deliverables": "d", "budget_per_creator": 5000, "category": "fnb",
-            "area": "Indiranagar", "creators_needed": 2, "status": status,
+            "area": "Indiranagar", "creators_needed": 2, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }
         body.update(overrides)
         r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
         assert r.status_code == 200, r.text
-        return r.json()
+        out = r.json()
+        if status == "open":
+            pipeline.submit_campaign(bs, out["id"])
+            assert pipeline.approve_campaign(admin, out["id"]) == "open"
+            out["status"] = "open"
+        return out
 
     def _ids(self, admin, **params):
         r = admin.get(f"{BASE_URL}/admin/campaigns", params={"page_size": 100, **params})
@@ -942,7 +957,7 @@ class TestCampaignOversight:
         bs, _ = brand
         cs, cuid, _ = creator
         draft = self._seed(bs, status="draft")
-        live = self._seed(bs, status="open")
+        live = self._seed(bs, admin, status="open")
         bs.post(f"{BASE_URL}/brand/campaigns/{live['id']}/close", json={"reason": "done"})
 
         visible = self._ids(admin)
@@ -960,8 +975,8 @@ class TestCampaignOversight:
         bs, _ = brand
         bs2, _ = brand_2
         mine_draft = self._seed(bs, status="draft")
-        mine_open = self._seed(bs, status="open")
-        theirs = self._seed(bs2, status="open")
+        mine_open = self._seed(bs, admin, status="open")
+        theirs = self._seed(bs2, admin, status="open")
 
         drafts = self._ids(admin, status="draft")
         assert mine_draft["id"] in drafts
@@ -990,7 +1005,7 @@ class TestCampaignOversight:
 
     def test_date_range_filters(self, admin, brand):
         bs, _ = brand
-        c = self._seed(bs, status="open")
+        c = self._seed(bs, admin, status="open")
         # A window that ends before anything was created excludes it…
         assert c["id"] not in self._ids(admin, date_to="2020-01-01T00:00:00Z")
         # …and one that starts before now includes it.
@@ -1109,11 +1124,15 @@ class TestBrandOversight:
             "business_name": f"Br-{uuid.uuid4().hex[:5]}",
             "category": "fnb", "areas": ["Indiranagar"],
         })
+        pipeline.verify_brand(admin, pipeline.user_id_of(bs))
         c = bs.post(f"{BASE_URL}/brand/campaigns", json={
             "title": f"C-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
             "budget_per_creator": 100, "category": "fnb", "area": "Indiranagar",
-            "creators_needed": 1, "status": "open",
+            "creators_needed": 1, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
         }).json()
+        pipeline.submit_campaign(bs, c["id"])
+        assert pipeline.approve_campaign(admin, c["id"]) == "open"
 
         def active():
             return next(
@@ -1124,3 +1143,217 @@ class TestBrandOversight:
         before = active()
         bs.post(f"{BASE_URL}/brand/campaigns/{c['id']}/close", json={})
         assert active() == before - 1
+
+
+# ---------- 8. Campaign invites ----------
+class TestCampaignInvites:
+    """POST /admin/campaigns/{id}/invite — sourcing is manual, so an admin picks
+    creators and asks them. Nobody gets asked twice, and a partial send reads as
+    a partial send."""
+
+    def _campaign(self, bs, admin, **overrides):
+        bs.put(f"{BASE_URL}/brand/profile", json={
+            "business_name": f"Invite-Br-{uuid.uuid4().hex[:5]}",
+            "category": "fnb", "areas": ["Indiranagar"],
+        })
+        pipeline.verify_brand(admin, pipeline.user_id_of(bs))
+        body = {
+            "title": f"Invite-{uuid.uuid4().hex[:6]}", "brief": "b", "deliverables": "d",
+            "budget_per_creator": 7500, "category": "fnb", "area": "Indiranagar",
+            "creators_needed": 3, "status": "draft",
+            "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
+        }
+        body.update(overrides)
+        r = bs.post(f"{BASE_URL}/brand/campaigns", json=body)
+        assert r.status_code == 200, r.text
+        out = r.json()
+        # Invites only go to live campaigns, so this has to clear review.
+        pipeline.submit_campaign(bs, out["id"])
+        out["status"] = pipeline.approve_campaign(admin, out["id"])
+        return out
+
+    def _verified_creator(self, admin):
+        s = requests.Session()
+        email, _ = _register(s, "creator")
+        _complete_creator(s)
+        uid = _vet(admin, email)
+        return s, uid
+
+    def _invite(self, admin, campaign_id, creator_ids, **body):
+        return admin.post(
+            f"{BASE_URL}/admin/campaigns/{campaign_id}/invite",
+            json={"creator_ids": creator_ids, **body},
+        )
+
+    def test_admin_only(self, admin, brand, creator, anon):
+        bs, _ = brand
+        cs, cuid, _ = creator
+        c = self._campaign(bs, admin)
+        path = f"{BASE_URL}/admin/campaigns/{c['id']}/invite"
+        body = {"creator_ids": [cuid]}
+        assert anon.post(path, json=body).status_code == 401
+        assert cs.post(path, json=body).status_code == 403
+        # The brand owns the campaign and still cannot send on our behalf.
+        assert bs.post(path, json=body).status_code == 403
+
+    def test_invites_a_creator_and_records_it(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        cs, uid = self._verified_creator(admin)
+
+        r = self._invite(admin, c["id"], [uid], note="Great fit for this one")
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert out["campaign_id"] == c["id"]
+        assert len(out["results"]) == 1
+        row = out["results"][0]
+        assert row["creator_id"] == uid
+        assert row["status"] in ("invited", "failed")
+        # Either way the invitation exists — a failed send must be retryable
+        # against a record, not vanish.
+        assert row.get("invitation_id")
+
+    def test_the_creator_sees_the_invite_in_app(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin, budget_per_creator=7500)
+        cs, uid = self._verified_creator(admin)
+
+        self._invite(admin, c["id"], [uid])
+
+        notes = cs.get(f"{BASE_URL}/notifications").json()["notifications"]
+        invite = next((n for n in notes if n["event"] == "campaign_invite"), None)
+        assert invite, "the invite has to reach the creator even if WhatsApp doesn't"
+        assert c["title"] in invite["body"]
+        assert "7,500" in invite["body"], "the creator is told what it pays"
+        assert invite["link"] == f"/campaigns/{c['id']}"
+
+    def test_the_same_creator_is_never_invited_twice(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        cs, uid = self._verified_creator(admin)
+
+        first = self._invite(admin, c["id"], [uid]).json()
+        assert first["results"][0]["status"] != "already_invited"
+
+        second = self._invite(admin, c["id"], [uid]).json()
+        assert second["results"][0]["status"] == "already_invited"
+        assert second["already_invited"] == 1
+        assert second["invited"] == 0
+
+        # And no second notification was raised.
+        events = [
+            n for n in cs.get(f"{BASE_URL}/notifications").json()["notifications"]
+            if n["event"] == "campaign_invite"
+        ]
+        assert len(events) == 1
+
+    def test_a_repeated_id_in_one_request_is_one_invite(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        cs, uid = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [uid, uid, uid]).json()
+        assert len(out["results"]) == 1, "a multi-select repeat must not multi-send"
+
+    def test_the_same_creator_can_be_invited_to_a_different_campaign(self, admin, brand):
+        bs, _ = brand
+        one = self._campaign(bs, admin)
+        two = self._campaign(bs, admin)
+        cs, uid = self._verified_creator(admin)
+
+        self._invite(admin, one["id"], [uid])
+        out = self._invite(admin, two["id"], [uid]).json()
+        assert out["results"][0]["status"] != "already_invited"
+
+    def test_unverified_creators_are_refused_with_a_reason(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        s = requests.Session()
+        _register(s, "creator")
+        _complete_creator(s)
+        uid = s.get(f"{BASE_URL}/auth/me").json()["id"]
+
+        out = self._invite(admin, c["id"], [uid]).json()
+        row = out["results"][0]
+        assert row["status"] == "failed"
+        # Only verified creators can apply, so the invite would be a dead end.
+        assert "verified" in row["reason"].lower()
+        assert out["invited"] == 0
+
+    def test_a_brand_account_is_not_a_creator(self, admin, brand, brand_2):
+        bs, _ = brand
+        bs2, _ = brand_2
+        c = self._campaign(bs, admin)
+        their_id = bs2.get(f"{BASE_URL}/auth/me").json()["id"]
+
+        row = self._invite(admin, c["id"], [their_id]).json()["results"][0]
+        assert row["status"] == "failed"
+
+    def test_a_partial_send_is_reported_per_creator(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        cs, good = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [good, "not-an-object-id"]).json()
+        assert len(out["results"]) == 2
+        by_id = {r["creator_id"]: r for r in out["results"]}
+        assert by_id["not-an-object-id"]["status"] == "failed"
+        assert out["failed"] >= 1
+        # The bad id must not have cost the good one its invite.
+        assert by_id[good]["status"] in ("invited", "failed")
+        assert by_id[good].get("invitation_id")
+
+    def test_results_come_back_in_the_order_they_were_asked_for(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        _, a = self._verified_creator(admin)
+        _, b = self._verified_creator(admin)
+
+        out = self._invite(admin, c["id"], [b, a]).json()
+        assert [r["creator_id"] for r in out["results"]] == [b, a]
+
+    def test_counts_add_up_to_the_batch(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        _, a = self._verified_creator(admin)
+        _, b = self._verified_creator(admin)
+        self._invite(admin, c["id"], [b])  # b is already in
+
+        out = self._invite(admin, c["id"], [a, b, "nonsense"]).json()
+        assert out["invited"] + out["failed"] + out["already_invited"] == len(out["results"])
+        assert out["already_invited"] == 1
+
+    def test_unknown_campaign_is_404(self, admin, brand):
+        _, uid = self._verified_creator(admin)
+        assert self._invite(admin, "64b7f9a2c3d4e5f6a7b8c9d0", [uid]).status_code == 404
+        assert self._invite(admin, "not-an-id", [uid]).status_code == 404
+
+    def test_a_closed_campaign_cannot_be_invited_to(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        _, uid = self._verified_creator(admin)
+        bs.post(f"{BASE_URL}/brand/campaigns/{c['id']}/close", json={"reason": "done"})
+
+        r = self._invite(admin, c["id"], [uid])
+        assert r.status_code == 409, r.text
+
+    def test_an_empty_ask_is_rejected(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        assert self._invite(admin, c["id"], []).status_code == 422
+
+    def test_the_invite_is_written_to_the_audit_log(self, admin, brand):
+        bs, _ = brand
+        c = self._campaign(bs, admin)
+        _, uid = self._verified_creator(admin)
+        self._invite(admin, c["id"], [uid], note="hand-picked")
+
+        entries = admin.get(
+            f"{BASE_URL}/admin/audit", params={"subject_type": "campaign", "limit": 200}
+        ).json()
+        mine = [
+            e for e in entries
+            if e["action"] == "campaign.invite" and e["subject_id"] == c["id"]
+        ]
+        assert mine, "a message sent to creators needs an author"
+        assert mine[0]["note"] == "hand-picked"

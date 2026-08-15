@@ -20,7 +20,7 @@ import {
     X,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -431,6 +431,14 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
+                        {c.profile_image_url && (
+                            <img
+                                src={mediaUrl(c.profile_image_url)}
+                                alt=""
+                                data-testid={`applicant-photo-${a.id}`}
+                                className="h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
+                            />
+                        )}
                         <span className="font-serif text-2xl leading-tight">
                             {c.name || "Creator"}
                         </span>

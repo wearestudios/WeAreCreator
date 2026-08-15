@@ -9,6 +9,8 @@ import time
 import random
 import subprocess
 import pytest
+
+import pipeline  # tests/ is on sys.path
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
@@ -169,7 +171,8 @@ def test_post_campaign_new_categories(brand, cat):
         "category": cat,
         "area": "Mumbai",
         "creators_needed": 2,
-        "status": "open",
+        "status": "draft",
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 200, r.text
     assert r.json()["category"] == cat
@@ -185,12 +188,15 @@ def test_post_campaign_invalid_category_422(brand):
         "category": "foo",
         "area": "Mumbai",
         "creators_needed": 1,
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 422, r.text
 
 
-def test_new_category_campaign_appears_in_list(creator, brand):
+def test_new_category_campaign_appears_in_list(creator, brand, admin):
     s_b = _brand_setup(brand, category="fashion")
+    # A campaign reaches the feed through review, not through the payload.
+    pipeline.verify_brand(admin, pipeline.user_id_of(s_b))
     unique_title = f"TEST_pivot_fashion_{random.randint(1000,999999)}"
     r = s_b.post(f"{API}/brand/campaigns", json={
         "title": unique_title,
@@ -200,9 +206,12 @@ def test_new_category_campaign_appears_in_list(creator, brand):
         "category": "fashion",
         "area": "Mumbai",
         "creators_needed": 1,
-        "status": "open",
+        "status": "draft",
+        "campaign_type": "personal_table", "start_date": "2025-06-01T00:00:00Z", "end_date": "2027-06-01T00:00:00Z",
     }, timeout=10)
     assert r.status_code == 200
+    pipeline.submit_campaign(s_b, r.json()["id"])
+    assert pipeline.approve_campaign(admin, r.json()["id"]) == "open"
     # Creator lists campaigns
     s_c, _, _ = creator
     listing = s_c.get(f"{API}/campaigns", timeout=10).json()

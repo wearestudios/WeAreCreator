@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth, homePathFor } from "@/context/AuthContext";
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -185,6 +185,14 @@ const CreatorHeader = ({ user, profile }) => {
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                     Creator · India
                 </p>
+                {profile?.profile_image_url && (
+                    <img
+                        src={mediaUrl(profile.profile_image_url)}
+                        alt=""
+                        data-testid="creator-profile-image"
+                        className="mt-4 h-16 w-16 rounded-md border border-white/10 object-cover"
+                    />
+                )}
                 <h1
                     data-testid="creator-name-heading"
                     className="mt-3 font-serif text-4xl leading-none tracking-tight md:text-5xl"
@@ -246,58 +254,9 @@ const CreatorHeader = ({ user, profile }) => {
     );
 };
 
-const StatsPanel = ({ profile, onRefresh }) => {
+const StatsPanel = ({ profile }) => {
     const niches = profile?.niches || [];
-    const stats = profile?.instagram_stats;
-    const [refreshing, setRefreshing] = useState(false);
-    const [errMsg, setErrMsg] = useState("");
-    const hasHandle = Boolean(profile?.instagram_handle);
-
-    // Auto-fetch on first load if there's a handle but no cached stats.
-    useEffect(() => {
-        if (hasHandle && !stats && !refreshing) {
-            (async () => {
-                setRefreshing(true);
-                try {
-                    await api.get("/creator/instagram-stats");
-                    onRefresh?.();
-                } catch (e) {
-                    setErrMsg(formatApiError(e));
-                } finally {
-                    setRefreshing(false);
-                }
-            })();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasHandle]);
-
-    const refresh = async () => {
-        if (refreshing) return;
-        setErrMsg("");
-        setRefreshing(true);
-        try {
-            await api.get("/creator/instagram-stats?refresh=true");
-            onRefresh?.();
-        } catch (e) {
-            setErrMsg(formatApiError(e));
-        } finally {
-            setRefreshing(false);
-        }
-    };
-
-    const ageMinutes = stats?._age_seconds != null
-        ? Math.max(0, Math.round(stats._age_seconds / 60))
-        : null;
-    const ageLabel = ageMinutes === null
-        ? ""
-        : ageMinutes < 1
-        ? "just now"
-        : ageMinutes < 60
-        ? `${ageMinutes}m ago`
-        : `${Math.round(ageMinutes / 60)}h ago`;
-
-    const followers = stats?.followers_count ?? profile?.follower_count;
-    const followersSource = stats?.followers_count != null ? "Instagram · live" : "Self-reported";
+    const followers = profile?.follower_count;
 
     return (
         <section
@@ -317,80 +276,25 @@ const StatsPanel = ({ profile, onRefresh }) => {
                 >
                     {formatCompact(followers)}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span data-testid="stat-live-note">
-                        {followersSource}
-                        {ageLabel ? ` · ${ageLabel}` : ""}
-                    </span>
-                    {stats?.verified && (
-                        <span
-                            data-testid="stat-verified-badge"
-                            className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-sky-300"
-                        >
-                            <CheckCircle2 className="h-3 w-3" />
-                            {/* Instagram's own blue check — named explicitly so it
-                                isn't read as WeAre verification, which now sits
-                                a few pixels away in the header. */}
-                            Instagram verified
-                        </span>
-                    )}
-                    {hasHandle && (
-                        <button
-                            type="button"
-                            onClick={refresh}
-                            disabled={refreshing}
-                            data-testid="stat-refresh-btn"
-                            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-transparent px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
-                        >
-                            {refreshing ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                                <ArrowRight className="h-3 w-3 rotate-90" />
-                            )}
-                            Refresh
-                        </button>
-                    )}
-                </div>
-                {stats && (
-                    <div className="mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-4">
-                        <div>
-                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                Posts
-                            </div>
-                            <div
-                                data-testid="stat-ig-posts"
-                                className="mt-1 font-serif text-2xl"
-                            >
-                                {formatCompact(stats.posts_count)}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                Following
-                            </div>
-                            <div
-                                data-testid="stat-ig-following"
-                                className="mt-1 font-serif text-2xl"
-                            >
-                                {formatCompact(stats.following_count)}
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {errMsg && (
+                {/* Said plainly. The figure is the creator's own until we have a
+                    source we're allowed to measure it with. */}
+                <div className="mt-3 space-y-2 text-xs text-muted-foreground">
+                    <p data-testid="stat-source-note">Self-reported</p>
                     <p
-                        data-testid="stat-ig-error"
-                        className="mt-3 text-xs text-destructive"
+                        data-testid="stat-verified-coming"
+                        className="leading-relaxed"
                     >
-                        {errMsg}{" "}
-                        <Link
-                            to="/onboarding/creator"
-                            className="underline underline-offset-2"
-                        >
-                            Update handle
-                        </Link>
+                        Verified audience stats are coming. Until then brands see
+                        this as your own figure — keep it accurate.
                     </p>
-                )}
+                    <Link
+                        to="/onboarding/creator"
+                        data-testid="stat-edit-followers"
+                        className="inline-block underline underline-offset-2 transition-colors duration-200 hover:text-ember-500"
+                    >
+                        Update your count
+                    </Link>
+                </div>
             </div>
 
             <div className="rounded-md border border-white/10 bg-card p-7 md:col-span-5">
@@ -1085,7 +989,7 @@ const CreatorDashboard = ({ user, justOnboarded }) => {
                         <CreatorHeader user={user} profile={data.profile} />
                         <OnboardedBanner visible={justOnboarded} />
                         <StatusBanners profile={data.profile} />
-                        <StatsPanel profile={data.profile} onRefresh={load} />
+                        <StatsPanel profile={data.profile} />
                         <ApplicationsSection applications={data.applications} onRefresh={load} />
                         <UpcomingSection upcoming={data.upcoming} />
                         <PaymentsSection
