@@ -6,14 +6,24 @@ import { toast } from "sonner";
 import { ScrollText, X } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
 import { Input } from "@/components/ui/input";
-import { ADMIN_AUDIT as IDS } from "@/constants/testIds";
+import { ADMIN_AUDIT as IDS, STICKY_BAR } from "@/constants/testIds";
+import {
+    FilterChips,
+    ListEmptyState,
+    ResultCount,
+    ScrollTable,
+    StickyBar,
+    pinnedCellClass,
+    pinnedHeadClass,
+    tableHeadClass,
+} from "@/components/data/DenseView";
 import {
     DateFilter,
-    EmptyState,
     FilterSelect,
     SectionHeader,
     TableSkeleton,
     endOfDay,
+    formatDate,
     formatDateTime,
 } from "./shared";
 
@@ -110,6 +120,48 @@ export default function AdminAudit() {
 
     const filtered = Boolean(family || actorQuery || from || to);
 
+    // One implementation behind the Clear button, the chips and the empty
+    // state's own clear, so all three undo exactly the same thing.
+    const clearAll = () => {
+        setFamily("");
+        setActor("");
+        setActorQuery("");
+        setFrom(null);
+        setTo(null);
+    };
+
+    const chips = [
+        {
+            key: "action",
+            label: "Action",
+            value: family
+                ? (FAMILY_OPTIONS.find((o) => o.value === family) || {}).label || family
+                : "",
+            onRemove: () => setFamily(""),
+        },
+        {
+            key: "actor",
+            label: "Admin",
+            value: actorQuery,
+            onRemove: () => {
+                setActor("");
+                setActorQuery("");
+            },
+        },
+        {
+            key: "from",
+            label: "From",
+            value: from ? formatDate(from.toISOString()) : "",
+            onRemove: () => setFrom(null),
+        },
+        {
+            key: "to",
+            label: "To",
+            value: to ? formatDate(to.toISOString()) : "",
+            onRemove: () => setTo(null),
+        },
+    ];
+
     return (
         <section data-testid={IDS.section}>
             <SectionHeader
@@ -120,7 +172,8 @@ export default function AdminAudit() {
                 refreshTestId={IDS.refresh}
             />
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.audit} className="mt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <FilterSelect
                     label="Everything"
                     value={family}
@@ -141,13 +194,7 @@ export default function AdminAudit() {
                 {filtered && (
                     <button
                         type="button"
-                        onClick={() => {
-                            setFamily("");
-                            setActor("");
-                            setActorQuery("");
-                            setFrom(null);
-                            setTo(null);
-                        }}
+                        onClick={clearAll}
                         data-testid={IDS.filterClear}
                         className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                     >
@@ -157,26 +204,51 @@ export default function AdminAudit() {
                 )}
             </div>
 
-            <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <FilterChips chips={chips} onClearAll={clearAll} />
+                {rows && (
+                    <ResultCount
+                        shown={visible.length}
+                        total={rows.length}
+                        noun="entry"
+                        nounPlural="entries"
+                        testid={IDS.count}
+                        className="ml-auto"
+                    />
+                )}
+            </div>
+            </StickyBar>
+
+            <div className="mt-6">
                 {!rows ? (
-                    <TableSkeleton rows={10} cols={4} testid={IDS.skeleton} />
+                    <div className="rounded-lg border border-white/10 bg-card grain-surface">
+                        <TableSkeleton rows={10} cols={4} testid={IDS.skeleton} />
+                    </div>
                 ) : visible.length === 0 ? (
-                    <EmptyState testid={IDS.empty} Icon={ScrollText}>
-                        {rows.length === 0
-                            ? "Nothing recorded for those filters."
-                            : "No entry matches that admin."}
-                    </EmptyState>
+                    <ListEmptyState
+                        Icon={ScrollText}
+                        testid={IDS.empty}
+                        filtered={filtered}
+                        onClearFilters={clearAll}
+                        emptyTitle="Nothing recorded yet."
+                        emptyBody="Every decision that moves a creator, a campaign or money lands here the moment it is made — with who made it and the reason they gave."
+                        filteredTitle="No entries match those filters."
+                        filteredBody="Widen the date range, or clear the action and admin filters."
+                    />
                 ) : (
-                    // The table scrolls inside its own container on small
-                    // screens rather than forcing the page wide.
-                    <div className="overflow-x-auto">
-                        <table data-testid={IDS.table} className="w-full min-w-[40rem] text-sm">
+                    // Scrolls sideways rather than forcing the page wide, with
+                    // the timestamp pinned: five columns of values with no idea
+                    // which entry they belong to is not a readable log. The
+                    // header sticks to this container — `overflow-x` makes it
+                    // the scroller, so it has to own the height too.
+                    <ScrollTable testid={IDS.scroll}>
+                        <table data-testid={IDS.table} className="w-full min-w-[46rem] text-sm">
                             <thead>
                                 <tr className="border-b border-white/10 text-left">
-                                    {["When", "Who", "Did what", "Change", "Reason"].map((h) => (
+                                    {["When", "Who", "Did what", "Change", "Reason"].map((h, i) => (
                                         <th
                                             key={h}
-                                            className="px-5 py-3 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground"
+                                            className={i === 0 ? pinnedHeadClass : tableHeadClass}
                                         >
                                             {h}
                                         </th>
@@ -186,7 +258,12 @@ export default function AdminAudit() {
                             <tbody className="divide-y divide-white/10">
                                 {visible.map((r) => (
                                     <tr key={r.id} data-testid={IDS.row(r.id)}>
-                                        <td className="whitespace-nowrap px-5 py-3 text-xs text-muted-foreground">
+                                        <td
+                                            className={
+                                                pinnedCellClass +
+                                                " whitespace-nowrap px-5 py-3 text-xs text-muted-foreground"
+                                            }
+                                        >
                                             {formatDateTime(r.created_at)}
                                         </td>
                                         <td
@@ -212,25 +289,27 @@ export default function AdminAudit() {
                                         </td>
                                         <td
                                             data-testid={IDS.rowReason(r.id)}
-                                            className="max-w-[18rem] px-5 py-3 text-xs leading-relaxed text-muted-foreground"
+                                            // Clamped rather than wrapped. A long
+                                            // reason took a row from 64px to 201px
+                                            // on a phone, which turns a log you
+                                            // scan into one you scroll. The full
+                                            // text is on the title attribute.
+                                            title={r.note || undefined}
+                                            className="w-[18rem] max-w-[18rem] px-5 py-3 text-xs leading-relaxed text-muted-foreground"
                                         >
-                                            {r.note || "—"}
+                                            <span className="line-clamp-2">{r.note || "—"}</span>
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                    </div>
+                    </ScrollTable>
                 )}
             </div>
 
             {rows && (
-                <p
-                    data-testid={IDS.count}
-                    className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground"
-                >
-                    {visible.length} entr{visible.length === 1 ? "y" : "ies"} · newest first ·
-                    capped at 200
+                <p className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Newest first · capped at 200
                 </p>
             )}
         </section>

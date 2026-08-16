@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-    Loader2,
     Users,
     MapPin,
     Instagram,
@@ -12,6 +11,14 @@ import {
     Sparkles,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import {
+    CreatorGridSkeleton,
+    FilterChips,
+    ListEmptyState,
+    ResultCount,
+    StickyBar,
+} from "@/components/data/DenseView";
+import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -162,33 +169,6 @@ const CreatorCard = ({ c, index }) => {
     );
 };
 
-const EmptyState = ({ hasFilters, onReset }) => (
-    <div
-        data-testid="directory-empty"
-        className="col-span-full rounded-lg border border-dashed border-white/15 bg-card/40 p-14 text-center"
-    >
-        <Sparkles className="mx-auto h-6 w-6 text-ember-500" />
-        <p className="mt-5 font-serif text-3xl">
-            No creators match that yet.
-        </p>
-        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-            {hasFilters
-                ? "Try widening your filters. We're verifying new creators across Bengaluru every week."
-                : "Our team is onboarding creators right now. Please check back soon."}
-        </p>
-        {hasFilters && (
-            <Button
-                variant="outline"
-                onClick={onReset}
-                data-testid="directory-reset-btn"
-                className="mt-6 rounded-full border-white/15 bg-transparent hover:bg-white/5"
-            >
-                Reset filters
-            </Button>
-        )}
-    </div>
-);
-
 export default function BrandCreatorDirectory() {
     const [items, setItems] = useState(null);
     const [error, setError] = useState("");
@@ -251,6 +231,31 @@ export default function BrandCreatorDirectory() {
             0,
         );
     }, [items]);
+
+    const chips = [
+        { key: "search", label: "Search", value: debouncedQ, onRemove: () => setQ("") },
+        {
+            key: "city",
+            label: "City",
+            value: city === ANY ? "" : city,
+            onRemove: () => setCity(ANY),
+        },
+        {
+            key: "niche",
+            label: "Niche",
+            value: niche === ANY ? "" : niche,
+            onRemove: () => setNiche(ANY),
+        },
+        {
+            key: "followers",
+            label: "Followers",
+            value:
+                followers === ANY
+                    ? ""
+                    : (FOLLOWER_BUCKETS.find((b) => b.value === followers) || {}).label || "",
+            onRemove: () => setFollowers(ANY),
+        },
+    ];
 
     const resetAll = () => {
         setCity(ANY);
@@ -345,10 +350,17 @@ export default function BrandCreatorDirectory() {
                     </div>
                 )}
 
-                {/* Filters bar */}
+                {/* Filters bar, sticky: shortlisting means scrolling a long
+                    way, and losing sight of what you filtered by is how you end
+                    up re-filtering the same thing twice. */}
+                <StickyBar level="headerFromMd"
+                    testid={STICKY_BAR.directory}
+                    bleed="-mx-6 px-6"
+                    className="mt-6"
+                >
                 <div
                     data-testid="directory-filters"
-                    className="mt-6 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-card/50 p-3 backdrop-blur"
+                    className="flex flex-wrap items-center gap-3"
                 >
                     <div className="flex items-center gap-2 pl-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                         <Filter className="h-3.5 w-3.5" />
@@ -440,18 +452,43 @@ export default function BrandCreatorDirectory() {
                     )}
                 </div>
 
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <FilterChips chips={chips} onClearAll={resetAll} />
+                    {Array.isArray(items) && (
+                        <ResultCount
+                            shown={items.length}
+                            total={filters.total || undefined}
+                            noun="creator"
+                            testid="directory-count"
+                            className="ml-auto"
+                        />
+                    )}
+                </div>
+                </StickyBar>
+
                 {/* Grid */}
                 <section
                     data-testid="directory-grid"
                     className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
                 >
                     {items === null && (
-                        <div className="col-span-full flex justify-center py-16 text-muted-foreground">
-                            <Loader2 className="h-5 w-5 animate-spin" />
+                        <div className="col-span-full">
+                            <CreatorGridSkeleton cards={6} testid="directory-skeleton" />
                         </div>
                     )}
                     {Array.isArray(items) && items.length === 0 && (
-                        <EmptyState hasFilters={hasFilters} onReset={resetAll} />
+                        <div className="col-span-full">
+                            <ListEmptyState
+                                Icon={Sparkles}
+                                testid="directory-empty"
+                                filtered={hasFilters}
+                                onClearFilters={resetAll}
+                                emptyTitle="No verified creators yet."
+                                emptyBody="Creators appear here once our team has checked their profile. We are verifying new ones across Bengaluru every week."
+                                filteredTitle="No creators match those filters."
+                                filteredBody="Try a wider city, niche or follower range."
+                            />
+                        </div>
                     )}
                     {Array.isArray(items) &&
                         items.map((c, i) => <CreatorCard c={c} key={c.id} index={i} />)}

@@ -23,7 +23,12 @@ import {
     SheetDescription,
     SheetTitle,
 } from "@/components/ui/sheet";
-import { ADMIN_CREATORS as IDS, ADMIN_CREATOR_DETAIL as DETAIL_IDS } from "@/constants/testIds";
+import {
+    ADMIN_CREATORS as IDS,
+    ADMIN_CREATOR_DETAIL as DETAIL_IDS,
+    STICKY_BAR,
+} from "@/constants/testIds";
+import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import {
     CreatorAvatar,
     FilterSelect,
@@ -404,6 +409,13 @@ export default function AdminCreators() {
 
     const closeDetail = useCallback(() => setOpenId(null), []);
 
+    const chips = [
+        { key: "search", label: "Search", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
+        { key: "status", label: "Status", value: status, onRemove: () => { setStatus(""); setPage(1); } },
+        { key: "niche", label: "Niche", value: niche, onRemove: () => { setNiche(""); setPage(1); } },
+        { key: "area", label: "Area", value: area, onRemove: () => { setArea(""); setPage(1); } },
+    ];
+
     const clearFilters = () => {
         setQ("");
         setSearch("");
@@ -436,7 +448,8 @@ export default function AdminCreators() {
                 refreshTestId={IDS.refresh}
             />
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="relative min-w-0 flex-1 sm:min-w-[16rem]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -482,21 +495,23 @@ export default function AdminCreators() {
                 )}
             </div>
 
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+            </StickyBar>
+
             <div className="mt-8">
                 {!data ? (
                     <GridSkeleton tiles={6} testid={IDS.skeleton} />
                 ) : rows.length === 0 ? (
-                    <div
-                        data-testid={IDS.empty}
-                        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground grain-surface"
-                    >
-                        <Users className="h-5 w-5 flex-none text-ember-500" />
-                        <p>
-                            {filtered
-                                ? "No creator matches those filters."
-                                : "Nobody has signed up yet."}
-                        </p>
-                    </div>
+                    <ListEmptyState
+                        Icon={Users}
+                        testid={IDS.empty}
+                        filtered={filtered}
+                        onClearFilters={clearFilters}
+                        emptyTitle="No creators yet."
+                        emptyBody="Everyone who signs up appears here, whether or not they have finished their profile. Approve them from Reviews once they submit."
+                        filteredTitle="No creator matches those filters."
+                        filteredBody="Widen the status, niche or area — or clear the search."
+                    />
                 ) : (
                     <>
                         <p

@@ -22,7 +22,8 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ADMIN_CAMPAIGNS as IDS } from "@/constants/testIds";
+import { ADMIN_CAMPAIGNS as IDS, STICKY_BAR } from "@/constants/testIds";
+import { FilterChips, StickyBar } from "@/components/data/DenseView";
 import InviteCreatorsDialog from "./InviteCreatorsDialog";
 import { CampaignEditDialog, ConfirmDialog } from "./dialogs";
 import {
@@ -408,6 +409,14 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         onClearBrand?.();
     };
 
+    const chips = [
+        { key: "search", label: "Title", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
+        { key: "brand", label: "Brand", value: brandFilter ? brandName || "Selected brand" : "", onRemove: () => onClearBrand?.() },
+        { key: "status", label: "Status", value: status, onRemove: () => { setStatus(""); setPage(1); } },
+        { key: "from", label: "From", value: from ? formatDate(from.toISOString()) : "", onRemove: () => { setFrom(null); setPage(1); } },
+        { key: "to", label: "To", value: to ? formatDate(to.toISOString()) : "", onRemove: () => { setTo(null); setPage(1); } },
+    ];
+
     return (
         <section data-testid={IDS.section}>
             <SectionHeader
@@ -429,7 +438,8 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                 </button>
             )}
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="relative min-w-0 flex-1 sm:min-w-[14rem]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -481,6 +491,9 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                     </button>
                 )}
             </div>
+
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+            </StickyBar>
 
             <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!data ? (

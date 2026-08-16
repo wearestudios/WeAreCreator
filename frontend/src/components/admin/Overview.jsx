@@ -25,7 +25,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
     ADMIN_CAMPAIGN_DETAIL as DETAIL_IDS,
     ADMIN_OVERVIEW as IDS,
+    STICKY_BAR,
 } from "@/constants/testIds";
+import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
 import {
     CAMPAIGN_STATUS_META,
@@ -178,6 +180,14 @@ export default function Overview({ onChanged }) {
         setTo(null);
     };
 
+    const chips = [
+        { key: "brand", label: "Brand", value: brand ? (brandOptions.find((o) => o.value === brand) || {}).label || brand : "", onRemove: () => setBrand("") },
+        { key: "status", label: "Status", value: status ? (STATUS_OPTIONS.find((o) => o.value === status) || {}).label || status : "", onRemove: () => { setStatus(""); setStatCard(""); } },
+        { key: "type", label: "Type", value: type ? (TYPE_OPTIONS.find((o) => o.value === type) || {}).label || type : "", onRemove: () => setType("") },
+        { key: "from", label: "From", value: from ? formatDate(from.toISOString()) : "", onRemove: () => setFrom(null) },
+        { key: "to", label: "To", value: to ? formatDate(to.toISOString()) : "", onRemove: () => setTo(null) },
+    ];
+
     const applyCard = (card) => {
         if (statCard === card.key) {
             clearFilters();
@@ -293,8 +303,11 @@ export default function Overview({ onChanged }) {
                 </div>
             )}
 
-            {/* Filters */}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            {/* Filters, and the sort row that doubles as the table header:
+                both stay on screen, because the column you sorted by is the
+                thing you most need labelled forty rows down. */}
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <FilterSelect
                     label="Any brand"
                     value={brand}
@@ -334,8 +347,9 @@ export default function Overview({ onChanged }) {
                 )}
             </div>
 
-            {/* Sort controls double as the table header on desktop. */}
-            <div className="mt-6 flex flex-wrap gap-2">
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+
+            <div className="mt-3 flex flex-wrap gap-2">
                 {SORTS.map((s) => {
                     const on = sort === s.key;
                     return (
@@ -361,15 +375,23 @@ export default function Overview({ onChanged }) {
                 })}
             </div>
 
+            </StickyBar>
+
             <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                 {!data ? (
                     <TableSkeleton rows={6} cols={5} testid={IDS.tableSkeleton} />
                 ) : rows.length === 0 ? (
-                    <EmptyState testid={IDS.empty} Icon={Sparkles}>
-                        {filtered
-                            ? "No campaign matches those filters."
-                            : "No campaigns yet."}
-                    </EmptyState>
+                    <ListEmptyState
+                        Icon={Sparkles}
+                        testid={IDS.empty}
+                        filtered={filtered}
+                        onClearFilters={clearFilters}
+                        emptyTitle="No campaigns yet."
+                        emptyBody="Every brief a brand drafts appears here, from draft through to closed, with its applicant counts."
+                        filteredTitle="No campaign matches those filters."
+                        filteredBody="Widen the brand, status, type or date range."
+                        className="border-0 bg-transparent"
+                    />
                 ) : (
                     <ul data-testid={IDS.table} className="divide-y divide-white/10">
                         {rows.map((c) => (

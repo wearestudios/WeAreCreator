@@ -200,6 +200,9 @@ export const ADMIN_AUDIT = {
 	filterDateTo: 'admin-audit-filter-date-to',
 	filterClear: 'admin-audit-filter-clear',
 	table: 'admin-audit-table',
+	// The horizontal scroller around the table, so a test can assert the
+	// log scrolls inside itself rather than widening the page.
+	scroll: 'admin-audit-scroll',
 	skeleton: 'admin-audit-skeleton',
 	empty: 'admin-audit-empty',
 	count: 'admin-audit-count',

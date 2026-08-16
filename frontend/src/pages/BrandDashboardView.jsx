@@ -25,6 +25,8 @@ import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ListSkeleton } from "@/components/data/DenseView";
 import { BRAND_CAMPAIGN_CONTROLS } from "@/constants/testIds";
 import {
     Dialog,
@@ -237,8 +239,23 @@ export default function BrandDashboardView({ user }) {
             <Navbar />
             <main className="mx-auto max-w-7xl px-6 py-12 md:py-16">
                 {!data && !error && (
-                    <div className="grid place-items-center py-24 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
+                    <div data-testid="brand-dashboard-skeleton" aria-hidden="true">
+                        <Skeleton className="h-3 w-40" />
+                        <Skeleton className="mt-6 h-11 w-2/3 max-w-md" />
+                        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="rounded-lg border border-white/10 bg-card p-6 grain-surface"
+                                >
+                                    <Skeleton className="h-3 w-24" />
+                                    <Skeleton className="mt-4 h-8 w-16" />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-12">
+                            <ListSkeleton rows={3} />
+                        </div>
                     </div>
                 )}
                 {error && (

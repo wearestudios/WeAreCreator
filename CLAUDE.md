@@ -317,6 +317,30 @@ brand-facing pages still use inline string literals, and `auth.js` doesn't match
 the shipped OTP screens. Match the surrounding file — add to the registry when the
 feature already uses it, inline otherwise, and don't half-migrate a page.
 
+## Dense views
+
+The admin console, the campaigns lists, the creator directory, the applicant
+board and the audit log share `frontend/src/components/data/DenseView.jsx`.
+Anything new that lists data uses it rather than solving these again:
+
+- `STICKY` is the only place the sticky offsets and z-indexes live. The navbar
+  is `sticky top-0 z-40 h-16`, so everything under it clears 4rem and stays
+  below z-40. A bar whose controls stack on a phone takes
+  `level="headerFromMd"` — a 400px column of filters pinned under the navbar
+  leaves a third of an 844px screen for the list it exists to help you read.
+- `FilterChips` + `ResultCount` on every filtered list: one chip per active
+  filter, each removable on its own. Sort gets no chip — it changes the order,
+  not the set.
+- `ListEmptyState` draws the distinction that matters: "nothing here yet"
+  (say what would appear) versus "nothing matches your filters" (offer the
+  clear). Never a bare blank area.
+- Loading is a skeleton shaped like the content, never a spinner, and sized so
+  the swap costs nothing — measured at 0.0000 CLS on both widths.
+- `ScrollTable` for tables: header sticky to the container, first column
+  pinned. `overflow-x: auto` computes `overflow-y` to `auto` too, so the
+  container is the scroller and has to own a max-height; a sticky header with
+  nothing to stick against does nothing at all.
+
 ## Tests
 
 ```bash

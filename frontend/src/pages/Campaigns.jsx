@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-    Loader2,
     MapPin,
     IndianRupee,
     ArrowRight,
@@ -12,6 +11,14 @@ import {
     ArrowDownUp,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import {
+    CardGridSkeleton,
+    FilterChips,
+    ListEmptyState,
+    ResultCount,
+    StickyBar,
+} from "@/components/data/DenseView";
+import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,31 +146,6 @@ const CampaignCard = ({ c, index }) => (
     </motion.div>
 );
 
-const EmptyState = ({ hasFilters, onReset }) => (
-    <div
-        data-testid="campaigns-empty"
-        className="col-span-full rounded-lg border border-dashed border-white/15 bg-card/40 p-14 text-center"
-    >
-        <Sparkles className="mx-auto h-6 w-6 text-ember-500" />
-        <p className="mt-5 font-serif text-3xl">Nothing matches yet.</p>
-        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-            {hasFilters
-                ? "Try widening your filters. New briefs go live every week."
-                : "We're onboarding brands right now. Check back in a day or two."}
-        </p>
-        {hasFilters && (
-            <Button
-                variant="outline"
-                onClick={onReset}
-                className="mt-6 rounded-full border-white/15 bg-transparent hover:bg-white/5"
-                data-testid="campaigns-reset-filters"
-            >
-                Reset filters
-            </Button>
-        )}
-    </div>
-);
-
 export default function Campaigns() {
     const [items, setItems] = useState(null);
     const [error, setError] = useState("");
@@ -231,6 +213,39 @@ export default function Campaigns() {
         );
     }, [items]);
 
+    // One chip per filter that is actually doing something. `sort` is left out
+    // on purpose: it changes the order, not the set, so calling it a filter
+    // would misdescribe what removing it does.
+    const chips = [
+        {
+            key: "search",
+            label: "Search",
+            value: debouncedQ,
+            onRemove: () => setQ(""),
+        },
+        {
+            key: "area",
+            label: "Area",
+            value: area === ANY ? "" : area,
+            onRemove: () => setArea(ANY),
+        },
+        {
+            key: "category",
+            label: "Category",
+            value: category === ANY ? "" : CAT_LABEL[category] || category,
+            onRemove: () => setCategory(ANY),
+        },
+        {
+            key: "budget",
+            label: "Budget",
+            value:
+                budget === ANY
+                    ? ""
+                    : (BUDGET_BUCKETS.find((b) => b.value === budget) || {}).label || "",
+            onRemove: () => setBudget(ANY),
+        },
+    ];
+
     const resetAll = () => {
         setArea(ANY);
         setCategory(ANY);
@@ -281,10 +296,16 @@ export default function Campaigns() {
                     )}
                 </div>
 
-                {/* Filters bar */}
+                {/* Filters bar. Sticky, so the thing you filtered by is still
+                    on screen thirty cards down the list. */}
+                <StickyBar level="headerFromMd"
+                    testid={STICKY_BAR.campaigns}
+                    bleed="-mx-6 px-6"
+                    className="mt-12"
+                >
                 <div
                     data-testid="campaigns-filters"
-                    className="mt-12 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-card/50 p-3 backdrop-blur"
+                    className="flex flex-wrap items-center gap-3"
                 >
                     <div className="flex items-center gap-2 pl-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                         <Filter className="h-3.5 w-3.5" />
@@ -402,18 +423,49 @@ export default function Campaigns() {
                     )}
                 </div>
 
+                {/* What you are looking at, and why. Both stay in the sticky
+                    bar: a count you have to scroll up to read is a count you
+                    stop reading. */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <FilterChips chips={chips} onClearAll={resetAll} />
+                    {Array.isArray(items) && (
+                        <ResultCount
+                            shown={items.length}
+                            noun="campaign"
+                            testid="campaigns-count"
+                            className="ml-auto"
+                        />
+                    )}
+                </div>
+                </StickyBar>
+
                 {/* Grid */}
                 <section
                     data-testid="campaigns-grid"
                     className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
                 >
                     {items === null && (
-                        <div className="col-span-full flex justify-center py-16 text-muted-foreground">
-                            <Loader2 className="h-5 w-5 animate-spin" />
+                        <div className="col-span-full">
+                            <CardGridSkeleton
+                                cards={6}
+                                columns="md:grid-cols-2 lg:grid-cols-3"
+                                testid="campaigns-skeleton"
+                            />
                         </div>
                     )}
                     {Array.isArray(items) && items.length === 0 && (
-                        <EmptyState hasFilters={hasFilters} onReset={resetAll} />
+                        <div className="col-span-full">
+                            <ListEmptyState
+                                Icon={Sparkles}
+                                testid="campaigns-empty"
+                                filtered={hasFilters}
+                                onClearFilters={resetAll}
+                                emptyTitle="No briefs are open right now."
+                                emptyBody="Live campaigns from verified brands appear here the moment they are approved. We are onboarding brands now — check back in a day or two."
+                                filteredTitle="Nothing matches those filters."
+                                filteredBody="Try a wider area, category or budget. New briefs go live every week."
+                            />
+                        </div>
                     )}
                     {Array.isArray(items) &&
                         items.map((c, i) => <CampaignCard c={c} key={c.id} index={i} />)}

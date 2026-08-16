@@ -7,7 +7,8 @@ import { BadgeCheck, Building2, IndianRupee, Search, XCircle } from "lucide-reac
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ADMIN_BRANDS as IDS } from "@/constants/testIds";
+import { ADMIN_BRANDS as IDS, STICKY_BAR } from "@/constants/testIds";
+import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
 import {
     EmptyState,
@@ -115,6 +116,21 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                 ),
         });
 
+    const clearFilters = () => {
+        setQ("");
+        setStatus("");
+    };
+
+    const chips = [
+        { key: "search", label: "Search", value: q, onRemove: () => setQ("") },
+        {
+            key: "status",
+            label: "Status",
+            value: status ? (STATUS_OPTIONS.find((o) => o.value === status) || {}).label || status : "",
+            onRemove: () => setStatus(""),
+        },
+    ];
+
     const visible = useMemo(() => {
         const term = q.trim().toLowerCase();
         return (rows || []).filter((b) => {
@@ -136,7 +152,8 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                 refreshTestId={IDS.refresh}
             />
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="relative min-w-0 flex-1 sm:min-w-[16rem]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -157,15 +174,24 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                 />
             </div>
 
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+            </StickyBar>
+
             <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!rows ? (
                     <ListSkeleton rows={5} testid={IDS.skeleton} />
                 ) : visible.length === 0 ? (
-                    <EmptyState testid={IDS.empty} Icon={Building2}>
-                        {rows.length === 0
-                            ? "No brand has signed up yet."
-                            : "No brand matches that."}
-                    </EmptyState>
+                    <ListEmptyState
+                        Icon={Building2}
+                        testid={IDS.empty}
+                        filtered={Boolean(q || status)}
+                        onClearFilters={clearFilters}
+                        emptyTitle="No brands yet."
+                        emptyBody="Every business that signs up appears here with its verification state and what it has actually paid out."
+                        filteredTitle="No brand matches that."
+                        filteredBody="Clear the search, or widen the status filter."
+                        className="border-0 bg-transparent"
+                    />
                 ) : (
                     <ul data-testid={IDS.list} className="divide-y divide-white/10">
                         {visible.map((b) => {

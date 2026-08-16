@@ -130,7 +130,12 @@ export default function AdminConsole() {
                 <nav
                     ref={navRef}
                     data-testid={IDS.nav}
-                    className="-mx-5 mt-8 flex gap-2 overflow-x-auto px-5 pb-2 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+                    // Sticky under the navbar, so which section you are in and
+                    // what is waiting in the others survives a long scroll.
+                    // The horizontal strip keeps its own bleed: nine tabs
+                    // wrapping to three rows on a phone would push the content
+                    // off the screen entirely.
+                    className="sticky top-16 z-30 -mx-5 mt-8 flex gap-2 overflow-x-auto border-b border-white/10 bg-background/80 px-5 py-3 backdrop-blur-xl md:-mx-6 md:flex-wrap md:overflow-visible md:px-6"
                 >
                     {TABS.map(({ key, label, Icon, badge }) => {
                         const on = active === key;

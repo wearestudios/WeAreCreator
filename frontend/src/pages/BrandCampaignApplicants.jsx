@@ -18,7 +18,15 @@ import {
     X,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import {
+    ApplicantListSkeleton,
+    ListEmptyState,
+    ResultCount,
+    StickyBar,
+} from "@/components/data/DenseView";
+import { STICKY_BAR } from "@/constants/testIds";
 import { WorkNotes } from "@/components/brand/WorkNotes";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -733,12 +741,29 @@ export default function BrandCampaignApplicants() {
     }, [applicants, filter]);
 
     if (!data && !error) {
+        // The masthead, the tab row and three applicant rows, at the sizes the
+        // real ones occupy — so the page fills in rather than jumping into
+        // place.
         return (
             <div className="min-h-screen bg-background grain-page">
                 <Navbar />
-                <div className="grid place-items-center py-32 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
+                <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="mt-6 h-11 w-3/4 max-w-lg" />
+                    <div className="mt-5 flex flex-wrap gap-5">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-36" />
+                        <Skeleton className="h-4 w-24" />
+                    </div>
+                    <div className="mt-10 flex flex-wrap gap-2 border-b border-white/10 pb-5">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <Skeleton key={i} className="h-8 w-28 rounded-full" />
+                        ))}
+                    </div>
+                    <div className="mt-8">
+                        <ApplicantListSkeleton rows={3} testid="applicants-skeleton" />
+                    </div>
+                </main>
             </div>
         );
     }
@@ -823,10 +848,17 @@ export default function BrandCampaignApplicants() {
                     </div>
                 )}
 
-                {/* Filters */}
+                {/* The tabs are this page's filter bar, and the count beside
+                    them is the answer to "which list am I in". Both stay put:
+                    a board you scroll through loses its heading immediately. */}
+                <StickyBar
+                    testid={STICKY_BAR.applicants}
+                    bleed="-mx-6 px-6"
+                    className="mt-10"
+                >
                 <div
                     data-testid="applicants-filters"
-                    className="mt-10 flex flex-wrap gap-2 border-b border-white/10 pb-5"
+                    className="flex flex-wrap items-center gap-2"
                 >
                     {FILTERS.map((f) => {
                         const active = filter === f.key;
@@ -850,26 +882,30 @@ export default function BrandCampaignApplicants() {
                             </button>
                         );
                     })}
+                    <ResultCount
+                        shown={visible.length}
+                        total={applicants.length}
+                        noun="applicant"
+                        testid="applicants-count"
+                        className="ml-auto"
+                    />
                 </div>
+                </StickyBar>
 
                 <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                     {visible.length === 0 ? (
-                        <div
-                            data-testid="applicants-empty"
-                            className="flex flex-col items-center gap-3 px-6 py-16 text-center"
-                        >
-                            <Users className="h-6 w-6 text-ember-500" />
-                            <p className="font-serif text-2xl">
-                                {applicants.length === 0
-                                    ? "No applications yet."
-                                    : "Nothing in this list."}
-                            </p>
-                            <p className="max-w-md text-sm text-muted-foreground">
-                                {applicants.length === 0
-                                    ? "Verified creators see this brief on their feed. Applications usually start within a day of publishing."
-                                    : "Try another tab — there's work in one of them."}
-                            </p>
-                        </div>
+                        <ListEmptyState
+                            Icon={Users}
+                            testid="applicants-empty"
+                            filtered={applicants.length > 0}
+                            onClearFilters={() => setFilter("all")}
+                            clearLabel="Show everyone"
+                            emptyTitle="No applications yet."
+                            emptyBody="Verified creators see this brief on their feed and apply from there. Applications usually start within a day of publishing — or invite creators yourself from the panel below."
+                            filteredTitle="Nothing in this tab."
+                            filteredBody="There is work in one of the others — the counts beside each tab say which."
+                            className="border-0 bg-transparent"
+                        />
                     ) : (
                         <ul className="divide-y divide-white/10">
                             {visible.map((a) => (
