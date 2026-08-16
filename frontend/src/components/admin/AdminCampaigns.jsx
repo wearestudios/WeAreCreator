@@ -3,6 +3,7 @@
 // live, resume while it's paused. The row is the workbench — there is no
 // separate "manage" page to lose.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     BadgeCheck,
@@ -60,23 +61,35 @@ function CampaignRow({ campaign, expanded, onToggle, busy, actions }) {
     return (
         <li data-testid={IDS.row(campaign.id)} className="px-5 py-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
-                <button
-                    type="button"
-                    onClick={onToggle}
-                    aria-expanded={expanded}
-                    data-testid={IDS.expand(campaign.id)}
-                    className="group flex min-w-0 flex-1 items-start gap-3 text-left"
-                >
-                    <ChevronDown
-                        className={
-                            "mt-1 h-4 w-4 flex-none text-muted-foreground transition-transform duration-200 " +
-                            (expanded ? "rotate-180" : "")
-                        }
-                    />
+                {/* Two affordances, deliberately separate: the chevron peeks
+                    at the applicants inline, the title opens the campaign's
+                    own page. Before this the whole row was the toggle, so
+                    clicking a campaign expanded it and there was no way to get
+                    to it at all. */}
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <button
+                        type="button"
+                        onClick={onToggle}
+                        aria-expanded={expanded}
+                        aria-label={expanded ? "Hide applicants" : "Show applicants"}
+                        data-testid={IDS.expand(campaign.id)}
+                        className="-m-2 grid h-11 w-11 flex-none place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:h-8 md:w-8"
+                    >
+                        <ChevronDown
+                            className={
+                                "h-4 w-4 transition-transform duration-200 " +
+                                (expanded ? "rotate-180" : "")
+                            }
+                        />
+                    </button>
                     <div className="min-w-0">
-                        <p className="truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-ember-500">
+                        <Link
+                            to={`/admin/campaigns/${campaign.id}`}
+                            data-testid={IDS.open(campaign.id)}
+                            className="block truncate font-serif text-lg leading-tight transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        >
                             {campaign.title}
-                        </p>
+                        </Link>
                         <p className="mt-1 truncate text-xs text-muted-foreground">
                             {[
                                 campaign.brand_name || "Unknown brand",
@@ -95,7 +108,7 @@ function CampaignRow({ campaign, expanded, onToggle, busy, actions }) {
                                 .join(" · ")}
                         </p>
                     </div>
-                </button>
+                </div>
 
                 <div className="flex flex-none flex-wrap items-center gap-2 md:justify-end">
                     <Pill meta={CAMPAIGN_STATUS_META} value={status} />

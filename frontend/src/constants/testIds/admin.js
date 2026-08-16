@@ -22,6 +22,68 @@ export const ADMIN_TABS = {
 	badge: (key) => `admin-tab-badge-${key}`,
 };
 
+// The four detail routes. Each is its own URL, so these identify a page rather
+// than a panel that happens to be open.
+export const ADMIN_DETAIL = {
+	back: 'admin-detail-back',
+	skeleton: 'admin-detail-skeleton',
+	error: 'admin-detail-error',
+	notFound: 'admin-detail-not-found',
+	title: 'admin-detail-title',
+	section: (key) => `admin-detail-section-${key}`,
+	stat: (key) => `admin-detail-stat-${key}`,
+	action: (key) => `admin-detail-action-${key}`,
+	timeline: 'admin-detail-timeline',
+	timelineEvent: (id) => `admin-detail-timeline-${id}`,
+	timelineEmpty: 'admin-detail-timeline-empty',
+	auditRow: (id) => `admin-detail-audit-${id}`,
+};
+
+export const ADMIN_CAMPAIGN_PAGE = {
+	page: 'admin-campaign-page',
+	status: 'admin-campaign-page-status',
+	brandLink: 'admin-campaign-page-brand',
+	managerName: 'admin-campaign-page-manager',
+	compensation: 'admin-campaign-page-compensation',
+	slot: (id) => `admin-campaign-page-slot-${id}`,
+	slotBooking: (id) => `admin-campaign-page-booking-${id}`,
+	slotsEmpty: 'admin-campaign-page-slots-empty',
+	applicant: (id) => `admin-campaign-page-applicant-${id}`,
+	applicantGroup: (key) => `admin-campaign-page-group-${key}`,
+	applicantsEmpty: 'admin-campaign-page-applicants-empty',
+	payment: (id) => `admin-campaign-page-payment-${id}`,
+	paymentsEmpty: 'admin-campaign-page-payments-empty',
+};
+
+export const ADMIN_CREATOR_PAGE = {
+	page: 'admin-creator-page',
+	instagram: 'admin-creator-page-instagram',
+	youtube: 'admin-creator-page-youtube',
+	collab: (id) => `admin-creator-page-collab-${id}`,
+	collabGroup: (key) => `admin-creator-page-group-${key}`,
+	booking: (id) => `admin-creator-page-booking-${id}`,
+	bookingsEmpty: 'admin-creator-page-bookings-empty',
+};
+
+export const ADMIN_BRAND_PAGE = {
+	page: 'admin-brand-page',
+	manager: 'admin-brand-page-manager',
+	document: (id) => `admin-brand-page-document-${id}`,
+	documentsEmpty: 'admin-brand-page-documents-empty',
+	campaign: (id) => `admin-brand-page-campaign-${id}`,
+	campaignsEmpty: 'admin-brand-page-campaigns-empty',
+};
+
+export const ADMIN_COLLAB_PAGE = {
+	page: 'admin-collab-page',
+	creatorLink: 'admin-collab-page-creator',
+	campaignLink: 'admin-collab-page-campaign',
+	step: (state) => `admin-collab-page-step-${state}`,
+	slot: 'admin-collab-page-slot',
+	content: 'admin-collab-page-content',
+	payment: 'admin-collab-page-payment',
+};
+
 export const ADMIN_OVERVIEW = {
 	section: 'admin-overview-section',
 	refresh: 'admin-overview-refresh',
@@ -95,6 +157,8 @@ export const ADMIN_QUEUE = {
 };
 
 export const ADMIN_CREATORS = {
+	// The link that opens the record's own page.
+	open: (id) => `admin-creators-open-${id}`,
 	section: 'admin-creators-section',
 	refresh: 'admin-creators-refresh',
 	search: 'admin-creators-search',
@@ -130,6 +194,8 @@ export const ADMIN_CREATOR_DETAIL = {
 };
 
 export const ADMIN_CAMPAIGNS = {
+	// The link that opens the record's own page.
+	open: (id) => `admin-campaigns-open-${id}`,
 	section: 'admin-campaigns-section',
 	refresh: 'admin-campaigns-refresh',
 	search: 'admin-campaigns-search',
@@ -176,6 +242,8 @@ export const ADMIN_CAMPAIGN_EDIT = {
 };
 
 export const ADMIN_BRANDS = {
+	// The link that opens the record's own page.
+	open: (id) => `admin-brands-open-${id}`,
 	section: 'admin-brands-section',
 	refresh: 'admin-brands-refresh',
 	search: 'admin-brands-search',

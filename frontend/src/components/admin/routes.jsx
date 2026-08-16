@@ -1,0 +1,91 @@
+// The console's list screens, adapted to routes.
+//
+// Each section component already existed and took callbacks from the old
+// tab-switching shell. These are the thin adapters that give them what they
+// need from the router instead: the outlet context for the badge counts, and
+// the query string for filters that ought to survive a reload.
+//
+// Nothing here holds state. If a wrapper starts wanting some, it belongs in the
+// section component or in the URL.
+import React from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+
+import { useAdminConsole } from "@/pages/AdminConsole";
+import Overview from "@/components/admin/Overview";
+import { BrandReviews, CampaignReviews, CreatorReviews } from "@/components/admin/Reviews";
+import ActionQueue from "@/components/admin/ActionQueue";
+import AdminCreators from "@/components/admin/AdminCreators";
+import AdminCampaigns from "@/components/admin/AdminCampaigns";
+import AdminBrands from "@/components/admin/AdminBrands";
+import AdminAudit from "@/components/admin/AdminAudit";
+
+export const OverviewRoute = () => {
+    const { reloadCounts } = useAdminConsole();
+    return <Overview onChanged={reloadCounts} />;
+};
+
+export const CreatorReviewsRoute = () => {
+    const { reloadCounts } = useAdminConsole();
+    return <CreatorReviews onChanged={reloadCounts} />;
+};
+
+export const CampaignReviewsRoute = () => {
+    const { reloadCounts } = useAdminConsole();
+    return <CampaignReviews onChanged={reloadCounts} />;
+};
+
+export const BrandReviewsRoute = () => {
+    const { reloadCounts } = useAdminConsole();
+    return <BrandReviews onChanged={reloadCounts} />;
+};
+
+export const QueueRoute = () => {
+    const { reloadCounts, feePercent } = useAdminConsole();
+    return <ActionQueue onChanged={reloadCounts} feePercent={feePercent} />;
+};
+
+export const CreatorsRoute = () => <AdminCreators />;
+
+export const AuditRoute = () => <AdminAudit />;
+
+/**
+ * The campaigns list, with "just this brand" in the URL.
+ *
+ * It used to be a `useState` in the shell, set when the Brands tab handed off.
+ * That made the filtered list unreachable except by that one click — you could
+ * not link somebody to "this brand's campaigns", and a reload dropped the
+ * filter silently while leaving the chip on screen.
+ */
+export const CampaignsRoute = () => {
+    const [params, setParams] = useSearchParams();
+    const { reloadCounts } = useAdminConsole();
+    const brandFilter = params.get("brand") || "";
+
+    const clearBrand = () => {
+        const next = new URLSearchParams(params);
+        next.delete("brand");
+        // replace: clearing a filter is a correction, not a place to go back to.
+        setParams(next, { replace: true });
+    };
+
+    return (
+        <AdminCampaigns
+            brandFilter={brandFilter}
+            onClearBrand={clearBrand}
+            onChanged={reloadCounts}
+        />
+    );
+};
+
+export const BrandsRoute = () => {
+    const navigate = useNavigate();
+    const { reloadCounts } = useAdminConsole();
+    return (
+        <AdminBrands
+            onChanged={reloadCounts}
+            onViewCampaigns={(brandId) =>
+                navigate(`/admin/campaigns?brand=${encodeURIComponent(brandId)}`)
+            }
+        />
+    );
+};

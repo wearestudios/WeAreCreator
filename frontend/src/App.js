@@ -16,6 +16,21 @@ import PostCampaign from "@/pages/PostCampaign";
 import Campaigns from "@/pages/Campaigns";
 import CampaignDetail from "@/pages/CampaignDetail";
 import AdminConsole from "@/pages/AdminConsole";
+import {
+    AuditRoute,
+    BrandReviewsRoute,
+    BrandsRoute,
+    CampaignReviewsRoute,
+    CampaignsRoute,
+    CreatorReviewsRoute,
+    CreatorsRoute,
+    OverviewRoute,
+    QueueRoute,
+} from "@/components/admin/routes";
+import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
+import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
+import AdminBrandDetail from "@/components/admin/BrandDetailPage";
+import AdminCollaborationDetail from "@/components/admin/CollaborationDetailPage";
 import ManagerHome from "@/pages/ManagerHome";
 import ManagerCampaign from "@/pages/ManagerCampaign";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
@@ -132,6 +147,10 @@ function App() {
                                 </ProtectedRoute>
                             }
                         />
+                        {/* The console is a layout, and everything under it is
+                            its own address. `/admin/login` is declared above
+                            this block and stays a separate page — it is the
+                            only /admin path that must not require an admin. */}
                         <Route
                             path="/admin"
                             element={
@@ -139,7 +158,34 @@ function App() {
                                     <AdminConsole />
                                 </ProtectedRoute>
                             }
-                        />
+                        >
+                            <Route index element={<OverviewRoute />} />
+                            <Route path="creator-reviews" element={<CreatorReviewsRoute />} />
+                            <Route path="campaign-reviews" element={<CampaignReviewsRoute />} />
+                            <Route path="brand-reviews" element={<BrandReviewsRoute />} />
+                            <Route path="queue" element={<QueueRoute />} />
+
+                            {/* List, then detail. Nested rather than sibling
+                                paths so the tab strip stays put and only the
+                                panel under it changes. */}
+                            <Route path="campaigns" element={<CampaignsRoute />} />
+                            <Route path="campaigns/:id" element={<AdminCampaignDetail />} />
+                            <Route path="creators" element={<CreatorsRoute />} />
+                            <Route path="creators/:id" element={<AdminCreatorDetail />} />
+                            <Route path="brands" element={<BrandsRoute />} />
+                            <Route path="brands/:id" element={<AdminBrandDetail />} />
+                            {/* No list route: collaborations are reached from
+                                the queue, a campaign or a creator, which is
+                                where the question about one always starts. */}
+                            <Route
+                                path="collaborations/:id"
+                                element={<AdminCollaborationDetail />}
+                            />
+                            <Route path="audit" element={<AuditRoute />} />
+                            {/* A bad path under /admin lands on the console
+                                rather than the marketing site. */}
+                            <Route path="*" element={<Navigate to="/admin" replace />} />
+                        </Route>
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </BrowserRouter>

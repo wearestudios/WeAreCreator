@@ -2,6 +2,7 @@
 // they've actually paid) and the verification decision inline. Rejection
 // demands a reason — the brand is told, and the audit log keeps it.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { BadgeCheck, Building2, IndianRupee, Search, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
@@ -205,9 +206,13 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                                 >
                                     <div className="min-w-0 flex-1">
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <p className="truncate font-serif text-lg leading-tight">
+                                            <Link
+                                                to={`/admin/brands/${b.user_id}`}
+                                                data-testid={IDS.open(b.user_id)}
+                                                className="truncate font-serif text-lg leading-tight transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                            >
                                                 {b.business_name || "Unnamed brand"}
-                                            </p>
+                                            </Link>
                                             <Pill
                                                 meta={BRAND_STATUS_META}
                                                 value={s}

@@ -1169,6 +1169,9 @@ NOTIFY_EVENTS = {
     "new_applicant": "A creator applied to your campaign",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
+    # Suspension is not a verification decision — see suspend_creator.
+    "creator_suspended": "Your account is on hold",
+    "creator_reinstated": "Your account is active again",
     "campaign_invite": "A brand invited you to a campaign",
     "brand_verified": "Your brand is verified",
     "brand_rejected": "We couldn't verify your brand yet",
@@ -6942,9 +6945,55 @@ async def get_creator_detail(
         }
     )
 
+    # Slots this creator holds, with the campaign they belong to. Separate from
+    # the collaboration rows because a booking is a commitment to be somewhere
+    # at a time — the question "where is this person on Saturday" is not
+    # answerable from a list of states.
+    slot_ids = [c["slot_id"] for c in await db.collaborations.find(
+        {"creator_id": oid, "slot_id": {"$ne": None}}
+    ).to_list(length=500) if c.get("slot_id")]
+    bookings = []
+    if slot_ids:
+        slot_docs = await db.campaign_slots.find(
+            {"_id": {"$in": slot_ids}}
+        ).sort("starts_at", 1).to_list(length=500)
+        slot_campaigns = await db.campaigns.find(
+            {"_id": {"$in": [s["campaign_id"] for s in slot_docs]}}
+        ).to_list(length=len(slot_docs))
+        title_by_campaign = {c["_id"]: c.get("title") for c in slot_campaigns}
+        collab_by_slot = {
+            c["slot_id"]: c
+            for c in await db.collaborations.find(
+                {"creator_id": oid, "slot_id": {"$in": slot_ids}}
+            ).to_list(length=500)
+        }
+        for s in slot_docs:
+            c = collab_by_slot.get(s["_id"]) or {}
+            bookings.append(
+                {
+                    **_serialize_slot(s),
+                    "campaign_title": title_by_campaign.get(s["campaign_id"]),
+                    "collaboration_id": str(c["_id"]) if c.get("_id") else None,
+                    "state": c.get("state"),
+                }
+            )
+
     return {
         "creator": detail,
+        # The connection, not the token — _serialize_instagram cannot return
+        # one. Absent credentials is a supported state, so this is present and
+        # says `configured: false` rather than being missing.
+        "instagram": _serialize_instagram(
+            await db.instagram_connections.find_one({"user_id": oid})
+        ),
+        # No API behind YouTube here: the creator gives us a channel URL and
+        # that is all we have. Said plainly rather than dressed up as stats.
+        "youtube": {
+            "url": profile.get("youtube_url"),
+            "connected": bool(profile.get("youtube_url")),
+        },
         "collaborations": groups,
+        "slot_bookings": bookings,
         "totals": {
             "lifetime_earned": round(lifetime_earned, 2),
             # Agreed on work in flight — what we owe if it all lands.
@@ -6953,6 +7002,7 @@ async def get_creator_detail(
             "collaborations_ongoing": len(groups["ongoing"]),
             "applications_open": len(groups["applied"]),
             "collaborations_ended": len(groups["ended"]),
+            "slots_booked": len(bookings),
         },
     }
 
@@ -7042,6 +7092,106 @@ async def reject_creator(
     return await _set_creator_verification(
         user_id, "rejected", user, (payload.reason if payload else None)
     )
+
+
+@admin_router.post("/creators/{user_id}/suspend")
+async def suspend_creator(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stop an account without touching what we decided about the profile.
+
+    Suspension and verification are two different judgements, and collapsing
+    them loses the one you need later: rejecting a verified creator to get them
+    off the platform would erase the record that they were ever approved, and
+    re-verifying them afterwards would look like a fresh decision rather than a
+    reinstatement. `UserStatus` has always had the state — this is the endpoint
+    that sets it.
+
+    Work already under way is deliberately untouched. A suspension is not a
+    cancellation: somebody has to decide, per collaboration, whether a shoot
+    two days out is still happening.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    account = await db.users.find_one({"_id": oid, "role": "creator"})
+    if not account:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    if account.get("status") == "suspended":
+        raise HTTPException(status_code=409, detail="This account is already suspended.")
+
+    reason = payload.reason.strip()
+    await db.users.update_one(
+        {"_id": oid},
+        {"$set": {"status": "suspended", "suspended_at": datetime.now(timezone.utc),
+                  "suspension_reason": reason}},
+    )
+    await audit(
+        user,
+        "creator.suspend",
+        "user",
+        oid,
+        before={"status": account.get("status")},
+        after={"status": "suspended"},
+        note=reason,
+    )
+    await notify(
+        oid,
+        "creator_suspended",
+        title="Your account is on hold",
+        body=reason,
+        link="/dashboard",
+    )
+    return {"user_id": user_id, "status": "suspended", "reason": reason}
+
+
+@admin_router.post("/creators/{user_id}/reinstate")
+async def reinstate_creator(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Undo a suspension.
+
+    Returns the account to `active` and leaves the verification decision
+    exactly where it was, which is the whole reason the two are separate.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    account = await db.users.find_one({"_id": oid, "role": "creator"})
+    if not account:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    if account.get("status") != "suspended":
+        raise HTTPException(status_code=409, detail="This account is not suspended.")
+
+    reason = payload.reason.strip()
+    await db.users.update_one(
+        {"_id": oid},
+        {"$set": {"status": "active"},
+         "$unset": {"suspended_at": "", "suspension_reason": ""}},
+    )
+    await audit(
+        user,
+        "creator.reinstate",
+        "user",
+        oid,
+        before={"status": "suspended"},
+        after={"status": "active"},
+        note=reason,
+    )
+    await notify(
+        oid,
+        "creator_reinstated",
+        title="Your account is back",
+        body="You can apply to briefs again.",
+        link="/campaigns",
+    )
+    return {"user_id": user_id, "status": "active", "reason": reason}
 
 
 # --- Brand verification (GAP 5) --------------------------------------------
@@ -7280,6 +7430,171 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
         }
         for d in docs
     ]
+
+
+@admin_router.get("/campaigns/{campaign_id}")
+async def get_admin_campaign_detail(
+    campaign_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One campaign, whole picture.
+
+    The brief itself, who it belongs to, who runs it, what it pays, the slots
+    and who is in them, and what has been paid out. The applicants live at
+    /campaigns/{id}/applicants and the trail at /audit?campaign_id= — three
+    focused calls rather than one that has to be refetched in full every time a
+    single row changes.
+
+    **Declared after /campaigns/pending**, or `pending` would be read as a
+    campaign id and that route would never match again.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    cid = campaign["_id"]
+
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+    brand_account = await db.users.find_one({"_id": campaign["brand_id"]}) or {}
+
+    slots = (
+        await db.campaign_slots.find({"campaign_id": cid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+
+    # Who is in each slot, so a slot row can name people rather than a count.
+    # One query for the campaign, grouped here — a lookup per slot would be a
+    # query per row on a page that already makes three.
+    booked = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": cid, "slot_id": {"$ne": None}}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "creator_id",
+                    "foreignField": "_id",
+                    "as": "creator",
+                }
+            },
+            {"$addFields": {"creator": {"$arrayElemAt": ["$creator", 0]}}},
+            {
+                "$project": {
+                    "slot_id": 1,
+                    "state": 1,
+                    "creator_id": 1,
+                    "creator_name": "$creator.name",
+                }
+            },
+        ]
+    ).to_list(length=1000)
+    by_slot: dict = {}
+    for row in booked:
+        by_slot.setdefault(row["slot_id"], []).append(
+            {
+                "collaboration_id": str(row["_id"]),
+                "creator_id": str(row["creator_id"]),
+                "creator_name": row.get("creator_name"),
+                "state": row.get("state"),
+            }
+        )
+
+    payments = await db.payments.aggregate(
+        [
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {"$match": {"collab.campaign_id": cid}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "collab.creator_id",
+                    "foreignField": "_id",
+                    "as": "creator",
+                }
+            },
+            {"$addFields": {"creator": {"$arrayElemAt": ["$creator", 0]}}},
+            {"$sort": {"created_at": -1}},
+        ]
+    ).to_list(length=1000)
+
+    paid_total = 0.0
+    committed_total = 0.0
+    payment_rows = []
+    for p in payments:
+        payout = float(p.get("creator_payout") or 0)
+        if p.get("state") == "paid":
+            paid_total += payout
+        else:
+            committed_total += payout
+        payment_rows.append(
+            {
+                "id": str(p["_id"]),
+                "collaboration_id": str(p["collaboration_id"]),
+                "creator_id": str((p.get("collab") or {}).get("creator_id"))
+                if (p.get("collab") or {}).get("creator_id")
+                else None,
+                "creator_name": (p.get("creator") or {}).get("name"),
+                "state": p.get("state"),
+                "creator_payout": payout,
+                "platform_fee": p.get("platform_fee"),
+                "brand_invoice_amount": p.get("brand_invoice_amount"),
+                "invoice_state": p.get("invoice_state"),
+                "reference": p.get("reference"),
+                "paid_at": _iso(p.get("paid_at")),
+                "created_at": _iso(p.get("created_at")),
+            }
+        )
+
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([cid])).get(cid, 0)
+
+    return {
+        "campaign": {
+            **_serialize_brand_campaign(campaign, 0, filled, 0),
+            # The brand's own serializer stops at the manager's name and phone,
+            # which is right for the brand. An admin assigns the manager, so
+            # the id has to come back or the picker can't show the current one.
+            "manager_id": str(campaign["manager_id"])
+            if campaign.get("manager_id")
+            else None,
+            "manager_email": campaign.get("manager_email"),
+            "paused_at": _iso(campaign.get("paused_at")),
+            "paused_from_status": campaign.get("paused_from_status"),
+            "closed_at": _iso(campaign.get("closed_at")),
+            "reviewed_at": _iso(campaign.get("reviewed_at")),
+        },
+        "brand": {
+            "user_id": str(campaign["brand_id"]),
+            "business_name": brand.get("business_name") or brand_account.get("name"),
+            "category": brand.get("category"),
+            "verified": bool(brand.get("verified", False)),
+            "verification_state": _brand_verification_state(brand),
+            "contact_person_name": brand.get("contact_person_name"),
+            "contact_email": brand.get("contact_email"),
+            # Staff-side, so the number is the point — this is who to ring when
+            # a shoot is going wrong. It never crosses to a brand response.
+            "contact_phone": brand.get("contact_phone") or brand_account.get("phone"),
+        },
+        "slots": [
+            {**_serialize_slot(s), "bookings": by_slot.get(s["_id"], [])} for s in slots
+        ],
+        "payments": payment_rows,
+        "totals": {
+            "creators_needed": needed,
+            "filled_slots": filled,
+            "spots_left": max(0, needed - filled),
+            "paid_out": round(paid_total, 2),
+            # Agreed but not yet released — what this brief still owes.
+            "committed": round(committed_total, 2),
+            "slot_capacity": sum(int(s.get("capacity") or 0) for s in slots),
+            "slot_booked": sum(int(s.get("booked_count") or 0) for s in slots),
+        },
+    }
 
 
 @admin_router.post("/campaigns/{campaign_id}/approve")
@@ -8152,6 +8467,53 @@ async def list_brands_for_review(
     return out
 
 
+def _admin_brand_fields(p: dict, u: dict) -> dict:
+    """A brand as staff read it: the claim, the evidence for it, and who is
+    making it. Shared by the verification queue and the brand detail page so
+    the two can't describe the same business differently."""
+    return {
+        "user_id": str(p["user_id"]),
+        "profile_id": str(p["_id"]),
+        "business_name": p.get("business_name"),
+        "category": p.get("category"),
+        "areas": p.get("areas") or [],
+        "verified": bool(p.get("verified", False)),
+        # The same vocabulary the brand's own profile reports, so one field
+        # name doesn't mean two different things on two screens.
+        "verification_state": _brand_verification_state(p),
+        "verification_reason": p.get("verification_reason"),
+        "verified_at": _iso(p.get("verified_at")),
+        "rejected_at": _iso(p.get("rejected_at")),
+        "submitted_at": _iso(p.get("submitted_for_verification_at")),
+        # The business, as claimed — this is what the documents are checked
+        # against.
+        "legal_entity_name": p.get("legal_entity_name"),
+        "business_type": p.get("business_type"),
+        "gst_number": p.get("gst_number"),
+        "registered_address": p.get("registered_address"),
+        "website": p.get("website"),
+        "instagram_handle": p.get("instagram_handle"),
+        "facebook_url": p.get("facebook_url"),
+        "linkedin_url": p.get("linkedin_url"),
+        # And the person asking on its behalf.
+        "contact_person_name": p.get("contact_person_name"),
+        "contact_person_designation": p.get("contact_person_designation"),
+        "contact_email": p.get("contact_email"),
+        "contact_phone": p.get("contact_phone"),
+        # Flagged, not refused: a café on Gmail is normal, but an address on
+        # the company's own domain is the cheapest evidence that somebody
+        # actually works there.
+        "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
+        "name": u.get("name"),
+        "email": u.get("email"),
+        "phone": u.get("phone"),
+        "status": u.get("status"),
+        "terms_accepted_at": _iso(u.get("terms_accepted_at")),
+        "signed_up_at": _iso(u.get("created_at")),
+        "created_at": _iso(p.get("created_at")),
+    }
+
+
 @admin_router.get("/brands/pending")
 async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     """Brands waiting on us, with what they told us at signup.
@@ -8212,51 +8574,132 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
         d = drafts.get(p["user_id"]) or {}
         out.append(
             {
-                "user_id": str(p["user_id"]),
-                "profile_id": str(p["_id"]),
-                "business_name": p.get("business_name"),
-                "category": p.get("category"),
-                "areas": p.get("areas") or [],
-                "verified": False,
-                # The same vocabulary the brand's own profile reports, so one
-                # field name doesn't mean two different things on two screens.
+                **_admin_brand_fields(p, u),
                 # In this queue it is always pending_verification or rejected.
-                "verification_state": _brand_verification_state(p),
-                "verification_reason": p.get("verification_reason"),
-                "rejected_at": _iso(p.get("rejected_at")),
-                "submitted_at": _iso(p.get("submitted_for_verification_at")),
-                # The business, as claimed — this is what the documents are
-                # checked against.
-                "legal_entity_name": p.get("legal_entity_name"),
-                "business_type": p.get("business_type"),
-                "gst_number": p.get("gst_number"),
-                "registered_address": p.get("registered_address"),
-                "website": p.get("website"),
-                "instagram_handle": p.get("instagram_handle"),
-                "facebook_url": p.get("facebook_url"),
-                "linkedin_url": p.get("linkedin_url"),
-                # And the person asking on its behalf.
-                "contact_person_name": p.get("contact_person_name"),
-                "contact_person_designation": p.get("contact_person_designation"),
-                "contact_email": p.get("contact_email"),
-                "contact_phone": p.get("contact_phone"),
-                # Flagged, not refused: a café on Gmail is normal, but an
-                # address on the company's own domain is the cheapest evidence
-                # that somebody actually works there.
-                "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
                 "documents": docs_by_brand.get(p["user_id"], []),
-                "name": u.get("name"),
-                "email": u.get("email"),
-                "phone": u.get("phone"),
-                "status": u.get("status"),
-                "terms_accepted_at": _iso(u.get("terms_accepted_at")),
-                "signed_up_at": _iso(u.get("created_at")),
                 "campaign_count": d.get("total", 0),
                 "campaigns_awaiting_review": d.get("awaiting_review", 0),
-                "created_at": _iso(p.get("created_at")),
             }
         )
     return out
+
+
+@admin_router.get("/brands/{user_id}")
+async def get_admin_brand_detail(
+    user_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One brand, whole picture: the claim, the documents behind it, the named
+    person who signed up, and every campaign they have run with what it filled
+    and what it cost.
+
+    **Declared after /brands/pending**, or `pending` becomes a user id.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    account = await db.users.find_one({"_id": oid})
+    if not profile or not account:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    documents = [
+        _serialize_brand_document(d)
+        for d in await db.brand_documents.find({"brand_id": oid})
+        .sort("created_at", -1)
+        .to_list(length=200)
+    ]
+
+    campaigns = (
+        await db.campaigns.find({"brand_id": oid})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    campaign_ids = [c["_id"] for c in campaigns]
+    filled_map = await _filled_counts_for(campaign_ids)
+
+    # Spend per campaign, so a row can say what it actually cost rather than
+    # what it budgeted. One pass over payments for the whole brand.
+    spend_by_campaign: dict = {}
+    if campaign_ids:
+        async for row in db.payments.aggregate(
+            [
+                {
+                    "$lookup": {
+                        "from": "collaborations",
+                        "localField": "collaboration_id",
+                        "foreignField": "_id",
+                        "as": "collab",
+                    }
+                },
+                {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+                {"$match": {"collab.campaign_id": {"$in": campaign_ids}, "state": "paid"}},
+                {
+                    "$group": {
+                        "_id": "$collab.campaign_id",
+                        "spend": {"$sum": {"$ifNull": ["$creator_payout", 0]}},
+                        "paid_collaborations": {"$sum": 1},
+                    }
+                },
+            ]
+        ):
+            spend_by_campaign[row["_id"]] = row
+
+    campaign_rows = []
+    for c in campaigns:
+        needed = int(c.get("creators_needed") or 1)
+        filled = filled_map.get(c["_id"], 0)
+        s = spend_by_campaign.get(c["_id"]) or {}
+        campaign_rows.append(
+            {
+                "id": str(c["_id"]),
+                "title": c.get("title"),
+                "status": c.get("status"),
+                "category": c.get("category"),
+                "area": c.get("area"),
+                "budget_per_creator": c.get("budget_per_creator"),
+                "compensation_type": _compensation_type(c),
+                "creators_needed": needed,
+                "filled_slots": filled,
+                # The number an admin is actually scanning for: a brief at 1/8
+                # a week before the shoot is the one to ring somebody about.
+                "fill_rate": round(filled / needed, 3) if needed else 0.0,
+                "spend": round(float(s.get("spend", 0) or 0), 2),
+                "paid_collaborations": s.get("paid_collaborations", 0),
+                "manager_name": c.get("manager_name"),
+                "event_date": _iso(c.get("event_date")),
+                "start_date": _iso(c.get("start_date")),
+                "end_date": _iso(c.get("end_date")),
+                "created_at": _iso(c.get("created_at")),
+            }
+        )
+
+    total_spend = await _brand_spend_map([oid])
+    s = total_spend.get(oid) or {}
+
+    return {
+        "brand": {
+            **_admin_brand_fields(profile, account),
+            # The one login this brand has, and the person it belongs to.
+            "manager_name": account.get("manager_name") or account.get("name"),
+            "manager_designation": profile.get("contact_person_designation"),
+            "manager_phone": account.get("phone"),
+            "manager_email": profile.get("contact_email") or account.get("email"),
+            "manager_role": account.get("role"),
+        },
+        "documents": documents,
+        "campaigns": campaign_rows,
+        "totals": {
+            "campaign_count": len(campaign_rows),
+            "active_campaign_count": sum(
+                1 for c in campaigns if c.get("status") in ACTIVE_CAMPAIGN_STATUSES
+            ),
+            "total_spend": round(float(s.get("spend", 0) or 0), 2),
+            "paid_collaborations": s.get("paid_collaborations", 0),
+            "creators_booked": sum(r["filled_slots"] for r in campaign_rows),
+        },
+    }
 
 
 @admin_router.get("/brands/{user_id}/documents/{document_id}")
@@ -8635,6 +9078,109 @@ async def list_all_collaborations(
         row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
         by_state.setdefault(row["state"], []).append(row)
     return {"by_state": by_state, "total": len(collabs)}
+
+
+@admin_router.get("/collaborations/{collab_id}")
+async def get_admin_collaboration_detail(
+    collab_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One application, end to end.
+
+    The lifecycle timeline is read out of the audit log rather than kept as a
+    second history on the collaboration: the log is already written on every
+    transition and is append-only, so a timeline built from it cannot disagree
+    with the record. A separate `state_history` array would be a second truth
+    to keep in step, and the one that drifts is always the one being read.
+
+    **Declared after GET /collaborations**, which takes no path parameter, so
+    ordering only matters against future fixed paths under this prefix.
+    """
+    oid = _as_oid(collab_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    brand = None
+    if campaign:
+        brand = (await _load_brand_map([campaign["brand_id"]])).get(
+            campaign["brand_id"]
+        )
+    creator_user = await db.users.find_one({"_id": collab["creator_id"]})
+    creator_profile = await db.creator_profiles.find_one(
+        {"user_id": collab["creator_id"]}
+    )
+    payment = await db.payments.find_one({"collaboration_id": oid})
+
+    row = _serialize_admin_collab(
+        collab,
+        campaign,
+        (brand or {}).get("business_name") or (brand or {}).get("name"),
+        creator_user,
+        creator_profile,
+        payment,
+    )
+    next_state = _next_collab_state(row["state"])
+    row["next_state"] = next_state
+    row["next_owner"] = "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
+    row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+    row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
+
+    slot = None
+    if collab.get("slot_id"):
+        slot_doc = await db.campaign_slots.find_one({"_id": collab["slot_id"]})
+        if slot_doc:
+            slot = _serialize_slot(slot_doc)
+
+    # Oldest first: a timeline is read forwards, unlike the audit log's own
+    # most-recent-first listing.
+    events = (
+        await db.audit_log.find(
+            {"subject_type": "collaboration", "subject_id": oid}
+        )
+        .sort("created_at", 1)
+        .to_list(length=500)
+    )
+
+    return {
+        "collaboration": row,
+        "slot": slot,
+        "payment": {
+            "id": str(payment["_id"]),
+            "state": payment.get("state"),
+            "creator_payout": payment.get("creator_payout"),
+            "platform_fee": payment.get("platform_fee"),
+            "brand_invoice_amount": payment.get("brand_invoice_amount"),
+            "invoice_state": payment.get("invoice_state"),
+            "reference": payment.get("reference"),
+            "paid_at": _iso(payment.get("paid_at")),
+            "created_at": _iso(payment.get("created_at")),
+        }
+        if payment
+        else None,
+        "timeline": [
+            {
+                "id": str(e["_id"]),
+                "action": e.get("action"),
+                "actor_id": str(e["actor_id"]) if e.get("actor_id") else None,
+                "actor_name": e.get("actor_name"),
+                "actor_role": e.get("actor_role"),
+                "before": _jsonable(e.get("before")),
+                "after": _jsonable(e.get("after")),
+                "note": e.get("note"),
+                "created_at": _iso(e.get("created_at")),
+            }
+            for e in events
+        ],
+        # The order the states actually run in, so the page can draw the ones
+        # still ahead rather than only the ones already behind.
+        "state_order": list(COLLAB_STATE_ORDER),
+        "terminal_states": list(TERMINAL_COLLAB_STATES),
+    }
 
 
 @admin_router.post("/collaborations/{collab_id}/advance")

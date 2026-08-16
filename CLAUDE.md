@@ -333,6 +333,58 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+## The admin console
+
+`/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the tab
+strip and the badge counts and renders the matched route into an `<Outlet>`. The
+URL is the state. It used to be one route with a `useState` tab, which made every
+screen unaddressable — no deep link, no back button, and a reload always landed
+on Overview.
+
+- Nine list routes off the tab strip (`""` index, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `queue`, `creators`, `campaigns`,
+  `brands`, `audit`) and four detail routes: `/admin/campaigns/:id`,
+  `/creators/:id`, `/brands/:id`, `/collaborations/:id`. `ADMIN_TABS` in
+  `AdminConsole.jsx` is both the strip and the route table.
+- `/admin/login` is declared **outside** the layout — it is the one `/admin`
+  path that must not require an admin.
+- Filters that are worth sharing live in the query string, not in state:
+  `/admin/campaigns?brand=<id>` is what the Brands list links to.
+- `useAdminConsole()` is how a screen reads `reloadCounts` and `feePercent` off
+  the outlet context; it throws rather than destructuring undefined.
+- `components/admin/routes.jsx` holds thin adapters between the router and the
+  section components. Nothing there holds state — if a wrapper wants some, it
+  belongs in the section or in the URL.
+- `components/admin/DetailPage.jsx` is the shared scaffold: `DetailShell`
+  (back link, title, loading/error/404), `Section`, `Field`, `Stat`, `Panel`
+  and `AuditTrail`. Four pages solving loading and failure four ways is how a
+  console starts feeling like four consoles.
+- Rows **link**. A creator tile used to open a drawer, so a creator had no
+  address at all; the drawer is gone. Campaign rows keep the chevron as a
+  peek-inline affordance, with the title as the link — two affordances, kept
+  separate.
+
+Backed by three detail endpoints — `GET /admin/campaigns/{id}`,
+`/admin/brands/{user_id}`, `/admin/collaborations/{id}` — each **declared after
+its fixed-path siblings**, or `pending` gets read as an id and the fixed route
+never matches again. A unit test checks this structurally for every prefix.
+Applicants, notes and the audit trail stay on their own endpoints so one action
+doesn't refetch the page.
+
+The collaboration timeline is read out of the audit log rather than kept as a
+`state_history` on the record: the log is already written on every transition and
+is append-only, so a timeline built from it cannot disagree with the record.
+
+`POST /admin/creators/{id}/suspend` and `/reinstate` are separate from
+verification and must stay that way — a unit test fails either if it touches
+`verification_status`. Rejecting a verified creator to remove them would erase
+the record that they were ever approved.
+
+Admins get **admin navigation only**. `linksFor()` in `Navbar.jsx` returns from
+one branch per role; admin used to share the creator branch, which put the
+creator brief feed in staff navigation. The marketing strip renders only when
+nobody is signed in.
+
 ## Design system
 
 `design_guidelines.json` is the brief: burnt orange `#F05D14` as `ember-500`,
