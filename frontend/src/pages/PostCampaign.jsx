@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowRight,
@@ -209,16 +209,16 @@ export default function PostCampaign() {
                 // Saving an edit on a draft and submitting should do both.
                 if (!isDraft && existing?.status === "draft") {
                     await api.post(`/brand/campaigns/${editingId}/publish`);
-                    toast.success("Sent for review — we'll publish it once we've read it");
+                    notifySuccess("Sent for review — we'll publish it once we've read it");
                 } else {
-                    toast.success("Campaign updated");
+                    notifySuccess("Campaign updated");
                 }
                 navigate("/dashboard", { replace: true });
                 return;
             }
 
             const { data } = await api.post("/brand/campaigns", buildPayload(status));
-            toast.success(
+            notifySuccess(
                 isDraft
                     ? "Draft saved to your dashboard"
                     : "Sent for review — we'll publish it once we've read it",

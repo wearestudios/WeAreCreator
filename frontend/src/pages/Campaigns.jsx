@@ -320,14 +320,14 @@ export default function Campaigns() {
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder="Search briefs…"
-                            className="h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
+                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
                         />
                     </div>
 
                     <Select value={area} onValueChange={setArea}>
                         <SelectTrigger
                             data-testid="filter-area-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any area" />
                         </SelectTrigger>
@@ -350,7 +350,7 @@ export default function Campaigns() {
                     <Select value={category} onValueChange={setCategory}>
                         <SelectTrigger
                             data-testid="filter-category-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any category" />
                         </SelectTrigger>
@@ -373,7 +373,7 @@ export default function Campaigns() {
                     <Select value={budget} onValueChange={setBudget}>
                         <SelectTrigger
                             data-testid="filter-budget-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any budget" />
                         </SelectTrigger>
@@ -393,7 +393,7 @@ export default function Campaigns() {
                     <Select value={sort} onValueChange={setSort}>
                         <SelectTrigger
                             data-testid="filter-sort-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-52"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-52"
                         >
                             <ArrowDownUp className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue />

@@ -9,7 +9,7 @@
 // Approving is one tap. Rejecting always opens a dialog and always requires a
 // reason, because the person on the other end is told what it said.
 import React, { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notifyError } from "@/lib/feedback";
 import {
     Building2,
     CheckCircle2,
@@ -19,7 +19,7 @@ import {
     Sparkles,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ADMIN_REVIEWS as IDS } from "@/constants/testIds";
 import { ConfirmDialog } from "./dialogs";
@@ -53,7 +53,7 @@ function ReviewQueue({ config, onChanged }) {
             const { data } = await api.get(config.endpoint);
             setRows(config.filter ? data.filter(config.filter) : data);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRows([]);
         }
     }, [config, setRows]);

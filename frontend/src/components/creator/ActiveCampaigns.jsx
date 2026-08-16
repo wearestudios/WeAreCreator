@@ -8,7 +8,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "framer-motion";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     CalendarClock,
     Loader2,
@@ -20,7 +20,7 @@ import {
     Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { CREATOR_ACTIVE as IDS } from "@/constants/testIds";
 import {
     EmptyState,
@@ -137,10 +137,10 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
         setReleasing(true);
         try {
             await api.post(`/creator/collaborations/${collab.id}/cancel-slot`, {});
-            toast.success("Slot released — pick another when you're ready");
+            notifySuccess("Slot released — pick another when you're ready");
             onRefresh?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setReleasing(false);
         }

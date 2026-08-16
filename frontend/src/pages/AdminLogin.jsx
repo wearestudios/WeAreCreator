@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ export default function AdminLogin() {
         const res = await loginAdmin(email, password);
         setSubmitting(false);
         if (res.ok) {
-            toast.success(`Welcome, ${res.user.name}`);
+            notifySuccess(`Welcome, ${res.user.name}`);
             navigate(from, { replace: true });
         } else {
             setError(res.error);

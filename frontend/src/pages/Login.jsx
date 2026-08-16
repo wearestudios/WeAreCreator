@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { useAuth } from "@/context/AuthContext";
 import OtpForm from "@/components/OtpForm";
 
@@ -26,7 +26,7 @@ export default function Login() {
                     <Link
                         to="/"
                         data-testid="auth-logo"
-                        className="font-serif text-2xl transition-colors duration-200 hover:text-ember-500"
+                        className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-ember-500"
                     >
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
@@ -42,7 +42,7 @@ export default function Login() {
             {/* Right form */}
             <div className="flex items-center justify-center bg-background p-6 md:p-12">
                 <div className="w-full max-w-md">
-                    <Link to="/" className="mb-10 inline-block font-serif text-xl md:hidden">
+                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
 
@@ -70,7 +70,7 @@ export default function Login() {
                         onRequest={(p) => requestOtp({ phone: p, purpose: "login" })}
                         onVerify={(code) => verifyOtp({ phone: phone.trim().replace(/[\s\-()]/g, ""), code, purpose: "login" })}
                         onVerified={(user) => {
-                            toast.success(`Welcome back, ${user.name}`);
+                            notifySuccess(`Welcome back, ${user.name}`);
                             navigate(from, { replace: true });
                         }}
                         hint="Use the WhatsApp number linked to your account."

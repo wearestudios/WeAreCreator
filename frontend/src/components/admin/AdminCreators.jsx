@@ -2,7 +2,7 @@
 // status. The verification queue upstairs is a to-do list; this is the address
 // book — you come here to look someone up, not to act on them.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError } from "@/lib/feedback";
 import {
     ChevronLeft,
     ChevronRight,
@@ -13,7 +13,7 @@ import {
     Users,
     X,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -126,7 +126,7 @@ function CreatorDetail({ creatorId, onClose }) {
                 const { data: d } = await api.get(`/admin/creators/${creatorId}`);
                 if (live) setData(d);
             } catch (e) {
-                toast.error(formatApiError(e));
+                notifyError(e);
                 if (live) onClose();
             }
         })();
@@ -394,7 +394,7 @@ export default function AdminCreators() {
             });
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setData({ creators: [], total: 0, pages: 0 });
         }
     }, [page, search, status, niche, area]);
@@ -458,7 +458,7 @@ export default function AdminCreators() {
                         data-testid={IDS.search}
                         placeholder="Name, handle, phone or email"
                         aria-label="Search creators"
-                        className="h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                        className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                     />
                 </div>
                 <FilterSelect

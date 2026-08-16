@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
@@ -184,11 +184,11 @@ export default function BrandDashboardView({ user }) {
         setBusyId(campaign.id);
         try {
             await fn();
-            toast.success(successMessage);
+            notifySuccess(successMessage);
             setConfirm({ kind: null, campaign: null });
             await load();
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err, { onRetry: () => runAction(campaign, fn, successMessage) });
         } finally {
             setBusyId(null);
         }

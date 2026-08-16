@@ -2,9 +2,9 @@
 // they've actually paid) and the verification decision inline. Rejection
 // demands a reason — the brand is told, and the audit log keeps it.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import { BadgeCheck, Building2, IndianRupee, Search, XCircle } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ADMIN_BRANDS as IDS, STICKY_BAR } from "@/constants/testIds";
@@ -62,7 +62,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                 })),
             );
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRows([]);
         }
     }, []);
@@ -76,12 +76,12 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
         setSubmitting(true);
         try {
             await fn();
-            toast.success(msg);
+            notifySuccess(msg);
             setConfirm(null);
             await load();
             onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusyId(null);
             setSubmitting(false);
@@ -162,7 +162,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                         data-testid={IDS.search}
                         placeholder="Business name, email or phone"
                         aria-label="Search brands"
-                        className="h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                        className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                     />
                 </div>
                 <FilterSelect

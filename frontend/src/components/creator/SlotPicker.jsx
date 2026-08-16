@@ -7,7 +7,7 @@
 // before anything is written — a booked slot is a real seat at a real venue
 // on a real evening, and a mis-tap on a phone shouldn't be able to take one.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import {
     AlertCircle,
     ArrowLeft,
@@ -164,7 +164,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
             const body = { slot_id: chosen.id };
             if (picksOwnTime) body.preferred_time = time.toISOString();
             await api.post(`/creator/collaborations/${collab.id}/book-slot`, body);
-            toast.success("Slot booked — it's on your dashboard");
+            notifySuccess("Slot booked — it's on your dashboard");
             onOpenChange(false);
             onBooked?.();
         } catch (e) {

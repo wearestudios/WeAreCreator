@@ -106,7 +106,7 @@ const CreatorCard = ({ c, index }) => {
                             target="_blank"
                             rel="noreferrer"
                             data-testid={`creator-ig-${c.id}`}
-                            className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-ember-500"
+                            className="mt-1 -my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-ember-500"
                         >
                             <Instagram className="h-3.5 w-3.5" />
                             {handle}
@@ -323,7 +323,7 @@ export default function BrandCreatorDirectory() {
                             onClick={() => setCity(ANY)}
                             aria-pressed={city === ANY}
                             className={
-                                "rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.14em] transition-colors duration-200 " +
+                                "inline-flex min-h-[2.75rem] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.14em] transition-colors duration-200 " +
                                 (city === ANY
                                     ? "border-ember-500 bg-ember-500/15 text-ember-500"
                                     : "border-white/10 bg-white/[0.02] text-muted-foreground hover:border-ember-500/40 hover:text-foreground")
@@ -338,7 +338,7 @@ export default function BrandCreatorDirectory() {
                                 onClick={() => setCity(cty)}
                                 aria-pressed={city === cty}
                                 className={
-                                    "rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.14em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.14em] transition-colors duration-200 " +
                                     (city === cty
                                         ? "border-ember-500 bg-ember-500/15 text-ember-500"
                                         : "border-white/10 bg-white/[0.02] text-muted-foreground hover:border-ember-500/40 hover:text-foreground")
@@ -374,14 +374,14 @@ export default function BrandCreatorDirectory() {
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder="Search name, handle, niche…"
-                            className="h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
+                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
                         />
                     </div>
 
                     <Select value={niche} onValueChange={setNiche}>
                         <SelectTrigger
                             data-testid="directory-niche-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any niche" />
                         </SelectTrigger>
@@ -402,7 +402,7 @@ export default function BrandCreatorDirectory() {
                     <Select value={followers} onValueChange={setFollowers}>
                         <SelectTrigger
                             data-testid="directory-followers-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-48"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-48"
                         >
                             <SelectValue />
                         </SelectTrigger>
@@ -422,7 +422,7 @@ export default function BrandCreatorDirectory() {
                     <Select value={sort} onValueChange={setSort}>
                         <SelectTrigger
                             data-testid="directory-sort-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-52"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-52"
                         >
                             <ArrowDownUp className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue />

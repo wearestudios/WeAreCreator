@@ -3,7 +3,7 @@
 // live, resume while it's paused. The row is the workbench — there is no
 // separate "manage" page to lose.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     BadgeCheck,
     ChevronDown,
@@ -19,7 +19,7 @@ import {
     X,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ADMIN_CAMPAIGNS as IDS, STICKY_BAR } from "@/constants/testIds";
@@ -304,7 +304,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             });
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setData({ campaigns: [], total: 0, pages: 0 });
         }
     }, [page, search, status, brandFilter, from, to]);
@@ -318,13 +318,13 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         setSubmitting(true);
         try {
             await fn();
-            toast.success(msg);
+            notifySuccess(msg);
             setConfirm(null);
             setEditFor(null);
             await load();
             onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             if (e?.response?.status === 409) await load();
         } finally {
             setBusyId(null);
@@ -448,7 +448,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                         data-testid={IDS.search}
                         placeholder="Campaign title"
                         aria-label="Search campaigns"
-                        className="h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                        className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                     />
                 </div>
                 <FilterSelect

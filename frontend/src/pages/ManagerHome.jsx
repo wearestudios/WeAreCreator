@@ -3,10 +3,10 @@
 // happening today is the only one they care about while standing in a venue.
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError } from "@/lib/feedback";
 import { CalendarClock, ChevronRight, MapPin, Users } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { MANAGER_HOME as IDS } from "@/constants/testIds";
 import {
     CAMPAIGN_TYPE_META,
@@ -33,7 +33,7 @@ export default function ManagerHome() {
             const { data } = await api.get("/manager/campaigns");
             setRows(sortForToday(data));
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRows([]);
         }
     }, []);

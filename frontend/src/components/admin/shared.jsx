@@ -211,7 +211,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
                     type="button"
                     onClick={onRefresh}
                     data-testid={refreshTestId}
-                    className="inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                 >
                     <RotateCw className="h-3.5 w-3.5" />
                     Refresh
@@ -235,7 +235,7 @@ export const FilterSelect = ({ label, value, onChange, options, testid, classNam
             data-testid={testid}
             aria-label={label}
             className={
-                "h-10 w-full rounded-md border-white/10 bg-background/60 text-sm capitalize focus:ring-ember-500 sm:w-44 " +
+                "h-11 md:h-10 w-full rounded-md border-white/10 bg-background/60 text-sm capitalize focus:ring-ember-500 sm:w-44 " +
                 className
             }
         >
@@ -300,7 +300,7 @@ export const DateFilter = ({ value, onChange, label, testid }) => {
                     type="button"
                     data-testid={testid}
                     className={
-                        "inline-flex h-10 items-center gap-2 rounded-md border border-white/10 bg-background/60 px-3 text-sm transition-colors duration-200 hover:border-white/25 " +
+                        "inline-flex h-11 md:h-10 items-center gap-2 rounded-md border border-white/10 bg-background/60 px-3 text-sm transition-colors duration-200 hover:border-white/25 " +
                         (value ? "text-foreground" : "text-muted-foreground")
                     }
                 >

@@ -7,7 +7,7 @@
 // the tie-break inside each band, and anything past two days is marked so it
 // stops blending in.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     BadgeCheck,
@@ -20,7 +20,7 @@ import {
     Wallet,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ADMIN_QUEUE as IDS } from "@/constants/testIds";
 import { AdvanceDialog, ConfirmDialog } from "./dialogs";
@@ -199,7 +199,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             setItems(rows);
             setWaiting(stillWaiting);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setItems([]);
             setWaiting([]);
         }
@@ -215,13 +215,13 @@ export default function ActionQueue({ onChanged, feePercent }) {
             setSubmitting(true);
             try {
                 await fn();
-                toast.success(successMessage);
+                notifySuccess(successMessage);
                 setConfirm(null);
                 setAdvance(null);
                 await load();
                 onChanged?.();
             } catch (e) {
-                toast.error(formatApiError(e));
+                notifyError(e);
                 // A 409 means somebody else moved it — the list is stale either way.
                 if (e?.response?.status === 409) await load();
             } finally {

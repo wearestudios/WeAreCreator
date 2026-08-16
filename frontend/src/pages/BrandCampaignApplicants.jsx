@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     Check,
@@ -710,11 +710,11 @@ export default function BrandCampaignApplicants() {
         setBusyId(applicant.id);
         try {
             await api.post(`/brand/collaborations/${applicant.id}/${path}`, body || {});
-            toast.success(successMessage);
+            notifySuccess(successMessage);
             closeDialog();
             await load();
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err, { onRetry: () => act(applicant, path, body, successMessage) });
             // A 409 means somebody else moved it — refresh so the buttons match.
             if (err?.response?.status === 409) await load();
         } finally {
@@ -799,7 +799,7 @@ export default function BrandCampaignApplicants() {
                 <Link
                     to="/dashboard"
                     data-testid="applicants-back-link"
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Your campaigns
@@ -871,7 +871,7 @@ export default function BrandCampaignApplicants() {
                                 data-testid={`applicants-filter-${f.key}`}
                                 onClick={() => setFilter(f.key)}
                                 className={
-                                    "rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (active
                                         ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                         : "border-white/10 bg-transparent text-muted-foreground hover:border-white/25 hover:text-foreground")

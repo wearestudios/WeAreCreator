@@ -118,7 +118,7 @@ export default function Hero({ user, profile, earnings }) {
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.handle}
-                            className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ember-500"
+                            className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ember-500"
                         >
                             <Instagram className="h-4 w-4" />@{handle}
                         </a>

@@ -8,7 +8,7 @@
 // line of red text.
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { AlertCircle, BadgeCheck, Instagram, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
@@ -57,7 +57,7 @@ export default function InstagramCallback() {
                     state: oauthState,
                 });
                 setState({ phase: "success", message: "", username: data.username });
-                toast.success("Instagram connected — your numbers are verified");
+                notifySuccess("Instagram connected — your numbers are verified");
                 // Long enough to read the confirmation, short enough not to
                 // feel like a dead end.
                 setTimeout(() => navigate("/onboarding/creator", { replace: true }), 1800);

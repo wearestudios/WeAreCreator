@@ -4,7 +4,7 @@
 // a story set plus a carousel, and making a creator pick which one "counts"
 // only produces a follow-up message.
 import React, { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { Link as LinkIcon, Loader2, Plus as PlusIcon, Send, X as XIcon } from "lucide-react";
 import {
     Dialog,
@@ -69,7 +69,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
             await api.post(`/creator/collaborations/${collab.id}/submit_content`, {
                 content_urls: clean,
             });
-            toast.success(
+            notifySuccess(
                 clean.length === 1
                     ? "Content submitted — the WeAre team will review it"
                     : `${clean.length} links submitted — the WeAre team will review them`,

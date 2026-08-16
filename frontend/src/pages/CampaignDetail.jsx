@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyInfo, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowRight,
@@ -113,7 +113,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                 pitch: trimmedPitch,
                 quoted_rate: numericRate,
             });
-            toast.success("Application submitted");
+            notifySuccess("Application submitted");
             onApplied(data);
             onOpenChange(false);
         } catch (err) {
@@ -121,7 +121,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
             if (status === 409) {
                 onApplied({ duplicate: true });
                 onOpenChange(false);
-                toast.info("You've already applied to this campaign");
+                notifyInfo("You've already applied to this campaign");
             } else {
                 setError(formatApiError(err));
             }

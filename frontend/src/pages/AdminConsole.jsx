@@ -148,7 +148,7 @@ export default function AdminConsole() {
                                 onClick={() => select(key)}
                                 data-testid={IDS.tab(key)}
                                 className={
-                                    "inline-flex flex-none items-center gap-2 whitespace-nowrap rounded-md border px-4 py-2.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] flex-none items-center gap-2 whitespace-nowrap rounded-md border px-4 py-2.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (on
                                         ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                         : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")

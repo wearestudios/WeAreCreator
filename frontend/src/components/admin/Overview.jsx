@@ -5,7 +5,7 @@
 // stat cards are not decoration — each one is the filter that produced it, so
 // clicking "pending review" shows you exactly the campaigns that number counts.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowUpDown,
@@ -19,7 +19,7 @@ import {
     X,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -123,7 +123,7 @@ export default function Overview({ onChanged }) {
             });
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setData({ campaigns: {}, awaiting: {}, totals: {}, campaign_summary: [] });
         }
     }, []);
@@ -360,7 +360,7 @@ export default function Overview({ onChanged }) {
                             aria-pressed={on}
                             data-testid={IDS.sort(s.key)}
                             className={
-                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                "inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                 (on
                                     ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                     : "border-white/10 text-muted-foreground hover:border-white/25")
@@ -490,7 +490,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
             const { data: d } = await api.get(`/admin/campaigns/${campaignId}/applicants`);
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             onBack();
         }
     }, [campaignId, onBack]);
@@ -503,12 +503,12 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
         setBusyId(entry.collaboration_id);
         try {
             await request();
-            toast.success(message);
+            notifySuccess(message);
             setConfirm(null);
             await load();
             onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusyId(null);
             setSubmitting(false);

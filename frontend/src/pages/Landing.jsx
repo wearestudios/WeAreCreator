@@ -421,7 +421,7 @@ function Hero() {
                     <a
                         href={MANAGED_MAILTO}
                         data-testid={HERO_IDS.managedLink}
-                        className="group inline-flex items-center gap-1 pt-2 text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline sm:pt-0 sm:pl-3"
+                        className="group -mb-2 mt-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:mt-0 sm:pl-3"
                     >
                         Prefer we run it? Talk to our team
                         <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-1" />
@@ -446,7 +446,7 @@ function Hero() {
                                     aria-label={s.kicker}
                                     data-testid={HERO_IDS.dot(i)}
                                     onClick={() => setIndex(i)}
-                                    className="group p-2 -m-2"
+                                    className="group -m-2 grid h-11 w-11 place-items-center rounded-full p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-auto md:w-auto"
                                 >
                                     <span
                                         className={
@@ -745,7 +745,7 @@ function ClosingCta() {
                                 data-testid={CLOSING_IDS.toggleOption(r)}
                                 onClick={() => setRole(r)}
                                 className={
-                                    "rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] transition-colors duration-200 " +
                                     (on
                                         ? "bg-ember-500 text-black"
                                         : "text-muted-foreground hover:text-foreground")
@@ -808,7 +808,7 @@ function ClosingCta() {
                                 <a
                                     href={MANAGED_MAILTO}
                                     data-testid={CLOSING_IDS.managedLink}
-                                    className="text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline"
+                                    className="-my-2 min-h-[2.75rem] py-2 md:my-0 md:min-h-0 md:py-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background inline-flex items-center text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline"
                                 >
                                     Or have our team run the campaign for you
                                 </a>

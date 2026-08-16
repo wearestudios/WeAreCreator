@@ -2,9 +2,9 @@
 // is the point: every reject, cancel, revert and refund records one, and this
 // is where it surfaces.
 import React, { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notifyError } from "@/lib/feedback";
 import { ScrollText, X } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { ADMIN_AUDIT as IDS, STICKY_BAR } from "@/constants/testIds";
 import {
@@ -101,7 +101,7 @@ export default function AdminAudit() {
             });
             setRows(data);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRows([]);
         }
     }, [family, from, to]);
@@ -187,7 +187,7 @@ export default function AdminAudit() {
                     data-testid={IDS.filterActor}
                     placeholder="Filter by admin name"
                     aria-label="Filter by admin"
-                    className="h-10 w-full rounded-md border-white/10 bg-background/60 text-sm focus-visible:ring-ember-500 sm:w-48"
+                    className="h-11 md:h-10 w-full rounded-md border-white/10 bg-background/60 text-sm focus-visible:ring-ember-500 sm:w-48"
                 />
                 <DateFilter label="From" value={from} onChange={setFrom} testid={IDS.filterDateFrom} />
                 <DateFilter label="To" value={to} onChange={setTo} testid={IDS.filterDateTo} />

@@ -5,7 +5,7 @@
 // changes shape at that point — you stop reading and start tapping.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     CalendarClock,
@@ -20,7 +20,7 @@ import {
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
     MANAGER_CAMPAIGN as IDS,
@@ -71,7 +71,7 @@ export default function ManagerCampaign() {
             setRoster(r.data);
             setSlots(s.data.slots);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRoster({ roster: [] });
             setSlots([]);
         }
@@ -102,15 +102,15 @@ export default function ManagerCampaign() {
         try {
             if (slotEditor?.slot) {
                 await api.patch(`/manager/slots/${slotEditor.slot.id}`, body);
-                toast.success("Slot updated");
+                notifySuccess("Slot updated");
             } else {
                 await api.post("/manager/slots", { campaign_id: id, ...body });
-                toast.success("Slot added");
+                notifySuccess("Slot added");
             }
             setSlotEditor(null);
             await load();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusy(false);
         }
@@ -120,10 +120,10 @@ export default function ManagerCampaign() {
         setBusy(true);
         try {
             await api.delete(`/manager/slots/${slot.id}`);
-            toast.success("Slot removed");
+            notifySuccess("Slot removed");
             await load();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusy(false);
         }
@@ -149,7 +149,7 @@ export default function ManagerCampaign() {
             a.remove();
             URL.revokeObjectURL(url);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusy(false);
         }
@@ -162,7 +162,7 @@ export default function ManagerCampaign() {
             setBroadcastReport(data);
             await load();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusy(false);
         }
@@ -177,7 +177,7 @@ export default function ManagerCampaign() {
                 <Link
                     to="/manager"
                     data-testid={IDS.back}
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -263,7 +263,7 @@ export default function ManagerCampaign() {
                                                 onClick={() => setTab(t.key)}
                                                 data-testid={IDS.tab(t.key)}
                                                 className={
-                                                    "flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                     (on
                                                         ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                                         : "border-white/10 text-muted-foreground")

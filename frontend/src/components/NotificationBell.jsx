@@ -77,7 +77,7 @@ export const NotificationBell = () => {
                             ? `Notifications, ${unread} unread`
                             : "Notifications"
                     }
-                    className="relative rounded-full p-2 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground"
+                    className="relative grid h-11 w-11 place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-9 md:w-9"
                 >
                     <Bell className="h-4 w-4" />
                     {unread > 0 && (
