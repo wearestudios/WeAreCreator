@@ -443,6 +443,10 @@ BrandDocumentType = Literal[
     "shop_establishment_licence",
 ]
 
+# Enough for several proofs plus a re-scan after a rejection, and low enough
+# that the collection can't be used as free file storage.
+MAX_BRAND_DOCUMENTS = 12
+
 BRAND_DOCUMENT_LABELS = {
     "gst_certificate": "GST certificate",
     "business_registration": "Business registration",
@@ -1534,6 +1538,16 @@ PRIVATE_UPLOAD_DIR = Path(
 # the bytes, never from the client — plus PDF, because that is what a licence
 # is usually downloaded as.
 _DOCUMENT_SIGNATURES = ((b"%PDF-", "application/pdf", ".pdf"),)
+
+# Derived from the signature tables rather than typed out, so the list the
+# upload form offers and the list `sniff_document_type` will actually accept
+# cannot come apart. An `accept=` attribute that promises a format the sniffer
+# rejects is worse than no attribute: it invites the file and then refuses it.
+ACCEPTED_DOCUMENT_MIMES = frozenset(
+    [mime for _, mime, _ in _DOCUMENT_SIGNATURES]
+    + [mime for _, mime, _ in _IMAGE_SIGNATURES]
+    + ["image/webp"]  # two-part magic, so it isn't in _IMAGE_SIGNATURES
+)
 
 
 def sniff_document_type(head: bytes) -> Optional[tuple]:
@@ -4847,6 +4861,14 @@ async def _brand_profile_response(profile: dict) -> dict:
         "accepted_document_types": [
             {"value": v, "label": BRAND_DOCUMENT_LABELS[v]} for v in BRAND_DOCUMENT_LABELS
         ],
+        # What the uploader may send, told rather than guessed. The form
+        # pre-checks each file so a 6MB scan fails in the browser instead of
+        # after a minute on a hotel wifi — but the check is only honest if it
+        # uses the server's number, and a copy of `MAX_UPLOAD_MB` in JavaScript
+        # is a copy that drifts the day somebody raises it here.
+        "max_document_bytes": max_upload_bytes(),
+        "accepted_mime_types": sorted(ACCEPTED_DOCUMENT_MIMES),
+        "max_documents": MAX_BRAND_DOCUMENTS,
     }
     return out
 
@@ -4965,7 +4987,7 @@ async def upload_brand_document(
         raise HTTPException(status_code=404, detail="Brand profile not found")
 
     existing = await db.brand_documents.count_documents({"brand_id": brand_oid})
-    if existing >= 12:
+    if existing >= MAX_BRAND_DOCUMENTS:
         raise HTTPException(
             status_code=409,
             detail="That's a lot of documents. Remove one before adding another.",

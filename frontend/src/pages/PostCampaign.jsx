@@ -18,6 +18,11 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { Navbar } from "@/components/Navbar";
+import {
+    FormPageSkeleton,
+    LoadingAnnouncement,
+} from "@/components/data/PageSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -121,6 +126,14 @@ export default function PostCampaign() {
                     setEventDate(toDateInput(data.event_date));
                     setStartDate(toDateInput(data.start_date));
                     setEndDate(toDateInput(data.end_date));
+                    // These three were never loaded, and buildPayload sends
+                    // them unconditionally — so opening a campaign for any
+                    // edit and saving wiped the venue, the arrival
+                    // instructions and the on-site contact, which are the
+                    // three things a creator needs to turn up.
+                    setVenueAddress(data.venue_address || "");
+                    setVenueInstructions(data.venue_instructions || "");
+                    setOnSiteContact(data.on_site_contact || "");
                 } catch (err) {
                     if (!cancelled) setError(formatApiError(err));
                 }
@@ -257,9 +270,33 @@ export default function PostCampaign() {
     };
 
     if (loadingProfile) {
+        // The real page is Navbar + max-w-3xl main, so the skeleton is too. The
+        // old version centred a spinner in the whole viewport, which meant the
+        // form did not so much arrive as replace a different page.
         return (
-            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground grain-page">
-                <Loader2 className="h-5 w-5 animate-spin" />
+            <div
+                data-testid="post-campaign-loading"
+                className="min-h-screen bg-background text-foreground grain-page"
+            >
+                <Navbar />
+                <main className="mx-auto max-w-3xl px-6 py-12 md:py-16">
+                    <LoadingAnnouncement>
+                        {isEditing ? "Loading campaign…" : "Loading the form…"}
+                    </LoadingAnnouncement>
+                    <Skeleton className="h-3 w-24" aria-hidden="true" />
+                    <div className="mt-6">
+                        <FormPageSkeleton
+                            testid="post-campaign-skeleton"
+                            sections={[
+                                // The type picker: three cards, then the dates.
+                                { fields: 1, columns: false },
+                                { fields: 3 },
+                                { fields: 2, columns: true },
+                                { fields: 2, columns: true },
+                            ]}
+                        />
+                    </div>
+                </main>
             </div>
         );
     }

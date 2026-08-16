@@ -16,6 +16,10 @@ import {
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import {
+    DetailPageSkeleton,
+    LoadingAnnouncement,
+} from "@/components/data/PageSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
@@ -449,12 +453,19 @@ export default function CampaignDetail() {
     }, [campaign, isCreator, user]);
 
     if (loading) {
+        // Same wrapper and the same <main> as the loaded page, so the swap
+        // moves the header and the sidebar by nothing. A centred spinner used
+        // to sit in a py-32 box and everything then jumped up when it left.
         return (
-            <div className="min-h-screen bg-background grain-page">
+            <div
+                data-testid="campaign-detail-loading"
+                className="min-h-screen bg-background grain-page"
+            >
                 <Navbar />
-                <div className="grid place-items-center py-32 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
+                <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
+                    <LoadingAnnouncement>Loading campaign…</LoadingAnnouncement>
+                    <DetailPageSkeleton testid="campaign-detail-skeleton" />
+                </main>
             </div>
         );
     }

@@ -271,6 +271,36 @@ before the field existed, and startup backfills it.
 - The queue is `verified: false` **and** `verification_state` in
   `pending_verification | rejected` — a bare signup is not a queue item.
 
+The brand's half of this is `pages/BrandOnboarding.jsx` plus
+`components/brand/VerificationDocuments.jsx`. For a long time it did not exist:
+the four endpoints above shipped with no caller anywhere in the frontend, so a
+brand could sign up, draft, and then hit `_verified_brand_or_403` forever with
+no route to the thing that would clear it. If a backend flow has no UI it is not
+shipped, whatever the tests say.
+
+- Onboarding and verification are **one page in two halves**, because the second
+  is invisible otherwise — an unverified brand drafts happily and only meets the
+  wall at publish. The top is the thirty-second setup; below it are the fields a
+  reviewer needs, the documents, and the submit.
+- Saving is partial and submitting is not, mirroring the server exactly: `Save`
+  writes whatever is filled in, `Send for verification` demands the set. The
+  button is disabled when it would 409, and **`missing_fields` is rendered as a
+  list** — a grey button with no explanation is how a form becomes a support
+  ticket.
+- The upload's limits come from the server (`max_document_bytes`,
+  `accepted_mime_types`, `max_documents` on the verification block) and are
+  checked in the browser before a byte moves, so a 6MB scan fails instantly
+  instead of after a minute on mobile data. `ACCEPTED_DOCUMENT_MIMES` is derived
+  from the signature tables `sniff_document_type` actually uses, so the `accept=`
+  attribute cannot offer a format the sniffer will reject.
+- **Uploads are sequential, one progress bar each, and the picker is closed
+  while any is in flight.** Parallel uploads on a phone make every bar crawl and
+  none finish; a silent disabled button gets pressed again, and the second press
+  is a second document in the reviewer's queue.
+- A file that fails the local check is **queued as already-failed rather than
+  dropped**, with the error on that file's own row. Dropping it silently is how
+  somebody submits believing four documents went up.
+
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
 publish, the creator directory and its filters, the applicant list, accept,
@@ -647,6 +677,34 @@ Anything new that lists data uses it rather than solving these again:
   pinned. `overflow-x: auto` computes `overflow-y` to `auto` too, so the
   container is the scroller and has to own a max-height; a sticky header with
   nothing to stick against does nothing at all.
+
+### Page skeletons
+
+`components/data/PageSkeleton.jsx` is the same idea one level up, for detail and
+form *pages* rather than lists: `DetailPageSkeleton`, `FormPageSkeleton`,
+`PageHeaderSkeleton`, `FieldSkeleton`, `LoadingAnnouncement`. Separate from
+DenseView because the problem is different — a list skeleton stands in for rows
+whose count is unknown and whose height is uniform, so sketching them is free,
+while a page skeleton stands in for one arrangement that will land in a known
+place and has to be measured against it.
+
+- **The skeleton renders inside the real page's chrome** — same `Navbar`, same
+  `<main>`, same `max-w-*`. The centred spinners these replaced sat in their own
+  full-viewport box, so the page did not arrive so much as replace a different
+  one.
+- Heights are **measured against a rendered element, not derived from the type
+  scale** — line-height is what occupies space, and `text-fluid-*` is a clamp, so
+  a headline is a different height at 375 and 1280. Where content decides the
+  height, reserve both.
+- The footer action bar is part of the shape. It is the tallest single element on
+  a phone (`flex-col-reverse` stacks full-width buttons), so leaving it out is
+  what makes a skeleton shift by 100px on mobile and 0 on a laptop.
+- Skeletons are `aria-hidden`; `LoadingAnnouncement` is the `role="status"` that
+  is not, so a screen reader hears "loading" rather than silence.
+- Verified by measurement, not by eye: CLS is **0.0000** on CampaignDetail,
+  PostCampaign (new and edit) and BrandOnboarding at 375 and 1280, and 0.0048 on
+  Landing's below-fold brief grid. When checking this, confirm the skeleton
+  actually rendered — a page that redirects to `/login` also scores zero.
 
 ## Local test accounts
 

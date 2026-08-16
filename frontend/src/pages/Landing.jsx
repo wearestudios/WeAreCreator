@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import {
@@ -553,6 +554,48 @@ function Reach() {
 // ---------------------------------------------------------------------------
 
 /**
+ * A brief card before its brief arrives.
+ *
+ * Structurally the same element as the real card rather than a box of its
+ * average height: same `p-7`, same order of blocks, same `flex-1` on the body
+ * and the same bordered footer. That matters because the cards sit in a grid
+ * row and stretch to the tallest of the three — a flat `h-56` was right at one
+ * viewport and short by most of the footer everywhere else, so the section
+ * below it jumped when the fetch landed.
+ */
+function BriefCardSkeleton() {
+    return (
+        <div
+            aria-hidden="true"
+            className="flex flex-col rounded-lg border border-white/10 bg-card p-7 grain-surface"
+        >
+            <div className="flex items-center justify-between">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-20" />
+            </div>
+            {/* text-2xl leading-tight, and titles routinely wrap to two.
+              * These heights are measured against a rendered card, not
+              * derived from the type scale — line-height, not font-size, is
+              * what occupies the space. */}
+            <Skeleton className="mt-5 h-5 w-full" />
+            <Skeleton className="mt-1.5 h-5 w-2/3" />
+            <Skeleton className="mt-2 h-3 w-24" />
+            <div className="mt-4 flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+            </div>
+            <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
+                <div>
+                    <Skeleton className="h-2.5 w-20" />
+                    <Skeleton className="mt-1 h-7 w-24" />
+                </div>
+                <Skeleton className="h-2.5 w-16" />
+            </div>
+        </div>
+    );
+}
+
+/**
  * Real open briefs, before anyone signs up.
  *
  * The page promises "discover briefs", but the campaign feed needs an account
@@ -612,10 +655,7 @@ function LiveBriefs() {
                 <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                     {briefs === null
                         ? Array.from({ length: 3 }).map((_, i) => (
-                              <div
-                                  key={i}
-                                  className="h-56 animate-pulse rounded-lg border border-white/10 bg-card grain-surface"
-                              />
+                              <BriefCardSkeleton key={i} />
                           ))
                         : briefs.map((b, idx) => (
                               <motion.article
