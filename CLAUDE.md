@@ -607,6 +607,25 @@ Anything new that lists data uses it rather than solving these again:
   container is the scroller and has to own a max-height; a sticky header with
   nothing to stick against does nothing at all.
 
+## Local test accounts
+
+`backend/seed_personas.py` seeds one signed-in-able account per persona —
+verified creator, half-finished creator, creator awaiting review, verified
+brand manager, unverified brand manager, campaign manager — plus a campaign for
+the manager to manage. Idempotent, keyed on phone. See `PREVIEW.md` for the
+numbers.
+
+**A script, not an endpoint.** A route that mints pre-verified accounts with
+known phone numbers is a backdoor whether or not it is guarded, and it would sit
+in the route table in production one misconfiguration from reachable. A script
+cannot be called over the network.
+
+It refuses to run unless `_simulation_allowed()` — the same gate the OTP log
+uses. That is not an extra precaution but the honest condition: without
+simulation you cannot read the login code, so the accounts would be unusable
+anyway. Numbers are `+9199000000NN`, patterned so one in a production database
+is a self-announcing bug.
+
 ## Tests
 
 ```bash
