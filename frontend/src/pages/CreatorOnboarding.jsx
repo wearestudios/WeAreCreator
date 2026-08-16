@@ -17,7 +17,7 @@
 // button and the rule behind it can never disagree.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { motion, useReducedMotion } from "framer-motion";
 import {
     ArrowRight,
@@ -166,7 +166,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                                 type="button"
                                 onClick={() => remove(v)}
                                 aria-label={`Remove ${v}`}
-                                className="rounded-full p-0.5 opacity-70 transition-opacity duration-200 hover:opacity-100"
+                                className="-mr-1 grid h-9 w-9 place-items-center rounded-full opacity-70 transition-opacity duration-200 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:-mr-0.5 md:h-5 md:w-5"
                             >
                                 <X className="h-3 w-3" />
                             </button>
@@ -178,7 +178,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={onKeyDown}
                         onBlur={() => draft.trim() && add(draft)}
-                        className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+                        className="min-h-[2.75rem] min-w-[140px] flex-1 bg-transparent px-2 py-1 text-base outline-none placeholder:text-muted-foreground md:min-h-0 md:text-sm"
                         placeholder={values.length === 0 ? placeholder : "Add another…"}
                     />
                 </div>
@@ -191,7 +191,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                             key={s}
                             onClick={() => add(s)}
                             data-testid={suggestId(s.replace(/\s+/g, "-"))}
-                            className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                            className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
                         >
                             + {s}
                         </button>
@@ -333,7 +333,7 @@ export default function CreatorOnboarding() {
                 headers: { "Content-Type": undefined },
             });
             setProfileImageUrl(data.profile_image_url);
-            toast.success("Photo updated");
+            notifySuccess("Photo updated");
             refreshCompleteness();
         } catch (err) {
             setImageError(formatApiError(err));
@@ -388,7 +388,7 @@ export default function CreatorOnboarding() {
             const { data } = await api.put("/creator/profile", payload);
             applyProfile({ ...data, profile_image_url: data.profile_image_url ?? profileImageUrl });
             await refresh(); // pick up any name change in the navbar
-            if (!quiet) toast.success("Saved — come back any time");
+            if (!quiet) notifySuccess("Saved — come back any time");
             return true;
         } catch (err) {
             setError(formatApiError(err));
@@ -406,7 +406,7 @@ export default function CreatorOnboarding() {
         setError("");
         try {
             await api.post("/creator/profile/submit-for-review");
-            toast.success("Sent to the WeAre team — we'll come back within 48 hours");
+            notifySuccess("Sent to the WeAre team — we'll come back within 48 hours");
             navigate("/dashboard", { replace: true, state: { justOnboarded: true } });
         } catch (err) {
             setError(formatApiError(err));

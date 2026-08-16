@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
@@ -23,8 +23,11 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ListSkeleton } from "@/components/data/DenseView";
 import { BRAND_CAMPAIGN_CONTROLS } from "@/constants/testIds";
 import {
     Dialog,
@@ -182,11 +185,11 @@ export default function BrandDashboardView({ user }) {
         setBusyId(campaign.id);
         try {
             await fn();
-            toast.success(successMessage);
+            notifySuccess(successMessage);
             setConfirm({ kind: null, campaign: null });
             await load();
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err, { onRetry: () => runAction(campaign, fn, successMessage) });
         } finally {
             setBusyId(null);
         }
@@ -237,8 +240,23 @@ export default function BrandDashboardView({ user }) {
             <Navbar />
             <main className="mx-auto max-w-7xl px-6 py-12 md:py-16">
                 {!data && !error && (
-                    <div className="grid place-items-center py-24 text-muted-foreground">
-                        <Loader2 className="h-5 w-5 animate-spin" />
+                    <div data-testid="brand-dashboard-skeleton" aria-hidden="true">
+                        <Skeleton className="h-3 w-40" />
+                        <Skeleton className="mt-6 h-11 w-2/3 max-w-md" />
+                        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="rounded-lg border border-white/10 bg-card p-6 grain-surface"
+                                >
+                                    <Skeleton className="h-3 w-24" />
+                                    <Skeleton className="mt-4 h-8 w-16" />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-12">
+                            <ListSkeleton rows={3} />
+                        </div>
                     </div>
                 )}
                 {error && (
@@ -429,8 +447,18 @@ export default function BrandDashboardView({ user }) {
                                                             </div>
                                                             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                                                                 <span className="inline-flex items-center gap-1">
-                                                                    <IndianRupee className="h-3.5 w-3.5" />
-                                                                    {formatRupees(c.budget_per_creator)} / creator
+                                                                    {isBarter(c) ? (
+                                                                        "Barter"
+                                                                    ) : (
+                                                                        <>
+                                                                            <IndianRupee className="h-3.5 w-3.5" />
+                                                                            {formatCompensation(c).amount ?? "—"}
+                                                                            {" / creator"}
+                                                                            {formatCompensation(c).suffix
+                                                                                ? ` · ${formatCompensation(c).suffix}`
+                                                                                : ""}
+                                                                        </>
+                                                                    )}
                                                                 </span>
                                                                 <span>·</span>
                                                                 <span className="inline-flex items-center gap-1">

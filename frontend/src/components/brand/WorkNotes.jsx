@@ -8,10 +8,10 @@
 // Collapsed by default. A thread is something you open when you are deciding
 // about a person, not a wall of text on every row of a list.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { notifyError } from "@/lib/feedback";
 import { IndianRupee, Loader2, MessageSquare, Send } from "lucide-react";
 
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { WORK_NOTES } from "@/constants/testIds";
@@ -54,7 +54,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
             const { data } = await api.get(`/collaborations/${collaborationId}/notes`);
             setThread(data);
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err, { onRetry: () => load() });
         } finally {
             setLoading(false);
         }
@@ -84,7 +84,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
             setThread((t) => ({ ...(t || {}), notes: [...(t?.notes || []), data] }));
             setDraft("");
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err);
         } finally {
             setSending(false);
         }
@@ -106,7 +106,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                 onClick={() => setOpen((v) => !v)}
                 data-testid={WORK_NOTES.toggle(collaborationId)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.03]"
+                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
             >
                 <span className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                     <MessageSquare className="h-3.5 w-3.5" />

@@ -11,7 +11,7 @@
 //   - that a personal account can't do this and how to change that,
 //   - that the whole thing is optional and self-reported numbers still work.
 import React, { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import {
     AlertCircle,
     BadgeCheck,
@@ -104,7 +104,7 @@ export default function InstagramConnect({ onChanged }) {
         try {
             await api.delete("/creator/instagram");
             await load();
-            toast.success("Instagram disconnected — back to your own figure");
+            notifySuccess("Instagram disconnected — back to your own figure");
             onChanged?.();
         } catch (e) {
             setError(formatApiError(e));

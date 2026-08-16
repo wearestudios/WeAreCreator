@@ -10,6 +10,7 @@
 // see why somebody was suggested has been handed an oracle.
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { notifyError, notifyInfo, notifySuccess } from "@/lib/feedback";
 import {
     ChevronDown,
     ExternalLink,
@@ -63,7 +64,7 @@ function ScoreBreakdown({ row }) {
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                className="inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
             >
                 Why this score
                 <ChevronDown
@@ -149,19 +150,19 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
             );
             const outcome = result?.results?.[0];
             if (outcome?.status === "invited") {
-                toast.success(`Invited ${row.name || "creator"}`);
+                notifySuccess(`Invited ${row.name || "creator"}`);
             } else if (outcome?.status === "already_invited") {
-                toast.info(outcome.reason);
+                notifyInfo(outcome.reason);
             } else {
                 // A partial send is reported, not swallowed: the invitation row
                 // exists either way and can be retried.
-                toast.error(outcome?.reason || "Couldn't send that invite.");
+                notifyError(outcome?.reason || "Couldn't send that invite.");
             }
             if (outcome?.status !== "failed") {
                 setInvited((s) => new Set(s).add(row.user_id));
             }
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err);
         } finally {
             setInviting((s) => {
                 const next = new Set(s);

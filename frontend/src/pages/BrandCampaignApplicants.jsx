@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     Check,
@@ -18,9 +18,18 @@ import {
     X,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import {
+    ApplicantListSkeleton,
+    ListEmptyState,
+    ResultCount,
+    StickyBar,
+} from "@/components/data/DenseView";
+import { STICKY_BAR } from "@/constants/testIds";
 import { WorkNotes } from "@/components/brand/WorkNotes";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -231,9 +240,14 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                                 className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                             />
                         </div>
+                        {/* `budget` is null on a barter brief, where the stored
+                          * figure is a leftover and quoting it as "your budget"
+                          * would be wrong. */}
                         <p className="mt-2 text-xs text-muted-foreground">
-                            They quoted ₹{formatRupees(applicant?.quoted_rate)} · your
-                            budget is ₹{formatRupees(budget)} per creator.
+                            They quoted ₹{formatRupees(applicant?.quoted_rate)}
+                            {budget != null
+                                ? ` · your budget is ₹${formatRupees(budget)} per creator.`
+                                : " · this brief is barter."}
                         </p>
                     </div>
 
@@ -702,11 +716,11 @@ export default function BrandCampaignApplicants() {
         setBusyId(applicant.id);
         try {
             await api.post(`/brand/collaborations/${applicant.id}/${path}`, body || {});
-            toast.success(successMessage);
+            notifySuccess(successMessage);
             closeDialog();
             await load();
         } catch (err) {
-            toast.error(formatApiError(err));
+            notifyError(err, { onRetry: () => act(applicant, path, body, successMessage) });
             // A 409 means somebody else moved it — refresh so the buttons match.
             if (err?.response?.status === 409) await load();
         } finally {
@@ -733,12 +747,29 @@ export default function BrandCampaignApplicants() {
     }, [applicants, filter]);
 
     if (!data && !error) {
+        // The masthead, the tab row and three applicant rows, at the sizes the
+        // real ones occupy — so the page fills in rather than jumping into
+        // place.
         return (
             <div className="min-h-screen bg-background grain-page">
                 <Navbar />
-                <div className="grid place-items-center py-32 text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
+                <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="mt-6 h-11 w-3/4 max-w-lg" />
+                    <div className="mt-5 flex flex-wrap gap-5">
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-36" />
+                        <Skeleton className="h-4 w-24" />
+                    </div>
+                    <div className="mt-10 flex flex-wrap gap-2 border-b border-white/10 pb-5">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <Skeleton key={i} className="h-8 w-28 rounded-full" />
+                        ))}
+                    </div>
+                    <div className="mt-8">
+                        <ApplicantListSkeleton rows={3} testid="applicants-skeleton" />
+                    </div>
+                </main>
             </div>
         );
     }
@@ -774,7 +805,7 @@ export default function BrandCampaignApplicants() {
                 <Link
                     to="/dashboard"
                     data-testid="applicants-back-link"
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Your campaigns
@@ -791,8 +822,17 @@ export default function BrandCampaignApplicants() {
                 </h1>
                 <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
-                        <IndianRupee className="h-3.5 w-3.5" />
-                        {formatRupees(campaign.budget_per_creator)} per creator
+                        {isBarter(campaign) ? (
+                            "Barter"
+                        ) : (
+                            <>
+                                <IndianRupee className="h-3.5 w-3.5" />
+                                {formatCompensation(campaign).amount ?? "\u2014"} per creator
+                                {formatCompensation(campaign).suffix
+                                    ? ` \u00b7 ${formatCompensation(campaign).suffix}`
+                                    : ""}
+                            </>
+                        )}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                         <Users className="h-3.5 w-3.5" />
@@ -823,10 +863,17 @@ export default function BrandCampaignApplicants() {
                     </div>
                 )}
 
-                {/* Filters */}
+                {/* The tabs are this page's filter bar, and the count beside
+                    them is the answer to "which list am I in". Both stay put:
+                    a board you scroll through loses its heading immediately. */}
+                <StickyBar
+                    testid={STICKY_BAR.applicants}
+                    bleed="-mx-6 px-6"
+                    className="mt-10"
+                >
                 <div
                     data-testid="applicants-filters"
-                    className="mt-10 flex flex-wrap gap-2 border-b border-white/10 pb-5"
+                    className="flex flex-wrap items-center gap-2"
                 >
                     {FILTERS.map((f) => {
                         const active = filter === f.key;
@@ -839,7 +886,7 @@ export default function BrandCampaignApplicants() {
                                 data-testid={`applicants-filter-${f.key}`}
                                 onClick={() => setFilter(f.key)}
                                 className={
-                                    "rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (active
                                         ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                         : "border-white/10 bg-transparent text-muted-foreground hover:border-white/25 hover:text-foreground")
@@ -850,33 +897,37 @@ export default function BrandCampaignApplicants() {
                             </button>
                         );
                     })}
+                    <ResultCount
+                        shown={visible.length}
+                        total={applicants.length}
+                        noun="applicant"
+                        testid="applicants-count"
+                        className="ml-auto"
+                    />
                 </div>
+                </StickyBar>
 
                 <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                     {visible.length === 0 ? (
-                        <div
-                            data-testid="applicants-empty"
-                            className="flex flex-col items-center gap-3 px-6 py-16 text-center"
-                        >
-                            <Users className="h-6 w-6 text-ember-500" />
-                            <p className="font-serif text-2xl">
-                                {applicants.length === 0
-                                    ? "No applications yet."
-                                    : "Nothing in this list."}
-                            </p>
-                            <p className="max-w-md text-sm text-muted-foreground">
-                                {applicants.length === 0
-                                    ? "Verified creators see this brief on their feed. Applications usually start within a day of publishing."
-                                    : "Try another tab — there's work in one of them."}
-                            </p>
-                        </div>
+                        <ListEmptyState
+                            Icon={Users}
+                            testid="applicants-empty"
+                            filtered={applicants.length > 0}
+                            onClearFilters={() => setFilter("all")}
+                            clearLabel="Show everyone"
+                            emptyTitle="No applications yet."
+                            emptyBody="Verified creators see this brief on their feed and apply from there. Applications usually start within a day of publishing — or invite creators yourself from the panel below."
+                            filteredTitle="Nothing in this tab."
+                            filteredBody="There is work in one of the others — the counts beside each tab say which."
+                            className="border-0 bg-transparent"
+                        />
                     ) : (
                         <ul className="divide-y divide-white/10">
                             {visible.map((a) => (
                                 <ApplicantCard
                                     key={a.id}
                                     applicant={a}
-                                    budget={campaign.budget_per_creator}
+                                    budget={isBarter(campaign) ? null : campaign.budget_per_creator}
                                     busy={busyId === a.id}
                                     onAccept={(x) => setDialog({ kind: "accept", applicant: x })}
                                     onDecline={(x) => setDialog({ kind: "decline", applicant: x })}
@@ -901,7 +952,7 @@ export default function BrandCampaignApplicants() {
                 open={dialog.kind === "accept"}
                 onOpenChange={(v) => !v && closeDialog()}
                 applicant={dialog.applicant}
-                budget={campaign.budget_per_creator}
+                budget={isBarter(campaign) ? null : campaign.budget_per_creator}
                 busy={busyId === dialog.applicant?.id}
                 onConfirm={(body) =>
                     act(dialog.applicant, "accept", body, "Creator accepted")

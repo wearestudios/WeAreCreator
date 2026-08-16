@@ -5,7 +5,7 @@
 // stat cards are not decoration — each one is the filter that produced it, so
 // clicking "pending review" shows you exactly the campaigns that number counts.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowUpDown,
@@ -19,13 +19,15 @@ import {
     X,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     ADMIN_CAMPAIGN_DETAIL as DETAIL_IDS,
     ADMIN_OVERVIEW as IDS,
+    STICKY_BAR,
 } from "@/constants/testIds";
+import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
 import {
     CAMPAIGN_STATUS_META,
@@ -121,7 +123,7 @@ export default function Overview({ onChanged }) {
             });
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setData({ campaigns: {}, awaiting: {}, totals: {}, campaign_summary: [] });
         }
     }, []);
@@ -177,6 +179,14 @@ export default function Overview({ onChanged }) {
         setFrom(null);
         setTo(null);
     };
+
+    const chips = [
+        { key: "brand", label: "Brand", value: brand ? (brandOptions.find((o) => o.value === brand) || {}).label || brand : "", onRemove: () => setBrand("") },
+        { key: "status", label: "Status", value: status ? (STATUS_OPTIONS.find((o) => o.value === status) || {}).label || status : "", onRemove: () => { setStatus(""); setStatCard(""); } },
+        { key: "type", label: "Type", value: type ? (TYPE_OPTIONS.find((o) => o.value === type) || {}).label || type : "", onRemove: () => setType("") },
+        { key: "from", label: "From", value: from ? formatDate(from.toISOString()) : "", onRemove: () => setFrom(null) },
+        { key: "to", label: "To", value: to ? formatDate(to.toISOString()) : "", onRemove: () => setTo(null) },
+    ];
 
     const applyCard = (card) => {
         if (statCard === card.key) {
@@ -293,8 +303,11 @@ export default function Overview({ onChanged }) {
                 </div>
             )}
 
-            {/* Filters */}
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            {/* Filters, and the sort row that doubles as the table header:
+                both stay on screen, because the column you sorted by is the
+                thing you most need labelled forty rows down. */}
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <FilterSelect
                     label="Any brand"
                     value={brand}
@@ -334,8 +347,9 @@ export default function Overview({ onChanged }) {
                 )}
             </div>
 
-            {/* Sort controls double as the table header on desktop. */}
-            <div className="mt-6 flex flex-wrap gap-2">
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+
+            <div className="mt-3 flex flex-wrap gap-2">
                 {SORTS.map((s) => {
                     const on = sort === s.key;
                     return (
@@ -346,7 +360,7 @@ export default function Overview({ onChanged }) {
                             aria-pressed={on}
                             data-testid={IDS.sort(s.key)}
                             className={
-                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                "inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                 (on
                                     ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                     : "border-white/10 text-muted-foreground hover:border-white/25")
@@ -361,15 +375,23 @@ export default function Overview({ onChanged }) {
                 })}
             </div>
 
+            </StickyBar>
+
             <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                 {!data ? (
                     <TableSkeleton rows={6} cols={5} testid={IDS.tableSkeleton} />
                 ) : rows.length === 0 ? (
-                    <EmptyState testid={IDS.empty} Icon={Sparkles}>
-                        {filtered
-                            ? "No campaign matches those filters."
-                            : "No campaigns yet."}
-                    </EmptyState>
+                    <ListEmptyState
+                        Icon={Sparkles}
+                        testid={IDS.empty}
+                        filtered={filtered}
+                        onClearFilters={clearFilters}
+                        emptyTitle="No campaigns yet."
+                        emptyBody="Every brief a brand drafts appears here, from draft through to closed, with its applicant counts."
+                        filteredTitle="No campaign matches those filters."
+                        filteredBody="Widen the brand, status, type or date range."
+                        className="border-0 bg-transparent"
+                    />
                 ) : (
                     <ul data-testid={IDS.table} className="divide-y divide-white/10">
                         {rows.map((c) => (
@@ -468,7 +490,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
             const { data: d } = await api.get(`/admin/campaigns/${campaignId}/applicants`);
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             onBack();
         }
     }, [campaignId, onBack]);
@@ -481,12 +503,12 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
         setBusyId(entry.collaboration_id);
         try {
             await request();
-            toast.success(message);
+            notifySuccess(message);
             setConfirm(null);
             await load();
             onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setBusyId(null);
             setSubmitting(false);

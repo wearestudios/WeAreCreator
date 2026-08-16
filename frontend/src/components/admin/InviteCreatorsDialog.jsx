@@ -4,8 +4,9 @@
 // the batch. A WhatsApp send can fail for one number and land for the next.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { notifyError, notifySuccess, notifyWarning } from "@/lib/feedback";
 import { AlertCircle, Check, Loader2, Search, Send, UserCheck } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,7 +85,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
             });
             setRows(data.creators || []);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setRows([]);
         }
     }, [open, search]);
@@ -118,19 +119,19 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
             });
             setReport(data);
             if (data.invited > 0 && data.failed === 0) {
-                toast.success(
+                notifySuccess(
                     `Invited ${data.invited} creator${data.invited === 1 ? "" : "s"}`,
                 );
             } else if (data.invited > 0) {
                 // Partial sends are the reason this screen exists — say so
                 // rather than showing a green tick over a half-failure.
-                toast.warning(`${data.invited} sent, ${data.failed} didn't go through`);
+                notifyWarning(`${data.invited} sent, ${data.failed} didn't go through`);
             } else {
-                toast.error("Nothing was sent — see the detail below.");
+                notifyError("Nothing was sent — see the detail below.");
             }
             onSent?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
         } finally {
             setSending(false);
         }
@@ -201,7 +202,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.search}
                                 placeholder="Search verified creators"
                                 aria-label="Search verified creators"
-                                className="h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                             />
                         </div>
 
@@ -294,7 +295,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.note}
                                 maxLength={500}
                                 placeholder="Why these creators — kept on the record, not sent"
-                                className="mt-2 h-10 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                className="mt-2 h-11 md:h-10 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                             />
                         </div>
                     </>

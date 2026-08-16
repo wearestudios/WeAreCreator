@@ -429,6 +429,36 @@ CampaignType = Literal["launch", "group_event", "personal_table"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
 
 
+# What a creator is actually being offered.
+#
+#   fixed       the budget on the brief is the fee, take it or leave it
+#   negotiated  the budget is a guide; the real number is agreed offline and
+#               recorded against the collaboration (see work notes)
+#   barter      no money — a meal, a stay, a product
+#
+# The distinction is not cosmetic. Barter is the arrangement most likely to
+# waste a creator's day for nothing, so it is ours to make and not a checkbox on
+# a self-serve form: a brand posts paid work or it does not post.
+CompensationType = Literal["fixed", "negotiated", "barter"]
+# The only two a brand may put on its own brief. Named as the allow-list rather
+# than as "not barter" so that adding a fourth kind later has to be a decision
+# about who can post it, not something that quietly inherits brand access.
+BRAND_COMPENSATION_TYPES = ("fixed", "negotiated")
+# Campaigns written before this field existed were all brand briefs with a cash
+# budget, so this is what they were, not merely a safe guess.
+DEFAULT_COMPENSATION_TYPE = "fixed"
+
+
+def _compensation_type(campaign: dict) -> str:
+    """What this campaign pays in. The one reader — a bare `.get()` returns None
+    for every pre-field document, and None is not a third kind of money."""
+    return (campaign or {}).get("compensation_type") or DEFAULT_COMPENSATION_TYPE
+
+
+def _is_barter(campaign: dict) -> bool:
+    return _compensation_type(campaign) == "barter"
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
@@ -440,6 +470,11 @@ class PostCampaignPayload(BaseModel):
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
     campaign_type: CampaignType
+    # Typed as the full enum rather than the brand subset on purpose: a payload
+    # that rejects "barter" as an unknown value would answer with pydantic's
+    # "Input should be 'fixed' or 'negotiated'", which reads like a typo. The
+    # handler refuses it with the actual reason instead.
+    compensation_type: CompensationType = DEFAULT_COMPENSATION_TYPE
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -495,6 +530,10 @@ class UpdateCampaignPayload(BaseModel):
     creators_needed: Optional[int] = Field(default=None, ge=1, le=100)
     # campaign_type is deliberately absent: the type decides which date fields
     # exist, so changing it mid-flight would orphan whichever dates were set.
+    #
+    # compensation_type is present but gated — this model serves both the brand
+    # edit and the admin one, and only the admin route lets barter through.
+    compensation_type: Optional[CompensationType] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -907,6 +946,9 @@ class Campaign(BaseModel):
     creators_needed: int = Field(ge=1, default=1)
     # launch / group_event carry event_date; personal_table carries the window.
     campaign_type: Optional[CampaignType] = None  # None on pre-types documents
+    # Read through _compensation_type, never off the document — None here means
+    # "written before the field existed", which is a fixed-fee brand brief.
+    compensation_type: Optional[CompensationType] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -4214,6 +4256,9 @@ def _serialize_brand_campaign(
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
+        # Travels with the figure everywhere the figure goes. A number with no
+        # word beside it is read as cash, which on a barter brief is a lie.
+        "compensation_type": _compensation_type(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": needed,
@@ -4384,6 +4429,44 @@ def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
                     status_code=422,
                     detail="A personal table needs its window — set new dates instead.",
                 )
+
+
+# A brand brief is paid work. Barter — a meal, a stay, a product, and no money —
+# is an arrangement WeAre makes, because it is the one most easily used to get a
+# day's work out of a creator for nothing, and because whether the thing on
+# offer is worth the shoot is a judgement somebody here has to have made.
+#
+# Both brand write paths funnel through this. There is no admin *create* route
+# for campaigns, so in practice barter is reached by an admin editing a brief —
+# `admin_update_campaign` is deliberately the only caller that skips this.
+BARTER_IS_OURS = (
+    "Barter campaigns are arranged by the WeAre team. Post this as paid work — "
+    "a fixed fee, or a budget you'll negotiate — and talk to us if barter is "
+    "what you had in mind."
+)
+
+
+def _refuse_brand_barter(campaign: Optional[dict], update: dict) -> None:
+    """Keep barter out of everything a brand can write.
+
+    Two separate refusals, because they are two different mistakes:
+      - asking for barter on a brief of your own, and
+      - rewriting the compensation on one we already made barter, which would
+        turn a WeAre arrangement back into cash without anyone deciding to.
+    `campaign` is None at creation time, where only the first can happen.
+    """
+    if "compensation_type" not in update:
+        return
+    if update["compensation_type"] == "barter":
+        raise HTTPException(status_code=422, detail=BARTER_IS_OURS)
+    if campaign is not None and _is_barter(campaign):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "We set this campaign up as barter. Ask us to change it to paid "
+                "— the rest of the brief is still yours to edit."
+            ),
+        )
 
 
 async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
@@ -4835,6 +4918,10 @@ async def create_brand_campaign(
     if payload.status == CAMPAIGN_REVIEW_STATUS:
         await _verified_brand_or_403(user)
 
+    # A brand posts paid work. Checked here rather than in the payload model so
+    # the refusal explains itself — see _refuse_brand_barter.
+    _refuse_brand_barter(None, {"compensation_type": payload.compensation_type})
+
     now = datetime.now(timezone.utc)
     doc = {
         "brand_id": _brand_scope(user),
@@ -4846,6 +4933,7 @@ async def create_brand_campaign(
         "area": payload.area.strip(),
         "creators_needed": int(payload.creators_needed),
         "campaign_type": payload.campaign_type,
+        "compensation_type": payload.compensation_type,
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -4908,6 +4996,9 @@ async def update_brand_campaign(
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
 
+    # The same rule as creation, on the path that would otherwise go round it:
+    # this loop copies whatever the payload carried, compensation_type included.
+    _refuse_brand_barter(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
@@ -5298,6 +5389,7 @@ async def list_campaign_applicants(
             "title": campaign.get("title"),
             "status": campaign.get("status"),
             "budget_per_creator": campaign.get("budget_per_creator"),
+            "compensation_type": _compensation_type(campaign),
             "creators_needed": needed,
             "filled_slots": filled,
             "spots_left": max(0, needed - filled),
@@ -6083,6 +6175,7 @@ async def _suggest_creators_for_campaign(
             "category": campaign.get("category"),
             "area": campaign.get("area"),
             "budget_per_creator": campaign.get("budget_per_creator"),
+            "compensation_type": _compensation_type(campaign),
         },
         # Shown in the panel so the ranking explains itself before a brand has
         # to ask why a 500k creator isn't at the top of a ₹4,000 brief.
@@ -7110,6 +7203,7 @@ async def list_all_campaigns(
                 "brief": d.get("brief"),
                 "deliverables": d.get("deliverables"),
                 "budget_per_creator": d.get("budget_per_creator"),
+                "compensation_type": _compensation_type(d),
                 "category": d.get("category"),
                 "area": d.get("area"),
                 "campaign_type": d.get("campaign_type"),
@@ -7173,6 +7267,7 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
             "brief": d.get("brief"),
             "deliverables": d.get("deliverables"),
             "budget_per_creator": d.get("budget_per_creator"),
+            "compensation_type": _compensation_type(d),
             "category": d.get("category"),
             "area": d.get("area"),
             "creators_needed": d.get("creators_needed"),
@@ -7624,6 +7719,10 @@ async def admin_update_campaign(
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
 
+    # No _refuse_brand_barter here, and that is the whole point of the feature:
+    # this route is the only way a campaign becomes barter. There is no admin
+    # campaign-create endpoint, so an admin makes a barter brief by taking one
+    # that exists and setting it — which also means somebody read it first.
     _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
@@ -8446,6 +8545,7 @@ def _serialize_admin_collab(
             "area": (campaign or {}).get("area"),
             "category": (campaign or {}).get("category"),
             "budget_per_creator": (campaign or {}).get("budget_per_creator"),
+            "compensation_type": _compensation_type(campaign),
             "status": (campaign or {}).get("status"),
         },
         "brand_name": brand_name,
@@ -9770,6 +9870,7 @@ async def admin_campaign_applicants(
             "campaign_type": campaign.get("campaign_type"),
             "status": campaign.get("status"),
             "budget_per_creator": campaign.get("budget_per_creator"),
+            "compensation_type": _compensation_type(campaign),
             "event_date": _iso(campaign.get("event_date")),
             "start_date": _iso(campaign.get("start_date")),
             "end_date": _iso(campaign.get("end_date")),
@@ -11185,6 +11286,7 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
+        "compensation_type": _compensation_type(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": doc.get("creators_needed"),
@@ -11824,6 +11926,7 @@ async def public_campaign_preview(limit: int = 6):
                 "category": d.get("category"),
                 "area": d.get("area"),
                 "budget_per_creator": d.get("budget_per_creator"),
+                "compensation_type": _compensation_type(d),
                 "teaser": brief[:180] + ("…" if len(brief) > 180 else ""),
                 "spots_left": max(0, needed - filled.get(d["_id"], 0)),
             }
@@ -12393,6 +12496,23 @@ async def _startup():
         [{"$set": {"manager_name": "$name"}}],
     )
 
+    # 8. Campaigns predate `compensation_type`. Every one of them was posted by
+    #    a brand against a cash budget, so `fixed` is what they are rather than
+    #    a default standing in for the unknown. `_compensation_type` reads the
+    #    same answer without this, but the field being present means an admin
+    #    filtering for barter gets a query that can use an index, and means the
+    #    stored document says what it is instead of relying on a reader.
+    priced = await db.campaigns.update_many(
+        {"compensation_type": {"$exists": False}},
+        {"$set": {"compensation_type": DEFAULT_COMPENSATION_TYPE}},
+    )
+    if priced.modified_count:
+        logger.info(
+            "Backfilled compensation_type=%s on %d campaign(s)",
+            DEFAULT_COMPENSATION_TYPE,
+            priced.modified_count,
+        )
+
     # The nudge loop. Off entirely when the interval is zero, so a deployment
     # that has its own scheduler can drive POST /admin/jobs/creator-nudges
     # instead without two things chasing the same people.
@@ -12711,6 +12831,12 @@ async def _seed_demo_campaigns() -> None:
                 "brief": spec["brief"],
                 "deliverables": spec["deliverables"],
                 "budget_per_creator": spec["budget_per_creator"],
+                # The demo feed is all paid work, which is also the only kind a
+                # brand can post — a seeded barter brief would show creators an
+                # arrangement the product does not offer self-serve.
+                "compensation_type": spec.get(
+                    "compensation_type", DEFAULT_COMPENSATION_TYPE
+                ),
                 "category": spec["category"],
                 "area": spec["area"],
                 "creators_needed": spec["creators_needed"],

@@ -206,6 +206,25 @@
     .marquee-track { animation: none; }
 }
 
+/* ---------------------------------------------------------------------------
+ * Reduced motion
+ *
+ * The components respect `useReducedMotion` individually, but the dialogs,
+ * sheets and menus animate through Tailwind/Radix data-attributes that no hook
+ * sees. This is the backstop: state still changes instantly and visibly, it
+ * just stops sliding and zooming to get there.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 /* Focus ring override for premium feel */
 :focus-visible {
     outline: 2px solid hsl(var(--primary));

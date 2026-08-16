@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import { Camera, Building2 } from "lucide-react";
 import { useAuth, isBrandSide } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -65,7 +65,7 @@ export default function Signup() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-background/40 via-background/60 to-background" />
                 <div className="relative flex h-full flex-col justify-between p-12">
-                    <Link to="/" className="font-serif text-2xl transition-colors duration-200 hover:text-ember-500">
+                    <Link to="/" className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-ember-500">
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
@@ -79,7 +79,7 @@ export default function Signup() {
 
             <div className="flex items-center justify-center bg-background p-6 md:p-12">
                 <div className="w-full max-w-md">
-                    <Link to="/" className="mb-10 inline-block font-serif text-xl md:hidden">
+                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <p className="text-xs uppercase tracking-[0.22em] text-ember-500/90">
@@ -156,7 +156,7 @@ export default function Signup() {
                             accept_terms: acceptedTerms,
                         })}
                         onVerified={(user) => {
-                            toast.success("Account created — welcome to WeAre.");
+                            notifySuccess("Account created — welcome to WeAre.");
                             const next =
                                 user?.role === "creator"
                                     ? "/onboarding/creator"
@@ -249,14 +249,14 @@ export default function Signup() {
                                 )}
                                 <label
                                     htmlFor="accept-terms"
-                                    className="flex cursor-pointer items-start gap-3 text-xs leading-relaxed text-muted-foreground"
+                                    className="-my-2 flex min-h-[2.75rem] cursor-pointer items-start gap-3 py-2 text-xs leading-relaxed text-muted-foreground"
                                 >
                                     <Checkbox
                                         id="accept-terms"
                                         data-testid="signup-terms-checkbox"
                                         checked={acceptedTerms}
                                         onCheckedChange={(v) => setAcceptedTerms(v === true)}
-                                        className="mt-0.5 border-white/25 data-[state=checked]:border-ember-500 data-[state=checked]:bg-ember-500 data-[state=checked]:text-black"
+                                        className="mt-0.5 h-5 w-5 flex-none border-white/25 focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[state=checked]:border-ember-500 data-[state=checked]:bg-ember-500 data-[state=checked]:text-black"
                                     />
                                     <span>
                                         I agree to the{" "}

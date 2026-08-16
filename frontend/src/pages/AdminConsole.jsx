@@ -130,7 +130,12 @@ export default function AdminConsole() {
                 <nav
                     ref={navRef}
                     data-testid={IDS.nav}
-                    className="-mx-5 mt-8 flex gap-2 overflow-x-auto px-5 pb-2 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+                    // Sticky under the navbar, so which section you are in and
+                    // what is waiting in the others survives a long scroll.
+                    // The horizontal strip keeps its own bleed: nine tabs
+                    // wrapping to three rows on a phone would push the content
+                    // off the screen entirely.
+                    className="sticky top-16 z-30 -mx-5 mt-8 flex gap-2 overflow-x-auto border-b border-white/10 bg-background/80 px-5 py-3 backdrop-blur-xl md:-mx-6 md:flex-wrap md:overflow-visible md:px-6"
                 >
                     {TABS.map(({ key, label, Icon, badge }) => {
                         const on = active === key;
@@ -143,7 +148,7 @@ export default function AdminConsole() {
                                 onClick={() => select(key)}
                                 data-testid={IDS.tab(key)}
                                 className={
-                                    "inline-flex flex-none items-center gap-2 whitespace-nowrap rounded-md border px-4 py-2.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                    "inline-flex min-h-[2.75rem] flex-none items-center gap-2 whitespace-nowrap rounded-md border px-4 py-2.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (on
                                         ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                         : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")

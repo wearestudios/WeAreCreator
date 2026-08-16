@@ -95,7 +95,7 @@ export const Navbar = () => {
                     <Link
                         to="/"
                         data-testid="nav-logo"
-                        className="flex items-center gap-2 transition-colors duration-200 hover:text-ember-500"
+                        className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
                         <span className="grid h-8 w-8 place-items-center rounded-md bg-ember-500 font-serif text-lg font-semibold text-black">
                             W
@@ -204,7 +204,7 @@ export const Navbar = () => {
                                 type="button"
                                 data-testid="nav-mobile-menu-btn"
                                 aria-label="Open menu"
-                                className="rounded-md p-2 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:hidden"
+                                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
                             >
                                 <Menu className="h-5 w-5" />
                             </button>

@@ -6,7 +6,7 @@
 // Actions that cost something (no-show, reschedule) open a sheet from the
 // bottom rather than firing on the tap that reached them.
 import React, { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     CalendarClock,
     Check,
@@ -15,7 +15,7 @@ import {
     Phone,
     UserX,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -46,38 +46,82 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
     const [busyId, setBusyId] = useState(null);
     const [noShowFor, setNoShowFor] = useState(null);
     const [rescheduleFor, setRescheduleFor] = useState(null);
+    // Rows the screen is showing as done before the server has confirmed it.
+    const [optimistic, setOptimistic] = useState({});
+
+    // The roster as the screen shows it: the server's answer, with any
+    // not-yet-confirmed check-ins applied on top. Everything below — the
+    // filters, the count, the progress figure — reads from this, so an
+    // optimistic tap moves all of them together rather than just the row.
+    const shown = useMemo(
+        () =>
+            (roster || []).map((r) =>
+                optimistic[r.collaboration_id]
+                    ? { ...r, attendance: optimistic[r.collaboration_id] }
+                    : r,
+            ),
+        [roster, optimistic],
+    );
 
     const rows = useMemo(() => {
-        const list = roster || [];
-        if (filter === "all") return list;
-        return list.filter((r) => r.attendance === filter);
-    }, [roster, filter]);
+        if (filter === "all") return shown;
+        return shown.filter((r) => r.attendance === filter);
+    }, [shown, filter]);
 
-    const done = (roster || []).filter((r) => r.attendance !== "expected").length;
-    const total = (roster || []).length;
+    const done = shown.filter((r) => r.attendance !== "expected").length;
+    const total = shown.length;
 
+    // Every failure here offers Retry, because the reason is almost always a
+    // venue's wifi rather than anything wrong with what was asked, and the
+    // person holding the phone has somebody standing in front of them.
     const run = async (row, fn, message) => {
         setBusyId(row.collaboration_id);
         try {
             await fn();
-            toast.success(message);
+            notifySuccess(message);
             setNoShowFor(null);
             setRescheduleFor(null);
             setOpenId(null);
             await onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e, { onRetry: () => run(row, fn, message) });
         } finally {
             setBusyId(null);
         }
     };
 
-    const checkIn = (row) =>
-        run(
-            row,
-            () => api.post(`/manager/collaborations/${row.collaboration_id}/check-in`),
-            `${row.name || "Creator"} checked in`,
-        );
+    // Check-in is optimistic: the row flips the moment you tap it, because you
+    // are looking at the person you just checked in, not at the phone. A
+    // failure puts it straight back and says so — but the common case is that
+    // it worked, and waiting on a round trip in a basement with one bar makes
+    // the whole queue feel broken.
+    const checkIn = async (row) => {
+        const id = row.collaboration_id;
+        setOptimistic((m) => ({ ...m, [id]: "attended" }));
+        setBusyId(id);
+        try {
+            await api.post(`/manager/collaborations/${id}/check-in`);
+            notifySuccess(`${row.name || "Creator"} checked in`);
+            setOpenId(null);
+            await onChanged?.();
+            // Only drop the local override once the refreshed roster carries
+            // the new state, or the row would flicker back for a frame.
+            setOptimistic((m) => {
+                const next = { ...m };
+                delete next[id];
+                return next;
+            });
+        } catch (e) {
+            setOptimistic((m) => {
+                const next = { ...m };
+                delete next[id];
+                return next;
+            });
+            notifyError(e, { onRetry: () => checkIn(row) });
+        } finally {
+            setBusyId(null);
+        }
+    };
 
     if (loading) {
         return <RowListSkeleton rows={5} testid={IDS.skeleton} />;

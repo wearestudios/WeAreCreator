@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-    Loader2,
     MapPin,
     IndianRupee,
     ArrowRight,
@@ -12,7 +11,16 @@ import {
     ArrowDownUp,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import {
+    CardGridSkeleton,
+    FilterChips,
+    ListEmptyState,
+    ResultCount,
+    StickyBar,
+} from "@/components/data/DenseView";
+import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -124,44 +132,31 @@ const CampaignCard = ({ c, index }) => (
             <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">
                 <div>
                     <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        Budget / creator
+                        {isBarter(c) ? "What you get" : "Budget / creator"}
                     </div>
+                    {/* A barter brief carries whatever budget it was posted
+                      * with, so the rupee figure has to be suppressed rather
+                      * than trusted — see lib/compensation.js. */}
                     <div className="mt-1 flex items-baseline gap-1 font-serif text-[32px] leading-none text-foreground">
-                        <IndianRupee className="h-5 w-5 text-ember-500" />
-                        {typeof c.budget_per_creator === "number"
-                            ? c.budget_per_creator.toLocaleString("en-IN")
-                            : "—"}
+                        {isBarter(c) ? (
+                            "Barter"
+                        ) : (
+                            <>
+                                <IndianRupee className="h-5 w-5 text-ember-500" />
+                                {formatCompensation(c).amount ?? "—"}
+                            </>
+                        )}
                     </div>
+                    {formatCompensation(c).suffix && (
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                            {formatCompensation(c).suffix}
+                        </div>
+                    )}
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
             </div>
         </Link>
     </motion.div>
-);
-
-const EmptyState = ({ hasFilters, onReset }) => (
-    <div
-        data-testid="campaigns-empty"
-        className="col-span-full rounded-lg border border-dashed border-white/15 bg-card/40 p-14 text-center"
-    >
-        <Sparkles className="mx-auto h-6 w-6 text-ember-500" />
-        <p className="mt-5 font-serif text-3xl">Nothing matches yet.</p>
-        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-            {hasFilters
-                ? "Try widening your filters. New briefs go live every week."
-                : "We're onboarding brands right now. Check back in a day or two."}
-        </p>
-        {hasFilters && (
-            <Button
-                variant="outline"
-                onClick={onReset}
-                className="mt-6 rounded-full border-white/15 bg-transparent hover:bg-white/5"
-                data-testid="campaigns-reset-filters"
-            >
-                Reset filters
-            </Button>
-        )}
-    </div>
 );
 
 export default function Campaigns() {
@@ -222,14 +217,53 @@ export default function Campaigns() {
         debouncedQ.length > 0 ||
         sort !== "newest";
 
+    // Barter briefs are left out: their stored budget is a leftover from
+    // whatever they were before, and adding it here would inflate a figure
+    // that is meant to say how much cash is on the feed.
     const totalBudget = useMemo(() => {
         if (!Array.isArray(items) || items.length === 0) return 0;
         return items.reduce(
             (acc, c) =>
-                acc + (typeof c.budget_per_creator === "number" ? c.budget_per_creator : 0),
+                acc +
+                (!isBarter(c) && typeof c.budget_per_creator === "number"
+                    ? c.budget_per_creator
+                    : 0),
             0,
         );
     }, [items]);
+
+    // One chip per filter that is actually doing something. `sort` is left out
+    // on purpose: it changes the order, not the set, so calling it a filter
+    // would misdescribe what removing it does.
+    const chips = [
+        {
+            key: "search",
+            label: "Search",
+            value: debouncedQ,
+            onRemove: () => setQ(""),
+        },
+        {
+            key: "area",
+            label: "Area",
+            value: area === ANY ? "" : area,
+            onRemove: () => setArea(ANY),
+        },
+        {
+            key: "category",
+            label: "Category",
+            value: category === ANY ? "" : CAT_LABEL[category] || category,
+            onRemove: () => setCategory(ANY),
+        },
+        {
+            key: "budget",
+            label: "Budget",
+            value:
+                budget === ANY
+                    ? ""
+                    : (BUDGET_BUCKETS.find((b) => b.value === budget) || {}).label || "",
+            onRemove: () => setBudget(ANY),
+        },
+    ];
 
     const resetAll = () => {
         setArea(ANY);
@@ -281,10 +315,16 @@ export default function Campaigns() {
                     )}
                 </div>
 
-                {/* Filters bar */}
+                {/* Filters bar. Sticky, so the thing you filtered by is still
+                    on screen thirty cards down the list. */}
+                <StickyBar level="headerFromMd"
+                    testid={STICKY_BAR.campaigns}
+                    bleed="-mx-6 px-6"
+                    className="mt-12"
+                >
                 <div
                     data-testid="campaigns-filters"
-                    className="mt-12 flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-card/50 p-3 backdrop-blur"
+                    className="flex flex-wrap items-center gap-3"
                 >
                     <div className="flex items-center gap-2 pl-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                         <Filter className="h-3.5 w-3.5" />
@@ -299,14 +339,14 @@ export default function Campaigns() {
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder="Search briefs…"
-                            className="h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
+                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
                         />
                     </div>
 
                     <Select value={area} onValueChange={setArea}>
                         <SelectTrigger
                             data-testid="filter-area-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any area" />
                         </SelectTrigger>
@@ -329,7 +369,7 @@ export default function Campaigns() {
                     <Select value={category} onValueChange={setCategory}>
                         <SelectTrigger
                             data-testid="filter-category-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any category" />
                         </SelectTrigger>
@@ -352,7 +392,7 @@ export default function Campaigns() {
                     <Select value={budget} onValueChange={setBudget}>
                         <SelectTrigger
                             data-testid="filter-budget-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any budget" />
                         </SelectTrigger>
@@ -372,7 +412,7 @@ export default function Campaigns() {
                     <Select value={sort} onValueChange={setSort}>
                         <SelectTrigger
                             data-testid="filter-sort-trigger"
-                            className="h-10 w-full border-white/10 bg-background md:w-52"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-52"
                         >
                             <ArrowDownUp className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue />
@@ -402,18 +442,49 @@ export default function Campaigns() {
                     )}
                 </div>
 
+                {/* What you are looking at, and why. Both stay in the sticky
+                    bar: a count you have to scroll up to read is a count you
+                    stop reading. */}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <FilterChips chips={chips} onClearAll={resetAll} />
+                    {Array.isArray(items) && (
+                        <ResultCount
+                            shown={items.length}
+                            noun="campaign"
+                            testid="campaigns-count"
+                            className="ml-auto"
+                        />
+                    )}
+                </div>
+                </StickyBar>
+
                 {/* Grid */}
                 <section
                     data-testid="campaigns-grid"
                     className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3"
                 >
                     {items === null && (
-                        <div className="col-span-full flex justify-center py-16 text-muted-foreground">
-                            <Loader2 className="h-5 w-5 animate-spin" />
+                        <div className="col-span-full">
+                            <CardGridSkeleton
+                                cards={6}
+                                columns="md:grid-cols-2 lg:grid-cols-3"
+                                testid="campaigns-skeleton"
+                            />
                         </div>
                     )}
                     {Array.isArray(items) && items.length === 0 && (
-                        <EmptyState hasFilters={hasFilters} onReset={resetAll} />
+                        <div className="col-span-full">
+                            <ListEmptyState
+                                Icon={Sparkles}
+                                testid="campaigns-empty"
+                                filtered={hasFilters}
+                                onClearFilters={resetAll}
+                                emptyTitle="No briefs are open right now."
+                                emptyBody="Live campaigns from verified brands appear here the moment they are approved. We are onboarding brands now — check back in a day or two."
+                                filteredTitle="Nothing matches those filters."
+                                filteredBody="Try a wider area, category or budget. New briefs go live every week."
+                            />
+                        </div>
                     )}
                     {Array.isArray(items) &&
                         items.map((c, i) => <CampaignCard c={c} key={c.id} index={i} />)}

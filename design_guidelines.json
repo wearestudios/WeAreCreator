@@ -173,6 +173,17 @@
     "media": [
       "Every image slot declares its ratio. Avatars carry aspect-square alongside their fixed dimensions, so the ratio is stated rather than implied by two numbers somebody has to keep equal.",
       "A full-bleed fill image (absolute inset-0) has no ratio to reserve — the box is sized by its parent. Those get .media-frame for the ground instead; an aspect-ratio there would fight min-h-screen and make the page scroll."
+    ],
+    "dense_views": [
+      "The admin console, the campaigns lists, the creator directory, the applicant board and the audit log share one set of primitives: src/components/data/DenseView.jsx.",
+      "Sticky: STICKY in that file is the only place the offsets and z-indexes are written. The navbar is sticky top-0 z-40 h-16, so everything below it clears 4rem and sits under z-40.",
+      "A filter bar whose controls stack on a phone uses level=\"headerFromMd\" — pinning a 400px column of controls under the navbar leaves a third of an 844px screen for the list it is meant to help you read. Single-row bars (the console's tab strip, the applicant tabs) pin at every width.",
+      "A sticky bar bleeds to its container's edges (`-mx-6 px-6`) or the blurred panel stops short and a strip of unblurred list slides past beside it.",
+      "Every filtered list carries a ResultCount and FilterChips: one chip per active filter, each removable on its own, plus a clear-all. Sort is not a filter and gets no chip — it changes the order, not the set.",
+      "Every list that can be empty uses ListEmptyState, which draws the distinction that matters: 'nothing here yet' (say what would appear, and how to get some) versus 'nothing matches your filters' (offer the clear).",
+      "Loading is a skeleton in the shape of the content, never a spinner. Measured: swapping skeleton for content scores 0.0000 CLS at 390px and 1440px.",
+      "Tables scroll inside a ScrollTable with the header sticky and the first column pinned — that column is the row's identity. `overflow-x: auto` computes overflow-y to auto as well, which makes the container the scroller, which is why it owns a max-height: a sticky header with nothing to stick against does nothing.",
+      "A long free-text cell is line-clamped with the full text on `title`. Unclamped, one audit reason took a row from 64px to 201px on a phone."
     ]
   }
 }

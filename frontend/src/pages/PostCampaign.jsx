@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowRight,
@@ -12,6 +12,11 @@ import {
     Users,
 } from "lucide-react";
 import { api, formatApiError } from "@/lib/api";
+// Note what is imported: the brand list, never the full one. Barter is a WeAre
+// arrangement and the server refuses it on this route — the option is absent
+// from this form rather than present and disabled, so there is nothing here to
+// enable with a devtools attribute edit.
+import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { Navbar } from "@/components/Navbar";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -60,6 +65,8 @@ export default function PostCampaign() {
     const [brief, setBrief] = useState("");
     const [deliverables, setDeliverables] = useState("");
     const [budget, setBudget] = useState("");
+    // Fixed or negotiated. A brand brief is paid work either way.
+    const [compensationType, setCompensationType] = useState("fixed");
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -106,6 +113,9 @@ export default function PostCampaign() {
                     );
                     setCategory(data.category || "");
                     setArea(data.area || "");
+                    // A campaign WeAre set to barter keeps that value here so
+                    // the form never round-trips it back to "fixed".
+                    setCompensationType(data.compensation_type || "fixed");
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -141,13 +151,21 @@ export default function PostCampaign() {
         return list;
     }, [brandProfile]);
 
+    // Only ever true on a campaign WeAre converted — this form cannot set it.
+    // The brand edit route refuses any write to the compensation of a barter
+    // campaign, so sending one would fail the whole save over a field the brand
+    // was never shown.
+    const isBarter = compensationType === "barter";
+
     const validateBase = () => {
         if (!title.trim()) return "Please enter a campaign title.";
         if (!brief.trim()) return "Please add a brief.";
         if (!deliverables.trim()) return "What deliverables are you expecting?";
-        const budgetNum = Number(budget);
-        if (!Number.isFinite(budgetNum) || budgetNum < 0)
-            return "Please enter a valid budget per creator.";
+        if (!isBarter) {
+            const budgetNum = Number(budget);
+            if (!Number.isFinite(budgetNum) || budgetNum < 0)
+                return "Please enter a valid budget per creator.";
+        }
         if (!category) return "Please pick a category.";
         if (!area) return "Please pick an area.";
         const needed = Number(creatorsNeeded);
@@ -168,7 +186,14 @@ export default function PostCampaign() {
         title: title.trim(),
         brief: brief.trim(),
         deliverables: deliverables.trim(),
-        budget_per_creator: Number(budget),
+        // Both omitted on a barter campaign: the field isn't rendered, so
+        // Number("") would silently write the fee down to zero.
+        ...(isBarter
+            ? {}
+            : {
+                  budget_per_creator: Number(budget),
+                  compensation_type: compensationType,
+              }),
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
@@ -209,16 +234,16 @@ export default function PostCampaign() {
                 // Saving an edit on a draft and submitting should do both.
                 if (!isDraft && existing?.status === "draft") {
                     await api.post(`/brand/campaigns/${editingId}/publish`);
-                    toast.success("Sent for review — we'll publish it once we've read it");
+                    notifySuccess("Sent for review — we'll publish it once we've read it");
                 } else {
-                    toast.success("Campaign updated");
+                    notifySuccess("Campaign updated");
                 }
                 navigate("/dashboard", { replace: true });
                 return;
             }
 
             const { data } = await api.post("/brand/campaigns", buildPayload(status));
-            toast.success(
+            notifySuccess(
                 isDraft
                     ? "Draft saved to your dashboard"
                     : "Sent for review — we'll publish it once we've read it",
@@ -449,29 +474,96 @@ export default function PostCampaign() {
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             Money & scope
                         </p>
-                        <div className="grid gap-5 md:grid-cols-2">
-                            <div>
-                                <Label htmlFor="pc-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Budget per creator
-                                </Label>
-                                <div className="relative mt-2">
-                                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="pc-budget"
-                                        data-testid="pc-budget-input"
-                                        type="number"
-                                        min="0"
-                                        step="500"
-                                        value={budget}
-                                        onChange={(e) => setBudget(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                        placeholder="e.g. 8000"
-                                    />
-                                </div>
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    Creators receive 100% of this amount. Platform fee is charged to you on top.
+
+                        {isBarter ? (
+                            // Only reachable on a campaign WeAre converted. Say
+                            // so plainly rather than showing a picker that the
+                            // server would refuse.
+                            <div
+                                data-testid="pc-compensation-barter-note"
+                                className="rounded-md border border-white/10 bg-card/60 p-5"
+                            >
+                                <p className="text-sm text-ember-500">Barter</p>
+                                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                    We set this campaign up as barter. The rest of the brief
+                                    is yours to edit — talk to us if you want it paid.
                                 </p>
                             </div>
+                        ) : (
+                            <div
+                                data-testid="pc-compensation-picker"
+                                role="radiogroup"
+                                aria-label="How creators are paid"
+                                className="grid gap-3 sm:grid-cols-2"
+                            >
+                                {BRAND_COMPENSATION_OPTIONS.map((opt) => {
+                                    const on = compensationType === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={`pc-compensation-${opt.value}`}
+                                            onClick={() => setCompensationType(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                            }
+                                        >
+                                            <span
+                                                className={
+                                                    "block text-sm " +
+                                                    (on ? "text-ember-500" : "text-foreground")
+                                                }
+                                            >
+                                                {opt.label}
+                                            </span>
+                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                                {opt.blurb}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <div className="grid gap-5 md:grid-cols-2">
+                            {/* A barter brief has no cash figure to set, so the
+                              * field is gone rather than sitting there at zero.
+                              * Whatever budget the campaign was posted with is
+                              * left untouched — see buildPayload. */}
+                            {!isBarter && (
+                                <div>
+                                    <Label htmlFor="pc-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        {compensationType === "negotiated"
+                                            ? "Budget per creator (guide)"
+                                            : "Budget per creator"}
+                                    </Label>
+                                    <div className="relative mt-2">
+                                        <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="pc-budget"
+                                            data-testid="pc-budget-input"
+                                            type="number"
+                                            inputMode="numeric"
+                                            min="0"
+                                            step="500"
+                                            value={budget}
+                                            onChange={(e) => setBudget(e.target.value)}
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            placeholder="e.g. 8000"
+                                        />
+                                    </div>
+                                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                        {compensationType === "negotiated"
+                                            ? "Shown to creators as a guide. You agree the actual fee with each one, and we record it against their application."
+                                            : "Creators receive 100% of this amount. Platform fee is charged to you on top."}
+                                    </p>
+                                </div>
+                            )}
                             <div>
                                 <Label htmlFor="pc-needed" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                                     Creators needed

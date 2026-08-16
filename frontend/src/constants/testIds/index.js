@@ -14,6 +14,7 @@
 export * from './admin';
 export * from './auth';
 export * from './brand';
+export * from './dense';
 export * from './creator';
 export * from './home';
 export * from './landing';

@@ -3,7 +3,7 @@
 // live, resume while it's paused. The row is the workbench — there is no
 // separate "manage" page to lose.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     BadgeCheck,
     ChevronDown,
@@ -19,10 +19,12 @@ import {
     X,
     XCircle,
 } from "lucide-react";
-import { api, formatApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import { compensationLabel, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ADMIN_CAMPAIGNS as IDS } from "@/constants/testIds";
+import { ADMIN_CAMPAIGNS as IDS, STICKY_BAR } from "@/constants/testIds";
+import { FilterChips, StickyBar } from "@/components/data/DenseView";
 import InviteCreatorsDialog from "./InviteCreatorsDialog";
 import { CampaignEditDialog, ConfirmDialog } from "./dialogs";
 import {
@@ -79,7 +81,11 @@ function CampaignRow({ campaign, expanded, onToggle, busy, actions }) {
                             {[
                                 campaign.brand_name || "Unknown brand",
                                 campaign.area,
-                                `₹${formatRupees(campaign.budget_per_creator)}`,
+                                // Barter shows as barter, not as the leftover
+                                // figure the brief was posted with.
+                                isBarter(campaign)
+                                    ? "Barter"
+                                    : `₹${formatRupees(campaign.budget_per_creator)} · ${compensationLabel(campaign)}`,
                                 `${campaign.filled_slots}/${campaign.creators_needed} filled`,
                                 inReview && campaign.submitted_for_review_at
                                     ? `waiting ${timeAgo(campaign.submitted_for_review_at)}`
@@ -303,7 +309,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             });
             setData(d);
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             setData({ campaigns: [], total: 0, pages: 0 });
         }
     }, [page, search, status, brandFilter, from, to]);
@@ -317,13 +323,13 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         setSubmitting(true);
         try {
             await fn();
-            toast.success(msg);
+            notifySuccess(msg);
             setConfirm(null);
             setEditFor(null);
             await load();
             onChanged?.();
         } catch (e) {
-            toast.error(formatApiError(e));
+            notifyError(e);
             if (e?.response?.status === 409) await load();
         } finally {
             setBusyId(null);
@@ -408,6 +414,14 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         onClearBrand?.();
     };
 
+    const chips = [
+        { key: "search", label: "Title", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
+        { key: "brand", label: "Brand", value: brandFilter ? brandName || "Selected brand" : "", onRemove: () => onClearBrand?.() },
+        { key: "status", label: "Status", value: status, onRemove: () => { setStatus(""); setPage(1); } },
+        { key: "from", label: "From", value: from ? formatDate(from.toISOString()) : "", onRemove: () => { setFrom(null); setPage(1); } },
+        { key: "to", label: "To", value: to ? formatDate(to.toISOString()) : "", onRemove: () => { setTo(null); setPage(1); } },
+    ];
+
     return (
         <section data-testid={IDS.section}>
             <SectionHeader
@@ -429,7 +443,8 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                 </button>
             )}
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <div className="relative min-w-0 flex-1 sm:min-w-[14rem]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -438,7 +453,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                         data-testid={IDS.search}
                         placeholder="Campaign title"
                         aria-label="Search campaigns"
-                        className="h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                        className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                     />
                 </div>
                 <FilterSelect
@@ -481,6 +496,9 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                     </button>
                 )}
             </div>
+
+            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
+            </StickyBar>
 
             <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!data ? (

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
@@ -117,7 +117,7 @@ export default function BrandOnboarding() {
                 areas,
             });
             await refresh();
-            toast.success("Brand profile saved");
+            notifySuccess("Brand profile saved");
             navigate("/dashboard", { replace: true, state: { justOnboarded: true } });
         } catch (err) {
             setError(formatApiError(err));

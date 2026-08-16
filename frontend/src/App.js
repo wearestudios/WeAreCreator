@@ -1,6 +1,7 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
+import { TOAST_DURATION } from "@/lib/feedback";
 import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Landing from "@/pages/Landing";
@@ -142,14 +143,35 @@ function App() {
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </BrowserRouter>
+                {/* One position for every toast in the app.
+                    top-center rather than a corner: on a phone a corner toast
+                    is either under the notch or over the bottom-anchored
+                    primary action, and this product is mostly used on phones.
+                    Durations and the success/error treatments come from
+                    lib/feedback.js, so no call site sets its own. */}
                 <Toaster
                     theme="dark"
-                    position="top-right"
+                    position="top-center"
+                    closeButton
+                    duration={TOAST_DURATION.success}
                     toastOptions={{
-                        style: {
-                            background: "hsl(24 8% 8%)",
-                            color: "hsl(30 12% 96%)",
-                            border: "1px solid hsl(24 6% 16%)",
+                        classNames: {
+                            toast:
+                                "group rounded-lg border border-white/10 bg-background/95 " +
+                                "text-foreground shadow-xl shadow-black/50 backdrop-blur-xl grain-surface",
+                            title: "text-sm leading-snug",
+                            description: "text-xs text-muted-foreground",
+                            // Success and failure must be distinguishable
+                            // without reading — a green rule and a red one,
+                            // on the leading edge where the eye lands first.
+                            success: "border-l-2 border-l-emerald-400",
+                            error: "border-l-2 border-l-red-400",
+                            info: "border-l-2 border-l-sky-400",
+                            warning: "border-l-2 border-l-amber-400",
+                            actionButton:
+                                "rounded-full bg-ember-500 px-3 text-black hover:bg-ember-400",
+                            closeButton:
+                                "border-white/15 bg-card text-muted-foreground hover:text-foreground",
                         },
                     }}
                 />
