@@ -1,7 +1,7 @@
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
@@ -62,7 +62,7 @@ function App() {
                         <Route
                             path="/onboarding/brand"
                             element={
-                                <ProtectedRoute roles={["brand"]}>
+                                <ProtectedRoute roles={BRAND_ROLES}>
                                     <BrandOnboarding />
                                 </ProtectedRoute>
                             }
@@ -70,7 +70,7 @@ function App() {
                         <Route
                             path="/campaigns/new"
                             element={
-                                <ProtectedRoute roles={["brand"]}>
+                                <ProtectedRoute roles={BRAND_ROLES}>
                                     <PostCampaign />
                                 </ProtectedRoute>
                             }
@@ -78,7 +78,7 @@ function App() {
                         <Route
                             path="/campaigns/:id/edit"
                             element={
-                                <ProtectedRoute roles={["brand"]}>
+                                <ProtectedRoute roles={BRAND_ROLES}>
                                     <PostCampaign />
                                 </ProtectedRoute>
                             }
@@ -86,7 +86,7 @@ function App() {
                         <Route
                             path="/brand/campaigns/:id/applicants"
                             element={
-                                <ProtectedRoute roles={["brand", "admin"]}>
+                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
                                     <BrandCampaignApplicants />
                                 </ProtectedRoute>
                             }
@@ -94,7 +94,7 @@ function App() {
                         <Route
                             path="/brand/creators"
                             element={
-                                <ProtectedRoute roles={["brand", "admin"]}>
+                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
                                     <BrandCreatorDirectory />
                                 </ProtectedRoute>
                             }
@@ -110,7 +110,7 @@ function App() {
                         <Route
                             path="/campaigns/:id"
                             element={
-                                <ProtectedRoute roles={["creator", "brand", "admin"]}>
+                                <ProtectedRoute roles={["creator", ...BRAND_ROLES, "admin"]}>
                                     <CampaignDetail />
                                 </ProtectedRoute>
                             }

@@ -4,6 +4,19 @@ import { api, formatApiError } from "@/lib/api";
 const AuthContext = createContext(null);
 
 /**
+ * The two role names a brand's own login can hold.
+ *
+ * `brand_manager` is the named person a brand registers behind and its only
+ * login; `brand` is what that role used to be called, and accounts created
+ * before the rename still carry it. Every route guard and role check on the
+ * brand side spreads this rather than naming a string, because naming one
+ * string is how a whole role gets locked out of its own product.
+ */
+export const BRAND_ROLES = ["brand", "brand_manager"];
+
+export const isBrandSide = (role) => BRAND_ROLES.includes(role);
+
+/**
  * Where a signed-in user belongs after login, or when they land somewhere their
  * role can't see. Admins have no dashboard — the console is their only surface —
  * so sending them to /dashboard just bounced them straight back out.
@@ -43,7 +56,18 @@ export const AuthProvider = ({ children }) => {
     };
 
     // WhatsApp OTP — request a code
-    const requestOtp = async ({ phone, purpose, name, role, accept_terms }) => {
+    const requestOtp = async ({
+        phone,
+        purpose,
+        name,
+        role,
+        accept_terms,
+        // A brand registers one named person, who becomes its only login.
+        // Passed straight through; the server ignores them for creators.
+        manager_name,
+        manager_designation,
+        manager_email,
+    }) => {
         try {
             const { data } = await api.post("/auth/otp/request", {
                 phone,
@@ -51,6 +75,9 @@ export const AuthProvider = ({ children }) => {
                 name,
                 role,
                 accept_terms,
+                manager_name,
+                manager_designation,
+                manager_email,
             });
             return { ok: true, ...data };
         } catch (e) {
@@ -59,7 +86,17 @@ export const AuthProvider = ({ children }) => {
     };
 
     // WhatsApp OTP — verify code (logs in or completes signup)
-    const verifyOtp = async ({ phone, code, purpose, name, role, accept_terms }) => {
+    const verifyOtp = async ({
+        phone,
+        code,
+        purpose,
+        name,
+        role,
+        accept_terms,
+        manager_name,
+        manager_designation,
+        manager_email,
+    }) => {
         try {
             const { data } = await api.post("/auth/otp/verify", {
                 phone,
@@ -68,6 +105,9 @@ export const AuthProvider = ({ children }) => {
                 name,
                 role,
                 accept_terms,
+                manager_name,
+                manager_designation,
+                manager_email,
             });
             setUser(data);
             return { ok: true, user: data };

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WeAre Creators">
+    <!-- The navbar mark, at tab size: an ember square with a serif W. The
+         letterform is drawn as paths rather than <text> so it renders the same
+         whether or not Fraunces has loaded — a favicon has no font stack to
+         fall back through. -->
+    <rect width="64" height="64" rx="12" fill="#F05D14"/>
+    <path fill="#0B0A09" d="M11.5 18.5h8.9l5.2 18.9 5.1-18.9h6.6l5.2 18.9 5.1-18.9h8.9l-9.4 28h-8.4l-4.8-17.2-4.8 17.2h-8.4z"/>
+</svg>

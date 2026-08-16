@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Camera, Building2 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, isBrandSide } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,8 +35,25 @@ export default function Signup() {
     const [role, setRole] = useState(initialRole);
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
+    // A brand registers one named person, who becomes its only login. Asked
+    // here rather than later because the audit log should say a name from the
+    // first action, and because verification asks for exactly these three.
+    const [managerName, setManagerName] = useState("");
+    const [managerDesignation, setManagerDesignation] = useState("");
+    const [managerEmail, setManagerEmail] = useState("");
+    const isBrand = role === "brand";
     // Consent is recorded against the account, so it has to be an actual act.
     const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+    // Sent on both OTP steps, so a code requested and verified minutes apart
+    // still lands the contact. Empty for creators, who have no such concept.
+    const brandContact = isBrand
+        ? {
+              manager_name: managerName.trim() || undefined,
+              manager_designation: managerDesignation.trim() || undefined,
+              manager_email: managerEmail.trim() || undefined,
+          }
+        : {};
 
     return (
         <div data-testid="signup-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
@@ -54,7 +71,7 @@ export default function Signup() {
                     <div className="max-w-md">
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Invite-only</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Get on the list. Every application is reviewed by our team — from every city in India.
+                            Get on the list. Every application is reviewed by our team, one at a time.
                         </p>
                     </div>
                 </div>
@@ -114,7 +131,11 @@ export default function Signup() {
                     <OtpForm
                         phone={phone}
                         setPhone={setPhone}
-                        canSubmitPhoneStep={name.trim().length > 0 && acceptedTerms}
+                        canSubmitPhoneStep={
+                            name.trim().length > 0 &&
+                            acceptedTerms &&
+                            (!isBrand || managerName.trim().length > 0)
+                        }
                         onRequest={(p) =>
                             requestOtp({
                                 phone: p,
@@ -122,6 +143,7 @@ export default function Signup() {
                                 name: name.trim(),
                                 role,
                                 accept_terms: acceptedTerms,
+                                ...brandContact,
                             })
                         }
                         onVerify={(code) => verifyOtp({
@@ -130,6 +152,7 @@ export default function Signup() {
                             purpose: "signup",
                             name: name.trim(),
                             role,
+                            ...brandContact,
                             accept_terms: acceptedTerms,
                         })}
                         onVerified={(user) => {
@@ -137,7 +160,7 @@ export default function Signup() {
                             const next =
                                 user?.role === "creator"
                                     ? "/onboarding/creator"
-                                    : user?.role === "brand"
+                                    : isBrandSide(user?.role)
                                     ? "/onboarding/brand"
                                     : "/dashboard";
                             navigate(next, { replace: true });
@@ -156,9 +179,74 @@ export default function Signup() {
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                        placeholder={role === "brand" ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
+                                        placeholder={isBrand ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
                                     />
                                 </div>
+
+                                {isBrand && (
+                                    <div
+                                        data-testid="signup-brand-contact"
+                                        className="flex flex-col gap-4 rounded-md border border-white/10 bg-card/40 p-4"
+                                    >
+                                        <p className="text-xs leading-relaxed text-muted-foreground">
+                                            One person runs the account. This number is their
+                                            login, and their name is what creators and our
+                                            team see on your campaigns.
+                                        </p>
+                                        <div>
+                                            <Label
+                                                htmlFor="manager-name"
+                                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                            >
+                                                Your full name
+                                            </Label>
+                                            <Input
+                                                id="manager-name"
+                                                data-testid="signup-manager-name-input"
+                                                required
+                                                value={managerName}
+                                                onChange={(e) => setManagerName(e.target.value)}
+                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                placeholder="e.g. Priya Rao"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label
+                                                htmlFor="manager-designation"
+                                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                            >
+                                                Your role there
+                                            </Label>
+                                            <Input
+                                                id="manager-designation"
+                                                data-testid="signup-manager-designation-input"
+                                                value={managerDesignation}
+                                                onChange={(e) =>
+                                                    setManagerDesignation(e.target.value)
+                                                }
+                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                placeholder="e.g. Marketing Lead"
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label
+                                                htmlFor="manager-email"
+                                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                            >
+                                                Work email
+                                            </Label>
+                                            <Input
+                                                id="manager-email"
+                                                type="email"
+                                                data-testid="signup-manager-email-input"
+                                                value={managerEmail}
+                                                onChange={(e) => setManagerEmail(e.target.value)}
+                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                placeholder="e.g. priya@toit.in"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                                 <label
                                     htmlFor="accept-terms"
                                     className="flex cursor-pointer items-start gap-3 text-xs leading-relaxed text-muted-foreground"

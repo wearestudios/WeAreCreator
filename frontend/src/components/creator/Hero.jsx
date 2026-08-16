@@ -68,7 +68,7 @@ export default function Hero({ user, profile, earnings }) {
         >
             <div className="md:col-span-7">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    Creator · India
+                    Creator · Bengaluru
                 </p>
 
                 <div className="mt-5 flex items-center gap-4">

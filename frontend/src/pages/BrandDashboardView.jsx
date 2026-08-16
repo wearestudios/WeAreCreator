@@ -11,7 +11,9 @@ import {
     Loader2,
     MapPin,
     MessageSquare,
+    Pause,
     Pencil,
+    Play,
     Plus,
     Send,
     Sparkles,
@@ -22,6 +24,16 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { BRAND_CAMPAIGN_CONTROLS } from "@/constants/testIds";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -148,6 +160,9 @@ export default function BrandDashboardView({ user }) {
     const [error, setError] = useState("");
     const [busyId, setBusyId] = useState(null);
     const [confirm, setConfirm] = useState({ kind: null, campaign: null });
+    // Pausing needs a reason the server insists on, so it gets its own dialog
+    // rather than the yes/no AlertDialog the other two share.
+    const [pausing, setPausing] = useState({ campaign: null, reason: "" });
 
     const load = useCallback(async () => {
         try {
@@ -194,6 +209,24 @@ export default function BrandDashboardView({ user }) {
     const deleteDraft = (c) =>
         runAction(c, () => api.delete(`/brand/campaigns/${c.id}`), "Draft deleted");
 
+    // Pausing stops new applications. Work already under way carries on, and
+    // resuming puts the campaign back in whichever state it was paused from.
+    const pauseCampaign = async (c, reason) => {
+        await runAction(
+            c,
+            () => api.post(`/brand/campaigns/${c.id}/pause`, { reason }),
+            "Paused — no new applications until you resume",
+        );
+        setPausing({ campaign: null, reason: "" });
+    };
+
+    const resumeCampaign = (c) =>
+        runAction(
+            c,
+            () => api.post(`/brand/campaigns/${c.id}/resume`, {}),
+            "Back on the feed",
+        );
+
     const profileMissing =
         data && (!data.profile || !data.profile.business_name);
     const businessName =
@@ -221,7 +254,7 @@ export default function BrandDashboardView({ user }) {
                         <header data-testid="brand-header" className="grid gap-6 md:grid-cols-12 md:items-end">
                             <div className="md:col-span-8">
                                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                    Brand · India
+                                    Brand · Bengaluru
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
@@ -357,7 +390,7 @@ export default function BrandDashboardView({ user }) {
                                         </p>
                                         <p className="max-w-md text-sm text-muted-foreground">
                                             Post your first paid brief and it will start
-                                            reaching verified creators across India immediately.
+                                            reaching verified creators across Bengaluru immediately.
                                         </p>
                                         <Link to="/campaigns/new" className="mt-4">
                                             <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">
@@ -501,6 +534,45 @@ export default function BrandDashboardView({ user }) {
                                                             </Link>
                                                         )}
 
+                                                        {["upcoming", "open", "in_progress"].includes(
+                                                            c.status,
+                                                        ) && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                data-testid={BRAND_CAMPAIGN_CONTROLS.pause(
+                                                                    c.id,
+                                                                )}
+                                                                onClick={() =>
+                                                                    setPausing({
+                                                                        campaign: c,
+                                                                        reason: "",
+                                                                    })
+                                                                }
+                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                            >
+                                                                <Pause className="mr-1.5 h-3.5 w-3.5" />
+                                                                Pause
+                                                            </Button>
+                                                        )}
+
+                                                        {c.status === "paused" && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={busy}
+                                                                data-testid={BRAND_CAMPAIGN_CONTROLS.resume(
+                                                                    c.id,
+                                                                )}
+                                                                onClick={() => resumeCampaign(c)}
+                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                            >
+                                                                <Play className="mr-1.5 h-3.5 w-3.5" />
+                                                                Resume
+                                                            </Button>
+                                                        )}
+
                                                         {c.can_close && (
                                                             <Button
                                                                 variant="outline"
@@ -556,6 +628,64 @@ export default function BrandDashboardView({ user }) {
                     </>
                 )}
             </main>
+
+            <Dialog
+                open={pausing.campaign !== null}
+                onOpenChange={(v) => !v && setPausing({ campaign: null, reason: "" })}
+            >
+                <DialogContent
+                    data-testid={BRAND_CAMPAIGN_CONTROLS.pauseDialog}
+                    className="rounded-md border border-white/10 bg-card"
+                >
+                    <DialogHeader>
+                        <DialogTitle className="font-serif text-2xl">
+                            Pause this campaign?
+                        </DialogTitle>
+                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                            “{pausing.campaign?.title}” comes off the feed and stops taking
+                            new applications. Creators already working on it carry on, and
+                            resuming puts it back exactly where it was.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col gap-2">
+                        <Textarea
+                            rows={3}
+                            value={pausing.reason}
+                            onChange={(e) =>
+                                setPausing((p) => ({ ...p, reason: e.target.value }))
+                            }
+                            placeholder="e.g. Kitchen closed for renovation until the 20th"
+                            data-testid={BRAND_CAMPAIGN_CONTROLS.pauseReason}
+                            aria-label="Why you're pausing"
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                            A line for your own records and ours — it isn't shown to creators.
+                        </span>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => setPausing({ campaign: null, reason: "" })}
+                            className="rounded-full"
+                        >
+                            Keep it running
+                        </Button>
+                        <Button
+                            disabled={
+                                pausing.reason.trim().length < 3 ||
+                                busyId === pausing.campaign?.id
+                            }
+                            data-testid={BRAND_CAMPAIGN_CONTROLS.pauseConfirm}
+                            onClick={() =>
+                                pauseCampaign(pausing.campaign, pausing.reason.trim())
+                            }
+                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        >
+                            Pause campaign
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <AlertDialog
                 open={confirm.kind !== null}

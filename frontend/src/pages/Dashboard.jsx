@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
-import { useAuth, homePathFor } from "@/context/AuthContext";
+import { useAuth, homePathFor, isBrandSide } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import {
     CREATOR_ACTIVE as ACTIVE_IDS,
@@ -351,7 +351,7 @@ export default function Dashboard() {
     if (user.role === "creator") {
         return <CreatorHome user={user} justOnboarded={justOnboarded} />;
     }
-    if (user.role === "brand") {
+    if (isBrandSide(user.role)) {
         return <BrandDashboardView user={user} />;
     }
     // Admins have no dashboard of their own — the console is their home.

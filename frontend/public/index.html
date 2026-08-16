@@ -1,27 +1,61 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-IN">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <meta name="description" content="A product of emergent.sh" />
+        <!-- The app's actual background, hsl(20 8% 4%) — warm-tinted near-black,
+             not pure #000. On Android Chrome this paints the address bar, so a
+             pure black here shows as a seam above the page. -->
+        <meta name="theme-color" content="#0B0A09" />
+
+        <title>WeAre Creators — Paid campaigns for verified creators in Bengaluru</title>
+        <meta
+            name="description"
+            content="WeAre Creators connects verified Bengaluru creators with cafés, restaurants, hotels, retail and fashion brands running paid campaigns. Brands post the brief; we verify the creator, book the slot and settle the payment."
+        />
+
+        <!-- Fonts. One stylesheet: Fraunces for headings, Inter Tight for body.
+             preconnect to gstatic needs crossorigin because the font files
+             themselves are fetched anonymously. -->
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap" rel="stylesheet" />
-        <!--
-        manifest.json provides metadata used when your web app is installed on a
-        user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-        -->
-        <!--
-        Notice the use of %PUBLIC_URL% in the tags above.
-        It will be replaced with the URL of the `public` folder during the build.
-        Only files inside the `public` folder can be referenced from the HTML.
 
-        Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-        work correctly both with client-side routing and a non-root public URL.
-        Learn how to configure a non-root public URL by running `npm run build`.
-        -->
-        <title>Emergent | Fullstack App</title>
+        <!-- Icons. SVG for anything current, PNG for Safari and home screens. -->
+        <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+        <link rel="icon" href="%PUBLIC_URL%/favicon-32.png" sizes="32x32" type="image/png" />
+        <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+
+        <!-- Link previews. Most of our traffic arrives as a link pasted into
+             WhatsApp, so this is the first thing a creator or a brand ever sees
+             of the product.
+
+             %PUBLIC_URL% resolves at build time. WhatsApp and X want an
+             absolute image URL, so build with PUBLIC_URL set to the site
+             origin — `PUBLIC_URL=https://your-domain npm run build` — and add
+             an og:url below once the canonical domain is fixed. -->
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="WeAre Creators" />
+        <meta property="og:locale" content="en_IN" />
+        <meta property="og:title" content="Paid campaigns for verified creators." />
+        <meta
+            property="og:description"
+            content="Verified Bengaluru creators, paid briefs from cafés, restaurants, hotels, retail and fashion brands. Brief to booking to payment, in one place."
+        />
+        <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta
+            property="og:image:alt"
+            content="WeAre Creators — paid campaigns for verified creators"
+        />
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Paid campaigns for verified creators." />
+        <meta
+            name="twitter:description"
+            content="Verified Bengaluru creators, paid briefs from cafés, restaurants, hotels, retail and fashion brands. Brief to booking to payment, in one place."
+        />
+        <meta name="twitter:image" content="%PUBLIC_URL%/og-image.png" />
         <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>

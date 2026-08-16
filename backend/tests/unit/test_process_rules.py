@@ -4,6 +4,7 @@ Every test here maps to a specific defect found in the process review, so a
 regression re-breaks a named flow rather than an anonymous assertion.
 """
 import asyncio
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -359,24 +360,35 @@ class TestApplicantProjection:
     CREATOR_USER = {"_id": "u1", "name": "Priya Rao", "email": "p@x.in", "phone": "+9198"}
     PROFILE = {"name": "Priya Rao", "instagram_handle": "priyaeats", "city": "Bengaluru"}
 
-    @pytest.mark.parametrize("state", ["applied", "verified", "declined", "cancelled"])
-    def test_contact_details_hidden_before_a_working_relationship(self, state):
+    # Every state, including the ones where the brand and the creator are
+    # actively working together. This used to reveal an email and a phone
+    # number from `accepted` onwards, which meant accepting an application
+    # handed over a contact the creator never offered. A brand reaches a
+    # creator through the platform, at every stage, or not at all.
+    @pytest.mark.parametrize(
+        "state",
+        ["applied", "verified", "declined", "cancelled",
+         "accepted", "commercial_agreed", "slot_booked", "attended",
+         "content_submitted", "content_approved", "in_payment", "closed"],
+    )
+    def test_contact_details_are_never_revealed(self, state):
         row = server._serialize_applicant(
             _collab(state), self.CREATOR_USER, self.PROFILE, None
         )
-        assert row["creator"]["email"] is None
-        assert row["creator"]["phone"] is None
+        for field in server.BRAND_FORBIDDEN_CREATOR_FIELDS:
+            assert field not in row["creator"], f"{field} leaked at {state}"
         # The things a brand needs in order to decide are still there.
         assert row["creator"]["instagram_handle"] == "priyaeats"
         assert row["pitch"]
 
-    @pytest.mark.parametrize("state", ["accepted", "slot_booked", "closed"])
-    def test_contact_details_revealed_once_working_together(self, state):
-        row = server._serialize_applicant(
-            _collab(state), self.CREATOR_USER, self.PROFILE, None
-        )
-        assert row["creator"]["email"] == "p@x.in"
-        assert row["creator"]["phone"] == "+9198"
+    def test_the_applicant_row_uses_the_one_brand_projection(self):
+        # Not a separate hand-written dict that happens to omit the contact
+        # fields — that is how the two brand surfaces drifted apart in the
+        # first place, one revealing a phone number and one not.
+        import inspect
+
+        src = inspect.getsource(server._serialize_applicant)
+        assert "_brand_visible_creator(" in src
 
     def test_actions_are_decided_server_side(self):
         verified = server._serialize_applicant(_collab("verified"), self.CREATOR_USER, self.PROFILE, None)
@@ -798,7 +810,9 @@ class TestInviteEndpointShape:
         # pre-check alone cannot promise that.
         source = (server.ROOT_DIR / "server.py").read_text()
         assert "one_invite_per_creator" in source
-        assert "DuplicateKeyError" in source.split("def invite_creators_to_campaign")[1][:6000]
+        # The send lives in `_invite_creators`, shared by the admin route and
+        # the brand manager's, so the guarantee holds for both callers.
+        assert "DuplicateKeyError" in source.split("def _invite_creators")[1][:6000]
 
 
 class TestNotificationRecordSplit:
@@ -1140,14 +1154,17 @@ class TestCampaignControls:
     def test_pause_remembers_where_to_come_back_to(self):
         import inspect
 
-        assert "paused_from_status" in inspect.getsource(server.pause_campaign)
-        assert "paused_from_status" in inspect.getsource(server.resume_campaign)
+        # What pausing *means* lives in one place, shared by the admin route
+        # and the brand manager's — a brand pause and an admin pause must not
+        # resume to different states.
+        assert "paused_from_status" in inspect.getsource(server._pause_campaign)
+        assert "paused_from_status" in inspect.getsource(server._resume_campaign)
 
     def test_resuming_re_checks_the_end_date(self):
         # A campaign paused past its window must not quietly reopen.
         import inspect
 
-        src = inspect.getsource(server.resume_campaign)
+        src = inspect.getsource(server._resume_campaign)
         assert "end_date" in src and '"completed"' in src
 
     def test_closing_answers_everyone_still_waiting(self):
@@ -1201,13 +1218,33 @@ class TestAuditCoverage:
             if "await audit(" in body:
                 continue
             # Some endpoints delegate to a helper that audits on their behalf.
+            # The helpers are named rather than discovered so that adding a
+            # thin wrapper around an unaudited action still fails this.
             delegates = any(
                 f"await {helper}(" in body
-                for helper in ("_set_creator_verification",)
+                for helper in (
+                    "_set_creator_verification",
+                    "_pause_campaign",
+                    "_resume_campaign",
+                    "_invite_creators",
+                    "_check_in_collaboration",
+                )
             )
             if not delegates:
                 missing.append(f"{path} ({fn})")
         assert not missing, f"admin mutations with no audit trail: {missing}"
+
+    @pytest.mark.parametrize(
+        "helper",
+        ["_pause_campaign", "_resume_campaign", "_invite_creators",
+         "_check_in_collaboration", "_set_creator_verification"],
+    )
+    def test_the_delegated_helpers_actually_audit(self, helper):
+        # The exemption above is only safe while this holds: a helper trusted
+        # to audit on a route's behalf has to actually do it.
+        import inspect
+
+        assert "await audit(" in inspect.getsource(getattr(server, helper))
 
     @pytest.mark.parametrize(
         "fn_name,action",
@@ -1220,8 +1257,8 @@ class TestAuditCoverage:
             ("refund_payment", "payment.refund"),
             ("approve_campaign", "campaign.approve"),
             ("reject_campaign", "campaign.reject"),
-            ("pause_campaign", "campaign.pause"),
-            ("resume_campaign", "campaign.resume"),
+            ("_pause_campaign", "campaign.pause"),
+            ("_resume_campaign", "campaign.resume"),
             ("admin_close_campaign", "campaign.close"),
             ("admin_update_campaign", "campaign.update"),
         ],
@@ -1692,7 +1729,7 @@ class TestManagerAudit:
             ("update_slot", "slot.update"),
             ("delete_campaign_slot", "slot.delete"),
             ("create_campaign_slot", "slot.create"),
-            ("check_in_creator", "collaboration.check_in"),
+            ("_check_in_collaboration", "collaboration.check_in"),
             ("mark_no_show", "collaboration.no_show"),
             ("reschedule_creator", "collaboration.reschedule"),
             ("broadcast_to_campaign", "campaign.broadcast"),
@@ -1717,8 +1754,13 @@ class TestManagerAudit:
             end = b.find("\n@")
             body = b[:end] if end > 0 else b
             fn = _re.search(r"async def (\w+)", b)
-            # create_slot delegates to create_campaign_slot, which audits.
-            if "await audit(" in body or "await create_campaign_slot(" in body:
+            # Some routes delegate to a helper that audits on their behalf:
+            # create_slot to create_campaign_slot, check-in to the transition
+            # it shares with the brand manager's route.
+            if "await audit(" in body or any(
+                f"await {helper}(" in body
+                for helper in ("create_campaign_slot", "_check_in_collaboration")
+            ):
                 continue
             missing.append(f"{m.group(2)} ({fn.group(1) if fn else '?'})")
         assert not missing, f"manager mutations with no audit trail: {missing}"
@@ -1768,7 +1810,7 @@ class TestOnTheDayTransitions:
     def test_check_in_only_from_slot_booked(self):
         import inspect
 
-        src = inspect.getsource(server.check_in_creator)
+        src = inspect.getsource(server._check_in_collaboration)
         assert 'current != "slot_booked"' in src
         assert '{"_id": collab["_id"], "state": "slot_booked"}' in src, (
             "the write needs a precondition"
@@ -1777,7 +1819,7 @@ class TestOnTheDayTransitions:
     def test_check_in_lands_on_attended(self):
         import inspect
 
-        assert '"state": "attended"' in inspect.getsource(server.check_in_creator)
+        assert '"state": "attended"' in inspect.getsource(server._check_in_collaboration)
 
     def test_a_no_show_needs_a_note(self):
         assert server.NoShowPayload.model_fields["note"].is_required()
@@ -2545,10 +2587,24 @@ class TestSuggestedCampaigns:
 class TestSignupAsksForAlmostNothing:
     def test_the_signup_payloads_carry_only_identity(self):
         # role picks which product you get and accept_terms is consent we have
-        # to be able to evidence. Anything else belongs in the profile builder.
+        # to be able to evidence. The three manager_* fields are the brand's
+        # one named contact — who the login belongs to, which is identity, not
+        # profile. Anything else still belongs in the profile builder.
         allowed = {"phone", "purpose", "name", "role", "accept_terms", "code"}
+        allowed |= set(server.BRAND_CONTACT_FIELDS)
         for model in (server.OtpRequestInput, server.OtpVerifyInput):
             assert set(model.model_fields) <= allowed, sorted(set(model.model_fields) - allowed)
+
+    def test_a_creator_signup_is_still_a_name_and_a_number(self):
+        # The named-contact fields are for the brand side. A creator sending
+        # them is not refused, but nothing reads them — the creator stub is
+        # still built from the name alone.
+        import inspect
+
+        src = inspect.getsource(server.verify_otp)
+        stub = src[src.index("db.creator_profiles.insert_one"):][:1200]
+        for field in server.BRAND_CONTACT_FIELDS:
+            assert field not in stub
 
     def test_signup_needs_a_name_and_a_role_and_nothing_more(self):
         import inspect
@@ -3260,10 +3316,23 @@ class TestVerifiedFollowerCount:
         for fn in (
             server._serialize_creator_profile,
             server._serialize_admin_creator,
-            server._serialize_directory_creator,
+            # Every brand-facing surface now shares one projection, so this is
+            # where the directory, the applicant board and the suggestions
+            # panel all get it.
+            server._brand_visible_creator,
             server.get_creator_dashboard,
         ):
             assert "_follower_provenance" in inspect.getsource(fn)
+
+    def test_the_brand_surfaces_all_go_through_that_one_projection(self):
+        import inspect
+
+        for fn in (
+            server._serialize_directory_creator,
+            server._serialize_applicant,
+            server._suggest_creators_for_campaign,
+        ):
+            assert "_brand_visible_creator(" in inspect.getsource(fn)
 
     def test_the_self_reported_figure_is_kept_as_a_fallback(self):
         import inspect
@@ -3332,3 +3401,1148 @@ class TestInstagramJobsAreSafeToRun:
 
         src = inspect.getsource(server._shutdown)
         assert "nudge_task" in src and "instagram_task" in src
+
+
+# ---------------------------------------------------------------------------
+# Brand representative verification. Anyone could sign up and claim to be any
+# business — the only check was a boolean an admin flipped on a name and a
+# category. These cover the documents, where they're stored, and the line
+# between a brand that has been checked and one that has merely said so.
+# ---------------------------------------------------------------------------
+
+
+class TestVerificationDocumentsAreNotPublic:
+    def test_they_are_stored_outside_the_static_directory(self):
+        # UPLOAD_DIR is mounted as StaticFiles. A GST certificate carries a
+        # registered address and a director's name; it must not be one guessed
+        # URL away from the internet.
+        assert server.PRIVATE_UPLOAD_DIR != server.UPLOAD_DIR
+        assert not str(server.PRIVATE_UPLOAD_DIR).startswith(str(server.UPLOAD_DIR))
+
+    def test_nothing_mounts_the_private_directory(self):
+        src = (server.ROOT_DIR / "server.py").read_text()
+        mounts = [ln for ln in src.splitlines() if "StaticFiles(" in ln]
+        assert mounts, "expected the public upload mount to still exist"
+        assert all("PRIVATE_UPLOAD_DIR" not in ln for ln in mounts)
+
+    def test_the_store_helper_returns_no_url(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "UPLOAD_URL_PREFIX" not in src
+        assert '"stored_name"' in src
+
+    def test_the_serializer_cannot_produce_a_link(self):
+        # A serializer with no path in it can't leak one into a template.
+        doc = {
+            "_id": "1", "doc_type": "gst_certificate", "stored_name": "secret-file.pdf",
+            "original_name": "gst.pdf", "mime": "application/pdf", "size": 10,
+        }
+        out = server._serialize_brand_document(doc)
+        assert "secret-file.pdf" not in str(out)
+        assert "stored_name" not in out
+        assert "path" not in out
+
+    def test_only_an_authenticated_admin_route_reads_them_back(self):
+        import inspect
+
+        src = inspect.getsource(server.download_brand_document)
+        assert 'require_roles("admin")' in inspect.getsource(server.download_brand_document)
+        # Both ids in the filter, so a document id can't be pulled out from
+        # under a different brand.
+        assert '{"_id": doc_oid, "brand_id": brand_oid}' in src
+        assert "audit(" in src
+        assert '"no-store"' in src
+
+
+class TestDocumentSniffing:
+    def test_a_pdf_is_accepted(self):
+        assert server.sniff_document_type(b"%PDF-1.7\n...") == ("application/pdf", ".pdf")
+
+    @pytest.mark.parametrize(
+        "head,expected",
+        [
+            (b"\xff\xd8\xff\xe0", "image/jpeg"),
+            (b"\x89PNG\r\n\x1a\n", "image/png"),
+            (b"GIF89a", "image/gif"),
+        ],
+    )
+    def test_the_image_types_still_pass(self, head, expected):
+        # Same magic-byte check as the creator profile image — one rule.
+        assert server.sniff_document_type(head)[0] == expected
+
+    @pytest.mark.parametrize("head", [b"MZ\x90\x00", b"<html>", b"PK\x03\x04", b""])
+    def test_anything_else_is_refused(self, head):
+        assert server.sniff_document_type(head) is None
+
+    def test_the_extension_comes_from_the_bytes_not_the_client(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "sniff_document_type(first)" in src
+        assert "file.filename" in src
+        # The client's name is a label only — it must not reach the path.
+        stored = src[src.index("stored_name = "):src.index("path = PRIVATE_UPLOAD_DIR")]
+        assert "filename" not in stored
+
+    def test_the_size_limit_is_enforced_while_streaming(self):
+        import inspect
+
+        src = inspect.getsource(server._store_private_upload)
+        assert "written > limit" in src
+        assert "413" in src
+
+
+class TestPrivatePathResolution:
+    @pytest.mark.parametrize(
+        "name", ["../../etc/passwd", "a/b.pdf", "a\\b.pdf", "", ".", ".."],
+    )
+    def test_traversal_and_nonsense_are_refused(self, name):
+        assert server._private_upload_path(name) is None
+
+    def test_it_checks_the_directory_boundary(self):
+        import inspect
+
+        src = inspect.getsource(server._private_upload_path)
+        assert "relative_to" in src
+
+
+class TestBrandProfileFields:
+    def test_the_paperwork_and_the_trading_name_are_separate(self):
+        # "Third Wave Coffee" trades; "…Roasters Pvt Ltd" signs. A reviewer
+        # matching a document to a profile needs both.
+        fields = server.BrandProfileUpdate.model_fields
+        assert "business_name" in fields and "legal_entity_name" in fields
+
+    def test_it_asks_who_is_asking(self):
+        fields = server.BrandProfileUpdate.model_fields
+        assert {"contact_person_name", "contact_person_designation", "contact_email"} <= set(fields)
+
+    def test_everything_is_optional_to_save(self):
+        # A rejected brand has to be able to fix itself one field at a time.
+        for name, field in server.BrandProfileUpdate.model_fields.items():
+            assert not field.is_required(), f"{name} blocks a partial save"
+
+    def test_only_the_keys_that_were_sent_are_written(self):
+        import inspect
+
+        assert "payload.model_fields_set" in inspect.getsource(server.update_brand_profile)
+
+    def test_business_type_is_a_closed_list(self):
+        assert "private_limited" in server.BusinessType.__args__
+        assert "sole_proprietorship" in server.BusinessType.__args__
+
+    def test_the_four_document_types_are_the_ones_asked_for(self):
+        assert set(server.BrandDocumentType.__args__) == {
+            "gst_certificate",
+            "business_registration",
+            "fssai_licence",
+            "shop_establishment_licence",
+        }
+        assert set(server.BRAND_DOCUMENT_LABELS) == set(server.BrandDocumentType.__args__)
+
+
+class TestBrandFieldValidation:
+    def test_a_gstin_is_normalised_or_refused(self):
+        assert server._clean_gstin(" 29abcde1234f1z5 ") == "29ABCDE1234F1Z5"
+        assert server._clean_gstin("") is None
+        with pytest.raises(HTTPException) as exc:
+            server._clean_gstin("NOT-A-GSTIN")
+        assert exc.value.status_code == 422
+
+    def test_a_url_gets_a_scheme_or_is_refused(self):
+        assert server._clean_web_url("example.com", label="website").startswith("https://")
+        assert server._clean_web_url(None, label="website") is None
+        with pytest.raises(HTTPException):
+            server._clean_web_url("not a url", label="website")
+
+    def test_a_free_mail_address_is_flagged_not_refused(self):
+        # A café on Gmail is normal. An address on the company's own domain is
+        # the cheapest signal that somebody actually works there.
+        assert server._is_free_email("owner@gmail.com") is True
+        assert server._is_free_email("riya@thirdwave.in") is False
+        import inspect
+
+        assert "contact_email_is_free_domain" in inspect.getsource(server.list_pending_brands)
+
+
+class TestBrandSubmission:
+    def test_the_required_set_is_named_not_guessed(self):
+        fields = {f for f, _ in server._BRAND_REQUIRED_FIELDS}
+        assert {"legal_entity_name", "business_type", "registered_address"} <= fields
+        assert {"contact_person_name", "contact_person_designation", "contact_email"} <= fields
+
+    def test_an_incomplete_profile_is_named_back(self):
+        missing = {r["field"] for r in server._brand_missing_fields({"business_name": "X"})}
+        assert "legal_entity_name" in missing
+        assert "business_name" not in missing
+
+    def test_submitting_needs_the_fields_and_a_document(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert "_brand_missing_fields(profile)" in src
+        assert "db.brand_documents.count_documents" in src
+        assert src.count("409") >= 2
+
+    def test_the_refusal_names_the_documents_we_accept(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        for name in ("GST certificate", "business registration", "FSSAI"):
+            assert name in src
+
+    def test_a_resubmission_clears_the_old_refusal(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert '"verification_reason": None' in src
+
+    def test_it_is_audited_and_confirmed(self):
+        import inspect
+
+        src = inspect.getsource(server.submit_brand_for_verification)
+        assert '"brand.submit_for_verification"' in src
+        assert "notify(" in src
+        assert "brand_verification_submitted" in server.NOTIFY_EVENTS
+
+
+class TestBrandVerificationState:
+    def test_verified_wins_whatever_is_stored(self):
+        assert server._brand_verification_state({"verified": True}) == "verified"
+
+    def test_a_stored_state_is_used(self):
+        assert (
+            server._brand_verification_state({"verification_state": "pending_verification"})
+            == "pending_verification"
+        )
+
+    def test_a_row_predating_the_field_is_derived(self):
+        # Old rows have a boolean and maybe a reason, and nothing else.
+        assert server._brand_verification_state({}) == "unsubmitted"
+        assert server._brand_verification_state({"verification_reason": "no"}) == "rejected"
+
+    def test_the_boolean_and_the_state_are_kept_in_step(self):
+        import inspect
+
+        for fn in (server.verify_brand, server.reject_brand, server.unverify_brand):
+            src = inspect.getsource(fn)
+            assert '"verification_state"' in src, fn.__name__
+
+    def test_startup_backfills_rather_than_emptying_the_queue(self):
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert '"verification_state": {"$exists": False}' in src
+        assert "pending_verification" in src
+
+
+class TestUnverifiedBrandsCannotReachCreators:
+    # The whole point of the feature. Each of these is a way an unverified
+    # brand could otherwise see, contact or notify a creator.
+    GATED = [
+        "list_campaign_applicants",
+        "brand_accept_applicant",
+        "brand_decline_applicant",
+        "brand_approve_content",
+        "brand_request_changes",
+        "brand_directory",
+        "brand_directory_filters",
+        "publish_brand_campaign",
+    ]
+
+    @pytest.mark.parametrize("fn_name", GATED)
+    def test_the_endpoint_checks_server_side(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert "_verified_brand_or_403(user)" in src, f"{fn_name} is not gated"
+
+    def test_drafting_and_editing_stay_open(self):
+        # A rejected brand has to be able to fix itself, and a draft reaches
+        # nobody.
+        import inspect
+
+        for fn in (server.update_brand_profile, server.get_brand_profile):
+            assert "_verified_brand_or_403" not in inspect.getsource(fn)
+
+    def test_the_directory_is_gated_before_it_queries(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_directory)
+        assert src.index("_verified_brand_or_403") < src.index("db.creator_profiles")
+
+    @pytest.mark.parametrize(
+        "fn_name,lookup",
+        [
+            ("list_campaign_applicants", "_own_campaign_or_404"),
+            ("brand_accept_applicant", "_brand_collab_or_404"),
+            ("brand_decline_applicant", "_brand_collab_or_404"),
+            ("brand_approve_content", "_brand_collab_or_404"),
+            ("brand_request_changes", "_brand_collab_or_404"),
+        ],
+    )
+    def test_ownership_is_checked_before_verification(self, fn_name, lookup):
+        # Somebody else's record stays a 404. An unverified brand probing ids
+        # must not learn what exists from the shape of the refusal.
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert src.index(lookup) < src.index("_verified_brand_or_403")
+
+    def test_contact_details_are_not_reachable_at_any_stage(self):
+        # Verification is necessary, not sufficient — and the older rule has
+        # been tightened rather than relaxed: there is no stage at which a
+        # brand is handed a creator's number.
+        import inspect
+
+        src = inspect.getsource(server._serialize_applicant)
+        assert "revealed" not in src
+        assert "_brand_visible_creator(" in src
+
+    def test_the_brand_invite_route_is_behind_verification(self):
+        # A brand *can* now invite a named creator — but only its own campaign,
+        # and only once we have checked the business is real. The message goes
+        # out through us; the number never comes back.
+        import inspect
+
+        src = inspect.getsource(server.brand_invite_creators)
+        assert "_own_campaign_or_404" in src
+        assert "_verified_brand_or_403" in src
+        assert src.index("_own_campaign_or_404") < src.index("_verified_brand_or_403")
+
+    def test_the_refusal_says_which_of_the_three_states_they_are_in(self):
+        never = server._why_brand_is_blocked({})
+        waiting = server._why_brand_is_blocked({"verification_state": "pending_verification"})
+        refused = server._why_brand_is_blocked(
+            {"verification_state": "rejected", "verification_reason": "Licence was illegible."}
+        )
+        assert "Verify your business" in never
+        assert "with the WeAre team" in waiting
+        assert "Licence was illegible." in refused
+        assert len({never, waiting, refused}) == 3
+
+    def test_someone_who_never_submitted_is_told_what_is_missing(self):
+        message = server._why_brand_is_blocked({"business_name": "Third Wave"})
+        assert "Legal entity name" in message
+        assert "document" in message
+
+
+class TestAdminBrandReview:
+    def test_the_queue_only_holds_brands_that_asked(self):
+        # It used to be every unverified row, which meant every signup.
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        assert '"verification_state": {"$in": ["pending_verification", "rejected"]}' in src
+
+    def test_the_longest_wait_is_first(self):
+        import inspect
+
+        assert '.sort("submitted_for_verification_at", 1)' in inspect.getsource(
+            server.list_pending_brands
+        )
+
+    def test_the_reviewer_sees_the_business_the_person_and_the_documents(self):
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        for field in (
+            "legal_entity_name",
+            "business_type",
+            "gst_number",
+            "registered_address",
+            "contact_person_name",
+            "contact_person_designation",
+            "documents",
+        ):
+            assert f'"{field}"' in src
+
+    def test_documents_are_loaded_in_one_query(self):
+        import inspect
+
+        src = inspect.getsource(server.list_pending_brands)
+        assert src.count("db.brand_documents.find") == 1
+
+    def test_a_rejection_still_requires_a_reason(self):
+        import inspect
+
+        src = inspect.getsource(server.reject_brand)
+        assert "422" in src
+        assert "the brand is told what to fix" in src
+
+    def test_both_decisions_reach_the_brand_on_whatsapp(self):
+        import inspect
+
+        for fn in (server.verify_brand, server.reject_brand):
+            assert "notify_over_utility_template" in inspect.getsource(fn)
+        assert "brand_verified" in server.NOTIFY_EVENTS
+        assert "brand_rejected" in server.NOTIFY_EVENTS
+
+    def test_a_document_can_be_rejected_on_its_own_with_a_note(self):
+        import inspect
+
+        src = inspect.getsource(server.review_brand_document)
+        assert "422" in src
+        assert "re-upload" in src
+
+    def test_a_verified_brand_cannot_delete_the_evidence(self):
+        import inspect
+
+        src = inspect.getsource(server.delete_brand_document)
+        assert 'profile.get("verified")' in src
+        assert "409" in src
+
+    def test_deleting_is_scoped_to_the_owner_in_the_query(self):
+        import inspect
+
+        src = inspect.getsource(server.delete_brand_document)
+        assert '{"_id": oid, "brand_id": brand_oid}' in src
+
+
+# ---------------------------------------------------------------------------
+# The brand manager: one named person per brand, and the only login it has.
+# ---------------------------------------------------------------------------
+
+
+class TestBrandManagerRole:
+    SOURCE = None
+
+    @classmethod
+    def setup_class(cls):
+        cls.SOURCE = (server.ROOT_DIR / "server.py").read_text()
+
+    def test_the_role_exists_and_the_old_name_still_works(self):
+        assert "brand_manager" in server.Role.__args__
+        # Accounts created before the rename are the same thing under an older
+        # name, so both are accepted wherever a brand acts.
+        assert server.BRAND_ROLES == ("brand", "brand_manager")
+        assert server.is_brand_side({"role": "brand"})
+        assert server.is_brand_side({"role": "brand_manager"})
+        assert not server.is_brand_side({"role": "creator"})
+        assert not server.is_brand_side({"role": "admin"})
+
+    def test_a_brand_signup_becomes_a_manager_not_a_bare_brand(self):
+        import inspect
+
+        src = inspect.getsource(server.verify_otp)
+        assert '"brand_manager" if signup_role == "brand" else signup_role' in src
+
+    def test_the_signup_records_who_the_login_belongs_to(self):
+        import inspect
+
+        src = inspect.getsource(server.verify_otp)
+        # Both halves: the account carries the person, and the profile carries
+        # the same three facts verification will ask for.
+        assert '"brand_id": user_id' in src
+        assert '"contact_person_name": contact.get("manager_name")' in src
+        assert '"contact_phone": phone' in src
+
+    def test_one_login_per_brand_is_a_database_constraint(self):
+        # Not a rule everybody has to remember: there is no endpoint that mints
+        # a second manager, and the index means there never accidentally is.
+        assert "one_manager_per_brand" in self.SOURCE
+        assert 'partialFilterExpression={"role": "brand_manager"}' in self.SOURCE
+
+    def test_existing_brand_accounts_are_migrated_at_startup(self):
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert '{"role": "brand", "phone": {"$nin": [None, ""]}}' in src
+        assert '"role": "brand_manager", "brand_id": "$_id"' in src
+
+    def test_demo_brands_are_not_called_managers(self):
+        # Seeded feed rows have no password and no phone. Nobody signs into
+        # them, so naming them a person's account would be a fiction.
+        import inspect
+
+        src = inspect.getsource(server._startup)
+        assert '"phone": {"$nin": [None, ""]}' in src
+
+    def test_the_scope_prefers_the_link_over_the_login(self):
+        from bson import ObjectId
+
+        own = ObjectId()
+        brand = ObjectId()
+        assert server._brand_scope({"_id": str(own)}) == own
+        assert server._brand_scope({"_id": str(own), "brand_id": brand}) == brand
+
+
+class TestBrandEndpointsAreScoped:
+    """Every brand-facing query goes through `_brand_scope`.
+
+    A brand endpoint that reaches for `user["_id"]` directly is correct only
+    while the login and the brand are the same row. That is true today; making
+    it a rule is what stops it silently becoming false.
+    """
+
+    SOURCE = None
+
+    @classmethod
+    def setup_class(cls):
+        cls.SOURCE = (server.ROOT_DIR / "server.py").read_text()
+
+    def _brand_blocks(self):
+        import re as _re
+
+        blocks = _re.split(r"\n(?=@brand_router\.)", self.SOURCE)
+        out = []
+        for b in blocks[1:]:
+            m = _re.match(r'@brand_router\.(get|post|patch|put|delete)\("([^"]*)"\)', b)
+            if not m:
+                continue
+            fn = _re.search(r"async def (\w+)", b)
+            end = b.find("\n@")
+            out.append((m.group(2) or "/", fn.group(1) if fn else "?", b[:end] if end > 0 else b))
+        return out
+
+    def test_there_are_brand_endpoints_to_check(self):
+        assert len(self._brand_blocks()) >= 20
+
+    def test_no_brand_endpoint_scopes_by_the_raw_login_id(self):
+        offenders = [
+            f"{path} ({fn})"
+            for path, fn, body in self._brand_blocks()
+            # `agreed_by`/`checked_in_by` record the actor, which really is the
+            # login. Everything else that filters is the brand.
+            if 'ObjectId(user["_id"])' in body
+            and not all(
+                marker in body
+                for marker in ('"agreed_by": ObjectId(user["_id"])',)
+            )
+        ]
+        assert not offenders, f"brand endpoints scoping by login id: {offenders}"
+
+    def test_every_brand_endpoint_accepts_both_role_names(self):
+        offenders = [
+            f"{path} ({fn})"
+            for path, fn, body in self._brand_blocks()
+            if "require_roles(*BRAND_ROLES" not in body
+        ]
+        assert not offenders, f"brand endpoints not using BRAND_ROLES: {offenders}"
+
+    def test_a_brand_manager_cannot_reach_the_weare_manager_router(self):
+        # Campaigns now default their manager to the brand's own person, so
+        # `_managed_campaign_or_404` would let them in on ownership alone. The
+        # role guard is what keeps them out — and out of the daysheet, which
+        # carries creators' phone numbers.
+        import re as _re
+
+        blocks = _re.split(r"\n(?=@manager_router\.)", self.SOURCE)
+        offenders = []
+        for b in blocks[1:]:
+            m = _re.match(r'@manager_router\.(get|post|patch|put|delete)\("([^"]*)"\)', b)
+            if not m:
+                continue
+            end = b.find("\n@")
+            body = b[:end] if end > 0 else b
+            if 'require_roles("campaign_manager", "admin")' not in body:
+                offenders.append(m.group(2))
+        assert not offenders, f"manager routes not restricted to staff: {offenders}"
+
+
+class TestBrandManagerPowers:
+    @pytest.mark.parametrize(
+        "fn_name",
+        [
+            "brand_pause_campaign",
+            "brand_resume_campaign",
+            "brand_invite_creators",
+            "brand_record_agreed_amount",
+            "brand_check_in_creator",
+            "brand_campaign_roster",
+            "brand_suggested_creators",
+        ],
+    )
+    def test_the_endpoint_exists_and_is_scoped_to_their_own_campaign(self, fn_name):
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        assert "_own_campaign_or_404" in src or "_brand_collab_or_404" in src
+
+    @pytest.mark.parametrize(
+        "fn_name",
+        [
+            "brand_invite_creators",
+            "brand_record_agreed_amount",
+            "brand_check_in_creator",
+            "brand_campaign_roster",
+            "brand_suggested_creators",
+        ],
+    )
+    def test_ownership_is_resolved_before_verification(self, fn_name):
+        # The other order turns another brand's campaign from a 404 into a 403
+        # and tells a probing brand which ids exist.
+        import inspect
+
+        src = inspect.getsource(getattr(server, fn_name))
+        lookup = "_own_campaign_or_404" if "_own_campaign_or_404" in src else "_brand_collab_or_404"
+        assert src.index(lookup) < src.index("_verified_brand_or_403")
+
+    def test_going_live_is_still_not_theirs(self):
+        # Pause, resume, close and edit are the brand's. Reaching creators is
+        # a decision somebody at WeAre makes about a brief.
+        assert "open" not in server.BRAND_SETTABLE_CAMPAIGN_STATUSES
+        assert "upcoming" not in server.BRAND_SETTABLE_CAMPAIGN_STATUSES
+        assert server.CAMPAIGN_REVIEW_STATUS in server.BRAND_SETTABLE_CAMPAIGN_STATUSES
+
+    def test_the_agreed_amount_is_written_with_a_precondition(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_record_agreed_amount)
+        assert '{"_id": collab["_id"], "state": state}' in src, "never a blind write"
+        assert '"agreed_by": ObjectId(user["_id"])' in src
+
+    def test_a_fee_cannot_be_agreed_with_somebody_not_on_the_campaign(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_record_agreed_amount)
+        assert '("accepted", "commercial_agreed")' in src
+        assert "TERMINAL_COLLAB_STATES" in src
+
+    def test_pause_and_resume_share_the_admin_implementation(self):
+        import inspect
+
+        assert "_pause_campaign(" in inspect.getsource(server.brand_pause_campaign)
+        assert "_resume_campaign(" in inspect.getsource(server.brand_resume_campaign)
+        assert "_invite_creators(" in inspect.getsource(server.brand_invite_creators)
+        assert "_check_in_collaboration(" in inspect.getsource(server.brand_check_in_creator)
+
+    def test_the_campaign_defaults_its_manager_to_the_brands_person(self):
+        import inspect
+
+        src = inspect.getsource(server.create_brand_campaign)
+        assert "_brand_manager_contact(_brand_scope(user))" in src
+
+    def test_an_admin_can_still_hand_it_to_a_weare_manager(self):
+        import inspect
+
+        src = inspect.getsource(server.assign_campaign_manager)
+        assert '"role": "campaign_manager"' in src
+        assert '"manager_id"' in src
+
+
+# ---------------------------------------------------------------------------
+# Creator data minimisation. A brand picks a creator on their work and their
+# audience, and reaches them through us.
+# ---------------------------------------------------------------------------
+
+
+def _walk(value, path="$"):
+    """Every (path, key, value) in a nested response."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield f"{path}.{k}", k, v
+            yield from _walk(v, f"{path}.{k}")
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            yield from _walk(v, f"{path}[{i}]")
+
+
+class TestCreatorDataMinimisation:
+    # A creator with every contact field populated, so a leak has something to
+    # leak. The values are distinctive enough to find by substring too.
+    ACCOUNT = {
+        "_id": "u1",
+        "name": "Priya Rao",
+        "email": "priya@example.in",
+        "phone": "+919876500001",
+    }
+    PROFILE = {
+        "_id": "p1",
+        "user_id": "u1",
+        "name": "Priya Rao",
+        "instagram_handle": "priyaeats",
+        "instagram_profile_url": "https://instagram.com/priyaeats",
+        "youtube_url": "https://youtube.com/@priyaeats",
+        "profile_image_url": "/uploads/x.jpg",
+        "city": "Bengaluru",
+        "address": "Indiranagar",
+        "full_address": "42 12th Main, Indiranagar, Bengaluru 560038",
+        "niches": ["brunch"],
+        "genres": ["food"],
+        "platforms": ["instagram"],
+        "follower_count": 24000,
+        "engagement_rate": 4.2,
+        "base_rate": 8000,
+        "verification_status": "verified",
+        # The payout identity, which a brand has no business seeing either.
+        "payout_upi": "priya@upi",
+        "pan": "ABCDE1234F",
+        "gstin": "29ABCDE1234F1Z5",
+        "email": "priya@example.in",
+        "phone": "+919876500001",
+    }
+
+    def _brand_payloads(self):
+        """One of every brand-facing shape that carries a creator."""
+        rows = [
+            ("directory", server._serialize_directory_creator(self.PROFILE)),
+            ("brand_visible", server._brand_visible_creator(self.PROFILE, self.ACCOUNT)),
+        ]
+        for state in server.COLLAB_STATE_ORDER + ["declined", "cancelled"]:
+            rows.append(
+                (
+                    f"applicant[{state}]",
+                    server._serialize_applicant(
+                        _collab(state), self.ACCOUNT, self.PROFILE, None
+                    ),
+                )
+            )
+        return rows
+
+    @pytest.mark.parametrize(
+        "field", server.BRAND_FORBIDDEN_CREATOR_FIELDS
+    )
+    def test_no_contact_field_appears_in_any_brand_response(self, field):
+        for name, payload in self._brand_payloads():
+            for path, key, _ in _walk(payload):
+                assert key != field, f"{field} leaked in {name} at {path}"
+
+    def test_no_contact_value_appears_in_any_brand_response(self):
+        # Belt and braces: the key could be renamed and the value still shipped.
+        secrets = [
+            self.ACCOUNT["phone"],
+            self.ACCOUNT["email"],
+            self.PROFILE["full_address"],
+            self.PROFILE["payout_upi"],
+            self.PROFILE["pan"],
+            self.PROFILE["gstin"],
+        ]
+        for name, payload in self._brand_payloads():
+            blob = json.dumps(payload, default=str)
+            for secret in secrets:
+                assert secret not in blob, f"{secret!r} leaked in {name}"
+
+    def test_the_brand_still_gets_what_it_needs_to_choose(self):
+        row = server._brand_visible_creator(self.PROFILE, self.ACCOUNT)
+        for field in (
+            "name", "profile_image_url", "instagram_handle", "youtube_url",
+            "follower_count", "city", "niches", "genres", "base_rate",
+        ):
+            assert row.get(field) not in (None, []), field
+        # And the provenance of the number, which is what makes it worth having.
+        assert "follower_count_verified" in row
+
+    def test_the_projection_is_an_allow_list_not_a_strip_list(self):
+        # Anything not declared is dropped, so a field added to the dict
+        # without being added to the contract does not go out.
+        assert set(server._brand_visible_creator(self.PROFILE, self.ACCOUNT)) <= set(
+            server._BRAND_VISIBLE_CREATOR_FIELDS
+        )
+        for forbidden in server.BRAND_FORBIDDEN_CREATOR_FIELDS:
+            assert forbidden not in server._BRAND_VISIBLE_CREATOR_FIELDS
+
+    def test_the_brand_roster_withholds_the_number_the_manager_gets(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_campaign_roster)
+        assert "reveal_contact=False" in src
+        # Absent, not null: a brand response has no creator-contact shape at all.
+        roster_src = inspect.getsource(server._roster_rows)
+        assert "if reveal_contact:" in roster_src
+
+    def test_the_csv_export_is_staff_only(self):
+        # The daysheet carries phone numbers by design — it is the clipboard at
+        # the door. It must stay on the staff router.
+        import inspect
+
+        src = inspect.getsource(server.campaign_daysheet)
+        assert 'require_roles("campaign_manager", "admin")' in src
+        assert "Phone" in src
+
+    def test_the_invite_flow_reads_the_number_and_never_returns_it(self):
+        import inspect
+
+        src = inspect.getsource(server._invite_creators)
+        assert 'phone = account.get("phone")' in src
+        # The per-creator result rows carry a name and a status, not a contact.
+        assert '"phone":' not in src.split("results[raw] = {")[-1]
+
+
+# ---------------------------------------------------------------------------
+# Work notes: where an offline negotiation leaves a trace.
+# ---------------------------------------------------------------------------
+
+
+class TestWorkNotes:
+    def test_the_routes_exist_on_the_documented_path(self):
+        paths = {getattr(r, "path", "") for r in server.app.routes}
+        assert "/api/collaborations/{collab_id}/notes" in paths
+
+    def test_creators_cannot_reach_them_at_all(self):
+        import inspect
+
+        for fn in (server.list_collaboration_notes, server.add_collaboration_note):
+            src = inspect.getsource(fn)
+            assert 'require_roles(*BRAND_ROLES, "admin", "campaign_manager")' in src
+            # The creator role is not one of the four that can reach a thread.
+            assert '"creator",' not in src
+
+    def test_the_three_doors_and_no_fourth(self):
+        import inspect
+
+        src = inspect.getsource(server._note_readable_collab_or_404)
+        assert 'role == "admin"' in src
+        assert "is_brand_side(user) and campaign.get(\"brand_id\") == _brand_scope(user)" in src
+        assert 'role == "campaign_manager" and campaign.get("manager_id")' in src
+        # Anything else falls through to the same 404 as a missing row.
+        assert src.rstrip().endswith('raise HTTPException(status_code=404, detail="Application not found")')
+
+    def test_a_refusal_is_a_404_not_a_403(self):
+        # Whether a private thread exists on somebody else's collaboration is
+        # itself something we don't answer.
+        import inspect
+
+        src = inspect.getsource(server._note_readable_collab_or_404)
+        assert "status_code=403" not in src
+        assert src.count("status_code=404") >= 3
+
+    def test_a_note_records_who_and_what_they_were_at_the_time(self):
+        import inspect
+
+        src = inspect.getsource(server.add_collaboration_note)
+        for field in ('"author_id"', '"author_name"', '"author_role"', '"created_at"'):
+            assert field in src
+
+    def test_there_is_no_edit_and_no_delete(self):
+        # A record of a negotiation that can be rewritten is not a record.
+        paths = [
+            (getattr(r, "path", ""), sorted(getattr(r, "methods", []) or []))
+            for r in server.app.routes
+            if getattr(r, "path", "").endswith("/notes")
+        ]
+        methods = {m for _, ms in paths for m in ms}
+        assert methods <= {"GET", "POST", "HEAD"}, methods
+
+    def test_the_agreed_amount_sits_with_the_thread(self):
+        import inspect
+
+        src = inspect.getsource(server.list_collaboration_notes)
+        assert '"agreed_amount"' in src
+        assert '"notes"' in src
+
+    def test_notes_are_audited(self):
+        import inspect
+
+        src = inspect.getsource(server.add_collaboration_note)
+        assert '"collaboration.note"' in src
+        assert "_campaign_audit_context(campaign)" in src
+
+    def test_agreeing_a_fee_with_a_note_leaves_one_in_the_thread(self):
+        import inspect
+
+        src = inspect.getsource(server.brand_record_agreed_amount)
+        assert "db.collaboration_notes.insert_one" in src
+
+
+# ---------------------------------------------------------------------------
+# Creator suggestions: an explainable score, not an oracle.
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorSuggestionScoring:
+    CAMPAIGN = {
+        "_id": "c1",
+        "title": "Weekend brunch launch",
+        "brief": "We want brunch reels from Bengaluru creators",
+        "deliverables": "1 reel, 2 stories",
+        "category": "fnb",
+        "area": "Indiranagar",
+        "budget_per_creator": 8000,
+    }
+
+    def _profile(self, **over):
+        base = {
+            "niches": ["brunch"],
+            "genres": ["food"],
+            "city": "Indiranagar",
+            "follower_count": 24000,
+            "engagement_rate": 4.2,
+        }
+        base.update(over)
+        return base
+
+    def test_the_weights_sum_to_one_hundred(self):
+        # So a score reads as a percentage rather than as an arbitrary number.
+        assert sum(server.CREATOR_MATCH_WEIGHTS.values()) == 100
+
+    def test_a_perfect_match_scores_full_marks(self):
+        result = server.score_creator_for_campaign(
+            self._profile(), self.CAMPAIGN, delivery={"completed": 3, "on_time": 3}
+        )
+        assert result["score"] == 100
+
+    def test_the_components_add_up_to_the_score(self):
+        # No hidden term: the breakdown is the score, which is what makes it
+        # arguable rather than an oracle.
+        result = server.score_creator_for_campaign(self._profile(), self.CAMPAIGN)
+        assert round(sum(result["components"].values()), 1) == result["score"]
+        assert set(result["components"]) == set(server.CREATOR_MATCH_WEIGHTS)
+
+    def test_an_unrelated_creator_ranks_below_a_matching_one(self):
+        good = server.score_creator_for_campaign(self._profile(), self.CAMPAIGN)
+        bad = server.score_creator_for_campaign(
+            self._profile(niches=["gaming"], genres=["tech"], city="Mumbai"),
+            self.CAMPAIGN,
+        )
+        assert good["score"] > bad["score"]
+
+    def test_the_category_enum_and_the_creators_own_words_are_bridged(self):
+        # Nobody writes "fnb" about themselves. Without the synonym map a food
+        # creator scores zero on a food brief.
+        result = server.score_creator_for_campaign(
+            self._profile(niches=["restaurants"], genres=[]), self.CAMPAIGN
+        )
+        assert result["components"]["niche"] == server.CREATOR_MATCH_WEIGHTS["niche"]
+
+    def test_a_brief_full_of_filler_matches_nothing_on_its_own(self):
+        empty = {"title": "Looking for creators", "brief": "We want content",
+                 "deliverables": "posts", "category": None, "area": None,
+                 "budget_per_creator": 5000}
+        result = server.score_creator_for_campaign(
+            self._profile(niches=["creators"], genres=["content"]), empty
+        )
+        assert result["components"]["niche"] == 0
+
+    @pytest.mark.parametrize(
+        "budget,followers,expect_full",
+        [
+            (2_000, 5_000, True),      # nano brief, nano creator
+            (8_000, 24_000, True),     # micro brief, micro creator
+            (50_000, 400_000, True),   # macro brief, macro creator
+            (2_000, 900_000, False),   # nobody with 900k turns up for ₹2,000
+            (50_000, 900, False),      # ₹50,000 is not buying 900 followers
+        ],
+    )
+    def test_audience_size_is_judged_against_the_budget(self, budget, followers, expect_full):
+        campaign = {**self.CAMPAIGN, "budget_per_creator": budget}
+        result = server.score_creator_for_campaign(
+            self._profile(follower_count=followers), campaign
+        )
+        full = server.CREATOR_MATCH_WEIGHTS["reach_fit"]
+        assert (result["components"]["reach_fit"] == full) is expect_full
+
+    def test_an_unmeasured_signal_scores_neither_well_nor_badly(self):
+        # A creator with no connected Instagram has an unknown engagement rate,
+        # not a bad one. Scoring unknowns at zero would bury everybody who has
+        # never worked here — which is everybody, at the start.
+        unknown = server.score_creator_for_campaign(
+            self._profile(engagement_rate=None), self.CAMPAIGN
+        )
+        bad = server.score_creator_for_campaign(
+            self._profile(engagement_rate=0.1), self.CAMPAIGN
+        )
+        good = server.score_creator_for_campaign(self._profile(), self.CAMPAIGN)
+        assert bad["components"]["engagement"] < unknown["components"]["engagement"]
+        assert unknown["components"]["engagement"] < good["components"]["engagement"]
+        assert "engagement" in unknown["unknown_signals"]
+
+    def test_a_first_timer_is_rankable(self):
+        result = server.score_creator_for_campaign(self._profile(), self.CAMPAIGN, delivery=None)
+        assert result["score"] > 0
+        assert "delivery" in result["unknown_signals"]
+
+    def test_the_reason_reads_like_a_sentence(self):
+        result = server.score_creator_for_campaign(
+            self._profile(niches=["fashion"], genres=["beauty"], city="Indiranagar"),
+            {**self.CAMPAIGN, "brief": "fashion and beauty shoot", "category": "retail"},
+        )
+        reason = result["reason"]
+        assert reason[0].isupper()
+        assert "fashion" in reason.lower()
+        assert "Indiranagar" in reason
+        assert "24k followers" in reason
+        assert "{" not in reason and "component" not in reason.lower()
+
+    def test_a_creator_with_nothing_matching_still_gets_a_readable_line(self):
+        result = server.score_creator_for_campaign(
+            {"niches": [], "genres": [], "city": None}, self.CAMPAIGN
+        )
+        assert result["reason"] == "Verified creator on WeAre"
+
+    def test_the_weights_are_tunable_without_touching_the_function(self):
+        louder = server.score_creator_for_campaign(
+            self._profile(), self.CAMPAIGN, weights={"city": 40}
+        )
+        assert louder["components"]["city"] == 40
+
+    def test_the_weights_are_in_code_not_in_the_database(self):
+        # A ranking that silently differs between environments is one nobody
+        # can debug.
+        assert "CREATOR_MATCH_WEIGHTS" in (server.ROOT_DIR / "server.py").read_text()
+        assert isinstance(server.CREATOR_MATCH_WEIGHTS, dict)
+
+    def test_the_suggestion_query_only_ever_returns_verified_creators(self):
+        import inspect
+
+        src = inspect.getsource(server._suggest_creators_for_campaign)
+        assert '"verification_status": "verified"' in src
+
+    def test_anyone_already_asked_is_excluded(self):
+        import inspect
+
+        src = inspect.getsource(server._suggest_creators_for_campaign)
+        assert "db.collaborations.find(" in src
+        assert "db.campaign_invitations.find(" in src
+        assert '"$nin"' in src
+
+    def test_the_panel_says_which_band_the_budget_buys(self):
+        import inspect
+
+        src = inspect.getsource(server._suggest_creators_for_campaign)
+        assert '"budget_tier"' in src
+        assert '"weights": CREATOR_MATCH_WEIGHTS' in src
+
+    def test_the_ordering_is_stable(self):
+        import inspect
+
+        # Two identical requests must paginate identically, so ties are broken
+        # all the way down to the name.
+        src = inspect.getsource(server._suggest_creators_for_campaign)
+        assert 'r.get("name")' in src
+
+    def test_engagement_rate_is_mirrored_onto_the_profile(self):
+        # So ranking a roster is not a join per candidate.
+        import inspect
+
+        assert '"engagement_rate"' in inspect.getsource(server._store_instagram_stats)
+        assert server._engagement_rate(1000, 40) == 4.0
+        assert server._engagement_rate(0, 40) is None
+        assert server._engagement_rate(1000, None) is None
+
+
+# ---------------------------------------------------------------------------
+# Telling the brand manager what happened, and writing down who did it.
+# ---------------------------------------------------------------------------
+
+
+class TestBrandManagerNotifications:
+    @pytest.mark.parametrize(
+        "event",
+        [
+            "brand_new_application",
+            "brand_slot_booked",
+            "brand_slot_cancelled",
+            "brand_slot_rescheduled",
+            "brand_content_submitted",
+            "brand_creator_cancelled",
+            "brand_creator_no_show",
+            "brand_campaign_updated",
+        ],
+    )
+    def test_the_event_is_declared(self, event):
+        # An undeclared event has no template name and reaches nobody.
+        assert event in server.NOTIFY_EVENTS
+
+    @pytest.mark.parametrize(
+        "fn_name,call",
+        [
+            ("apply_to_campaign", "notify_brand_manager"),
+            ("submit_collab_content", "notify_brand_manager"),
+            ("_claim_slot", "_tell_brand_manager_unless_managed"),
+            ("_tell_manager_a_seat_freed", "_tell_brand_manager_unless_managed"),
+            ("mark_no_show", "_tell_brand_manager_unless_managed"),
+            ("reschedule_creator", "_tell_brand_manager_unless_managed"),
+            ("cancel_collaboration", "_tell_brand_manager_about_campaign"),
+            ("admin_update_campaign", "_tell_brand_manager_about_campaign"),
+            ("_pause_campaign", "_tell_brand_manager_about_campaign"),
+            ("_resume_campaign", "_tell_brand_manager_about_campaign"),
+        ],
+    )
+    def test_the_brand_manager_hears_about_it(self, fn_name, call):
+        import inspect
+
+        assert call in inspect.getsource(getattr(server, fn_name))
+
+    def test_an_admin_decision_on_the_brand_still_reaches_them(self):
+        import inspect
+
+        for fn in (server.verify_brand, server.reject_brand,
+                   server.approve_campaign, server.reject_campaign):
+            assert "notify_over_utility_template" in inspect.getsource(fn)
+
+    def test_nobody_is_told_what_they_just_did_themselves(self):
+        import inspect
+
+        src = inspect.getsource(server.notify_brand_manager)
+        assert "skip_user_id" in src
+        assert 'skip_user_id=(actor or {}).get("_id")' in inspect.getsource(
+            server._tell_brand_manager_about_campaign
+        )
+
+    def test_one_booking_is_not_two_whatsapps(self):
+        # When the campaign manager *is* the brand manager — the default — the
+        # campaign-manager message already reached them.
+        import inspect
+
+        src = inspect.getsource(server._tell_brand_manager_unless_managed)
+        assert 'campaign.get("manager_id") == manager["_id"]' in src
+
+    def test_a_missing_send_never_breaks_the_state_change(self):
+        import inspect
+
+        # `notify` swallows delivery failures; these must not add a raise.
+        for fn in (server.notify_brand_manager, server._tell_brand_manager_unless_managed,
+                   server._tell_brand_manager_about_campaign):
+            body = "".join(
+                ln for ln in inspect.getsource(fn).splitlines(keepends=True)
+                if not ln.strip().startswith("#")
+            )
+            body = body.split('"""')[-1]  # drop the docstring, which says "never raises"
+            assert "raise" not in body
+
+
+class TestAuditCarriesBrandAndCampaign:
+    def test_the_audit_row_has_somewhere_to_put_them(self):
+        import inspect
+
+        src = inspect.getsource(server.audit)
+        assert '"brand_id": _as_oid(brand_id)' in src
+        assert '"campaign_id": _as_oid(campaign_id)' in src
+
+    def test_context_is_read_off_the_campaign_not_written_by_hand(self):
+        campaign = {"_id": "c1", "brand_id": "b1"}
+        assert server._campaign_audit_context(campaign) == {
+            "brand_id": "b1",
+            "campaign_id": "c1",
+        }
+        assert server._campaign_audit_context(None) == {}
+
+    @pytest.mark.parametrize(
+        "fn_name",
+        [
+            "create_brand_campaign",
+            "update_brand_campaign",
+            "close_brand_campaign",
+            "brand_accept_applicant",
+            "brand_decline_applicant",
+            "brand_approve_content",
+            "brand_request_changes",
+            "brand_record_agreed_amount",
+            "add_collaboration_note",
+            "_check_in_collaboration",
+            "_pause_campaign",
+            "_resume_campaign",
+            "_invite_creators",
+        ],
+    )
+    def test_every_brand_manager_action_carries_its_context(self, fn_name):
+        import inspect
+
+        fn = getattr(server, fn_name, None)
+        assert fn is not None, f"{fn_name} does not exist"
+        src = inspect.getsource(fn)
+        assert "_campaign_audit_context(" in src, fn_name
+
+    def test_the_log_can_be_read_by_brand_and_by_campaign(self):
+        import inspect
+
+        src = inspect.getsource(server.list_audit_log)
+        assert 'query[field] = oid' in src
+        assert '"brand_id"' in src and '"campaign_id"' in src
+
+    def test_both_are_indexed(self):
+        source = (server.ROOT_DIR / "server.py").read_text()
+        assert '[("brand_id", 1), ("created_at", -1)], sparse=True' in source
+        assert '[("campaign_id", 1), ("created_at", -1)], sparse=True' in source

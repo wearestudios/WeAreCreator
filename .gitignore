@@ -67,6 +67,10 @@ agenthub/agents/youtube/db
 # Uploaded creator media — user content, never source
 backend/uploads/
 
+# Brand verification paperwork — GST certificates, registration documents.
+# Somebody's business records; they must never reach a repository.
+backend/private_uploads/
+
 # Archive files and large assets
 **/*.zip
 **/*.tar.gz

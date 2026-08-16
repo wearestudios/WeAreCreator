@@ -154,6 +154,8 @@ Two things to try breaking on purpose:
 | `INSTAGRAM_TOKEN_KEY` | Fernet key encrypting access tokens at rest. Absent = feature stays off rather than storing tokens in the clear. |
 | `INSTAGRAM_STATS_TTL_HOURS` | How long a cached reading counts as current. Default 12; never fetched on page load. |
 | `PROFILE_NUDGE_AFTER_DAYS` | How long before an unfinished creator profile gets its one WhatsApp chase. Default 3. |
+| `PRIVATE_UPLOAD_DIR` | Where brand verification documents land. Must not be `UPLOAD_DIR`, which is served as static files; these are reachable only through the audited admin route. Default `backend/private_uploads`. |
+| `REACT_APP_STUDIO_URL` (frontend) | Parent-studio link behind the "A WeAre Studios offering" endorsement in the nav and home footer. Blank renders the line as plain text rather than a dead link. |
 
 Full list with comments: `backend/.env.example`.
 

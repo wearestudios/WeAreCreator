@@ -24,11 +24,13 @@ from fastapi import (
     HTTPException,
     Depends,
     File,
+    Form,
     Request,
     Response,
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -54,7 +56,17 @@ REFRESH_TOKEN_DAYS = 7
 
 # campaign_manager is staff: created by an admin, signs in with email +
 # password, and sees only the campaigns they are assigned to.
-Role = Literal["creator", "brand", "admin", "campaign_manager"]
+#
+# brand_manager is the named human who runs a brand's campaigns. There is
+# exactly one per brand and it is the brand's only login — the person captured
+# at registration, not an extra seat. `brand` is what that role used to be
+# called; both are accepted everywhere a brand acts (BRAND_ROLES) so accounts
+# created before the rename keep working, and startup migrates them over.
+Role = Literal["creator", "brand", "brand_manager", "admin", "campaign_manager"]
+
+# Every guard on a brand-facing endpoint uses this rather than naming the
+# strings, so a third spelling can never drift into existence.
+BRAND_ROLES = ("brand", "brand_manager")
 
 
 def _pyobjectid_validator(v):
@@ -189,7 +201,49 @@ def _normalize_phone(raw: str) -> str:
 OtpPurpose = Literal["login", "signup"]
 
 
-class OtpRequestInput(BaseModel):
+# What the brand's one named person is called, on the user document. Kept in
+# one tuple because it is read off a Pydantic payload, off a stored OTP row and
+# off the user itself, and three hand-written lists would drift.
+BRAND_CONTACT_FIELDS = ("manager_name", "manager_designation", "manager_email")
+
+
+def _brand_contact_from(source) -> dict:
+    """The named-contact fields off a signup payload or a stored OTP row.
+
+    Absent keys are omitted rather than written as null, so the verify step can
+    fall back to whatever the request step captured: a client that sends the
+    contact once shouldn't have to send it twice.
+    """
+    getter = source.get if isinstance(source, dict) else lambda f: getattr(source, f, None)
+    out = {}
+    for field in BRAND_CONTACT_FIELDS:
+        value = getter(field)
+        value = (str(value).strip() if value is not None else "") or None
+        if value:
+            out[field] = value
+    return out
+
+
+class BrandContactSignup(BaseModel):
+    """The one named person a brand registers behind.
+
+    Every brand has exactly one login and it belongs to a human, not to a
+    mailbox the whole office shares. Capturing who they are at registration is
+    what makes the audit log say a name rather than "the brand", and what lets
+    a campaign default its manager to somebody real.
+
+    All three are optional here so an existing signup screen keeps working, but
+    they are not optional for long: `_BRAND_REQUIRED_FIELDS` demands the same
+    three before a brand can be submitted for verification, and verification is
+    required before anything the brand does can reach a creator.
+    """
+
+    manager_name: Optional[str] = Field(default=None, max_length=80)
+    manager_designation: Optional[str] = Field(default=None, max_length=80)
+    manager_email: Optional[EmailStr] = None
+
+
+class OtpRequestInput(BrandContactSignup):
     phone: str = Field(min_length=8, max_length=20)
     purpose: OtpPurpose = "login"
     # required for signup only
@@ -198,7 +252,7 @@ class OtpRequestInput(BaseModel):
     accept_terms: bool = False
 
 
-class OtpVerifyInput(BaseModel):
+class OtpVerifyInput(BrandContactSignup):
     phone: str = Field(min_length=8, max_length=20)
     code: str = Field(pattern=r"^\d{6}$")
     purpose: OtpPurpose = "login"
@@ -289,12 +343,82 @@ class SubmitContentPayload(BaseModel):
     content_url: Optional[str] = Field(default=None, min_length=1, max_length=500)
 
 
-class BrandProfileUpdate(BaseModel):
-    """Payload for brand onboarding / profile edits."""
+# Indian entity types, because "business type" with a free-text box is a field
+# nobody can review. `other` exists so an unusual structure isn't a dead end.
+BusinessType = Literal[
+    "sole_proprietorship",
+    "partnership",
+    "llp",
+    "private_limited",
+    "public_limited",
+    "trust",
+    "society",
+    "other",
+]
 
-    business_name: str = Field(min_length=1, max_length=140)
-    category: CATEGORY_LITERAL
+# What a brand can hand us to prove it is the business it says it is. Any one
+# of these is enough — a small café has a shop establishment licence and no
+# GST; a company has a certificate of incorporation and no FSSAI.
+BrandDocumentType = Literal[
+    "gst_certificate",
+    "business_registration",
+    "fssai_licence",
+    "shop_establishment_licence",
+]
+
+BRAND_DOCUMENT_LABELS = {
+    "gst_certificate": "GST certificate",
+    "business_registration": "Business registration",
+    "fssai_licence": "FSSAI licence",
+    "shop_establishment_licence": "Shop & establishment licence",
+}
+
+# Where a brand stands with us. `verified` is kept as a boolean alongside this
+# because a great deal of code already gates on it; this says *why* it is
+# false, which the boolean never could.
+BrandVerificationState = Literal[
+    "unsubmitted",
+    "pending_verification",
+    "verified",
+    "rejected",
+]
+
+
+class BrandProfileUpdate(BaseModel):
+    """Payload for brand onboarding / profile edits.
+
+    Same partial-save rule as the creator builder: every field is optional and
+    only the keys actually present in the body are written, so a brand can fill
+    this in over several sittings without a later step blanking an earlier one.
+    Submitting for verification is what checks the set is complete.
+    """
+
+    business_name: Optional[str] = Field(default=None, max_length=140)
+    category: Optional[CATEGORY_LITERAL] = None
     areas: list[str] = Field(default_factory=list, max_length=30)
+
+    # The name on the paperwork, which is often not the name on the door —
+    # "Third Wave Coffee" trades, "Third Wave Coffee Roasters Pvt Ltd" signs.
+    # A reviewer needs both to match a document against a profile.
+    legal_entity_name: Optional[str] = Field(default=None, max_length=200)
+    gst_number: Optional[str] = Field(default=None, max_length=15)
+    business_type: Optional[BusinessType] = None
+    registered_address: Optional[str] = Field(default=None, max_length=500)
+    website: Optional[str] = Field(default=None, max_length=300)
+
+    # The accounts we can check the business against. Not proof on their own —
+    # anyone can type a handle — but a reviewer comparing a handle to a
+    # licence catches the obvious impersonation.
+    instagram_handle: Optional[str] = Field(default=None, max_length=60)
+    facebook_url: Optional[str] = Field(default=None, max_length=300)
+    linkedin_url: Optional[str] = Field(default=None, max_length=300)
+
+    # Who is actually asking, and on what authority. The whole point of this
+    # feature: an account is a person claiming to represent a business.
+    contact_person_name: Optional[str] = Field(default=None, max_length=140)
+    contact_person_designation: Optional[str] = Field(default=None, max_length=140)
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = Field(default=None, max_length=20)
 
 
 # The shape of the work decides the shape of the dates. A launch or a group
@@ -483,6 +607,26 @@ class DecisionPayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class AgreedAmountPayload(BaseModel):
+    """The fee settled offline, written back against the collaboration.
+
+    The note is optional but wanted: "agreed on the call, includes the reel"
+    is the difference between a number and a record of a conversation. It ends
+    up in the audit log and, when supplied, in the work notes thread.
+    """
+
+    agreed_amount: float = Field(ge=0)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class DocumentReviewPayload(BaseModel):
+    """One document, accepted or rejected. A rejection has to say why, because
+    the brand is told what to re-upload."""
+
+    status: Literal["accepted", "rejected"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class BrandAcceptPayload(BaseModel):
     """Payload for a brand accepting an applicant onto a campaign."""
 
@@ -636,6 +780,28 @@ CAMPAIGN_REVIEW_STATUS = "pending_review"
 # How a connection can be. `stale` is recoverable by reconnecting; it is not
 # the same as disconnected, and the difference is what the UI needs to say.
 InstagramConnectionStatus = Literal["connected", "stale"]
+
+
+class BrandDocument(BaseModel):
+    """Collection: brand_documents — proof that a brand is the business it claims.
+
+    Files live in PRIVATE_UPLOAD_DIR, which is deliberately not the static
+    upload directory: these carry registered addresses and directors' names,
+    and there is no public path to them. `stored_name` is ours and random; the
+    uploader's filename is kept only as a label and never touches the disk.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    brand_id: PyObjectId
+    doc_type: BrandDocumentType
+    stored_name: str
+    original_name: Optional[str] = None
+    mime: Optional[str] = None
+    size: Optional[int] = None
+    status: Literal["submitted", "accepted", "rejected"] = "submitted"
+    review_note: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class InstagramConnection(BaseModel):
@@ -855,9 +1021,37 @@ def require_roles(*roles: str):
     return _guard
 
 
+def is_brand_side(user: dict) -> bool:
+    """True for the brand's own login, whichever of the two role names it holds."""
+    return (user or {}).get("role") in BRAND_ROLES
+
+
+def _brand_scope(user: dict) -> ObjectId:
+    """The brand this caller acts for.
+
+    Every brand-scoped query goes through here instead of reaching for
+    `user["_id"]` directly. Today a brand manager *is* the brand's login, so
+    the two are the same id; routing it through one function means that if a
+    brand ever gains a second seat, the scope is one edit rather than a hunt
+    through forty queries — and a missed one would have been a brand reading
+    another brand's campaigns.
+    """
+    return ObjectId(user.get("brand_id") or user["_id"])
+
+
 # ---------------------------------------------------------------------------
 # Audit log
 # ---------------------------------------------------------------------------
+
+
+def _as_oid(value) -> Optional[ObjectId]:
+    """Best-effort ObjectId. Audit context is never worth raising over."""
+    if value is None or isinstance(value, ObjectId):
+        return value
+    try:
+        return ObjectId(str(value))
+    except Exception:
+        return None
 
 
 async def audit(
@@ -869,9 +1063,19 @@ async def audit(
     before: Optional[dict] = None,
     after: Optional[dict] = None,
     note: Optional[str] = None,
+    brand_id=None,
+    campaign_id=None,
 ) -> None:
     """Record who changed what. Every state-changing admin or brand action goes
-    through here — without it a payout is a click with no author."""
+    through here — without it a payout is a click with no author.
+
+    `brand_id` and `campaign_id` are the context the subject alone doesn't
+    carry. A brand manager's actions land on collaborations, payments and
+    slots as often as on the campaign itself, and "everything this brand did"
+    or "everything that happened on this brief" is the question actually asked
+    of the log — answering it by walking each subject back to its campaign is
+    both slow and lossy once a row is deleted.
+    """
     try:
         await db.audit_log.insert_one(
             {
@@ -881,6 +1085,8 @@ async def audit(
                 "action": action,
                 "subject_type": subject_type,
                 "subject_id": subject_id if isinstance(subject_id, ObjectId) else str(subject_id),
+                "brand_id": _as_oid(brand_id),
+                "campaign_id": _as_oid(campaign_id),
                 "before": before,
                 "after": after,
                 "note": note,
@@ -889,6 +1095,18 @@ async def audit(
         )
     except Exception as exc:  # never let logging break the operation
         logger.error("audit write failed for %s/%s: %s", action, subject_id, exc)
+
+
+def _campaign_audit_context(campaign: Optional[dict]) -> dict:
+    """The brand/campaign kwargs for `audit`, read off a campaign document.
+
+    A helper rather than two inline lookups at each call site, because the
+    failure mode of doing it by hand is an audit line that is silently missing
+    its context — which nobody notices until they need it.
+    """
+    if not campaign:
+        return {}
+    return {"brand_id": campaign.get("brand_id"), "campaign_id": campaign.get("_id")}
 
 
 # ---------------------------------------------------------------------------
@@ -922,6 +1140,18 @@ NOTIFY_EVENTS = {
     "profile_submitted": "Your profile is with the team",
     "profile_nudge": "Your profile is still half-finished",
     "instagram_disconnected": "Reconnect Instagram to keep your verified stats",
+    "brand_verification_submitted": "Your business details are with the team",
+    # The brand manager's own feed. A brand runs its campaigns from a phone
+    # between other work, so anything that changes what they have to do next
+    # reaches them rather than waiting to be discovered on a dashboard.
+    "brand_new_application": "A creator applied to your campaign",
+    "brand_slot_booked": "A creator booked a slot",
+    "brand_slot_cancelled": "A creator gave up their slot",
+    "brand_slot_rescheduled": "A creator's slot moved",
+    "brand_content_submitted": "Content is waiting for your review",
+    "brand_creator_cancelled": "A creator dropped off your campaign",
+    "brand_creator_no_show": "A creator didn't turn up",
+    "brand_campaign_updated": "WeAre changed something on your campaign",
 }
 
 
@@ -1130,6 +1360,122 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
 
     logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
     return f"{UPLOAD_URL_PREFIX}/{filename}", path
+
+
+# ---------------------------------------------------------------------------
+# Private uploads — verification documents
+# ---------------------------------------------------------------------------
+#
+# A separate directory from UPLOAD_DIR, which is mounted as static files and
+# therefore world-readable by design. A GST certificate carries a registered
+# address and a director's name; it must never be one guessable URL away from
+# the public internet. Nothing serves this directory — the only way out is an
+# authenticated admin route that streams the bytes.
+PRIVATE_UPLOAD_DIR = Path(
+    os.environ.get("PRIVATE_UPLOAD_DIR", str(ROOT_DIR / "private_uploads"))
+)
+
+# The same sniffing rule as the profile-image upload — the extension comes from
+# the bytes, never from the client — plus PDF, because that is what a licence
+# is usually downloaded as.
+_DOCUMENT_SIGNATURES = ((b"%PDF-", "application/pdf", ".pdf"),)
+
+
+def sniff_document_type(head: bytes) -> Optional[tuple]:
+    """Identify a document from its leading bytes: PDF, or any image we accept."""
+    for magic, mime, ext in _DOCUMENT_SIGNATURES:
+        if head.startswith(magic):
+            return mime, ext
+    return sniff_image_type(head)
+
+
+async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
+    """Validate and write a document outside the public upload directory.
+
+    Returns the stored metadata. Deliberately never returns a URL: there isn't
+    one, and a caller that can't accidentally be handed a link can't
+    accidentally render it.
+    """
+    limit = max_upload_bytes()
+    chunk_size = 64 * 1024
+
+    first = await file.read(chunk_size)
+    if not first:
+        raise HTTPException(status_code=422, detail="That file is empty.")
+
+    sniffed = sniff_document_type(first)
+    if not sniffed:
+        raise HTTPException(
+            status_code=422,
+            detail="Please upload a PDF, JPEG, PNG, WebP or GIF.",
+        )
+    mime, ext = sniffed
+
+    PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{prefix}-{_secrets.token_urlsafe(20)}{ext}"
+    path = PRIVATE_UPLOAD_DIR / stored_name
+
+    written = 0
+    try:
+        with open(path, "wb") as out:
+            chunk = first
+            while chunk:
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Documents must be under {limit // (1024 * 1024)}MB.",
+                    )
+                out.write(chunk)
+                chunk = await file.read(chunk_size)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        path.unlink(missing_ok=True)
+        logger.error("private upload write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not save that document.")
+    finally:
+        await file.close()
+
+    # The original filename is kept only to show the uploader what they sent;
+    # it never touches the filesystem, so a "../../etc/passwd" is just a label.
+    original = (file.filename or "document")[:200]
+    logger.info("stored private upload %s (%s, %d bytes)", stored_name, mime, written)
+    return {
+        "stored_name": stored_name,
+        "original_name": original,
+        "mime": mime,
+        "size": written,
+    }
+
+
+def _private_upload_path(stored_name: Optional[str]) -> Optional[Path]:
+    """Resolve a stored document, refusing anything that escapes the directory.
+
+    The names are ours and random, but this is the one place a path is built
+    from stored data, so it checks rather than assumes.
+    """
+    if not stored_name or "/" in stored_name or "\\" in stored_name:
+        return None
+    if stored_name in ("", ".", ".."):
+        return None
+    path = (PRIVATE_UPLOAD_DIR / stored_name).resolve()
+    try:
+        path.relative_to(PRIVATE_UPLOAD_DIR.resolve())
+    except ValueError:
+        return None
+    return path if path.is_file() else None
+
+
+def _delete_private_upload(stored_name: Optional[str]) -> None:
+    path = _private_upload_path(stored_name)
+    if not path:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("could not delete private upload %s: %s", stored_name, exc)
 
 
 def _delete_upload(public_url: Optional[str]) -> None:
@@ -1596,7 +1942,8 @@ async def notify_over_utility_template(
 
 async def _tell_manager_a_seat_freed(collab: dict, how: str) -> None:
     """A seat coming back on sale is the manager's problem, not the admin's —
-    they are the one who has to fill it or re-plan the day."""
+    they are the one who has to fill it or re-plan the day. The brand hears
+    about it too: it is their table sitting empty."""
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if not campaign:
         return
@@ -1607,6 +1954,90 @@ async def _tell_manager_a_seat_freed(collab: dict, how: str) -> None:
         "manager_slot_released",
         title="A slot opened up",
         body=f"{name}'s booking on {campaign.get('title')} was {how} — their place is free again.",
+    )
+    await _tell_brand_manager_unless_managed(
+        campaign,
+        "brand_slot_cancelled",
+        title="A slot opened up",
+        body=f"{name}'s booking on “{campaign.get('title')}” was {how} — "
+        "their place is free again.",
+    )
+
+
+async def notify_brand_manager(
+    brand_id,
+    event: str,
+    *,
+    title: str,
+    body: str,
+    link: Optional[str] = None,
+    skip_user_id=None,
+) -> None:
+    """Tell the brand's one named manager that something moved.
+
+    `skip_user_id` drops the message when the manager is the person who caused
+    it — telling somebody what they just did themselves trains them to ignore
+    the channel, and the channel is WhatsApp.
+
+    Silent when a brand has no manager account yet (a demo row, or a brand
+    seeded before the role existed). Never raises: `notify` swallows delivery
+    failures, and a message that didn't send must not roll back the state
+    change that earned it.
+    """
+    manager = await _brand_manager_user(_as_oid(brand_id))
+    if not manager:
+        return
+    if skip_user_id is not None and manager["_id"] == _as_oid(skip_user_id):
+        return
+    await notify(manager["_id"], event, title=title, body=body, link=link)
+
+
+async def _tell_brand_manager_about_campaign(
+    campaign: Optional[dict], *, actor: dict, event: str, title: str, body: str
+) -> None:
+    """The campaign-shaped case of the above, with the link filled in.
+
+    Used wherever WeAre changes something on a brand's brief: the brand asked
+    for the campaign and is answerable for it, so a decision made about it
+    without telling them is a decision they find out about from a creator.
+    """
+    if not campaign:
+        return
+    await notify_brand_manager(
+        campaign.get("brand_id"),
+        event,
+        title=title,
+        body=body,
+        link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
+        skip_user_id=(actor or {}).get("_id"),
+    )
+
+
+async def _tell_brand_manager_unless_managed(
+    campaign: Optional[dict], event: str, *, title: str, body: str
+) -> None:
+    """Tell the brand's manager about something a creator did on their campaign.
+
+    Skipped when the campaign's assigned manager *is* the brand's manager and
+    has already been told through `notify_campaign_manager` — that is the
+    default arrangement, and two WhatsApps for one booking is how a channel
+    stops being read. Once an admin hands the campaign to a WeAre manager the
+    two are different people and the brand still hears about it, which is the
+    case this exists for.
+    """
+    if not campaign:
+        return
+    manager = await _brand_manager_user(campaign.get("brand_id"))
+    if not manager:
+        return
+    if campaign.get("manager_id") == manager["_id"]:
+        return
+    await notify(
+        manager["_id"],
+        event,
+        title=title,
+        body=body,
+        link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
     )
 
 
@@ -1703,6 +2134,9 @@ async def request_otp(payload: OtpRequestInput):
             "name": (payload.name or "").strip() or None,
             "role": payload.role,
             "accept_terms": bool(payload.accept_terms),
+            # Carried through the code so the verify step can write the named
+            # contact even when the client only sent it once, at request time.
+            **_brand_contact_from(payload),
             "attempts": 0,
             "verified": False,
             "provider_mode": mode,
@@ -1790,11 +2224,18 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
                 detail="Please accept the terms and privacy policy to create an account.",
             )
 
+        # The named contact, from whichever step carried it. The verify call
+        # wins where both did, so a corrected spelling on the second screen is
+        # the one that sticks.
+        contact = {**_brand_contact_from(record), **_brand_contact_from(payload)}
+
         user_doc = {
             "email": None,
             "password_hash": None,
             "name": signup_name,
-            "role": signup_role,
+            # A brand's login is its one named manager. Signing up is the only
+            # way to become one — there is no endpoint that mints a second.
+            "role": "brand_manager" if signup_role == "brand" else signup_role,
             "phone": phone,
             "status": "pending",
             "terms_accepted_at": now,
@@ -1803,6 +2244,13 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
         }
         result = await db.users.insert_one(user_doc)
         user_id = result.inserted_id
+        if signup_role == "brand":
+            # Self-registered, so the brand it manages is itself. Stored
+            # explicitly rather than inferred, because `_brand_scope` reads it
+            # and an implicit rule is one refactor away from being wrong.
+            await db.users.update_one(
+                {"_id": user_id}, {"$set": {"brand_id": user_id, **contact}}
+            )
 
         if signup_role == "creator":
             await db.creator_profiles.insert_one(
@@ -1838,6 +2286,15 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
                     "category": None,
                     "areas": [],
                     "verified": False,
+                    "verification_state": "unsubmitted",
+                    # The person who signed up is the brand's manager, and the
+                    # same three facts are what verification asks for — so they
+                    # land on the profile straight away rather than being typed
+                    # twice. `contact_phone` is the login number by definition.
+                    "contact_person_name": contact.get("manager_name") or None,
+                    "contact_person_designation": contact.get("manager_designation"),
+                    "contact_email": contact.get("manager_email"),
+                    "contact_phone": phone,
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -2380,12 +2837,29 @@ async def _store_instagram_stats(doc: dict, stats: dict) -> dict:
             "follower_count": followers,
             "follower_count_source": "instagram_verified",
             "follower_count_verified_at": now,
+            "engagement_rate": _engagement_rate(followers, stats.get("engagement")),
             "updated_at": now,
         }
         if profile and profile.get("follower_count_self_reported") is None:
             update["follower_count_self_reported"] = profile.get("follower_count")
         await db.creator_profiles.update_one({"user_id": doc["user_id"]}, {"$set": update})
     return stats
+
+
+def _engagement_rate(followers, interactions) -> Optional[float]:
+    """Interactions per follower, as a percentage, or None.
+
+    Mirrored onto the profile alongside the follower count for the same reason:
+    ranking creators for a brief must not become a join per candidate. None
+    rather than zero when there is nothing to divide — a creator whose insights
+    we couldn't read has an unknown engagement rate, not a bad one, and the
+    scorer treats the two very differently.
+    """
+    if not isinstance(followers, int) or followers <= 0:
+        return None
+    if not isinstance(interactions, (int, float)) or interactions < 0:
+        return None
+    return round((float(interactions) / followers) * 100, 2)
 
 
 def _follower_provenance(profile: Optional[dict]) -> dict:
@@ -3376,16 +3850,19 @@ async def submit_collab_content(
         after={"state": "content_submitted", "content_urls": urls},
     )
 
-    # Tell the brand there's something to look at.
+    # Tell the brand there's something to look at. Approving content is the
+    # brand manager's own decision, so it goes to them by name rather than to
+    # the brand account — the same person today, but the routing shouldn't be
+    # what depends on that.
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if campaign:
-        await notify(
+        await notify_brand_manager(
             campaign["brand_id"],
-            "content_submitted",
+            "brand_content_submitted",
             title="Content submitted for review",
             body=(
                 f"{user.get('name') or 'A creator'} submitted content for "
-                f"\"{campaign.get('title')}\"."
+                f"“{campaign.get('title')}”. It's waiting on your approval."
             ),
             link=f"/brand/campaigns/{campaign['_id']}/applicants",
         )
@@ -3698,7 +4175,23 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "business_name": doc.get("business_name"),
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
+        # The business as claimed, which is what documents get checked against.
+        "legal_entity_name": doc.get("legal_entity_name"),
+        "gst_number": doc.get("gst_number"),
+        "business_type": doc.get("business_type"),
+        "registered_address": doc.get("registered_address"),
+        "website": doc.get("website"),
+        "instagram_handle": doc.get("instagram_handle"),
+        "facebook_url": doc.get("facebook_url"),
+        "linkedin_url": doc.get("linkedin_url"),
+        # And the person asking on its behalf.
+        "contact_person_name": doc.get("contact_person_name"),
+        "contact_person_designation": doc.get("contact_person_designation"),
+        "contact_email": doc.get("contact_email"),
+        "contact_phone": doc.get("contact_phone"),
         "verified": bool(doc.get("verified", False)),
+        "verification_state": _brand_verification_state(doc),
+        "submitted_for_verification_at": _iso(doc.get("submitted_for_verification_at")),
         # Set when we refuse a brand, so it can be shown rather than guessed at.
         "verification_reason": doc.get("verification_reason"),
         "created_at": doc["created_at"].isoformat()
@@ -3776,35 +4269,89 @@ async def _awaiting_brand_counts(campaign_ids: list) -> dict:
     return {r["_id"]: r["n"] for r in rows}
 
 
+def _why_brand_is_blocked(profile: Optional[dict]) -> str:
+    """Why this brand can't reach creators yet, and what to do about it.
+
+    Three different situations with three different next steps: never
+    submitted, waiting on us, or turned down. "Not verified" on its own just
+    generates a support email.
+    """
+    state = _brand_verification_state(profile or {})
+    if state == "rejected":
+        reason = (profile or {}).get("verification_reason")
+        return (
+            f"Your brand wasn't verified: {reason} Fix that and submit again."
+            if reason
+            else "Your brand wasn't verified. Update your details and submit again."
+        )
+    if state == "pending_verification":
+        return (
+            "Your business details are with the WeAre team. You can keep drafting — "
+            "we'll be in touch as soon as you're verified, usually within 48 hours."
+        )
+    missing = _brand_missing_fields(profile or {})
+    if missing:
+        return (
+            "Verify your business first — still needed: "
+            + ", ".join(row["label"] for row in missing)
+            + ", plus a document proving you represent it."
+        )
+    return (
+        "Verify your business first — upload a document proving you represent it, "
+        "then submit for verification."
+    )
+
+
 async def _verified_brand_or_403(user: dict) -> dict:
     """Assert the caller's brand has been verified by us.
 
-    Drafting is open to anyone who signs up — writing a brief costs nobody
-    anything. Putting one in front of creators is what needs a real business
-    behind it, so that is where the gate sits.
+    Anyone can sign up and claim to be any business, so this is the line
+    between a claim and a checked one. Drafting a brief and editing your own
+    profile stay open — they cost nobody anything and a rejected brand has to
+    be able to fix itself. Everything that *reaches a creator* is behind here:
+    publishing, the directory, the applicant list, and every action that
+    notifies somebody.
     """
     if user.get("role") == "admin":
         return {}
-    profile = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+    profile = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
     if not profile:
         raise HTTPException(
             status_code=403,
             detail="Finish your brand profile before submitting a campaign.",
         )
     if not profile.get("verified", False):
-        reason = profile.get("verification_reason")
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"Your brand hasn't been verified yet: {reason}"
-                if reason
-                else (
-                    "Your brand is still being verified. You can keep drafting — "
-                    "we'll be in touch as soon as it's approved."
-                )
-            ),
-        )
+        raise HTTPException(status_code=403, detail=_why_brand_is_blocked(profile))
     return profile
+
+
+async def _brand_manager_user(brand_oid) -> Optional[dict]:
+    """The one person who runs this brand, or None for a brand that predates
+    the role and has not signed in since."""
+    if brand_oid is None:
+        return None
+    return await db.users.find_one(
+        {"$or": [{"brand_id": brand_oid}, {"_id": brand_oid}], "role": {"$in": list(BRAND_ROLES)}}
+    )
+
+
+async def _brand_manager_contact(brand_oid) -> dict:
+    """Name, phone and email for the brand's manager, for stamping onto a
+    campaign. The profile is the better source for the first and last — a
+    manager may have corrected them there — with the account as the fallback.
+    """
+    account = await _brand_manager_user(brand_oid) or {}
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid}) or {}
+    return {
+        "manager_id": account.get("_id"),
+        "manager_name": (
+            profile.get("contact_person_name")
+            or account.get("manager_name")
+            or account.get("name")
+        ),
+        "manager_phone": profile.get("contact_phone") or account.get("phone"),
+        "manager_email": profile.get("contact_email") or account.get("manager_email"),
+    }
 
 
 def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
@@ -3848,34 +4395,216 @@ async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
     doc = await db.campaigns.find_one({"_id": oid})
     if not doc:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    if user.get("role") != "admin" and doc.get("brand_id") != ObjectId(user["_id"]):
+    if user.get("role") != "admin" and doc.get("brand_id") != _brand_scope(user):
         raise HTTPException(status_code=404, detail="Campaign not found")
     return doc
 
 
+def _clean_gstin(raw: Optional[str]) -> Optional[str]:
+    """A GSTIN is either well-formed or it isn't. Optional, but not sloppy —
+    a reviewer matching a number to a certificate needs it in one shape."""
+    value = (raw or "").strip().upper().replace(" ", "")
+    if not value:
+        return None
+    if not GSTIN_RE.match(value):
+        raise HTTPException(
+            status_code=422,
+            detail="GSTIN should be 15 characters, like 29ABCDE1234F1Z5.",
+        )
+    return value
+
+
+def _clean_web_url(raw: Optional[str], *, label: str) -> Optional[str]:
+    """Normalise a URL, or refuse it.
+
+    A reviewer clicks these to check the business exists, so a link that goes
+    nowhere is worse than no link — it looks like evidence and isn't.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if not value.lower().startswith(("http://", "https://")):
+        value = f"https://{value}"
+    if not re.match(r"^https?://[\w.-]+\.[a-z]{2,}(/.*)?$", value, re.IGNORECASE):
+        raise HTTPException(
+            status_code=422, detail=f"That doesn't look like a {label} URL."
+        )
+    return value
+
+
+# What a brand has to tell us before we will look at it. Documents prove the
+# business exists; these say which business, and who is asking on its behalf.
+_BRAND_REQUIRED_FIELDS = (
+    ("business_name", "Business name"),
+    ("legal_entity_name", "Legal entity name"),
+    ("business_type", "Business type"),
+    ("category", "Category"),
+    ("registered_address", "Registered address"),
+    ("contact_person_name", "Contact person"),
+    ("contact_person_designation", "Their designation"),
+    ("contact_email", "Work email"),
+)
+
+# Domains where an address proves nothing about employment. Not a rejection —
+# plenty of real small businesses run on Gmail — but the reviewer should be
+# told, because a work email on the company domain is the cheapest signal that
+# somebody actually works there.
+_FREE_EMAIL_DOMAINS = frozenset(
+    {
+        "gmail.com", "googlemail.com", "yahoo.com", "yahoo.in", "yahoo.co.in",
+        "outlook.com", "hotmail.com", "live.com", "rediffmail.com",
+        "icloud.com", "proton.me", "protonmail.com", "zoho.com",
+    }
+)
+
+
+def _is_free_email(address: Optional[str]) -> bool:
+    domain = (address or "").rsplit("@", 1)[-1].lower().strip()
+    return bool(domain) and domain in _FREE_EMAIL_DOMAINS
+
+
+def _brand_missing_fields(profile: dict) -> list:
+    return [
+        {"field": field, "label": label}
+        for field, label in _BRAND_REQUIRED_FIELDS
+        if not (profile or {}).get(field)
+    ]
+
+
+def _brand_verification_state(profile: dict) -> str:
+    """Where the brand stands, derived so old rows without the field still work."""
+    if (profile or {}).get("verified"):
+        return "verified"
+    stored = (profile or {}).get("verification_state")
+    if stored in ("unsubmitted", "pending_verification", "rejected"):
+        return stored
+    # Pre-dates the field: a refusal left a reason behind, everything else
+    # never submitted anything.
+    return "rejected" if (profile or {}).get("verification_reason") else "unsubmitted"
+
+
+async def _brand_documents(brand_oid) -> list:
+    docs = (
+        await db.brand_documents.find({"brand_id": brand_oid})
+        .sort("created_at", -1)
+        .to_list(length=100)
+    )
+    return [_serialize_brand_document(d) for d in docs]
+
+
+def _serialize_brand_document(doc: dict) -> dict:
+    """A document as its uploader sees it: what it is, not where it lives.
+
+    No path and no URL — there is no public one, and a serializer that can't
+    produce a link can't leak one into a template by accident.
+    """
+    return {
+        "id": str(doc["_id"]),
+        "doc_type": doc.get("doc_type"),
+        "doc_label": BRAND_DOCUMENT_LABELS.get(doc.get("doc_type"), doc.get("doc_type")),
+        "original_name": doc.get("original_name"),
+        "mime": doc.get("mime"),
+        "size": doc.get("size"),
+        "status": doc.get("status", "submitted"),
+        "review_note": doc.get("review_note"),
+        "uploaded_at": _iso(doc.get("created_at")),
+    }
+
+
+async def _brand_profile_response(profile: dict) -> dict:
+    """The profile plus everything the verification screen needs in one call."""
+    out = _serialize_brand_profile(profile)
+    missing = _brand_missing_fields(profile)
+    # Keyed on user_id, the same id campaigns use for brand_id.
+    documents = await _brand_documents(profile["user_id"])
+    state = _brand_verification_state(profile)
+    out["verification"] = {
+        "state": state,
+        "missing_fields": missing,
+        "documents": documents,
+        "document_count": len(documents),
+        "can_submit": not missing and bool(documents) and state != "verified",
+        "submitted_at": _iso(profile.get("submitted_for_verification_at")),
+        "verification_reason": profile.get("verification_reason"),
+        "accepted_document_types": [
+            {"value": v, "label": BRAND_DOCUMENT_LABELS[v]} for v in BRAND_DOCUMENT_LABELS
+        ],
+    }
+    return out
+
+
 @brand_router.get("/profile")
-async def get_brand_profile(user: dict = Depends(require_roles("brand"))):
-    doc = await db.brand_profiles.find_one({"user_id": ObjectId(user["_id"])})
+async def get_brand_profile(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    doc = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Brand profile not found")
-    return _serialize_brand_profile(doc)
+    return await _brand_profile_response(doc)
 
 
 @brand_router.put("/profile")
 async def update_brand_profile(
     payload: BrandProfileUpdate,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
+    """Save the brand profile. Editing stays open whatever the brand's state.
+
+    An unverified brand can always fix its own details — that is the only way
+    a rejected brand ever becomes a verified one. What it cannot do is reach a
+    creator, which is enforced separately.
+    """
+    existing = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    sent = payload.model_fields_set
     now = datetime.now(timezone.utc)
-    business_name = payload.business_name.strip()
-    update = {
-        "business_name": business_name,
-        "category": payload.category,
-        "areas": [a.strip() for a in payload.areas if a and a.strip()],
-        "updated_at": now,
-    }
+    update: dict = {"updated_at": now}
+
+    def text(field, value, *, lower=False):
+        if field not in sent:
+            return
+        cleaned = (value or "").strip()
+        update[field] = (cleaned.lower() if lower else cleaned) or None
+
+    text("business_name", payload.business_name)
+    text("legal_entity_name", payload.legal_entity_name)
+    text("registered_address", payload.registered_address)
+    text("contact_person_name", payload.contact_person_name)
+    text("contact_person_designation", payload.contact_person_designation)
+    text("contact_email", payload.contact_email, lower=True)
+
+    if "category" in sent:
+        update["category"] = payload.category
+    if "business_type" in sent:
+        update["business_type"] = payload.business_type
+    if "areas" in sent:
+        update["areas"] = [a.strip() for a in payload.areas if a and a.strip()]
+    if "gst_number" in sent:
+        update["gst_number"] = _clean_gstin(payload.gst_number)
+    if "website" in sent:
+        update["website"] = _clean_web_url(payload.website, label="website")
+    if "facebook_url" in sent:
+        update["facebook_url"] = _clean_web_url(payload.facebook_url, label="Facebook page")
+    if "linkedin_url" in sent:
+        update["linkedin_url"] = _clean_web_url(payload.linkedin_url, label="LinkedIn page")
+    if "instagram_handle" in sent:
+        raw = (payload.instagram_handle or "").strip()
+        if raw:
+            handle = _extract_ig_handle(raw)
+            if not handle:
+                raise HTTPException(
+                    status_code=422,
+                    detail="That doesn't look like an Instagram handle.",
+                )
+            update["instagram_handle"] = handle
+        else:
+            update["instagram_handle"] = None
+    if "contact_phone" in sent:
+        raw = (payload.contact_phone or "").strip()
+        update["contact_phone"] = _normalize_phone(raw) if raw else None
+
     result = await db.brand_profiles.find_one_and_update(
-        {"user_id": ObjectId(user["_id"])},
+        {"user_id": _brand_scope(user)},
         {"$set": update},
         return_document=True,
     )
@@ -3883,11 +4612,169 @@ async def update_brand_profile(
         raise HTTPException(status_code=404, detail="Brand profile not found")
 
     # Keep the display name on the user doc in sync with business_name.
+    business_name = update.get("business_name")
     if business_name and business_name != user.get("name"):
         await db.users.update_one(
-            {"_id": ObjectId(user["_id"])}, {"$set": {"name": business_name}}
+            {"_id": _brand_scope(user)}, {"$set": {"name": business_name}}
         )
-    return _serialize_brand_profile(result)
+    return await _brand_profile_response(result)
+
+
+@brand_router.get("/verification")
+async def get_brand_verification(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """Where this brand stands, and what it has already sent us."""
+    profile = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    return (await _brand_profile_response(profile))["verification"]
+
+
+@brand_router.post("/verification/documents")
+async def upload_brand_document(
+    doc_type: BrandDocumentType = Form(...),
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """Upload one proof-of-business document.
+
+    Several are allowed and expected: a brand may have a GST certificate and a
+    shop licence, and after a rejection it needs to be able to send a clearer
+    scan without losing the rest. Nothing is deleted on upload.
+    """
+    brand_oid = _brand_scope(user)
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+
+    existing = await db.brand_documents.count_documents({"brand_id": brand_oid})
+    if existing >= 12:
+        raise HTTPException(
+            status_code=409,
+            detail="That's a lot of documents. Remove one before adding another.",
+        )
+
+    stored = await _store_private_upload(file, prefix=f"brand-{brand_oid}")
+    now = datetime.now(timezone.utc)
+    result = await db.brand_documents.insert_one(
+        {
+            "brand_id": brand_oid,
+            "doc_type": doc_type,
+            "stored_name": stored["stored_name"],
+            "original_name": stored["original_name"],
+            "mime": stored["mime"],
+            "size": stored["size"],
+            "status": "submitted",
+            "review_note": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    doc = await db.brand_documents.find_one({"_id": result.inserted_id})
+    await audit(
+        user,
+        "brand.document_upload",
+        "brand_profile",
+        profile["_id"],
+        after={"doc_type": doc_type, "size": stored["size"]},
+        brand_id=brand_oid,
+    )
+    return _serialize_brand_document(doc)
+
+
+@brand_router.delete("/verification/documents/{document_id}")
+async def delete_brand_document(
+    document_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """Remove a document — to replace a bad scan, usually.
+
+    Refused once verified: the paperwork we approved against is the record of
+    why, and a brand shouldn't be able to empty it after the fact.
+    """
+    brand_oid = _brand_scope(user)
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if profile and profile.get("verified"):
+        raise HTTPException(
+            status_code=409,
+            detail="Your brand is verified — get in touch if a document needs changing.",
+        )
+    try:
+        oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Scoped to the owner in the same query, so another brand's id is a 404.
+    doc = await db.brand_documents.find_one_and_delete(
+        {"_id": oid, "brand_id": brand_oid}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    _delete_private_upload(doc.get("stored_name"))
+    return {"deleted": True, "id": document_id}
+
+
+@brand_router.post("/verification/submit")
+async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """Ask us to check the business out.
+
+    Refused until the details are complete and at least one document is on
+    file, because a review with nothing to review is a queue item that wastes
+    an admin's time and tells the brand nothing.
+    """
+    brand_oid = _brand_scope(user)
+    profile = await db.brand_profiles.find_one({"user_id": brand_oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    if profile.get("verified"):
+        raise HTTPException(status_code=409, detail="Your brand is already verified.")
+
+    missing = _brand_missing_fields(profile)
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail="Still needed: " + ", ".join(row["label"] for row in missing) + ".",
+        )
+    if not await db.brand_documents.count_documents({"brand_id": brand_oid}):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Upload at least one document proving you represent this business — "
+                "a GST certificate, business registration, FSSAI licence or shop "
+                "establishment licence."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.brand_profiles.find_one_and_update(
+        {"user_id": brand_oid},
+        {
+            "$set": {
+                "verification_state": "pending_verification",
+                "submitted_for_verification_at": now,
+                # A resubmission starts clean; the old refusal is not a verdict
+                # on the documents they have just sent.
+                "verification_reason": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "brand.submit_for_verification",
+        "brand_profile",
+        profile["_id"],
+        after={"verification_state": "pending_verification"},
+        brand_id=brand_oid,
+    )
+    await notify(
+        brand_oid,
+        "brand_verification_submitted",
+        title="Verification submitted",
+        body="Your business details are with the WeAre team. We usually come back within 48 hours.",
+        link="/brand/profile",
+    )
+    return (await _brand_profile_response(updated))["verification"]
 
 
 async def _applicant_counts_for(campaign_ids: list) -> dict:
@@ -3904,9 +4791,9 @@ async def _applicant_counts_for(campaign_ids: list) -> dict:
 
 
 @brand_router.get("/campaigns")
-async def list_brand_campaigns(user: dict = Depends(require_roles("brand"))):
+async def list_brand_campaigns(user: dict = Depends(require_roles(*BRAND_ROLES))):
     await _expire_stale_campaigns()
-    brand_oid = ObjectId(user["_id"])
+    brand_oid = _brand_scope(user)
     docs = (
         await db.campaigns.find({"brand_id": brand_oid})
         .sort("created_at", -1)
@@ -3930,7 +4817,7 @@ async def list_brand_campaigns(user: dict = Depends(require_roles("brand"))):
 @brand_router.post("/campaigns")
 async def create_brand_campaign(
     payload: PostCampaignPayload,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
     # The type/date combinations are enforced by the payload model itself.
 
@@ -3950,7 +4837,7 @@ async def create_brand_campaign(
 
     now = datetime.now(timezone.utc)
     doc = {
-        "brand_id": ObjectId(user["_id"]),
+        "brand_id": _brand_scope(user),
         "title": payload.title.strip(),
         "brief": payload.brief.strip(),
         "deliverables": payload.deliverables.strip(),
@@ -3965,11 +4852,11 @@ async def create_brand_campaign(
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
-        # Assigned later by an admin — see assign_campaign_manager.
-        "manager_id": None,
-        "manager_name": None,
-        "manager_phone": None,
-        "manager_email": None,
+        # The brand's own manager runs it unless an admin hands it to a WeAre
+        # one (see assign_campaign_manager). Defaulting to nobody meant every
+        # campaign spent its first days with no named contact on it, which is
+        # the state a creator is most likely to have a question in.
+        **(await _brand_manager_contact(_brand_scope(user))),
         "status": payload.status,
         "created_at": now,
         "updated_at": now,
@@ -3978,7 +4865,14 @@ async def create_brand_campaign(
         doc["submitted_for_review_at"] = now
     result = await db.campaigns.insert_one(doc)
     doc["_id"] = result.inserted_id
-    await audit(user, "campaign.create", "campaign", result.inserted_id, after={"title": doc["title"], "status": doc["status"]})
+    await audit(
+        user,
+        "campaign.create",
+        "campaign",
+        result.inserted_id,
+        after={"title": doc["title"], "status": doc["status"]},
+        **_campaign_audit_context(doc),
+    )
     return _serialize_brand_campaign(doc, 0)
 
 
@@ -3986,7 +4880,7 @@ async def create_brand_campaign(
 async def update_brand_campaign(
     campaign_id: str,
     payload: UpdateCampaignPayload,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
     """Correct a brief. Allowed while a campaign is a draft or still live —
     once it's in progress the terms creators applied under are fixed."""
@@ -4042,6 +4936,7 @@ async def update_brand_campaign(
         doc["_id"],
         before={k: doc.get(k) for k in update if k != "updated_at"},
         after={k: v for k, v in update.items() if k != "updated_at"},
+        **_campaign_audit_context(doc),
     )
     await _sync_campaign_fill(doc["_id"])
 
@@ -4059,7 +4954,7 @@ async def update_brand_campaign(
 @brand_router.post("/campaigns/{campaign_id}/publish")
 async def publish_brand_campaign(
     campaign_id: str,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
     """Submit a draft for review.
 
@@ -4117,6 +5012,7 @@ async def publish_brand_campaign(
         doc["_id"],
         before={"status": "draft"},
         after={"status": CAMPAIGN_REVIEW_STATUS},
+        **_campaign_audit_context(doc),
     )
     return {
         "id": campaign_id,
@@ -4129,7 +5025,7 @@ async def publish_brand_campaign(
 async def close_brand_campaign(
     campaign_id: str,
     payload: DecisionPayload,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
     """Stop a campaign taking new applications. Collaborations already under way
     are untouched — closing a brief is not cancelling the work."""
@@ -4150,6 +5046,7 @@ async def close_brand_campaign(
         before={"status": doc.get("status")},
         after={"status": "closed"},
         note=payload.reason,
+        **_campaign_audit_context(doc),
     )
 
     # Anyone still waiting on a decision is owed one.
@@ -4181,7 +5078,7 @@ async def close_brand_campaign(
 @brand_router.delete("/campaigns/{campaign_id}")
 async def delete_brand_campaign(
     campaign_id: str,
-    user: dict = Depends(require_roles("brand")),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
 ):
     """Delete a draft nobody has seen. Anything published is closed, not erased —
     creators applied to it and that history has to survive."""
@@ -4196,7 +5093,14 @@ async def delete_brand_campaign(
             status_code=409, detail="This campaign already has applicants."
         )
     await db.campaigns.delete_one({"_id": doc["_id"]})
-    await audit(user, "campaign.delete", "campaign", doc["_id"], before={"title": doc.get("title")})
+    await audit(
+        user,
+        "campaign.delete",
+        "campaign",
+        doc["_id"],
+        before={"title": doc.get("title")},
+        **_campaign_audit_context(doc),
+    )
     return {"success": True, "id": campaign_id}
 
 
@@ -4206,16 +5110,106 @@ async def delete_brand_campaign(
 _BRAND_VISIBLE_STATES = [s for s in COLLAB_STATE_ORDER] + ["declined", "cancelled"]
 
 
+# Everything a brand may know about a creator, and nothing else. Written as an
+# allow-list because the alternative — remembering to strip fields — is how a
+# phone number ends up in a payload the day somebody adds a `$lookup`.
+#
+# The line is drawn at "what you need to choose and work with someone" versus
+# "how to reach them off-platform". A brand picks a creator on their work, their
+# audience and their price; it reaches them through us. That holds after
+# acceptance too: this used to reveal an email and a phone number once a
+# collaboration was under way, which meant every accepted application handed
+# over a contact whether or not the creator would have given it.
+_BRAND_VISIBLE_CREATOR_FIELDS = (
+    "id",
+    "user_id",
+    "name",
+    "profile_image_url",
+    "instagram_handle",
+    "instagram_profile_url",
+    "youtube_url",
+    "youtube_handle",
+    "follower_count",
+    "follower_count_source",
+    "follower_count_verified",
+    "follower_count_verified_at",
+    "follower_count_self_reported",
+    "verified_stats_available",
+    "engagement_rate",
+    "media_count",
+    "city",
+    "niches",
+    "genres",
+    "platforms",
+    "base_rate",
+    "verification_status",
+)
+
+# The fields that must never appear in a brand-scoped response, under any key
+# nesting. A unit test walks every brand response shape looking for these; the
+# tuple is here rather than in the test so the rule and the code ship together.
+BRAND_FORBIDDEN_CREATOR_FIELDS = (
+    "phone",
+    "whatsapp",
+    "whatsapp_number",
+    "email",
+    "contact_phone",
+    "contact_email",
+    "full_address",
+    "address",
+    "payout_upi",
+    "payout_account_name",
+    "pan",
+    "gstin",
+)
+
+
+def _brand_visible_creator(profile: Optional[dict], account: Optional[dict] = None) -> dict:
+    """A creator as a brand is allowed to see them.
+
+    One function behind every brand surface — the directory, the applicant
+    board, the suggestions panel — so "what a brand can see about a creator" is
+    a single answer that can be read, tested and changed in one place.
+    """
+    profile = profile or {}
+    account = account or {}
+    row = {
+        "id": str(profile["_id"]) if profile.get("_id") else None,
+        "user_id": (
+            str(profile["user_id"])
+            if profile.get("user_id")
+            else (str(account["_id"]) if account.get("_id") else None)
+        ),
+        "name": profile.get("name") or account.get("name"),
+        "profile_image_url": profile.get("profile_image_url"),
+        "instagram_handle": profile.get("instagram_handle"),
+        "instagram_profile_url": profile.get("instagram_profile_url"),
+        "youtube_url": profile.get("youtube_url"),
+        "follower_count": profile.get("follower_count"),
+        **_follower_provenance(profile),
+        "engagement_rate": profile.get("engagement_rate"),
+        "city": profile.get("city"),
+        "niches": profile.get("niches") or [],
+        "genres": profile.get("genres") or [],
+        "platforms": profile.get("platforms") or [],
+        "base_rate": profile.get("base_rate"),
+        "verification_status": profile.get("verification_status"),
+    }
+    # Belt and braces: the allow-list is the contract, so anything that drifts
+    # into the dict above without being declared there does not go out.
+    return {k: v for k, v in row.items() if k in _BRAND_VISIBLE_CREATOR_FIELDS}
+
+
 def _serialize_applicant(
     collab: dict, creator_user: dict, profile: dict, payment: Optional[dict]
 ) -> dict:
     """An applicant as the brand sees them.
 
-    Contact details stay hidden until the brand has accepted and the
-    collaboration is under way — the directory makes the same promise.
+    The creator block comes from `_brand_visible_creator` and carries no way to
+    contact anyone. Everything about the *collaboration* — the pitch, the rates,
+    the state, the content — is the brand's own business and stays.
     """
     state = collab.get("state", "applied")
-    revealed = state not in ("applied", "verified", "declined", "cancelled")
     return {
         "id": str(collab["_id"]),
         "state": state,
@@ -4236,21 +5230,7 @@ def _serialize_applicant(
         "can_accept": state == "verified",
         "can_decline": state in ("applied", "verified", "accepted"),
         "can_review_content": state == "content_submitted",
-        "creator": {
-            "id": str((creator_user or {}).get("_id")) if creator_user else None,
-            "name": (profile or {}).get("name") or (creator_user or {}).get("name"),
-            "instagram_handle": (profile or {}).get("instagram_handle"),
-            "instagram_profile_url": (profile or {}).get("instagram_profile_url"),
-            "profile_image_url": (profile or {}).get("profile_image_url"),
-            "city": (profile or {}).get("city"),
-            "niches": (profile or {}).get("niches") or [],
-            "follower_count": (profile or {}).get("follower_count"),
-            "base_rate": (profile or {}).get("base_rate"),
-            "verification_status": (profile or {}).get("verification_status"),
-            # Only once they're working together.
-            "email": (creator_user or {}).get("email") if revealed else None,
-            "phone": (creator_user or {}).get("phone") if revealed else None,
-        },
+        "creator": _brand_visible_creator(profile, creator_user),
         "payment": (
             {
                 "state": payment.get("state"),
@@ -4266,7 +5246,7 @@ def _serialize_applicant(
 @brand_router.get("/campaigns/{campaign_id}/applicants")
 async def list_campaign_applicants(
     campaign_id: str,
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Who applied, what they pitched, what they want to be paid.
 
@@ -4274,6 +5254,8 @@ async def list_campaign_applicants(
     brand side of the product could only show a count.
     """
     campaign = await _own_campaign_or_404(campaign_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     collabs = (
         await db.collaborations.find({"campaign_id": campaign["_id"]})
         .sort("created_at", -1)
@@ -4354,7 +5336,7 @@ async def _brand_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict]:
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if not campaign:
         raise HTTPException(status_code=404, detail="Application not found")
-    if user.get("role") != "admin" and campaign.get("brand_id") != ObjectId(user["_id"]):
+    if user.get("role") != "admin" and campaign.get("brand_id") != _brand_scope(user):
         raise HTTPException(status_code=404, detail="Application not found")
     return collab, campaign
 
@@ -4363,10 +5345,12 @@ async def _brand_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict]:
 async def brand_accept_applicant(
     collab_id: str,
     payload: BrandAcceptPayload,
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """The brand picks a creator. Records who agreed to what, and when."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "verified":
         raise HTTPException(
             status_code=409,
@@ -4417,6 +5401,7 @@ async def brand_accept_applicant(
         before={"state": "verified"},
         after={"state": "accepted", "agreed_amount": amount},
         note=payload.note,
+        **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(campaign["_id"])
     await notify(
@@ -4436,10 +5421,12 @@ async def brand_accept_applicant(
 async def brand_decline_applicant(
     collab_id: str,
     payload: DecisionPayload,
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Say no, out loud. Every applicant gets an answer instead of silence."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") not in ("applied", "verified", "accepted"):
         raise HTTPException(
             status_code=409,
@@ -4471,6 +5458,7 @@ async def brand_decline_applicant(
         before={"state": collab["state"]},
         after={"state": "declined"},
         note=payload.reason,
+        **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(campaign["_id"])
     await notify(
@@ -4489,11 +5477,13 @@ async def brand_decline_applicant(
 @brand_router.post("/collaborations/{collab_id}/approve_content")
 async def brand_approve_content(
     collab_id: str,
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Sign off the work. This is the step the landing page promises and the
     thing that should release payment."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
@@ -4514,6 +5504,7 @@ async def brand_approve_content(
         collab["_id"],
         before={"state": "content_submitted"},
         after={"state": "content_approved"},
+        **_campaign_audit_context(campaign),
     )
     await notify(
         collab["creator_id"],
@@ -4529,11 +5520,13 @@ async def brand_approve_content(
 async def brand_request_changes(
     collab_id: str,
     payload: DecisionPayload,
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Send the work back with a note. The creator can resubmit without an admin
     unpicking the state by hand."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
@@ -4565,6 +5558,7 @@ async def brand_request_changes(
         before={"state": "content_submitted"},
         after={"state": "attended"},
         note=payload.reason,
+        **_campaign_audit_context(campaign),
     )
     await notify(
         collab["creator_id"],
@@ -4577,9 +5571,9 @@ async def brand_request_changes(
 
 
 @brand_router.get("/dashboard")
-async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
+async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES))):
     await _expire_stale_campaigns()
-    brand_oid = ObjectId(user["_id"])
+    brand_oid = _brand_scope(user)
     profile = await db.brand_profiles.find_one({"user_id": brand_oid})
     campaigns = (
         await db.campaigns.find({"brand_id": brand_oid})
@@ -4626,23 +5620,14 @@ async def get_brand_dashboard(user: dict = Depends(require_roles("brand"))):
 # --- Creator directory (brand-facing) --------------------------------------
 
 def _serialize_directory_creator(profile: dict) -> dict:
-    """Public projection of a creator profile for the brand-side directory."""
-    return {
-        "id": str(profile["_id"]),
-        "user_id": str(profile["user_id"]),
-        "name": profile.get("name"),
-        "instagram_handle": profile.get("instagram_handle"),
-        "instagram_profile_url": profile.get("instagram_profile_url"),
-        "youtube_url": profile.get("youtube_url"),
-        "profile_image_url": profile.get("profile_image_url"),
-        "city": profile.get("city"),
-        "niches": profile.get("niches") or [],
-        "follower_count": profile.get("follower_count"),
-        **_follower_provenance(profile),
-        "base_rate": profile.get("base_rate"),
-        # Intentionally omitted: email, address, phone — brands see them
-        # only after inviting/accepting a collaboration.
-    }
+    """Public projection of a creator profile for the brand-side directory.
+
+    Now the same projection as everywhere else a brand sees a creator. It used
+    to be its own hand-written dict that happened to omit the contact fields —
+    correct, but by coincidence rather than by construction, and the applicant
+    board sitting next to it made the opposite choice.
+    """
+    return _brand_visible_creator(profile)
 
 
 @brand_router.get("/creators")
@@ -4652,9 +5637,11 @@ async def brand_directory(
     min_followers: Optional[int] = None,
     q: Optional[str] = None,
     sort: Optional[str] = None,  # "newest" | "followers_desc" | "rate_asc"
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Browse verified creators with optional city/niche/keyword filters."""
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     query: dict = {"verification_status": "verified"}
     if city:
         query["city"] = city
@@ -4684,9 +5671,11 @@ async def brand_directory(
 
 @brand_router.get("/creators/filters")
 async def brand_directory_filters(
-    user: dict = Depends(require_roles("brand", "admin")),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Distinct filter options across verified creators."""
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
     base = {"verification_status": "verified"}
     cities_raw = await db.creator_profiles.distinct("city", base)
     niches_flat: list[str] = []
@@ -4705,6 +5694,634 @@ async def brand_directory_filters(
         "cities": sorted([c for c in cities_raw if c]),
         "niches": sorted(niches, key=str.lower),
         "total": await db.creator_profiles.count_documents(base),
+    }
+
+
+# --- Suggesting creators for a brief ---------------------------------------
+#
+# Waiting for applicants means a brief is only ever seen by creators who happen
+# to be browsing. This ranks the verified roster against a campaign so a brand
+# can go and ask.
+#
+# The whole score is `score_creator_for_campaign` below: one pure function, no
+# hidden state, and every component it adds up is reported alongside the total.
+# A brand that cannot see why somebody was suggested has been handed an oracle,
+# and an oracle is not something you can argue with or improve.
+
+# What each signal is worth, out of 100. These are the tuning knobs — change
+# them here and nothing else moves. They are deliberately not in the database:
+# a ranking that silently differs between environments is one nobody can debug.
+CREATOR_MATCH_WEIGHTS = {
+    # What they cover and what they make, against the brief. The strongest
+    # signal by far — a food creator on a food brief is most of the decision.
+    "niche": 30,
+    "genre": 15,
+    # Being in the city. Not decisive on its own (a creator travels) but a
+    # campaign with a venue is much easier to fill locally.
+    "city": 20,
+    # Audience size against what the campaign pays. Both directions are a
+    # mismatch: a 500k creator will not turn up for ₹2,000, and a 900-follower
+    # account is not what a ₹50,000 brief is buying.
+    "reach_fit": 15,
+    "engagement": 10,
+    # Whether they have actually delivered here before.
+    "delivery": 10,
+}
+
+# Budget per creator → the follower band that budget is realistically buying.
+# Rupees, ascending; the last band has no upper bound.
+CREATOR_REACH_TIERS = (
+    (3_000, 1_000, 10_000, "nano"),
+    (10_000, 10_000, 50_000, "micro"),
+    (30_000, 50_000, 200_000, "mid"),
+    (float("inf"), 200_000, None, "macro"),
+)
+
+# Signals with nothing behind them score here rather than at zero. A creator
+# whose engagement we have never measured is an unknown, not a bad bet, and
+# scoring unknowns at zero would rank every creator without a connected
+# Instagram account below every creator with a poor one.
+_UNKNOWN_SIGNAL = 0.5
+
+
+def _reach_tier(budget: Optional[float]) -> tuple:
+    """The follower band a budget is buying: (low, high_or_None, label)."""
+    amount = float(budget or 0)
+    for ceiling, low, high, label in CREATOR_REACH_TIERS:
+        if amount < ceiling:
+            return low, high, label
+    return CREATOR_REACH_TIERS[-1][1], CREATOR_REACH_TIERS[-1][2], CREATOR_REACH_TIERS[-1][3]
+
+
+def _reach_fit(followers: Optional[int], budget: Optional[float]) -> Optional[float]:
+    """How well an audience size fits the budget, 0..1, or None if unknown.
+
+    Inside the band is a full mark. Outside it decays by how far out they are
+    in proportion, not in absolute followers — 5k against a 10k floor is the
+    same size of miss as 100k against a 200k one, and treating it in absolutes
+    would make every band above micro impossible to miss.
+    """
+    if not isinstance(followers, int) or followers <= 0:
+        return None
+    low, high, _ = _reach_tier(budget)
+    if followers < low:
+        return max(0.0, followers / low)
+    if high is not None and followers > high:
+        return max(0.0, high / followers)
+    return 1.0
+
+
+def _overlap(values, wanted: set) -> list:
+    """The creator's own spelling of each term that matched, order preserved.
+
+    Their casing, not ours: the reason line reads "Matches Brunch" the way they
+    wrote it, rather than the lower-cased key we compared on.
+    """
+    seen, out = set(), []
+    for raw in values or []:
+        key = str(raw).lower().strip()
+        if key and key in wanted and key not in seen:
+            seen.add(key)
+            out.append(str(raw).strip())
+    return out
+
+
+_CAMPAIGN_TERM_RE = re.compile(r"[a-z][a-z&'-]{2,}")
+
+# Words that appear in every brief and match nothing useful. Without this,
+# "creators" in a brief would "match" a creator whose niche is creators.
+_CAMPAIGN_STOPWORDS = frozenset(
+    """the and for with our your you are who this that from will can new
+    looking creators creator content post posts reel reels story stories brand
+    brands campaign about into over their they them need needs want wants
+    please must should would could have has had been being""".split()
+)
+
+
+# Campaigns pick a category from a fixed enum; creators type their own niches
+# and genres. Nobody writes "fnb" about themselves — they write "food" or
+# "restaurants" — so without this a food creator scores zero on a food brief.
+# Bridging the two vocabularies here keeps both sides free to use their own
+# words, and is the sort of thing that has to be visible to be arguable.
+CAMPAIGN_CATEGORY_SYNONYMS = {
+    "fnb": ("food", "restaurant", "restaurants", "cafe", "cafes", "dining",
+            "drinks", "beverage", "foodie"),
+    "hospitality": ("hotel", "hotels", "travel", "stays", "resort", "tourism"),
+    "retail": ("shopping", "fashion", "style", "beauty", "products"),
+    "lifestyle": ("lifestyle", "wellness", "fitness", "culture", "living"),
+}
+
+
+def _campaign_terms(campaign: dict) -> set:
+    """The vocabulary of a brief: its category, its area, and the words in it.
+
+    Free text is included because a brief that says "brunch" and "dessert"
+    describes what it wants far better than its single category enum does. It
+    is only ever used to *find* an overlap with something the creator typed
+    about themselves, so a stray word costs a weak match, never a wrong one.
+    """
+    terms = set()
+    for field in ("category", "area"):
+        value = (campaign.get(field) or "").lower().strip()
+        if value:
+            terms.add(value)
+    terms.update(CAMPAIGN_CATEGORY_SYNONYMS.get(
+        (campaign.get("category") or "").lower().strip(), ()
+    ))
+    for field in ("title", "brief", "deliverables"):
+        for word in _CAMPAIGN_TERM_RE.findall((campaign.get(field) or "").lower()):
+            if word not in _CAMPAIGN_STOPWORDS:
+                terms.add(word)
+    return terms
+
+
+def _human_followers(n: Optional[int]) -> Optional[str]:
+    if not isinstance(n, int) or n <= 0:
+        return None
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}m".replace(".0m", "m")
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}k"
+    return str(n)
+
+
+def _and_list(items: list) -> str:
+    """"a", "a and b", "a, b and c" — the reason line is read, not parsed."""
+    items = [i for i in items if i]
+    if len(items) <= 1:
+        return items[0] if items else ""
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def score_creator_for_campaign(
+    profile: dict,
+    campaign: dict,
+    *,
+    delivery: Optional[dict] = None,
+    weights: Optional[dict] = None,
+) -> dict:
+    """Rank one creator against one brief, and say why.
+
+    Pure: everything it needs is in its arguments, so it can be read, tested
+    and tuned without a database. Returns the score out of 100, a one-line
+    reason a brand can read on a card, and the component breakdown behind it.
+
+    `delivery` is this creator's history on WeAre, as
+    `{"completed": int, "on_time": int}` — None when they have none, which
+    scores as unknown rather than as bad. A creator's first campaign must not
+    be unrankable, or the suggestions only ever surface people who are already
+    working.
+    """
+    w = {**CREATOR_MATCH_WEIGHTS, **(weights or {})}
+    terms = _campaign_terms(campaign)
+
+    niches = _overlap(profile.get("niches"), terms)
+    genres = _overlap(profile.get("genres"), terms)
+
+    campaign_city = (campaign.get("area") or "").lower().strip()
+    creator_places = {
+        (profile.get("city") or "").lower().strip(),
+        (profile.get("address") or "").lower().strip(),
+    }
+    city_match = bool(campaign_city) and campaign_city in creator_places
+
+    followers = profile.get("follower_count")
+    fit = _reach_fit(followers if isinstance(followers, int) else None,
+                     campaign.get("budget_per_creator"))
+
+    rate = profile.get("engagement_rate")
+    # 3% is a good engagement rate on Instagram; anything at or above it takes
+    # the full mark rather than letting one outlier creator define the scale.
+    engagement = None if not isinstance(rate, (int, float)) else min(1.0, float(rate) / 3.0)
+
+    completed = int((delivery or {}).get("completed") or 0)
+    on_time = int((delivery or {}).get("on_time") or 0)
+    reliability = (on_time / completed) if completed else None
+
+    components = {
+        "niche": round(w["niche"] * (1.0 if niches else 0.0), 1),
+        "genre": round(w["genre"] * (1.0 if genres else 0.0), 1),
+        "city": round(w["city"] * (1.0 if city_match else 0.0), 1),
+        "reach_fit": round(w["reach_fit"] * (_UNKNOWN_SIGNAL if fit is None else fit), 1),
+        "engagement": round(
+            w["engagement"] * (_UNKNOWN_SIGNAL if engagement is None else engagement), 1
+        ),
+        "delivery": round(
+            w["delivery"] * (_UNKNOWN_SIGNAL if reliability is None else reliability), 1
+        ),
+    }
+
+    # The reason names only what actually scored, in the order a person would
+    # say it. A card that says "Matches fashion and beauty, based in Mumbai,
+    # 24k followers" is a sentence; a list of six components is a debug dump.
+    bits = []
+    matched = niches + [g for g in genres if g.lower() not in {n.lower() for n in niches}]
+    if matched:
+        bits.append("Matches " + _and_list(matched[:3]))
+    if city_match:
+        bits.append(f"based in {campaign.get('area')}")
+    reach = _human_followers(followers if isinstance(followers, int) else None)
+    if reach:
+        bits.append(f"{reach} followers")
+    if isinstance(rate, (int, float)) and rate >= 3.0:
+        bits.append(f"{rate:g}% engagement")
+    if completed:
+        bits.append(
+            f"{completed} campaign{'s' if completed != 1 else ''} delivered here"
+        )
+    reason = ", ".join(bits) if bits else "Verified creator on WeAre"
+
+    return {
+        "score": round(sum(components.values()), 1),
+        "reason": reason[0].upper() + reason[1:],
+        "components": components,
+        "matched_niches": niches,
+        "matched_genres": genres,
+        "city_match": city_match,
+        # Named so a brand can tell "we have not measured this" apart from
+        # "this is poor", which is the whole reason unknowns score at the
+        # midpoint instead of at zero.
+        "unknown_signals": [
+            name
+            for name, value in (
+                ("reach_fit", fit),
+                ("engagement", engagement),
+                ("delivery", reliability),
+            )
+            if value is None
+        ],
+    }
+
+
+async def _delivery_history(creator_ids: list) -> dict:
+    """How each creator has actually performed here, in one round trip.
+
+    "On time" is deliberately coarse: a collaboration that reached
+    `content_approved` or beyond without a no-show being raised was delivered.
+    We do not track a content deadline, so anything finer would be invented
+    precision dressed up as a statistic.
+    """
+    if not creator_ids:
+        return {}
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"creator_id": {"$in": list(creator_ids)}}},
+            {
+                "$group": {
+                    "_id": "$creator_id",
+                    "completed": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$state", ["content_approved", "in_payment", "closed"]]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "on_time": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$and": [
+                                        {"$in": ["$state", ["content_approved", "in_payment", "closed"]]},
+                                        {"$ne": ["$no_show_reported", True]},
+                                    ]
+                                },
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                }
+            },
+        ]
+    ).to_list(length=len(creator_ids))
+    return {r["_id"]: {"completed": r["completed"], "on_time": r["on_time"]} for r in rows}
+
+
+async def _suggest_creators_for_campaign(
+    campaign: dict,
+    *,
+    niche: Optional[str] = None,
+    city: Optional[str] = None,
+    min_followers: Optional[int] = None,
+    max_followers: Optional[int] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """The ranked shortlist for a brief, with the filters applied first.
+
+    Ranked in Python rather than in the aggregation for the same reason the
+    creator-side suggestions are: the score has to be explainable per creator,
+    and a pipeline that sorts by a computed number cannot say what went into
+    it. The candidate set is bounded before it gets here by the filters and by
+    `verification_status`, so this is a sort over a roster, not over a firehose.
+    """
+    query: dict = {"verification_status": "verified"}
+    if city:
+        query["city"] = {"$regex": f"^{re.escape(city.strip()[:80])}$", "$options": "i"}
+    if niche:
+        query["niches"] = {"$regex": f"^{re.escape(niche.strip()[:80])}$", "$options": "i"}
+    if min_followers is not None or max_followers is not None:
+        band: dict = {}
+        if min_followers is not None:
+            band["$gte"] = int(min_followers)
+        if max_followers is not None:
+            band["$lte"] = int(max_followers)
+        query["follower_count"] = band
+
+    # Anyone already asked, or already applied, is not a suggestion.
+    on_campaign = {
+        row["creator_id"]
+        async for row in db.collaborations.find(
+            {"campaign_id": campaign["_id"]}, {"creator_id": 1}
+        )
+    }
+    invited = {
+        row["creator_id"]
+        async for row in db.campaign_invitations.find(
+            {"campaign_id": campaign["_id"]}, {"creator_id": 1}
+        )
+    }
+    excluded = on_campaign | invited
+    if excluded:
+        query["user_id"] = {"$nin": list(excluded)}
+
+    profiles = await db.creator_profiles.find(query).to_list(length=500)
+    history = await _delivery_history([p["user_id"] for p in profiles])
+
+    scored = []
+    for profile in profiles:
+        result = score_creator_for_campaign(
+            profile, campaign, delivery=history.get(profile["user_id"])
+        )
+        scored.append(
+            {
+                **_brand_visible_creator(profile),
+                "match_score": result["score"],
+                "match_reason": result["reason"],
+                "match_components": result["components"],
+                "matched_niches": result["matched_niches"],
+                "matched_genres": result["matched_genres"],
+                "unknown_signals": result["unknown_signals"],
+                "campaigns_delivered": (history.get(profile["user_id"]) or {}).get("completed", 0),
+            }
+        )
+
+    # Highest score first; ties broken by the bigger audience, then by name so
+    # the order is stable across two identical requests.
+    scored.sort(key=lambda r: (-r["match_score"], -(r.get("follower_count") or 0), r.get("name") or ""))
+
+    limit = max(1, min(int(limit or 20), 100))
+    offset = max(0, int(offset or 0))
+    page = scored[offset:offset + limit]
+    low, high, tier = _reach_tier(campaign.get("budget_per_creator"))
+    return {
+        "campaign": {
+            "id": str(campaign["_id"]),
+            "title": campaign.get("title"),
+            "category": campaign.get("category"),
+            "area": campaign.get("area"),
+            "budget_per_creator": campaign.get("budget_per_creator"),
+        },
+        # Shown in the panel so the ranking explains itself before a brand has
+        # to ask why a 500k creator isn't at the top of a ₹4,000 brief.
+        "budget_tier": {"label": tier, "min_followers": low, "max_followers": high},
+        "weights": CREATOR_MATCH_WEIGHTS,
+        "total": len(scored),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(page) < len(scored),
+        "suggestions": page,
+    }
+
+
+@brand_router.get("/campaigns/{campaign_id}/suggested-creators")
+async def brand_suggested_creators(
+    campaign_id: str,
+    niche: Optional[str] = None,
+    city: Optional[str] = None,
+    min_followers: Optional[int] = None,
+    max_followers: Optional[int] = None,
+    limit: int = 20,
+    offset: int = 0,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Verified creators ranked for this brief, each with the reason.
+
+    Ownership first, then verification — an unverified brand probing campaign
+    ids must not learn which ones exist, and creators are not reachable by a
+    brand we have not checked.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
+    return await _suggest_creators_for_campaign(
+        campaign,
+        niche=niche,
+        city=city,
+        min_followers=min_followers,
+        max_followers=max_followers,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# --- Running the campaign (brand manager) ----------------------------------
+#
+# The brand's own manager runs the day-to-day: stopping and restarting the
+# brief, asking creators, settling the fee, and marking who turned up. What
+# stays with WeAre is the one thing that can't be self-served — putting a
+# campaign in front of creators. Everything here is scoped by
+# `_own_campaign_or_404`, so "their own campaigns" is a database filter rather
+# than a promise.
+
+
+@brand_router.post("/campaigns/{campaign_id}/pause")
+async def brand_pause_campaign(
+    campaign_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Stop taking applications, without ending the campaign.
+
+    A brand that has to email us to pause a brief it is paying for will simply
+    let it run. Work already under way is untouched.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return await _pause_campaign(campaign, payload.reason, user)
+
+
+@brand_router.post("/campaigns/{campaign_id}/resume")
+async def brand_resume_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Put it back on the feed, in whatever state it was paused from."""
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return await _resume_campaign(campaign, (payload.reason if payload else None), user)
+
+
+@brand_router.post("/campaigns/{campaign_id}/invite")
+async def brand_invite_creators(
+    campaign_id: str,
+    payload: CampaignInvitePayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Ask named creators to take up this brief.
+
+    Ownership first, then verification: an unverified brand asking after
+    another brand's campaign must learn nothing from the refusal. The creators'
+    numbers are read inside `_invite_creators` and never returned — a brand
+    invites through the platform, it does not get a contact list.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
+    return await _invite_creators(campaign, payload, user)
+
+
+@brand_router.post("/collaborations/{collab_id}/agreed-amount")
+async def brand_record_agreed_amount(
+    collab_id: str,
+    payload: AgreedAmountPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Record the fee settled offline.
+
+    Negotiation happens on WhatsApp and over the phone — that is the model, not
+    a gap in it. What matters is that the number lands somewhere both sides and
+    an admin can see, attributed and timestamped, before anybody books a date
+    against it. Writing it does not move the collaboration on its own: the fee
+    is agreed, the creator still has to book.
+    """
+    collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
+
+    state = collab.get("state")
+    if state in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This application is {state} — there's no fee left to agree.",
+        )
+    if state not in ("accepted", "commercial_agreed"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Accept the creator first — the fee is agreed with somebody who "
+                "is on the campaign."
+            ),
+        )
+
+    amount = round(float(payload.agreed_amount), 2)
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": state},  # precondition, never a blind write
+        {
+            "$set": {
+                "state": "commercial_agreed",
+                "agreed_amount": amount,
+                "agreed_at": now,
+                "agreed_by": ObjectId(user["_id"]),
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.agreed_amount",
+        "collaboration",
+        collab["_id"],
+        before={"state": state, "agreed_amount": collab.get("agreed_amount")},
+        after={"state": "commercial_agreed", "agreed_amount": amount},
+        note=payload.note,
+        **_campaign_audit_context(campaign),
+    )
+    # The number and the reasoning belong together. A note supplied here lands
+    # in the thread as well, so the record of the negotiation reads in one
+    # place rather than half in the audit log.
+    if (payload.note or "").strip():
+        await db.collaboration_notes.insert_one(
+            {
+                "collaboration_id": collab["_id"],
+                "campaign_id": campaign["_id"],
+                "brand_id": campaign.get("brand_id"),
+                "author_id": ObjectId(user["_id"]),
+                "author_name": user.get("name"),
+                "author_role": user.get("role"),
+                "body": f"Agreed ₹{amount:,.0f}. {payload.note.strip()}",
+                "created_at": now,
+            }
+        )
+    await notify(
+        collab["creator_id"],
+        "commercial_agreed",
+        title="Your fee has been agreed",
+        body=(
+            f"₹{amount:,.0f} agreed for “{campaign.get('title')}”. "
+            "You can book your slot now."
+        ),
+        link="/dashboard",
+    )
+    return {
+        "id": str(collab["_id"]),
+        "state": "commercial_agreed",
+        "agreed_amount": amount,
+        "agreed_at": _iso(now),
+    }
+
+
+@brand_router.post("/collaborations/{collab_id}/check-in")
+async def brand_check_in_creator(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Mark a creator as having turned up.
+
+    The brand is the one standing there when a campaign has no WeAre manager on
+    it — which, since campaigns now default to the brand's own manager, is the
+    usual case. Same transition and same precondition as the manager's
+    check-in; only the door it is reached through differs.
+    """
+    collab, campaign = await _brand_collab_or_404(collab_id, user)
+    # Creators are never reachable by a brand we have not checked.
+    await _verified_brand_or_403(user)
+    return await _check_in_collaboration(collab, campaign, user)
+
+
+@brand_router.get("/campaigns/{campaign_id}/roster")
+async def brand_campaign_roster(
+    campaign_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Who is coming and when — without how to reach them.
+
+    The manager's roster carries phone numbers because a WeAre manager is the
+    person chasing a creator who is late. A brand gets the same list with the
+    numbers withheld: on the day it reaches creators through the platform, not
+    out of a spreadsheet. `_roster_rows(..., reveal_contact=False)` is what
+    enforces that, not this docstring.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    await _verified_brand_or_403(user)
+    rows = await _roster_rows(campaign, reveal_contact=False)
+    return {
+        "campaign_id": campaign_id,
+        "title": campaign.get("title"),
+        "campaign_type": campaign.get("campaign_type"),
+        "event_date": _iso(campaign.get("event_date")),
+        "venue_address": campaign.get("venue_address"),
+        "venue_instructions": campaign.get("venue_instructions"),
+        "expected": sum(1 for r in rows if r["attendance"] == "expected"),
+        "attended": sum(1 for r in rows if r["attendance"] == "attended"),
+        "no_shows": sum(1 for r in rows if r["attendance"] == "no_show"),
+        "roster": rows,
     }
 
 
@@ -5759,20 +7376,19 @@ async def _admin_campaign_or_404(campaign_id: str) -> dict:
     return doc
 
 
-@admin_router.post("/campaigns/{campaign_id}/pause")
-async def pause_campaign(
-    campaign_id: str,
-    payload: ReasonPayload,
-    user: dict = Depends(require_roles("admin")),
-):
+async def _pause_campaign(doc: dict, reason: Optional[str], user: dict) -> dict:
     """Take a live campaign off the feed without ending it.
 
     Collaborations already under way are untouched — pausing stops new
     applications, it does not cancel work somebody is mid-way through. The
     status it was in is remembered so resuming puts it back rather than
     guessing.
+
+    Shared by the admin route and the brand manager's. The two differ only in
+    who is allowed to reach the campaign; what pausing *means* must not fork,
+    or a brand pause and an admin pause would resume to different places.
     """
-    doc = await _admin_campaign_or_404(campaign_id)
+    campaign_id = str(doc["_id"])
     current = doc.get("status")
     if current == "paused":
         raise HTTPException(status_code=409, detail="This campaign is already paused.")
@@ -5790,7 +7406,7 @@ async def pause_campaign(
                 "status": "paused",
                 "paused_at": now,
                 "paused_from_status": current,
-                "pause_reason": payload.reason,
+                "pause_reason": reason,
                 "updated_at": now,
             }
         },
@@ -5806,17 +7422,34 @@ async def pause_campaign(
         doc["_id"],
         before={"status": current},
         after={"status": "paused"},
-        note=payload.reason,
+        note=reason,
+        **_campaign_audit_context(doc),
+    )
+    await _tell_brand_manager_about_campaign(
+        doc,
+        actor=user,
+        event="brand_campaign_updated",
+        title="Your campaign was paused",
+        body=(
+            f"“{doc.get('title')}” has been paused"
+            + (f" — {reason}" if reason else ".")
+        ),
     )
     return {"id": campaign_id, "status": "paused", "paused_from_status": current}
 
 
-@admin_router.post("/campaigns/{campaign_id}/resume")
-async def resume_campaign(
+@admin_router.post("/campaigns/{campaign_id}/pause")
+async def pause_campaign(
     campaign_id: str,
-    payload: DecisionPayload | None = None,
+    payload: ReasonPayload,
     user: dict = Depends(require_roles("admin")),
 ):
+    """Pause any campaign, as WeAre."""
+    doc = await _admin_campaign_or_404(campaign_id)
+    return await _pause_campaign(doc, payload.reason, user)
+
+
+async def _resume_campaign(doc: dict, reason: Optional[str], user: dict) -> dict:
     """Put a paused campaign back where it was.
 
     Pause without this is a one-way door, which is the shape of problem the rest
@@ -5824,7 +7457,7 @@ async def resume_campaign(
     campaign paused past its window returns as completed rather than quietly
     reopening.
     """
-    doc = await _admin_campaign_or_404(campaign_id)
+    campaign_id = str(doc["_id"])
     if doc.get("status") != "paused":
         raise HTTPException(
             status_code=409,
@@ -5857,11 +7490,30 @@ async def resume_campaign(
         doc["_id"],
         before={"status": "paused"},
         after={"status": back_to},
-        note=(payload.reason if payload else None),
+        note=reason,
+        **_campaign_audit_context(doc),
+    )
+    await _tell_brand_manager_about_campaign(
+        doc,
+        actor=user,
+        event="brand_campaign_updated",
+        title="Your campaign is running again",
+        body=f"“{doc.get('title')}” is back to {back_to.replace('_', ' ')}.",
     )
     # Re-check the fill: slots may have changed while it was off the feed.
     await _sync_campaign_fill(doc["_id"])
     return {"id": campaign_id, "status": back_to}
+
+
+@admin_router.post("/campaigns/{campaign_id}/resume")
+async def resume_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Resume any campaign, as WeAre."""
+    doc = await _admin_campaign_or_404(campaign_id)
+    return await _resume_campaign(doc, (payload.reason if payload else None), user)
 
 
 @admin_router.post("/campaigns/{campaign_id}/close")
@@ -6003,7 +7655,24 @@ async def admin_update_campaign(
         doc["_id"],
         before=before,
         after={k: v for k, v in update.items() if k != "updated_at"},
+        **_campaign_audit_context(doc),
     )
+    # WeAre editing somebody's brief without telling them means they find out
+    # from a creator quoting terms they didn't write. The fields are named so
+    # the message says what changed rather than that something did.
+    changed = sorted(k.replace("_", " ") for k in update if k != "updated_at")
+    if changed:
+        await _tell_brand_manager_about_campaign(
+            doc,
+            actor=user,
+            event="brand_campaign_updated",
+            title="WeAre updated your campaign",
+            body=(
+                f"“{doc.get('title')}” was changed by the WeAre team: "
+                + ", ".join(changed)
+                + "."
+            ),
+        )
     await _sync_campaign_fill(doc["_id"])
 
     counts = await _applicant_counts_for([doc["_id"]])
@@ -6017,12 +7686,9 @@ async def admin_update_campaign(
 INVITABLE_CAMPAIGN_STATUSES = ("upcoming", "open", "in_progress")
 
 
-@admin_router.post("/campaigns/{campaign_id}/invite")
-async def invite_creators_to_campaign(
-    campaign_id: str,
-    payload: CampaignInvitePayload,
-    user: dict = Depends(require_roles("admin")),
-):
+async def _invite_creators(
+    campaign: dict, payload: "CampaignInvitePayload", user: dict
+) -> dict:
     """Invite hand-picked creators to a campaign over WhatsApp.
 
     Sourcing is a manual job — someone reads the brief, picks creators who fit
@@ -6034,16 +7700,14 @@ async def invite_creators_to_campaign(
     per-creator result says which is which. Duplicate invites are refused by a
     unique index on (campaign_id, creator_id), not just by the pre-check — two
     admins clicking at once must not send the same creator two messages.
+
+    Shared by the admin route and the brand manager's, because an invite is the
+    same message whoever sends it — and because the creator's number is read
+    here and never returned, which is a property worth having in exactly one
+    place.
     """
-    try:
-        cid = ObjectId(campaign_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    campaign = await db.campaigns.find_one({"_id": cid})
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
+    cid = campaign["_id"]
+    campaign_id = str(cid)
     status = campaign.get("status")
     if status not in INVITABLE_CAMPAIGN_STATUSES:
         raise HTTPException(
@@ -6227,6 +7891,7 @@ async def invite_creators_to_campaign(
         cid,
         after={"invited": sent, "failed": failed, "already_invited": skipped},
         note=payload.note,
+        **_campaign_audit_context(campaign),
     )
 
     # 200 even when nothing sent: the per-creator rows are the answer, and the
@@ -6240,6 +7905,17 @@ async def invite_creators_to_campaign(
         "already_invited": skipped,
         "results": rows,
     }
+
+
+@admin_router.post("/campaigns/{campaign_id}/invite")
+async def invite_creators_to_campaign(
+    campaign_id: str,
+    payload: CampaignInvitePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Invite creators to any campaign, as WeAre."""
+    campaign = await _admin_campaign_or_404(campaign_id)
+    return await _invite_creators(campaign, payload, user)
 
 
 async def _brand_spend_map(brand_ids: list) -> dict:
@@ -6387,8 +8063,10 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     it is; `verification_state` says which is which.
     """
     profiles = (
-        await db.brand_profiles.find({"verified": False})
-        .sort("created_at", -1)
+        await db.brand_profiles.find(
+            {"verified": False, "verification_state": {"$in": ["pending_verification", "rejected"]}}
+        )
+        .sort("submitted_for_verification_at", 1)  # longest wait first
         .to_list(length=500)
     )
     if not profiles:
@@ -6397,6 +8075,16 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     user_ids = [p["user_id"] for p in profiles]
     users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
     users_by_id = {u["_id"]: u for u in users}
+
+    # Every queued brand's documents in one query, so a page of twenty doesn't
+    # become twenty round trips.
+    docs_by_brand: dict = {}
+    for doc in await db.brand_documents.find(
+        {"brand_id": {"$in": user_ids}}
+    ).sort("created_at", -1).to_list(length=1000):
+        docs_by_brand.setdefault(doc["brand_id"], []).append(
+            _serialize_brand_document(doc)
+        )
 
     # How much they have already drafted — a brand with briefs waiting is a
     # more urgent review than one that signed up and stopped.
@@ -6431,12 +8119,33 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
                 "category": p.get("category"),
                 "areas": p.get("areas") or [],
                 "verified": False,
-                # "pending" = never decided; "rejected" = we said no and why.
-                "verification_state": (
-                    "rejected" if p.get("verification_reason") else "pending"
-                ),
+                # The same vocabulary the brand's own profile reports, so one
+                # field name doesn't mean two different things on two screens.
+                # In this queue it is always pending_verification or rejected.
+                "verification_state": _brand_verification_state(p),
                 "verification_reason": p.get("verification_reason"),
                 "rejected_at": _iso(p.get("rejected_at")),
+                "submitted_at": _iso(p.get("submitted_for_verification_at")),
+                # The business, as claimed — this is what the documents are
+                # checked against.
+                "legal_entity_name": p.get("legal_entity_name"),
+                "business_type": p.get("business_type"),
+                "gst_number": p.get("gst_number"),
+                "registered_address": p.get("registered_address"),
+                "website": p.get("website"),
+                "instagram_handle": p.get("instagram_handle"),
+                "facebook_url": p.get("facebook_url"),
+                "linkedin_url": p.get("linkedin_url"),
+                # And the person asking on its behalf.
+                "contact_person_name": p.get("contact_person_name"),
+                "contact_person_designation": p.get("contact_person_designation"),
+                "contact_email": p.get("contact_email"),
+                "contact_phone": p.get("contact_phone"),
+                # Flagged, not refused: a café on Gmail is normal, but an
+                # address on the company's own domain is the cheapest evidence
+                # that somebody actually works there.
+                "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
+                "documents": docs_by_brand.get(p["user_id"], []),
                 "name": u.get("name"),
                 "email": u.get("email"),
                 "phone": u.get("phone"),
@@ -6449,6 +8158,104 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
             }
         )
     return out
+
+
+@admin_router.get("/brands/{user_id}/documents/{document_id}")
+async def download_brand_document(
+    user_id: str,
+    document_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stream one verification document to a reviewing admin.
+
+    The only way these bytes leave the server. They are written outside the
+    static upload directory precisely so there is no second path — a GST
+    certificate carries a registered address and a director's name, and it must
+    never be one guessed URL away from the public internet.
+    """
+    try:
+        brand_oid = ObjectId(user_id)
+        doc_oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Both ids in the filter, so a document id can't be pulled out from under a
+    # different brand.
+    doc = await db.brand_documents.find_one({"_id": doc_oid, "brand_id": brand_oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    path = _private_upload_path(doc.get("stored_name"))
+    if not path:
+        logger.error("brand document %s is recorded but missing on disk", document_id)
+        raise HTTPException(status_code=410, detail="That file is no longer on disk.")
+
+    await audit(
+        user,
+        "brand.document_view",
+        "brand_profile",
+        brand_oid,
+        after={"document_id": document_id, "doc_type": doc.get("doc_type")},
+    )
+    return FileResponse(
+        path,
+        media_type=doc.get("mime") or "application/octet-stream",
+        # inline so a reviewer can read it in the browser; the filename is the
+        # one they uploaded, which is only ever a label.
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.get("original_name") or "document"}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@admin_router.post("/brands/{user_id}/documents/{document_id}/review")
+async def review_brand_document(
+    user_id: str,
+    document_id: str,
+    payload: DocumentReviewPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Mark one document accepted or rejected, with a note.
+
+    Per-document rather than only per-brand, so "your FSSAI licence is
+    illegible" doesn't have to be written as a whole-brand rejection.
+    """
+    decision = (payload.reason or "").strip()
+    status = payload.status
+    if status == "rejected" and not decision:
+        raise HTTPException(
+            status_code=422,
+            detail="Say what's wrong with it — the brand is told what to re-upload.",
+        )
+    try:
+        brand_oid = ObjectId(user_id)
+        doc_oid = ObjectId(document_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    updated = await db.brand_documents.find_one_and_update(
+        {"_id": doc_oid, "brand_id": brand_oid},
+        {
+            "$set": {
+                "status": status,
+                "review_note": decision or None,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Document not found")
+    await audit(
+        user,
+        f"brand.document_{status}",
+        "brand_profile",
+        brand_oid,
+        after={"document_id": document_id, "doc_type": updated.get("doc_type")},
+        note=decision or None,
+    )
+    return _serialize_brand_document(updated)
 
 
 @admin_router.post("/brands/{user_id}/verify")
@@ -6465,7 +8272,12 @@ async def verify_brand(
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
         {
-            "$set": {"verified": True, "verified_at": now, "updated_at": now},
+            "$set": {
+                "verified": True,
+                "verification_state": "verified",
+                "verified_at": now,
+                "updated_at": now,
+            },
             # Approving clears an earlier refusal; leaving it would keep telling
             # the brand it was rejected.
             "$unset": {"verification_reason": "", "rejected_at": ""},
@@ -6527,6 +8339,7 @@ async def reject_brand(
         {
             "$set": {
                 "verified": False,
+                "verification_state": "rejected",
                 "verification_reason": reason,
                 "rejected_at": now,
                 "updated_at": now,
@@ -6586,7 +8399,8 @@ async def unverify_brand(
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
-        {"$set": {"verified": False, "updated_at": now}},
+        {"$set": {"verified": False,
+                "verification_state": "pending_verification", "updated_at": now}},
         return_document=True,
     )
     if not result:
@@ -7124,6 +8938,8 @@ async def cancel_collaboration(
             status_code=409, detail=f"This collaboration is already {current}."
         )
 
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
     payment = await db.payments.find_one({"collaboration_id": oid})
     if payment and payment.get("state") == "paid":
         raise HTTPException(
@@ -7201,6 +9017,7 @@ async def cancel_collaboration(
             "settlement_review_needed": settlement_review_needed,
         },
         note=payload.reason,
+        **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(collab["campaign_id"])
     await notify(
@@ -7209,6 +9026,19 @@ async def cancel_collaboration(
         title="Collaboration cancelled",
         body=payload.reason,
         link="/dashboard",
+    )
+    # The brand loses a creator it had counted on — and if anything was agreed,
+    # a place to fill. It hears that from us, not from the empty table.
+    cancelled_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    await _tell_brand_manager_about_campaign(
+        campaign,
+        actor=user,
+        event="brand_creator_cancelled",
+        title="A creator dropped off your campaign",
+        body=(
+            f"{(cancelled_profile or {}).get('name') or 'A creator'} is off "
+            f"“{(campaign or {}).get('title')}” — {payload.reason}"
+        ),
     )
     return {
         "id": collab_id,
@@ -7960,6 +9790,8 @@ async def list_audit_log(
     action: Optional[str] = None,
     subject_type: Optional[str] = None,
     subject_id: Optional[str] = None,
+    brand_id: Optional[str] = None,
+    campaign_id: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     user: dict = Depends(require_roles("admin")),
@@ -7968,9 +9800,19 @@ async def list_audit_log(
 
     `action` matches a whole action ("payment.refund") or a prefix ("payment"),
     because "everything that happened to money" is the question people actually
-    arrive with.
+    arrive with. `brand_id` and `campaign_id` are the other two: a brand
+    manager's work lands on collaborations and slots as often as on the
+    campaign, so filtering by subject alone never assembled the story.
     """
     query: dict = {}
+    for field, raw in (("brand_id", brand_id), ("campaign_id", campaign_id)):
+        if raw:
+            oid = _as_oid(raw)
+            if oid is None:
+                raise HTTPException(
+                    status_code=422, detail=f"{field} is not a valid id."
+                )
+            query[field] = oid
     if subject_type:
         query["subject_type"] = subject_type
     if subject_id:
@@ -8018,6 +9860,8 @@ async def list_audit_log(
             "action": d.get("action"),
             "subject_type": d.get("subject_type"),
             "subject_id": str(d.get("subject_id")),
+            "brand_id": str(d["brand_id"]) if d.get("brand_id") else None,
+            "campaign_id": str(d["campaign_id"]) if d.get("campaign_id") else None,
             "before": _jsonable(d.get("before")),
             "after": _jsonable(d.get("after")),
             "note": d.get("note"),
@@ -8857,11 +10701,16 @@ _ROSTER_STATES = (
 )
 
 
-async def _roster_rows(campaign: dict) -> list:
+async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
     """Everyone confirmed on a campaign, with what the manager needs on the day.
 
     One pipeline rather than a query per creator: a roster of forty would
     otherwise be eighty round trips on a phone at a venue.
+
+    `reveal_contact` is what separates the WeAre manager's copy from the
+    brand's. It defaults to True because the manager's is the original use and
+    the brand's route passes False explicitly — a caller that forgets is a
+    caller inside WeAre.
     """
     rows = await db.collaborations.aggregate(
         [
@@ -8903,14 +10752,20 @@ async def _roster_rows(campaign: dict) -> list:
         profile = r.get("profile") or {}
         account = r.get("user") or {}
         slot = r.get("slot") or {}
+        row = {
+            "collaboration_id": str(r["_id"]),
+            "creator_id": str(r["creator_id"]),
+            "name": profile.get("name") or account.get("name"),
+            "instagram_handle": profile.get("instagram_handle"),
+        }
+        if reveal_contact:
+            # A WeAre manager rings these on the day — that is the whole job.
+            # A brand doesn't get them: the key is absent rather than null, so
+            # a brand response has no creator-contact shape at all.
+            row["phone"] = account.get("phone")
         out.append(
             {
-                "collaboration_id": str(r["_id"]),
-                "creator_id": str(r["creator_id"]),
-                "name": profile.get("name") or account.get("name"),
-                # The manager rings these on the day — that is the whole job.
-                "phone": account.get("phone"),
-                "instagram_handle": profile.get("instagram_handle"),
+                **row,
                 "state": state,
                 "slot_id": str(r["slot_id"]) if r.get("slot_id") else None,
                 "slot_time": _iso(slot.get("starts_at") or r.get("scheduled_at")),
@@ -8992,18 +10847,18 @@ async def campaign_daysheet(
     )
 
 
-@manager_router.post("/collaborations/{collab_id}/check-in")
-async def check_in_creator(
-    collab_id: str,
-    user: dict = Depends(require_roles("campaign_manager", "admin")),
-):
+async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> dict:
     """Mark a creator as turned up.
 
     The same transition the admin's advance makes, done by the person actually
     standing there. Only from slot_booked — checking in somebody who never got
     a slot would skip the booking the venue is counting on.
+
+    Shared by the WeAre manager's route and the brand manager's: who is holding
+    the clipboard depends on whether the campaign was reassigned, and the
+    attendance record must not depend on that.
     """
-    collab, campaign = await _managed_collab_or_404(collab_id, user)
+    collab_id = str(collab["_id"])
     current = collab.get("state")
     if current == "attended":
         raise HTTPException(status_code=409, detail="They're already checked in.")
@@ -9038,9 +10893,20 @@ async def check_in_creator(
         "collaboration",
         collab["_id"],
         before={"state": "slot_booked"},
-        after={"state": "attended", "campaign_id": str(campaign["_id"])},
+        after={"state": "attended"},
+        **_campaign_audit_context(campaign),
     )
     return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
+
+
+@manager_router.post("/collaborations/{collab_id}/check-in")
+async def check_in_creator(
+    collab_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """Mark a creator as turned up, as the assigned WeAre manager."""
+    collab, campaign = await _managed_collab_or_404(collab_id, user)
+    return await _check_in_collaboration(collab, campaign, user)
 
 
 @manager_router.post("/collaborations/{collab_id}/no-show")
@@ -9097,8 +10963,19 @@ async def mark_no_show(
         "collaboration",
         collab["_id"],
         before={"state": current},
-        after={"no_show_reported": True, "campaign_id": str(campaign["_id"])},
+        after={"no_show_reported": True},
         note=payload.note.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    await _tell_brand_manager_unless_managed(
+        campaign,
+        "brand_creator_no_show",
+        title="A creator didn't turn up",
+        body=(
+            f"{(creator_profile or {}).get('name') or 'A creator'} was marked a "
+            f"no-show on “{campaign.get('title')}”. The WeAre team will settle it."
+        ),
     )
     return {
         "id": collab_id,
@@ -9191,6 +11068,7 @@ async def reschedule_creator(
         before={"slot_id": str(collab.get("slot_id")) if collab.get("slot_id") else None},
         after={"slot_id": str(target_oid), "scheduled_at": _iso(target["starts_at"])},
         note=(payload.reason or "").strip() or None,
+        **_campaign_audit_context(campaign),
     )
     await notify(
         collab["creator_id"],
@@ -9201,6 +11079,17 @@ async def reschedule_creator(
             f"{target['starts_at'].strftime('%d %b, %I:%M %p')}."
         ),
         link=f"/campaigns/{str(campaign['_id'])}",
+    )
+    moved_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    await _tell_brand_manager_unless_managed(
+        campaign,
+        "brand_slot_rescheduled",
+        title="A creator's slot moved",
+        body=(
+            f"{(moved_profile or {}).get('name') or 'A creator'} is now at "
+            f"{target['starts_at'].strftime('%d %b, %I:%M %p')} on "
+            f"“{campaign.get('title')}”."
+        ),
     )
     return {
         "id": collab_id,
@@ -9492,7 +11381,7 @@ async def campaign_filters(
 @campaigns_router.get("/{campaign_id}")
 async def get_campaign(
     campaign_id: str,
-    user: dict = Depends(require_roles("creator", "brand", "admin")),
+    user: dict = Depends(require_roles("creator", *BRAND_ROLES, "admin")),
 ):
     try:
         oid = ObjectId(campaign_id)
@@ -9505,8 +11394,8 @@ async def get_campaign(
 
     # A brand may read its own brief in any state, and nobody else's — a live
     # campaign carries a competitor's budget and deliverables.
-    if user["role"] == "brand":
-        if doc.get("brand_id") != ObjectId(user["_id"]):
+    if is_brand_side(user):
+        if doc.get("brand_id") != _brand_scope(user):
             raise HTTPException(status_code=404, detail="Campaign not found")
     elif user["role"] != "admin" and doc.get("status") not in _LIVE_STATUSES:
         # Creators can only view live/upcoming campaigns. Admins see anything.
@@ -9662,11 +11551,11 @@ async def apply_to_campaign(
             status_code=409, detail="You've already applied to this campaign"
         )
 
-    await notify(
+    await notify_brand_manager(
         campaign["brand_id"],
-        "new_applicant",
+        "brand_new_application",
         title="New applicant",
-        body=f"{user.get('name') or 'A creator'} applied to \"{campaign.get('title')}\".",
+        body=f"{user.get('name') or 'A creator'} applied to “{campaign.get('title')}”.",
         link=f"/brand/campaigns/{campaign_id}/applicants",
     )
 
@@ -9769,6 +11658,16 @@ async def _claim_slot(
         title="A creator booked a slot",
         body=f"{creator_name} booked "
         f"{when.strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
+    )
+    # And the brand, which has a table to hold whoever is running the day.
+    # `notify_brand_manager` no-ops when the campaign manager *is* the brand
+    # manager and has just been told, so nobody gets the same thing twice.
+    await _tell_brand_manager_unless_managed(
+        campaign,
+        "brand_slot_booked",
+        title="A creator booked a slot",
+        body=f"{creator_name} booked {when.strftime('%d %b, %I:%M %p')} on "
+        f"“{campaign.get('title')}”.",
     )
     return {
         "collaboration_id": str(collab["_id"]),
@@ -10009,6 +11908,149 @@ async def mark_notifications_read(user: dict = Depends(get_current_user)):
 api_router.include_router(notifications_router)
 
 
+# --- Work notes on a collaboration -----------------------------------------
+#
+# Negotiation happens offline — on WhatsApp, on the phone, at the venue. That is
+# the model, not a gap in it, and it means the reasoning behind a number lives
+# in somebody's head until they leave. This is where it goes instead: who said
+# what, when, against the application it was about.
+#
+# Deliberately not visible to the creator. A brand writing "asked for 12k, worth
+# 8" needs somewhere to write it; a thread the creator can read is a thread
+# nobody uses, and the creator-facing record is the collaboration itself — the
+# agreed amount, the state, the notifications — which is honest about the terms
+# without being a transcript of the deliberation.
+
+notes_router = APIRouter(prefix="/collaborations", tags=["notes"])
+
+
+class NotePayload(BaseModel):
+    """One entry in the thread."""
+
+    body: str = Field(min_length=1, max_length=4000)
+
+
+async def _note_readable_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict]:
+    """Load a collaboration whose notes this caller may read.
+
+    Three doors, and a 404 rather than a 403 behind all of them: an admin, the
+    brand that owns the campaign, or the WeAre manager assigned to it. A
+    creator gets the 404 too — not because their own collaboration is a secret
+    from them, but because whether a private thread exists on it is.
+    """
+    role = (user or {}).get("role")
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Application not found")
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Application not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if role == "admin":
+        return collab, campaign
+    if is_brand_side(user) and campaign.get("brand_id") == _brand_scope(user):
+        return collab, campaign
+    if role == "campaign_manager" and campaign.get("manager_id") == ObjectId(user["_id"]):
+        return collab, campaign
+    raise HTTPException(status_code=404, detail="Application not found")
+
+
+def _serialize_note(doc: dict) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "collaboration_id": str(doc["collaboration_id"]),
+        "author_id": str(doc["author_id"]) if doc.get("author_id") else None,
+        "author_name": doc.get("author_name"),
+        # The role at the time of writing, stored rather than joined: "the
+        # brand said" and "WeAre said" is most of what a thread is for, and a
+        # manager who later becomes an admin must not rewrite what they were.
+        "author_role": doc.get("author_role"),
+        "body": doc.get("body"),
+        "created_at": _iso(doc.get("created_at")),
+    }
+
+
+@notes_router.get("/{collab_id}/notes")
+async def list_collaboration_notes(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """The thread, oldest first, with the agreed amount above it.
+
+    The number travels with the conversation because the conversation is how it
+    was arrived at — reading one without the other is what made a fee look
+    arbitrary a month later.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    docs = (
+        await db.collaboration_notes.find({"collaboration_id": collab["_id"]})
+        .sort("created_at", 1)
+        .to_list(length=500)
+    )
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    return {
+        "collaboration_id": collab_id,
+        "campaign": {"id": str(campaign["_id"]), "title": campaign.get("title")},
+        "creator": _brand_visible_creator(profile),
+        "state": collab.get("state"),
+        "quoted_rate": collab.get("quoted_rate"),
+        "agreed_amount": collab.get("agreed_amount"),
+        "agreed_at": _iso(collab.get("agreed_at")),
+        "notes": [_serialize_note(d) for d in docs],
+    }
+
+
+@notes_router.post("/{collab_id}/notes")
+async def add_collaboration_note(
+    collab_id: str,
+    payload: NotePayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Add to the thread. Append-only — there is no edit and no delete.
+
+    A record of a negotiation that can be quietly rewritten afterwards is not a
+    record. If something was written in error, the correction is another note.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="A note needs something in it.")
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "collaboration_id": collab["_id"],
+        "campaign_id": campaign["_id"],
+        "brand_id": campaign.get("brand_id"),
+        "author_id": ObjectId(user["_id"]),
+        "author_name": user.get("name"),
+        "author_role": user.get("role"),
+        "body": body,
+        "created_at": now,
+    }
+    result = await db.collaboration_notes.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    await audit(
+        user,
+        "collaboration.note",
+        "collaboration",
+        collab["_id"],
+        after={"note_id": str(result.inserted_id)},
+        # The note itself, so the audit log carries the paper trail rather than
+        # a pointer to it — the two are read in different places.
+        note=body[:500],
+        **_campaign_audit_context(campaign),
+    )
+    return _serialize_note(doc)
+
+
+api_router.include_router(notes_router)
+
+
 # --- Admin sample route ----------------------------------------------------
 
 
@@ -10096,6 +12138,27 @@ async def _startup():
         [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
     )
 
+    # Brand verification documents — read per brand, newest first.
+    await db.brand_documents.create_index([("brand_id", 1), ("created_at", -1)])
+    await db.brand_profiles.create_index(
+        [("verified", 1), ("verification_state", 1), ("submitted_for_verification_at", 1)]
+    )
+
+    # Work notes — always read as one thread, oldest first.
+    await db.collaboration_notes.create_index(
+        [("collaboration_id", 1), ("created_at", 1)]
+    )
+    await db.collaboration_notes.create_index([("campaign_id", 1), ("created_at", 1)])
+
+    # One login per brand, enforced by the database rather than by everybody
+    # remembering. Partial, so it constrains brand managers and nothing else.
+    await db.users.create_index(
+        "brand_id",
+        unique=True,
+        partialFilterExpression={"role": "brand_manager"},
+        name="one_manager_per_brand",
+    )
+
     # Instagram connections — one per creator, read by the two refresh jobs in
     # expiry and staleness order.
     await db.instagram_connections.create_index("user_id", unique=True)
@@ -10173,6 +12236,14 @@ async def _startup():
     # newest-first — the two ways the log is actually read.
     await db.audit_log.create_index([("actor_id", 1), ("created_at", -1)])
     await db.audit_log.create_index([("action", 1), ("created_at", -1)])
+    # "everything this brand did" and "everything that happened on this brief" —
+    # sparse, because only the actions that have the context carry the keys.
+    await db.audit_log.create_index(
+        [("brand_id", 1), ("created_at", -1)], sparse=True
+    )
+    await db.audit_log.create_index(
+        [("campaign_id", 1), ("created_at", -1)], sparse=True
+    )
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("read", 1)])
 
@@ -10271,6 +12342,56 @@ async def _startup():
             "waiting in the vetting queue",
             backfilled,
         )
+
+    # 6. Brands predate `verification_state`, and the review queue now filters
+    #    on it. Anyone already waiting on us is moved to pending_verification
+    #    rather than dropped — they will show in the queue with no documents
+    #    attached, which is the truth about them and something an admin can act
+    #    on, where vanishing silently would not be.
+    for query, state in (
+        ({"verified": True}, "verified"),
+        ({"verified": False, "verification_reason": {"$nin": [None, ""]}}, "rejected"),
+        ({"verified": False}, "pending_verification"),
+    ):
+        moved = await db.brand_profiles.update_many(
+            {**query, "verification_state": {"$exists": False}},
+            {"$set": {"verification_state": state}},
+        )
+        if moved.modified_count:
+            logger.info(
+                "Backfilled verification_state=%s on %d brand profile(s)",
+                state,
+                moved.modified_count,
+            )
+
+    # 7. `brand` accounts predate the `brand_manager` role. Every one of them is
+    #    already a single login belonging to a single person — that is what the
+    #    role names, so they are moved rather than left on a second spelling
+    #    that every guard would have to keep remembering. Demo brands seeded for
+    #    the feed are skipped: they have no password and no phone, nobody signs
+    #    into them, and calling them managers would put a fiction in the role.
+    promoted = await db.users.update_many(
+        {"role": "brand", "phone": {"$nin": [None, ""]}},
+        [{"$set": {"role": "brand_manager", "brand_id": "$_id"}}],
+    )
+    if promoted.modified_count:
+        logger.info(
+            "Moved %d brand account(s) onto the brand_manager role",
+            promoted.modified_count,
+        )
+    # Any brand login still missing the link — including one promoted before
+    # this ran — gets it, since `_brand_scope` reads it on every request.
+    await db.users.update_many(
+        {"role": "brand_manager", "brand_id": {"$exists": False}},
+        [{"$set": {"brand_id": "$_id"}}],
+    )
+    # And the name: a manager with no name makes for a campaign whose contact
+    # is blank. The account name is who signed up, which is the best we have
+    # until they fill the profile in.
+    await db.users.update_many(
+        {"role": "brand_manager", "manager_name": {"$in": [None, ""]}},
+        [{"$set": {"manager_name": "$name"}}],
+    )
 
     # The nudge loop. Off entirely when the interval is zero, so a deployment
     # that has its own scheduler can drive POST /admin/jobs/creator-nudges
