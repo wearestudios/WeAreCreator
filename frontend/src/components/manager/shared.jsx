@@ -120,7 +120,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                     {kicker}
                 </p>
-                <h1 className="mt-2 font-serif text-3xl leading-none tracking-tight md:text-4xl">
+                <h1 className="mt-2 font-serif text-fluid-4xl leading-none tracking-tight">
                     {title}
                 </h1>
                 {sub && (
@@ -151,7 +151,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
 export const EmptyState = ({ Icon, children, testid }) => (
     <div
         data-testid={testid}
-        className="flex flex-col items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-12 text-center text-sm text-muted-foreground"
+        className="flex flex-col items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-12 text-center text-sm text-muted-foreground grain-surface"
     >
         {Icon && <Icon className="h-6 w-6 text-ember-500" />}
         <p className="max-w-xs leading-relaxed">{children}</p>
@@ -159,7 +159,7 @@ export const EmptyState = ({ Icon, children, testid }) => (
 );
 
 export const CardSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6">
+    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-5 w-3/4" />
         <div className="mt-6 flex gap-3">
@@ -178,7 +178,7 @@ export const CardListSkeleton = ({ cards = 3, testid }) => (
 );
 
 export const RowSkeleton = () => (
-    <div className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5">
+    <div className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5 grain-surface">
         <Skeleton className="h-10 w-16 flex-none rounded-md" />
         <div className="min-w-0 flex-1 space-y-2">
             <Skeleton className="h-4 w-1/2" />

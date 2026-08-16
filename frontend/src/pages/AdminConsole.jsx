@@ -110,7 +110,7 @@ export default function AdminConsole() {
     };
 
     return (
-        <div data-testid={SHELL_IDS.page} className="min-h-screen bg-background">
+        <div data-testid={SHELL_IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
 
             <main className="mx-auto max-w-7xl px-5 py-8 md:px-6 md:py-12">
@@ -119,7 +119,7 @@ export default function AdminConsole() {
                 </p>
                 <h1
                     data-testid={SHELL_IDS.heading}
-                    className="mt-2 font-serif text-3xl leading-none tracking-tight md:text-4xl"
+                    className="mt-2 font-serif text-fluid-4xl leading-none tracking-tight"
                 >
                     Everything, and what needs you.
                 </h1>

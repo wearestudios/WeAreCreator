@@ -93,7 +93,7 @@ export const NotificationBell = () => {
             <PopoverContent
                 align="end"
                 data-testid="nav-notifications-panel"
-                className="w-80 rounded-md border-white/10 bg-card p-0"
+                className="w-80 rounded-md border-white/10 bg-card p-0 grain-surface"
             >
                 <div className="border-b border-white/10 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">

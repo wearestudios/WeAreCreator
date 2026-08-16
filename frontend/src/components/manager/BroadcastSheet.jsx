@@ -39,7 +39,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
             <SheetContent
                 side="bottom"
                 data-testid={IDS.sheet}
-                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card"
+                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
             >
                 {report ? (
                     <>

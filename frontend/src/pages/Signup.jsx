@@ -57,7 +57,7 @@ export default function Signup() {
 
     return (
         <div data-testid="signup-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
-            <div className="relative hidden md:block">
+            <div className="media-frame relative hidden md:block">
                 <img
                     src="https://images.unsplash.com/photo-1596797038530-2c107229654b?auto=format&fit=crop&w=1200&q=80"
                     alt=""

@@ -145,5 +145,34 @@
     "Never use placeholder URLs (via.placeholder.com). ONLY use the provided image URLs.",
     "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='login-submit-button').",
     "Do not use transparent backgrounds for dropdowns, headers, or over content."
-  ]
+  ],
+  "foundations": {
+    "source_of_truth": "frontend/src/index.css and frontend/tailwind.config.js. This block describes what is implemented there; the code wins.",
+    "grain": [
+      "One texture, defined once as the --grain-texture custom property in src/index.css.",
+      ".grain — the overlay variant: an absolutely-positioned ::before over whatever is beneath, including a photograph. Needs a positioned parent and `absolute inset-0`. Used by the landing hero.",
+      ".grain-surface — the surface variant: the texture as a second background layer on the element itself, blended `overlay` against its own background-color. Inherits border-radius, needs no wrapper. Goes on cards, dialogs, sheets, popovers and menus.",
+      ".grain-page — the same with `background-attachment: fixed`, on page shells.",
+      ".media-frame — reserves an image's space and shows a grained, card-coloured ground until it loads.",
+      "NEVER on a translucent surface (bg-card/40): the blend runs against the element's own colour before that colour composites over the page, so at 40% alpha nothing attenuates the noise and the panel lifts from sRGB 13 to about 40. Measured, not guessed.",
+      "NEVER on an element with a Tailwind gradient — that sets background-image too, and one of the two wins.",
+      "Calibrated rather than eyeballed: over --background (sRGB 11) the ground settles at 12-15; over --card (17) at 17-21."
+    ],
+    "fluid_type": [
+      "Display headings use the `text-fluid-*` scale in tailwind.config.js, never a `text-X md:text-Y` pair.",
+      "Steps: fluid-3xl (2xl to 3xl), fluid-4xl (3xl to 4xl), fluid-5xl (4xl to 5xl), fluid-5xl-wide (3xl to 5xl), fluid-6xl (5xl to 6xl), fluid-6xl-wide (4xl to 6xl), fluid-hero (2.5rem to 4.25rem).",
+      "Each step's clamp minimum and maximum are the exact Tailwind sizes of the pair it replaced, interpolated over a 375px-1280px viewport.",
+      "Card titles and other single-size headings (text-xl, text-2xl) stay fixed on purpose: a 24px card title should not grow to 40px on a wide screen."
+    ],
+    "elevation_on_dark": [
+      "Elevation is a lighter surface, not a shadow: `hover:bg-card-elevated` (--card-elevated, three points of lightness above --card) plus a brighter hairline border.",
+      "Shadows are reserved for what genuinely floats above the page — dialogs, sheets, popovers, menus, tooltips, toasts. Nothing inline: no inputs, buttons, badges, switches, cards or tabs.",
+      "Floating surfaces are glass: border-white/10, bg-*/95, backdrop-blur-xl, grain-surface, and a shadow in shadow-black rather than the default grey.",
+      "Modal overlays are bg-black/60 with backdrop-blur-sm rather than a flat bg-black/80 — less of the app is lost behind them."
+    ],
+    "media": [
+      "Every image slot declares its ratio. Avatars carry aspect-square alongside their fixed dimensions, so the ratio is stated rather than implied by two numbers somebody has to keep equal.",
+      "A full-bleed fill image (absolute inset-0) has no ratio to reserve — the box is sized by its parent. Those get .media-frame for the ground instead; an aspect-ratio there would fight min-h-screen and make the page scroll."
+    ]
+  }
 }

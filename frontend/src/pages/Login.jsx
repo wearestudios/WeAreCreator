@@ -15,7 +15,7 @@ export default function Login() {
     return (
         <div data-testid="login-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
             {/* Left visual */}
-            <div className="relative hidden md:block">
+            <div className="media-frame relative hidden md:block">
                 <img
                     src="https://images.unsplash.com/photo-1726835498689-b4f6dbcdbdfb?auto=format&fit=crop&w=1200&q=80"
                     alt=""

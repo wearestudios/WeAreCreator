@@ -270,7 +270,7 @@ const CreatorHome = ({ user, justOnboarded }) => {
         : [];
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
 
             <main className="mx-auto max-w-6xl px-5 py-10 md:px-6 md:py-16">

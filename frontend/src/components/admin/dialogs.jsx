@@ -78,7 +78,7 @@ export function ConfirmDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_CONFIRM.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     {kicker && (
@@ -289,7 +289,7 @@ export function AdvanceDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_ADVANCE.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -497,7 +497,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_CAMPAIGN_EDIT.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">

@@ -233,7 +233,7 @@ export default function PostCampaign() {
 
     if (loadingProfile) {
         return (
-            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground">
+            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground grain-page">
                 <Loader2 className="h-5 w-5 animate-spin" />
             </div>
         );
@@ -242,7 +242,7 @@ export default function PostCampaign() {
     return (
         <div
             data-testid="post-campaign-page"
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-3xl px-6 py-12 md:py-16">
@@ -259,7 +259,7 @@ export default function PostCampaign() {
                 <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
                     {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
-                <h1 className="mt-3 font-serif text-4xl leading-none tracking-tight md:text-5xl">
+                <h1 className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight">
                     {isEditing ? "Change the brief." : "Post a paid brief."}
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">

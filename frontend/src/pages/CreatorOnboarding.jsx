@@ -424,7 +424,7 @@ export default function CreatorOnboarding() {
 
     if (loading) {
         return (
-            <div data-testid={IDS.page} className="min-h-screen bg-background">
+            <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <main data-testid={IDS.skeleton} className="mx-auto max-w-3xl space-y-8 px-5 py-12 md:px-6 md:py-16">
                     <Skeleton className="h-3 w-32" />
@@ -443,13 +443,13 @@ export default function CreatorOnboarding() {
     }
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-12 md:px-6 md:py-16">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                     Creator · Your profile
                 </p>
-                <h1 className="mt-4 font-serif text-4xl leading-none tracking-tight md:text-5xl">
+                <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
                     Tell us about you.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
@@ -461,7 +461,7 @@ export default function CreatorOnboarding() {
                 {/* The gate, made visible. The ring is what decides whether the
                     submit button works, so it sits above the form rather than
                     at the end of it. */}
-                <div className="mt-10 flex flex-col gap-5 rounded-md border border-white/10 bg-card p-6 sm:flex-row sm:items-center">
+                <div className="mt-10 flex flex-col gap-5 rounded-md border border-white/10 bg-card p-6 sm:flex-row sm:items-center grain-surface">
                     <Ring percent={percent} />
                     <div className="min-w-0 flex-1">
                         {completeness?.complete ? (
@@ -508,7 +508,7 @@ export default function CreatorOnboarding() {
                         <div className="flex flex-wrap items-center gap-5">
                             <div
                                 data-testid={IDS.photoPreview}
-                                className="grid h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-white/10 bg-card/60"
+                                className="media-frame grid aspect-square h-20 w-20 flex-none place-items-center rounded-md border border-white/10"
                             >
                                 {profileImageUrl ? (
                                     <img src={mediaUrl(profileImageUrl)} alt="Your profile" className="h-full w-full object-cover" />

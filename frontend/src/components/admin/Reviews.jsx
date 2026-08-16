@@ -128,7 +128,7 @@ function ReviewQueue({ config, onChanged }) {
                                 <li
                                     key={id}
                                     data-testid={IDS.row(id)}
-                                    className="overflow-hidden rounded-md border border-white/10 bg-card"
+                                    className="overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
                                 >
                                     <button
                                         type="button"

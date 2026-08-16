@@ -67,14 +67,14 @@ const CreatorCard = ({ c, index }) => {
                 delay: Math.min(index, 10) * 0.03,
                 ease: [0.22, 1, 0.36, 1],
             }}
-            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card hover:shadow-[0_20px_60px_-30px_rgba(240,93,20,0.4)]"
+            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
         >
             <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
 
             <div className="flex items-start gap-4">
                 {/* The initial is the fallback, not the default — a real photo
                     is what a brand actually wants to see here. */}
-                <div className="grid h-14 w-14 flex-none place-items-center overflow-hidden rounded-full border border-white/10 bg-ember-500/10 font-serif text-2xl text-ember-500">
+                <div className="media-frame grid aspect-square h-14 w-14 flex-none place-items-center rounded-full border border-white/10 bg-ember-500/10 font-serif text-2xl text-ember-500">
                     {c.profile_image_url ? (
                         <img
                             src={mediaUrl(c.profile_image_url)}
@@ -263,7 +263,7 @@ export default function BrandCreatorDirectory() {
     return (
         <div
             data-testid="brand-directory-page"
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-7xl px-6 py-14 md:py-20">
@@ -276,7 +276,7 @@ export default function BrandCreatorDirectory() {
                         </p>
                         <h1
                             data-testid="directory-heading"
-                            className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight md:text-6xl"
+                            className="mt-5 font-serif text-fluid-6xl leading-[0.95] tracking-tight"
                         >
                             Every verified creator,{" "}
                             <span className="italic">by city</span>.

@@ -43,7 +43,7 @@ export default function ManagerHome() {
     }, [load]);
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-10 md:px-6 md:py-14">
                 <ManagerHeader
@@ -69,7 +69,7 @@ export default function ManagerHome() {
                                     <Link
                                         to={`/manager/campaigns/${c.id}`}
                                         data-testid={IDS.card(c.id)}
-                                        className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-ember-500/40"
+                                        className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-ember-500/40 grain-surface"
                                     >
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-2">

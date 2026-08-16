@@ -206,7 +206,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
             data-testid={IDS.card(collab.id)}
             whileHover={still ? undefined : { y: -2 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20 md:p-7"
+            className="rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20 md:p-7 grain-surface"
         >
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">

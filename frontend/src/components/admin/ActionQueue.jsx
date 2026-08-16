@@ -433,7 +433,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 </div>
             )}
 
-            <div className="mt-6 rounded-md border border-white/10 bg-card">
+            <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!items ? (
                     <ListSkeleton rows={6} testid={IDS.skeleton} />
                 ) : visible.length === 0 ? (
@@ -483,7 +483,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     {showWaiting && (
                         <ul
                             data-testid={IDS.waitingList}
-                            className="mt-4 divide-y divide-white/10 rounded-md border border-white/10 bg-card"
+                            className="mt-4 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface"
                         >
                             {waiting.map((row) => (
                                 <li

@@ -288,7 +288,7 @@ function Hero() {
             <motion.div
                 style={{ y: imgY, opacity: imgOpacity }}
                 data-testid={HERO_IDS.slides}
-                className="absolute inset-0"
+                className="media-frame absolute inset-0"
             >
                 <AnimatePresence initial={false}>
                     <motion.div
@@ -369,7 +369,7 @@ function Hero() {
                             </p>
                             <h1
                                 data-testid={HERO_IDS.heading}
-                                className="h-fluid max-w-5xl font-serif tracking-tightest"
+                                className="max-w-5xl font-serif text-fluid-hero tracking-tightest"
                             >
                                 {current.headline[0]}
                                 <span className="block italic text-muted-foreground">
@@ -478,7 +478,7 @@ function Hero() {
                         { id: "fees", k: 0, s: "", v: "hidden fees", prefix: "₹" },
                     ].map((s) => (
                         <div key={s.id} data-testid={HERO_IDS.stat(s.id)}>
-                            <div className="font-serif text-3xl text-foreground md:text-4xl">
+                            <div className="font-serif text-fluid-4xl text-foreground">
                                 {s.prefix}
                                 <AnimatedNumber value={s.k} suffix={s.s} />
                             </div>
@@ -594,7 +594,7 @@ function LiveBriefs() {
                             <span className="h-px w-8 bg-ember-500" />
                             Open right now
                         </p>
-                        <h2 className="mt-5 max-w-2xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl">
+                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
                             Briefs live on the platform{" "}
                             <span className="italic">today</span>.
                         </h2>
@@ -613,7 +613,7 @@ function LiveBriefs() {
                         ? Array.from({ length: 3 }).map((_, i) => (
                               <div
                                   key={i}
-                                  className="h-56 animate-pulse rounded-lg border border-white/10 bg-card"
+                                  className="h-56 animate-pulse rounded-lg border border-white/10 bg-card grain-surface"
                               />
                           ))
                         : briefs.map((b, idx) => (
@@ -628,7 +628,7 @@ function LiveBriefs() {
                                       delay: idx * 0.06,
                                       ease: [0.22, 1, 0.36, 1],
                                   }}
-                                  className="group flex flex-col rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50"
+                                  className="group flex flex-col rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50 grain-surface"
                               >
                                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
                                       <span>{CAT_LABEL[b.category] || b.category}</span>
@@ -776,7 +776,7 @@ function ClosingCta() {
                             </p>
                             <h2
                                 data-testid={CLOSING_IDS.heading}
-                                className="mt-5 max-w-3xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl"
+                                className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight"
                             >
                                 {copy.heading[0]}{" "}
                                 <span className="italic">{copy.heading[1]}</span>
@@ -847,7 +847,7 @@ export default function Landing() {
     return (
         <div
             data-testid={PAGE_IDS.page}
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
 
@@ -867,7 +867,7 @@ export default function Landing() {
                                 <span className="h-px w-8 bg-ember-500" />
                                 For creators
                             </p>
-                            <h2 className="mt-5 max-w-2xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl">
+                            <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
                                 Four steps from{" "}
                                 <span className="italic">application</span> to
                                 bank account.
@@ -894,7 +894,7 @@ export default function Landing() {
                                     ease: [0.22, 1, 0.36, 1],
                                 }}
                                 whileHover={{ y: -4 }}
-                                className="group relative flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50 hover:shadow-[0_24px_80px_-32px_rgba(240,93,20,0.45)]"
+                                className="group relative flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50 hover:bg-card-elevated grain-surface"
                             >
                                 <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
                                 <div className="flex items-center justify-between">
@@ -939,7 +939,7 @@ export default function Landing() {
                     <span className="h-px w-8 bg-ember-500" />
                     Why WeAre
                 </p>
-                <h2 className="mt-5 max-w-3xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl">
+                <h2 className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
                     Built for people who take content{" "}
                     <span className="italic">and</span> payment seriously.
                 </h2>
@@ -957,7 +957,7 @@ export default function Landing() {
                                 ease: [0.22, 1, 0.36, 1],
                             }}
                             whileHover={{ y: -4 }}
-                            className="group relative overflow-hidden rounded-lg border border-white/10 bg-card p-8 transition-colors duration-300 hover:border-ember-500/50 hover:shadow-[0_24px_80px_-32px_rgba(240,93,20,0.4)]"
+                            className="group relative overflow-hidden rounded-lg border border-white/10 bg-card p-8 transition-colors duration-300 hover:border-ember-500/50 hover:bg-card-elevated grain-surface"
                         >
                             <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
                             <Icon className="h-6 w-6 text-ember-500" />
@@ -986,7 +986,7 @@ export default function Landing() {
                                 <span className="h-px w-8 bg-ember-500" />
                                 For brands
                             </p>
-                            <h2 className="mt-5 max-w-3xl font-serif text-4xl leading-[0.98] tracking-tight md:text-5xl">
+                            <h2 className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
                                 Self-serve platform.{" "}
                                 <span className="italic">Or a team</span> that runs
                                 the whole thing.

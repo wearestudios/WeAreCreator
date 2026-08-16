@@ -87,7 +87,7 @@ const CampaignCard = ({ c, index }) => (
         <Link
             to={`/campaigns/${c.id}`}
             data-testid={`campaign-card-${c.id}`}
-            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 p-7 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card hover:shadow-[0_20px_60px_-30px_rgba(240,93,20,0.4)]"
+            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 p-7 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
         >
             {/* editorial accent line */}
             <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
@@ -242,7 +242,7 @@ export default function Campaigns() {
     return (
         <div
             data-testid="campaigns-page"
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-7xl px-6 py-14 md:py-20">
@@ -255,7 +255,7 @@ export default function Campaigns() {
                         </p>
                         <h1
                             data-testid="campaigns-heading"
-                            className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight md:text-6xl"
+                            className="mt-5 font-serif text-fluid-6xl leading-[0.95] tracking-tight"
                         >
                             Paid briefs, <span className="italic">open</span> to apply.
                         </h1>
