@@ -157,7 +157,7 @@ export default function AdminAudit() {
                 )}
             </div>
 
-            <div className="mt-6 rounded-md border border-white/10 bg-card">
+            <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!rows ? (
                     <TableSkeleton rows={10} cols={4} testid={IDS.skeleton} />
                 ) : visible.length === 0 ? (

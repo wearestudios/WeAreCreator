@@ -33,7 +33,7 @@ export default function AdminLogin() {
     };
 
     return (
-        <div data-testid="admin-login-page" className="grid min-h-screen place-items-center bg-background p-6">
+        <div data-testid="admin-login-page" className="grid min-h-screen place-items-center bg-background p-6 grain-page">
             <div className="w-full max-w-md">
                 <Link to="/" className="mb-8 inline-block font-serif text-2xl">
                     WeAre <span className="text-ember-500">Creators</span>

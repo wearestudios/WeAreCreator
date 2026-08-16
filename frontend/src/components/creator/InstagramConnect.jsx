@@ -130,7 +130,7 @@ export default function InstagramConnect({ onChanged }) {
 
     if (!data) {
         return (
-            <div data-testid={IDS.skeleton} className="rounded-md border border-white/10 bg-card p-6">
+            <div data-testid={IDS.skeleton} className="rounded-md border border-white/10 bg-card p-6 grain-surface">
                 <Skeleton className="h-3 w-40" />
                 <Skeleton className="mt-4 h-6 w-2/3" />
                 <Skeleton className="mt-6 h-12 w-48 rounded-full" />
@@ -143,7 +143,7 @@ export default function InstagramConnect({ onChanged }) {
     const stale = data.status === "stale";
 
     return (
-        <div data-testid={IDS.card} className="rounded-md border border-white/10 bg-card p-6">
+        <div data-testid={IDS.card} className="rounded-md border border-white/10 bg-card p-6 grain-surface">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                     <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">

@@ -87,7 +87,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card"
+                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">

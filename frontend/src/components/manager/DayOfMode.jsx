@@ -88,7 +88,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
             {/* Progress first: the only number that matters mid-shift. */}
             <div
                 data-testid={IDS.progress}
-                className="rounded-md border border-white/10 bg-card p-5"
+                className="rounded-md border border-white/10 bg-card p-5 grain-surface"
             >
                 <div className="flex items-baseline justify-between">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -156,7 +156,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                             <li
                                 key={row.collaboration_id}
                                 data-testid={IDS.row(row.collaboration_id)}
-                                className="overflow-hidden rounded-md border border-white/10 bg-card"
+                                className="overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
                             >
                                 <div className="flex items-stretch gap-3 p-4">
                                     <div className="flex min-w-0 flex-1 flex-col justify-center">
@@ -327,7 +327,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
             <SheetContent
                 side="bottom"
                 data-testid={NO_SHOW_IDS.sheet}
-                className="rounded-t-md border-t border-white/10 bg-card"
+                className="rounded-t-md border-t border-white/10 bg-card grain-surface"
             >
                 <SheetTitle className="font-serif text-2xl leading-tight">
                     {row?.name} didn't turn up?
@@ -398,7 +398,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
             <SheetContent
                 side="bottom"
                 data-testid={RESCHEDULE_IDS.sheet}
-                className="max-h-[85vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card"
+                className="max-h-[85vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
             >
                 <SheetTitle className="font-serif text-2xl leading-tight">
                     Move {row?.name}

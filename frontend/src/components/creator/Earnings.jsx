@@ -86,7 +86,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                 ) : (
                     <ul
                         data-testid={IDS.list}
-                        className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card"
+                        className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
                     >
                         {rows.map((p) => (
                             <li

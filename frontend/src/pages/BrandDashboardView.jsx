@@ -233,7 +233,7 @@ export default function BrandDashboardView({ user }) {
         data?.profile?.business_name || user.name || "Your brand";
 
     return (
-        <div data-testid="dashboard-page" className="min-h-screen bg-background">
+        <div data-testid="dashboard-page" className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-7xl px-6 py-12 md:py-16">
                 {!data && !error && (
@@ -258,7 +258,7 @@ export default function BrandDashboardView({ user }) {
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
-                                    className="mt-3 font-serif text-4xl leading-none tracking-tight md:text-5xl"
+                                    className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight"
                                 >
                                     {businessName}
                                 </h1>
@@ -360,7 +360,7 @@ export default function BrandDashboardView({ user }) {
                                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                                         Your campaigns
                                     </p>
-                                    <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
+                                    <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
                                         Every brief you've posted.
                                     </h2>
                                 </div>
@@ -378,7 +378,7 @@ export default function BrandDashboardView({ user }) {
                                 </Link>
                             </div>
 
-                            <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card">
+                            <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                                 {data.campaigns.length === 0 ? (
                                     <div
                                         data-testid="brand-campaigns-empty"
@@ -635,7 +635,7 @@ export default function BrandDashboardView({ user }) {
             >
                 <DialogContent
                     data-testid={BRAND_CAMPAIGN_CONTROLS.pauseDialog}
-                    className="rounded-md border border-white/10 bg-card"
+                    className="rounded-md border border-white/10 bg-card grain-surface"
                 >
                     <DialogHeader>
                         <DialogTitle className="font-serif text-2xl">
@@ -693,7 +693,7 @@ export default function BrandDashboardView({ user }) {
             >
                 <AlertDialogContent
                     data-testid="brand-campaign-confirm"
-                    className="rounded-md border border-white/10 bg-card"
+                    className="rounded-md border border-white/10 bg-card grain-surface"
                 >
                     <AlertDialogHeader>
                         <AlertDialogTitle className="font-serif text-2xl">

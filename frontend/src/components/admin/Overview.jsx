@@ -233,7 +233,7 @@ export default function Overview({ onChanged }) {
                     {STAT_CARDS.map((c) => (
                         <div
                             key={c.key}
-                            className="rounded-md border border-white/10 bg-card p-5"
+                            className="rounded-md border border-white/10 bg-card p-5 grain-surface"
                         >
                             <Skeleton className="h-3 w-16" />
                             <Skeleton className="mt-4 h-7 w-20" />
@@ -361,7 +361,7 @@ export default function Overview({ onChanged }) {
                 })}
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card">
+            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                 {!data ? (
                     <TableSkeleton rows={6} cols={5} testid={IDS.tableSkeleton} />
                 ) : rows.length === 0 ? (
@@ -555,7 +555,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                     <Skeleton className="h-8 w-2/3" />
                     <div className="grid gap-4 lg:grid-cols-3">
                         {COLUMNS.map((c) => (
-                            <div key={c.key} className="rounded-md border border-white/10 bg-card">
+                            <div key={c.key} className="rounded-md border border-white/10 bg-card grain-surface">
                                 <ListSkeleton rows={3} />
                             </div>
                         ))}
@@ -573,7 +573,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                         </div>
                         <h2
                             data-testid={DETAIL_IDS.title}
-                            className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl"
+                            className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight"
                         >
                             {data.campaign.title}
                         </h2>
@@ -591,7 +591,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 <div
                                     key={col.key}
                                     data-testid={DETAIL_IDS.column(col.key)}
-                                    className="rounded-md border border-white/10 bg-card"
+                                    className="rounded-md border border-white/10 bg-card grain-surface"
                                 >
                                     <div className="flex items-baseline justify-between border-b border-white/10 px-5 py-4">
                                         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">

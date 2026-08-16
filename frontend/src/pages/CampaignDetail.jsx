@@ -134,14 +134,14 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="apply-dialog"
-                className="max-w-lg overflow-hidden rounded-md border border-white/10 bg-card p-0 sm:rounded-md"
+                className="max-w-lg overflow-hidden rounded-md border border-white/10 bg-card p-0 sm:rounded-md grain-surface"
             >
                 <div className="border-b border-white/10 bg-background/50 px-6 pt-6 pb-5">
                     <DialogHeader className="text-left">
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                             Apply to campaign
                         </p>
-                        <DialogTitle className="mt-3 font-serif text-2xl leading-tight tracking-tight text-foreground md:text-3xl">
+                        <DialogTitle className="mt-3 font-serif text-fluid-3xl leading-tight tracking-tight text-foreground">
                             {campaign?.title}
                         </DialogTitle>
                         <DialogDescription className="mt-2 text-sm text-muted-foreground">
@@ -443,7 +443,7 @@ export default function CampaignDetail() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="grid place-items-center py-32 text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -454,7 +454,7 @@ export default function CampaignDetail() {
 
     if (!campaign) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="mx-auto max-w-2xl px-6 py-24 text-center">
                     <p className="font-serif text-3xl">Campaign not found</p>
@@ -475,7 +475,7 @@ export default function CampaignDetail() {
     return (
         <div
             data-testid="campaign-detail-page"
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
@@ -515,7 +515,7 @@ export default function CampaignDetail() {
 
                 <h1
                     data-testid="detail-title"
-                    className="mt-4 max-w-3xl font-serif text-4xl leading-none tracking-tight md:text-6xl"
+                    className="mt-4 max-w-3xl font-serif text-fluid-6xl-wide leading-none tracking-tight"
                 >
                     {campaign.title}
                 </h1>
@@ -534,7 +534,7 @@ export default function CampaignDetail() {
                             </p>
                         </section>
 
-                        <section className="mt-12 rounded-md border border-white/10 bg-card p-8">
+                        <section className="mt-12 rounded-md border border-white/10 bg-card p-8 grain-surface">
                             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                                 Deliverables
                             </p>
@@ -549,7 +549,7 @@ export default function CampaignDetail() {
 
                     <aside className="md:col-span-4">
                         <div className="sticky top-24 space-y-4">
-                            <div className="rounded-md border border-white/10 bg-card p-7">
+                            <div className="rounded-md border border-white/10 bg-card p-7 grain-surface">
                                 <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                     Budget per creator
                                 </div>

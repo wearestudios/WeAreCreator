@@ -246,7 +246,7 @@ export const SectionHead = ({ kicker, title, aside }) => (
     <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">{kicker}</p>
-            <h2 className="mt-3 font-serif text-2xl leading-none tracking-tight md:text-3xl">
+            <h2 className="mt-3 font-serif text-fluid-3xl leading-none tracking-tight">
                 {title}
             </h2>
         </div>
@@ -257,7 +257,7 @@ export const SectionHead = ({ kicker, title, aside }) => (
 export const EmptyState = ({ Icon, title, children, testid, action }) => (
     <div
         data-testid={testid}
-        className="flex flex-col items-center gap-3 rounded-md border border-white/10 bg-card px-6 py-14 text-center"
+        className="flex flex-col items-center gap-3 rounded-md border border-white/10 bg-card px-6 py-14 text-center grain-surface"
     >
         {Icon && <Icon className="h-6 w-6 text-ember-500" />}
         {title && <p className="font-serif text-xl leading-tight">{title}</p>}
@@ -267,7 +267,7 @@ export const EmptyState = ({ Icon, title, children, testid, action }) => (
 );
 
 export const CardSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6">
+    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-6 w-2/3" />
         <Skeleton className="mt-6 h-2 w-full rounded-full" />

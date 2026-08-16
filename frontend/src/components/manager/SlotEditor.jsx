@@ -92,7 +92,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
             <SheetContent
                 side="bottom"
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card"
+                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
             >
                 <SheetTitle className="font-serif text-2xl leading-tight">
                     {editing ? "Edit slot" : "Add a slot"}

@@ -45,7 +45,7 @@ const initialsOf = (name) =>
         .join("") || "·";
 
 const SmallStat = ({ label, children, testid }) => (
-    <div className="rounded-md border border-white/10 bg-card p-5">
+    <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {label}
         </p>
@@ -77,7 +77,7 @@ export default function Hero({ user, profile, earnings }) {
                             src={mediaUrl(profile.profile_image_url)}
                             alt=""
                             data-testid={IDS.photo}
-                            className="h-16 w-16 flex-none rounded-md border border-white/10 object-cover md:h-20 md:w-20"
+                            className="aspect-square h-16 w-16 flex-none rounded-md border border-white/10 object-cover md:h-20 md:w-20"
                         />
                     ) : (
                         <span
@@ -91,7 +91,7 @@ export default function Hero({ user, profile, earnings }) {
                     <div className="min-w-0">
                         <h1
                             data-testid={IDS.name}
-                            className="font-serif text-3xl leading-none tracking-tight md:text-5xl"
+                            className="font-serif text-fluid-5xl-wide leading-none tracking-tight"
                         >
                             {profile?.name || user?.name}
                         </h1>
@@ -176,13 +176,13 @@ export default function Hero({ user, profile, earnings }) {
             </div>
 
             <div className="md:col-span-5">
-                <div className="rounded-md border border-white/10 bg-card p-6 md:p-7">
+                <div className="rounded-md border border-white/10 bg-card p-6 md:p-7 grain-surface">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                         Earned with WeAre
                     </p>
                     <Money
                         symbolClass="h-6 w-6 md:h-7 md:w-7"
-                        className="mt-4 font-serif text-5xl leading-none tracking-tight md:text-6xl"
+                        className="mt-4 font-serif text-fluid-6xl leading-none tracking-tight"
                     >
                         <CountUp value={lifetime} testid={IDS.lifetime} />
                     </Money>

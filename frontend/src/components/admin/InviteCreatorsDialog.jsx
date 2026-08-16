@@ -140,7 +140,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-white/10 bg-card"
+                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">

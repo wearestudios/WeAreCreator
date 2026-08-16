@@ -195,7 +195,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="accept-applicant-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -335,7 +335,7 @@ function ReasonDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="reason-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -436,7 +436,7 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                                 src={mediaUrl(c.profile_image_url)}
                                 alt=""
                                 data-testid={`applicant-photo-${a.id}`}
-                                className="h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
+                                className="aspect-square h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
                             />
                         )}
                         <span className="font-serif text-2xl leading-tight">
@@ -734,7 +734,7 @@ export default function BrandCampaignApplicants() {
 
     if (!data && !error) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="grid place-items-center py-32 text-muted-foreground">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -745,7 +745,7 @@ export default function BrandCampaignApplicants() {
 
     if (error && !data) {
         return (
-            <div className="min-h-screen bg-background">
+            <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="mx-auto max-w-2xl px-6 py-24 text-center">
                     <p className="font-serif text-3xl">Campaign not found</p>
@@ -767,7 +767,7 @@ export default function BrandCampaignApplicants() {
     return (
         <div
             data-testid="brand-applicants-page"
-            className="min-h-screen bg-background text-foreground"
+            className="min-h-screen bg-background text-foreground grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
@@ -785,7 +785,7 @@ export default function BrandCampaignApplicants() {
                 </p>
                 <h1
                     data-testid="applicants-campaign-title"
-                    className="mt-3 max-w-3xl font-serif text-4xl leading-none tracking-tight md:text-5xl"
+                    className="mt-3 max-w-3xl font-serif text-fluid-5xl leading-none tracking-tight"
                 >
                     {campaign.title}
                 </h1>
@@ -852,7 +852,7 @@ export default function BrandCampaignApplicants() {
                     })}
                 </div>
 
-                <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card">
+                <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                     {visible.length === 0 ? (
                         <div
                             data-testid="applicants-empty"

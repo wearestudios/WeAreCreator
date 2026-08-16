@@ -62,7 +62,7 @@ export default function Completeness({ completeness }) {
     if (!completeness || completeness.complete || missing.length === 0) return null;
 
     return (
-        <div className="rounded-md border border-white/10 bg-card p-6 md:p-7">
+        <div className="rounded-md border border-white/10 bg-card p-6 md:p-7 grain-surface">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <Ring percent={completeness.percent ?? 0} />
 

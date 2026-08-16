@@ -61,7 +61,7 @@ export default function Suggested({ campaigns }) {
                                 data-testid={IDS.tile(c.id)}
                                 whileHover={still ? undefined : { y: -3 }}
                                 transition={{ duration: 0.2, ease: "easeOut" }}
-                                className="flex flex-col rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20"
+                                className="flex flex-col rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20 grain-surface"
                             >
                                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                                     {c.brand_name || "Brand"}

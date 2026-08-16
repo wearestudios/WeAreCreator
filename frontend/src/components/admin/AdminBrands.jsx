@@ -157,7 +157,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                 />
             </div>
 
-            <div className="mt-6 rounded-md border border-white/10 bg-card">
+            <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
                 {!rows ? (
                     <ListSkeleton rows={5} testid={IDS.skeleton} />
                 ) : visible.length === 0 ? (

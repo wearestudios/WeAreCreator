@@ -182,7 +182,7 @@ export const CreatorAvatar = ({ creator, size = "h-12 w-12", testids = {} }) => 
                 loading="lazy"
                 data-testid={testids.photo}
                 onError={() => setBroken(true)}
-                className={`${size} flex-none rounded-md border border-white/10 object-cover`}
+                className={`${size} aspect-square flex-none rounded-md border border-white/10 object-cover`}
             />
         );
     }
@@ -202,7 +202,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
         <div className="flex items-baseline justify-between gap-6">
             <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">{kicker}</p>
-                <h2 className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl">
+                <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
                     {title}
                 </h2>
             </div>
@@ -241,7 +241,7 @@ export const FilterSelect = ({ label, value, onChange, options, testid, classNam
         >
             <SelectValue placeholder={label} />
         </SelectTrigger>
-        <SelectContent className="max-h-72 rounded-md border-white/10 bg-card">
+        <SelectContent className="max-h-72 rounded-md border-white/10 bg-card grain-surface">
             <SelectItem value={ALL} className="text-sm">
                 {label}
             </SelectItem>
@@ -256,7 +256,7 @@ export const FilterSelect = ({ label, value, onChange, options, testid, classNam
 
 /** Skeletons. One shape per section, so a loading console reads like the loaded one. */
 export const TileSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6">
+    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
         <div className="flex items-start gap-4">
             <Skeleton className="h-12 w-12 flex-none rounded-md" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -308,7 +308,7 @@ export const DateFilter = ({ value, onChange, label, testid }) => {
                     {value ? formatDate(value.toISOString()) : label}
                 </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto rounded-md border-white/10 bg-card p-0">
+            <PopoverContent align="start" className="w-auto rounded-md border-white/10 bg-card p-0 grain-surface">
                 <Calendar
                     mode="single"
                     selected={value || undefined}
@@ -341,7 +341,7 @@ export const endOfDay = (d) =>
 export const EmptyState = ({ Icon, children, testid }) => (
     <div
         data-testid={testid}
-        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground"
+        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground grain-surface"
     >
         {Icon && <Icon className="h-5 w-5 flex-none text-ember-500" />}
         <p>{children}</p>

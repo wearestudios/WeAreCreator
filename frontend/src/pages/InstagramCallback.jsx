@@ -82,7 +82,7 @@ export default function InstagramCallback() {
     };
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-xl px-5 py-16 md:px-6 md:py-24">
                 <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">

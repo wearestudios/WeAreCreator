@@ -186,7 +186,7 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
                     </div>
                     <h2
                         data-testid={T.heading}
-                        className="mt-2 font-serif text-3xl tracking-tight md:text-4xl"
+                        className="mt-2 font-serif text-fluid-4xl tracking-tight"
                     >
                         Suggested creators
                     </h2>
@@ -351,7 +351,7 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
                                 <li
                                     key={row.user_id}
                                     data-testid={T.card(row.user_id)}
-                                    className="flex flex-col gap-4 rounded-lg border border-white/10 bg-card p-5"
+                                    className="flex flex-col gap-4 rounded-lg border border-white/10 bg-card p-5 grain-surface"
                                 >
                                     <div className="flex items-start gap-3">
                                         {row.profile_image_url ? (
@@ -359,7 +359,7 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
                                                 src={mediaUrl(row.profile_image_url)}
                                                 alt=""
                                                 loading="lazy"
-                                                className="h-11 w-11 flex-none rounded-full border border-white/10 object-cover"
+                                                className="aspect-square h-11 w-11 flex-none rounded-full border border-white/10 object-cover"
                                             />
                                         ) : (
                                             <span className="h-11 w-11 flex-none rounded-full border border-white/10 bg-white/5" />

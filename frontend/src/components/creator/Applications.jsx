@@ -104,7 +104,7 @@ export default function Applications({ applied, declined }) {
                         {waiting.length > 0 && (
                             <ul
                                 data-testid={IDS.list}
-                                className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card"
+                                className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
                             >
                                 {waiting.map((row) => (
                                     <Row key={row.id} row={row} testid={IDS.row(row.id)} />

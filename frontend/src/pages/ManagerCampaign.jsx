@@ -171,7 +171,7 @@ export default function ManagerCampaign() {
     const loading = !roster || !slots;
 
     return (
-        <div data-testid={IDS.page} className="min-h-screen bg-background">
+        <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-8 md:px-6 md:py-12">
                 <Link
@@ -362,7 +362,7 @@ function RosterList({ rows }) {
                 <li
                     key={r.collaboration_id}
                     data-testid={ROSTER_IDS.row(r.collaboration_id)}
-                    className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5"
+                    className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5 grain-surface"
                 >
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -426,7 +426,7 @@ function SlotList({ slots, busy, onAdd, onEdit, onDelete }) {
                             <li
                                 key={s.id}
                                 data-testid={SLOT_IDS.row(s.id)}
-                                className="flex items-center gap-3 rounded-md border border-white/10 bg-card p-5"
+                                className="flex items-center gap-3 rounded-md border border-white/10 bg-card p-5 grain-surface"
                             >
                                 <div className="min-w-0 flex-1">
                                     <p className="font-serif text-lg leading-none">
@@ -508,7 +508,7 @@ function VenuePanel({ campaign }) {
     return (
         <section data-testid={VENUE_IDS.section} className="space-y-4">
             {campaign.venue_address && (
-                <div className="rounded-md border border-white/10 bg-card p-5">
+                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                         Address
                     </p>
@@ -529,7 +529,7 @@ function VenuePanel({ campaign }) {
             )}
 
             {campaign.venue_instructions && (
-                <div className="rounded-md border border-white/10 bg-card p-5">
+                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                         On arrival
                     </p>
@@ -543,7 +543,7 @@ function VenuePanel({ campaign }) {
             )}
 
             {campaign.on_site_contact && (
-                <div className="rounded-md border border-white/10 bg-card p-5">
+                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                         On-site contact
                     </p>

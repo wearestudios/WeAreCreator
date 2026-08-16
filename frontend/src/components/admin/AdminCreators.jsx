@@ -67,7 +67,7 @@ const GROUPS = [
 // ---------------------------------------------------------------------------
 
 const DetailStat = ({ label, value, prefix, testid }) => (
-    <div className="rounded-md border border-white/10 bg-card p-5">
+    <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {label}
         </p>
@@ -209,7 +209,7 @@ function CreatorDetail({ creatorId, onClose }) {
                                 }
                                 target="_blank"
                                 rel="noreferrer"
-                                className="mt-6 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-card px-3 py-1.5 text-xs transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                                className="mt-6 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-card px-3 py-1.5 text-xs transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 grain-surface"
                             >
                                 <Instagram className="h-3.5 w-3.5" />@{creator.instagram_handle}
                                 {typeof creator.follower_count === "number" && (
@@ -300,7 +300,7 @@ function CreatorTile({ creator, onOpen }) {
             type="button"
             onClick={() => onOpen(creator.user_id)}
             data-testid={IDS.tile(creator.user_id)}
-            className="group flex flex-col rounded-md border border-white/10 bg-card p-6 text-left transition-colors duration-200 hover:border-ember-500/40"
+            className="group flex flex-col rounded-md border border-white/10 bg-card p-6 text-left transition-colors duration-200 hover:border-ember-500/40 grain-surface"
         >
             <div className="flex items-start gap-4">
                 <CreatorAvatar
@@ -488,7 +488,7 @@ export default function AdminCreators() {
                 ) : rows.length === 0 ? (
                     <div
                         data-testid={IDS.empty}
-                        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground"
+                        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground grain-surface"
                     >
                         <Users className="h-5 w-5 flex-none text-ember-500" />
                         <p>

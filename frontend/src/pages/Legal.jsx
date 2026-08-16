@@ -20,7 +20,7 @@ const CONTACT = "creators@wearemonk.in";
 
 const Section = ({ title, children }) => (
     <section className="mt-10">
-        <h2 className="font-serif text-2xl leading-tight tracking-tight md:text-3xl">
+        <h2 className="font-serif text-fluid-3xl leading-tight tracking-tight">
             {title}
         </h2>
         <div className="mt-4 space-y-4 text-sm leading-relaxed text-muted-foreground">
@@ -30,7 +30,7 @@ const Section = ({ title, children }) => (
 );
 
 const Shell = ({ kicker, title, standfirst, children }) => (
-    <div data-testid="legal-page" className="min-h-screen bg-background">
+    <div data-testid="legal-page" className="min-h-screen bg-background grain-page">
         <Navbar />
         <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
             <Link
@@ -45,7 +45,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
             <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
                 {kicker}
             </p>
-            <h1 className="mt-4 font-serif text-4xl leading-none tracking-tight md:text-5xl">
+            <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
                 {title}
             </h1>
             <p className="mt-6 text-base leading-relaxed text-muted-foreground">

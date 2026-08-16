@@ -128,7 +128,7 @@ export default function BrandOnboarding() {
 
     if (loading) {
         return (
-            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground">
+            <div className="grid min-h-screen place-items-center bg-background text-muted-foreground grain-page">
                 <Loader2 className="h-5 w-5 animate-spin" />
             </div>
         );
@@ -137,14 +137,14 @@ export default function BrandOnboarding() {
     return (
         <div
             data-testid="brand-onboarding-page"
-            className="min-h-screen bg-background"
+            className="min-h-screen bg-background grain-page"
         >
             <Navbar />
             <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                     Brand · Onboarding
                 </p>
-                <h1 className="mt-4 font-serif text-4xl leading-none tracking-tight md:text-5xl">
+                <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
                     Tell us about your brand.
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
