@@ -28,6 +28,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { api } from "@/lib/api";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_TABS as IDS } from "@/constants/testIds";
+import { CommandPalette } from "@/components/admin/CommandPalette";
 
 // `badge` names which count from /admin/dashboard sits on the tab. `to` is
 // relative to /admin, so the strip and the router cannot disagree about where
@@ -128,9 +129,14 @@ export default function AdminConsole() {
             <Navbar />
 
             <main className="mx-auto max-w-7xl px-5 py-8 md:px-6 md:py-12">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    WeAre · Admin console
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        WeAre · Admin console
+                    </p>
+                    {/* Mounted in the shell so ⌘K works on every screen under
+                        /admin, detail pages included. */}
+                    <CommandPalette />
+                </div>
 
                 {/* A scrolling strip rather than a wrapping grid: nine tabs
                     wrapping to three rows on a phone pushes the content off

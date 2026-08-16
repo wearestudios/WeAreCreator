@@ -33,6 +33,8 @@ import {
     formatRupees,
 } from "@/components/admin/shared";
 import { ConfirmDialog } from "@/components/admin/dialogs";
+import { CampaignLink, CollaborationLink } from "@/components/admin/links";
+import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const COLLAB_GROUPS = [
@@ -110,6 +112,11 @@ export default function CreatorDetailPage() {
             testid={IDS.page}
             backTo="/admin/creators"
             backLabel="All creators"
+            crumbs={[
+                { key: "console", label: "Console", to: "/admin" },
+                { key: "creators", label: "Creators", to: "/admin/creators" },
+                { key: "creator", label: creator?.name || "Creator" },
+            ]}
             kicker="Creator"
             title={creator?.name || "Creator"}
             loading={!data && !error && !notFound}
@@ -168,6 +175,11 @@ export default function CreatorDetailPage() {
                                 Reject
                             </Button>
                         )}
+                        <ViewAsButton
+                            userId={creator.user_id}
+                            name={creator.name}
+                            role="creator"
+                        />
                         {suspended ? (
                             <Button
                                 variant="outline"
@@ -363,12 +375,12 @@ export default function CreatorDetailPage() {
                                         <span className="w-56 flex-none text-sm">
                                             {formatDateTime(b.starts_at)}
                                         </span>
-                                        <Link
-                                            to={`/admin/collaborations/${b.collaboration_id}`}
-                                            className="min-w-0 flex-1 text-sm transition-colors duration-200 hover:text-ember-500"
+                                        <CollaborationLink
+                                            id={b.collaboration_id}
+                                            className="min-w-0 flex-1 text-sm"
                                         >
                                             {b.campaign_title || "Campaign"}
-                                        </Link>
+                                        </CollaborationLink>
                                         <StatePill state={b.state} />
                                     </li>
                                 ))}
@@ -395,15 +407,21 @@ export default function CreatorDetailPage() {
                                                 data-testid={IDS.collab(c.id)}
                                                 className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                             >
-                                                <Link
-                                                    to={`/admin/collaborations/${c.id}`}
-                                                    className="min-w-0 flex-1 text-sm transition-colors duration-200 hover:text-ember-500"
-                                                >
-                                                    {c.campaign_title || "Campaign"}
+                                                <span className="min-w-0 flex-1 text-sm">
+                                                    <CampaignLink
+                                                        id={c.campaign_id}
+                                                        title={c.campaign_title}
+                                                    />
                                                     <span className="block text-xs text-muted-foreground">
                                                         {c.brand_name}
+                                                        <CollaborationLink
+                                                            id={c.id}
+                                                            className="ml-2 uppercase tracking-[0.15em]"
+                                                        >
+                                                            application
+                                                        </CollaborationLink>
                                                     </span>
-                                                </Link>
+                                                </span>
                                                 <span className="flex-none text-xs text-muted-foreground">
                                                     {c.agreed_amount != null
                                                         ? `₹${formatRupees(c.agreed_amount)}`

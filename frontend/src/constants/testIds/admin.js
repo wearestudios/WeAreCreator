@@ -24,6 +24,30 @@ export const ADMIN_TABS = {
 
 // The four detail routes. Each is its own URL, so these identify a page rather
 // than a panel that happens to be open.
+export const COMMAND_PALETTE = {
+	trigger: 'admin-search-trigger',
+	dialog: 'admin-search-dialog',
+	input: 'admin-search-input',
+	hint: 'admin-search-hint',
+	empty: 'admin-search-empty',
+	group: (key) => `admin-search-group-${key}`,
+	result: (id) => `admin-search-result-${id}`,
+};
+
+// The view-as banner lives above the router, so it is not an admin-only id in
+// the routing sense — but it is only ever an admin who sees it.
+export const IMPERSONATION = {
+	banner: 'impersonation-banner',
+	who: 'impersonation-who',
+	stop: 'impersonation-stop',
+	start: (id) => `impersonation-start-${id}`,
+};
+
+export const BREADCRUMBS = {
+	nav: 'admin-breadcrumbs',
+	crumb: (key) => `admin-breadcrumb-${key}`,
+};
+
 export const ADMIN_DETAIL = {
 	back: 'admin-detail-back',
 	skeleton: 'admin-detail-skeleton',

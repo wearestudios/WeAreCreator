@@ -66,6 +66,7 @@ import {
 } from "@/components/admin/shared";
 import { ConfirmDialog, CampaignEditDialog } from "@/components/admin/dialogs";
 import InviteCreatorsDialog from "@/components/admin/InviteCreatorsDialog";
+import { CollaborationLink, CreatorLink } from "@/components/admin/links";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The applicant board's columns, in pipeline order. The server groups them;
@@ -184,6 +185,19 @@ export default function CampaignDetailPage() {
             testid={IDS.page}
             backTo="/admin/campaigns"
             backLabel="All campaigns"
+            crumbs={[
+                { key: "console", label: "Console", to: "/admin" },
+                { key: "campaigns", label: "Campaigns", to: "/admin/campaigns" },
+                // The brand sits between the list and this campaign because
+                // that is what a campaign is inside — jumping to it is the
+                // move an admin makes next about half the time.
+                detail?.brand && {
+                    key: "brand",
+                    label: detail.brand.business_name || "Brand",
+                    to: `/admin/brands/${detail.brand.user_id}`,
+                },
+                { key: "campaign", label: campaign?.title || "Campaign" },
+            ]}
             kicker={campaign?.brand_name || "Campaign"}
             title={campaign?.title || "Campaign"}
             loading={!detail && !error && !notFound}
@@ -545,12 +559,11 @@ export default function CampaignDetailPage() {
                                                         data-testid={IDS.applicant(a.id)}
                                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                                     >
-                                                        <Link
-                                                            to={`/admin/creators/${a.creator?.id}`}
-                                                            className="min-w-0 flex-1 text-sm transition-colors duration-200 hover:text-ember-500"
-                                                        >
-                                                            {a.creator?.name || "Creator"}
-                                                        </Link>
+                                                        <CreatorLink
+                                                            id={a.creator?.id}
+                                                            name={a.creator?.name}
+                                                            className="min-w-0 flex-1 text-sm"
+                                                        />
                                                         <span className="flex-none text-xs text-muted-foreground">
                                                             quoted ₹
                                                             {formatRupees(a.quoted_rate)}
@@ -591,12 +604,18 @@ export default function CampaignDetailPage() {
                                         data-testid={IDS.payment(p.id)}
                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                     >
-                                        <Link
-                                            to={`/admin/collaborations/${p.collaboration_id}`}
-                                            className="min-w-0 flex-1 text-sm transition-colors duration-200 hover:text-ember-500"
-                                        >
-                                            {p.creator_name || "Creator"}
-                                        </Link>
+                                        <span className="min-w-0 flex-1 text-sm">
+                                            <CreatorLink
+                                                id={p.creator_id}
+                                                name={p.creator_name}
+                                            />
+                                            <CollaborationLink
+                                                id={p.collaboration_id}
+                                                className="ml-3 text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                            >
+                                                application
+                                            </CollaborationLink>
+                                        </span>
                                         <span className="flex-none text-sm">
                                             ₹{formatRupees(p.creator_payout)}
                                         </span>

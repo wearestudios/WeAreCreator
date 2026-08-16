@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { TOAST_DURATION } from "@/lib/feedback";
 import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -42,6 +43,11 @@ function App() {
         <div className="App">
             <AuthProvider>
                 <BrowserRouter>
+                    {/* Above the router on purpose. Inside it, a route could
+                        be added tomorrow that never renders the banner, and
+                        the one requirement of view-as is that you always know
+                        you are in it. */}
+                    <ImpersonationBanner />
                     <Routes>
                         <Route path="/" element={<Landing />} />
                         <Route path="/login" element={<Login />} />

@@ -30,7 +30,7 @@ from fastapi import (
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -139,6 +139,81 @@ def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
+
+
+# ---------------------------------------------------------------------------
+# Impersonation ("view as")
+#
+# A support tool: an admin sees the app exactly as one creator, brand manager
+# or campaign manager sees it, so "I can't find the button" can be answered by
+# looking rather than by guessing.
+#
+# It is **read-only, and that is enforced in middleware**, not in the UI. The
+# banner and the hidden buttons are a courtesy; `_reject_impersonated_writes`
+# is the guarantee. Anything else means the guarantee is "every route
+# remembered", which is not a guarantee.
+#
+# The token is a third cookie rather than a swap of the admin's own. Three
+# consequences, all wanted:
+#   - the admin's real session is never destroyed, so stopping is instant and
+#     cannot strand them logged out;
+#   - it is impossible to confuse an impersonated request for a real one,
+#     because the two arrive in differently-named cookies;
+#   - it expires on its own. A forgotten view-as session ends by itself.
+# ---------------------------------------------------------------------------
+
+IMPERSONATION_COOKIE = "impersonation_token"
+# Deliberately short. This is for looking at one screen with somebody on the
+# phone, not for working inside another account.
+IMPERSONATION_MIN = 30
+
+# Who an admin may look through. Not other admins: an admin already sees
+# everything an admin sees, so the only thing it would add is a way to act as a
+# colleague, and that is the one thing this must never be.
+IMPERSONATABLE_ROLES = ("creator", "brand", "brand_manager", "campaign_manager")
+
+# The methods that cannot change anything. Everything else is refused while a
+# view-as session is active.
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+# The single exception, and the reason it is safe: it only clears the
+# impersonation cookie and writes the audit line closing the session. It
+# touches no business data at all.
+IMPERSONATION_STOP_PATH = "/api/auth/impersonate/stop"
+
+
+def create_impersonation_token(target_id: str, actor: dict) -> str:
+    payload = {
+        "sub": target_id,
+        # Who is really behind this request. Carried in the token rather than
+        # looked up, so an audit line written during impersonation can name the
+        # admin even though the acting user is somebody else.
+        "act": str(actor["_id"]),
+        "act_name": actor.get("name"),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=IMPERSONATION_MIN),
+        "type": "impersonation",
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def _decode_impersonation(request: Request) -> Optional[dict]:
+    """The active view-as claim, or None.
+
+    Never raises. An expired or malformed impersonation cookie means "not
+    impersonating" — the admin's own session is still in `access_token` and
+    takes over, which is exactly the behaviour wanted when a view-as session
+    times out mid-look.
+    """
+    token = request.cookies.get(IMPERSONATION_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    if payload.get("type") != "impersonation":
+        return None
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -1026,6 +1101,29 @@ class Payment(BaseModel):
 
 
 async def get_current_user(request: Request) -> dict:
+    # A view-as session wins over the admin's own, so every downstream guard,
+    # query and serializer sees the target user and nothing has to know that
+    # impersonation exists. `_impersonation` is attached for the two things
+    # that do care: /auth/me, which draws the banner, and audit(), which names
+    # who was really behind the request.
+    claim = _decode_impersonation(request)
+    if claim:
+        try:
+            target = await db.users.find_one({"_id": ObjectId(claim["sub"])})
+        except Exception:
+            target = None
+        if target:
+            target["_id"] = str(target["_id"])
+            target.pop("password_hash", None)
+            target["_impersonation"] = {
+                "actor_id": claim.get("act"),
+                "actor_name": claim.get("act_name"),
+                "expires_at": claim.get("exp"),
+            }
+            return target
+        # The target was deleted mid-session. Fall through to the admin's own
+        # token rather than 401ing them out of their own account.
+
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization", "")
@@ -1568,6 +1666,41 @@ api_router = APIRouter(prefix="/api")
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@app.middleware("http")
+async def _reject_impersonated_writes(request: Request, call_next):
+    """**The read-only guarantee for view-as.**
+
+    Not a route dependency and not a check inside `get_current_user`: those
+    would both be per-route promises, and a promise every route has to remember
+    is one a new route will forget. This sees the method before routing
+    happens, so a handler added tomorrow is covered by having been written at
+    all.
+
+    It keys on the *method*, not on a list of dangerous endpoints. An allow-list
+    of mutations would have to be maintained; "GET, HEAD and OPTIONS cannot
+    change anything, so everything else is refused" does not.
+
+    One exception, and it is the reason the feature can be left safely: the stop
+    endpoint. It clears the cookie and writes the closing audit line and touches
+    no business data, so allowing it cannot be used to change anything — and
+    without it an admin could not get out without waiting for the token to
+    expire.
+    """
+    if request.method not in SAFE_METHODS and request.url.path != IMPERSONATION_STOP_PATH:
+        if _decode_impersonation(request) is not None:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        "You're viewing as somebody else. This is read-only — "
+                        "stop viewing as them to make changes."
+                    ),
+                    "code": "impersonation_read_only",
+                },
+            )
+    return await call_next(request)
+
+
 @api_router.get("/")
 async def root():
     return {"message": "WeAre Creators API", "status": "ok"}
@@ -1696,6 +1829,7 @@ async def logout(response: Response, user: dict = Depends(get_current_user)):
 
 @auth_router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
+    imp = user.get("_impersonation")
     return {
         "id": user["_id"],
         "email": user["email"],
@@ -1704,7 +1838,61 @@ async def me(user: dict = Depends(get_current_user)):
         "phone": user.get("phone"),
         "status": user.get("status"),
         "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+        # Present only during a view-as session. The frontend draws its banner
+        # off this rather than off anything it stored when it started, so a
+        # session resumed in a second tab — or one that expired while the tab
+        # sat open — still shows the truth.
+        "impersonation": {
+            "active": True,
+            "actor_id": imp.get("actor_id"),
+            "actor_name": imp.get("actor_name"),
+            "expires_at": _iso(datetime.fromtimestamp(imp["expires_at"], tz=timezone.utc))
+            if imp.get("expires_at")
+            else None,
+            "read_only": True,
+        }
+        if imp
+        else None,
     }
+
+
+@auth_router.post("/impersonate/stop")
+async def stop_impersonating(request: Request, response: Response):
+    """End a view-as session and hand the admin back their own.
+
+    The one non-GET route reachable while impersonating — see
+    `_reject_impersonated_writes`. It clears a cookie and writes an audit line;
+    it touches no business data, which is what makes allowing it safe.
+
+    Deliberately does not require a role: the caller *is* the impersonated
+    creator as far as every guard is concerned, so `require_roles("admin")`
+    would lock the admin inside the session it exists to leave. The token
+    itself is the authorisation — only `impersonate_user` mints one, and only
+    an admin can call that.
+    """
+    claim = _decode_impersonation(request)
+    response.delete_cookie(IMPERSONATION_COOKIE, path="/")
+    if not claim:
+        # Already out, or the token expired on its own. Not an error: the
+        # button should work whatever state the tab was left in.
+        return {"success": True, "was_impersonating": False}
+
+    target = await db.users.find_one({"_id": ObjectId(claim["sub"])})
+    actor = await db.users.find_one({"_id": ObjectId(claim["act"])}) if claim.get("act") else None
+    if actor:
+        actor["_id"] = str(actor["_id"])
+        await audit(
+            actor,
+            "admin.impersonate.stop",
+            "user",
+            ObjectId(claim["sub"]),
+            after={
+                "target_user_id": claim["sub"],
+                "target_name": (target or {}).get("name"),
+                "target_role": (target or {}).get("role"),
+            },
+        )
+    return {"success": True, "was_impersonating": True}
 
 
 @auth_router.post("/refresh")
@@ -7192,6 +7380,259 @@ async def reinstate_creator(
         link="/campaigns",
     )
     return {"user_id": user_id, "status": "active", "reason": reason}
+
+
+def _phone_tail(raw: Optional[str]) -> Optional[str]:
+    """The last ten digits of a number, or None if there aren't ten.
+
+    A number reaches us written five ways — `+91 98765 43210`, `09876543210`,
+    `9876543210`, with dashes, with brackets. The tail is the part that is the
+    same in all of them, so it is what search matches on. Ten because that is
+    an Indian subscriber number; the country code is the part people leave off.
+    """
+    digits = re.sub(r"\D", "", raw or "")
+    return digits[-10:] if len(digits) >= 10 else None
+
+
+# Enough to be worth a query. One character would return the whole database
+# ranked by nothing.
+SEARCH_MIN_CHARS = 2
+SEARCH_GROUP_LIMIT = 6
+
+
+@admin_router.get("/search")
+async def admin_global_search(
+    q: str = "",
+    user: dict = Depends(require_roles("admin")),
+):
+    """One box over creators, brands, campaigns and phone numbers.
+
+    Built for one moment: somebody messages us mid-campaign and we have thirty
+    seconds to find out who they are and what they are on. So a bare phone
+    number has to work as well as a name, and the results have to say which
+    kind of thing each one is rather than making the reader infer it.
+
+    Declared before /{user_id}-shaped admin paths at this depth — see the route
+    ordering test. `search` is a word somebody could plausibly have as an id.
+    """
+    term = (q or "").strip()[:120]
+    if len(term) < SEARCH_MIN_CHARS:
+        return {"query": term, "groups": [], "total": 0}
+
+    rx = {"$regex": re.escape(term), "$options": "i"}
+    tail = _phone_tail(term)
+    # Matching the tail against stored E.164 means a suffix match, which cannot
+    # use an index — acceptable at this size, and the alternative is a stored
+    # normalised column that every write path has to remember to maintain.
+    phone_rx = {"$regex": f"{re.escape(tail)}$"} if tail else None
+
+    creator_or = [{"name": rx}, {"email": rx}]
+    if phone_rx:
+        creator_or.append({"phone": phone_rx})
+
+    creator_users, profiles, brand_profiles, brand_users, campaigns = await asyncio.gather(
+        db.users.find({"role": "creator", "$or": creator_or}).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.creator_profiles.find(
+            {"$or": [{"name": rx}, {"instagram_handle": rx}, {"city": rx}]}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.brand_profiles.find(
+            {"$or": [{"business_name": rx}, {"legal_entity_name": rx}, {"contact_person_name": rx}]}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.users.find(
+            {"role": {"$in": list(BRAND_ROLES)}, "$or": creator_or}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.campaigns.find({"$or": [{"title": rx}, {"area": rx}]})
+        .sort("created_at", -1)
+        .limit(SEARCH_GROUP_LIMIT)
+        .to_list(length=SEARCH_GROUP_LIMIT),
+    )
+
+    # A creator can match on their account or on their profile; the two are
+    # merged by user id so somebody whose name is on both is one result.
+    creator_ids = {u["_id"] for u in creator_users} | {p["user_id"] for p in profiles}
+    creator_ids = list(creator_ids)[: SEARCH_GROUP_LIMIT * 2]
+    creator_rows = []
+    if creator_ids:
+        users_by_id = {u["_id"]: u for u in creator_users}
+        profile_by_uid = {p["user_id"]: p for p in profiles}
+        missing = [i for i in creator_ids if i not in users_by_id]
+        if missing:
+            for u in await db.users.find({"_id": {"$in": missing}}).to_list(length=len(missing)):
+                users_by_id[u["_id"]] = u
+        for cid in creator_ids:
+            u = users_by_id.get(cid) or {}
+            p = profile_by_uid.get(cid) or {}
+            if not u and not p:
+                continue
+            creator_rows.append(
+                {
+                    "id": str(cid),
+                    "label": p.get("name") or u.get("name") or "Unnamed creator",
+                    # Staff-side, so the number is here on purpose: it is what
+                    # somebody searched to find this person. It never crosses
+                    # into a brand response — see _brand_visible_creator.
+                    "sublabel": " · ".join(
+                        [
+                            s
+                            for s in (
+                                f"@{p['instagram_handle']}" if p.get("instagram_handle") else None,
+                                u.get("phone"),
+                                p.get("city"),
+                            )
+                            if s
+                        ]
+                    ),
+                    "badge": p.get("verification_status") or "pending",
+                    "href": f"/admin/creators/{cid}",
+                }
+            )
+
+    brand_ids = {p["user_id"] for p in brand_profiles} | {u["_id"] for u in brand_users}
+    brand_rows = []
+    if brand_ids:
+        profile_by_uid = {p["user_id"]: p for p in brand_profiles}
+        accounts = {u["_id"]: u for u in brand_users}
+        missing = [i for i in brand_ids if i not in accounts]
+        if missing:
+            for u in await db.users.find({"_id": {"$in": missing}}).to_list(length=len(missing)):
+                accounts[u["_id"]] = u
+        missing_p = [i for i in brand_ids if i not in profile_by_uid]
+        if missing_p:
+            for p in await db.brand_profiles.find(
+                {"user_id": {"$in": missing_p}}
+            ).to_list(length=len(missing_p)):
+                profile_by_uid[p["user_id"]] = p
+        for bid in list(brand_ids)[: SEARCH_GROUP_LIMIT * 2]:
+            p = profile_by_uid.get(bid) or {}
+            u = accounts.get(bid) or {}
+            brand_rows.append(
+                {
+                    "id": str(bid),
+                    "label": p.get("business_name") or u.get("name") or "Unnamed brand",
+                    "sublabel": " · ".join(
+                        [s for s in (p.get("contact_person_name"), u.get("phone"), p.get("category")) if s]
+                    ),
+                    "badge": "verified" if p.get("verified") else _brand_verification_state(p),
+                    "href": f"/admin/brands/{bid}",
+                }
+            )
+
+    brand_name_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+    campaign_rows = [
+        {
+            "id": str(c["_id"]),
+            "label": c.get("title") or "Untitled",
+            "sublabel": " · ".join(
+                [
+                    s
+                    for s in (
+                        (brand_name_map.get(c["brand_id"]) or {}).get("business_name"),
+                        c.get("area"),
+                    )
+                    if s
+                ]
+            ),
+            "badge": c.get("status"),
+            "href": f"/admin/campaigns/{c['_id']}",
+        }
+        for c in campaigns
+    ]
+
+    groups = [
+        g
+        for g in (
+            {"key": "creators", "label": "Creators", "items": creator_rows[:SEARCH_GROUP_LIMIT]},
+            {"key": "brands", "label": "Brands", "items": brand_rows[:SEARCH_GROUP_LIMIT]},
+            {"key": "campaigns", "label": "Campaigns", "items": campaign_rows},
+        )
+        if g["items"]
+    ]
+    return {
+        "query": term,
+        # Said out loud so the palette can explain an empty result for a number
+        # that was typed short rather than one that matched nobody.
+        "matched_phone": bool(tail),
+        "groups": groups,
+        "total": sum(len(g["items"]) for g in groups),
+    }
+
+
+@admin_router.post("/impersonate/{user_id}")
+async def impersonate_user(
+    user_id: str,
+    response: Response,
+    request: Request,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Start looking at the app as somebody else.
+
+    Read-only — `_reject_impersonated_writes` refuses every unsafe method for
+    as long as the cookie is set. This endpoint only mints the token; it is the
+    middleware that makes the promise.
+
+    The admin's own cookies are left alone. Stopping is then just deleting one
+    cookie, and a failure anywhere in here cannot log the admin out.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target = await db.users.find_one({"_id": oid})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    role = target.get("role")
+    if role not in IMPERSONATABLE_ROLES:
+        # Refusing admin→admin is the point. An admin already sees everything
+        # an admin sees, so the only thing this would add is acting as a
+        # named colleague — which is precisely what the audit log exists to
+        # prevent being possible.
+        raise HTTPException(
+            status_code=422,
+            detail=f"You can't view as {'another admin' if role == 'admin' else f'a {role}'}.",
+        )
+    if str(target["_id"]) == str(user["_id"]):
+        raise HTTPException(status_code=422, detail="You're already yourself.")
+
+    # Refused while already impersonating, so a session cannot be chained from
+    # one person to the next without an audited stop in between. (The
+    # middleware blocks this POST anyway; this is the readable reason.)
+    if _decode_impersonation(request) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Stop viewing as the current user first.",
+        )
+
+    await audit(
+        user,
+        "admin.impersonate.start",
+        "user",
+        oid,
+        after={
+            "target_user_id": str(target["_id"]),
+            "target_name": target.get("name"),
+            "target_role": role,
+            "expires_in_minutes": IMPERSONATION_MIN,
+        },
+    )
+
+    response.set_cookie(
+        key=IMPERSONATION_COOKIE,
+        value=create_impersonation_token(str(target["_id"]), user),
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=IMPERSONATION_MIN * 60,
+        path="/",
+    )
+    return {
+        "impersonating": {
+            "user_id": str(target["_id"]),
+            "name": target.get("name"),
+            "role": role,
+            "expires_in_minutes": IMPERSONATION_MIN,
+        }
+    }
 
 
 # --- Brand verification (GAP 5) --------------------------------------------

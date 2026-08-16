@@ -380,6 +380,60 @@ verification and must stay that way — a unit test fails either if it touches
 `verification_status`. Rejecting a verified creator to remove them would erase
 the record that they were ever approved.
 
+**Cmd+K** (`components/admin/CommandPalette.jsx`) is mounted in the shell, so it
+works on every screen under `/admin`. It calls `GET /admin/search`, which spans
+creators, brands, campaigns **and phone numbers** — a number arrives as a
+WhatsApp message, so `_phone_tail` matches on the last ten digits and a number
+typed with or without `+91` finds the same person. Results are grouped, walked
+with the arrows and opened with Enter.
+
+Every entity name in the console is a link, through `components/admin/links.jsx`
+(`CreatorLink`, `BrandLink`, `CampaignLink`, `CollaborationLink`). They render
+plain text when the id is missing rather than a link to nowhere. Detail pages
+carry `crumbs` into `DetailShell`, which draws breadcrumbs above the back link —
+the crumbs say what you are inside, the back link is the one-tap way out.
+
+## View-as (impersonation)
+
+An admin sees the app exactly as one creator, brand manager or campaign manager
+sees it, so "I can't see the button" is answered by looking. `POST
+/admin/impersonate/{user_id}` starts it, `POST /auth/impersonate/stop` ends it.
+
+**It is read-only, and `_reject_impersonated_writes` is what makes that true.**
+The banner and the hidden buttons are a courtesy. The middleware refuses every
+method outside `SAFE_METHODS` while an impersonation cookie is present, before
+routing — so a route added tomorrow is covered by having been written at all.
+It keys on the *method*, never on a list of endpoints: an allow-list would have
+to be maintained, and the endpoint added after it is forgotten is unprotected.
+`tests/unit/test_impersonation.py` holds this line over real HTTP, including
+against paths that do not exist; 38 of its 62 tests fail if the middleware is
+disabled.
+
+- A **third cookie**, never a swap of the admin's own. Stopping is deleting one
+  cookie, the admin's real session is never destroyed, and an impersonated
+  request cannot be confused for a real one. `IMPERSONATION_MIN` is 30 — it
+  expires on its own, and an expired token reads as "not impersonating" so the
+  admin is simply themselves again.
+- One exemption from the middleware, and it must stay one: the stop route,
+  which clears a cookie and writes an audit line and touches no business data.
+  It deliberately has **no role guard** — the caller *is* the impersonated
+  creator to every guard, so `require_roles("admin")` would lock the admin
+  inside the session it exists to leave.
+- **Admins are not impersonatable** (`IMPERSONATABLE_ROLES`). An admin already
+  sees what an admin sees; the only thing admin→admin would add is acting as a
+  named colleague.
+- Both ends audit with the target's name and role. The start audits **before**
+  the cookie is set, or a failed write would leave a live session with no
+  record. The stop recovers the admin from the token's `act` claim, so the line
+  is not credited to the creator.
+- A session that simply expires writes no closing line — there is no request to
+  write it on. The start line carries `expires_in_minutes`, so the window is
+  reconstructible.
+- `/auth/me` reports the session; the banner is drawn from that rather than
+  from anything stored at start, so a second tab and an expired session both
+  show the truth. The banner is mounted **above the router** in `App.js`, so no
+  route can fail to render it.
+
 Admins get **admin navigation only**. `linksFor()` in `Navbar.jsx` returns from
 one branch per role; admin used to share the creator branch, which put the
 creator brief feed in staff navigation. The marketing strip renders only when

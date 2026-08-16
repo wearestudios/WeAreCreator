@@ -6,11 +6,61 @@
 // console starts feeling like four consoles.
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { ADMIN_DETAIL as IDS } from "@/constants/testIds";
+import { ADMIN_DETAIL as IDS, BREADCRUMBS } from "@/constants/testIds";
+
+/**
+ * Where you are, and every step back.
+ *
+ * The back link alone answers "how do I leave" but not "what am I inside" —
+ * and a collaboration reached from a campaign reached from a brand is three
+ * levels deep with nothing on screen saying so. Every crumb but the last is a
+ * link, so any level can be jumped to directly.
+ *
+ * `crumbs` is [{ key, label, to? }]. The last one is the current page and is
+ * never a link, even if it carries a `to`.
+ */
+export const Breadcrumbs = ({ crumbs }) => (
+    <nav data-testid={BREADCRUMBS.nav} aria-label="Breadcrumb">
+        <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs uppercase tracking-[0.15em] text-muted-foreground">
+            {crumbs.filter(Boolean).map((c, i, all) => {
+                const last = i === all.length - 1;
+                return (
+                    <li key={c.key} className="inline-flex min-w-0 items-center gap-1.5">
+                        {i > 0 && (
+                            <ChevronRight
+                                aria-hidden="true"
+                                className="h-3 w-3 flex-none opacity-50"
+                            />
+                        )}
+                        {last || !c.to ? (
+                            <span
+                                data-testid={BREADCRUMBS.crumb(c.key)}
+                                aria-current={last ? "page" : undefined}
+                                className={
+                                    "max-w-[14rem] truncate " + (last ? "text-foreground" : "")
+                                }
+                            >
+                                {c.label}
+                            </span>
+                        ) : (
+                            <Link
+                                to={c.to}
+                                data-testid={BREADCRUMBS.crumb(c.key)}
+                                className="max-w-[14rem] truncate transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            >
+                                {c.label}
+                            </Link>
+                        )}
+                    </li>
+                );
+            })}
+        </ol>
+    </nav>
+);
 
 /**
  * A titled block. The console is read by scanning for the section you want, so
@@ -90,6 +140,7 @@ export const Panel = ({ children, className = "", ...rest }) => (
 export function DetailShell({
     backTo,
     backLabel,
+    crumbs,
     kicker,
     title,
     subtitle,
@@ -103,10 +154,17 @@ export function DetailShell({
 }) {
     return (
         <div data-testid={testid} className="min-w-0">
+            {/* Both, and they do different jobs: the crumbs say what you are
+                inside, the back link is the one-tap way out on a phone where
+                a crumb is a small target. */}
+            {crumbs && <Breadcrumbs crumbs={crumbs} />}
             <Link
                 to={backTo}
                 data-testid={IDS.back}
-                className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
+                className={
+                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                    (crumbs ? "mt-2" : "")
+                }
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 {backLabel}

@@ -34,6 +34,7 @@ import {
     formatRupees,
 } from "@/components/admin/shared";
 import { AdvanceDialog, ConfirmDialog } from "@/components/admin/dialogs";
+import { CampaignLink, CreatorLink } from "@/components/admin/links";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The transitions that need something typed before they can happen. Everything
@@ -110,6 +111,16 @@ export default function CollaborationDetailPage() {
             testid={IDS.page}
             backTo="/admin/queue"
             backLabel="Back to the queue"
+            crumbs={[
+                { key: "console", label: "Console", to: "/admin" },
+                { key: "campaigns", label: "Campaigns", to: "/admin/campaigns" },
+                collab?.campaign?.id && {
+                    key: "campaign",
+                    label: collab.campaign.title || "Campaign",
+                    to: `/admin/campaigns/${collab.campaign.id}`,
+                },
+                { key: "collab", label: collab?.creator?.name || "Application" },
+            ]}
             kicker={collab?.brand_name || "Collaboration"}
             title={collab?.creator?.name || "Collaboration"}
             loading={!data && !error && !notFound}
@@ -120,20 +131,16 @@ export default function CollaborationDetailPage() {
                 collab && (
                     <>
                         <StatePill state={collab.state} />
-                        <Link
-                            to={`/admin/campaigns/${collab.campaign?.id}`}
-                            data-testid={IDS.campaignLink}
-                            className="transition-colors duration-200 hover:text-ember-500"
-                        >
-                            {collab.campaign?.title || "Campaign"}
-                        </Link>
-                        <Link
-                            to={`/admin/creators/${collab.creator?.id}`}
-                            data-testid={IDS.creatorLink}
-                            className="transition-colors duration-200 hover:text-ember-500"
-                        >
-                            Creator profile
-                        </Link>
+                        <CampaignLink
+                            id={collab.campaign?.id}
+                            title={collab.campaign?.title}
+                            testid={IDS.campaignLink}
+                        />
+                        <CreatorLink
+                            id={collab.creator?.id}
+                            name="Creator profile"
+                            testid={IDS.creatorLink}
+                        />
                     </>
                 )
             }

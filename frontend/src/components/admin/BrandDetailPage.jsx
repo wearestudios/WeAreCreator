@@ -31,6 +31,8 @@ import {
     formatRupees,
 } from "@/components/admin/shared";
 import { ConfirmDialog } from "@/components/admin/dialogs";
+import { CampaignLink } from "@/components/admin/links";
+import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -105,6 +107,11 @@ export default function BrandDetailPage() {
             testid={IDS.page}
             backTo="/admin/brands"
             backLabel="All brands"
+            crumbs={[
+                { key: "console", label: "Console", to: "/admin" },
+                { key: "brands", label: "Brands", to: "/admin/brands" },
+                { key: "brand", label: brand?.business_name || "Brand" },
+            ]}
             kicker="Brand"
             title={brand?.business_name || "Brand"}
             loading={!data && !error && !notFound}
@@ -161,6 +168,14 @@ export default function BrandDetailPage() {
                                 Unverify
                             </Button>
                         )}
+                        {/* A brand has exactly one login, and this is it —
+                            so "view as this brand" and "view as their manager"
+                            are the same thing. */}
+                        <ViewAsButton
+                            userId={brand.user_id}
+                            name={brand.manager_name || brand.business_name}
+                            role={brand.manager_role || "brand_manager"}
+                        />
                         {brand.verification_state !== "rejected" && (
                             <Button
                                 variant="outline"
@@ -340,16 +355,13 @@ export default function BrandDetailPage() {
                                         data-testid={IDS.campaign(c.id)}
                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                     >
-                                        <Link
-                                            to={`/admin/campaigns/${c.id}`}
-                                            className="min-w-0 flex-1 text-sm transition-colors duration-200 hover:text-ember-500"
-                                        >
-                                            {c.title}
+                                        <span className="min-w-0 flex-1 text-sm">
+                                            <CampaignLink id={c.id} title={c.title} />
                                             <span className="block text-xs text-muted-foreground">
                                                 {c.area}
                                                 {c.manager_name ? ` · ${c.manager_name}` : ""}
                                             </span>
-                                        </Link>
+                                        </span>
                                         <span className="flex-none text-xs text-muted-foreground">
                                             {c.filled_slots}/{c.creators_needed} filled
                                         </span>
