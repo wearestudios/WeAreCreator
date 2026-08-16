@@ -12,6 +12,11 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAdminConsole } from "@/pages/AdminConsole";
 import Overview from "@/components/admin/Overview";
+import {
+    ExportsPanel,
+    HealthPanel,
+    IntelligencePanel,
+} from "@/components/admin/Health";
 import { BrandReviews, CampaignReviews, CreatorReviews } from "@/components/admin/Reviews";
 import ActionQueue from "@/components/admin/ActionQueue";
 import AdminCreators from "@/components/admin/AdminCreators";
@@ -19,9 +24,24 @@ import AdminCampaigns from "@/components/admin/AdminCampaigns";
 import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
 
+/**
+ * The overview, with the operational panels above it.
+ *
+ * Order is the argument: what is going wrong, then what the business is doing,
+ * then the numbers, then the exports. Somebody opening the console at 9am wants
+ * the first of those, and putting it under a fold of stat cards would mean they
+ * find out about an underfilled shoot from the brand instead.
+ */
 export const OverviewRoute = () => {
     const { reloadCounts } = useAdminConsole();
-    return <Overview onChanged={reloadCounts} />;
+    return (
+        <div className="space-y-12">
+            <HealthPanel />
+            <IntelligencePanel />
+            <Overview onChanged={reloadCounts} />
+            <ExportsPanel />
+        </div>
+    );
 };
 
 export const CreatorReviewsRoute = () => {

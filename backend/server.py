@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / ".env")
 import asyncio
 import csv
 import io
+import json
 from html import escape as html_escape
 import os
 import re
@@ -8250,6 +8251,877 @@ class ShowcasePayload(BaseModel):
 
     showcase: bool
     note: Optional[str] = Field(default=None, max_length=300)
+
+
+# ---------------------------------------------------------------------------
+# Health
+#
+# The console tells you what is waiting. This tells you what is *going wrong* —
+# the difference being that nothing here is in a queue. A campaign quietly
+# underfilling four days before the shoot generates no notification, appears in
+# no list, and is discovered when the brand rings up.
+#
+# Every threshold is named here rather than inlined, because every one of them
+# is a judgement about how much slack the operation has and will be argued
+# about later.
+# ---------------------------------------------------------------------------
+
+# A campaign is worth flagging when the shoot is close and the roster is short.
+FILL_WARNING_DAYS = 7          # how close "close" is
+FILL_WARNING_RATIO = 0.7       # below this share of the brief, it is short
+# Somebody accepted onto a campaign who still has no slot, this near the day.
+SLOT_WARNING_DAYS = 2
+# Attended, and no content since. A creator needs a few days to edit and post.
+CONTENT_OVERDUE_DAYS = 7
+# Approved work with money still sitting here.
+PAYMENT_OVERDUE_DAYS = 7
+# A brand that submitted documents and heard nothing.
+VERIFICATION_OVERDUE_DAYS = 3
+# Signed up, started a profile, and stopped.
+PROFILE_STALE_DAYS = 14
+
+# Severity drives the order things are read in, not the colour. `critical`
+# means a brand or creator is about to be let down; `warning` means somebody
+# will be if nothing happens.
+_HEALTH_ORDER = {"critical": 0, "warning": 1}
+
+
+def _days_ago(n: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=n)
+
+
+def _days_ahead(n: int) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=n)
+
+
+@admin_router.get("/health")
+async def admin_health(user: dict = Depends(require_roles("admin"))):
+    """What is going wrong, before anybody outside finds out.
+
+    Six checks, each returning rows that link straight to the thing that needs
+    doing. Deliberately not a count — a number tells you there is a problem and
+    then makes you go and find it.
+
+    Declared before `/{campaign_id}`-shaped siblings cannot swallow it: this is
+    `/admin/health`, one segment, and there is no bare `/admin/{id}`.
+    """
+    now = datetime.now(timezone.utc)
+    checks: list = []
+
+    # 1. Underfilling with the day approaching.
+    soon = _days_ahead(FILL_WARNING_DAYS)
+    live = await db.campaigns.find(
+        {
+            "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)},
+            "$or": [
+                {"event_date": {"$gte": now, "$lte": soon}},
+                {"start_date": {"$gte": now, "$lte": soon}},
+            ],
+        }
+    ).to_list(length=500)
+    filled = await _filled_counts_for([c["_id"] for c in live])
+    rows = []
+    for c in live:
+        needed = int(c.get("creators_needed") or 1)
+        got = filled.get(c["_id"], 0)
+        if needed and got / needed < FILL_WARNING_RATIO:
+            when = c.get("event_date") or c.get("start_date")
+            rows.append(
+                {
+                    "id": str(c["_id"]),
+                    "label": c.get("title") or "Untitled",
+                    "detail": f"{got} of {needed} booked · {_humanise_until(when, now)}",
+                    "href": f"/admin/campaigns/{c['_id']}",
+                    # Nothing booked at all, this close, is a different problem
+                    # from being two short.
+                    "severity": "critical" if got == 0 else "warning",
+                    "at": _iso(when),
+                }
+            )
+    checks.append(
+        {
+            "key": "underfilling",
+            "label": "Campaigns underfilling",
+            "blurb": f"Under {int(FILL_WARNING_RATIO * 100)}% booked with under {FILL_WARNING_DAYS} days to go.",
+            "items": rows,
+        }
+    )
+
+    # 2. Accepted, agreed, and still no slot with the day nearly here.
+    slot_cutoff = _days_ahead(SLOT_WARNING_DAYS)
+    near = await db.campaigns.find(
+        {
+            "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)},
+            "$or": [
+                {"event_date": {"$gte": now, "$lte": slot_cutoff}},
+                {"end_date": {"$gte": now, "$lte": slot_cutoff}},
+            ],
+        }
+    ).to_list(length=500)
+    near_by_id = {c["_id"]: c for c in near}
+    rows = []
+    if near_by_id:
+        unbooked = await db.collaborations.find(
+            {
+                "campaign_id": {"$in": list(near_by_id)},
+                "state": {"$in": ["accepted", "commercial_agreed"]},
+                "slot_id": None,
+            }
+        ).to_list(length=1000)
+        names = await _creator_names_for([c["creator_id"] for c in unbooked])
+        for c in unbooked:
+            camp = near_by_id[c["campaign_id"]]
+            when = camp.get("event_date") or camp.get("end_date")
+            rows.append(
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp.get('title')} · no slot · {_humanise_until(when, now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "critical",
+                    "at": _iso(when),
+                }
+            )
+    checks.append(
+        {
+            "key": "no_slot",
+            "label": "No slot booked",
+            "blurb": f"Accepted creators with nothing booked, within {SLOT_WARNING_DAYS} days of the day.",
+            "items": rows,
+        }
+    )
+
+    # 3. Turned up, never posted.
+    overdue = await db.collaborations.find(
+        {"state": "attended", "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)}}
+    ).to_list(length=500)
+    names = await _creator_names_for([c["creator_id"] for c in overdue])
+    camp_titles = await _campaign_titles_for([c["campaign_id"] for c in overdue])
+    checks.append(
+        {
+            "key": "content_overdue",
+            "label": "Content overdue",
+            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing submitted.",
+            "items": [
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp_titles.get(c['campaign_id']) or 'Campaign'} · attended {timeago_days(c.get('updated_at'), now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "warning",
+                    "at": _iso(c.get("updated_at")),
+                }
+                for c in overdue
+            ],
+        }
+    )
+
+    # 4. Money we are sitting on.
+    stale_pay = await db.payments.find(
+        {"state": {"$ne": "paid"}, "created_at": {"$lte": _days_ago(PAYMENT_OVERDUE_DAYS)}}
+    ).sort("created_at", 1).to_list(length=500)
+    pay_collabs = {
+        c["_id"]: c
+        for c in await db.collaborations.find(
+            {"_id": {"$in": [p["collaboration_id"] for p in stale_pay]}}
+        ).to_list(length=len(stale_pay) or 1)
+    }
+    pay_names = await _creator_names_for([c["creator_id"] for c in pay_collabs.values()])
+    checks.append(
+        {
+            "key": "payments_pending",
+            "label": "Payments pending",
+            "blurb": f"Raised more than {PAYMENT_OVERDUE_DAYS} days ago and still not sent.",
+            "items": [
+                {
+                    "id": str(p["_id"]),
+                    "label": pay_names.get(
+                        (pay_collabs.get(p["collaboration_id"]) or {}).get("creator_id")
+                    )
+                    or "Creator",
+                    "detail": f"₹{p.get('creator_payout') or 0:,.0f} · raised {timeago_days(p.get('created_at'), now)}",
+                    "href": f"/admin/collaborations/{p['collaboration_id']}",
+                    # Creators chase us for this, and it is the fastest way to
+                    # lose one.
+                    "severity": "critical",
+                    "at": _iso(p.get("created_at")),
+                }
+                for p in stale_pay
+            ],
+        }
+    )
+
+    # 5. Brands waiting on a decision from us.
+    waiting = await db.brand_profiles.find(
+        {
+            "verified": False,
+            "verification_state": "pending_verification",
+            "submitted_for_verification_at": {"$lte": _days_ago(VERIFICATION_OVERDUE_DAYS)},
+        }
+    ).sort("submitted_for_verification_at", 1).to_list(length=200)
+    checks.append(
+        {
+            "key": "verification_overdue",
+            "label": "Brands waiting on us",
+            "blurb": f"Documents submitted more than {VERIFICATION_OVERDUE_DAYS} days ago.",
+            "items": [
+                {
+                    "id": str(b["user_id"]),
+                    "label": b.get("business_name") or "Unnamed brand",
+                    "detail": f"submitted {timeago_days(b.get('submitted_for_verification_at'), now)}",
+                    "href": f"/admin/brands/{b['user_id']}",
+                    "severity": "warning",
+                    "at": _iso(b.get("submitted_for_verification_at")),
+                }
+                for b in waiting
+            ],
+        }
+    )
+
+    # 6. Creators who started and stopped. Not a failure on their part — it is
+    # the signal that onboarding lost somebody, and each one is a person we
+    # could still get over the line.
+    stalled = await db.creator_profiles.find(
+        {
+            "verification_status": "pending",
+            "submitted_for_review_at": {"$in": [None, False], "$exists": False},
+            "updated_at": {"$lte": _days_ago(PROFILE_STALE_DAYS)},
+        }
+    ).sort("updated_at", 1).to_list(length=200)
+    checks.append(
+        {
+            "key": "profiles_stalled",
+            "label": "Profiles stalled",
+            "blurb": f"Started a profile, never submitted it, quiet for {PROFILE_STALE_DAYS}+ days.",
+            "items": [
+                {
+                    "id": str(p["user_id"]),
+                    "label": p.get("name") or "Unnamed",
+                    "detail": (
+                        f"{_profile_completeness(p).get('percent', 0)}% complete · "
+                        f"last touched {timeago_days(p.get('updated_at'), now)}"
+                    ),
+                    "href": f"/admin/creators/{p['user_id']}",
+                    "severity": "warning",
+                    "at": _iso(p.get("updated_at")),
+                }
+                for p in stalled
+            ],
+        }
+    )
+
+    for c in checks:
+        c["items"].sort(key=lambda i: (_HEALTH_ORDER.get(i["severity"], 9), i.get("at") or ""))
+        c["count"] = len(c["items"])
+        c["critical"] = sum(1 for i in c["items"] if i["severity"] == "critical")
+
+    return {
+        "checks": checks,
+        "total": sum(c["count"] for c in checks),
+        "critical": sum(c["critical"] for c in checks),
+        "generated_at": _iso(now),
+        # Returned so the UI can say "under 70% with 7 days to go" rather than
+        # hard-coding numbers that then drift from the server's.
+        "thresholds": {
+            "fill_warning_days": FILL_WARNING_DAYS,
+            "fill_warning_ratio": FILL_WARNING_RATIO,
+            "slot_warning_days": SLOT_WARNING_DAYS,
+            "content_overdue_days": CONTENT_OVERDUE_DAYS,
+            "payment_overdue_days": PAYMENT_OVERDUE_DAYS,
+            "verification_overdue_days": VERIFICATION_OVERDUE_DAYS,
+            "profile_stale_days": PROFILE_STALE_DAYS,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Exports
+#
+# **Where the contact-details line falls.** An admin export is an internal
+# document: it goes to accounting, or to somebody reconciling a bank statement,
+# and a payout row without a phone number to chase is useless. So creator
+# contact details are allowed here — and this is the *only* family of responses
+# where that is true.
+#
+# `_ADMIN_ONLY_CONTACT_COLUMNS` names them, in one place, so that "which
+# columns are the sensitive ones" is a question with an answer rather than a
+# reading exercise. `tests/unit/test_exports.py` walks the real output of every
+# brand-facing builder for these same values, so the boundary is checked
+# against what is actually emitted rather than against what the code looks
+# like it emits.
+# ---------------------------------------------------------------------------
+
+_ADMIN_ONLY_CONTACT_COLUMNS = ("Phone", "Email", "Address", "UPI", "PAN", "GSTIN")
+
+
+def _csv_response(rows: list, headers: list, filename: str) -> Response:
+    """Rows to a downloadable file.
+
+    Through `csv.writer` so a note with a comma or a business name with a
+    newline cannot shift every column to its right — the failure mode that
+    makes a spreadsheet look fine and be wrong.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(headers)
+    w.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # These carry phone numbers and payout figures. Not something to
+            # leave in a shared browser cache.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _export_window(date_from: Optional[datetime], date_to: Optional[datetime], field: str) -> dict:
+    if not date_from and not date_to:
+        return {}
+    window: dict = {}
+    if date_from:
+        window["$gte"] = date_from
+    if date_to:
+        window["$lte"] = date_to
+    return {field: window}
+
+
+def _stamp(prefix: str) -> str:
+    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.csv"
+
+
+@admin_router.get("/exports/{kind}")
+async def admin_export(
+    kind: str,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    status: Optional[str] = None,
+    brand_id: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    q: Optional[str] = None,
+    action: Optional[str] = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Six exports, one route.
+
+    One route rather than six because they share the whole preamble — the date
+    window, the filters, the CSV framing, the audit line — and six copies of
+    that is six places for the `no-store` header to be forgotten.
+
+    Every export is audited. A file of creators' phone numbers leaving the
+    system is exactly the event the log exists to record.
+    """
+    if kind not in EXPORT_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown export. One of: {', '.join(EXPORT_KINDS)}.",
+        )
+    builder = globals()[f"_export_{kind}"]
+    rows, headers = await builder(
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        brand_id=_as_oid(brand_id) if brand_id else None,
+        campaign_id=_as_oid(campaign_id) if campaign_id else None,
+        q=q,
+        action=action,
+    )
+    await audit(
+        user,
+        f"export.{kind}",
+        "export",
+        kind,
+        after={
+            "rows": len(rows),
+            "date_from": _iso(date_from),
+            "date_to": _iso(date_to),
+            # Named so the log says which slice left, not merely that one did.
+            "filters": {
+                k: v
+                for k, v in (
+                    ("status", status), ("brand_id", brand_id),
+                    ("campaign_id", campaign_id), ("q", q), ("action", action),
+                )
+                if v
+            },
+            "includes_contact_details": kind in EXPORTS_WITH_CONTACT,
+        },
+    )
+    return _csv_response(rows, headers, _stamp(kind))
+
+
+EXPORT_KINDS = (
+    "creators", "brands", "campaigns", "collaborations", "payments", "audit",
+)
+# Which of them carry a way to reach somebody. Named so the audit line can say
+# so, and so a reviewer can see the answer without reading six builders.
+EXPORTS_WITH_CONTACT = ("creators", "brands", "collaborations", "payments")
+
+
+async def _export_creators(*, date_from, date_to, status, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["verification_status"] = status
+    if q:
+        query["name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    profiles = await db.creator_profiles.find(query).sort("created_at", -1).to_list(length=10000)
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find(
+            {"_id": {"$in": [p["user_id"] for p in profiles]}}
+        ).to_list(length=len(profiles) or 1)
+    }
+    stats = await _creator_activity_stats([p["user_id"] for p in profiles])
+    headers = [
+        "Creator ID", "Name", "Phone", "Email", "City", "Address",
+        "Instagram", "Followers", "Follower source", "Niches", "Base rate",
+        "Verification", "Payout ready", "UPI", "PAN", "Completed", "Ongoing",
+        "Lifetime earned", "Joined",
+    ]
+    rows = []
+    for p in profiles:
+        u = accounts.get(p["user_id"], {})
+        s = stats.get(p["user_id"], {})
+        rows.append([
+            str(p["user_id"]), p.get("name") or u.get("name") or "",
+            u.get("phone") or "", p.get("email") or u.get("email") or "",
+            p.get("city") or "", p.get("full_address") or p.get("address") or "",
+            f"@{p['instagram_handle']}" if p.get("instagram_handle") else "",
+            p.get("follower_count") if p.get("follower_count") is not None else "",
+            _follower_provenance(p)["follower_count_source"],
+            ", ".join(p.get("niches") or []),
+            p.get("base_rate") if p.get("base_rate") is not None else "",
+            p.get("verification_status") or "pending",
+            "yes" if payout_ready(p) else "no",
+            p.get("payout_upi") or "", p.get("pan") or "",
+            s.get("completed", 0), s.get("ongoing", 0),
+            round(float(s.get("earned", 0) or 0), 2),
+            _iso(p.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_brands(*, date_from, date_to, status, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["verification_state"] = status
+    if q:
+        query["business_name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    profiles = await db.brand_profiles.find(query).sort("created_at", -1).to_list(length=10000)
+    ids = [p["user_id"] for p in profiles]
+    accounts = {
+        u["_id"]: u for u in await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids) or 1)
+    }
+    spend = await _brand_spend_map(ids)
+    counts: dict = {}
+    async for row in db.campaigns.aggregate(
+        [{"$match": {"brand_id": {"$in": ids}}}, {"$group": {"_id": "$brand_id", "n": {"$sum": 1}}}]
+    ):
+        counts[row["_id"]] = row["n"]
+    headers = [
+        "Brand ID", "Business", "Legal entity", "Type", "GST", "Category",
+        "Address", "Manager", "Designation", "Phone", "Email", "Website",
+        "Verification", "Campaigns", "Total spend", "Paid collaborations", "Signed up",
+    ]
+    rows = []
+    for p in profiles:
+        u = accounts.get(p["user_id"], {})
+        s = spend.get(p["user_id"]) or {}
+        rows.append([
+            str(p["user_id"]), p.get("business_name") or "", p.get("legal_entity_name") or "",
+            p.get("business_type") or "", p.get("gst_number") or "", p.get("category") or "",
+            p.get("registered_address") or "",
+            u.get("manager_name") or u.get("name") or "",
+            p.get("contact_person_designation") or "",
+            u.get("phone") or "", p.get("contact_email") or u.get("email") or "",
+            p.get("website") or "", _brand_verification_state(p),
+            counts.get(p["user_id"], 0),
+            round(float(s.get("spend", 0) or 0), 2), s.get("paid_collaborations", 0),
+            _iso(u.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["status"] = status
+    if brand_id:
+        query["brand_id"] = brand_id
+    if q:
+        query["title"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=10000)
+    brands = await _load_brand_map([d["brand_id"] for d in docs])
+    filled = await _filled_counts_for([d["_id"] for d in docs])
+    perf = {
+        r["campaign_id"]: r
+        for r in await db.content_performance.find(
+            {"campaign_id": {"$in": [d["_id"] for d in docs]}}
+        ).to_list(length=10000)
+    }
+    headers = [
+        "Campaign ID", "Title", "Brand", "Status", "Compensation", "Budget per creator",
+        "Category", "Area", "Type", "Needed", "Filled", "Fill rate %",
+        "Manager", "Showcase", "Event date", "Start", "End", "Created",
+    ]
+    rows = []
+    for d in docs:
+        needed = int(d.get("creators_needed") or 1)
+        got = filled.get(d["_id"], 0)
+        rows.append([
+            str(d["_id"]), d.get("title") or "",
+            (brands.get(d["brand_id"]) or {}).get("business_name") or "",
+            d.get("status") or "", _compensation_type(d),
+            d.get("budget_per_creator") if d.get("budget_per_creator") is not None else "",
+            d.get("category") or "", d.get("area") or "", d.get("campaign_type") or "",
+            needed, got, round(got / needed * 100, 1) if needed else "",
+            d.get("manager_name") or "", "yes" if d.get("showcase") else "no",
+            (_iso(d.get("event_date")) or "")[:10], (_iso(d.get("start_date")) or "")[:10],
+            (_iso(d.get("end_date")) or "")[:10], _iso(d.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_collaborations(*, date_from, date_to, status, campaign_id, brand_id, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["state"] = status
+    if campaign_id:
+        query["campaign_id"] = campaign_id
+    if brand_id:
+        # Filtering by brand means going through their campaigns first.
+        ids = await db.campaigns.distinct("_id", {"brand_id": brand_id})
+        query["campaign_id"] = {"$in": ids}
+    docs = await db.collaborations.find(query).sort("created_at", -1).to_list(length=20000)
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [d["campaign_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    brands = await _load_brand_map([c["brand_id"] for c in campaigns.values()])
+    creator_ids = [d["creator_id"] for d in docs]
+    names = await _creator_names_for(creator_ids)
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": list(set(creator_ids))}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    perf = {
+        r["collaboration_id"]: r
+        for r in await db.content_performance.find(
+            {"collaboration_id": {"$in": [d["_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    headers = [
+        "Collaboration ID", "Campaign", "Brand", "Creator", "Phone", "State",
+        "Quoted", "Agreed", "Scheduled", "Content", "Reach", "Engagements",
+        "Engagement rate %", "Created", "Updated",
+    ]
+    rows = []
+    for d in docs:
+        camp = campaigns.get(d["campaign_id"]) or {}
+        r = perf.get(d["_id"]) or {}
+        rows.append([
+            str(d["_id"]), camp.get("title") or "",
+            (brands.get(camp.get("brand_id")) or {}).get("business_name") or "",
+            names.get(d["creator_id"]) or "",
+            (accounts.get(d["creator_id"]) or {}).get("phone") or "",
+            d.get("state") or "",
+            d.get("quoted_rate") if d.get("quoted_rate") is not None else "",
+            d.get("agreed_amount") if d.get("agreed_amount") is not None else "",
+            _iso(d.get("scheduled_at")) or "",
+            " ".join(d.get("content_urls") or ([d["content_url"]] if d.get("content_url") else [])),
+            r.get("reach") if r.get("reach") is not None else "",
+            _engagements(r) if r else "",
+            _engagement_rate_from(r) if r else "",
+            _iso(d.get("created_at")) or "", _iso(d.get("updated_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_payments(*, date_from, date_to, status, brand_id, campaign_id, **_):
+    """The accounting export.
+
+    Everything needed to reconcile a bank statement without opening the app:
+    who was paid, for which brief, for which brand, what we charged on top,
+    what the invoice is doing, and when each of those happened. If somebody has
+    to come back and ask "which campaign was this?", the export has failed.
+    """
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["state"] = status
+    docs = await db.payments.find(query).sort("created_at", -1).to_list(length=20000)
+    collabs = {
+        c["_id"]: c
+        for c in await db.collaborations.find(
+            {"_id": {"$in": [d["collaboration_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [c["campaign_id"] for c in collabs.values()]}}
+        ).to_list(length=len(collabs) or 1)
+    }
+    if brand_id:
+        campaigns = {k: v for k, v in campaigns.items() if v.get("brand_id") == brand_id}
+    if campaign_id:
+        campaigns = {k: v for k, v in campaigns.items() if k == campaign_id}
+    brands = await _load_brand_map([c["brand_id"] for c in campaigns.values()])
+    creator_ids = [c["creator_id"] for c in collabs.values()]
+    names = await _creator_names_for(creator_ids)
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": list(set(creator_ids))}}
+        ).to_list(length=len(creator_ids) or 1)
+    }
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": list(set(creator_ids))}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    headers = [
+        "Payment ID", "State", "Campaign", "Campaign ID", "Brand", "Creator",
+        "Phone", "UPI", "PAN", "GSTIN", "Agreed amount", "Platform fee",
+        "Creator payout", "Brand invoice amount", "Invoice state", "Reference",
+        "Raised", "Paid", "Collaboration ID",
+    ]
+    rows = []
+    for d in docs:
+        collab = collabs.get(d["collaboration_id"]) or {}
+        camp = campaigns.get(collab.get("campaign_id"))
+        if (brand_id or campaign_id) and camp is None:
+            continue
+        camp = camp or {}
+        cid = collab.get("creator_id")
+        prof = profiles.get(cid) or {}
+        rows.append([
+            str(d["_id"]), d.get("state") or "", camp.get("title") or "",
+            str(camp.get("_id")) if camp.get("_id") else "",
+            (brands.get(camp.get("brand_id")) or {}).get("business_name") or "",
+            names.get(cid) or "",
+            (accounts.get(cid) or {}).get("phone") or "",
+            prof.get("payout_upi") or "", prof.get("pan") or "", prof.get("gstin") or "",
+            collab.get("agreed_amount") if collab.get("agreed_amount") is not None else "",
+            d.get("platform_fee") if d.get("platform_fee") is not None else "",
+            d.get("creator_payout") if d.get("creator_payout") is not None else "",
+            d.get("brand_invoice_amount") if d.get("brand_invoice_amount") is not None else "",
+            d.get("invoice_state") or "", d.get("reference") or "",
+            _iso(d.get("created_at")) or "", _iso(d.get("paid_at")) or "",
+            str(d["collaboration_id"]),
+        ])
+    return rows, headers
+
+
+async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if brand_id:
+        query["brand_id"] = brand_id
+    if campaign_id:
+        query["campaign_id"] = campaign_id
+    if action:
+        term = action.strip()[:80]
+        query["action"] = term if "." in term else {"$regex": f"^{re.escape(term)}\\.", "$options": "i"}
+    if q:
+        query["actor_name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    docs = await db.audit_log.find(query).sort("created_at", -1).to_list(length=20000)
+    headers = [
+        "When", "Actor", "Role", "Action", "Subject type", "Subject ID",
+        "Brand ID", "Campaign ID", "Note", "Before", "After",
+    ]
+    rows = [
+        [
+            _iso(d.get("created_at")) or "", d.get("actor_name") or "",
+            d.get("actor_role") or "", d.get("action") or "",
+            d.get("subject_type") or "", str(d.get("subject_id") or ""),
+            str(d.get("brand_id") or ""), str(d.get("campaign_id") or ""),
+            d.get("note") or "",
+            json.dumps(_jsonable(d.get("before")), default=str) if d.get("before") else "",
+            json.dumps(_jsonable(d.get("after")), default=str) if d.get("after") else "",
+        ]
+        for d in docs
+    ]
+    return rows, headers
+
+
+# How far back the trend charts look, and how long a creator can be quiet
+# before we stop calling them active. 60 days because a creator doing one
+# campaign a quarter is still a creator.
+INTELLIGENCE_WEEKS = 12
+DORMANT_AFTER_DAYS = 60
+
+
+@admin_router.get("/intelligence")
+async def admin_intelligence(user: dict = Depends(require_roles("admin"))):
+    """Four small shapes, deliberately.
+
+    Not an analytics product: four questions somebody actually asks about the
+    business, each answerable from a chart small enough to sit beside the
+    others. Anything that needs a legend to read is out of scope here — that is
+    what the exports are for.
+    """
+    now = datetime.now(timezone.utc)
+    since = _days_ago(INTELLIGENCE_WEEKS * 7)
+
+    # Weekly buckets, oldest first. Built here rather than in the pipeline so
+    # a week with nothing in it is still a point on the line — a chart that
+    # silently skips empty weeks draws a lie.
+    weeks: list = []
+    cursor = since
+    while cursor <= now:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+
+    def _bucket(when: Optional[datetime]) -> Optional[int]:
+        if not isinstance(when, datetime):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when < since:
+            return None
+        idx = (when - since).days // 7
+        return idx if 0 <= idx < len(weeks) else None
+
+    campaigns = await db.campaigns.find(
+        {}, {"status": 1, "created_at": 1, "brand_id": 1, "creators_needed": 1}
+    ).to_list(length=5000)
+
+    # 1. Campaigns created per week, split by where they ended up. Status is
+    # current, not historical — this says "of the briefs posted that week, how
+    # many are live now", which is the question worth asking of a young
+    # marketplace.
+    by_status: dict = {}
+    for c in campaigns:
+        b = _bucket(c.get("created_at"))
+        if b is None:
+            continue
+        by_status.setdefault(c.get("status") or "draft", [0] * len(weeks))[b] += 1
+
+    # 2. Fill rate of campaigns that reached their day, per week.
+    filled = await _filled_counts_for([c["_id"] for c in campaigns])
+    fill_num = [0] * len(weeks)
+    fill_den = [0] * len(weeks)
+    for c in campaigns:
+        b = _bucket(c.get("created_at"))
+        if b is None:
+            continue
+        needed = int(c.get("creators_needed") or 0)
+        if not needed:
+            continue
+        fill_num[b] += min(filled.get(c["_id"], 0), needed)
+        fill_den[b] += needed
+    fill_rate = [
+        round(fill_num[i] / fill_den[i] * 100, 1) if fill_den[i] else None
+        for i in range(len(weeks))
+    ]
+
+    # 3. Repeat brands versus new. A brand is "repeat" from its second campaign
+    # onwards, so the split answers "are they coming back", which is the only
+    # question that matters about a marketplace's brand side.
+    per_brand: dict = {}
+    for c in campaigns:
+        per_brand.setdefault(c["brand_id"], []).append(c.get("created_at"))
+    repeat = sum(1 for v in per_brand.values() if len(v) > 1)
+    brand_total = len(per_brand)
+
+    # 4. Creators active versus dormant. Active = applied to something, or was
+    # moved along on something, inside the window.
+    dormant_cutoff = _days_ago(DORMANT_AFTER_DAYS)
+    active_ids = set(
+        await db.collaborations.distinct(
+            "creator_id", {"updated_at": {"$gte": dormant_cutoff}}
+        )
+    )
+    verified_total = await db.creator_profiles.count_documents(
+        {"verification_status": "verified"}
+    )
+    verified_ids = set(
+        await db.creator_profiles.distinct("user_id", {"verification_status": "verified"})
+    )
+    active_verified = len(active_ids & verified_ids)
+
+    return {
+        "weeks": [_iso(w) for w in weeks],
+        "campaigns_by_status": [
+            {"status": k, "points": v}
+            for k, v in sorted(by_status.items(), key=lambda kv: -sum(kv[1]))
+        ],
+        "fill_rate": fill_rate,
+        "brands": {
+            "repeat": repeat,
+            "new": brand_total - repeat,
+            "total": brand_total,
+        },
+        "creators": {
+            "active": active_verified,
+            "dormant": max(0, verified_total - active_verified),
+            "total": verified_total,
+            "window_days": DORMANT_AFTER_DAYS,
+        },
+        "window_weeks": INTELLIGENCE_WEEKS,
+        "generated_at": _iso(now),
+    }
+
+
+async def _creator_names_for(user_ids: list) -> dict:
+    ids = [i for i in set(user_ids) if i]
+    if not ids:
+        return {}
+    profiles = await db.creator_profiles.find(
+        {"user_id": {"$in": ids}}, {"user_id": 1, "name": 1}
+    ).to_list(length=len(ids))
+    by_id = {p["user_id"]: p.get("name") for p in profiles if p.get("name")}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        for u in await db.users.find({"_id": {"$in": missing}}, {"name": 1}).to_list(
+            length=len(missing)
+        ):
+            by_id[u["_id"]] = u.get("name")
+    return by_id
+
+
+async def _campaign_titles_for(campaign_ids: list) -> dict:
+    ids = [i for i in set(campaign_ids) if i]
+    if not ids:
+        return {}
+    return {
+        c["_id"]: c.get("title")
+        for c in await db.campaigns.find({"_id": {"$in": ids}}, {"title": 1}).to_list(
+            length=len(ids)
+        )
+    }
+
+
+def _humanise_until(when: Optional[datetime], now: datetime) -> str:
+    """"in 3 days", "tomorrow", "today". Read at a glance on a panel that
+    exists to be scanned."""
+    if not isinstance(when, datetime):
+        return "date unknown"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    days = (when - now).days
+    if days < 0:
+        return "already started"
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    return f"in {days} days"
+
+
+def timeago_days(when: Optional[datetime], now: datetime) -> str:
+    if not isinstance(when, datetime):
+        return "at some point"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    days = max(0, (now - when).days)
+    return "today" if days == 0 else f"{days}d ago"
 
 
 @admin_router.get("/campaigns/{campaign_id}/report")

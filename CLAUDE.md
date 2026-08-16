@@ -403,6 +403,52 @@ effect of adding an export.
 campaigns we put in front of a prospect is not theirs to decide. The list filter
 uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
 
+## Health, activity and exports
+
+The overview leads with **what is going wrong**, then what the business is
+doing, then its own numbers, then the exports. A campaign quietly underfilling
+four days before the shoot generates no notification and sits in no queue — it
+is discovered when the brand rings up, unless something looks for it.
+
+`GET /admin/health` runs six checks: underfilling campaigns near their day,
+accepted creators with no slot, content overdue after attendance, payments
+sitting unpaid, brands waiting on our verification, and profiles that stalled.
+Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
+…) because each is a judgement about how much slack the operation has, and they
+travel back in the response so the panel quotes the server's numbers rather than
+a copy that drifts. **Every row carries an `href`** — a count tells you there is
+a problem and then makes you go and find it.
+
+`GET /admin/intelligence` is four shapes and no more: campaigns posted per week
+by current status, fill-rate trend, repeat versus one-off brands, active versus
+dormant creators over `DORMANT_AFTER_DAYS` (60). Charts are hand-written SVG in
+`components/admin/Health.jsx` — four small shapes do not justify a charting
+dependency. A week with no data is `None` and **breaks the sparkline** rather
+than being drawn as zero; a line that runs straight through a gap asserts
+something we do not know.
+
+### Exports and the contact line
+
+`GET /admin/exports/{kind}` — creators, brands, campaigns, collaborations,
+payments, audit — honouring the caller's filters and a date range. One route,
+because six copies of the date window, the CSV framing and the `no-store` header
+is six places to forget one. `kind` is checked against `EXPORT_KINDS` **before**
+the `globals()` lookup that resolves the builder. Every download is audited,
+including whether it carried contact details.
+
+**This is the only family of responses where creator contact details are
+allowed.** An admin export is an internal document — a payout row without a
+number to chase is useless to whoever is reconciling a bank statement — and
+`EXPORTS_WITH_CONTACT` names which ones carry them. Nothing brand-facing may,
+including the campaign report.
+
+`tests/unit/test_exports.py` holds that line by **running the brand-facing
+builders with recognisable contact values planted in the input and searching the
+real output**, not by reading the source for a key name. Source-reading catches
+the mistake somebody makes on purpose; running it catches the one where a phone
+number arrives through a `**spread` from a document nobody remembered had one.
+Planting a leak in `_build_campaign_report` fails the suite — checked.
+
 ## The admin console
 
 `/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the tab

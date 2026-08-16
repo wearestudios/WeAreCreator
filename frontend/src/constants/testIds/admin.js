@@ -69,6 +69,33 @@ export const PERFORMANCE = {
 	showcaseBadge: (id) => `admin-campaign-showcase-${id}`,
 };
 
+export const ADMIN_HEALTH = {
+	section: 'admin-health-section',
+	skeleton: 'admin-health-skeleton',
+	allClear: 'admin-health-all-clear',
+	check: (key) => `admin-health-check-${key}`,
+	checkCount: (key) => `admin-health-count-${key}`,
+	item: (id) => `admin-health-item-${id}`,
+	more: (key) => `admin-health-more-${key}`,
+	total: 'admin-health-total',
+};
+
+export const ADMIN_INTEL = {
+	section: 'admin-intel-section',
+	skeleton: 'admin-intel-skeleton',
+	chart: (key) => `admin-intel-chart-${key}`,
+	stat: (key) => `admin-intel-stat-${key}`,
+};
+
+export const ADMIN_EXPORTS = {
+	section: 'admin-exports-section',
+	kind: (key) => `admin-export-${key}`,
+	dateFrom: 'admin-export-date-from',
+	dateTo: 'admin-export-date-to',
+	clearDates: 'admin-export-clear-dates',
+	note: 'admin-export-note',
+};
+
 export const ADMIN_DETAIL = {
 	back: 'admin-detail-back',
 	skeleton: 'admin-detail-skeleton',
