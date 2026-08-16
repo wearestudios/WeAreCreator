@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / ".env")
 import asyncio
 import csv
 import io
+from html import escape as html_escape
 import os
 import re
 import logging
@@ -860,6 +861,16 @@ COLLAB_GROUP_ONGOING = (
     "in_payment",
 )
 COLLAB_GROUP_COMPLETED = ("closed",)
+
+# Delivered = the content exists. `attended` is not enough — somebody turned up
+# and shot something, but there is no link yet and so nothing to measure. This
+# is the set a report describes and the set performance is recorded against.
+DELIVERED_COLLAB_STATES = (
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+    "closed",
+)
 COLLAB_GROUP_ENDED = ("declined", "cancelled")
 
 # States where the next move is the admin's. Deliberately not derived from
@@ -4450,6 +4461,10 @@ def _serialize_brand_campaign(
         # Travels with the figure everywhere the figure goes. A number with no
         # word beside it is read as cash, which on a barter brief is a lie.
         "compensation_type": _compensation_type(doc),
+        # Case-study material. Ours to decide, not the brand's — see
+        # set_campaign_showcase.
+        "showcase": bool(doc.get("showcase")),
+        "showcase_note": doc.get("showcase_note"),
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": needed,
@@ -7382,6 +7397,392 @@ async def reinstate_creator(
     return {"user_id": user_id, "status": "active", "reason": reason}
 
 
+# ---------------------------------------------------------------------------
+# Content performance
+#
+# `content_url` has been collected on every delivery since content submission
+# existed and read by nobody. It is the only evidence we have that the work we
+# arranged did anything, which makes it the answer to the only question a brand
+# asks at renewal.
+#
+# One record per collaboration, in its own collection. Separate from the
+# collaboration because a reading is a thing that happened *at a time* — a post
+# keeps accruing reach for days — and because the numbers arrive from two
+# different places and one of them is a person typing.
+# ---------------------------------------------------------------------------
+
+# What a creator's audience actually did with the post. Reach is the
+# denominator for engagement rate; the rest are the numerator or context.
+PERFORMANCE_METRICS = ("reach", "impressions", "views", "likes", "comments", "saves")
+# The three that count as somebody engaging rather than merely seeing.
+ENGAGEMENT_METRICS = ("likes", "comments", "saves")
+
+
+class PerformancePayload(BaseModel):
+    """A reading, typed in by an admin or a campaign manager.
+
+    Every metric is optional and `None` means "not known", never zero — a post
+    with no saves and a post whose saves we could not read are different
+    things, and averaging the second as a zero is how a report starts lying.
+
+    `engagement_rate` is deliberately absent: it is derived from the metrics
+    below so it cannot disagree with them. See `_engagement_rate_from`.
+    """
+
+    reach: Optional[int] = Field(default=None, ge=0)
+    impressions: Optional[int] = Field(default=None, ge=0)
+    views: Optional[int] = Field(default=None, ge=0)
+    likes: Optional[int] = Field(default=None, ge=0)
+    comments: Optional[int] = Field(default=None, ge=0)
+    saves: Optional[int] = Field(default=None, ge=0)
+    # When the numbers were read off the screen, which is not when they were
+    # typed in. Defaults to now.
+    captured_at: Optional[datetime] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _at_least_one_number(self):
+        if all(getattr(self, m) is None for m in PERFORMANCE_METRICS):
+            raise ValueError(
+                "Give at least one number — an empty reading is not a reading."
+            )
+        return self
+
+
+def _engagements(doc: dict) -> Optional[int]:
+    """Likes + comments + saves, or None when we know none of them.
+
+    Sums what is present rather than requiring all three: a manual reading off
+    a phone screen often has likes and comments and no saves, and refusing that
+    would mean recording nothing at all.
+    """
+    present = [doc.get(m) for m in ENGAGEMENT_METRICS if doc.get(m) is not None]
+    return sum(present) if present else None
+
+
+def _engagement_rate_from(doc: dict) -> Optional[float]:
+    """Engagements as a percentage of reach.
+
+    Against **reach**, not followers. Reach is who actually saw it, which is
+    the question a brand is asking; a rate against followers flatters a post
+    that reached nobody and punishes one that travelled beyond its audience.
+    The choice matters enough that it lives in one function rather than being
+    inlined at three call sites with two different denominators.
+
+    None when either half is unknown — not zero.
+    """
+    reach = doc.get("reach")
+    eng = _engagements(doc)
+    if not reach or eng is None:
+        return None
+    return round(eng / reach * 100, 2)
+
+
+def _serialize_performance(doc: Optional[dict]) -> Optional[dict]:
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "collaboration_id": str(doc["collaboration_id"]),
+        **{m: doc.get(m) for m in PERFORMANCE_METRICS},
+        "engagements": _engagements(doc),
+        # Recomputed on read rather than trusted from storage, so a record
+        # written before the formula existed still reports the current one.
+        "engagement_rate": _engagement_rate_from(doc),
+        "captured_at": _iso(doc.get("captured_at")),
+        # Where the numbers came from. A brand-facing report should be able to
+        # say "measured" or not, and an admin looking at an odd figure wants to
+        # know whether a person typed it.
+        "source": doc.get("source") or "manual",
+        "captured_by_name": doc.get("captured_by_name"),
+        "content_url": doc.get("content_url"),
+        "media_id": doc.get("media_id"),
+        "note": doc.get("note"),
+        "updated_at": _iso(doc.get("updated_at")),
+    }
+
+
+def _rollup_performance(
+    records: list, paid_collab_ids: set, spend: float, barter_collab_ids: set = frozenset()
+) -> dict:
+    """Totals across a set of readings.
+
+    **Barter is the whole difficulty here.** A barter campaign has reach and
+    engagement and no spend, so it belongs in the audience totals and nowhere
+    near the cost ones. Excluding only its *spend* would be worse than useless:
+    the spend is already zero, so the damage is on the other side of the
+    division — its reach would inflate the denominator and quietly report a
+    cost per thousand that we never achieved.
+
+    So cost metrics are computed over the paid subset on **both** sides, and
+    the paid reach they were computed from is returned alongside them. A number
+    you cannot reconstruct is a number nobody can defend in a meeting.
+
+    `paid` and `barter` are asked separately rather than one being the inverse
+    of the other, because they are not: a delivery on a *paid* campaign whose
+    payment has not gone out yet is neither. Calling that remainder "barter"
+    would put a sentence in a client report claiming we got work for free that
+    we have simply not paid for yet.
+    """
+    reach = sum(r["reach"] for r in records if r.get("reach"))
+    engagements = sum(e for e in (_engagements(r) for r in records) if e)
+    paid = [r for r in records if r["collaboration_id"] in paid_collab_ids]
+    paid_reach = sum(r["reach"] for r in paid if r.get("reach"))
+    barter = [r for r in records if r["collaboration_id"] in barter_collab_ids]
+
+    return {
+        "creators_delivered": len(records),
+        "total_reach": reach,
+        "total_impressions": sum(r["impressions"] for r in records if r.get("impressions")),
+        "total_views": sum(r["views"] for r in records if r.get("views")),
+        "total_engagements": engagements,
+        # The aggregate rate, which is engagements over reach for the whole set
+        # — not the mean of the per-post rates. Those two differ whenever the
+        # posts differ in size, and the mean lets one tiny post with a freak
+        # rate move the headline number.
+        "engagement_rate": round(engagements / reach * 100, 2) if reach else None,
+        "total_spend": round(spend, 2),
+        # Cost per thousand people reached, over paid work only.
+        "cost_per_thousand_reach": (
+            round(spend / paid_reach * 1000, 2) if paid_reach and spend else None
+        ),
+        # Shown so the CPM above can be checked by hand.
+        "paid_reach": paid_reach,
+        "barter_reach": sum(r["reach"] for r in barter if r.get("reach")),
+        "barter_deliveries": len(barter),
+        # Delivered, on a paid campaign, and the money has not gone out. Not
+        # barter — just not settled — and worth its own number so nobody
+        # reports it as either.
+        "awaiting_payment_deliveries": len(records) - len(paid) - len(barter),
+        # Named so a report can say "3 of 5 posts measured" rather than
+        # implying the total covers everybody.
+        "with_reach": sum(1 for r in records if r.get("reach")),
+    }
+
+
+async def _paid_collab_ids(campaign_ids: list) -> set:
+    """Collaborations that actually cost money, and how much in total.
+
+    A collaboration on a barter campaign never produces a paid payment, so this
+    catches barter without having to ask what kind of campaign anything is —
+    which also catches a paid campaign whose payment never went out.
+    """
+    if not campaign_ids:
+        return set()
+    rows = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {"$match": {"collab.campaign_id": {"$in": campaign_ids}}},
+            {"$project": {"collaboration_id": 1, "creator_payout": 1}},
+        ]
+    ).to_list(length=5000)
+    return {r["collaboration_id"] for r in rows}
+
+
+async def _performance_for(campaign_ids: list) -> list:
+    if not campaign_ids:
+        return []
+    return await db.content_performance.find(
+        {"campaign_id": {"$in": campaign_ids}}
+    ).to_list(length=5000)
+
+
+async def _barter_collab_ids(campaign_ids: list) -> set:
+    """Collaborations on campaigns that pay in kind.
+
+    Read off the campaign's `compensation_type` rather than inferred from a
+    missing payment — see the note in `_rollup_performance`.
+    """
+    if not campaign_ids:
+        return set()
+    barter = [
+        c["_id"]
+        for c in await db.campaigns.find(
+            {"_id": {"$in": campaign_ids}}, {"compensation_type": 1}
+        ).to_list(length=len(campaign_ids))
+        if _compensation_type(c) == "barter"
+    ]
+    if not barter:
+        return set()
+    return {
+        c["_id"]
+        for c in await db.collaborations.find(
+            {"campaign_id": {"$in": barter}}, {"_id": 1}
+        ).to_list(length=5000)
+    }
+
+
+async def _campaign_performance(campaign_ids: list, spend: float) -> dict:
+    records = await _performance_for(campaign_ids)
+    return _rollup_performance(
+        records,
+        await _paid_collab_ids(campaign_ids),
+        spend,
+        await _barter_collab_ids(campaign_ids),
+    )
+
+
+async def _record_performance(
+    collab: dict,
+    payload: PerformancePayload,
+    actor: dict,
+    *,
+    source: str = "manual",
+    media_id: Optional[str] = None,
+) -> dict:
+    """Write or replace the reading for one collaboration.
+
+    One record per collaboration, upserted: a post keeps accruing reach, so the
+    second reading a week later is a correction of the first rather than a
+    second data point. `captured_at` says which moment the numbers describe.
+
+    Deliberately does **not** require the collaboration to be in any particular
+    state. The obvious rule would be "only once content is approved", and it
+    would be wrong the first time a brand asks how a post is doing before they
+    have got round to approving it.
+    """
+    now = datetime.now(timezone.utc)
+    given = payload.model_dump(exclude_unset=True)
+    doc = {
+        **{m: given.get(m) for m in PERFORMANCE_METRICS if m in given},
+        "collaboration_id": collab["_id"],
+        "campaign_id": collab["campaign_id"],
+        "creator_id": collab["creator_id"],
+        "captured_at": payload.captured_at or now,
+        "source": source,
+        "captured_by": ObjectId(actor["_id"]),
+        "captured_by_name": actor.get("name"),
+        "content_url": (collab.get("content_urls") or [collab.get("content_url")] or [None])[0],
+        "updated_at": now,
+    }
+    if media_id:
+        doc["media_id"] = media_id
+    if payload.note is not None:
+        doc["note"] = payload.note.strip() or None
+
+    saved = await db.content_performance.find_one_and_update(
+        {"collaboration_id": collab["_id"]},
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+        return_document=True,
+    )
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        actor,
+        "collaboration.performance",
+        "collaboration",
+        collab["_id"],
+        after={
+            "source": source,
+            **{m: doc.get(m) for m in PERFORMANCE_METRICS if m in doc},
+            "engagement_rate": _engagement_rate_from(saved),
+        },
+        **_campaign_audit_context(campaign or {}),
+    )
+    return _serialize_performance(saved)
+
+
+# What Instagram calls each metric, against what we call it. `saved` and
+# `total_interactions` are theirs; the rest happen to match.
+_IG_MEDIA_METRICS = {
+    "reach": "reach",
+    "likes": "likes",
+    "comments": "comments",
+    "saves": "saved",
+    "views": "views",
+}
+
+
+def _permalink_key(url: Optional[str]) -> Optional[str]:
+    """The shortcode out of an Instagram permalink.
+
+    Matching on the whole URL fails constantly: creators paste links with
+    `?igsh=` tracking noise, with and without the trailing slash, and from
+    `instagram.com` or `www.instagram.com`. The shortcode is the part that
+    identifies the post, so it is the part we compare.
+    """
+    if not url:
+        return None
+    m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
+    return m.group(1) if m else None
+
+
+async def _fetch_instagram_performance(collab: dict) -> tuple[Optional[dict], Optional[str]]:
+    """Read one post's insights off the creator's own connected account.
+
+    Returns `(metrics, reason_it_did_not_work)` — never raises. Every branch
+    that fails returns a sentence a human can act on, because the alternative
+    to this working is somebody typing the numbers in, and they need to know
+    that is what they are now doing.
+
+    **It only ever looks at media belonging to the creator's own connected
+    account.** The permalink is matched against their media list rather than
+    being fetched directly, so there is no path here that reads insights for a
+    post we were merely given a link to.
+    """
+    if not instagram_configured():
+        return None, "Instagram isn't connected on this deployment — enter the numbers by hand."
+
+    urls = collab.get("content_urls") or ([collab["content_url"]] if collab.get("content_url") else [])
+    wanted = {k for k in (_permalink_key(u) for u in urls) if k}
+    if not wanted:
+        return None, "No Instagram link on this delivery — enter the numbers by hand."
+
+    conn = await db.instagram_connections.find_one({"user_id": collab["creator_id"]})
+    if not conn or conn.get("status") != "connected":
+        return None, "This creator hasn't connected Instagram — enter the numbers by hand."
+    token = _decrypt_token(conn.get("access_token"))
+    if not token:
+        return None, "Their Instagram connection needs renewing — enter the numbers by hand."
+
+    try:
+        media = await _instagram_get(
+            "/me/media",
+            {"fields": "id,permalink,media_type,timestamp", "limit": 50, "access_token": token},
+        )
+    except HTTPException as exc:
+        return None, f"Instagram wouldn't answer ({exc.detail}) — enter the numbers by hand."
+
+    match = next(
+        (m for m in (media.get("data") or []) if _permalink_key(m.get("permalink")) in wanted),
+        None,
+    )
+    if not match:
+        return None, (
+            "That post isn't in their recent media — it may be older than the last 50 "
+            "posts, or posted from another account. Enter the numbers by hand."
+        )
+
+    try:
+        insights = await _instagram_get(
+            f"/{match['id']}/insights",
+            {"metric": ",".join(_IG_MEDIA_METRICS.values()), "access_token": token},
+        )
+    except HTTPException as exc:
+        return None, f"Instagram had no insights for that post ({exc.detail}) — enter the numbers by hand."
+
+    by_name = {row.get("name"): row for row in (insights.get("data") or [])}
+    out: dict = {"media_id": match["id"]}
+    for ours, theirs in _IG_MEDIA_METRICS.items():
+        row = by_name.get(theirs) or {}
+        values = row.get("values") or []
+        value = values[0].get("value") if values else None
+        if isinstance(value, (int, float)):
+            out[ours] = int(value)
+    if not any(k in out for k in PERFORMANCE_METRICS):
+        return None, "Instagram returned no numbers for that post — enter them by hand."
+    return out, None
+
+
 def _phone_tail(raw: Optional[str]) -> Optional[str]:
     """The last ten digits of a number, or None if there aren't ten.
 
@@ -7557,6 +7958,426 @@ async def admin_global_search(
     }
 
 
+async def _collab_or_404(collab_id: str) -> dict:
+    oid = _as_oid(collab_id)
+    collab = await db.collaborations.find_one({"_id": oid}) if oid else None
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    return collab
+
+
+async def _build_campaign_report(campaign: dict) -> dict:
+    """What a brand is handed when a campaign closes.
+
+    The rule that shapes it: **it goes to the brand, so it carries what a brand
+    may see.** Handles and follower counts are on the allow-list; a phone
+    number, an email or an address is not, at any collaboration state. That is
+    the same line `_brand_visible_creator` draws on every other brand-facing
+    surface, and this file is the one most likely to be forwarded onwards.
+    """
+    cid = campaign["_id"]
+    brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
+
+    # Only the people who actually delivered. A report listing everybody who
+    # applied would describe a campaign that did not happen.
+    collabs = await db.collaborations.find(
+        {"campaign_id": cid, "state": {"$in": list(DELIVERED_COLLAB_STATES)}}
+    ).to_list(length=500)
+    creator_ids = [c["creator_id"] for c in collabs]
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": creator_ids}}
+        ).to_list(length=len(creator_ids) or 1)
+    }
+    users = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": creator_ids}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    perf = {
+        r["collaboration_id"]: r
+        for r in await db.content_performance.find({"campaign_id": cid}).to_list(length=500)
+    }
+    payments = {
+        p["collaboration_id"]: p
+        for p in await db.payments.find(
+            {"collaboration_id": {"$in": [c["_id"] for c in collabs]}}
+        ).to_list(length=500)
+    }
+
+    spend = sum(
+        float(p.get("creator_payout") or 0)
+        for p in payments.values()
+        if p.get("state") == "paid"
+    )
+    paid_ids = {
+        cid_ for cid_, p in payments.items() if p.get("state") == "paid"
+    }
+
+    rows = []
+    for c in collabs:
+        prof = profiles.get(c["creator_id"]) or {}
+        acct = users.get(c["creator_id"]) or {}
+        r = perf.get(c["_id"]) or {}
+        rows.append(
+            {
+                "collaboration_id": str(c["_id"]),
+                "creator_name": prof.get("name") or acct.get("name"),
+                "instagram_handle": prof.get("instagram_handle"),
+                "youtube_url": prof.get("youtube_url"),
+                "follower_count": prof.get("follower_count"),
+                **_follower_provenance(prof),
+                # What they were asked for, and the links that prove it.
+                "deliverables": campaign.get("deliverables"),
+                "content_urls": c.get("content_urls")
+                or ([c["content_url"]] if c.get("content_url") else []),
+                "delivered_state": c.get("state"),
+                **{m: r.get(m) for m in PERFORMANCE_METRICS},
+                "engagements": _engagements(r) if r else None,
+                "engagement_rate": _engagement_rate_from(r) if r else None,
+                "measured": bool(r),
+                "measurement_source": r.get("source") if r else None,
+                "captured_at": _iso(r.get("captured_at")) if r else None,
+            }
+        )
+    rows.sort(key=lambda r: (r.get("reach") or 0), reverse=True)
+
+    return {
+        "campaign": {
+            "id": str(cid),
+            "title": campaign.get("title"),
+            "brand_name": brand.get("business_name") or brand.get("name"),
+            "category": campaign.get("category"),
+            "area": campaign.get("area"),
+            "status": campaign.get("status"),
+            "compensation_type": _compensation_type(campaign),
+            "campaign_type": campaign.get("campaign_type"),
+            "event_date": _iso(campaign.get("event_date")),
+            "start_date": _iso(campaign.get("start_date")),
+            "end_date": _iso(campaign.get("end_date")),
+            "deliverables": campaign.get("deliverables"),
+            "showcase": bool(campaign.get("showcase")),
+        },
+        "creators": rows,
+        "totals": _rollup_performance(
+            list(perf.values()),
+            paid_ids,
+            spend,
+            # One campaign, so it is barter or it is not.
+            {c["_id"] for c in collabs}
+            if _compensation_type(campaign) == "barter"
+            else frozenset(),
+        ),
+        "generated_at": _iso(datetime.now(timezone.utc)),
+    }
+
+
+def _report_csv(report: dict) -> str:
+    """The same report as a spreadsheet.
+
+    `csv.writer` rather than joining with commas: a campaign title with a comma
+    in it, or a note with a newline, would otherwise silently shift every
+    column to its right.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    c = report["campaign"]
+    t = report["totals"]
+
+    w.writerow(["Campaign", c["title"]])
+    w.writerow(["Brand", c["brand_name"] or ""])
+    # Dates, not timestamps. This goes to a client, and "2026-09-01T00:00:00
+    # +00:00" in a spreadsheet cell is us showing our working.
+    w.writerow([
+        "Dates",
+        " to ".join([d[:10] for d in (c["start_date"], c["end_date"]) if d])
+        or (c["event_date"] or "")[:10],
+    ])
+    w.writerow(["Deliverables", c["deliverables"] or ""])
+    w.writerow([])
+    w.writerow(["Creators delivered", t["creators_delivered"]])
+    w.writerow(["Total reach", t["total_reach"]])
+    w.writerow(["Total engagements", t["total_engagements"]])
+    w.writerow(["Engagement rate %", t["engagement_rate"] if t["engagement_rate"] is not None else "—"])
+    w.writerow(["Total spend (INR)", t["total_spend"]])
+    w.writerow([
+        "Cost per 1,000 reach (INR)",
+        t["cost_per_thousand_reach"] if t["cost_per_thousand_reach"] is not None else "—",
+    ])
+    if t["barter_reach"]:
+        # Said in the file itself, not just in the UI. A spreadsheet gets
+        # forwarded without whatever was on screen beside it.
+        n = t["barter_deliveries"]
+        w.writerow([
+            "Note",
+            f"{n} barter {'delivery' if n == 1 else 'deliveries'} contributed "
+            f"{t['barter_reach']:,} reach at no cost; cost per 1,000 is over paid work only.",
+        ])
+    w.writerow([])
+    w.writerow([
+        "Creator", "Instagram", "Followers", "Reach", "Impressions", "Views",
+        "Likes", "Comments", "Saves", "Engagement rate %", "Measured", "Content",
+    ])
+    for r in report["creators"]:
+        w.writerow([
+            r["creator_name"] or "",
+            f"@{r['instagram_handle']}" if r.get("instagram_handle") else "",
+            r.get("follower_count") if r.get("follower_count") is not None else "",
+            *[r.get(m) if r.get(m) is not None else "" for m in
+              ("reach", "impressions", "views", "likes", "comments", "saves")],
+            r["engagement_rate"] if r.get("engagement_rate") is not None else "",
+            "yes" if r["measured"] else "no",
+            " ".join(r["content_urls"]),
+        ])
+    return buf.getvalue()
+
+
+def _report_html(report: dict) -> str:
+    """A page to print, or to save as a PDF and send.
+
+    Self-contained and light-on-white on purpose. The app is a dark product,
+    but this is the one artefact that leaves it — it gets printed, pasted into
+    a deck, and read on somebody else's laptop, and a near-black page prints as
+    a solid block of toner.
+    """
+    c = report["campaign"]
+    t = report["totals"]
+    esc = html_escape
+
+    def _num(v, suffix=""):
+        return f"{v:,}{suffix}" if isinstance(v, (int, float)) else "—"
+
+    dates = " – ".join([d[:10] for d in (c["start_date"], c["end_date"]) if d]) or (
+        (c["event_date"] or "")[:10] or "—"
+    )
+
+    rows = "".join(
+        f"""<tr>
+          <td><strong>{esc(r['creator_name'] or 'Creator')}</strong>
+            {f"<span class=h>@{esc(r['instagram_handle'])}</span>" if r.get('instagram_handle') else ""}</td>
+          <td class=n>{_num(r.get('follower_count'))}</td>
+          <td class=n>{_num(r.get('reach'))}</td>
+          <td class=n>{_num(r.get('engagements'))}</td>
+          <td class=n>{f"{r['engagement_rate']}%" if r.get('engagement_rate') is not None else '—'}</td>
+          <td>{"".join(f'<a href="{esc(u)}">{esc(u[:60])}</a><br>' for u in r['content_urls']) or '—'}</td>
+        </tr>"""
+        for r in report["creators"]
+    ) or '<tr><td colspan="6" class=e>Nobody has delivered on this campaign yet.</td></tr>'
+
+    n_barter = t["barter_deliveries"]
+    barter_note = (
+        f"<p class=note>{n_barter} barter "
+        f"{'delivery' if n_barter == 1 else 'deliveries'} contributed "
+        f"{_num(t['barter_reach'])} reach at no cost. Cost per 1,000 reach is "
+        f"calculated over paid work only.</p>"
+        if t["barter_reach"]
+        else ""
+    )
+    unmeasured = t["creators_delivered"] - t["with_reach"]
+    measured_note = (
+        f"<p class=note>{t['with_reach']} of {t['creators_delivered']} deliveries have "
+        f"reach figures; {unmeasured} {'is' if unmeasured == 1 else 'are'} not yet "
+        f"measured, so the totals are a floor.</p>"
+        if unmeasured > 0
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{esc(c['title'] or 'Campaign report')} — WeAre Creators</title>
+<style>
+  :root {{ --ink:#141210; --mute:#6b6560; --line:#e6e1dc; --ember:#F05D14; }}
+  * {{ box-sizing:border-box; }}
+  body {{ margin:0; padding:48px 40px; background:#fff; color:var(--ink);
+    font:15px/1.5 "Inter Tight",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+  .wrap {{ max-width:900px; margin:0 auto; }}
+  .eyebrow {{ font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ember); }}
+  h1 {{ font-family:Fraunces,Georgia,serif; font-size:38px; line-height:1.05; margin:12px 0 0; font-weight:400; }}
+  .meta {{ color:var(--mute); font-size:13px; margin-top:10px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); margin:36px 0 8px;
+    border:1px solid var(--line); border-right:0; border-bottom:0; }}
+  .stat {{ background:#fff; padding:18px 16px;
+    border-right:1px solid var(--line); border-bottom:1px solid var(--line); }}
+  @media (min-width:760px) {{ .stats {{ grid-template-columns:repeat(6,1fr); }} }}
+  .stat span {{ display:block; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--mute); }}
+  .stat b {{ display:block; font-family:Fraunces,Georgia,serif; font-size:26px; font-weight:400; margin-top:8px; }}
+  table {{ width:100%; border-collapse:collapse; margin-top:32px; font-size:13px; }}
+  th {{ text-align:left; font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--mute); font-weight:500; padding:0 10px 8px; border-bottom:1px solid var(--line); }}
+  td {{ padding:12px 10px; border-bottom:1px solid var(--line); vertical-align:top; }}
+  td.n {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
+  td.e {{ text-align:center; color:var(--mute); padding:32px; }}
+  .h {{ color:var(--mute); margin-left:8px; }}
+  a {{ color:var(--ember); word-break:break-all; }}
+  .note {{ color:var(--mute); font-size:12px; margin:6px 0 0; }}
+  footer {{ margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
+    color:var(--mute); font-size:11px; display:flex; justify-content:space-between; gap:20px; }}
+  @media print {{ body {{ padding:0; }} a {{ color:var(--ink); }} }}
+</style></head>
+<body><div class=wrap>
+  <p class=eyebrow>Campaign report · {esc(c['brand_name'] or '')}</p>
+  <h1>{esc(c['title'] or 'Campaign')}</h1>
+  <p class=meta>{esc(dates)}{f" · {esc(c['area'])}" if c.get('area') else ""}
+    {f" · {esc(c['category'])}" if c.get('category') else ""}</p>
+
+  <div class=stats>
+    <div class=stat><span>Creators delivered</span><b>{_num(t['creators_delivered'])}</b></div>
+    <div class=stat><span>Total reach</span><b>{_num(t['total_reach'])}</b></div>
+    <div class=stat><span>Engagements</span><b>{_num(t['total_engagements'])}</b></div>
+    <div class=stat><span>Engagement rate</span><b>{f"{t['engagement_rate']}%" if t['engagement_rate'] is not None else '—'}</b></div>
+    <div class=stat><span>Spend</span><b>{"₹" + format(int(t['total_spend']), ",") if t['total_spend'] else '—'}</b></div>
+    <div class=stat><span>Cost / 1,000 reach</span><b>{"₹" + format(round(t['cost_per_thousand_reach']), ",") if t['cost_per_thousand_reach'] is not None else '—'}</b></div>
+  </div>
+  {barter_note}{measured_note}
+
+  <table>
+    <thead><tr><th>Creator</th><th class=n>Followers</th><th class=n>Reach</th>
+      <th class=n>Engagements</th><th class=n>Rate</th><th>Content</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+
+  <p class=note style="margin-top:28px"><strong>Deliverables:</strong> {esc(c['deliverables'] or '—')}</p>
+
+  <footer><span>WeAre Creators</span><span>Generated {esc((report['generated_at'] or '')[:10])}</span></footer>
+</div></body></html>"""
+
+
+class ShowcasePayload(BaseModel):
+    """Mark a campaign as case-study material."""
+
+    showcase: bool
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+@admin_router.get("/campaigns/{campaign_id}/report")
+async def campaign_report(
+    campaign_id: str,
+    format: str = "json",
+    user: dict = Depends(require_roles("admin")),
+):
+    """The close-of-campaign summary, in whichever shape is being asked for.
+
+    Three formats off one builder, so the spreadsheet and the printable page
+    cannot come to different totals. `json` feeds the console's own preview.
+
+    Authenticated, deliberately. "Shareable" here means an admin opens it,
+    prints it to a PDF and sends that — not a public link. A public one would
+    be a new unauthenticated surface carrying creator handles and follower
+    counts, and that is a decision to take on purpose rather than as a side
+    effect of adding an export.
+
+    **Declared before `/campaigns/{id}` would swallow it** — see the route
+    ordering test.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    report = await _build_campaign_report(campaign)
+    slug = re.sub(r"[^a-z0-9]+", "-", (campaign.get("title") or "campaign").lower()).strip("-")[:60]
+
+    if format == "csv":
+        return Response(
+            content=_report_csv(report),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug or "campaign"}-report.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
+    if format == "html":
+        return Response(
+            content=_report_html(report),
+            media_type="text/html; charset=utf-8",
+            # It names creators and their reach. Not something to leave in a
+            # shared browser cache.
+            headers={"Cache-Control": "no-store"},
+        )
+    if format != "json":
+        raise HTTPException(status_code=422, detail="format must be json, csv or html.")
+    return report
+
+
+@admin_router.post("/campaigns/{campaign_id}/showcase")
+async def set_campaign_showcase(
+    campaign_id: str,
+    payload: ShowcasePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Flag a campaign as one worth showing people.
+
+    Its own endpoint rather than a field on the campaign edit payload: that one
+    is shared with the brand's edit route, and which of our campaigns we put in
+    front of a prospect is not a brand's decision to make.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    now = datetime.now(timezone.utc)
+    update = {"showcase": payload.showcase, "updated_at": now}
+    if payload.showcase:
+        update["showcase_note"] = (payload.note or "").strip() or None
+        update["showcase_at"] = now
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": campaign["_id"]},
+        {"$set": update} if payload.showcase else {
+            "$set": update,
+            "$unset": {"showcase_note": "", "showcase_at": ""},
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "campaign.showcase" if payload.showcase else "campaign.showcase.remove",
+        "campaign",
+        campaign["_id"],
+        before={"showcase": bool(campaign.get("showcase"))},
+        after={"showcase": payload.showcase},
+        note=payload.note,
+        **_campaign_audit_context(campaign),
+    )
+    return {
+        "id": campaign_id,
+        "showcase": bool(updated.get("showcase")),
+        "showcase_note": updated.get("showcase_note"),
+    }
+
+
+@admin_router.post("/collaborations/{collab_id}/performance")
+async def record_collaboration_performance(
+    collab_id: str,
+    payload: PerformancePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Type in what a post did. Always available — see `_record_performance`."""
+    return await _record_performance(await _collab_or_404(collab_id), payload, user)
+
+
+@admin_router.post("/collaborations/{collab_id}/performance/fetch")
+async def fetch_collaboration_performance(
+    collab_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Try Instagram, and say plainly when it can't be done.
+
+    A 200 either way. A failure here is not an error condition — it is the
+    ordinary case for every creator who hasn't connected their account, and
+    the answer to it is the manual form that is already on screen. Returning a
+    4xx would make the UI treat "this creator uses YouTube" as a fault.
+    """
+    collab = await _collab_or_404(collab_id)
+    metrics, reason = await _fetch_instagram_performance(collab)
+    if reason:
+        return {"fetched": False, "reason": reason, "performance": None}
+    media_id = metrics.pop("media_id", None)
+    saved = await _record_performance(
+        collab,
+        PerformancePayload(**metrics),
+        user,
+        source="instagram",
+        media_id=media_id,
+    )
+    return {"fetched": True, "reason": None, "performance": saved}
+
+
 @admin_router.post("/impersonate/{user_id}")
 async def impersonate_user(
     user_id: str,
@@ -7642,6 +8463,7 @@ async def impersonate_user(
 async def list_all_campaigns(
     brand_id: Optional[str] = None,
     status: Optional[str] = None,
+    showcase: Optional[bool] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     date_field: str = "created_at",  # created_at | start_date | end_date
@@ -7688,6 +8510,11 @@ async def list_all_campaigns(
     if q:
         term = re.escape(q.strip()[:120])
         match["title"] = {"$regex": term, "$options": "i"}
+    if showcase is not None:
+        # `False` has to mean "everything not flagged", which includes every
+        # campaign written before the field existed — hence $ne rather than an
+        # equality that would match nothing.
+        match["showcase"] = True if showcase else {"$ne": True}
 
     pipeline: list = []
     if match:
@@ -7795,6 +8622,7 @@ async def list_all_campaigns(
                 "deliverables": d.get("deliverables"),
                 "budget_per_creator": d.get("budget_per_creator"),
                 "compensation_type": _compensation_type(d),
+                "showcase": bool(d.get("showcase")),
                 "category": d.get("category"),
                 "area": d.get("area"),
                 "campaign_type": d.get("campaign_type"),
@@ -7993,8 +8821,10 @@ async def get_admin_campaign_detail(
 
     needed = int(campaign.get("creators_needed") or 1)
     filled = (await _filled_counts_for([cid])).get(cid, 0)
+    performance = await _campaign_performance([cid], paid_total)
 
     return {
+        "performance": performance,
         "campaign": {
             **_serialize_brand_campaign(campaign, 0, filled, 0),
             # The brand's own serializer stops at the manager's name and phone,
@@ -9118,8 +9948,12 @@ async def get_admin_brand_detail(
 
     total_spend = await _brand_spend_map([oid])
     s = total_spend.get(oid) or {}
+    performance = await _campaign_performance(
+        campaign_ids, float(s.get("spend", 0) or 0)
+    )
 
     return {
+        "performance": performance,
         "brand": {
             **_admin_brand_fields(profile, account),
             # The one login this brand has, and the person it belongs to.
@@ -9621,6 +10455,12 @@ async def get_admin_collaboration_detail(
         # still ahead rather than only the ones already behind.
         "state_order": list(COLLAB_STATE_ORDER),
         "terminal_states": list(TERMINAL_COLLAB_STATES),
+        # Whether there is anything to measure yet, decided here rather than by
+        # the UI keeping its own copy of the delivered set.
+        "delivered_states": list(DELIVERED_COLLAB_STATES),
+        "performance": _serialize_performance(
+            await db.content_performance.find_one({"collaboration_id": oid})
+        ),
     }
 
 
@@ -11987,6 +12827,22 @@ async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> d
     return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
 
 
+@manager_router.post("/collaborations/{collab_id}/performance")
+async def manager_record_performance(
+    collab_id: str,
+    payload: PerformancePayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The same thing, for the manager who was actually at the shoot.
+
+    Scoped to their assigned campaigns by `_managed_campaign_or_404`, which is
+    what keeps a manager out of a campaign they were never given.
+    """
+    collab = await _collab_or_404(collab_id)
+    await _managed_campaign_or_404(str(collab["campaign_id"]), user)
+    return await _record_performance(collab, payload, user)
+
+
 @manager_router.post("/collaborations/{collab_id}/check-in")
 async def check_in_creator(
     collab_id: str,
@@ -13252,6 +14108,16 @@ async def _startup():
     # Instagram connections — one per creator, read by the two refresh jobs in
     # expiry and staleness order.
     await db.instagram_connections.create_index("user_id", unique=True)
+
+    # content_performance: one reading per collaboration, so the upsert in
+    # _record_performance has something to be unique against; campaign_id
+    # carries every rollup.
+    await db.content_performance.create_index("collaboration_id", unique=True)
+    await db.content_performance.create_index("campaign_id")
+    # Showcase is a filter on the campaigns list. Sparse: almost nothing
+    # carries it, and an index over mostly-absent values should not be paying
+    # for the rows that do not.
+    await db.campaigns.create_index("showcase", sparse=True)
     await db.instagram_connections.create_index([("status", 1), ("token_expires_at", 1)])
     await db.instagram_connections.create_index([("status", 1), ("stats_fetched_at", 1)])
     # OAuth states are single-use and short-lived; Mongo expires the leftovers

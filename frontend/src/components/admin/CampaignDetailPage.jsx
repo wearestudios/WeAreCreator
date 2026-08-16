@@ -67,6 +67,7 @@ import {
 import { ConfirmDialog, CampaignEditDialog } from "@/components/admin/dialogs";
 import InviteCreatorsDialog from "@/components/admin/InviteCreatorsDialog";
 import { CollaborationLink, CreatorLink } from "@/components/admin/links";
+import { PerformanceRollup, ReportActions } from "@/components/admin/Performance";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The applicant board's columns, in pipeline order. The server groups them;
@@ -465,6 +466,33 @@ export default function CampaignDetailPage() {
                             </Section>
                         </div>
                     </div>
+
+                    {/* Above the slots: this is the answer to "did it work",
+                        which is what anyone opening a finished campaign came
+                        for. */}
+                    <PerformanceRollup
+                        performance={detail.performance}
+                        scope="campaign"
+                        action={
+                            <ReportActions
+                                campaignId={id}
+                                showcase={campaign.showcase}
+                                busy={busy === "showcase"}
+                                onToggleShowcase={() =>
+                                    act(
+                                        "showcase",
+                                        () =>
+                                            api.post(`/admin/campaigns/${id}/showcase`, {
+                                                showcase: !campaign.showcase,
+                                            }),
+                                        campaign.showcase
+                                            ? "Removed from showcase"
+                                            : "Marked as showcase",
+                                    )
+                                }
+                            />
+                        }
+                    />
 
                     <Section
                         id="slots"

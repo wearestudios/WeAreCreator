@@ -1307,6 +1307,7 @@ class TestAuditCoverage:
                 f"await {helper}(" in body
                 for helper in (
                     "_set_creator_verification",
+                    "_record_performance",
                     "_pause_campaign",
                     "_resume_campaign",
                     "_invite_creators",
@@ -1320,7 +1321,8 @@ class TestAuditCoverage:
     @pytest.mark.parametrize(
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
-         "_check_in_collaboration", "_set_creator_verification"],
+         "_check_in_collaboration", "_set_creator_verification",
+         "_record_performance"],
     )
     def test_the_delegated_helpers_actually_audit(self, helper):
         # The exemption above is only safe while this holds: a helper trusted
@@ -1993,7 +1995,11 @@ class TestManagerAudit:
             # it shares with the brand manager's route.
             if "await audit(" in body or any(
                 f"await {helper}(" in body
-                for helper in ("create_campaign_slot", "_check_in_collaboration")
+                for helper in (
+                    "create_campaign_slot",
+                    "_check_in_collaboration",
+                    "_record_performance",
+                )
             ):
                 continue
             missing.append(f"{m.group(2)} ({fn.group(1) if fn else '?'})")

@@ -48,6 +48,27 @@ export const BREADCRUMBS = {
 	crumb: (key) => `admin-breadcrumb-${key}`,
 };
 
+export const PERFORMANCE = {
+	rollup: 'admin-performance-rollup',
+	stat: (key) => `admin-performance-stat-${key}`,
+	note: 'admin-performance-note',
+	empty: 'admin-performance-empty',
+	// One collaboration's reading.
+	panel: 'admin-performance-panel',
+	fetch: 'admin-performance-fetch',
+	edit: 'admin-performance-edit',
+	dialog: 'admin-performance-dialog',
+	input: (metric) => `admin-performance-input-${metric}`,
+	submit: 'admin-performance-submit',
+	source: 'admin-performance-source',
+	// Report + showcase.
+	reportCsv: 'admin-report-csv',
+	reportPrint: 'admin-report-print',
+	showcase: 'admin-showcase-toggle',
+	showcaseFilter: 'admin-campaigns-filter-showcase',
+	showcaseBadge: (id) => `admin-campaign-showcase-${id}`,
+};
+
 export const ADMIN_DETAIL = {
 	back: 'admin-detail-back',
 	skeleton: 'admin-detail-skeleton',

@@ -35,6 +35,7 @@ import {
 } from "@/components/admin/shared";
 import { AdvanceDialog, ConfirmDialog } from "@/components/admin/dialogs";
 import { CampaignLink, CreatorLink } from "@/components/admin/links";
+import { PerformancePanel } from "@/components/admin/Performance";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The transitions that need something typed before they can happen. Everything
@@ -388,6 +389,15 @@ export default function CollaborationDetailPage() {
                             </Panel>
                         </Section>
                     )}
+
+                    <Section id="performance" title="What the post did">
+                        <PerformancePanel
+                            collaborationId={id}
+                            performance={data.performance}
+                            delivered={(data.delivered_states || []).includes(collab.state)}
+                            onSaved={load}
+                        />
+                    </Section>
 
                     <Section id="pitch" title="What they wrote">
                         <Panel>

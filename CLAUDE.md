@@ -333,6 +333,76 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+## Content performance
+
+`content_url` was collected on every delivery and read by nobody. It is the
+only evidence that the work we arranged did anything, which makes it the answer
+to the question a brand asks at renewal.
+
+One record per collaboration in `content_performance`, upserted on
+`collaboration_id`: a post keeps accruing reach, so a second reading is a
+correction of the first, and `captured_at` says which moment the numbers
+describe. Written by `_record_performance`, which both the admin and the
+`/manager` route delegate to (the manager's is scoped by
+`_managed_campaign_or_404`) — the audit-coverage tests name it as a delegating
+helper, so it must keep auditing.
+
+- **An unknown metric is `None`, never `0`.** A post with no saves and a post
+  whose saves we could not read are different, and averaging the second as a
+  zero makes a campaign look worse than it was. Every surface draws unknown as
+  an em dash.
+- `engagement_rate` is **derived, never stored or typed** — `_engagement_rate_from`
+  computes engagements over **reach**, recomputed on read so an old record
+  reports the current formula and can never contradict its own inputs. Against
+  reach rather than followers: a rate against followers flatters a post that
+  reached nobody.
+- The rollup's headline rate is total engagements over total reach, **not the
+  mean of the per-post rates** — the mean lets one tiny post with a freak rate
+  move the number.
+
+### Barter and cost
+
+`_rollup_performance` takes the paid set **and** the barter set, and they are
+not each other's inverse. Excluding barter's *spend* would be meaningless (it
+is already zero); the damage is on the other side of the division, where its
+reach would inflate the denominator and report a cost per thousand we never
+achieved. So cost metrics use `paid_reach` on both sides, and `paid_reach`,
+`barter_reach` and `awaiting_payment_deliveries` all come back so the figure
+can be checked by hand.
+
+A delivery on a *paid* campaign whose payment hasn't gone out is **neither**
+paid nor barter. Deriving barter as "everything unpaid" would put a line in a
+client report claiming we got work free that we simply haven't settled —
+`_barter_collab_ids` reads `compensation_type`, never a missing payment.
+
+### Instagram, and never depending on it
+
+`_fetch_instagram_performance` returns `(metrics, reason)` and **never raises**.
+It matches the submitted permalink's shortcode against the creator's *own*
+`/me/media`, so there is no path that reads insights for a link we were merely
+handed. Every failure returns a sentence, and the fetch endpoint answers 200
+either way — a creator who hasn't connected Instagram is the ordinary case, not
+a fault, and manual entry is always on screen beside it.
+
+### The report
+
+`GET /admin/campaigns/{id}/report?format=json|csv|html`, all three off one
+builder so the spreadsheet and the printable page cannot disagree. It goes to a
+brand, so it carries what a brand may see: handles and follower counts, **never
+a phone number, email or address** — a unit test walks the builder for those
+keys. CSV goes through `csv.writer`; the HTML escapes everything typed and is
+light-on-white because it gets printed. Both are `no-store`.
+
+Authenticated deliberately — "shareable" means an admin prints it to a PDF and
+sends that. A public link would be a new unauthenticated surface carrying
+creator data, which is a decision to take on purpose rather than as a side
+effect of adding an export.
+
+`showcase` is admin-only and its own endpoint, not a field on
+`UpdateCampaignPayload` — that payload is the brand's edit route too, and which
+campaigns we put in front of a prospect is not theirs to decide. The list filter
+uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
+
 ## The admin console
 
 `/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the tab

@@ -32,6 +32,7 @@ import {
 } from "@/components/admin/shared";
 import { ConfirmDialog } from "@/components/admin/dialogs";
 import { CampaignLink } from "@/components/admin/links";
+import { PerformanceRollup } from "@/components/admin/Performance";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
@@ -287,6 +288,8 @@ export default function BrandDetailPage() {
                             </Panel>
                         </Section>
                     </div>
+
+                    <PerformanceRollup performance={data.performance} scope="brand" />
 
                     <Section id="documents" title="Documents" count={data.documents.length}>
                         {data.documents.length === 0 ? (
