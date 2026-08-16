@@ -7,6 +7,8 @@ load_dotenv(ROOT_DIR / ".env")
 import asyncio
 import csv
 import io
+import json
+from html import escape as html_escape
 import os
 import re
 import logging
@@ -30,7 +32,7 @@ from fastapi import (
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -139,6 +141,81 @@ def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
+
+
+# ---------------------------------------------------------------------------
+# Impersonation ("view as")
+#
+# A support tool: an admin sees the app exactly as one creator, brand manager
+# or campaign manager sees it, so "I can't find the button" can be answered by
+# looking rather than by guessing.
+#
+# It is **read-only, and that is enforced in middleware**, not in the UI. The
+# banner and the hidden buttons are a courtesy; `_reject_impersonated_writes`
+# is the guarantee. Anything else means the guarantee is "every route
+# remembered", which is not a guarantee.
+#
+# The token is a third cookie rather than a swap of the admin's own. Three
+# consequences, all wanted:
+#   - the admin's real session is never destroyed, so stopping is instant and
+#     cannot strand them logged out;
+#   - it is impossible to confuse an impersonated request for a real one,
+#     because the two arrive in differently-named cookies;
+#   - it expires on its own. A forgotten view-as session ends by itself.
+# ---------------------------------------------------------------------------
+
+IMPERSONATION_COOKIE = "impersonation_token"
+# Deliberately short. This is for looking at one screen with somebody on the
+# phone, not for working inside another account.
+IMPERSONATION_MIN = 30
+
+# Who an admin may look through. Not other admins: an admin already sees
+# everything an admin sees, so the only thing it would add is a way to act as a
+# colleague, and that is the one thing this must never be.
+IMPERSONATABLE_ROLES = ("creator", "brand", "brand_manager", "campaign_manager")
+
+# The methods that cannot change anything. Everything else is refused while a
+# view-as session is active.
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+# The single exception, and the reason it is safe: it only clears the
+# impersonation cookie and writes the audit line closing the session. It
+# touches no business data at all.
+IMPERSONATION_STOP_PATH = "/api/auth/impersonate/stop"
+
+
+def create_impersonation_token(target_id: str, actor: dict) -> str:
+    payload = {
+        "sub": target_id,
+        # Who is really behind this request. Carried in the token rather than
+        # looked up, so an audit line written during impersonation can name the
+        # admin even though the acting user is somebody else.
+        "act": str(actor["_id"]),
+        "act_name": actor.get("name"),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=IMPERSONATION_MIN),
+        "type": "impersonation",
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def _decode_impersonation(request: Request) -> Optional[dict]:
+    """The active view-as claim, or None.
+
+    Never raises. An expired or malformed impersonation cookie means "not
+    impersonating" — the admin's own session is still in `access_token` and
+    takes over, which is exactly the behaviour wanted when a view-as session
+    times out mid-look.
+    """
+    token = request.cookies.get(IMPERSONATION_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    if payload.get("type") != "impersonation":
+        return None
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -785,6 +862,16 @@ COLLAB_GROUP_ONGOING = (
     "in_payment",
 )
 COLLAB_GROUP_COMPLETED = ("closed",)
+
+# Delivered = the content exists. `attended` is not enough — somebody turned up
+# and shot something, but there is no link yet and so nothing to measure. This
+# is the set a report describes and the set performance is recorded against.
+DELIVERED_COLLAB_STATES = (
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+    "closed",
+)
 COLLAB_GROUP_ENDED = ("declined", "cancelled")
 
 # States where the next move is the admin's. Deliberately not derived from
@@ -1026,6 +1113,29 @@ class Payment(BaseModel):
 
 
 async def get_current_user(request: Request) -> dict:
+    # A view-as session wins over the admin's own, so every downstream guard,
+    # query and serializer sees the target user and nothing has to know that
+    # impersonation exists. `_impersonation` is attached for the two things
+    # that do care: /auth/me, which draws the banner, and audit(), which names
+    # who was really behind the request.
+    claim = _decode_impersonation(request)
+    if claim:
+        try:
+            target = await db.users.find_one({"_id": ObjectId(claim["sub"])})
+        except Exception:
+            target = None
+        if target:
+            target["_id"] = str(target["_id"])
+            target.pop("password_hash", None)
+            target["_impersonation"] = {
+                "actor_id": claim.get("act"),
+                "actor_name": claim.get("act_name"),
+                "expires_at": claim.get("exp"),
+            }
+            return target
+        # The target was deleted mid-session. Fall through to the admin's own
+        # token rather than 401ing them out of their own account.
+
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization", "")
@@ -1169,6 +1279,9 @@ NOTIFY_EVENTS = {
     "new_applicant": "A creator applied to your campaign",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
+    # Suspension is not a verification decision — see suspend_creator.
+    "creator_suspended": "Your account is on hold",
+    "creator_reinstated": "Your account is active again",
     "campaign_invite": "A brand invited you to a campaign",
     "brand_verified": "Your brand is verified",
     "brand_rejected": "We couldn't verify your brand yet",
@@ -1565,6 +1678,41 @@ api_router = APIRouter(prefix="/api")
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@app.middleware("http")
+async def _reject_impersonated_writes(request: Request, call_next):
+    """**The read-only guarantee for view-as.**
+
+    Not a route dependency and not a check inside `get_current_user`: those
+    would both be per-route promises, and a promise every route has to remember
+    is one a new route will forget. This sees the method before routing
+    happens, so a handler added tomorrow is covered by having been written at
+    all.
+
+    It keys on the *method*, not on a list of dangerous endpoints. An allow-list
+    of mutations would have to be maintained; "GET, HEAD and OPTIONS cannot
+    change anything, so everything else is refused" does not.
+
+    One exception, and it is the reason the feature can be left safely: the stop
+    endpoint. It clears the cookie and writes the closing audit line and touches
+    no business data, so allowing it cannot be used to change anything — and
+    without it an admin could not get out without waiting for the token to
+    expire.
+    """
+    if request.method not in SAFE_METHODS and request.url.path != IMPERSONATION_STOP_PATH:
+        if _decode_impersonation(request) is not None:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        "You're viewing as somebody else. This is read-only — "
+                        "stop viewing as them to make changes."
+                    ),
+                    "code": "impersonation_read_only",
+                },
+            )
+    return await call_next(request)
+
+
 @api_router.get("/")
 async def root():
     return {"message": "WeAre Creators API", "status": "ok"}
@@ -1693,6 +1841,7 @@ async def logout(response: Response, user: dict = Depends(get_current_user)):
 
 @auth_router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
+    imp = user.get("_impersonation")
     return {
         "id": user["_id"],
         "email": user["email"],
@@ -1701,7 +1850,61 @@ async def me(user: dict = Depends(get_current_user)):
         "phone": user.get("phone"),
         "status": user.get("status"),
         "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+        # Present only during a view-as session. The frontend draws its banner
+        # off this rather than off anything it stored when it started, so a
+        # session resumed in a second tab — or one that expired while the tab
+        # sat open — still shows the truth.
+        "impersonation": {
+            "active": True,
+            "actor_id": imp.get("actor_id"),
+            "actor_name": imp.get("actor_name"),
+            "expires_at": _iso(datetime.fromtimestamp(imp["expires_at"], tz=timezone.utc))
+            if imp.get("expires_at")
+            else None,
+            "read_only": True,
+        }
+        if imp
+        else None,
     }
+
+
+@auth_router.post("/impersonate/stop")
+async def stop_impersonating(request: Request, response: Response):
+    """End a view-as session and hand the admin back their own.
+
+    The one non-GET route reachable while impersonating — see
+    `_reject_impersonated_writes`. It clears a cookie and writes an audit line;
+    it touches no business data, which is what makes allowing it safe.
+
+    Deliberately does not require a role: the caller *is* the impersonated
+    creator as far as every guard is concerned, so `require_roles("admin")`
+    would lock the admin inside the session it exists to leave. The token
+    itself is the authorisation — only `impersonate_user` mints one, and only
+    an admin can call that.
+    """
+    claim = _decode_impersonation(request)
+    response.delete_cookie(IMPERSONATION_COOKIE, path="/")
+    if not claim:
+        # Already out, or the token expired on its own. Not an error: the
+        # button should work whatever state the tab was left in.
+        return {"success": True, "was_impersonating": False}
+
+    target = await db.users.find_one({"_id": ObjectId(claim["sub"])})
+    actor = await db.users.find_one({"_id": ObjectId(claim["act"])}) if claim.get("act") else None
+    if actor:
+        actor["_id"] = str(actor["_id"])
+        await audit(
+            actor,
+            "admin.impersonate.stop",
+            "user",
+            ObjectId(claim["sub"]),
+            after={
+                "target_user_id": claim["sub"],
+                "target_name": (target or {}).get("name"),
+                "target_role": (target or {}).get("role"),
+            },
+        )
+    return {"success": True, "was_impersonating": True}
 
 
 @auth_router.post("/refresh")
@@ -4259,6 +4462,10 @@ def _serialize_brand_campaign(
         # Travels with the figure everywhere the figure goes. A number with no
         # word beside it is read as cash, which on a barter brief is a lie.
         "compensation_type": _compensation_type(doc),
+        # Case-study material. Ours to decide, not the brand's — see
+        # set_campaign_showcase.
+        "showcase": bool(doc.get("showcase")),
+        "showcase_note": doc.get("showcase_note"),
         "category": doc.get("category"),
         "area": doc.get("area"),
         "creators_needed": needed,
@@ -6942,9 +7149,55 @@ async def get_creator_detail(
         }
     )
 
+    # Slots this creator holds, with the campaign they belong to. Separate from
+    # the collaboration rows because a booking is a commitment to be somewhere
+    # at a time — the question "where is this person on Saturday" is not
+    # answerable from a list of states.
+    slot_ids = [c["slot_id"] for c in await db.collaborations.find(
+        {"creator_id": oid, "slot_id": {"$ne": None}}
+    ).to_list(length=500) if c.get("slot_id")]
+    bookings = []
+    if slot_ids:
+        slot_docs = await db.campaign_slots.find(
+            {"_id": {"$in": slot_ids}}
+        ).sort("starts_at", 1).to_list(length=500)
+        slot_campaigns = await db.campaigns.find(
+            {"_id": {"$in": [s["campaign_id"] for s in slot_docs]}}
+        ).to_list(length=len(slot_docs))
+        title_by_campaign = {c["_id"]: c.get("title") for c in slot_campaigns}
+        collab_by_slot = {
+            c["slot_id"]: c
+            for c in await db.collaborations.find(
+                {"creator_id": oid, "slot_id": {"$in": slot_ids}}
+            ).to_list(length=500)
+        }
+        for s in slot_docs:
+            c = collab_by_slot.get(s["_id"]) or {}
+            bookings.append(
+                {
+                    **_serialize_slot(s),
+                    "campaign_title": title_by_campaign.get(s["campaign_id"]),
+                    "collaboration_id": str(c["_id"]) if c.get("_id") else None,
+                    "state": c.get("state"),
+                }
+            )
+
     return {
         "creator": detail,
+        # The connection, not the token — _serialize_instagram cannot return
+        # one. Absent credentials is a supported state, so this is present and
+        # says `configured: false` rather than being missing.
+        "instagram": _serialize_instagram(
+            await db.instagram_connections.find_one({"user_id": oid})
+        ),
+        # No API behind YouTube here: the creator gives us a channel URL and
+        # that is all we have. Said plainly rather than dressed up as stats.
+        "youtube": {
+            "url": profile.get("youtube_url"),
+            "connected": bool(profile.get("youtube_url")),
+        },
         "collaborations": groups,
+        "slot_bookings": bookings,
         "totals": {
             "lifetime_earned": round(lifetime_earned, 2),
             # Agreed on work in flight — what we owe if it all lands.
@@ -6953,6 +7206,7 @@ async def get_creator_detail(
             "collaborations_ongoing": len(groups["ongoing"]),
             "applications_open": len(groups["applied"]),
             "collaborations_ended": len(groups["ended"]),
+            "slots_booked": len(bookings),
         },
     }
 
@@ -7044,6 +7298,2036 @@ async def reject_creator(
     )
 
 
+@admin_router.post("/creators/{user_id}/suspend")
+async def suspend_creator(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stop an account without touching what we decided about the profile.
+
+    Suspension and verification are two different judgements, and collapsing
+    them loses the one you need later: rejecting a verified creator to get them
+    off the platform would erase the record that they were ever approved, and
+    re-verifying them afterwards would look like a fresh decision rather than a
+    reinstatement. `UserStatus` has always had the state — this is the endpoint
+    that sets it.
+
+    Work already under way is deliberately untouched. A suspension is not a
+    cancellation: somebody has to decide, per collaboration, whether a shoot
+    two days out is still happening.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    account = await db.users.find_one({"_id": oid, "role": "creator"})
+    if not account:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    if account.get("status") == "suspended":
+        raise HTTPException(status_code=409, detail="This account is already suspended.")
+
+    reason = payload.reason.strip()
+    await db.users.update_one(
+        {"_id": oid},
+        {"$set": {"status": "suspended", "suspended_at": datetime.now(timezone.utc),
+                  "suspension_reason": reason}},
+    )
+    await audit(
+        user,
+        "creator.suspend",
+        "user",
+        oid,
+        before={"status": account.get("status")},
+        after={"status": "suspended"},
+        note=reason,
+    )
+    await notify(
+        oid,
+        "creator_suspended",
+        title="Your account is on hold",
+        body=reason,
+        link="/dashboard",
+    )
+    return {"user_id": user_id, "status": "suspended", "reason": reason}
+
+
+@admin_router.post("/creators/{user_id}/reinstate")
+async def reinstate_creator(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Undo a suspension.
+
+    Returns the account to `active` and leaves the verification decision
+    exactly where it was, which is the whole reason the two are separate.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Creator not found")
+
+    account = await db.users.find_one({"_id": oid, "role": "creator"})
+    if not account:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    if account.get("status") != "suspended":
+        raise HTTPException(status_code=409, detail="This account is not suspended.")
+
+    reason = payload.reason.strip()
+    await db.users.update_one(
+        {"_id": oid},
+        {"$set": {"status": "active"},
+         "$unset": {"suspended_at": "", "suspension_reason": ""}},
+    )
+    await audit(
+        user,
+        "creator.reinstate",
+        "user",
+        oid,
+        before={"status": "suspended"},
+        after={"status": "active"},
+        note=reason,
+    )
+    await notify(
+        oid,
+        "creator_reinstated",
+        title="Your account is back",
+        body="You can apply to briefs again.",
+        link="/campaigns",
+    )
+    return {"user_id": user_id, "status": "active", "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# Content performance
+#
+# `content_url` has been collected on every delivery since content submission
+# existed and read by nobody. It is the only evidence we have that the work we
+# arranged did anything, which makes it the answer to the only question a brand
+# asks at renewal.
+#
+# One record per collaboration, in its own collection. Separate from the
+# collaboration because a reading is a thing that happened *at a time* — a post
+# keeps accruing reach for days — and because the numbers arrive from two
+# different places and one of them is a person typing.
+# ---------------------------------------------------------------------------
+
+# What a creator's audience actually did with the post. Reach is the
+# denominator for engagement rate; the rest are the numerator or context.
+PERFORMANCE_METRICS = ("reach", "impressions", "views", "likes", "comments", "saves")
+# The three that count as somebody engaging rather than merely seeing.
+ENGAGEMENT_METRICS = ("likes", "comments", "saves")
+
+
+class PerformancePayload(BaseModel):
+    """A reading, typed in by an admin or a campaign manager.
+
+    Every metric is optional and `None` means "not known", never zero — a post
+    with no saves and a post whose saves we could not read are different
+    things, and averaging the second as a zero is how a report starts lying.
+
+    `engagement_rate` is deliberately absent: it is derived from the metrics
+    below so it cannot disagree with them. See `_engagement_rate_from`.
+    """
+
+    reach: Optional[int] = Field(default=None, ge=0)
+    impressions: Optional[int] = Field(default=None, ge=0)
+    views: Optional[int] = Field(default=None, ge=0)
+    likes: Optional[int] = Field(default=None, ge=0)
+    comments: Optional[int] = Field(default=None, ge=0)
+    saves: Optional[int] = Field(default=None, ge=0)
+    # When the numbers were read off the screen, which is not when they were
+    # typed in. Defaults to now.
+    captured_at: Optional[datetime] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _at_least_one_number(self):
+        if all(getattr(self, m) is None for m in PERFORMANCE_METRICS):
+            raise ValueError(
+                "Give at least one number — an empty reading is not a reading."
+            )
+        return self
+
+
+def _engagements(doc: dict) -> Optional[int]:
+    """Likes + comments + saves, or None when we know none of them.
+
+    Sums what is present rather than requiring all three: a manual reading off
+    a phone screen often has likes and comments and no saves, and refusing that
+    would mean recording nothing at all.
+    """
+    present = [doc.get(m) for m in ENGAGEMENT_METRICS if doc.get(m) is not None]
+    return sum(present) if present else None
+
+
+def _engagement_rate_from(doc: dict) -> Optional[float]:
+    """Engagements as a percentage of reach.
+
+    Against **reach**, not followers. Reach is who actually saw it, which is
+    the question a brand is asking; a rate against followers flatters a post
+    that reached nobody and punishes one that travelled beyond its audience.
+    The choice matters enough that it lives in one function rather than being
+    inlined at three call sites with two different denominators.
+
+    None when either half is unknown — not zero.
+    """
+    reach = doc.get("reach")
+    eng = _engagements(doc)
+    if not reach or eng is None:
+        return None
+    return round(eng / reach * 100, 2)
+
+
+def _serialize_performance(doc: Optional[dict]) -> Optional[dict]:
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "collaboration_id": str(doc["collaboration_id"]),
+        **{m: doc.get(m) for m in PERFORMANCE_METRICS},
+        "engagements": _engagements(doc),
+        # Recomputed on read rather than trusted from storage, so a record
+        # written before the formula existed still reports the current one.
+        "engagement_rate": _engagement_rate_from(doc),
+        "captured_at": _iso(doc.get("captured_at")),
+        # Where the numbers came from. A brand-facing report should be able to
+        # say "measured" or not, and an admin looking at an odd figure wants to
+        # know whether a person typed it.
+        "source": doc.get("source") or "manual",
+        "captured_by_name": doc.get("captured_by_name"),
+        "content_url": doc.get("content_url"),
+        "media_id": doc.get("media_id"),
+        "note": doc.get("note"),
+        "updated_at": _iso(doc.get("updated_at")),
+    }
+
+
+def _rollup_performance(
+    records: list, paid_collab_ids: set, spend: float, barter_collab_ids: set = frozenset()
+) -> dict:
+    """Totals across a set of readings.
+
+    **Barter is the whole difficulty here.** A barter campaign has reach and
+    engagement and no spend, so it belongs in the audience totals and nowhere
+    near the cost ones. Excluding only its *spend* would be worse than useless:
+    the spend is already zero, so the damage is on the other side of the
+    division — its reach would inflate the denominator and quietly report a
+    cost per thousand that we never achieved.
+
+    So cost metrics are computed over the paid subset on **both** sides, and
+    the paid reach they were computed from is returned alongside them. A number
+    you cannot reconstruct is a number nobody can defend in a meeting.
+
+    `paid` and `barter` are asked separately rather than one being the inverse
+    of the other, because they are not: a delivery on a *paid* campaign whose
+    payment has not gone out yet is neither. Calling that remainder "barter"
+    would put a sentence in a client report claiming we got work for free that
+    we have simply not paid for yet.
+    """
+    reach = sum(r["reach"] for r in records if r.get("reach"))
+    engagements = sum(e for e in (_engagements(r) for r in records) if e)
+    paid = [r for r in records if r["collaboration_id"] in paid_collab_ids]
+    paid_reach = sum(r["reach"] for r in paid if r.get("reach"))
+    barter = [r for r in records if r["collaboration_id"] in barter_collab_ids]
+
+    return {
+        "creators_delivered": len(records),
+        "total_reach": reach,
+        "total_impressions": sum(r["impressions"] for r in records if r.get("impressions")),
+        "total_views": sum(r["views"] for r in records if r.get("views")),
+        "total_engagements": engagements,
+        # The aggregate rate, which is engagements over reach for the whole set
+        # — not the mean of the per-post rates. Those two differ whenever the
+        # posts differ in size, and the mean lets one tiny post with a freak
+        # rate move the headline number.
+        "engagement_rate": round(engagements / reach * 100, 2) if reach else None,
+        "total_spend": round(spend, 2),
+        # Cost per thousand people reached, over paid work only.
+        "cost_per_thousand_reach": (
+            round(spend / paid_reach * 1000, 2) if paid_reach and spend else None
+        ),
+        # Shown so the CPM above can be checked by hand.
+        "paid_reach": paid_reach,
+        "barter_reach": sum(r["reach"] for r in barter if r.get("reach")),
+        "barter_deliveries": len(barter),
+        # Delivered, on a paid campaign, and the money has not gone out. Not
+        # barter — just not settled — and worth its own number so nobody
+        # reports it as either.
+        "awaiting_payment_deliveries": len(records) - len(paid) - len(barter),
+        # Named so a report can say "3 of 5 posts measured" rather than
+        # implying the total covers everybody.
+        "with_reach": sum(1 for r in records if r.get("reach")),
+    }
+
+
+async def _paid_collab_ids(campaign_ids: list) -> set:
+    """Collaborations that actually cost money, and how much in total.
+
+    A collaboration on a barter campaign never produces a paid payment, so this
+    catches barter without having to ask what kind of campaign anything is —
+    which also catches a paid campaign whose payment never went out.
+    """
+    if not campaign_ids:
+        return set()
+    rows = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {"$match": {"collab.campaign_id": {"$in": campaign_ids}}},
+            {"$project": {"collaboration_id": 1, "creator_payout": 1}},
+        ]
+    ).to_list(length=5000)
+    return {r["collaboration_id"] for r in rows}
+
+
+async def _performance_for(campaign_ids: list) -> list:
+    if not campaign_ids:
+        return []
+    return await db.content_performance.find(
+        {"campaign_id": {"$in": campaign_ids}}
+    ).to_list(length=5000)
+
+
+async def _barter_collab_ids(campaign_ids: list) -> set:
+    """Collaborations on campaigns that pay in kind.
+
+    Read off the campaign's `compensation_type` rather than inferred from a
+    missing payment — see the note in `_rollup_performance`.
+    """
+    if not campaign_ids:
+        return set()
+    barter = [
+        c["_id"]
+        for c in await db.campaigns.find(
+            {"_id": {"$in": campaign_ids}}, {"compensation_type": 1}
+        ).to_list(length=len(campaign_ids))
+        if _compensation_type(c) == "barter"
+    ]
+    if not barter:
+        return set()
+    return {
+        c["_id"]
+        for c in await db.collaborations.find(
+            {"campaign_id": {"$in": barter}}, {"_id": 1}
+        ).to_list(length=5000)
+    }
+
+
+async def _campaign_performance(campaign_ids: list, spend: float) -> dict:
+    records = await _performance_for(campaign_ids)
+    return _rollup_performance(
+        records,
+        await _paid_collab_ids(campaign_ids),
+        spend,
+        await _barter_collab_ids(campaign_ids),
+    )
+
+
+async def _record_performance(
+    collab: dict,
+    payload: PerformancePayload,
+    actor: dict,
+    *,
+    source: str = "manual",
+    media_id: Optional[str] = None,
+) -> dict:
+    """Write or replace the reading for one collaboration.
+
+    One record per collaboration, upserted: a post keeps accruing reach, so the
+    second reading a week later is a correction of the first rather than a
+    second data point. `captured_at` says which moment the numbers describe.
+
+    Deliberately does **not** require the collaboration to be in any particular
+    state. The obvious rule would be "only once content is approved", and it
+    would be wrong the first time a brand asks how a post is doing before they
+    have got round to approving it.
+    """
+    now = datetime.now(timezone.utc)
+    given = payload.model_dump(exclude_unset=True)
+    doc = {
+        **{m: given.get(m) for m in PERFORMANCE_METRICS if m in given},
+        "collaboration_id": collab["_id"],
+        "campaign_id": collab["campaign_id"],
+        "creator_id": collab["creator_id"],
+        "captured_at": payload.captured_at or now,
+        "source": source,
+        "captured_by": ObjectId(actor["_id"]),
+        "captured_by_name": actor.get("name"),
+        "content_url": (collab.get("content_urls") or [collab.get("content_url")] or [None])[0],
+        "updated_at": now,
+    }
+    if media_id:
+        doc["media_id"] = media_id
+    if payload.note is not None:
+        doc["note"] = payload.note.strip() or None
+
+    saved = await db.content_performance.find_one_and_update(
+        {"collaboration_id": collab["_id"]},
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+        return_document=True,
+    )
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        actor,
+        "collaboration.performance",
+        "collaboration",
+        collab["_id"],
+        after={
+            "source": source,
+            **{m: doc.get(m) for m in PERFORMANCE_METRICS if m in doc},
+            "engagement_rate": _engagement_rate_from(saved),
+        },
+        **_campaign_audit_context(campaign or {}),
+    )
+    return _serialize_performance(saved)
+
+
+# What Instagram calls each metric, against what we call it. `saved` and
+# `total_interactions` are theirs; the rest happen to match.
+_IG_MEDIA_METRICS = {
+    "reach": "reach",
+    "likes": "likes",
+    "comments": "comments",
+    "saves": "saved",
+    "views": "views",
+}
+
+
+def _permalink_key(url: Optional[str]) -> Optional[str]:
+    """The shortcode out of an Instagram permalink.
+
+    Matching on the whole URL fails constantly: creators paste links with
+    `?igsh=` tracking noise, with and without the trailing slash, and from
+    `instagram.com` or `www.instagram.com`. The shortcode is the part that
+    identifies the post, so it is the part we compare.
+    """
+    if not url:
+        return None
+    m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
+    return m.group(1) if m else None
+
+
+async def _fetch_instagram_performance(collab: dict) -> tuple[Optional[dict], Optional[str]]:
+    """Read one post's insights off the creator's own connected account.
+
+    Returns `(metrics, reason_it_did_not_work)` — never raises. Every branch
+    that fails returns a sentence a human can act on, because the alternative
+    to this working is somebody typing the numbers in, and they need to know
+    that is what they are now doing.
+
+    **It only ever looks at media belonging to the creator's own connected
+    account.** The permalink is matched against their media list rather than
+    being fetched directly, so there is no path here that reads insights for a
+    post we were merely given a link to.
+    """
+    if not instagram_configured():
+        return None, "Instagram isn't connected on this deployment — enter the numbers by hand."
+
+    urls = collab.get("content_urls") or ([collab["content_url"]] if collab.get("content_url") else [])
+    wanted = {k for k in (_permalink_key(u) for u in urls) if k}
+    if not wanted:
+        return None, "No Instagram link on this delivery — enter the numbers by hand."
+
+    conn = await db.instagram_connections.find_one({"user_id": collab["creator_id"]})
+    if not conn or conn.get("status") != "connected":
+        return None, "This creator hasn't connected Instagram — enter the numbers by hand."
+    token = _decrypt_token(conn.get("access_token"))
+    if not token:
+        return None, "Their Instagram connection needs renewing — enter the numbers by hand."
+
+    try:
+        media = await _instagram_get(
+            "/me/media",
+            {"fields": "id,permalink,media_type,timestamp", "limit": 50, "access_token": token},
+        )
+    except HTTPException as exc:
+        return None, f"Instagram wouldn't answer ({exc.detail}) — enter the numbers by hand."
+
+    match = next(
+        (m for m in (media.get("data") or []) if _permalink_key(m.get("permalink")) in wanted),
+        None,
+    )
+    if not match:
+        return None, (
+            "That post isn't in their recent media — it may be older than the last 50 "
+            "posts, or posted from another account. Enter the numbers by hand."
+        )
+
+    try:
+        insights = await _instagram_get(
+            f"/{match['id']}/insights",
+            {"metric": ",".join(_IG_MEDIA_METRICS.values()), "access_token": token},
+        )
+    except HTTPException as exc:
+        return None, f"Instagram had no insights for that post ({exc.detail}) — enter the numbers by hand."
+
+    by_name = {row.get("name"): row for row in (insights.get("data") or [])}
+    out: dict = {"media_id": match["id"]}
+    for ours, theirs in _IG_MEDIA_METRICS.items():
+        row = by_name.get(theirs) or {}
+        values = row.get("values") or []
+        value = values[0].get("value") if values else None
+        if isinstance(value, (int, float)):
+            out[ours] = int(value)
+    if not any(k in out for k in PERFORMANCE_METRICS):
+        return None, "Instagram returned no numbers for that post — enter them by hand."
+    return out, None
+
+
+def _phone_tail(raw: Optional[str]) -> Optional[str]:
+    """The last ten digits of a number, or None if there aren't ten.
+
+    A number reaches us written five ways — `+91 98765 43210`, `09876543210`,
+    `9876543210`, with dashes, with brackets. The tail is the part that is the
+    same in all of them, so it is what search matches on. Ten because that is
+    an Indian subscriber number; the country code is the part people leave off.
+    """
+    digits = re.sub(r"\D", "", raw or "")
+    return digits[-10:] if len(digits) >= 10 else None
+
+
+# Enough to be worth a query. One character would return the whole database
+# ranked by nothing.
+SEARCH_MIN_CHARS = 2
+SEARCH_GROUP_LIMIT = 6
+
+
+@admin_router.get("/search")
+async def admin_global_search(
+    q: str = "",
+    user: dict = Depends(require_roles("admin")),
+):
+    """One box over creators, brands, campaigns and phone numbers.
+
+    Built for one moment: somebody messages us mid-campaign and we have thirty
+    seconds to find out who they are and what they are on. So a bare phone
+    number has to work as well as a name, and the results have to say which
+    kind of thing each one is rather than making the reader infer it.
+
+    Declared before /{user_id}-shaped admin paths at this depth — see the route
+    ordering test. `search` is a word somebody could plausibly have as an id.
+    """
+    term = (q or "").strip()[:120]
+    if len(term) < SEARCH_MIN_CHARS:
+        return {"query": term, "groups": [], "total": 0}
+
+    rx = {"$regex": re.escape(term), "$options": "i"}
+    tail = _phone_tail(term)
+    # Matching the tail against stored E.164 means a suffix match, which cannot
+    # use an index — acceptable at this size, and the alternative is a stored
+    # normalised column that every write path has to remember to maintain.
+    phone_rx = {"$regex": f"{re.escape(tail)}$"} if tail else None
+
+    creator_or = [{"name": rx}, {"email": rx}]
+    if phone_rx:
+        creator_or.append({"phone": phone_rx})
+
+    creator_users, profiles, brand_profiles, brand_users, campaigns = await asyncio.gather(
+        db.users.find({"role": "creator", "$or": creator_or}).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.creator_profiles.find(
+            {"$or": [{"name": rx}, {"instagram_handle": rx}, {"city": rx}]}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.brand_profiles.find(
+            {"$or": [{"business_name": rx}, {"legal_entity_name": rx}, {"contact_person_name": rx}]}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.users.find(
+            {"role": {"$in": list(BRAND_ROLES)}, "$or": creator_or}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.campaigns.find({"$or": [{"title": rx}, {"area": rx}]})
+        .sort("created_at", -1)
+        .limit(SEARCH_GROUP_LIMIT)
+        .to_list(length=SEARCH_GROUP_LIMIT),
+    )
+
+    # A creator can match on their account or on their profile; the two are
+    # merged by user id so somebody whose name is on both is one result.
+    creator_ids = {u["_id"] for u in creator_users} | {p["user_id"] for p in profiles}
+    creator_ids = list(creator_ids)[: SEARCH_GROUP_LIMIT * 2]
+    creator_rows = []
+    if creator_ids:
+        users_by_id = {u["_id"]: u for u in creator_users}
+        profile_by_uid = {p["user_id"]: p for p in profiles}
+        missing = [i for i in creator_ids if i not in users_by_id]
+        if missing:
+            for u in await db.users.find({"_id": {"$in": missing}}).to_list(length=len(missing)):
+                users_by_id[u["_id"]] = u
+        for cid in creator_ids:
+            u = users_by_id.get(cid) or {}
+            p = profile_by_uid.get(cid) or {}
+            if not u and not p:
+                continue
+            creator_rows.append(
+                {
+                    "id": str(cid),
+                    "label": p.get("name") or u.get("name") or "Unnamed creator",
+                    # Staff-side, so the number is here on purpose: it is what
+                    # somebody searched to find this person. It never crosses
+                    # into a brand response — see _brand_visible_creator.
+                    "sublabel": " · ".join(
+                        [
+                            s
+                            for s in (
+                                f"@{p['instagram_handle']}" if p.get("instagram_handle") else None,
+                                u.get("phone"),
+                                p.get("city"),
+                            )
+                            if s
+                        ]
+                    ),
+                    "badge": p.get("verification_status") or "pending",
+                    "href": f"/admin/creators/{cid}",
+                }
+            )
+
+    brand_ids = {p["user_id"] for p in brand_profiles} | {u["_id"] for u in brand_users}
+    brand_rows = []
+    if brand_ids:
+        profile_by_uid = {p["user_id"]: p for p in brand_profiles}
+        accounts = {u["_id"]: u for u in brand_users}
+        missing = [i for i in brand_ids if i not in accounts]
+        if missing:
+            for u in await db.users.find({"_id": {"$in": missing}}).to_list(length=len(missing)):
+                accounts[u["_id"]] = u
+        missing_p = [i for i in brand_ids if i not in profile_by_uid]
+        if missing_p:
+            for p in await db.brand_profiles.find(
+                {"user_id": {"$in": missing_p}}
+            ).to_list(length=len(missing_p)):
+                profile_by_uid[p["user_id"]] = p
+        for bid in list(brand_ids)[: SEARCH_GROUP_LIMIT * 2]:
+            p = profile_by_uid.get(bid) or {}
+            u = accounts.get(bid) or {}
+            brand_rows.append(
+                {
+                    "id": str(bid),
+                    "label": p.get("business_name") or u.get("name") or "Unnamed brand",
+                    "sublabel": " · ".join(
+                        [s for s in (p.get("contact_person_name"), u.get("phone"), p.get("category")) if s]
+                    ),
+                    "badge": "verified" if p.get("verified") else _brand_verification_state(p),
+                    "href": f"/admin/brands/{bid}",
+                }
+            )
+
+    brand_name_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+    campaign_rows = [
+        {
+            "id": str(c["_id"]),
+            "label": c.get("title") or "Untitled",
+            "sublabel": " · ".join(
+                [
+                    s
+                    for s in (
+                        (brand_name_map.get(c["brand_id"]) or {}).get("business_name"),
+                        c.get("area"),
+                    )
+                    if s
+                ]
+            ),
+            "badge": c.get("status"),
+            "href": f"/admin/campaigns/{c['_id']}",
+        }
+        for c in campaigns
+    ]
+
+    groups = [
+        g
+        for g in (
+            {"key": "creators", "label": "Creators", "items": creator_rows[:SEARCH_GROUP_LIMIT]},
+            {"key": "brands", "label": "Brands", "items": brand_rows[:SEARCH_GROUP_LIMIT]},
+            {"key": "campaigns", "label": "Campaigns", "items": campaign_rows},
+        )
+        if g["items"]
+    ]
+    return {
+        "query": term,
+        # Said out loud so the palette can explain an empty result for a number
+        # that was typed short rather than one that matched nobody.
+        "matched_phone": bool(tail),
+        "groups": groups,
+        "total": sum(len(g["items"]) for g in groups),
+    }
+
+
+async def _collab_or_404(collab_id: str) -> dict:
+    oid = _as_oid(collab_id)
+    collab = await db.collaborations.find_one({"_id": oid}) if oid else None
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    return collab
+
+
+async def _build_campaign_report(campaign: dict) -> dict:
+    """What a brand is handed when a campaign closes.
+
+    The rule that shapes it: **it goes to the brand, so it carries what a brand
+    may see.** Handles and follower counts are on the allow-list; a phone
+    number, an email or an address is not, at any collaboration state. That is
+    the same line `_brand_visible_creator` draws on every other brand-facing
+    surface, and this file is the one most likely to be forwarded onwards.
+    """
+    cid = campaign["_id"]
+    brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
+
+    # Only the people who actually delivered. A report listing everybody who
+    # applied would describe a campaign that did not happen.
+    collabs = await db.collaborations.find(
+        {"campaign_id": cid, "state": {"$in": list(DELIVERED_COLLAB_STATES)}}
+    ).to_list(length=500)
+    creator_ids = [c["creator_id"] for c in collabs]
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": creator_ids}}
+        ).to_list(length=len(creator_ids) or 1)
+    }
+    users = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": creator_ids}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    perf = {
+        r["collaboration_id"]: r
+        for r in await db.content_performance.find({"campaign_id": cid}).to_list(length=500)
+    }
+    payments = {
+        p["collaboration_id"]: p
+        for p in await db.payments.find(
+            {"collaboration_id": {"$in": [c["_id"] for c in collabs]}}
+        ).to_list(length=500)
+    }
+
+    spend = sum(
+        float(p.get("creator_payout") or 0)
+        for p in payments.values()
+        if p.get("state") == "paid"
+    )
+    paid_ids = {
+        cid_ for cid_, p in payments.items() if p.get("state") == "paid"
+    }
+
+    rows = []
+    for c in collabs:
+        prof = profiles.get(c["creator_id"]) or {}
+        acct = users.get(c["creator_id"]) or {}
+        r = perf.get(c["_id"]) or {}
+        rows.append(
+            {
+                "collaboration_id": str(c["_id"]),
+                "creator_name": prof.get("name") or acct.get("name"),
+                "instagram_handle": prof.get("instagram_handle"),
+                "youtube_url": prof.get("youtube_url"),
+                "follower_count": prof.get("follower_count"),
+                **_follower_provenance(prof),
+                # What they were asked for, and the links that prove it.
+                "deliverables": campaign.get("deliverables"),
+                "content_urls": c.get("content_urls")
+                or ([c["content_url"]] if c.get("content_url") else []),
+                "delivered_state": c.get("state"),
+                **{m: r.get(m) for m in PERFORMANCE_METRICS},
+                "engagements": _engagements(r) if r else None,
+                "engagement_rate": _engagement_rate_from(r) if r else None,
+                "measured": bool(r),
+                "measurement_source": r.get("source") if r else None,
+                "captured_at": _iso(r.get("captured_at")) if r else None,
+            }
+        )
+    rows.sort(key=lambda r: (r.get("reach") or 0), reverse=True)
+
+    return {
+        "campaign": {
+            "id": str(cid),
+            "title": campaign.get("title"),
+            "brand_name": brand.get("business_name") or brand.get("name"),
+            "category": campaign.get("category"),
+            "area": campaign.get("area"),
+            "status": campaign.get("status"),
+            "compensation_type": _compensation_type(campaign),
+            "campaign_type": campaign.get("campaign_type"),
+            "event_date": _iso(campaign.get("event_date")),
+            "start_date": _iso(campaign.get("start_date")),
+            "end_date": _iso(campaign.get("end_date")),
+            "deliverables": campaign.get("deliverables"),
+            "showcase": bool(campaign.get("showcase")),
+        },
+        "creators": rows,
+        "totals": _rollup_performance(
+            list(perf.values()),
+            paid_ids,
+            spend,
+            # One campaign, so it is barter or it is not.
+            {c["_id"] for c in collabs}
+            if _compensation_type(campaign) == "barter"
+            else frozenset(),
+        ),
+        "generated_at": _iso(datetime.now(timezone.utc)),
+    }
+
+
+def _report_csv(report: dict) -> str:
+    """The same report as a spreadsheet.
+
+    `csv.writer` rather than joining with commas: a campaign title with a comma
+    in it, or a note with a newline, would otherwise silently shift every
+    column to its right.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    c = report["campaign"]
+    t = report["totals"]
+
+    w.writerow(["Campaign", c["title"]])
+    w.writerow(["Brand", c["brand_name"] or ""])
+    # Dates, not timestamps. This goes to a client, and "2026-09-01T00:00:00
+    # +00:00" in a spreadsheet cell is us showing our working.
+    w.writerow([
+        "Dates",
+        " to ".join([d[:10] for d in (c["start_date"], c["end_date"]) if d])
+        or (c["event_date"] or "")[:10],
+    ])
+    w.writerow(["Deliverables", c["deliverables"] or ""])
+    w.writerow([])
+    w.writerow(["Creators delivered", t["creators_delivered"]])
+    w.writerow(["Total reach", t["total_reach"]])
+    w.writerow(["Total engagements", t["total_engagements"]])
+    w.writerow(["Engagement rate %", t["engagement_rate"] if t["engagement_rate"] is not None else "—"])
+    w.writerow(["Total spend (INR)", t["total_spend"]])
+    w.writerow([
+        "Cost per 1,000 reach (INR)",
+        t["cost_per_thousand_reach"] if t["cost_per_thousand_reach"] is not None else "—",
+    ])
+    if t["barter_reach"]:
+        # Said in the file itself, not just in the UI. A spreadsheet gets
+        # forwarded without whatever was on screen beside it.
+        n = t["barter_deliveries"]
+        w.writerow([
+            "Note",
+            f"{n} barter {'delivery' if n == 1 else 'deliveries'} contributed "
+            f"{t['barter_reach']:,} reach at no cost; cost per 1,000 is over paid work only.",
+        ])
+    w.writerow([])
+    w.writerow([
+        "Creator", "Instagram", "Followers", "Reach", "Impressions", "Views",
+        "Likes", "Comments", "Saves", "Engagement rate %", "Measured", "Content",
+    ])
+    for r in report["creators"]:
+        w.writerow([
+            r["creator_name"] or "",
+            f"@{r['instagram_handle']}" if r.get("instagram_handle") else "",
+            r.get("follower_count") if r.get("follower_count") is not None else "",
+            *[r.get(m) if r.get(m) is not None else "" for m in
+              ("reach", "impressions", "views", "likes", "comments", "saves")],
+            r["engagement_rate"] if r.get("engagement_rate") is not None else "",
+            "yes" if r["measured"] else "no",
+            " ".join(r["content_urls"]),
+        ])
+    return buf.getvalue()
+
+
+def _report_html(report: dict) -> str:
+    """A page to print, or to save as a PDF and send.
+
+    Self-contained and light-on-white on purpose. The app is a dark product,
+    but this is the one artefact that leaves it — it gets printed, pasted into
+    a deck, and read on somebody else's laptop, and a near-black page prints as
+    a solid block of toner.
+    """
+    c = report["campaign"]
+    t = report["totals"]
+    esc = html_escape
+
+    def _num(v, suffix=""):
+        return f"{v:,}{suffix}" if isinstance(v, (int, float)) else "—"
+
+    dates = " – ".join([d[:10] for d in (c["start_date"], c["end_date"]) if d]) or (
+        (c["event_date"] or "")[:10] or "—"
+    )
+
+    rows = "".join(
+        f"""<tr>
+          <td><strong>{esc(r['creator_name'] or 'Creator')}</strong>
+            {f"<span class=h>@{esc(r['instagram_handle'])}</span>" if r.get('instagram_handle') else ""}</td>
+          <td class=n>{_num(r.get('follower_count'))}</td>
+          <td class=n>{_num(r.get('reach'))}</td>
+          <td class=n>{_num(r.get('engagements'))}</td>
+          <td class=n>{f"{r['engagement_rate']}%" if r.get('engagement_rate') is not None else '—'}</td>
+          <td>{"".join(f'<a href="{esc(u)}">{esc(u[:60])}</a><br>' for u in r['content_urls']) or '—'}</td>
+        </tr>"""
+        for r in report["creators"]
+    ) or '<tr><td colspan="6" class=e>Nobody has delivered on this campaign yet.</td></tr>'
+
+    n_barter = t["barter_deliveries"]
+    barter_note = (
+        f"<p class=note>{n_barter} barter "
+        f"{'delivery' if n_barter == 1 else 'deliveries'} contributed "
+        f"{_num(t['barter_reach'])} reach at no cost. Cost per 1,000 reach is "
+        f"calculated over paid work only.</p>"
+        if t["barter_reach"]
+        else ""
+    )
+    unmeasured = t["creators_delivered"] - t["with_reach"]
+    measured_note = (
+        f"<p class=note>{t['with_reach']} of {t['creators_delivered']} deliveries have "
+        f"reach figures; {unmeasured} {'is' if unmeasured == 1 else 'are'} not yet "
+        f"measured, so the totals are a floor.</p>"
+        if unmeasured > 0
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{esc(c['title'] or 'Campaign report')} — WeAre Creators</title>
+<style>
+  :root {{ --ink:#141210; --mute:#6b6560; --line:#e6e1dc; --ember:#F05D14; }}
+  * {{ box-sizing:border-box; }}
+  body {{ margin:0; padding:48px 40px; background:#fff; color:var(--ink);
+    font:15px/1.5 "Inter Tight",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
+  .wrap {{ max-width:900px; margin:0 auto; }}
+  .eyebrow {{ font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ember); }}
+  h1 {{ font-family:Fraunces,Georgia,serif; font-size:38px; line-height:1.05; margin:12px 0 0; font-weight:400; }}
+  .meta {{ color:var(--mute); font-size:13px; margin-top:10px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); margin:36px 0 8px;
+    border:1px solid var(--line); border-right:0; border-bottom:0; }}
+  .stat {{ background:#fff; padding:18px 16px;
+    border-right:1px solid var(--line); border-bottom:1px solid var(--line); }}
+  @media (min-width:760px) {{ .stats {{ grid-template-columns:repeat(6,1fr); }} }}
+  .stat span {{ display:block; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--mute); }}
+  .stat b {{ display:block; font-family:Fraunces,Georgia,serif; font-size:26px; font-weight:400; margin-top:8px; }}
+  table {{ width:100%; border-collapse:collapse; margin-top:32px; font-size:13px; }}
+  th {{ text-align:left; font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--mute); font-weight:500; padding:0 10px 8px; border-bottom:1px solid var(--line); }}
+  td {{ padding:12px 10px; border-bottom:1px solid var(--line); vertical-align:top; }}
+  td.n {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
+  td.e {{ text-align:center; color:var(--mute); padding:32px; }}
+  .h {{ color:var(--mute); margin-left:8px; }}
+  a {{ color:var(--ember); word-break:break-all; }}
+  .note {{ color:var(--mute); font-size:12px; margin:6px 0 0; }}
+  footer {{ margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
+    color:var(--mute); font-size:11px; display:flex; justify-content:space-between; gap:20px; }}
+  @media print {{ body {{ padding:0; }} a {{ color:var(--ink); }} }}
+</style></head>
+<body><div class=wrap>
+  <p class=eyebrow>Campaign report · {esc(c['brand_name'] or '')}</p>
+  <h1>{esc(c['title'] or 'Campaign')}</h1>
+  <p class=meta>{esc(dates)}{f" · {esc(c['area'])}" if c.get('area') else ""}
+    {f" · {esc(c['category'])}" if c.get('category') else ""}</p>
+
+  <div class=stats>
+    <div class=stat><span>Creators delivered</span><b>{_num(t['creators_delivered'])}</b></div>
+    <div class=stat><span>Total reach</span><b>{_num(t['total_reach'])}</b></div>
+    <div class=stat><span>Engagements</span><b>{_num(t['total_engagements'])}</b></div>
+    <div class=stat><span>Engagement rate</span><b>{f"{t['engagement_rate']}%" if t['engagement_rate'] is not None else '—'}</b></div>
+    <div class=stat><span>Spend</span><b>{"₹" + format(int(t['total_spend']), ",") if t['total_spend'] else '—'}</b></div>
+    <div class=stat><span>Cost / 1,000 reach</span><b>{"₹" + format(round(t['cost_per_thousand_reach']), ",") if t['cost_per_thousand_reach'] is not None else '—'}</b></div>
+  </div>
+  {barter_note}{measured_note}
+
+  <table>
+    <thead><tr><th>Creator</th><th class=n>Followers</th><th class=n>Reach</th>
+      <th class=n>Engagements</th><th class=n>Rate</th><th>Content</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+
+  <p class=note style="margin-top:28px"><strong>Deliverables:</strong> {esc(c['deliverables'] or '—')}</p>
+
+  <footer><span>WeAre Creators</span><span>Generated {esc((report['generated_at'] or '')[:10])}</span></footer>
+</div></body></html>"""
+
+
+class ShowcasePayload(BaseModel):
+    """Mark a campaign as case-study material."""
+
+    showcase: bool
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+# ---------------------------------------------------------------------------
+# Health
+#
+# The console tells you what is waiting. This tells you what is *going wrong* —
+# the difference being that nothing here is in a queue. A campaign quietly
+# underfilling four days before the shoot generates no notification, appears in
+# no list, and is discovered when the brand rings up.
+#
+# Every threshold is named here rather than inlined, because every one of them
+# is a judgement about how much slack the operation has and will be argued
+# about later.
+# ---------------------------------------------------------------------------
+
+# A campaign is worth flagging when the shoot is close and the roster is short.
+FILL_WARNING_DAYS = 7          # how close "close" is
+FILL_WARNING_RATIO = 0.7       # below this share of the brief, it is short
+# Somebody accepted onto a campaign who still has no slot, this near the day.
+SLOT_WARNING_DAYS = 2
+# Attended, and no content since. A creator needs a few days to edit and post.
+CONTENT_OVERDUE_DAYS = 7
+# Approved work with money still sitting here.
+PAYMENT_OVERDUE_DAYS = 7
+# A brand that submitted documents and heard nothing.
+VERIFICATION_OVERDUE_DAYS = 3
+# Signed up, started a profile, and stopped.
+PROFILE_STALE_DAYS = 14
+
+# Severity drives the order things are read in, not the colour. `critical`
+# means a brand or creator is about to be let down; `warning` means somebody
+# will be if nothing happens.
+_HEALTH_ORDER = {"critical": 0, "warning": 1}
+
+
+def _days_ago(n: int) -> datetime:
+    return datetime.now(timezone.utc) - timedelta(days=n)
+
+
+def _days_ahead(n: int) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=n)
+
+
+@admin_router.get("/health")
+async def admin_health(user: dict = Depends(require_roles("admin"))):
+    """What is going wrong, before anybody outside finds out.
+
+    Six checks, each returning rows that link straight to the thing that needs
+    doing. Deliberately not a count — a number tells you there is a problem and
+    then makes you go and find it.
+
+    Declared before `/{campaign_id}`-shaped siblings cannot swallow it: this is
+    `/admin/health`, one segment, and there is no bare `/admin/{id}`.
+    """
+    now = datetime.now(timezone.utc)
+    checks: list = []
+
+    # 1. Underfilling with the day approaching.
+    soon = _days_ahead(FILL_WARNING_DAYS)
+    live = await db.campaigns.find(
+        {
+            "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)},
+            "$or": [
+                {"event_date": {"$gte": now, "$lte": soon}},
+                {"start_date": {"$gte": now, "$lte": soon}},
+            ],
+        }
+    ).to_list(length=500)
+    filled = await _filled_counts_for([c["_id"] for c in live])
+    rows = []
+    for c in live:
+        needed = int(c.get("creators_needed") or 1)
+        got = filled.get(c["_id"], 0)
+        if needed and got / needed < FILL_WARNING_RATIO:
+            when = c.get("event_date") or c.get("start_date")
+            rows.append(
+                {
+                    "id": str(c["_id"]),
+                    "label": c.get("title") or "Untitled",
+                    "detail": f"{got} of {needed} booked · {_humanise_until(when, now)}",
+                    "href": f"/admin/campaigns/{c['_id']}",
+                    # Nothing booked at all, this close, is a different problem
+                    # from being two short.
+                    "severity": "critical" if got == 0 else "warning",
+                    "at": _iso(when),
+                }
+            )
+    checks.append(
+        {
+            "key": "underfilling",
+            "label": "Campaigns underfilling",
+            "blurb": f"Under {int(FILL_WARNING_RATIO * 100)}% booked with under {FILL_WARNING_DAYS} days to go.",
+            "items": rows,
+        }
+    )
+
+    # 2. Accepted, agreed, and still no slot with the day nearly here.
+    slot_cutoff = _days_ahead(SLOT_WARNING_DAYS)
+    near = await db.campaigns.find(
+        {
+            "status": {"$in": list(ACTIVE_CAMPAIGN_STATUSES)},
+            "$or": [
+                {"event_date": {"$gte": now, "$lte": slot_cutoff}},
+                {"end_date": {"$gte": now, "$lte": slot_cutoff}},
+            ],
+        }
+    ).to_list(length=500)
+    near_by_id = {c["_id"]: c for c in near}
+    rows = []
+    if near_by_id:
+        unbooked = await db.collaborations.find(
+            {
+                "campaign_id": {"$in": list(near_by_id)},
+                "state": {"$in": ["accepted", "commercial_agreed"]},
+                "slot_id": None,
+            }
+        ).to_list(length=1000)
+        names = await _creator_names_for([c["creator_id"] for c in unbooked])
+        for c in unbooked:
+            camp = near_by_id[c["campaign_id"]]
+            when = camp.get("event_date") or camp.get("end_date")
+            rows.append(
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp.get('title')} · no slot · {_humanise_until(when, now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "critical",
+                    "at": _iso(when),
+                }
+            )
+    checks.append(
+        {
+            "key": "no_slot",
+            "label": "No slot booked",
+            "blurb": f"Accepted creators with nothing booked, within {SLOT_WARNING_DAYS} days of the day.",
+            "items": rows,
+        }
+    )
+
+    # 3. Turned up, never posted.
+    overdue = await db.collaborations.find(
+        {"state": "attended", "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)}}
+    ).to_list(length=500)
+    names = await _creator_names_for([c["creator_id"] for c in overdue])
+    camp_titles = await _campaign_titles_for([c["campaign_id"] for c in overdue])
+    checks.append(
+        {
+            "key": "content_overdue",
+            "label": "Content overdue",
+            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing submitted.",
+            "items": [
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp_titles.get(c['campaign_id']) or 'Campaign'} · attended {timeago_days(c.get('updated_at'), now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "warning",
+                    "at": _iso(c.get("updated_at")),
+                }
+                for c in overdue
+            ],
+        }
+    )
+
+    # 4. Money we are sitting on.
+    stale_pay = await db.payments.find(
+        {"state": {"$ne": "paid"}, "created_at": {"$lte": _days_ago(PAYMENT_OVERDUE_DAYS)}}
+    ).sort("created_at", 1).to_list(length=500)
+    pay_collabs = {
+        c["_id"]: c
+        for c in await db.collaborations.find(
+            {"_id": {"$in": [p["collaboration_id"] for p in stale_pay]}}
+        ).to_list(length=len(stale_pay) or 1)
+    }
+    pay_names = await _creator_names_for([c["creator_id"] for c in pay_collabs.values()])
+    checks.append(
+        {
+            "key": "payments_pending",
+            "label": "Payments pending",
+            "blurb": f"Raised more than {PAYMENT_OVERDUE_DAYS} days ago and still not sent.",
+            "items": [
+                {
+                    "id": str(p["_id"]),
+                    "label": pay_names.get(
+                        (pay_collabs.get(p["collaboration_id"]) or {}).get("creator_id")
+                    )
+                    or "Creator",
+                    "detail": f"₹{p.get('creator_payout') or 0:,.0f} · raised {timeago_days(p.get('created_at'), now)}",
+                    "href": f"/admin/collaborations/{p['collaboration_id']}",
+                    # Creators chase us for this, and it is the fastest way to
+                    # lose one.
+                    "severity": "critical",
+                    "at": _iso(p.get("created_at")),
+                }
+                for p in stale_pay
+            ],
+        }
+    )
+
+    # 5. Brands waiting on a decision from us.
+    waiting = await db.brand_profiles.find(
+        {
+            "verified": False,
+            "verification_state": "pending_verification",
+            "submitted_for_verification_at": {"$lte": _days_ago(VERIFICATION_OVERDUE_DAYS)},
+        }
+    ).sort("submitted_for_verification_at", 1).to_list(length=200)
+    checks.append(
+        {
+            "key": "verification_overdue",
+            "label": "Brands waiting on us",
+            "blurb": f"Documents submitted more than {VERIFICATION_OVERDUE_DAYS} days ago.",
+            "items": [
+                {
+                    "id": str(b["user_id"]),
+                    "label": b.get("business_name") or "Unnamed brand",
+                    "detail": f"submitted {timeago_days(b.get('submitted_for_verification_at'), now)}",
+                    "href": f"/admin/brands/{b['user_id']}",
+                    "severity": "warning",
+                    "at": _iso(b.get("submitted_for_verification_at")),
+                }
+                for b in waiting
+            ],
+        }
+    )
+
+    # 6. Creators who started and stopped. Not a failure on their part — it is
+    # the signal that onboarding lost somebody, and each one is a person we
+    # could still get over the line.
+    stalled = await db.creator_profiles.find(
+        {
+            "verification_status": "pending",
+            "submitted_for_review_at": {"$in": [None, False], "$exists": False},
+            "updated_at": {"$lte": _days_ago(PROFILE_STALE_DAYS)},
+        }
+    ).sort("updated_at", 1).to_list(length=200)
+    checks.append(
+        {
+            "key": "profiles_stalled",
+            "label": "Profiles stalled",
+            "blurb": f"Started a profile, never submitted it, quiet for {PROFILE_STALE_DAYS}+ days.",
+            "items": [
+                {
+                    "id": str(p["user_id"]),
+                    "label": p.get("name") or "Unnamed",
+                    "detail": (
+                        f"{_profile_completeness(p).get('percent', 0)}% complete · "
+                        f"last touched {timeago_days(p.get('updated_at'), now)}"
+                    ),
+                    "href": f"/admin/creators/{p['user_id']}",
+                    "severity": "warning",
+                    "at": _iso(p.get("updated_at")),
+                }
+                for p in stalled
+            ],
+        }
+    )
+
+    for c in checks:
+        c["items"].sort(key=lambda i: (_HEALTH_ORDER.get(i["severity"], 9), i.get("at") or ""))
+        c["count"] = len(c["items"])
+        c["critical"] = sum(1 for i in c["items"] if i["severity"] == "critical")
+
+    return {
+        "checks": checks,
+        "total": sum(c["count"] for c in checks),
+        "critical": sum(c["critical"] for c in checks),
+        "generated_at": _iso(now),
+        # Returned so the UI can say "under 70% with 7 days to go" rather than
+        # hard-coding numbers that then drift from the server's.
+        "thresholds": {
+            "fill_warning_days": FILL_WARNING_DAYS,
+            "fill_warning_ratio": FILL_WARNING_RATIO,
+            "slot_warning_days": SLOT_WARNING_DAYS,
+            "content_overdue_days": CONTENT_OVERDUE_DAYS,
+            "payment_overdue_days": PAYMENT_OVERDUE_DAYS,
+            "verification_overdue_days": VERIFICATION_OVERDUE_DAYS,
+            "profile_stale_days": PROFILE_STALE_DAYS,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Exports
+#
+# **Where the contact-details line falls.** An admin export is an internal
+# document: it goes to accounting, or to somebody reconciling a bank statement,
+# and a payout row without a phone number to chase is useless. So creator
+# contact details are allowed here — and this is the *only* family of responses
+# where that is true.
+#
+# `_ADMIN_ONLY_CONTACT_COLUMNS` names them, in one place, so that "which
+# columns are the sensitive ones" is a question with an answer rather than a
+# reading exercise. `tests/unit/test_exports.py` walks the real output of every
+# brand-facing builder for these same values, so the boundary is checked
+# against what is actually emitted rather than against what the code looks
+# like it emits.
+# ---------------------------------------------------------------------------
+
+_ADMIN_ONLY_CONTACT_COLUMNS = ("Phone", "Email", "Address", "UPI", "PAN", "GSTIN")
+
+
+def _csv_response(rows: list, headers: list, filename: str) -> Response:
+    """Rows to a downloadable file.
+
+    Through `csv.writer` so a note with a comma or a business name with a
+    newline cannot shift every column to its right — the failure mode that
+    makes a spreadsheet look fine and be wrong.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(headers)
+    w.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # These carry phone numbers and payout figures. Not something to
+            # leave in a shared browser cache.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _export_window(date_from: Optional[datetime], date_to: Optional[datetime], field: str) -> dict:
+    if not date_from and not date_to:
+        return {}
+    window: dict = {}
+    if date_from:
+        window["$gte"] = date_from
+    if date_to:
+        window["$lte"] = date_to
+    return {field: window}
+
+
+def _stamp(prefix: str) -> str:
+    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.csv"
+
+
+@admin_router.get("/exports/{kind}")
+async def admin_export(
+    kind: str,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    status: Optional[str] = None,
+    brand_id: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    q: Optional[str] = None,
+    action: Optional[str] = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Six exports, one route.
+
+    One route rather than six because they share the whole preamble — the date
+    window, the filters, the CSV framing, the audit line — and six copies of
+    that is six places for the `no-store` header to be forgotten.
+
+    Every export is audited. A file of creators' phone numbers leaving the
+    system is exactly the event the log exists to record.
+    """
+    if kind not in EXPORT_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown export. One of: {', '.join(EXPORT_KINDS)}.",
+        )
+    builder = globals()[f"_export_{kind}"]
+    rows, headers = await builder(
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        brand_id=_as_oid(brand_id) if brand_id else None,
+        campaign_id=_as_oid(campaign_id) if campaign_id else None,
+        q=q,
+        action=action,
+    )
+    await audit(
+        user,
+        f"export.{kind}",
+        "export",
+        kind,
+        after={
+            "rows": len(rows),
+            "date_from": _iso(date_from),
+            "date_to": _iso(date_to),
+            # Named so the log says which slice left, not merely that one did.
+            "filters": {
+                k: v
+                for k, v in (
+                    ("status", status), ("brand_id", brand_id),
+                    ("campaign_id", campaign_id), ("q", q), ("action", action),
+                )
+                if v
+            },
+            "includes_contact_details": kind in EXPORTS_WITH_CONTACT,
+        },
+    )
+    return _csv_response(rows, headers, _stamp(kind))
+
+
+EXPORT_KINDS = (
+    "creators", "brands", "campaigns", "collaborations", "payments", "audit",
+)
+# Which of them carry a way to reach somebody. Named so the audit line can say
+# so, and so a reviewer can see the answer without reading six builders.
+EXPORTS_WITH_CONTACT = ("creators", "brands", "collaborations", "payments")
+
+
+async def _export_creators(*, date_from, date_to, status, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["verification_status"] = status
+    if q:
+        query["name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    profiles = await db.creator_profiles.find(query).sort("created_at", -1).to_list(length=10000)
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find(
+            {"_id": {"$in": [p["user_id"] for p in profiles]}}
+        ).to_list(length=len(profiles) or 1)
+    }
+    stats = await _creator_activity_stats([p["user_id"] for p in profiles])
+    headers = [
+        "Creator ID", "Name", "Phone", "Email", "City", "Address",
+        "Instagram", "Followers", "Follower source", "Niches", "Base rate",
+        "Verification", "Payout ready", "UPI", "PAN", "Completed", "Ongoing",
+        "Lifetime earned", "Joined",
+    ]
+    rows = []
+    for p in profiles:
+        u = accounts.get(p["user_id"], {})
+        s = stats.get(p["user_id"], {})
+        rows.append([
+            str(p["user_id"]), p.get("name") or u.get("name") or "",
+            u.get("phone") or "", p.get("email") or u.get("email") or "",
+            p.get("city") or "", p.get("full_address") or p.get("address") or "",
+            f"@{p['instagram_handle']}" if p.get("instagram_handle") else "",
+            p.get("follower_count") if p.get("follower_count") is not None else "",
+            _follower_provenance(p)["follower_count_source"],
+            ", ".join(p.get("niches") or []),
+            p.get("base_rate") if p.get("base_rate") is not None else "",
+            p.get("verification_status") or "pending",
+            "yes" if payout_ready(p) else "no",
+            p.get("payout_upi") or "", p.get("pan") or "",
+            s.get("completed", 0), s.get("ongoing", 0),
+            round(float(s.get("earned", 0) or 0), 2),
+            _iso(p.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_brands(*, date_from, date_to, status, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["verification_state"] = status
+    if q:
+        query["business_name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    profiles = await db.brand_profiles.find(query).sort("created_at", -1).to_list(length=10000)
+    ids = [p["user_id"] for p in profiles]
+    accounts = {
+        u["_id"]: u for u in await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids) or 1)
+    }
+    spend = await _brand_spend_map(ids)
+    counts: dict = {}
+    async for row in db.campaigns.aggregate(
+        [{"$match": {"brand_id": {"$in": ids}}}, {"$group": {"_id": "$brand_id", "n": {"$sum": 1}}}]
+    ):
+        counts[row["_id"]] = row["n"]
+    headers = [
+        "Brand ID", "Business", "Legal entity", "Type", "GST", "Category",
+        "Address", "Manager", "Designation", "Phone", "Email", "Website",
+        "Verification", "Campaigns", "Total spend", "Paid collaborations", "Signed up",
+    ]
+    rows = []
+    for p in profiles:
+        u = accounts.get(p["user_id"], {})
+        s = spend.get(p["user_id"]) or {}
+        rows.append([
+            str(p["user_id"]), p.get("business_name") or "", p.get("legal_entity_name") or "",
+            p.get("business_type") or "", p.get("gst_number") or "", p.get("category") or "",
+            p.get("registered_address") or "",
+            u.get("manager_name") or u.get("name") or "",
+            p.get("contact_person_designation") or "",
+            u.get("phone") or "", p.get("contact_email") or u.get("email") or "",
+            p.get("website") or "", _brand_verification_state(p),
+            counts.get(p["user_id"], 0),
+            round(float(s.get("spend", 0) or 0), 2), s.get("paid_collaborations", 0),
+            _iso(u.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["status"] = status
+    if brand_id:
+        query["brand_id"] = brand_id
+    if q:
+        query["title"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=10000)
+    brands = await _load_brand_map([d["brand_id"] for d in docs])
+    filled = await _filled_counts_for([d["_id"] for d in docs])
+    perf = {
+        r["campaign_id"]: r
+        for r in await db.content_performance.find(
+            {"campaign_id": {"$in": [d["_id"] for d in docs]}}
+        ).to_list(length=10000)
+    }
+    headers = [
+        "Campaign ID", "Title", "Brand", "Status", "Compensation", "Budget per creator",
+        "Category", "Area", "Type", "Needed", "Filled", "Fill rate %",
+        "Manager", "Showcase", "Event date", "Start", "End", "Created",
+    ]
+    rows = []
+    for d in docs:
+        needed = int(d.get("creators_needed") or 1)
+        got = filled.get(d["_id"], 0)
+        rows.append([
+            str(d["_id"]), d.get("title") or "",
+            (brands.get(d["brand_id"]) or {}).get("business_name") or "",
+            d.get("status") or "", _compensation_type(d),
+            d.get("budget_per_creator") if d.get("budget_per_creator") is not None else "",
+            d.get("category") or "", d.get("area") or "", d.get("campaign_type") or "",
+            needed, got, round(got / needed * 100, 1) if needed else "",
+            d.get("manager_name") or "", "yes" if d.get("showcase") else "no",
+            (_iso(d.get("event_date")) or "")[:10], (_iso(d.get("start_date")) or "")[:10],
+            (_iso(d.get("end_date")) or "")[:10], _iso(d.get("created_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_collaborations(*, date_from, date_to, status, campaign_id, brand_id, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["state"] = status
+    if campaign_id:
+        query["campaign_id"] = campaign_id
+    if brand_id:
+        # Filtering by brand means going through their campaigns first.
+        ids = await db.campaigns.distinct("_id", {"brand_id": brand_id})
+        query["campaign_id"] = {"$in": ids}
+    docs = await db.collaborations.find(query).sort("created_at", -1).to_list(length=20000)
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [d["campaign_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    brands = await _load_brand_map([c["brand_id"] for c in campaigns.values()])
+    creator_ids = [d["creator_id"] for d in docs]
+    names = await _creator_names_for(creator_ids)
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": list(set(creator_ids))}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    perf = {
+        r["collaboration_id"]: r
+        for r in await db.content_performance.find(
+            {"collaboration_id": {"$in": [d["_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    headers = [
+        "Collaboration ID", "Campaign", "Brand", "Creator", "Phone", "State",
+        "Quoted", "Agreed", "Scheduled", "Content", "Reach", "Engagements",
+        "Engagement rate %", "Created", "Updated",
+    ]
+    rows = []
+    for d in docs:
+        camp = campaigns.get(d["campaign_id"]) or {}
+        r = perf.get(d["_id"]) or {}
+        rows.append([
+            str(d["_id"]), camp.get("title") or "",
+            (brands.get(camp.get("brand_id")) or {}).get("business_name") or "",
+            names.get(d["creator_id"]) or "",
+            (accounts.get(d["creator_id"]) or {}).get("phone") or "",
+            d.get("state") or "",
+            d.get("quoted_rate") if d.get("quoted_rate") is not None else "",
+            d.get("agreed_amount") if d.get("agreed_amount") is not None else "",
+            _iso(d.get("scheduled_at")) or "",
+            " ".join(d.get("content_urls") or ([d["content_url"]] if d.get("content_url") else [])),
+            r.get("reach") if r.get("reach") is not None else "",
+            _engagements(r) if r else "",
+            _engagement_rate_from(r) if r else "",
+            _iso(d.get("created_at")) or "", _iso(d.get("updated_at")) or "",
+        ])
+    return rows, headers
+
+
+async def _export_payments(*, date_from, date_to, status, brand_id, campaign_id, **_):
+    """The accounting export.
+
+    Everything needed to reconcile a bank statement without opening the app:
+    who was paid, for which brief, for which brand, what we charged on top,
+    what the invoice is doing, and when each of those happened. If somebody has
+    to come back and ask "which campaign was this?", the export has failed.
+    """
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if status:
+        query["state"] = status
+    docs = await db.payments.find(query).sort("created_at", -1).to_list(length=20000)
+    collabs = {
+        c["_id"]: c
+        for c in await db.collaborations.find(
+            {"_id": {"$in": [d["collaboration_id"] for d in docs]}}
+        ).to_list(length=len(docs) or 1)
+    }
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [c["campaign_id"] for c in collabs.values()]}}
+        ).to_list(length=len(collabs) or 1)
+    }
+    if brand_id:
+        campaigns = {k: v for k, v in campaigns.items() if v.get("brand_id") == brand_id}
+    if campaign_id:
+        campaigns = {k: v for k, v in campaigns.items() if k == campaign_id}
+    brands = await _load_brand_map([c["brand_id"] for c in campaigns.values()])
+    creator_ids = [c["creator_id"] for c in collabs.values()]
+    names = await _creator_names_for(creator_ids)
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": list(set(creator_ids))}}
+        ).to_list(length=len(creator_ids) or 1)
+    }
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": list(set(creator_ids))}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+    headers = [
+        "Payment ID", "State", "Campaign", "Campaign ID", "Brand", "Creator",
+        "Phone", "UPI", "PAN", "GSTIN", "Agreed amount", "Platform fee",
+        "Creator payout", "Brand invoice amount", "Invoice state", "Reference",
+        "Raised", "Paid", "Collaboration ID",
+    ]
+    rows = []
+    for d in docs:
+        collab = collabs.get(d["collaboration_id"]) or {}
+        camp = campaigns.get(collab.get("campaign_id"))
+        if (brand_id or campaign_id) and camp is None:
+            continue
+        camp = camp or {}
+        cid = collab.get("creator_id")
+        prof = profiles.get(cid) or {}
+        rows.append([
+            str(d["_id"]), d.get("state") or "", camp.get("title") or "",
+            str(camp.get("_id")) if camp.get("_id") else "",
+            (brands.get(camp.get("brand_id")) or {}).get("business_name") or "",
+            names.get(cid) or "",
+            (accounts.get(cid) or {}).get("phone") or "",
+            prof.get("payout_upi") or "", prof.get("pan") or "", prof.get("gstin") or "",
+            collab.get("agreed_amount") if collab.get("agreed_amount") is not None else "",
+            d.get("platform_fee") if d.get("platform_fee") is not None else "",
+            d.get("creator_payout") if d.get("creator_payout") is not None else "",
+            d.get("brand_invoice_amount") if d.get("brand_invoice_amount") is not None else "",
+            d.get("invoice_state") or "", d.get("reference") or "",
+            _iso(d.get("created_at")) or "", _iso(d.get("paid_at")) or "",
+            str(d["collaboration_id"]),
+        ])
+    return rows, headers
+
+
+async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q, **_):
+    query: dict = {**_export_window(date_from, date_to, "created_at")}
+    if brand_id:
+        query["brand_id"] = brand_id
+    if campaign_id:
+        query["campaign_id"] = campaign_id
+    if action:
+        term = action.strip()[:80]
+        query["action"] = term if "." in term else {"$regex": f"^{re.escape(term)}\\.", "$options": "i"}
+    if q:
+        query["actor_name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    docs = await db.audit_log.find(query).sort("created_at", -1).to_list(length=20000)
+    headers = [
+        "When", "Actor", "Role", "Action", "Subject type", "Subject ID",
+        "Brand ID", "Campaign ID", "Note", "Before", "After",
+    ]
+    rows = [
+        [
+            _iso(d.get("created_at")) or "", d.get("actor_name") or "",
+            d.get("actor_role") or "", d.get("action") or "",
+            d.get("subject_type") or "", str(d.get("subject_id") or ""),
+            str(d.get("brand_id") or ""), str(d.get("campaign_id") or ""),
+            d.get("note") or "",
+            json.dumps(_jsonable(d.get("before")), default=str) if d.get("before") else "",
+            json.dumps(_jsonable(d.get("after")), default=str) if d.get("after") else "",
+        ]
+        for d in docs
+    ]
+    return rows, headers
+
+
+# How far back the trend charts look, and how long a creator can be quiet
+# before we stop calling them active. 60 days because a creator doing one
+# campaign a quarter is still a creator.
+INTELLIGENCE_WEEKS = 12
+DORMANT_AFTER_DAYS = 60
+
+
+@admin_router.get("/intelligence")
+async def admin_intelligence(user: dict = Depends(require_roles("admin"))):
+    """Four small shapes, deliberately.
+
+    Not an analytics product: four questions somebody actually asks about the
+    business, each answerable from a chart small enough to sit beside the
+    others. Anything that needs a legend to read is out of scope here — that is
+    what the exports are for.
+    """
+    now = datetime.now(timezone.utc)
+    since = _days_ago(INTELLIGENCE_WEEKS * 7)
+
+    # Weekly buckets, oldest first. Built here rather than in the pipeline so
+    # a week with nothing in it is still a point on the line — a chart that
+    # silently skips empty weeks draws a lie.
+    weeks: list = []
+    cursor = since
+    while cursor <= now:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+
+    def _bucket(when: Optional[datetime]) -> Optional[int]:
+        if not isinstance(when, datetime):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when < since:
+            return None
+        idx = (when - since).days // 7
+        return idx if 0 <= idx < len(weeks) else None
+
+    campaigns = await db.campaigns.find(
+        {}, {"status": 1, "created_at": 1, "brand_id": 1, "creators_needed": 1}
+    ).to_list(length=5000)
+
+    # 1. Campaigns created per week, split by where they ended up. Status is
+    # current, not historical — this says "of the briefs posted that week, how
+    # many are live now", which is the question worth asking of a young
+    # marketplace.
+    by_status: dict = {}
+    for c in campaigns:
+        b = _bucket(c.get("created_at"))
+        if b is None:
+            continue
+        by_status.setdefault(c.get("status") or "draft", [0] * len(weeks))[b] += 1
+
+    # 2. Fill rate of campaigns that reached their day, per week.
+    filled = await _filled_counts_for([c["_id"] for c in campaigns])
+    fill_num = [0] * len(weeks)
+    fill_den = [0] * len(weeks)
+    for c in campaigns:
+        b = _bucket(c.get("created_at"))
+        if b is None:
+            continue
+        needed = int(c.get("creators_needed") or 0)
+        if not needed:
+            continue
+        fill_num[b] += min(filled.get(c["_id"], 0), needed)
+        fill_den[b] += needed
+    fill_rate = [
+        round(fill_num[i] / fill_den[i] * 100, 1) if fill_den[i] else None
+        for i in range(len(weeks))
+    ]
+
+    # 3. Repeat brands versus new. A brand is "repeat" from its second campaign
+    # onwards, so the split answers "are they coming back", which is the only
+    # question that matters about a marketplace's brand side.
+    per_brand: dict = {}
+    for c in campaigns:
+        per_brand.setdefault(c["brand_id"], []).append(c.get("created_at"))
+    repeat = sum(1 for v in per_brand.values() if len(v) > 1)
+    brand_total = len(per_brand)
+
+    # 4. Creators active versus dormant. Active = applied to something, or was
+    # moved along on something, inside the window.
+    dormant_cutoff = _days_ago(DORMANT_AFTER_DAYS)
+    active_ids = set(
+        await db.collaborations.distinct(
+            "creator_id", {"updated_at": {"$gte": dormant_cutoff}}
+        )
+    )
+    verified_total = await db.creator_profiles.count_documents(
+        {"verification_status": "verified"}
+    )
+    verified_ids = set(
+        await db.creator_profiles.distinct("user_id", {"verification_status": "verified"})
+    )
+    active_verified = len(active_ids & verified_ids)
+
+    return {
+        "weeks": [_iso(w) for w in weeks],
+        "campaigns_by_status": [
+            {"status": k, "points": v}
+            for k, v in sorted(by_status.items(), key=lambda kv: -sum(kv[1]))
+        ],
+        "fill_rate": fill_rate,
+        "brands": {
+            "repeat": repeat,
+            "new": brand_total - repeat,
+            "total": brand_total,
+        },
+        "creators": {
+            "active": active_verified,
+            "dormant": max(0, verified_total - active_verified),
+            "total": verified_total,
+            "window_days": DORMANT_AFTER_DAYS,
+        },
+        "window_weeks": INTELLIGENCE_WEEKS,
+        "generated_at": _iso(now),
+    }
+
+
+async def _creator_names_for(user_ids: list) -> dict:
+    ids = [i for i in set(user_ids) if i]
+    if not ids:
+        return {}
+    profiles = await db.creator_profiles.find(
+        {"user_id": {"$in": ids}}, {"user_id": 1, "name": 1}
+    ).to_list(length=len(ids))
+    by_id = {p["user_id"]: p.get("name") for p in profiles if p.get("name")}
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        for u in await db.users.find({"_id": {"$in": missing}}, {"name": 1}).to_list(
+            length=len(missing)
+        ):
+            by_id[u["_id"]] = u.get("name")
+    return by_id
+
+
+async def _campaign_titles_for(campaign_ids: list) -> dict:
+    ids = [i for i in set(campaign_ids) if i]
+    if not ids:
+        return {}
+    return {
+        c["_id"]: c.get("title")
+        for c in await db.campaigns.find({"_id": {"$in": ids}}, {"title": 1}).to_list(
+            length=len(ids)
+        )
+    }
+
+
+def _humanise_until(when: Optional[datetime], now: datetime) -> str:
+    """"in 3 days", "tomorrow", "today". Read at a glance on a panel that
+    exists to be scanned."""
+    if not isinstance(when, datetime):
+        return "date unknown"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    days = (when - now).days
+    if days < 0:
+        return "already started"
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    return f"in {days} days"
+
+
+def timeago_days(when: Optional[datetime], now: datetime) -> str:
+    if not isinstance(when, datetime):
+        return "at some point"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    days = max(0, (now - when).days)
+    return "today" if days == 0 else f"{days}d ago"
+
+
+@admin_router.get("/campaigns/{campaign_id}/report")
+async def campaign_report(
+    campaign_id: str,
+    format: str = "json",
+    user: dict = Depends(require_roles("admin")),
+):
+    """The close-of-campaign summary, in whichever shape is being asked for.
+
+    Three formats off one builder, so the spreadsheet and the printable page
+    cannot come to different totals. `json` feeds the console's own preview.
+
+    Authenticated, deliberately. "Shareable" here means an admin opens it,
+    prints it to a PDF and sends that — not a public link. A public one would
+    be a new unauthenticated surface carrying creator handles and follower
+    counts, and that is a decision to take on purpose rather than as a side
+    effect of adding an export.
+
+    **Declared before `/campaigns/{id}` would swallow it** — see the route
+    ordering test.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    report = await _build_campaign_report(campaign)
+    slug = re.sub(r"[^a-z0-9]+", "-", (campaign.get("title") or "campaign").lower()).strip("-")[:60]
+
+    if format == "csv":
+        return Response(
+            content=_report_csv(report),
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{slug or "campaign"}-report.csv"',
+                "Cache-Control": "no-store",
+            },
+        )
+    if format == "html":
+        return Response(
+            content=_report_html(report),
+            media_type="text/html; charset=utf-8",
+            # It names creators and their reach. Not something to leave in a
+            # shared browser cache.
+            headers={"Cache-Control": "no-store"},
+        )
+    if format != "json":
+        raise HTTPException(status_code=422, detail="format must be json, csv or html.")
+    return report
+
+
+@admin_router.post("/campaigns/{campaign_id}/showcase")
+async def set_campaign_showcase(
+    campaign_id: str,
+    payload: ShowcasePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Flag a campaign as one worth showing people.
+
+    Its own endpoint rather than a field on the campaign edit payload: that one
+    is shared with the brand's edit route, and which of our campaigns we put in
+    front of a prospect is not a brand's decision to make.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    now = datetime.now(timezone.utc)
+    update = {"showcase": payload.showcase, "updated_at": now}
+    if payload.showcase:
+        update["showcase_note"] = (payload.note or "").strip() or None
+        update["showcase_at"] = now
+    updated = await db.campaigns.find_one_and_update(
+        {"_id": campaign["_id"]},
+        {"$set": update} if payload.showcase else {
+            "$set": update,
+            "$unset": {"showcase_note": "", "showcase_at": ""},
+        },
+        return_document=True,
+    )
+    await audit(
+        user,
+        "campaign.showcase" if payload.showcase else "campaign.showcase.remove",
+        "campaign",
+        campaign["_id"],
+        before={"showcase": bool(campaign.get("showcase"))},
+        after={"showcase": payload.showcase},
+        note=payload.note,
+        **_campaign_audit_context(campaign),
+    )
+    return {
+        "id": campaign_id,
+        "showcase": bool(updated.get("showcase")),
+        "showcase_note": updated.get("showcase_note"),
+    }
+
+
+@admin_router.post("/collaborations/{collab_id}/performance")
+async def record_collaboration_performance(
+    collab_id: str,
+    payload: PerformancePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Type in what a post did. Always available — see `_record_performance`."""
+    return await _record_performance(await _collab_or_404(collab_id), payload, user)
+
+
+@admin_router.post("/collaborations/{collab_id}/performance/fetch")
+async def fetch_collaboration_performance(
+    collab_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Try Instagram, and say plainly when it can't be done.
+
+    A 200 either way. A failure here is not an error condition — it is the
+    ordinary case for every creator who hasn't connected their account, and
+    the answer to it is the manual form that is already on screen. Returning a
+    4xx would make the UI treat "this creator uses YouTube" as a fault.
+    """
+    collab = await _collab_or_404(collab_id)
+    metrics, reason = await _fetch_instagram_performance(collab)
+    if reason:
+        return {"fetched": False, "reason": reason, "performance": None}
+    media_id = metrics.pop("media_id", None)
+    saved = await _record_performance(
+        collab,
+        PerformancePayload(**metrics),
+        user,
+        source="instagram",
+        media_id=media_id,
+    )
+    return {"fetched": True, "reason": None, "performance": saved}
+
+
+@admin_router.post("/impersonate/{user_id}")
+async def impersonate_user(
+    user_id: str,
+    response: Response,
+    request: Request,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Start looking at the app as somebody else.
+
+    Read-only — `_reject_impersonated_writes` refuses every unsafe method for
+    as long as the cookie is set. This endpoint only mints the token; it is the
+    middleware that makes the promise.
+
+    The admin's own cookies are left alone. Stopping is then just deleting one
+    cookie, and a failure anywhere in here cannot log the admin out.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target = await db.users.find_one({"_id": oid})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    role = target.get("role")
+    if role not in IMPERSONATABLE_ROLES:
+        # Refusing admin→admin is the point. An admin already sees everything
+        # an admin sees, so the only thing this would add is acting as a
+        # named colleague — which is precisely what the audit log exists to
+        # prevent being possible.
+        raise HTTPException(
+            status_code=422,
+            detail=f"You can't view as {'another admin' if role == 'admin' else f'a {role}'}.",
+        )
+    if str(target["_id"]) == str(user["_id"]):
+        raise HTTPException(status_code=422, detail="You're already yourself.")
+
+    # Refused while already impersonating, so a session cannot be chained from
+    # one person to the next without an audited stop in between. (The
+    # middleware blocks this POST anyway; this is the readable reason.)
+    if _decode_impersonation(request) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Stop viewing as the current user first.",
+        )
+
+    await audit(
+        user,
+        "admin.impersonate.start",
+        "user",
+        oid,
+        after={
+            "target_user_id": str(target["_id"]),
+            "target_name": target.get("name"),
+            "target_role": role,
+            "expires_in_minutes": IMPERSONATION_MIN,
+        },
+    )
+
+    response.set_cookie(
+        key=IMPERSONATION_COOKIE,
+        value=create_impersonation_token(str(target["_id"]), user),
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=IMPERSONATION_MIN * 60,
+        path="/",
+    )
+    return {
+        "impersonating": {
+            "user_id": str(target["_id"]),
+            "name": target.get("name"),
+            "role": role,
+            "expires_in_minutes": IMPERSONATION_MIN,
+        }
+    }
+
+
 # --- Brand verification (GAP 5) --------------------------------------------
 
 
@@ -7051,6 +9335,7 @@ async def reject_creator(
 async def list_all_campaigns(
     brand_id: Optional[str] = None,
     status: Optional[str] = None,
+    showcase: Optional[bool] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     date_field: str = "created_at",  # created_at | start_date | end_date
@@ -7097,6 +9382,11 @@ async def list_all_campaigns(
     if q:
         term = re.escape(q.strip()[:120])
         match["title"] = {"$regex": term, "$options": "i"}
+    if showcase is not None:
+        # `False` has to mean "everything not flagged", which includes every
+        # campaign written before the field existed — hence $ne rather than an
+        # equality that would match nothing.
+        match["showcase"] = True if showcase else {"$ne": True}
 
     pipeline: list = []
     if match:
@@ -7204,6 +9494,7 @@ async def list_all_campaigns(
                 "deliverables": d.get("deliverables"),
                 "budget_per_creator": d.get("budget_per_creator"),
                 "compensation_type": _compensation_type(d),
+                "showcase": bool(d.get("showcase")),
                 "category": d.get("category"),
                 "area": d.get("area"),
                 "campaign_type": d.get("campaign_type"),
@@ -7280,6 +9571,173 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
         }
         for d in docs
     ]
+
+
+@admin_router.get("/campaigns/{campaign_id}")
+async def get_admin_campaign_detail(
+    campaign_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One campaign, whole picture.
+
+    The brief itself, who it belongs to, who runs it, what it pays, the slots
+    and who is in them, and what has been paid out. The applicants live at
+    /campaigns/{id}/applicants and the trail at /audit?campaign_id= — three
+    focused calls rather than one that has to be refetched in full every time a
+    single row changes.
+
+    **Declared after /campaigns/pending**, or `pending` would be read as a
+    campaign id and that route would never match again.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id)
+    cid = campaign["_id"]
+
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+    brand_account = await db.users.find_one({"_id": campaign["brand_id"]}) or {}
+
+    slots = (
+        await db.campaign_slots.find({"campaign_id": cid})
+        .sort("starts_at", 1)
+        .to_list(length=500)
+    )
+
+    # Who is in each slot, so a slot row can name people rather than a count.
+    # One query for the campaign, grouped here — a lookup per slot would be a
+    # query per row on a page that already makes three.
+    booked = await db.collaborations.aggregate(
+        [
+            {"$match": {"campaign_id": cid, "slot_id": {"$ne": None}}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "creator_id",
+                    "foreignField": "_id",
+                    "as": "creator",
+                }
+            },
+            {"$addFields": {"creator": {"$arrayElemAt": ["$creator", 0]}}},
+            {
+                "$project": {
+                    "slot_id": 1,
+                    "state": 1,
+                    "creator_id": 1,
+                    "creator_name": "$creator.name",
+                }
+            },
+        ]
+    ).to_list(length=1000)
+    by_slot: dict = {}
+    for row in booked:
+        by_slot.setdefault(row["slot_id"], []).append(
+            {
+                "collaboration_id": str(row["_id"]),
+                "creator_id": str(row["creator_id"]),
+                "creator_name": row.get("creator_name"),
+                "state": row.get("state"),
+            }
+        )
+
+    payments = await db.payments.aggregate(
+        [
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {"$match": {"collab.campaign_id": cid}},
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "collab.creator_id",
+                    "foreignField": "_id",
+                    "as": "creator",
+                }
+            },
+            {"$addFields": {"creator": {"$arrayElemAt": ["$creator", 0]}}},
+            {"$sort": {"created_at": -1}},
+        ]
+    ).to_list(length=1000)
+
+    paid_total = 0.0
+    committed_total = 0.0
+    payment_rows = []
+    for p in payments:
+        payout = float(p.get("creator_payout") or 0)
+        if p.get("state") == "paid":
+            paid_total += payout
+        else:
+            committed_total += payout
+        payment_rows.append(
+            {
+                "id": str(p["_id"]),
+                "collaboration_id": str(p["collaboration_id"]),
+                "creator_id": str((p.get("collab") or {}).get("creator_id"))
+                if (p.get("collab") or {}).get("creator_id")
+                else None,
+                "creator_name": (p.get("creator") or {}).get("name"),
+                "state": p.get("state"),
+                "creator_payout": payout,
+                "platform_fee": p.get("platform_fee"),
+                "brand_invoice_amount": p.get("brand_invoice_amount"),
+                "invoice_state": p.get("invoice_state"),
+                "reference": p.get("reference"),
+                "paid_at": _iso(p.get("paid_at")),
+                "created_at": _iso(p.get("created_at")),
+            }
+        )
+
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([cid])).get(cid, 0)
+    performance = await _campaign_performance([cid], paid_total)
+
+    return {
+        "performance": performance,
+        "campaign": {
+            **_serialize_brand_campaign(campaign, 0, filled, 0),
+            # The brand's own serializer stops at the manager's name and phone,
+            # which is right for the brand. An admin assigns the manager, so
+            # the id has to come back or the picker can't show the current one.
+            "manager_id": str(campaign["manager_id"])
+            if campaign.get("manager_id")
+            else None,
+            "manager_email": campaign.get("manager_email"),
+            "paused_at": _iso(campaign.get("paused_at")),
+            "paused_from_status": campaign.get("paused_from_status"),
+            "closed_at": _iso(campaign.get("closed_at")),
+            "reviewed_at": _iso(campaign.get("reviewed_at")),
+        },
+        "brand": {
+            "user_id": str(campaign["brand_id"]),
+            "business_name": brand.get("business_name") or brand_account.get("name"),
+            "category": brand.get("category"),
+            "verified": bool(brand.get("verified", False)),
+            "verification_state": _brand_verification_state(brand),
+            "contact_person_name": brand.get("contact_person_name"),
+            "contact_email": brand.get("contact_email"),
+            # Staff-side, so the number is the point — this is who to ring when
+            # a shoot is going wrong. It never crosses to a brand response.
+            "contact_phone": brand.get("contact_phone") or brand_account.get("phone"),
+        },
+        "slots": [
+            {**_serialize_slot(s), "bookings": by_slot.get(s["_id"], [])} for s in slots
+        ],
+        "payments": payment_rows,
+        "totals": {
+            "creators_needed": needed,
+            "filled_slots": filled,
+            "spots_left": max(0, needed - filled),
+            "paid_out": round(paid_total, 2),
+            # Agreed but not yet released — what this brief still owes.
+            "committed": round(committed_total, 2),
+            "slot_capacity": sum(int(s.get("capacity") or 0) for s in slots),
+            "slot_booked": sum(int(s.get("booked_count") or 0) for s in slots),
+        },
+    }
 
 
 @admin_router.post("/campaigns/{campaign_id}/approve")
@@ -8152,6 +10610,53 @@ async def list_brands_for_review(
     return out
 
 
+def _admin_brand_fields(p: dict, u: dict) -> dict:
+    """A brand as staff read it: the claim, the evidence for it, and who is
+    making it. Shared by the verification queue and the brand detail page so
+    the two can't describe the same business differently."""
+    return {
+        "user_id": str(p["user_id"]),
+        "profile_id": str(p["_id"]),
+        "business_name": p.get("business_name"),
+        "category": p.get("category"),
+        "areas": p.get("areas") or [],
+        "verified": bool(p.get("verified", False)),
+        # The same vocabulary the brand's own profile reports, so one field
+        # name doesn't mean two different things on two screens.
+        "verification_state": _brand_verification_state(p),
+        "verification_reason": p.get("verification_reason"),
+        "verified_at": _iso(p.get("verified_at")),
+        "rejected_at": _iso(p.get("rejected_at")),
+        "submitted_at": _iso(p.get("submitted_for_verification_at")),
+        # The business, as claimed — this is what the documents are checked
+        # against.
+        "legal_entity_name": p.get("legal_entity_name"),
+        "business_type": p.get("business_type"),
+        "gst_number": p.get("gst_number"),
+        "registered_address": p.get("registered_address"),
+        "website": p.get("website"),
+        "instagram_handle": p.get("instagram_handle"),
+        "facebook_url": p.get("facebook_url"),
+        "linkedin_url": p.get("linkedin_url"),
+        # And the person asking on its behalf.
+        "contact_person_name": p.get("contact_person_name"),
+        "contact_person_designation": p.get("contact_person_designation"),
+        "contact_email": p.get("contact_email"),
+        "contact_phone": p.get("contact_phone"),
+        # Flagged, not refused: a café on Gmail is normal, but an address on
+        # the company's own domain is the cheapest evidence that somebody
+        # actually works there.
+        "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
+        "name": u.get("name"),
+        "email": u.get("email"),
+        "phone": u.get("phone"),
+        "status": u.get("status"),
+        "terms_accepted_at": _iso(u.get("terms_accepted_at")),
+        "signed_up_at": _iso(u.get("created_at")),
+        "created_at": _iso(p.get("created_at")),
+    }
+
+
 @admin_router.get("/brands/pending")
 async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     """Brands waiting on us, with what they told us at signup.
@@ -8212,51 +10717,136 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
         d = drafts.get(p["user_id"]) or {}
         out.append(
             {
-                "user_id": str(p["user_id"]),
-                "profile_id": str(p["_id"]),
-                "business_name": p.get("business_name"),
-                "category": p.get("category"),
-                "areas": p.get("areas") or [],
-                "verified": False,
-                # The same vocabulary the brand's own profile reports, so one
-                # field name doesn't mean two different things on two screens.
+                **_admin_brand_fields(p, u),
                 # In this queue it is always pending_verification or rejected.
-                "verification_state": _brand_verification_state(p),
-                "verification_reason": p.get("verification_reason"),
-                "rejected_at": _iso(p.get("rejected_at")),
-                "submitted_at": _iso(p.get("submitted_for_verification_at")),
-                # The business, as claimed — this is what the documents are
-                # checked against.
-                "legal_entity_name": p.get("legal_entity_name"),
-                "business_type": p.get("business_type"),
-                "gst_number": p.get("gst_number"),
-                "registered_address": p.get("registered_address"),
-                "website": p.get("website"),
-                "instagram_handle": p.get("instagram_handle"),
-                "facebook_url": p.get("facebook_url"),
-                "linkedin_url": p.get("linkedin_url"),
-                # And the person asking on its behalf.
-                "contact_person_name": p.get("contact_person_name"),
-                "contact_person_designation": p.get("contact_person_designation"),
-                "contact_email": p.get("contact_email"),
-                "contact_phone": p.get("contact_phone"),
-                # Flagged, not refused: a café on Gmail is normal, but an
-                # address on the company's own domain is the cheapest evidence
-                # that somebody actually works there.
-                "contact_email_is_free_domain": _is_free_email(p.get("contact_email")),
                 "documents": docs_by_brand.get(p["user_id"], []),
-                "name": u.get("name"),
-                "email": u.get("email"),
-                "phone": u.get("phone"),
-                "status": u.get("status"),
-                "terms_accepted_at": _iso(u.get("terms_accepted_at")),
-                "signed_up_at": _iso(u.get("created_at")),
                 "campaign_count": d.get("total", 0),
                 "campaigns_awaiting_review": d.get("awaiting_review", 0),
-                "created_at": _iso(p.get("created_at")),
             }
         )
     return out
+
+
+@admin_router.get("/brands/{user_id}")
+async def get_admin_brand_detail(
+    user_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One brand, whole picture: the claim, the documents behind it, the named
+    person who signed up, and every campaign they have run with what it filled
+    and what it cost.
+
+    **Declared after /brands/pending**, or `pending` becomes a user id.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    account = await db.users.find_one({"_id": oid})
+    if not profile or not account:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    documents = [
+        _serialize_brand_document(d)
+        for d in await db.brand_documents.find({"brand_id": oid})
+        .sort("created_at", -1)
+        .to_list(length=200)
+    ]
+
+    campaigns = (
+        await db.campaigns.find({"brand_id": oid})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    campaign_ids = [c["_id"] for c in campaigns]
+    filled_map = await _filled_counts_for(campaign_ids)
+
+    # Spend per campaign, so a row can say what it actually cost rather than
+    # what it budgeted. One pass over payments for the whole brand.
+    spend_by_campaign: dict = {}
+    if campaign_ids:
+        async for row in db.payments.aggregate(
+            [
+                {
+                    "$lookup": {
+                        "from": "collaborations",
+                        "localField": "collaboration_id",
+                        "foreignField": "_id",
+                        "as": "collab",
+                    }
+                },
+                {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+                {"$match": {"collab.campaign_id": {"$in": campaign_ids}, "state": "paid"}},
+                {
+                    "$group": {
+                        "_id": "$collab.campaign_id",
+                        "spend": {"$sum": {"$ifNull": ["$creator_payout", 0]}},
+                        "paid_collaborations": {"$sum": 1},
+                    }
+                },
+            ]
+        ):
+            spend_by_campaign[row["_id"]] = row
+
+    campaign_rows = []
+    for c in campaigns:
+        needed = int(c.get("creators_needed") or 1)
+        filled = filled_map.get(c["_id"], 0)
+        s = spend_by_campaign.get(c["_id"]) or {}
+        campaign_rows.append(
+            {
+                "id": str(c["_id"]),
+                "title": c.get("title"),
+                "status": c.get("status"),
+                "category": c.get("category"),
+                "area": c.get("area"),
+                "budget_per_creator": c.get("budget_per_creator"),
+                "compensation_type": _compensation_type(c),
+                "creators_needed": needed,
+                "filled_slots": filled,
+                # The number an admin is actually scanning for: a brief at 1/8
+                # a week before the shoot is the one to ring somebody about.
+                "fill_rate": round(filled / needed, 3) if needed else 0.0,
+                "spend": round(float(s.get("spend", 0) or 0), 2),
+                "paid_collaborations": s.get("paid_collaborations", 0),
+                "manager_name": c.get("manager_name"),
+                "event_date": _iso(c.get("event_date")),
+                "start_date": _iso(c.get("start_date")),
+                "end_date": _iso(c.get("end_date")),
+                "created_at": _iso(c.get("created_at")),
+            }
+        )
+
+    total_spend = await _brand_spend_map([oid])
+    s = total_spend.get(oid) or {}
+    performance = await _campaign_performance(
+        campaign_ids, float(s.get("spend", 0) or 0)
+    )
+
+    return {
+        "performance": performance,
+        "brand": {
+            **_admin_brand_fields(profile, account),
+            # The one login this brand has, and the person it belongs to.
+            "manager_name": account.get("manager_name") or account.get("name"),
+            "manager_designation": profile.get("contact_person_designation"),
+            "manager_phone": account.get("phone"),
+            "manager_email": profile.get("contact_email") or account.get("email"),
+            "manager_role": account.get("role"),
+        },
+        "documents": documents,
+        "campaigns": campaign_rows,
+        "totals": {
+            "campaign_count": len(campaign_rows),
+            "active_campaign_count": sum(
+                1 for c in campaigns if c.get("status") in ACTIVE_CAMPAIGN_STATUSES
+            ),
+            "total_spend": round(float(s.get("spend", 0) or 0), 2),
+            "paid_collaborations": s.get("paid_collaborations", 0),
+            "creators_booked": sum(r["filled_slots"] for r in campaign_rows),
+        },
+    }
 
 
 @admin_router.get("/brands/{user_id}/documents/{document_id}")
@@ -8635,6 +11225,115 @@ async def list_all_collaborations(
         row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
         by_state.setdefault(row["state"], []).append(row)
     return {"by_state": by_state, "total": len(collabs)}
+
+
+@admin_router.get("/collaborations/{collab_id}")
+async def get_admin_collaboration_detail(
+    collab_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """One application, end to end.
+
+    The lifecycle timeline is read out of the audit log rather than kept as a
+    second history on the collaboration: the log is already written on every
+    transition and is append-only, so a timeline built from it cannot disagree
+    with the record. A separate `state_history` array would be a second truth
+    to keep in step, and the one that drifts is always the one being read.
+
+    **Declared after GET /collaborations**, which takes no path parameter, so
+    ordering only matters against future fixed paths under this prefix.
+    """
+    oid = _as_oid(collab_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    brand = None
+    if campaign:
+        brand = (await _load_brand_map([campaign["brand_id"]])).get(
+            campaign["brand_id"]
+        )
+    creator_user = await db.users.find_one({"_id": collab["creator_id"]})
+    creator_profile = await db.creator_profiles.find_one(
+        {"user_id": collab["creator_id"]}
+    )
+    payment = await db.payments.find_one({"collaboration_id": oid})
+
+    row = _serialize_admin_collab(
+        collab,
+        campaign,
+        (brand or {}).get("business_name") or (brand or {}).get("name"),
+        creator_user,
+        creator_profile,
+        payment,
+    )
+    next_state = _next_collab_state(row["state"])
+    row["next_state"] = next_state
+    row["next_owner"] = "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
+    row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+    row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
+
+    slot = None
+    if collab.get("slot_id"):
+        slot_doc = await db.campaign_slots.find_one({"_id": collab["slot_id"]})
+        if slot_doc:
+            slot = _serialize_slot(slot_doc)
+
+    # Oldest first: a timeline is read forwards, unlike the audit log's own
+    # most-recent-first listing.
+    events = (
+        await db.audit_log.find(
+            {"subject_type": "collaboration", "subject_id": oid}
+        )
+        .sort("created_at", 1)
+        .to_list(length=500)
+    )
+
+    return {
+        "collaboration": row,
+        "slot": slot,
+        "payment": {
+            "id": str(payment["_id"]),
+            "state": payment.get("state"),
+            "creator_payout": payment.get("creator_payout"),
+            "platform_fee": payment.get("platform_fee"),
+            "brand_invoice_amount": payment.get("brand_invoice_amount"),
+            "invoice_state": payment.get("invoice_state"),
+            "reference": payment.get("reference"),
+            "paid_at": _iso(payment.get("paid_at")),
+            "created_at": _iso(payment.get("created_at")),
+        }
+        if payment
+        else None,
+        "timeline": [
+            {
+                "id": str(e["_id"]),
+                "action": e.get("action"),
+                "actor_id": str(e["actor_id"]) if e.get("actor_id") else None,
+                "actor_name": e.get("actor_name"),
+                "actor_role": e.get("actor_role"),
+                "before": _jsonable(e.get("before")),
+                "after": _jsonable(e.get("after")),
+                "note": e.get("note"),
+                "created_at": _iso(e.get("created_at")),
+            }
+            for e in events
+        ],
+        # The order the states actually run in, so the page can draw the ones
+        # still ahead rather than only the ones already behind.
+        "state_order": list(COLLAB_STATE_ORDER),
+        "terminal_states": list(TERMINAL_COLLAB_STATES),
+        # Whether there is anything to measure yet, decided here rather than by
+        # the UI keeping its own copy of the delivered set.
+        "delivered_states": list(DELIVERED_COLLAB_STATES),
+        "performance": _serialize_performance(
+            await db.content_performance.find_one({"collaboration_id": oid})
+        ),
+    }
 
 
 @admin_router.post("/collaborations/{collab_id}/advance")
@@ -11000,6 +13699,22 @@ async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> d
     return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
 
 
+@manager_router.post("/collaborations/{collab_id}/performance")
+async def manager_record_performance(
+    collab_id: str,
+    payload: PerformancePayload,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The same thing, for the manager who was actually at the shoot.
+
+    Scoped to their assigned campaigns by `_managed_campaign_or_404`, which is
+    what keeps a manager out of a campaign they were never given.
+    """
+    collab = await _collab_or_404(collab_id)
+    await _managed_campaign_or_404(str(collab["campaign_id"]), user)
+    return await _record_performance(collab, payload, user)
+
+
 @manager_router.post("/collaborations/{collab_id}/check-in")
 async def check_in_creator(
     collab_id: str,
@@ -12265,6 +14980,16 @@ async def _startup():
     # Instagram connections — one per creator, read by the two refresh jobs in
     # expiry and staleness order.
     await db.instagram_connections.create_index("user_id", unique=True)
+
+    # content_performance: one reading per collaboration, so the upsert in
+    # _record_performance has something to be unique against; campaign_id
+    # carries every rollup.
+    await db.content_performance.create_index("collaboration_id", unique=True)
+    await db.content_performance.create_index("campaign_id")
+    # Showcase is a filter on the campaigns list. Sparse: almost nothing
+    # carries it, and an index over mostly-absent values should not be paying
+    # for the rows that do not.
+    await db.campaigns.create_index("showcase", sparse=True)
     await db.instagram_connections.create_index([("status", 1), ("token_expires_at", 1)])
     await db.instagram_connections.create_index([("status", 1), ("stats_fetched_at", 1)])
     # OAuth states are single-use and short-lived; Mongo expires the leftovers

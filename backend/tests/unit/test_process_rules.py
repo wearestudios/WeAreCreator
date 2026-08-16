@@ -898,6 +898,89 @@ class TestModerationRoutes:
         ):
             assert paths.index(fixed) < paths.index(param)
 
+    @pytest.mark.parametrize(
+        "prefix",
+        ["/api/admin/campaigns", "/api/admin/brands", "/api/admin/creators"],
+    )
+    def test_no_bare_id_route_swallows_a_fixed_sibling(self, prefix):
+        """The detail pages added a bare GET /{id} to three prefixes that
+        already had fixed paths one level down.
+
+        FastAPI matches in declaration order, so `GET /admin/campaigns/{id}`
+        declared above `/admin/campaigns/pending` would answer "pending" as a
+        campaign id and 404 — with the fixed route still in the OpenAPI schema,
+        still importable, and never reachable. Checked structurally rather than
+        route by route so a fourth detail page cannot be added above its own
+        siblings.
+        """
+        depth = prefix.count("/") + 1
+        fixed_after_param = []
+        seen_param = None
+        for r in server.app.routes:
+            path = getattr(r, "path", "")
+            if not path.startswith(prefix + "/"):
+                continue
+            if "GET" not in (getattr(r, "methods", None) or set()):
+                continue
+            if path.count("/") != depth:
+                continue  # deeper paths cannot collide with a single segment
+            segment = path.split("/")[depth]
+            if segment.startswith("{"):
+                seen_param = path
+            elif seen_param:
+                fixed_after_param.append((path, seen_param))
+        assert not fixed_after_param, (
+            "these fixed paths are declared after a parameterised sibling and "
+            f"will never match: {fixed_after_param}"
+        )
+
+    @pytest.mark.parametrize(
+        "fn_name",
+        [
+            "get_admin_campaign_detail",
+            "get_admin_brand_detail",
+            "get_admin_collaboration_detail",
+            "suspend_creator",
+            "reinstate_creator",
+        ],
+    )
+    def test_the_new_detail_and_account_routes_are_admin_only(self, fn_name):
+        # The detail pages assemble contact numbers, documents and payouts in
+        # one response. Nothing here may be reachable by a brand or a manager.
+        import inspect
+
+        assert 'require_roles("admin")' in inspect.getsource(getattr(server, fn_name))
+
+    def test_suspension_is_not_a_verification_decision(self):
+        """Suspending an account must not touch the profile's verification.
+
+        Collapsing the two loses the answer you need later: rejecting a verified
+        creator to get them off the platform erases the record that they were
+        ever approved, and re-verifying them afterwards reads as a fresh
+        decision rather than a reinstatement.
+        """
+        import inspect
+
+        for fn in (server.suspend_creator, server.reinstate_creator):
+            src = inspect.getsource(fn)
+            assert "verification_status" not in src, (
+                f"{fn.__name__} touches the verification decision"
+            )
+            assert "creator_profiles" not in src
+        # And both are audited and announced.
+        assert "creator_suspended" in server.NOTIFY_EVENTS
+        assert "creator_reinstated" in server.NOTIFY_EVENTS
+
+    def test_the_collaboration_timeline_is_read_from_the_audit_log(self):
+        # Not a second history kept on the collaboration. The log is already
+        # written on every transition and is append-only, so a timeline built
+        # from it cannot disagree with the record.
+        import inspect
+
+        src = inspect.getsource(server.get_admin_collaboration_detail)
+        assert "db.audit_log.find" in src
+        assert '"subject_type": "collaboration"' in src
+
     def test_every_moderation_decision_is_guarded_by_the_admin_role(self):
         import inspect
 
@@ -1224,6 +1307,7 @@ class TestAuditCoverage:
                 f"await {helper}(" in body
                 for helper in (
                     "_set_creator_verification",
+                    "_record_performance",
                     "_pause_campaign",
                     "_resume_campaign",
                     "_invite_creators",
@@ -1237,7 +1321,8 @@ class TestAuditCoverage:
     @pytest.mark.parametrize(
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
-         "_check_in_collaboration", "_set_creator_verification"],
+         "_check_in_collaboration", "_set_creator_verification",
+         "_record_performance"],
     )
     def test_the_delegated_helpers_actually_audit(self, helper):
         # The exemption above is only safe while this holds: a helper trusted
@@ -1910,7 +1995,11 @@ class TestManagerAudit:
             # it shares with the brand manager's route.
             if "await audit(" in body or any(
                 f"await {helper}(" in body
-                for helper in ("create_campaign_slot", "_check_in_collaboration")
+                for helper in (
+                    "create_campaign_slot",
+                    "_check_in_collaboration",
+                    "_record_performance",
+                )
             ):
                 continue
             missing.append(f"{m.group(2)} ({fn.group(1) if fn else '?'})")
@@ -3714,7 +3803,12 @@ class TestBrandFieldValidation:
         assert server._is_free_email("riya@thirdwave.in") is False
         import inspect
 
-        assert "contact_email_is_free_domain" in inspect.getsource(server.list_pending_brands)
+        # The queue composes _admin_brand_fields, which the brand detail page
+        # shares — one description of a business, two screens.
+        assert "contact_email_is_free_domain" in inspect.getsource(
+            server._admin_brand_fields
+        )
+        assert "_admin_brand_fields" in inspect.getsource(server.list_pending_brands)
 
 
 class TestBrandSubmission:
@@ -3897,7 +3991,11 @@ class TestAdminBrandReview:
     def test_the_reviewer_sees_the_business_the_person_and_the_documents(self):
         import inspect
 
-        src = inspect.getsource(server.list_pending_brands)
+        # The business fields live in the shared serializer; `documents` is the
+        # queue's own, since it loads them in one query for the whole page.
+        src = inspect.getsource(server._admin_brand_fields) + inspect.getsource(
+            server.list_pending_brands
+        )
         for field in (
             "legal_entity_name",
             "business_type",
@@ -3908,6 +4006,15 @@ class TestAdminBrandReview:
             "documents",
         ):
             assert f'"{field}"' in src
+
+    def test_the_detail_page_describes_a_brand_the_same_way_the_queue_does(self):
+        # Two screens showing the same business must not describe it
+        # differently — that is what the shared serializer is for.
+        import inspect
+
+        assert "_admin_brand_fields" in inspect.getsource(
+            server.get_admin_brand_detail
+        )
 
     def test_documents_are_loaded_in_one_query(self):
         import inspect

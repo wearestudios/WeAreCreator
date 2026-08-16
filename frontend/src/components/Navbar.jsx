@@ -17,45 +17,57 @@ import {
 /**
  * The role-specific links, defined once so the desktop bar and the mobile
  * sheet can't drift apart.
+ *
+ * Each role gets its own branch and returns from it. Admin used to share the
+ * creator branch for the `/campaigns` link, which put the creator's brief feed
+ * — a page for deciding what to apply to — in an admin's navigation, next to
+ * the console that already lists every campaign with far more on it. Staff
+ * navigate to staff tools.
  */
 const linksFor = (role) => {
-    const links = [];
-    if (role === "creator" || role === "admin") {
-        links.push({ to: "/campaigns", label: "Campaigns", testId: "nav-campaigns" });
+    if (role === "admin") {
+        // The console's own sections, so the work is one tap from anywhere
+        // rather than a tap to /admin and another to the right tab.
+        // `secondary` holds the section shortcuts back to wide screens — four
+        // links plus the bell and Log out do not fit beside the wordmark at
+        // 640px. They are all in the mobile sheet and in the console's own tab
+        // strip regardless, so nothing is only reachable here.
+        return [
+            { to: "/admin/queue", label: "Queue", testId: "nav-admin-queue", secondary: true },
+            { to: "/admin/campaigns", label: "Campaigns", testId: "nav-admin-campaigns", secondary: true },
+            { to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true },
+            { to: "/admin", label: "Admin", testId: "nav-admin", accent: true },
+        ];
+    }
+    if (role === "campaign_manager") {
+        // A manager's home is their campaign list; there is no other page.
+        return [
+            { to: "/manager", label: "My campaigns", testId: "nav-manager", accent: true },
+        ];
     }
     if (isBrandSide(role)) {
-        links.push(
+        return [
             { to: "/brand/creators", label: "Creators", testId: "nav-brand-creators" },
-            {
-                to: "/campaigns/new",
-                label: "Post a campaign",
-                testId: "nav-post-campaign",
-            },
-        );
+            { to: "/campaigns/new", label: "Post a campaign", testId: "nav-post-campaign" },
+            { to: homePathFor(role), label: "Dashboard", testId: "nav-dashboard" },
+        ];
     }
-    if (role === "admin") {
-        links.push({
-            to: "/admin",
-            label: "Admin",
-            testId: "nav-admin",
-            accent: true,
-        });
-    } else if (role === "campaign_manager") {
-        // A manager's home is their campaign list; there is no other page.
-        links.push({
-            to: "/manager",
-            label: "My campaigns",
-            testId: "nav-manager",
-            accent: true,
-        });
-    } else {
-        links.push({
-            to: homePathFor(role),
-            label: "Dashboard",
-            testId: "nav-dashboard",
-        });
-    }
-    return links;
+    return [
+        { to: "/campaigns", label: "Campaigns", testId: "nav-campaigns" },
+        { to: homePathFor(role), label: "Dashboard", testId: "nav-dashboard" },
+    ];
+};
+
+// The pitch, for people who have not signed up. "How it works" and "For brands"
+// are conversion copy; showing them to a signed-in admin clearing a review
+// queue is noise, and showing "For brands" to a brand is worse than noise.
+// The stored role is a wire value; `brand_manager` is not a word anybody says.
+const ROLE_LABEL = {
+    creator: "Creator",
+    brand: "Brand",
+    brand_manager: "Brand",
+    admin: "WeAre admin",
+    campaign_manager: "WeAre manager",
 };
 
 const MARKETING_LINKS = [
@@ -111,8 +123,12 @@ export const Navbar = () => {
                     />
                 </div>
 
+                {/* Only for people we are still pitching to. A signed-in user
+                    has a job in here; "Why WeAre" is not part of it. Hidden
+                    while `checking` too, so it doesn't flash in and out once
+                    /auth/me answers. */}
                 <nav className="hidden items-center gap-8 md:flex">
-                    {MARKETING_LINKS.map((l) =>
+                    {(checking || signedIn ? [] : MARKETING_LINKS).map((l) =>
                         l.href ? (
                             <a
                                 key={l.testId}
@@ -153,7 +169,8 @@ export const Navbar = () => {
                                     to={l.to}
                                     data-testid={l.testId}
                                     className={
-                                        "hidden text-sm transition-colors duration-200 sm:inline " +
+                                        "hidden text-sm transition-colors duration-200 " +
+                                        (l.secondary ? "lg:inline " : "sm:inline ") +
                                         (l.accent
                                             ? "text-ember-500 hover:text-ember-400"
                                             : "text-muted-foreground hover:text-foreground")
@@ -230,8 +247,11 @@ export const Navbar = () => {
                                 <nav className="flex-1 overflow-y-auto px-6 py-7">
                                     {signedIn && (
                                         <>
-                                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                                {user.role}
+                                            <p
+                                                data-testid="nav-mobile-role"
+                                                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
+                                            >
+                                                {ROLE_LABEL[user.role] || user.role}
                                             </p>
                                             <div className="mt-4 flex flex-col">
                                                 {roleLinks.map((l) => (
@@ -254,11 +274,10 @@ export const Navbar = () => {
                                         </>
                                     )}
 
+                                    {!signedIn && (
+                                      <>
                                     <p
-                                        className={
-                                            "text-[10px] uppercase tracking-[0.2em] text-muted-foreground " +
-                                            (signedIn ? "mt-10" : "")
-                                        }
+                                        className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
                                     >
                                         Explore
                                     </p>
@@ -285,6 +304,8 @@ export const Navbar = () => {
                                             </SheetClose>
                                         ))}
                                     </div>
+                                      </>
+                                    )}
                                 </nav>
 
                                 <div className="border-t border-white/10 px-6 py-6">

@@ -125,6 +125,22 @@ export const AuthProvider = ({ children }) => {
         setUser(false);
     };
 
+    /**
+     * Leave a view-as session and return to being yourself.
+     *
+     * A full reload rather than a re-fetch: every page in the app has state
+     * loaded as the impersonated user — dashboards, lists, counts — and
+     * re-rendering with a new identity over the top of it would leave one
+     * person's numbers on another person's screen.
+     */
+    const stopImpersonating = useCallback(async () => {
+        try {
+            await api.post("/auth/impersonate/stop");
+        } finally {
+            window.location.assign("/admin");
+        }
+    }, []);
+
     return (
         <AuthContext.Provider
             value={{
@@ -134,6 +150,18 @@ export const AuthProvider = ({ children }) => {
                 verifyOtp,
                 logout,
                 refresh: fetchMe,
+                // Read straight off /auth/me rather than remembered from when
+                // the session started: a second tab, or a session that expired
+                // while this one sat open, would otherwise show the wrong
+                // thing. Null when nobody is being impersonated.
+                impersonation: user && user !== false ? user.impersonation || null : null,
+                // The one question the whole UI asks: may this session change
+                // anything? The server refuses regardless — this is only so
+                // buttons do not offer what would be refused.
+                readOnly: Boolean(
+                    user && user !== false && user.impersonation?.read_only,
+                ),
+                stopImpersonating,
             }}
         >
             {children}

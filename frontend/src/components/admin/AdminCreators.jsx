@@ -2,6 +2,7 @@
 // status. The verification queue upstairs is a to-do list; this is the address
 // book — you come here to look someone up, not to act on them.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { notifyError } from "@/lib/feedback";
 import {
     ChevronLeft,
@@ -114,198 +115,21 @@ const CollabRow = ({ row }) => (
     </li>
 );
 
-function CreatorDetail({ creatorId, onClose }) {
-    const [data, setData] = useState(null);
-
-    useEffect(() => {
-        let live = true;
-        setData(null);
-        if (!creatorId) return undefined;
-        (async () => {
-            try {
-                const { data: d } = await api.get(`/admin/creators/${creatorId}`);
-                if (live) setData(d);
-            } catch (e) {
-                notifyError(e);
-                if (live) onClose();
-            }
-        })();
-        return () => {
-            live = false;
-        };
-    }, [creatorId, onClose]);
-
-    const creator = data?.creator;
-    const totals = data?.totals;
-
-    return (
-        <Sheet open={Boolean(creatorId)} onOpenChange={(v) => !v && onClose()}>
-            <SheetContent
-                side="right"
-                data-testid={DETAIL_IDS.drawer}
-                className="w-full overflow-y-auto border-l border-white/10 bg-background p-0 sm:max-w-xl"
-            >
-                {/* Radix needs a title and description on the panel; the visible
-                    heading below is the same name, so these are screen-reader only. */}
-                <SheetTitle className="sr-only">
-                    {creator?.name || "Creator record"}
-                </SheetTitle>
-                <SheetDescription className="sr-only">
-                    Earnings and collaboration history for this creator.
-                </SheetDescription>
-
-                {!data ? (
-                    <div data-testid={DETAIL_IDS.skeleton} className="space-y-8 p-8">
-                        <div className="flex items-center gap-4">
-                            <Skeleton className="h-16 w-16 flex-none rounded-md" />
-                            <div className="flex-1 space-y-2">
-                                <Skeleton className="h-5 w-1/2" />
-                                <Skeleton className="h-3 w-1/3" />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                            {[0, 1, 2].map((i) => (
-                                <Skeleton key={i} className="h-24 rounded-md" />
-                            ))}
-                        </div>
-                        <div className="space-y-3">
-                            {[0, 1, 2, 3].map((i) => (
-                                <Skeleton key={i} className="h-12 rounded-md" />
-                            ))}
-                        </div>
-                    </div>
-                ) : (
-                    <div className="p-8">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                            Creator record
-                        </p>
-
-                        <div className="mt-6 flex items-start gap-4">
-                            <CreatorAvatar creator={creator} size="h-16 w-16" />
-                            <div className="min-w-0 flex-1">
-                                <h3
-                                    data-testid={DETAIL_IDS.name}
-                                    className="font-serif text-3xl leading-none tracking-tight"
-                                >
-                                    {creator.name || "Unnamed creator"}
-                                </h3>
-                                <div className="mt-3 flex flex-wrap items-center gap-3">
-                                    <Pill
-                                        meta={VERIFICATION_META}
-                                        value={creator.verification_status}
-                                    />
-                                    {creator.city && (
-                                        <span className="text-xs text-muted-foreground">
-                                            {creator.city}
-                                        </span>
-                                    )}
-                                    <span className="text-xs text-muted-foreground">
-                                        Joined {formatDate(creator.joined_at || creator.created_at)}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {creator.instagram_handle && (
-                            <a
-                                href={
-                                    creator.instagram_profile_url ||
-                                    `https://instagram.com/${creator.instagram_handle}`
-                                }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-6 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-card px-3 py-1.5 text-xs transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 grain-surface"
-                            >
-                                <Instagram className="h-3.5 w-3.5" />@{creator.instagram_handle}
-                                {typeof creator.follower_count === "number" && (
-                                    <span className="text-muted-foreground">
-                                        · {formatCompact(creator.follower_count)} followers
-                                    </span>
-                                )}
-                                <ExternalLink className="h-3 w-3" />
-                            </a>
-                        )}
-
-                        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                            <DetailStat
-                                testid={DETAIL_IDS.lifetimeEarned}
-                                label="Lifetime earned"
-                                prefix
-                                value={formatRupees(totals.lifetime_earned)}
-                            />
-                            <DetailStat
-                                testid={DETAIL_IDS.committed}
-                                label="Committed"
-                                prefix
-                                value={formatRupees(totals.committed)}
-                            />
-                            <DetailStat
-                                testid={DETAIL_IDS.campaignsCompleted}
-                                label="Campaigns done"
-                                value={totals.campaigns_completed}
-                            />
-                        </div>
-                        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                            Earned is money that has actually left the bank. Committed is
-                            agreed on work still in flight.
-                        </p>
-
-                        <div className="mt-10 space-y-8">
-                            {GROUPS.map((g) => {
-                                const rows = data.collaborations[g.key] || [];
-                                return (
-                                    <div key={g.key} data-testid={DETAIL_IDS.group(g.key)}>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                            {g.label} · {rows.length}
-                                        </p>
-                                        {rows.length === 0 ? (
-                                            <p
-                                                data-testid={DETAIL_IDS.groupEmpty(g.key)}
-                                                className="mt-4 text-sm text-muted-foreground"
-                                            >
-                                                {g.empty}
-                                            </p>
-                                        ) : (
-                                            <ul className="mt-2 divide-y divide-white/10">
-                                                {rows.map((r) => (
-                                                    <CollabRow key={r.id} row={r} />
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* The panel scrolls; this saves a trip back to the
-                            corner X after reading a long history. */}
-                        <SheetClose asChild>
-                            <button
-                                type="button"
-                                data-testid={DETAIL_IDS.close}
-                                className="mt-10 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
-                            >
-                                Close
-                            </button>
-                        </SheetClose>
-                    </div>
-                )}
-            </SheetContent>
-        </Sheet>
-    );
-}
 
 // ---------------------------------------------------------------------------
 // Roster
 // ---------------------------------------------------------------------------
 
-function CreatorTile({ creator, onOpen }) {
+// A link, not a button. It used to open a drawer over the grid, which meant a
+// creator had no address: you could not send one to a colleague, reload onto
+// one, or use the back button to leave. The drawer is gone — this goes to
+// /admin/creators/:id, which holds far more than a drawer ever could.
+function CreatorTile({ creator }) {
     return (
-        <button
-            type="button"
-            onClick={() => onOpen(creator.user_id)}
+        <Link
+            to={`/admin/creators/${creator.user_id}`}
             data-testid={IDS.tile(creator.user_id)}
-            className="group flex flex-col rounded-md border border-white/10 bg-card p-6 text-left transition-colors duration-200 hover:border-ember-500/40 grain-surface"
+            className="group flex flex-col rounded-md border border-white/10 bg-card p-6 text-left transition-colors duration-200 hover:border-ember-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background grain-surface"
         >
             <div className="flex items-start gap-4">
                 <CreatorAvatar
@@ -356,7 +180,7 @@ function CreatorTile({ creator, onOpen }) {
                     {formatRupees(creator.total_earned)}
                 </span>
             </div>
-        </button>
+        </Link>
     );
 }
 
@@ -368,7 +192,6 @@ export default function AdminCreators() {
     const [niche, setNiche] = useState("");
     const [area, setArea] = useState("");
     const [page, setPage] = useState(1);
-    const [openId, setOpenId] = useState(null);
 
     // Typing shouldn't fire a request per keystroke.
     useEffect(() => {
@@ -407,7 +230,6 @@ export default function AdminCreators() {
     const rows = data?.creators || [];
     const pages = data?.pages || 0;
 
-    const closeDetail = useCallback(() => setOpenId(null), []);
 
     const chips = [
         { key: "search", label: "Search", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
@@ -525,7 +347,7 @@ export default function AdminCreators() {
                             className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
                         >
                             {rows.map((c) => (
-                                <CreatorTile key={c.user_id} creator={c} onOpen={setOpenId} />
+                                <CreatorTile key={c.user_id} creator={c} />
                             ))}
                         </div>
                     </>
@@ -566,7 +388,6 @@ export default function AdminCreators() {
                 </div>
             )}
 
-            <CreatorDetail creatorId={openId} onClose={closeDetail} />
         </section>
     );
 }

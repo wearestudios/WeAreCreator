@@ -5,6 +5,7 @@
 // stat cards are not decoration — each one is the filter that produced it, so
 // clicking "pending review" shows you exactly the campaigns that number counts.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
@@ -396,11 +397,14 @@ export default function Overview({ onChanged }) {
                     <ul data-testid={IDS.table} className="divide-y divide-white/10">
                         {rows.map((c) => (
                             <li key={c.id}>
-                                <button
-                                    type="button"
-                                    onClick={() => setOpenCampaign(c.id)}
+                                {/* A link now. The inline panel below is still
+                                    here for a quick look, but a campaign has a
+                                    page of its own and that is where a row
+                                    should take you. */}
+                                <Link
+                                    to={`/admin/campaigns/${c.id}`}
                                     data-testid={IDS.row(c.id)}
-                                    className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/5"
+                                    className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
                                 >
                                     <div className="min-w-0 flex-1">
                                         <div className="flex flex-wrap items-center gap-2">
@@ -439,7 +443,7 @@ export default function Overview({ onChanged }) {
                                         />
                                     </div>
                                     <ChevronRight className="hidden h-4 w-4 flex-none text-muted-foreground sm:block" />
-                                </button>
+                                </Link>
                             </li>
                         ))}
                     </ul>

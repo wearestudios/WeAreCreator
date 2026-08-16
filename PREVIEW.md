@@ -85,6 +85,42 @@ npm start
 
 ---
 
+## Test accounts, before AiSensy is live
+
+Creators, brands and campaign managers sign in by WhatsApp OTP only, so until
+AiSensy is configured there is no way into any of those accounts. Seed one per
+persona:
+
+```bash
+cd backend
+ALLOW_OTP_SIMULATION=true python seed_personas.py
+```
+
+It prints the numbers. Sign in at `/login`, then read the code off the server
+log — simulation mode logs it instead of sending it:
+
+```bash
+docker compose logs -f api | grep -i "simulation mode"
+```
+
+| Number | Who |
+|---|---|
+| `+919900000001` | Verified creator — can apply, book, submit |
+| `+919900000002` | Half-finished profile — for the builder and the apply gate |
+| `+919900000003` | Awaiting review — sits in the admin creator queue |
+| `+919900000004` | Verified brand manager — can publish, invite, see applicants |
+| `+919900000005` | Unverified brand — for testing the verification gate |
+| `+919900000006` | WeAre campaign manager, with a campaign assigned |
+
+Admin signs in separately at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+The script is a script and not an endpoint on purpose: a route that mints
+pre-verified accounts with known numbers is a backdoor whether or not it is
+guarded, and it would sit in the route table in production. It refuses to run
+unless OTP simulation is permitted — which is the honest condition, because
+without simulation you could not read the code and the accounts would be
+unusable. **These numbers are fake and must never reach production.**
+
 ## What to click, and in what order
 
 A fresh database seeds four demo brands, seven open briefs and eight verified

@@ -333,6 +333,228 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+## Content performance
+
+`content_url` was collected on every delivery and read by nobody. It is the
+only evidence that the work we arranged did anything, which makes it the answer
+to the question a brand asks at renewal.
+
+One record per collaboration in `content_performance`, upserted on
+`collaboration_id`: a post keeps accruing reach, so a second reading is a
+correction of the first, and `captured_at` says which moment the numbers
+describe. Written by `_record_performance`, which both the admin and the
+`/manager` route delegate to (the manager's is scoped by
+`_managed_campaign_or_404`) — the audit-coverage tests name it as a delegating
+helper, so it must keep auditing.
+
+- **An unknown metric is `None`, never `0`.** A post with no saves and a post
+  whose saves we could not read are different, and averaging the second as a
+  zero makes a campaign look worse than it was. Every surface draws unknown as
+  an em dash.
+- `engagement_rate` is **derived, never stored or typed** — `_engagement_rate_from`
+  computes engagements over **reach**, recomputed on read so an old record
+  reports the current formula and can never contradict its own inputs. Against
+  reach rather than followers: a rate against followers flatters a post that
+  reached nobody.
+- The rollup's headline rate is total engagements over total reach, **not the
+  mean of the per-post rates** — the mean lets one tiny post with a freak rate
+  move the number.
+
+### Barter and cost
+
+`_rollup_performance` takes the paid set **and** the barter set, and they are
+not each other's inverse. Excluding barter's *spend* would be meaningless (it
+is already zero); the damage is on the other side of the division, where its
+reach would inflate the denominator and report a cost per thousand we never
+achieved. So cost metrics use `paid_reach` on both sides, and `paid_reach`,
+`barter_reach` and `awaiting_payment_deliveries` all come back so the figure
+can be checked by hand.
+
+A delivery on a *paid* campaign whose payment hasn't gone out is **neither**
+paid nor barter. Deriving barter as "everything unpaid" would put a line in a
+client report claiming we got work free that we simply haven't settled —
+`_barter_collab_ids` reads `compensation_type`, never a missing payment.
+
+### Instagram, and never depending on it
+
+`_fetch_instagram_performance` returns `(metrics, reason)` and **never raises**.
+It matches the submitted permalink's shortcode against the creator's *own*
+`/me/media`, so there is no path that reads insights for a link we were merely
+handed. Every failure returns a sentence, and the fetch endpoint answers 200
+either way — a creator who hasn't connected Instagram is the ordinary case, not
+a fault, and manual entry is always on screen beside it.
+
+### The report
+
+`GET /admin/campaigns/{id}/report?format=json|csv|html`, all three off one
+builder so the spreadsheet and the printable page cannot disagree. It goes to a
+brand, so it carries what a brand may see: handles and follower counts, **never
+a phone number, email or address** — a unit test walks the builder for those
+keys. CSV goes through `csv.writer`; the HTML escapes everything typed and is
+light-on-white because it gets printed. Both are `no-store`.
+
+Authenticated deliberately — "shareable" means an admin prints it to a PDF and
+sends that. A public link would be a new unauthenticated surface carrying
+creator data, which is a decision to take on purpose rather than as a side
+effect of adding an export.
+
+`showcase` is admin-only and its own endpoint, not a field on
+`UpdateCampaignPayload` — that payload is the brand's edit route too, and which
+campaigns we put in front of a prospect is not theirs to decide. The list filter
+uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
+
+## Health, activity and exports
+
+The overview leads with **what is going wrong**, then what the business is
+doing, then its own numbers, then the exports. A campaign quietly underfilling
+four days before the shoot generates no notification and sits in no queue — it
+is discovered when the brand rings up, unless something looks for it.
+
+`GET /admin/health` runs six checks: underfilling campaigns near their day,
+accepted creators with no slot, content overdue after attendance, payments
+sitting unpaid, brands waiting on our verification, and profiles that stalled.
+Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
+…) because each is a judgement about how much slack the operation has, and they
+travel back in the response so the panel quotes the server's numbers rather than
+a copy that drifts. **Every row carries an `href`** — a count tells you there is
+a problem and then makes you go and find it.
+
+`GET /admin/intelligence` is four shapes and no more: campaigns posted per week
+by current status, fill-rate trend, repeat versus one-off brands, active versus
+dormant creators over `DORMANT_AFTER_DAYS` (60). Charts are hand-written SVG in
+`components/admin/Health.jsx` — four small shapes do not justify a charting
+dependency. A week with no data is `None` and **breaks the sparkline** rather
+than being drawn as zero; a line that runs straight through a gap asserts
+something we do not know.
+
+### Exports and the contact line
+
+`GET /admin/exports/{kind}` — creators, brands, campaigns, collaborations,
+payments, audit — honouring the caller's filters and a date range. One route,
+because six copies of the date window, the CSV framing and the `no-store` header
+is six places to forget one. `kind` is checked against `EXPORT_KINDS` **before**
+the `globals()` lookup that resolves the builder. Every download is audited,
+including whether it carried contact details.
+
+**This is the only family of responses where creator contact details are
+allowed.** An admin export is an internal document — a payout row without a
+number to chase is useless to whoever is reconciling a bank statement — and
+`EXPORTS_WITH_CONTACT` names which ones carry them. Nothing brand-facing may,
+including the campaign report.
+
+`tests/unit/test_exports.py` holds that line by **running the brand-facing
+builders with recognisable contact values planted in the input and searching the
+real output**, not by reading the source for a key name. Source-reading catches
+the mistake somebody makes on purpose; running it catches the one where a phone
+number arrives through a `**spread` from a document nobody remembered had one.
+Planting a leak in `_build_campaign_report` fails the suite — checked.
+
+## The admin console
+
+`/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the tab
+strip and the badge counts and renders the matched route into an `<Outlet>`. The
+URL is the state. It used to be one route with a `useState` tab, which made every
+screen unaddressable — no deep link, no back button, and a reload always landed
+on Overview.
+
+- Nine list routes off the tab strip (`""` index, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `queue`, `creators`, `campaigns`,
+  `brands`, `audit`) and four detail routes: `/admin/campaigns/:id`,
+  `/creators/:id`, `/brands/:id`, `/collaborations/:id`. `ADMIN_TABS` in
+  `AdminConsole.jsx` is both the strip and the route table.
+- `/admin/login` is declared **outside** the layout — it is the one `/admin`
+  path that must not require an admin.
+- Filters that are worth sharing live in the query string, not in state:
+  `/admin/campaigns?brand=<id>` is what the Brands list links to.
+- `useAdminConsole()` is how a screen reads `reloadCounts` and `feePercent` off
+  the outlet context; it throws rather than destructuring undefined.
+- `components/admin/routes.jsx` holds thin adapters between the router and the
+  section components. Nothing there holds state — if a wrapper wants some, it
+  belongs in the section or in the URL.
+- `components/admin/DetailPage.jsx` is the shared scaffold: `DetailShell`
+  (back link, title, loading/error/404), `Section`, `Field`, `Stat`, `Panel`
+  and `AuditTrail`. Four pages solving loading and failure four ways is how a
+  console starts feeling like four consoles.
+- Rows **link**. A creator tile used to open a drawer, so a creator had no
+  address at all; the drawer is gone. Campaign rows keep the chevron as a
+  peek-inline affordance, with the title as the link — two affordances, kept
+  separate.
+
+Backed by three detail endpoints — `GET /admin/campaigns/{id}`,
+`/admin/brands/{user_id}`, `/admin/collaborations/{id}` — each **declared after
+its fixed-path siblings**, or `pending` gets read as an id and the fixed route
+never matches again. A unit test checks this structurally for every prefix.
+Applicants, notes and the audit trail stay on their own endpoints so one action
+doesn't refetch the page.
+
+The collaboration timeline is read out of the audit log rather than kept as a
+`state_history` on the record: the log is already written on every transition and
+is append-only, so a timeline built from it cannot disagree with the record.
+
+`POST /admin/creators/{id}/suspend` and `/reinstate` are separate from
+verification and must stay that way — a unit test fails either if it touches
+`verification_status`. Rejecting a verified creator to remove them would erase
+the record that they were ever approved.
+
+**Cmd+K** (`components/admin/CommandPalette.jsx`) is mounted in the shell, so it
+works on every screen under `/admin`. It calls `GET /admin/search`, which spans
+creators, brands, campaigns **and phone numbers** — a number arrives as a
+WhatsApp message, so `_phone_tail` matches on the last ten digits and a number
+typed with or without `+91` finds the same person. Results are grouped, walked
+with the arrows and opened with Enter.
+
+Every entity name in the console is a link, through `components/admin/links.jsx`
+(`CreatorLink`, `BrandLink`, `CampaignLink`, `CollaborationLink`). They render
+plain text when the id is missing rather than a link to nowhere. Detail pages
+carry `crumbs` into `DetailShell`, which draws breadcrumbs above the back link —
+the crumbs say what you are inside, the back link is the one-tap way out.
+
+## View-as (impersonation)
+
+An admin sees the app exactly as one creator, brand manager or campaign manager
+sees it, so "I can't see the button" is answered by looking. `POST
+/admin/impersonate/{user_id}` starts it, `POST /auth/impersonate/stop` ends it.
+
+**It is read-only, and `_reject_impersonated_writes` is what makes that true.**
+The banner and the hidden buttons are a courtesy. The middleware refuses every
+method outside `SAFE_METHODS` while an impersonation cookie is present, before
+routing — so a route added tomorrow is covered by having been written at all.
+It keys on the *method*, never on a list of endpoints: an allow-list would have
+to be maintained, and the endpoint added after it is forgotten is unprotected.
+`tests/unit/test_impersonation.py` holds this line over real HTTP, including
+against paths that do not exist; 38 of its 62 tests fail if the middleware is
+disabled.
+
+- A **third cookie**, never a swap of the admin's own. Stopping is deleting one
+  cookie, the admin's real session is never destroyed, and an impersonated
+  request cannot be confused for a real one. `IMPERSONATION_MIN` is 30 — it
+  expires on its own, and an expired token reads as "not impersonating" so the
+  admin is simply themselves again.
+- One exemption from the middleware, and it must stay one: the stop route,
+  which clears a cookie and writes an audit line and touches no business data.
+  It deliberately has **no role guard** — the caller *is* the impersonated
+  creator to every guard, so `require_roles("admin")` would lock the admin
+  inside the session it exists to leave.
+- **Admins are not impersonatable** (`IMPERSONATABLE_ROLES`). An admin already
+  sees what an admin sees; the only thing admin→admin would add is acting as a
+  named colleague.
+- Both ends audit with the target's name and role. The start audits **before**
+  the cookie is set, or a failed write would leave a live session with no
+  record. The stop recovers the admin from the token's `act` claim, so the line
+  is not credited to the creator.
+- A session that simply expires writes no closing line — there is no request to
+  write it on. The start line carries `expires_in_minutes`, so the window is
+  reconstructible.
+- `/auth/me` reports the session; the banner is drawn from that rather than
+  from anything stored at start, so a second tab and an expired session both
+  show the truth. The banner is mounted **above the router** in `App.js`, so no
+  route can fail to render it.
+
+Admins get **admin navigation only**. `linksFor()` in `Navbar.jsx` returns from
+one branch per role; admin used to share the creator branch, which put the
+creator brief feed in staff navigation. The marketing strip renders only when
+nobody is signed in.
+
 ## Design system
 
 `design_guidelines.json` is the brief: burnt orange `#F05D14` as `ember-500`,
@@ -384,6 +606,25 @@ Anything new that lists data uses it rather than solving these again:
   pinned. `overflow-x: auto` computes `overflow-y` to `auto` too, so the
   container is the scroller and has to own a max-height; a sticky header with
   nothing to stick against does nothing at all.
+
+## Local test accounts
+
+`backend/seed_personas.py` seeds one signed-in-able account per persona —
+verified creator, half-finished creator, creator awaiting review, verified
+brand manager, unverified brand manager, campaign manager — plus a campaign for
+the manager to manage. Idempotent, keyed on phone. See `PREVIEW.md` for the
+numbers.
+
+**A script, not an endpoint.** A route that mints pre-verified accounts with
+known phone numbers is a backdoor whether or not it is guarded, and it would sit
+in the route table in production one misconfiguration from reachable. A script
+cannot be called over the network.
+
+It refuses to run unless `_simulation_allowed()` — the same gate the OTP log
+uses. That is not an extra precaution but the honest condition: without
+simulation you cannot read the login code, so the accounts would be unusable
+anyway. Numbers are `+9199000000NN`, patterned so one in a production database
+is a self-announcing bug.
 
 ## Tests
 
