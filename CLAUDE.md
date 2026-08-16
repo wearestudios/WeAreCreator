@@ -37,6 +37,47 @@ creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
 
+## The OTP front door
+
+Login and signup are the same two steps — a number, then a code — and share
+one component, `frontend/src/components/OtpForm.jsx`. `Login.jsx` is that
+component and nothing else; `Signup.jsx` wraps it with the fields a new account
+needs and blocks the send until they are valid, passing `blockedReason` so the
+disabled button says why.
+
+**Every OTP refusal carries a `code`, and the form dispatches on the code, not
+on the prose.** `_otp_error(status, code, message, **extra)` builds them —
+`{"detail": {"message", "code", ...}}`, the same shape the Instagram and
+impersonation refusals use, read by `formatApiError` / `apiErrorCode` in
+`lib/api.js`. Eleven codes, listed in `tests/unit/test_otp_errors.py`, which
+fails if the set changes.
+
+The codes exist because the form has to *decide something*, and deciding it by
+matching English means a copy edit breaks a login screen:
+
+- `FAILURES` in `OtpForm.jsx` maps each code to some of `coolsDown`,
+  `offerResend`, `clearCode`, `backToPhone`. An unrecognised code falls through
+  `|| {}` to "show the message and do nothing", so a code deployed on the
+  server before the form catches up degrades rather than throwing.
+- **`cooldown` carries `retry_after` and the countdown is seeded from it**,
+  never from a local constant. The form used to set a flat 30s while the
+  message said "wait 23s", so the button stayed dead after the server would
+  have accepted it — and the two 429s are not the same thing: `hourly_limit`
+  has no countdown that will clear inside the session, so it sends the user
+  back to the number field instead of ticking down to nothing.
+- **`wrong_code` carries `remaining` and must not offer a resend.** They got
+  the code; they mistyped it. Resending invalidates the one they are holding,
+  so "didn't get it? resend" — which used to be appended to *every* failure —
+  is advice that makes it worse.
+- `locked_out` is raised at two sites, before the comparison and after the
+  decrement, or the fifth wrong code reads as a sixth.
+
+Validation is inline and fires on blur, not on submit: `validatePhone` names
+the three distinct problems (no country code, too short, not an Indian mobile)
+rather than answering all of them with "invalid". A plain-string `detail` still
+renders — the two signup-integrity refusals have no code because the client
+already prevents them.
+
 ## The brand manager
 
 A brand has exactly **one login**, and it belongs to a named person captured at

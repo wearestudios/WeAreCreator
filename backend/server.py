@@ -1965,6 +1965,20 @@ def _simulation_allowed() -> bool:
     return env in ("dev", "development", "local", "test")
 
 
+# Every OTP refusal the client has to behave differently about carries a code,
+# not just a sentence. The prose is for the person; the code is for the form,
+# which has to decide whether to start a countdown, offer a resend, or send
+# somebody back to the number field — and pattern-matching English to decide
+# that is how a copy edit breaks a login screen.
+#
+# Same `{"detail": ..., "code": ...}` shape the Instagram and impersonation
+# refusals already use.
+def _otp_error(status: int, code: str, message: str, **extra):
+    return HTTPException(
+        status_code=status, detail={"message": message, "code": code, **extra}
+    )
+
+
 def _hash_otp_code(phone: str, code: str) -> str:
     """Bcrypt-hash the OTP so raw codes never sit in the database."""
     salted = f"{phone}:{code}".encode("utf-8")
@@ -1998,9 +2012,9 @@ async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
                 "is not permitted in this environment. Set AISENSY_API_KEY and "
                 "AISENSY_CAMPAIGN_NAME, or set ALLOW_OTP_SIMULATION=true for local dev."
             )
-            raise HTTPException(
-                status_code=503,
-                detail="WhatsApp sign-in is unavailable right now. Please try again shortly.",
+            raise _otp_error(
+                503, "send_failed",
+                "We couldn't send your code. Try again.",
             )
         logger.warning(
             "AISENSY simulation mode — OTP for %s is %s (do NOT enable in prod)",
@@ -2026,9 +2040,8 @@ async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
             )
     except httpx.HTTPError as exc:
         logger.error("AiSensy request failed: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail="Could not send WhatsApp code right now. Please try again.",
+        raise _otp_error(
+            503, "send_failed", "We couldn't send your code. Try again."
         )
 
     if resp.status_code == 200:
@@ -2041,13 +2054,12 @@ async def _send_aisensy_otp(phone: str, name: str, code: str) -> str:
         resp.text[:400],
     )
     if resp.status_code in (408, 425, 429) or resp.status_code >= 500:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp delivery is temporarily unavailable. Please resend.",
+        raise _otp_error(
+            503, "send_failed", "We couldn't send your code. Try again."
         )
-    raise HTTPException(
-        status_code=502,
-        detail="WhatsApp delivery failed. Please resend or try a different number.",
+    raise _otp_error(
+        502, "send_failed",
+        "We couldn't send your code. Try again, or use a different number.",
     )
 
 
@@ -2314,25 +2326,25 @@ async def request_otp(payload: OtpRequestInput):
     existing_user = await db.users.find_one({"phone": phone})
     if payload.purpose == "login":
         if not existing_user:
-            raise HTTPException(
-                status_code=404,
-                detail="No account found for this number. Please sign up first.",
+            raise _otp_error(
+                404, "no_account",
+                "No account found for this number. Sign up first.",
             )
         if existing_user.get("role") == "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Admins must sign in with email and password.",
+            raise _otp_error(
+                403, "admin_uses_password",
+                "Admins sign in with email and password.",
             )
     else:  # signup
         if existing_user:
-            raise HTTPException(
-                status_code=409,
-                detail="This number is already registered. Please log in.",
+            raise _otp_error(
+                409, "already_registered",
+                "This number is already registered. Log in instead.",
             )
         if not payload.name or not payload.role:
-            raise HTTPException(
-                status_code=400,
-                detail="Name and role are required to sign up.",
+            raise _otp_error(
+                400, "missing_fields",
+                "Name and role are required to sign up.",
             )
 
     # Rate limits ---------------------------------------------------------
@@ -2346,9 +2358,13 @@ async def request_otp(payload: OtpRequestInput):
         elapsed = (now - last_created).total_seconds()
         if elapsed < cooldown:
             retry_after = int(cooldown - elapsed)
-            raise HTTPException(
-                status_code=429,
-                detail=f"Please wait {retry_after}s before requesting another code.",
+            # retry_after is the whole point: the form seeds its countdown from
+            # it rather than guessing, so the resend button stays disabled for
+            # exactly as long as the server will go on refusing it.
+            raise _otp_error(
+                429, "cooldown",
+                f"Wait {retry_after}s before asking for another code.",
+                retry_after=retry_after,
             )
 
     hour_ago = now - timedelta(hours=1)
@@ -2356,9 +2372,13 @@ async def request_otp(payload: OtpRequestInput):
         {"phone": phone, "created_at": {"$gte": hour_ago}}
     )
     if count_recent >= hourly_limit:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many code requests for this number. Try again later.",
+        # A different 429 from the 30-second cooldown, and the form has to
+        # treat it differently: no countdown will clear this one inside the
+        # session, so it says "try later" rather than ticking down to nothing.
+        raise _otp_error(
+            429, "hourly_limit",
+            f"That's {hourly_limit} codes for this number in an hour. "
+            "Try again later, or contact us if you're stuck.",
         )
 
     # Generate + send -----------------------------------------------------
@@ -2408,32 +2428,38 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
         sort=[("created_at", -1)],
     )
     if not record:
-        raise HTTPException(status_code=400, detail="No active code. Please request a new one.")
+        raise _otp_error(
+            400, "no_active_code", "That code has expired. Ask for a new one."
+        )
 
     expires_at = record["expires_at"]
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= now:
-        raise HTTPException(status_code=400, detail="Code expired. Please resend.")
+        raise _otp_error(400, "expired", "That code has expired. Ask for a new one.")
 
     max_attempts = _otp_max_attempts()
     if record["attempts"] >= max_attempts:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many wrong attempts. Please request a new code.",
+        raise _otp_error(
+            429, "locked_out",
+            "Too many wrong attempts. Ask for a new code to try again.",
         )
 
     if not _verify_otp_code(phone, payload.code, record["code_hash"]):
         await db.otp_codes.update_one({"_id": record["_id"]}, {"$inc": {"attempts": 1}})
         remaining = max_attempts - (record["attempts"] + 1)
         if remaining <= 0:
-            raise HTTPException(
-                status_code=429,
-                detail="Too many wrong attempts. Please request a new code.",
+            raise _otp_error(
+                429, "locked_out",
+                "Too many wrong attempts. Ask for a new code to try again.",
             )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Incorrect code. {remaining} attempt(s) remaining.",
+        # `remaining` travels separately so the form can say "2 tries
+        # left" in its own words and colour it as it likes.
+        raise _otp_error(
+            400, "wrong_code",
+            f"That code isn't right. {remaining} "
+            f"{'try' if remaining == 1 else 'tries'} left.",
+            remaining=remaining,
         )
 
     # Mark verified & consume all other pending codes for this phone.
@@ -2448,16 +2474,18 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
     if payload.purpose == "login":
         user = await db.users.find_one({"phone": phone})
         if not user:
-            raise HTTPException(status_code=404, detail="Account not found. Please sign up.")
+            raise _otp_error(404, "no_account", "Account not found. Sign up first.")
         if user.get("role") == "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Admins must sign in with email and password.",
+            raise _otp_error(
+                403, "admin_uses_password",
+                "Admins sign in with email and password.",
             )
     else:  # signup
         existing_user = await db.users.find_one({"phone": phone})
         if existing_user:
-            raise HTTPException(status_code=409, detail="This number is already registered.")
+            raise _otp_error(
+                409, "already_registered", "This number is already registered."
+            )
 
         signup_name = (record.get("name") or payload.name or "").strip()
         signup_role = record.get("role") or payload.role

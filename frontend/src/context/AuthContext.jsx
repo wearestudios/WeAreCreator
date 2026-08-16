@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api, formatApiError } from "@/lib/api";
+import { api, apiErrorCode, formatApiError } from "@/lib/api";
 
 const AuthContext = createContext(null);
 
@@ -81,7 +81,21 @@ export const AuthProvider = ({ children }) => {
             });
             return { ok: true, ...data };
         } catch (e) {
-            return { ok: false, error: formatApiError(e), status: e?.response?.status };
+            return {
+                ok: false,
+                error: formatApiError(e),
+                // The form branches on this rather than on the prose. A copy
+                // edit to a server message must not change what a button does.
+                code: apiErrorCode(e),
+                // Structured extras travel too: retry_after seeds the cooldown,
+                // remaining says how many tries are left.
+                retryAfter: e?.response?.data?.detail?.retry_after ?? null,
+                remaining: e?.response?.data?.detail?.remaining ?? null,
+                // No response at all means the request never landed — a
+                // different thing from the server refusing it.
+                offline: Boolean(e && !e.response),
+                status: e?.response?.status,
+            };
         }
     };
 
@@ -112,7 +126,21 @@ export const AuthProvider = ({ children }) => {
             setUser(data);
             return { ok: true, user: data };
         } catch (e) {
-            return { ok: false, error: formatApiError(e), status: e?.response?.status };
+            return {
+                ok: false,
+                error: formatApiError(e),
+                // The form branches on this rather than on the prose. A copy
+                // edit to a server message must not change what a button does.
+                code: apiErrorCode(e),
+                // Structured extras travel too: retry_after seeds the cooldown,
+                // remaining says how many tries are left.
+                retryAfter: e?.response?.data?.detail?.retry_after ?? null,
+                remaining: e?.response?.data?.detail?.remaining ?? null,
+                // No response at all means the request never landed — a
+                // different thing from the server refusing it.
+                offline: Boolean(e && !e.response),
+                status: e?.response?.status,
+            };
         }
     };
 

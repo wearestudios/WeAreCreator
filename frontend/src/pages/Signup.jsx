@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { SIGNUP } from "@/constants/testIds";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { notifySuccess } from "@/lib/feedback";
 import { Camera, Building2 } from "lucide-react";
@@ -44,6 +45,31 @@ export default function Signup() {
     const isBrand = role === "brand";
     // Consent is recorded against the account, so it has to be an actual act.
     const [acceptedTerms, setAcceptedTerms] = useState(false);
+    // Which fields the person has finished with. Validation appears on blur,
+    // not on the first keystroke: flagging "P" as too short while somebody is
+    // still typing "Priya" is correct and useless.
+    const [touched, setTouched] = useState({});
+    const touch = (k) => setTouched((t) => ({ ...t, [k]: true }));
+
+    const nameProblem = !name.trim()
+        ? `${role === "brand" ? "Brand name" : "Your name"} is required.`
+        : name.trim().length < 2
+          ? "That looks too short."
+          : null;
+    const managerNameProblem =
+        isBrand && !managerName.trim() ? "We need the name of the person running this." : null;
+    // Advice, not a refusal: the server does not require a work email, and a
+    // café on Gmail is a real business.
+    const managerEmailProblem =
+        isBrand && managerEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(managerEmail.trim())
+            ? "That doesn't look like an email address."
+            : null;
+    const termsProblem = !acceptedTerms ? "Accept the terms to continue." : null;
+
+    // What to tell somebody whose Send button is off. First unmet thing only —
+    // a list of four problems at once reads as a wall.
+    const blockedReason =
+        [nameProblem, managerNameProblem, managerEmailProblem, termsProblem].find(Boolean) || null;
 
     // Sent on both OTP steps, so a code requested and verified minutes apart
     // still lands the contact. Empty for creators, who have no such concept.
@@ -131,11 +157,8 @@ export default function Signup() {
                     <OtpForm
                         phone={phone}
                         setPhone={setPhone}
-                        canSubmitPhoneStep={
-                            name.trim().length > 0 &&
-                            acceptedTerms &&
-                            (!isBrand || managerName.trim().length > 0)
-                        }
+                        canSubmitPhoneStep={!blockedReason}
+                        blockedReason={blockedReason}
                         onRequest={(p) =>
                             requestOtp({
                                 phone: p,
@@ -174,13 +197,27 @@ export default function Signup() {
                                     </Label>
                                     <Input
                                         id="name"
-                                        data-testid="signup-name-input"
-                                        required
+                                        data-testid={SIGNUP.nameInput}
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                        onBlur={() => touch("name")}
+                                        aria-invalid={(touched.name && Boolean(nameProblem)) || undefined}
+                                        className={
+                                            "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                            (touched.name && nameProblem
+                                                ? "border-destructive/60"
+                                                : "border-white/10")
+                                        }
                                         placeholder={isBrand ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
                                     />
+                                    {touched.name && nameProblem && (
+                                        <p
+                                            data-testid={SIGNUP.nameError}
+                                            className="mt-2 text-xs text-destructive"
+                                        >
+                                            {nameProblem}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {isBrand && (
@@ -202,13 +239,31 @@ export default function Signup() {
                                             </Label>
                                             <Input
                                                 id="manager-name"
-                                                data-testid="signup-manager-name-input"
-                                                required
+                                                data-testid={SIGNUP.managerNameInput}
                                                 value={managerName}
                                                 onChange={(e) => setManagerName(e.target.value)}
-                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                onBlur={() => touch("managerName")}
+                                                aria-invalid={
+                                                    (touched.managerName &&
+                                                        Boolean(managerNameProblem)) ||
+                                                    undefined
+                                                }
+                                                className={
+                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                                    (touched.managerName && managerNameProblem
+                                                        ? "border-destructive/60"
+                                                        : "border-white/10")
+                                                }
                                                 placeholder="e.g. Priya Rao"
                                             />
+                                            {touched.managerName && managerNameProblem && (
+                                                <p
+                                                    data-testid={SIGNUP.managerNameError}
+                                                    className="mt-2 text-xs text-destructive"
+                                                >
+                                                    {managerNameProblem}
+                                                </p>
+                                            )}
                                         </div>
                                         <div>
                                             <Label
@@ -238,12 +293,33 @@ export default function Signup() {
                                             <Input
                                                 id="manager-email"
                                                 type="email"
-                                                data-testid="signup-manager-email-input"
+                                                inputMode="email"
+                                                autoComplete="email"
+                                                data-testid={SIGNUP.managerEmailInput}
                                                 value={managerEmail}
                                                 onChange={(e) => setManagerEmail(e.target.value)}
-                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                onBlur={() => touch("managerEmail")}
+                                                aria-invalid={
+                                                    (touched.managerEmail &&
+                                                        Boolean(managerEmailProblem)) ||
+                                                    undefined
+                                                }
+                                                className={
+                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                                    (touched.managerEmail && managerEmailProblem
+                                                        ? "border-destructive/60"
+                                                        : "border-white/10")
+                                                }
                                                 placeholder="e.g. priya@toit.in"
                                             />
+                                            {touched.managerEmail && managerEmailProblem && (
+                                                <p
+                                                    data-testid={SIGNUP.managerEmailError}
+                                                    className="mt-2 text-xs text-destructive"
+                                                >
+                                                    {managerEmailProblem}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 )}
