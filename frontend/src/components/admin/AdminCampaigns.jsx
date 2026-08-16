@@ -20,6 +20,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { compensationLabel, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ADMIN_CAMPAIGNS as IDS, STICKY_BAR } from "@/constants/testIds";
@@ -80,7 +81,11 @@ function CampaignRow({ campaign, expanded, onToggle, busy, actions }) {
                             {[
                                 campaign.brand_name || "Unknown brand",
                                 campaign.area,
-                                `₹${formatRupees(campaign.budget_per_creator)}`,
+                                // Barter shows as barter, not as the leftover
+                                // figure the brief was posted with.
+                                isBarter(campaign)
+                                    ? "Barter"
+                                    : `₹${formatRupees(campaign.budget_per_creator)} · ${compensationLabel(campaign)}`,
                                 `${campaign.filled_slots}/${campaign.creators_needed} filled`,
                                 inReview && campaign.submitted_for_review_at
                                     ? `waiting ${timeAgo(campaign.submitted_for_review_at)}`

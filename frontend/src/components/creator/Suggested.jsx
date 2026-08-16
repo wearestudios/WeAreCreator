@@ -10,6 +10,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Compass, MapPin, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CREATOR_SUGGESTED as IDS } from "@/constants/testIds";
+import { isBarter } from "@/lib/compensation";
 import { CAT_LABEL, EmptyState, Money, SectionHead, formatRupees } from "./shared";
 
 export default function Suggested({ campaigns }) {
@@ -104,14 +105,25 @@ export default function Suggested({ campaigns }) {
                                 {/* mt-auto so every tile's price and button line up
                                     across the row however long the brief runs. */}
                                 <div className="mt-auto flex items-end justify-between gap-3 pt-6">
-                                    <Money
-                                        symbolClass="h-4 w-4"
-                                        className="font-serif text-2xl leading-none"
-                                    >
-                                        <span data-testid={IDS.budget(c.id)}>
-                                            {formatRupees(c.budget_per_creator)}
+                                    {/* Money renders the rupee symbol, so a
+                                      * barter brief cannot go through it. */}
+                                    {isBarter(c) ? (
+                                        <span
+                                            data-testid={IDS.budget(c.id)}
+                                            className="font-serif text-2xl leading-none"
+                                        >
+                                            Barter
                                         </span>
-                                    </Money>
+                                    ) : (
+                                        <Money
+                                            symbolClass="h-4 w-4"
+                                            className="font-serif text-2xl leading-none"
+                                        >
+                                            <span data-testid={IDS.budget(c.id)}>
+                                                {formatRupees(c.budget_per_creator)}
+                                            </span>
+                                        </Money>
+                                    )}
                                     {/* Applying needs a pitch and a rate, and that
                                         form lives on the brief. */}
                                     <Link to={`/campaigns/${c.id}`} data-testid={IDS.apply(c.id)}>

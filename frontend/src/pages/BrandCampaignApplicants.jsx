@@ -29,6 +29,7 @@ import {
 import { STICKY_BAR } from "@/constants/testIds";
 import { WorkNotes } from "@/components/brand/WorkNotes";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -239,9 +240,14 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                                 className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
                             />
                         </div>
+                        {/* `budget` is null on a barter brief, where the stored
+                          * figure is a leftover and quoting it as "your budget"
+                          * would be wrong. */}
                         <p className="mt-2 text-xs text-muted-foreground">
-                            They quoted ₹{formatRupees(applicant?.quoted_rate)} · your
-                            budget is ₹{formatRupees(budget)} per creator.
+                            They quoted ₹{formatRupees(applicant?.quoted_rate)}
+                            {budget != null
+                                ? ` · your budget is ₹${formatRupees(budget)} per creator.`
+                                : " · this brief is barter."}
                         </p>
                     </div>
 
@@ -816,8 +822,17 @@ export default function BrandCampaignApplicants() {
                 </h1>
                 <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
-                        <IndianRupee className="h-3.5 w-3.5" />
-                        {formatRupees(campaign.budget_per_creator)} per creator
+                        {isBarter(campaign) ? (
+                            "Barter"
+                        ) : (
+                            <>
+                                <IndianRupee className="h-3.5 w-3.5" />
+                                {formatCompensation(campaign).amount ?? "\u2014"} per creator
+                                {formatCompensation(campaign).suffix
+                                    ? ` \u00b7 ${formatCompensation(campaign).suffix}`
+                                    : ""}
+                            </>
+                        )}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                         <Users className="h-3.5 w-3.5" />
@@ -912,7 +927,7 @@ export default function BrandCampaignApplicants() {
                                 <ApplicantCard
                                     key={a.id}
                                     applicant={a}
-                                    budget={campaign.budget_per_creator}
+                                    budget={isBarter(campaign) ? null : campaign.budget_per_creator}
                                     busy={busyId === a.id}
                                     onAccept={(x) => setDialog({ kind: "accept", applicant: x })}
                                     onDecline={(x) => setDialog({ kind: "decline", applicant: x })}
@@ -937,7 +952,7 @@ export default function BrandCampaignApplicants() {
                 open={dialog.kind === "accept"}
                 onOpenChange={(v) => !v && closeDialog()}
                 applicant={dialog.applicant}
-                budget={campaign.budget_per_creator}
+                budget={isBarter(campaign) ? null : campaign.budget_per_creator}
                 busy={busyId === dialog.applicant?.id}
                 onConfirm={(body) =>
                     act(dialog.applicant, "accept", body, "Creator accepted")

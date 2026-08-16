@@ -165,6 +165,9 @@ export const ADMIN_CAMPAIGN_EDIT = {
 	dialog: 'admin-campaign-edit-dialog',
 	title: 'admin-campaign-edit-title',
 	budget: 'admin-campaign-edit-budget',
+	// The only control in the product that can set a campaign to barter.
+	compensation: 'admin-campaign-edit-compensation',
+	compensationOption: (value) => `admin-campaign-edit-compensation-${value}`,
 	creatorsNeeded: 'admin-campaign-edit-creators-needed',
 	deliverables: 'admin-campaign-edit-deliverables',
 	error: 'admin-campaign-edit-error',

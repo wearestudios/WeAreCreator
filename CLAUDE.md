@@ -248,6 +248,50 @@ generates a support email.
 The other order turns another brand's campaign from a 404 into a 403, which
 leaks which ids exist. A unit test pins the order for every gated endpoint.
 
+## What a brief pays
+
+`compensation_type` on a campaign, one of three (`CompensationType`):
+
+- `fixed` — `budget_per_creator` is the fee.
+- `negotiated` — the budget is a guide; the real number is agreed offline and
+  recorded against the collaboration (see work notes).
+- `barter` — no money. A meal, a stay, a product.
+
+**Barter is admin-only.** A brand posts paid work or it posts nothing:
+`BRAND_COMPENSATION_TYPES = ("fixed", "negotiated")`, and `_refuse_brand_barter`
+422s on both brand write paths — `create_brand_campaign` and
+`update_brand_campaign`, the second because its update loop copies the payload
+generically and `compensation_type` would otherwise ride along with everything
+else. `PATCH /admin/campaigns/{id}` is the **only** route that accepts it, and
+deliberately does not call the guard; a unit test pins both halves. There is no
+admin campaign-*create* route, so in practice a barter brief is one an admin
+converted, which means somebody read it first.
+
+The guard refuses two different things: writing `barter`, and rewriting the
+compensation of a campaign that already *is* barter — otherwise a brand could
+undo a WeAre arrangement into a cash liability. The rest of such a brief stays
+theirs to edit.
+
+`compensation_type` is typed as the full enum on `PostCampaignPayload` on
+purpose. Narrowing it to the brand subset would answer with pydantic's "Input
+should be 'fixed' or 'negotiated'", which reads like a typo; the handler
+refuses it with the actual reason instead.
+
+- `_compensation_type(doc)` is the only reader. Campaigns predate the field and
+  a bare `.get()` returns `None`, which is not a third kind of money — they
+  were all brand briefs against a cash budget, so they read as `fixed`. Startup
+  backfills them.
+- **A barter campaign keeps whatever budget it was posted with**, so that an
+  admin switching it back is not lossy. That makes rendering
+  `budget_per_creator` unconditionally a lie, so every response carrying a fee
+  carries the type beside it and every surface that shows money goes through
+  `formatCompensation` / `isBarter` in `frontend/src/lib/compensation.js`. A
+  unit test walks `server.py` for a fee emitted without its type.
+- The brand form imports `BRAND_COMPENSATION_OPTIONS`, which has no barter in
+  it — the option is *absent*, not present and disabled, so there is nothing to
+  re-enable from devtools. `ALL_COMPENSATION_OPTIONS` is admin-only and is used
+  by exactly one control, `CampaignEditDialog`.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:

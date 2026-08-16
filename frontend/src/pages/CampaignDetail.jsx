@@ -18,6 +18,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
+import { compensationType, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,11 +79,13 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
     const [error, setError] = useState("");
 
     // Re-seed the rate from the campaign budget every time the dialog opens.
+    // Not on a barter brief: the stored budget is a leftover from before we
+    // converted it, so pre-filling it would quote a fee nobody is paying.
     useEffect(() => {
         if (open && campaign) {
             setPitch("");
             setRate(
-                campaign.budget_per_creator != null
+                !isBarter(campaign) && campaign.budget_per_creator != null
                     ? String(campaign.budget_per_creator)
                     : "",
             );
@@ -200,15 +203,19 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                             className="mt-3 flex items-start gap-2 rounded-md border border-ember-500/25 bg-ember-500/10 p-3 text-xs leading-relaxed text-ember-500/90"
                         >
                             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none" />
-                            You receive 100% of this amount. The platform fee is charged to the brand on top.
+                            {isBarter(campaign)
+                                ? "This brief is barter — there's no fee attached to it. Quote what you'd want if that changes, or leave it blank."
+                                : "You receive 100% of this amount. The platform fee is charged to the brand on top."}
                         </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Budget on this brief:{" "}
-                            <span className="text-foreground">
-                                ₹{formatRupees(campaign?.budget_per_creator)}
-                            </span>
-                            . Feel free to quote lower or higher — brands consider both.
-                        </p>
+                        {!isBarter(campaign) && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Budget on this brief:{" "}
+                                <span className="text-foreground">
+                                    ₹{formatRupees(campaign?.budget_per_creator)}
+                                </span>
+                                . Feel free to quote lower or higher — brands consider both.
+                            </p>
+                        )}
                     </div>
 
                     {error && (
@@ -551,15 +558,33 @@ export default function CampaignDetail() {
                         <div className="sticky top-24 space-y-4">
                             <div className="rounded-md border border-white/10 bg-card p-7 grain-surface">
                                 <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                    Budget per creator
+                                    {isBarter(campaign)
+                                        ? "What you get"
+                                        : "Budget per creator"}
                                 </div>
                                 <div
                                     data-testid="detail-budget"
                                     className="mt-2 flex items-baseline font-serif text-4xl text-foreground"
                                 >
-                                    <IndianRupee className="h-6 w-6 text-ember-500" />
-                                    {formatRupees(campaign.budget_per_creator)}
+                                    {isBarter(campaign) ? (
+                                        "Barter"
+                                    ) : (
+                                        <>
+                                            <IndianRupee className="h-6 w-6 text-ember-500" />
+                                            {formatRupees(campaign.budget_per_creator)}
+                                        </>
+                                    )}
                                 </div>
+                                {/* The one thing a creator most needs to know
+                                  * before giving up a day, said where the fee
+                                  * would otherwise be. */}
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    {isBarter(campaign)
+                                        ? "No fee on this one — what's offered is in the brief. Read it before you apply."
+                                        : compensationType(campaign) === "negotiated"
+                                          ? "A guide, not a fixed fee. You quote your rate and the brand agrees it with you."
+                                          : "You receive 100% of this. The platform fee is charged to the brand."}
+                                </p>
 
                                 <dl className="mt-7 space-y-4 border-t border-white/10 pt-6 text-sm">
                                     <div className="flex items-start gap-3">

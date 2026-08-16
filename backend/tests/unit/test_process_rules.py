@@ -1459,6 +1459,13 @@ class TestCampaignTypes:
     def test_an_edit_that_touches_neither_is_fine(self):
         server._refuse_dates_foreign_to_type({"campaign_type": "launch"}, {"title": "x"})
 
+    def test_a_type_and_a_compensation_are_different_questions(self):
+        # A launch can be paid or barter; a personal table can be either too.
+        # Nothing in the date rules may key off what the brief pays.
+        assert set(server.CampaignType.__args__).isdisjoint(
+            set(server.CompensationType.__args__)
+        )
+
     def test_a_passed_event_day_expires_the_campaign_too(self):
         # Not just closed windows: an event whose day has gone must stop taking
         # applications.
@@ -1466,6 +1473,150 @@ class TestCampaignTypes:
 
         src = inspect.getsource(server._expire_stale_campaigns)
         assert "event_date" in src and "end_date" in src
+
+
+class TestBarterIsAdminOnly:
+    """Barter is an arrangement WeAre makes, never one a brand posts.
+
+    A brand brief is paid work — a fixed fee or a negotiated one. Barter is the
+    arrangement most easily used to get a shoot out of a creator for nothing, so
+    it is set by somebody here who has read the brief, and refused on every path
+    a brand can write to.
+    """
+
+    def test_the_three_kinds_are_the_declared_ones(self):
+        assert set(server.CompensationType.__args__) == {
+            "fixed",
+            "negotiated",
+            "barter",
+        }
+
+    def test_a_brand_may_post_two_of_them_and_barter_is_not_one(self):
+        assert server.BRAND_COMPENSATION_TYPES == ("fixed", "negotiated")
+        assert "barter" not in server.BRAND_COMPENSATION_TYPES
+        # The brand set has to be a real subset, or the allow-list is a fiction.
+        assert set(server.BRAND_COMPENSATION_TYPES) < set(
+            server.CompensationType.__args__
+        )
+
+    def test_a_campaign_written_before_the_field_reads_as_a_paid_one(self):
+        # Every pre-field campaign was a brand brief against a cash budget.
+        # Reading None as a third kind of money would put barter on the feed by
+        # accident, which is the exact failure this whole rule exists to stop.
+        assert server.DEFAULT_COMPENSATION_TYPE == "fixed"
+        assert server._compensation_type({}) == "fixed"
+        assert server._compensation_type({"compensation_type": None}) == "fixed"
+        assert server._compensation_type(None) == "fixed"
+        assert server._is_barter({}) is False
+        assert server._is_barter({"compensation_type": "barter"}) is True
+
+    # -- the guard itself ---------------------------------------------------
+
+    def test_a_brand_cannot_post_a_barter_brief(self):
+        with pytest.raises(HTTPException) as exc:
+            server._refuse_brand_barter(None, {"compensation_type": "barter"})
+        assert exc.value.status_code == 422
+        assert "barter" in exc.value.detail.lower()
+
+    @pytest.mark.parametrize("kind", ["fixed", "negotiated"])
+    def test_a_brand_may_post_either_paid_kind(self, kind):
+        server._refuse_brand_barter(None, {"compensation_type": kind})
+
+    def test_a_brand_cannot_edit_a_brief_we_made_barter_back_to_cash(self):
+        # The other half of the rule. Refusing only the write *to* barter would
+        # leave a brand able to undo one, which turns a WeAre arrangement into a
+        # cash liability without anybody deciding to.
+        with pytest.raises(HTTPException) as exc:
+            server._refuse_brand_barter(
+                {"compensation_type": "barter"}, {"compensation_type": "fixed"}
+            )
+        assert exc.value.status_code == 422
+
+    def test_a_brand_may_still_edit_the_rest_of_a_barter_brief(self):
+        # The compensation is ours; the brief is still theirs. An edit that
+        # doesn't touch the money has to go through untouched.
+        server._refuse_brand_barter({"compensation_type": "barter"}, {"title": "New"})
+
+    def test_the_guard_is_a_no_op_when_the_field_is_absent(self):
+        server._refuse_brand_barter({"compensation_type": "fixed"}, {"area": "HSR"})
+        server._refuse_brand_barter(None, {})
+
+    # -- where the guard is actually wired in --------------------------------
+
+    @pytest.mark.parametrize(
+        "handler", ["create_brand_campaign", "update_brand_campaign"]
+    )
+    def test_every_brand_write_path_calls_the_guard(self, handler):
+        # The refusal is worth nothing if a route forgets it, and
+        # update_brand_campaign in particular copies the payload generically —
+        # compensation_type would ride along with everything else.
+        import inspect
+
+        # The call form, not the bare name — the admin route mentions the guard
+        # in a comment saying why it does *not* call it, and a substring test
+        # would happily accept that comment as the guard being present.
+        src = inspect.getsource(getattr(server, handler))
+        assert "_refuse_brand_barter(" in src, (
+            f"{handler} can write compensation_type without going through the guard"
+        )
+
+    def test_the_admin_edit_is_the_one_route_that_does_not(self):
+        # Not an oversight — this asymmetry is the feature. If somebody adds the
+        # guard here, barter becomes unreachable and the product loses it.
+        import inspect
+
+        assert "_refuse_brand_barter(" not in inspect.getsource(
+            server.admin_update_campaign
+        )
+
+    def test_both_edit_routes_share_one_payload_model(self):
+        # So the gate cannot be the schema: the brand and the admin send the
+        # same shape, and only the handler tells them apart.
+        assert (
+            server.UpdateCampaignPayload.model_fields["compensation_type"]
+            .annotation.__args__[0]
+            .__args__
+        ) == server.CompensationType.__args__
+
+    def test_the_posted_kind_is_what_gets_stored(self):
+        import inspect
+
+        src = inspect.getsource(server.create_brand_campaign)
+        assert '"compensation_type": payload.compensation_type' in src
+
+    # -- the figure that travels with it -------------------------------------
+
+    def test_every_response_carrying_a_fee_also_says_what_kind_it_is(self):
+        # A rupee figure with no word beside it is read as cash. On a barter
+        # brief — which keeps whatever budget it was posted with, so that an
+        # admin switching back is not lossy — that is a lie to a creator
+        # deciding whether to give up a day.
+        import inspect
+        import re
+
+        src = inspect.getsource(server)
+        # Every dict literal that emits budget_per_creator, minus the ones that
+        # are queries or seed input rather than a response.
+        offenders = []
+        for line_no, line in enumerate(src.splitlines(), 1):
+            if '"budget_per_creator": ' not in line:
+                continue
+            value = line.split('"budget_per_creator": ', 1)[1]
+            # A query operator, a literal seed amount, or the create handler's
+            # own float() cast — none of these are a response shape.
+            if re.match(r"^(\{|\d|float\()", value.strip()):
+                continue
+            if "spec[" in value:
+                continue
+            # Wide enough to step over the comment that usually explains why
+            # the pair is there, narrow enough that "beside it" still means it.
+            following = src.splitlines()[line_no : line_no + 6]
+            if not any("compensation_type" in f for f in following):
+                offenders.append((line_no, line.strip()))
+        assert not offenders, (
+            "these responses emit a fee with no compensation_type beside it: "
+            f"{offenders}"
+        )
 
 
 class TestCampaignManagerRole:

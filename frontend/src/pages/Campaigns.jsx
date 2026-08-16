@@ -20,6 +20,7 @@ import {
 } from "@/components/data/DenseView";
 import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -131,14 +132,26 @@ const CampaignCard = ({ c, index }) => (
             <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">
                 <div>
                     <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        Budget / creator
+                        {isBarter(c) ? "What you get" : "Budget / creator"}
                     </div>
+                    {/* A barter brief carries whatever budget it was posted
+                      * with, so the rupee figure has to be suppressed rather
+                      * than trusted — see lib/compensation.js. */}
                     <div className="mt-1 flex items-baseline gap-1 font-serif text-[32px] leading-none text-foreground">
-                        <IndianRupee className="h-5 w-5 text-ember-500" />
-                        {typeof c.budget_per_creator === "number"
-                            ? c.budget_per_creator.toLocaleString("en-IN")
-                            : "—"}
+                        {isBarter(c) ? (
+                            "Barter"
+                        ) : (
+                            <>
+                                <IndianRupee className="h-5 w-5 text-ember-500" />
+                                {formatCompensation(c).amount ?? "—"}
+                            </>
+                        )}
                     </div>
+                    {formatCompensation(c).suffix && (
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                            {formatCompensation(c).suffix}
+                        </div>
+                    )}
                 </div>
                 <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
             </div>
@@ -204,11 +217,17 @@ export default function Campaigns() {
         debouncedQ.length > 0 ||
         sort !== "newest";
 
+    // Barter briefs are left out: their stored budget is a leftover from
+    // whatever they were before, and adding it here would inflate a figure
+    // that is meant to say how much cash is on the feed.
     const totalBudget = useMemo(() => {
         if (!Array.isArray(items) || items.length === 0) return 0;
         return items.reduce(
             (acc, c) =>
-                acc + (typeof c.budget_per_creator === "number" ? c.budget_per_creator : 0),
+                acc +
+                (!isBarter(c) && typeof c.budget_per_creator === "number"
+                    ? c.budget_per_creator
+                    : 0),
             0,
         );
     }, [items]);

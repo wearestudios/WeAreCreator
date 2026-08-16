@@ -28,6 +28,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import {
     LANDING as PAGE_IDS,
     LANDING_CLOSING as CLOSING_IDS,
@@ -646,13 +647,17 @@ function LiveBriefs() {
                                   <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
                                       <div>
                                           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                              Per creator
+                                              {isBarter(b) ? "What you get" : "Per creator"}
                                           </div>
                                           <div className="mt-1 flex items-baseline font-serif text-3xl">
-                                              <IndianRupee className="h-5 w-5 text-ember-500" />
-                                              {typeof b.budget_per_creator === "number"
-                                                  ? b.budget_per_creator.toLocaleString("en-IN")
-                                                  : "—"}
+                                              {isBarter(b) ? (
+                                                  "Barter"
+                                              ) : (
+                                                  <>
+                                                      <IndianRupee className="h-5 w-5 text-ember-500" />
+                                                      {formatCompensation(b).amount ?? "—"}
+                                                  </>
+                                              )}
                                           </div>
                                       </div>
                                       {b.spots_left > 0 && (

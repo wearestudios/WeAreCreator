@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
+import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -446,8 +447,18 @@ export default function BrandDashboardView({ user }) {
                                                             </div>
                                                             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                                                                 <span className="inline-flex items-center gap-1">
-                                                                    <IndianRupee className="h-3.5 w-3.5" />
-                                                                    {formatRupees(c.budget_per_creator)} / creator
+                                                                    {isBarter(c) ? (
+                                                                        "Barter"
+                                                                    ) : (
+                                                                        <>
+                                                                            <IndianRupee className="h-3.5 w-3.5" />
+                                                                            {formatCompensation(c).amount ?? "—"}
+                                                                            {" / creator"}
+                                                                            {formatCompensation(c).suffix
+                                                                                ? ` · ${formatCompensation(c).suffix}`
+                                                                                : ""}
+                                                                        </>
+                                                                    )}
                                                                 </span>
                                                                 <span>·</span>
                                                                 <span className="inline-flex items-center gap-1">

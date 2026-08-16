@@ -18,6 +18,13 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { ADMIN_ADVANCE, ADMIN_CAMPAIGN_EDIT, ADMIN_CONFIRM } from "@/constants/testIds";
+// The full list, barter included — this is the admin surface, and the only one
+// that gets it. The brand form imports BRAND_COMPENSATION_OPTIONS instead.
+import {
+    ALL_COMPENSATION_OPTIONS,
+    DEFAULT_COMPENSATION_TYPE,
+    compensationType,
+} from "@/lib/compensation";
 import { formatRupees } from "./shared";
 
 // The server's ReasonPayload floor. Enforced here too so a three-character
@@ -443,10 +450,17 @@ export function AdvanceDialog({
 /**
  * Correcting a live campaign. Only the fields support actually gets asked to
  * change — the whole brief is the brand's to rewrite, not ours.
+ *
+ * This dialog is also the one place in the product that can make a campaign
+ * barter. `PATCH /admin/campaigns/{id}` is the only route that accepts it; both
+ * brand write paths refuse it outright. That asymmetry is the feature, not an
+ * oversight — barter is a WeAre arrangement, so it is set by someone who has
+ * read the brief rather than picked from a self-serve form.
  */
 export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, submitting }) {
     const [title, setTitle] = useState("");
     const [budget, setBudget] = useState("");
+    const [compensation, setCompensation] = useState(DEFAULT_COMPENSATION_TYPE);
     const [needed, setNeeded] = useState("");
     const [deliverables, setDeliverables] = useState("");
     const [err, setErr] = useState("");
@@ -455,6 +469,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         if (!open || !campaign) return;
         setTitle(campaign.title || "");
         setBudget(campaign.budget_per_creator != null ? String(campaign.budget_per_creator) : "");
+        setCompensation(compensationType(campaign));
         setNeeded(campaign.creators_needed != null ? String(campaign.creators_needed) : "");
         setDeliverables(campaign.deliverables || "");
         setErr("");
@@ -474,6 +489,9 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 return;
             }
             changes.budget_per_creator = b;
+        }
+        if (compensation !== compensationType(campaign)) {
+            changes.compensation_type = compensation;
         }
         const n = Number(needed);
         if (needed !== "" && n !== campaign.creators_needed) {
@@ -540,22 +558,70 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             className="mt-2 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                         />
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                            <Label htmlFor="ce-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                Budget per creator
-                            </Label>
-                            <Input
-                                id="ce-budget"
-                                data-testid={ADMIN_CAMPAIGN_EDIT.budget}
-                                type="number"
-                                min="0"
-                                step="500"
-                                value={budget}
-                                onChange={(e) => setBudget(e.target.value)}
-                                className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
-                            />
+                    <div>
+                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            What it pays
+                        </Label>
+                        <div
+                            data-testid={ADMIN_CAMPAIGN_EDIT.compensation}
+                            role="radiogroup"
+                            aria-label="What the campaign pays"
+                            className="mt-2 grid gap-2 sm:grid-cols-3"
+                        >
+                            {ALL_COMPENSATION_OPTIONS.map((opt) => {
+                                const on = compensation === opt.value;
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={on}
+                                        title={opt.blurb}
+                                        data-testid={ADMIN_CAMPAIGN_EDIT.compensationOption(opt.value)}
+                                        onClick={() => setCompensation(opt.value)}
+                                        className={
+                                            "min-h-[2.75rem] rounded-md border px-3 py-2 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
+                                            (on
+                                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                : "border-white/10 bg-background/60 hover:border-white/25")
+                                        }
+                                    >
+                                        {opt.label}
+                                    </button>
+                                );
+                            })}
                         </div>
+                        {compensation === "barter" && (
+                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                Creators will see this as barter, with no fee shown. The brand
+                                can't set or undo this — only we can.
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        {/* No cash figure on a barter brief. The stored budget
+                          * is left as it was so switching back isn't lossy. */}
+                        {compensation !== "barter" && (
+                            <div>
+                                <Label htmlFor="ce-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    {compensation === "negotiated"
+                                        ? "Budget per creator (guide)"
+                                        : "Budget per creator"}
+                                </Label>
+                                <Input
+                                    id="ce-budget"
+                                    data-testid={ADMIN_CAMPAIGN_EDIT.budget}
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="0"
+                                    step="500"
+                                    value={budget}
+                                    onChange={(e) => setBudget(e.target.value)}
+                                    className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                />
+                            </div>
+                        )}
                         <div>
                             <Label htmlFor="ce-needed" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                                 Creators needed
