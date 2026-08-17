@@ -181,6 +181,16 @@ Two things to try breaking on purpose:
 
 ## Configuration worth knowing
 
+Three variables have no default, and the server **refuses to start** without
+them rather than failing later: `MONGO_URL`, `DB_NAME` and `JWT_SECRET`. It
+prints all of the missing ones at once and exits 1, so a half-filled `.env` is
+one restart to fix rather than three. `JWT_SECRET` is the reason — without the
+check a deploy missing it booted happily and only broke when somebody tried to
+sign in.
+
+`ADMIN_EMAIL`, `ADMIN_PASSWORD` and `CORS_ORIGINS` warn instead of stopping the
+boot; set `APP_ENV=development` on a laptop to silence them.
+
 | Variable | Effect |
 | --- | --- |
 | `ALLOW_OTP_SIMULATION` | Permits log-based login codes. Required in any environment without AiSensy. |

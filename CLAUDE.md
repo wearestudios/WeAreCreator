@@ -888,6 +888,47 @@ mid-screen produces one toast rather than six. A non-request crash gets
 "Something went wrong" and never a type name or a stack — the person reading it
 cannot act on either.
 
+## Configuration, and refusing to start
+
+Three variables have no default and nothing sensible to fall back to:
+`MONGO_URL`, `DB_NAME`, `JWT_SECRET`. `validate_environment()` checks all three
+at import, **before** the `os.environ["MONGO_URL"]` a few lines below it, and
+exits 1 with every missing one named at once. The order matters — the other way
+round, a raw `KeyError` wins the race and the useful message is never printed;
+a unit test pins it structurally.
+
+- The list is one boot, not one variable per restart. Reporting only the first
+  costs three deploys to fix three blanks.
+- `JWT_SECRET` is why this exists at all. The other two were already read at
+  import so a missing one crashed the boot, loudly if unhelpfully. `_jwt_secret()`
+  read its own per call, so a deploy without it **started cleanly**, served the
+  marketing page, and 500'd the first person who tried to sign in. It is still
+  a lookup rather than a frozen constant — a test can set it — but a blank now
+  raises a `RuntimeError` naming the variable.
+- A blank string counts as missing. `JWT_SECRET=` in a `.env` file is an empty
+  value, not an absent key, and it is the shape a half-filled `.env.example`
+  copy actually takes.
+- `_ENV_PRODUCTION` (`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `CORS_ORIGINS`) **warns
+  rather than exits**: each has a default that lets the process run, and a
+  laptop and the unit suite legitimately have no admin account. Refusing to boot
+  over CORS would be worse than saying so loudly, since a proxy may be setting
+  the header instead.
+- **Unset reads as production.** `_is_production()` treats only
+  `dev|development|local|test` as not — the same signal `_simulation_allowed()`
+  uses, read the same way. Guessing the other way would silently permit OTP
+  simulation on a real deployment. `ENV` is a fallback for hosts that set that
+  name; `APP_ENV` wins where both are present.
+
+`backend/.env.example` documents **every** variable the app reads, defaults
+included, and `tests/unit/test_environment.py` holds it to that by AST-walking
+the backend for `os.environ` reads and diffing against the file. The
+notification templates are the half that drifts: they are resolved dynamically
+as `AISENSY_TEMPLATE_{event.upper()}`, so no static analysis of the source can
+find them and nothing but that test notices when a new `NOTIFY_EVENTS` entry
+ships with no line documenting its template. It checks both directions — an
+undocumented event, and a documented template for an event that no longer
+exists.
+
 ## Tests
 
 Dependencies are split in two. `requirements.txt` is the **runtime** set —
