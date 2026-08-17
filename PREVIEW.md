@@ -1,7 +1,7 @@
 # Previewing the site
 
-Two ways: pull the branch into Emergent (fastest, the database and environment
-already exist there), or run the whole stack locally.
+Run the whole stack locally with Docker, sign in as one of the seeded
+personas, and click through the flows below.
 
 ---
 
@@ -27,36 +27,7 @@ password and is unaffected either way.
 
 ---
 
-## Option 1 — Preview on Emergent
-
-Emergent doesn't take a push from here; it pulls from GitHub. The branch is
-already on GitHub, so:
-
-1. Open the project in Emergent.
-2. Click the **GitHub** icon → select `wearestudios/WeAreCreator`.
-3. Choose the branch **`claude/site-process-review-3f21az`** → **Import**.
-4. Set `ALLOW_OTP_SIMULATION=true` in the environment (see the warning above).
-5. Use the interactive preview to click through the app.
-
-If the branch isn't offered, merge it into `main` first and import that instead.
-
-Two things happen automatically on the first boot after importing:
-
-- **A data migration.** The creator approval concept has been called three things.
-  The field `vetting_status` is renamed to `verification_status`, and the values
-  `"approved"` and `"vetted"` are both rewritten to `"verified"`. Collaborations
-  sitting in the `vetted` state move to `verified`. This is what makes approved
-  creators visible to brands. One-way, and safe to re-run.
-- **An index rebuild.** The unique index on `(campaign_id, creator_id)` is
-  replaced with a partial one so a declined creator can apply again. Existing
-  collaborations are backfilled with `active: true`.
-
-Neither deletes anything. Take a snapshot first if the preview database holds
-data you care about.
-
----
-
-## Option 2 — Run it locally
+## Running it
 
 Needs Docker.
 
@@ -84,6 +55,20 @@ cd frontend
 npm ci
 npm start
 ```
+
+### What happens on the first boot against an existing database
+
+Two migrations run automatically. Neither deletes anything, but take a snapshot
+first if the database holds data you care about.
+
+- **A data migration.** The creator approval concept has been called three
+  things. The field `vetting_status` is renamed to `verification_status`, and
+  the values `"approved"` and `"vetted"` are both rewritten to `"verified"`.
+  Collaborations sitting in the `vetted` state move to `verified`. This is what
+  makes approved creators visible to brands. One-way, and safe to re-run.
+- **An index rebuild.** The unique index on `(campaign_id, creator_id)` is
+  replaced with a partial one so a declined creator can apply again. Existing
+  collaborations are backfilled with `active: true`.
 
 ---
 
