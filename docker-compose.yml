@@ -64,12 +64,11 @@ services:
       # The dev server runs outside a TTY here.
       CI: "false"
       WATCHPACK_POLLING: "true"
+    # `npm ci` and nothing else: the lockfile is committed, the peer tree
+    # resolves without flags, and the private visual-edits package that the
+    # old retry-dance worked around is gone from package.json.
     command: >
-      sh -c "npm install --legacy-peer-deps --no-audit --no-fund || (
-               echo 'Retrying without the private visual-edits package' &&
-               node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devDependencies['@emergentbase/visual-edits'];fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')\" &&
-               npm install --legacy-peer-deps --no-audit --no-fund
-             ) && npm start"
+      sh -c "npm ci --no-audit --no-fund && npm start"
 
 volumes:
   mongo_data:

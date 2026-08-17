@@ -81,7 +81,7 @@ pip install -r requirements-dev.txt
 uvicorn server:app --reload --port 8001
 
 cd frontend
-npm install --legacy-peer-deps
+npm ci
 npm start
 ```
 
