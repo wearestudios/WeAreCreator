@@ -197,6 +197,20 @@ Two things to try breaking on purpose:
 
 Full list with comments: `backend/.env.example`.
 
+### Deploying the frontend to Vercel
+
+`frontend/vercel.json` rewrites everything to `/index.html` so react-router
+handles the URL. Vercel checks the filesystem before rewrites, so the hashed
+bundles under `/static/` are still served as files — only paths with no file
+behind them fall through to the app.
+
+The rule excludes `/api/`. `API_BASE` is `` `${REACT_APP_BACKEND_URL}/api` ``,
+so an unset or empty `REACT_APP_BACKEND_URL` makes the app call same-origin
+`/api` — and a blanket catch-all would answer those with the HTML shell, which
+surfaces as every request failing to parse rather than as the misconfiguration
+it is. Excluded, they 404 honestly. Set `REACT_APP_BACKEND_URL` to the Railway
+URL and the calls are absolute anyway.
+
 ---
 
 ## Still outstanding
