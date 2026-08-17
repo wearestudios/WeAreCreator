@@ -23,6 +23,7 @@ import {
     CREATOR_SUGGESTED as SUGGESTED_IDS,
 } from "@/constants/testIds";
 import { HomeSkeleton, Reveal } from "@/components/creator/shared";
+import { SafeSection } from "@/components/ErrorBoundary";
 import Hero from "@/components/creator/Hero";
 import Completeness from "@/components/creator/Completeness";
 import ActiveCampaigns from "@/components/creator/ActiveCampaigns";
@@ -287,27 +288,36 @@ const CreatorHome = ({ user, justOnboarded }) => {
 
                 {data && (
                     <>
-                        <Reveal index={0}>
-                            <Hero user={user} profile={data.profile} earnings={data.earnings} />
-                        </Reveal>
+                        {/* Six panels off one payload, each rendering a
+                            different slice of it. A creator whose earnings row
+                            has an unexpected shape should still see what they
+                            are booked on this week — before this, that one bad
+                            row blanked the page and the creator's evidence was
+                            "the app is broken". */}
+                        <SafeSection name="hero" label="Your header couldn't load">
+                            <Reveal index={0}>
+                                <Hero
+                                    user={user}
+                                    profile={data.profile}
+                                    earnings={data.earnings}
+                                />
+                            </Reveal>
+                        </SafeSection>
 
-                        <div className="mt-8">
+                        <SafeSection name="banners" className="mt-8">
                             <StatusBanners
                                 profile={data.profile}
                                 completeness={data.profile_completeness}
                                 justOnboarded={justOnboarded}
                             />
-                        </div>
+                        </SafeSection>
 
                         {sections.map(({ key, testid, node }, i) => (
-                            <Reveal
-                                key={key}
-                                index={i + 1}
-                                data-testid={testid}
-                                className="mt-14 md:mt-20"
-                            >
-                                {node}
-                            </Reveal>
+                            <SafeSection key={key} name={key} className="mt-14 md:mt-20">
+                                <Reveal index={i + 1} data-testid={testid}>
+                                    {node}
+                                </Reveal>
+                            </SafeSection>
                         ))}
 
                         <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">

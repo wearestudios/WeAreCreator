@@ -29,3 +29,16 @@ export const STICKY_BAR = {
     audit: 'sticky-audit-filters',
     brandCampaigns: 'sticky-brand-campaigns',
 };
+
+// Error boundaries. The page fallback is the one a test asserts is NOT on
+// screen; the section ids let a test target one broken panel while checking
+// its neighbours still rendered.
+export const ERROR_BOUNDARY = {
+    page: 'error-boundary-page',
+    pageReload: 'error-boundary-reload',
+    pageHome: 'error-boundary-home',
+    sectionAny: 'error-boundary-section',
+    section: (name) => `error-boundary-section-${name}`,
+    sectionRetryAny: 'error-boundary-section-retry',
+    sectionRetry: (name) => `error-boundary-section-retry-${name}`,
+};

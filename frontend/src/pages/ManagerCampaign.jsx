@@ -4,7 +4,7 @@
 // takes over the screen when people are actually arriving, because the job
 // changes shape at that point — you stop reading and start tapping.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
@@ -53,10 +53,15 @@ const TABS = [
 
 export default function ManagerCampaign() {
     const { id } = useParams();
+    // `?mode=day-of` is how the Today card on the home page arrives here: on
+    // the day, the roster is not what you opened this for. Read once as the
+    // initial state rather than kept in sync, so toggling out of day-of mode
+    // does not fight the URL you came in on.
+    const [params] = useSearchParams();
     const [roster, setRoster] = useState(null);
     const [slots, setSlots] = useState(null);
     const [tab, setTab] = useState("roster");
-    const [dayOf, setDayOf] = useState(false);
+    const [dayOf, setDayOf] = useState(() => params.get("mode") === "day-of");
     const [slotEditor, setSlotEditor] = useState(null);
     const [broadcast, setBroadcast] = useState(false);
     const [broadcastReport, setBroadcastReport] = useState(null);

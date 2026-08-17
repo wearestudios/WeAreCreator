@@ -64,3 +64,54 @@ export const BRAND_CAMPAIGN_CONTROLS = {
     pauseReason: "brand-campaign-pause-reason",
     pauseConfirm: "brand-campaign-pause-confirm",
 };
+
+// The brand verification screen — the profile a reviewer reads, and the
+// documents it is checked against. New surface, so it starts in the registry.
+//
+// The upload ids are keyed on the *queue* key rather than a document id,
+// because a file that is still going up has no id yet and a file that failed
+// the local type check never will. Stored documents key on the server's id.
+export const BRAND_VERIFICATION = {
+    page: "brand-verification-page",
+    skeleton: "brand-verification-skeleton",
+    stateBanner: "brand-verification-state",
+    rejectionReason: "brand-verification-rejection-reason",
+    missingList: "brand-verification-missing",
+    missingField: (field) => `brand-verification-missing-${field}`,
+
+    // Profile fields a reviewer needs before there is anything to review.
+    field: (name) => `brand-verification-field-${name}`,
+    fieldError: (name) => `brand-verification-field-error-${name}`,
+    saveBtn: "brand-verification-save",
+    saveError: "brand-verification-save-error",
+
+    // Documents
+    documentsSection: "brand-verification-documents",
+    documentCount: "brand-verification-document-count",
+    documentsEmpty: "brand-verification-documents-empty",
+    documentsFull: "brand-verification-documents-full",
+    documentList: "brand-verification-document-list",
+    document: (id) => `brand-verification-document-${id}`,
+    documentType: (id) => `brand-verification-document-type-${id}`,
+    documentRemove: (id) => `brand-verification-document-remove-${id}`,
+    documentConfirmRemove: (id) => `brand-verification-document-confirm-${id}`,
+    documentCancelRemove: (id) => `brand-verification-document-keep-${id}`,
+    documentError: (id) => `brand-verification-document-error-${id}`,
+    docTypeTrigger: "brand-verification-doc-type",
+    docTypeOption: (value) => `brand-verification-doc-type-${value}`,
+    fileInput: "brand-verification-file-input",
+    chooseBtn: "brand-verification-choose-file",
+
+    // In-flight uploads
+    queue: "brand-verification-upload-queue",
+    queueItem: (key) => `brand-verification-upload-${key}`,
+    queueProgress: (key) => `brand-verification-upload-progress-${key}`,
+    queuePercent: (key) => `brand-verification-upload-percent-${key}`,
+    queueError: (key) => `brand-verification-upload-error-${key}`,
+    queueRetry: (key) => `brand-verification-upload-retry-${key}`,
+    queueDismiss: (key) => `brand-verification-upload-dismiss-${key}`,
+
+    submitBtn: "brand-verification-submit",
+    submitBlocked: "brand-verification-submit-blocked",
+    submitError: "brand-verification-submit-error",
+};

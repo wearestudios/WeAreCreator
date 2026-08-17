@@ -1,10 +1,13 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TOAST_DURATION } from "@/lib/feedback";
 import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import { installGlobalErrorHandlers } from "@/lib/globalErrors";
+import { installOfflineQueue } from "@/lib/offlineQueue";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -38,9 +41,41 @@ import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
 import BrandCampaignApplicants from "@/pages/BrandCampaignApplicants";
 import { Terms, Privacy } from "@/pages/Legal";
 
+// Attached at module load rather than in an effect, so a rejection thrown
+// while the first render is still in flight is already covered.
+installGlobalErrorHandlers();
+// Drains anything a previous session left behind before the first render, so a
+// manager whose phone died mid-shift finds their check-ins already sent.
+installOfflineQueue();
+
+/**
+ * The second layer: a crash inside a page, caught below the router.
+ *
+ * The root boundary would also catch this, but it cannot un-catch it — the
+ * fallback would stay until a manual reload, even after the user navigated
+ * somewhere that works. This one resets on the pathname, so leaving the broken
+ * screen is enough. It also sits below `ImpersonationBanner`, which therefore
+ * survives a page crash — an admin must never be left acting as somebody else
+ * with nothing on screen saying so.
+ */
+function RouteBoundary({ children }) {
+    const { pathname } = useLocation();
+    return (
+        <ErrorBoundary variant="page" name="route" resetOn={pathname}>
+            {children}
+        </ErrorBoundary>
+    );
+}
+
 function App() {
     return (
         <div className="App">
+            {/* Outside AuthProvider and the router on purpose — those two can
+                throw as easily as anything else, and a boundary inside them
+                would go down with them. The fallback uses plain anchors and a
+                real reload for exactly the same reason: it must not need the
+                router it may be standing in for. */}
+            <ErrorBoundary variant="page" name="app">
             <AuthProvider>
                 <BrowserRouter>
                     {/* Above the router on purpose. Inside it, a route could
@@ -48,6 +83,7 @@ function App() {
                         the one requirement of view-as is that you always know
                         you are in it. */}
                     <ImpersonationBanner />
+                    <RouteBoundary>
                     <Routes>
                         <Route path="/" element={<Landing />} />
                         <Route path="/login" element={<Login />} />
@@ -194,6 +230,7 @@ function App() {
                         </Route>
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
+                    </RouteBoundary>
                 </BrowserRouter>
                 {/* One position for every toast in the app.
                     top-center rather than a corner: on a phone a corner toast
@@ -228,6 +265,7 @@ function App() {
                     }}
                 />
             </AuthProvider>
+            </ErrorBoundary>
         </div>
     );
 }

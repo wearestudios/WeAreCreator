@@ -1,5 +1,19 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { api, formatApiError } from "@/lib/api";
+import { api, apiErrorCode, formatApiError } from "@/lib/api";
+import { setLogContext } from "@/lib/errorLog";
+
+/**
+ * Tell the error log who is on screen — the *role*, never the person.
+ *
+ * Published to a module rather than passed down through context because the
+ * two window-level handlers in `lib/globalErrors.js` run outside React
+ * entirely and still have to be able to say whose session this was.
+ */
+const publishLogContext = (user) =>
+    setLogContext({
+        role: user && user !== false ? user.role || "unknown" : "anonymous",
+        impersonating: Boolean(user && user !== false && user.impersonation),
+    });
 
 const AuthContext = createContext(null);
 
@@ -34,8 +48,16 @@ export const AuthProvider = ({ children }) => {
     const fetchMe = useCallback(async () => {
         try {
             const { data } = await api.get("/auth/me");
+            // Before setUser, not after, and not in an effect. React runs
+            // effects after a commit — and a child that throws during the very
+            // render this state change causes never reaches one, so the effect
+            // below has not fired yet when its boundary logs. That crash would
+            // be filed against "anonymous", which is exactly the crash you most
+            // want the role for.
+            publishLogContext(data);
             setUser(data);
         } catch {
+            publishLogContext(false);
             setUser(false);
         }
     }, []);
@@ -43,6 +65,12 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         fetchMe();
     }, [fetchMe]);
+
+    // A backstop for the paths that change `user` without going through
+    // fetchMe — logging out, stopping an impersonation.
+    useEffect(() => {
+        publishLogContext(user);
+    }, [user]);
 
     // Admin-only email/password login
     const loginAdmin = async (email, password) => {
@@ -81,7 +109,21 @@ export const AuthProvider = ({ children }) => {
             });
             return { ok: true, ...data };
         } catch (e) {
-            return { ok: false, error: formatApiError(e), status: e?.response?.status };
+            return {
+                ok: false,
+                error: formatApiError(e),
+                // The form branches on this rather than on the prose. A copy
+                // edit to a server message must not change what a button does.
+                code: apiErrorCode(e),
+                // Structured extras travel too: retry_after seeds the cooldown,
+                // remaining says how many tries are left.
+                retryAfter: e?.response?.data?.detail?.retry_after ?? null,
+                remaining: e?.response?.data?.detail?.remaining ?? null,
+                // No response at all means the request never landed — a
+                // different thing from the server refusing it.
+                offline: Boolean(e && !e.response),
+                status: e?.response?.status,
+            };
         }
     };
 
@@ -112,7 +154,21 @@ export const AuthProvider = ({ children }) => {
             setUser(data);
             return { ok: true, user: data };
         } catch (e) {
-            return { ok: false, error: formatApiError(e), status: e?.response?.status };
+            return {
+                ok: false,
+                error: formatApiError(e),
+                // The form branches on this rather than on the prose. A copy
+                // edit to a server message must not change what a button does.
+                code: apiErrorCode(e),
+                // Structured extras travel too: retry_after seeds the cooldown,
+                // remaining says how many tries are left.
+                retryAfter: e?.response?.data?.detail?.retry_after ?? null,
+                remaining: e?.response?.data?.detail?.remaining ?? null,
+                // No response at all means the request never landed — a
+                // different thing from the server refusing it.
+                offline: Boolean(e && !e.response),
+                status: e?.response?.status,
+            };
         }
     };
 

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import {
@@ -553,6 +554,57 @@ function Reach() {
 // ---------------------------------------------------------------------------
 
 /**
+ * A brief card before its brief arrives.
+ *
+ * Structurally the same element as the real card rather than a box of its
+ * average height: same `p-7`, same order of blocks, same `flex-1` on the body
+ * and the same bordered footer. That matters because the cards sit in a grid
+ * row and stretch to the tallest of the three — a flat `h-56` was right at one
+ * viewport and short by most of the footer everywhere else, so the section
+ * below it jumped when the fetch landed.
+ *
+ * The teaser reserves two lines on a phone and four from `md` up. That is not
+ * symmetry for its own sake: one column gives each card its own height, while
+ * three columns stretch every card to the tallest teaser in the row, so the
+ * desktop card is reliably taller than the narrow one it was tuned against.
+ * Measured, not assumed — a two-line skeleton was 73px short at 1280 and
+ * within 7px at 375.
+ */
+function BriefCardSkeleton() {
+    return (
+        <div
+            aria-hidden="true"
+            className="flex flex-col rounded-lg border border-white/10 bg-card p-7 grain-surface"
+        >
+            <div className="flex items-center justify-between">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-20" />
+            </div>
+            {/* text-fluid-2xl leading-tight — 20px on a phone, 24 on a
+              * laptop — and titles routinely wrap to two lines. The bar
+              * heights follow the line box, not the font size: line-height is
+              * what occupies the space. */}
+            <Skeleton className="mt-5 h-[1.5625rem] w-full md:h-[1.875rem]" />
+            <Skeleton className="mt-1.5 h-[1.5625rem] w-2/3 md:h-[1.875rem]" />
+            <Skeleton className="mt-2 h-3 w-24" />
+            <div className="mt-4 flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-5/6" />
+                <Skeleton className="hidden h-3 w-full md:block" />
+                <Skeleton className="hidden h-3 w-4/6 md:block" />
+            </div>
+            <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
+                <div>
+                    <Skeleton className="h-2.5 w-20" />
+                    <Skeleton className="mt-1 h-7 w-24" />
+                </div>
+                <Skeleton className="h-2.5 w-16" />
+            </div>
+        </div>
+    );
+}
+
+/**
  * Real open briefs, before anyone signs up.
  *
  * The page promises "discover briefs", but the campaign feed needs an account
@@ -612,10 +664,7 @@ function LiveBriefs() {
                 <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                     {briefs === null
                         ? Array.from({ length: 3 }).map((_, i) => (
-                              <div
-                                  key={i}
-                                  className="h-56 animate-pulse rounded-lg border border-white/10 bg-card grain-surface"
-                              />
+                              <BriefCardSkeleton key={i} />
                           ))
                         : briefs.map((b, idx) => (
                               <motion.article
@@ -635,7 +684,7 @@ function LiveBriefs() {
                                       <span>{CAT_LABEL[b.category] || b.category}</span>
                                       {b.area && <span>{b.area}</span>}
                                   </div>
-                                  <h3 className="mt-5 font-serif text-2xl leading-tight tracking-tight">
+                                  <h3 className="mt-5 font-serif text-fluid-2xl leading-tight tracking-tight">
                                       {b.title}
                                   </h3>
                                   <p className="mt-2 text-xs uppercase tracking-[0.15em] text-ember-500">

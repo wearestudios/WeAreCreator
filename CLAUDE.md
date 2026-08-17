@@ -37,6 +37,47 @@ creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
 
+## The OTP front door
+
+Login and signup are the same two steps — a number, then a code — and share
+one component, `frontend/src/components/OtpForm.jsx`. `Login.jsx` is that
+component and nothing else; `Signup.jsx` wraps it with the fields a new account
+needs and blocks the send until they are valid, passing `blockedReason` so the
+disabled button says why.
+
+**Every OTP refusal carries a `code`, and the form dispatches on the code, not
+on the prose.** `_otp_error(status, code, message, **extra)` builds them —
+`{"detail": {"message", "code", ...}}`, the same shape the Instagram and
+impersonation refusals use, read by `formatApiError` / `apiErrorCode` in
+`lib/api.js`. Eleven codes, listed in `tests/unit/test_otp_errors.py`, which
+fails if the set changes.
+
+The codes exist because the form has to *decide something*, and deciding it by
+matching English means a copy edit breaks a login screen:
+
+- `FAILURES` in `OtpForm.jsx` maps each code to some of `coolsDown`,
+  `offerResend`, `clearCode`, `backToPhone`. An unrecognised code falls through
+  `|| {}` to "show the message and do nothing", so a code deployed on the
+  server before the form catches up degrades rather than throwing.
+- **`cooldown` carries `retry_after` and the countdown is seeded from it**,
+  never from a local constant. The form used to set a flat 30s while the
+  message said "wait 23s", so the button stayed dead after the server would
+  have accepted it — and the two 429s are not the same thing: `hourly_limit`
+  has no countdown that will clear inside the session, so it sends the user
+  back to the number field instead of ticking down to nothing.
+- **`wrong_code` carries `remaining` and must not offer a resend.** They got
+  the code; they mistyped it. Resending invalidates the one they are holding,
+  so "didn't get it? resend" — which used to be appended to *every* failure —
+  is advice that makes it worse.
+- `locked_out` is raised at two sites, before the comparison and after the
+  decrement, or the fifth wrong code reads as a sixth.
+
+Validation is inline and fires on blur, not on submit: `validatePhone` names
+the three distinct problems (no country code, too short, not an Indian mobile)
+rather than answering all of them with "invalid". A plain-string `detail` still
+renders — the two signup-integrity refusals have no code because the client
+already prevents them.
+
 ## The brand manager
 
 A brand has exactly **one login**, and it belongs to a named person captured at
@@ -229,6 +270,36 @@ before the field existed, and startup backfills it.
   rejection quotes the reason so the brand knows what to fix.
 - The queue is `verified: false` **and** `verification_state` in
   `pending_verification | rejected` — a bare signup is not a queue item.
+
+The brand's half of this is `pages/BrandOnboarding.jsx` plus
+`components/brand/VerificationDocuments.jsx`. For a long time it did not exist:
+the four endpoints above shipped with no caller anywhere in the frontend, so a
+brand could sign up, draft, and then hit `_verified_brand_or_403` forever with
+no route to the thing that would clear it. If a backend flow has no UI it is not
+shipped, whatever the tests say.
+
+- Onboarding and verification are **one page in two halves**, because the second
+  is invisible otherwise — an unverified brand drafts happily and only meets the
+  wall at publish. The top is the thirty-second setup; below it are the fields a
+  reviewer needs, the documents, and the submit.
+- Saving is partial and submitting is not, mirroring the server exactly: `Save`
+  writes whatever is filled in, `Send for verification` demands the set. The
+  button is disabled when it would 409, and **`missing_fields` is rendered as a
+  list** — a grey button with no explanation is how a form becomes a support
+  ticket.
+- The upload's limits come from the server (`max_document_bytes`,
+  `accepted_mime_types`, `max_documents` on the verification block) and are
+  checked in the browser before a byte moves, so a 6MB scan fails instantly
+  instead of after a minute on mobile data. `ACCEPTED_DOCUMENT_MIMES` is derived
+  from the signature tables `sniff_document_type` actually uses, so the `accept=`
+  attribute cannot offer a format the sniffer will reject.
+- **Uploads are sequential, one progress bar each, and the picker is closed
+  while any is in flight.** Parallel uploads on a phone make every bar crawl and
+  none finish; a silent disabled button gets pressed again, and the second press
+  is a second document in the reviewer's queue.
+- A file that fails the local check is **queued as already-failed rather than
+  dropped**, with the error on that file's own row. Dropping it silently is how
+  somebody submits believing four documents went up.
 
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
@@ -570,6 +641,44 @@ second one to `public/index.html`.
 In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
 `border-white/10` on `bg-card` surfaces, ember for CTAs and accents only.
 
+### The four foundations
+
+All four live in `src/index.css` and `tailwind.config.js` rather than at call
+sites, so a new component gets them by using the ordinary classes.
+
+- **Grain.** One texture, `--grain-texture`, applied three ways: `.grain-page`
+  (the ground, `background-attachment: fixed`, so it reads as paper rather than
+  a pattern scrolling behind the text), `.grain-surface` (an extra background
+  layer on the element, inheriting its radius) and `.media-frame`. All blend
+  `overlay`, measured: the page ground lifts sRGB 11 → 12.8, a card 17 → 18.7.
+  `soft-light` was tried and took the ground to 15.6, which reads as a different
+  colour rather than a texture.
+  - **Never on a gradient** — both set `background-image` and one silently wins.
+  - **Never on a translucent surface** (`bg-card/40`). The blend runs against
+    the element's own colour before it composites over the page, so at 40% alpha
+    there is nothing to attenuate the noise against and the panel lifts to
+    nearly 40. Those panels sit on a grained ground already.
+- **Fluid type.** Eight `text-fluid-*` steps, each a `clamp()` whose minimum and
+  maximum are the two Tailwind sizes the responsive pair it replaced used, so
+  nothing is bigger or smaller at either end — it just stops jumping. The
+  preferred term interpolates over 375px→1280px, so the whole phone range is
+  fluid rather than pinned at the minimum. **No heading uses a flat `text-*`
+  size.** An explicit `leading-*` still wins over the step's own line-height
+  (Tailwind emits lineHeight after fontSize), so a converted heading keeps its
+  leading.
+- **Media frames.** `.media-frame` reserves the box and tints it, so an empty
+  frame reads as a surface that has not filled rather than a hole. Every `<img>`
+  in the app is inside one, out of flow, or carries an aspect ratio.
+  - When checking this, do **not** ask whether `getComputedStyle(img).height` is
+    non-zero. Computed style resolves `height: auto` to the used pixel value
+    once layout has run, so that test passes for a completely unreserved image
+    and the whole check silently becomes vacuous. Ask for an aspect ratio, out-
+    of-flow positioning, `width`+`height` attributes, or a framed ancestor.
+- **Elevation.** Hairline border plus surface tint on anything that sits in the
+  page; `box-shadow` only on things that genuinely float — dialogs, dropdowns,
+  popovers, toasts. Zero shadows outside `components/ui/`, checked by walking
+  every element on a rendered page rather than by grepping for `shadow-`.
+
 ## data-testid convention
 
 Every interactive or informational element carries a `data-testid`, kebab-case and
@@ -607,6 +716,87 @@ Anything new that lists data uses it rather than solving these again:
   container is the scroller and has to own a max-height; a sticky header with
   nothing to stick against does nothing at all.
 
+### Page skeletons
+
+`components/data/PageSkeleton.jsx` is the same idea one level up, for detail and
+form *pages* rather than lists: `DetailPageSkeleton`, `FormPageSkeleton`,
+`PageHeaderSkeleton`, `FieldSkeleton`, `LoadingAnnouncement`. Separate from
+DenseView because the problem is different — a list skeleton stands in for rows
+whose count is unknown and whose height is uniform, so sketching them is free,
+while a page skeleton stands in for one arrangement that will land in a known
+place and has to be measured against it.
+
+- **The skeleton renders inside the real page's chrome** — same `Navbar`, same
+  `<main>`, same `max-w-*`. The centred spinners these replaced sat in their own
+  full-viewport box, so the page did not arrive so much as replace a different
+  one.
+- Heights are **measured against a rendered element, not derived from the type
+  scale** — line-height is what occupies space, and `text-fluid-*` is a clamp, so
+  a headline is a different height at 375 and 1280. Where content decides the
+  height, reserve both.
+- The footer action bar is part of the shape. It is the tallest single element on
+  a phone (`flex-col-reverse` stacks full-width buttons), so leaving it out is
+  what makes a skeleton shift by 100px on mobile and 0 on a laptop.
+- Skeletons are `aria-hidden`; `LoadingAnnouncement` is the `role="status"` that
+  is not, so a screen reader hears "loading" rather than silence.
+- Verified by measurement, not by eye: CLS is **0.0000** on CampaignDetail,
+  PostCampaign (new and edit) and BrandOnboarding at 375 and 1280, and 0.0048 on
+  Landing's below-fold brief grid. When checking this, confirm the skeleton
+  actually rendered — a page that redirects to `/login` also scores zero.
+
+## The campaign manager, and the venue
+
+A manager reads `ManagerHome` either the night before a shoot or standing in the
+venue on the day, and those two moments want opposite things. So the day's work
+is a section of its own, at full size, with a direct route into day-of mode
+(`/manager/campaigns/:id?mode=day-of`); everything else is smaller below it and
+anything already finished is folded shut but kept, because performance still
+gets recorded days later.
+
+- `isToday` compares at **local midnight**, not on the ISO string — a 19:00
+  event reads as tomorrow in UTC for everybody using this. It answers for both
+  shapes: an event's single date, and a personal table's window that *contains*
+  today.
+- `attentionFor` only speaks about today and the next two days. Every signal it
+  raises is otherwise silent — no notification, no queue — and each is a thing
+  the manager finds out about from a phone call: no slots, unbooked places,
+  fewer creators than the brief asked for, no venue address on the day. It stays
+  short deliberately; a list of eleven warnings is a list nobody reads standing
+  up.
+
+### Check-ins survive the venue's wifi
+
+`lib/offlineQueue.js`. A manager checking twenty people into a basement is the
+worst network in the product and the least forgiving moment to be in it: there
+is a person in front of them, and a check-in that silently failed surfaces days
+later as an attendance record that disagrees with the room.
+
+- **A network failure queues rather than rolls back.** The row stays checked in
+  and gets a "waiting" marker; the request goes to `localStorage` and replays
+  itself. The old behaviour — revert and raise a Retry toast — asks somebody
+  mid-queue to notice a toast and tap it, which is asking them to do the
+  network's job.
+- **A 4xx drops the item; only no-response, 408, 429 and 5xx retry.** The
+  check-in route answers **409 "They're already checked in"**, so on a replay a
+  409 means the work landed. Treating it as retryable would loop forever on
+  something that already succeeded — a unit of this is pinned by a test that
+  queues a check-in for an already-attended collaboration.
+- **Backoff is for timers, not for people.** `flush({ force: true })` ignores
+  both the backoff and `navigator.onLine`, and is what "Try now", the `online`
+  event and returning to the tab all use. Honouring a two-minute wait after an
+  explicit tap makes the button look broken — and `onLine` is a hint that lies
+  on captive portals.
+- `enqueue` keys on the action (`check-in:<id>`), so a second tap replaces
+  rather than stacks.
+- `QueueBanner` shows nothing when online and empty. A permanent "connected"
+  badge trains the manager to stop looking at the corner of the screen that will
+  one day say four check-ins have not gone through.
+
+Verified against a stub that fails check-ins on demand: the queue survives a
+full page reload, drains when the server recovers, and both check-ins reach the
+server. Breaking either rule — persistence, or 409-as-retryable — fails the
+suite.
+
 ## Local test accounts
 
 `backend/seed_personas.py` seeds one signed-in-able account per persona —
@@ -625,6 +815,78 @@ uses. That is not an extra precaution but the honest condition: without
 simulation you cannot read the login code, so the accounts would be unusable
 anyway. Numbers are `+9199000000NN`, patterned so one in a production database
 is a self-announcing bug.
+
+## When something breaks
+
+Three layers, in `components/ErrorBoundary.jsx`, `lib/errorLog.js` and
+`lib/globalErrors.js`. Before them a render error anywhere unmounted the whole
+tree, and the user's evidence was a white page — indistinguishable from a
+network failure, a bad deploy, or the app not existing.
+
+- **Root boundary**, mounted in `App.js` *outside* `AuthProvider` and
+  `BrowserRouter`. Those can throw too, so a boundary inside them goes down with
+  them. Its fallback therefore uses a plain `<a href="/">` and
+  `location.reload()` and touches no router — a `<Link>` in a fallback that may
+  be standing in for a broken router is a fallback that breaks.
+- **Route boundary** (`RouteBoundary`) inside the router, `resetOn={pathname}`.
+  The root one would also catch a page crash but could never un-catch it: the
+  fallback would survive navigating somewhere that works. It also sits *below*
+  `ImpersonationBanner`, so a page crash never leaves an admin acting as
+  somebody else with nothing on screen saying so.
+- **Section boundaries** (`SafeSection`) around independent panels: the four
+  admin overview panels, the `<Outlet>` and the ⌘K palette in the console shell,
+  the creator dashboard's six sections, the applicant board and the suggestions
+  panel. Named `SafeSection` because `admin/DetailPage.jsx` already exports a
+  `Section` that means a titled block.
+  - Every panel on every admin **detail** page is covered by one change:
+    `DetailPage`'s `Section` wraps its own children. Doing it in the shared
+    primitive rather than at twenty call sites is the only version that stays
+    true — a panel added next month is covered by using `Section` at all. The
+    heading stays outside the boundary, so a broken panel still says which one.
+  - `Try again` bumps a key and remounts, so a component that threw on bad state
+    gets a fresh one rather than the state that broke it.
+
+### What a crash report may contain
+
+`logError` records the component, the route, the **role**, the error and the
+component stack. It must never record a name, phone number, email, address, UPI
+id or PAN — this product handles all of them, and a log line is a data store
+nobody audits because logs feel like plumbing.
+
+- `redact()` scrubs message, stack and component stack. The patterns are blunt
+  on purpose: personal data reaches a log by somebody interpolating a record
+  into an error, and that can be any shape.
+- **The query string is dropped whole, not filtered.** ⌘K searches on phone
+  numbers, so `?q=%2B919876543210` is a URL this app really produces. Path
+  segments stay — an ObjectId is opaque and "which creator's page crashed" is
+  most of the debugging value.
+- The role is published to a module by `AuthContext`, **inside `fetchMe` before
+  `setUser`**, not only in an effect. React runs effects after a commit, and a
+  child that throws during the render a state change causes never reaches one —
+  so an effect-only version filed every first-render crash against `anonymous`,
+  which is exactly the crash you most want the role for.
+- The sink is the console plus a bounded ring at `window.__weareErrors()`.
+  Everything in the ring went through `redact` on the way in, so pointing it at
+  a real collector cannot become a privacy change by accident.
+
+### Failures nobody was listening for
+
+`installGlobalErrorHandlers()` in `App.js` at module load. `unhandledrejection`
+covers a request whose `.then()` chain had no `.catch()` — the spinner that
+spins forever; `error` covers a throw in a callback or timer, which no boundary
+can see.
+
+**Deliberately not an axios interceptor.** Around sixty call sites already catch
+their own failures and say something better than a generic message ("Accept the
+creator first"). An interceptor cannot know whether a caller is about to handle
+the rejection, so it would double-toast every one of them. The browser knows
+exactly that, and only fires `unhandledrejection` when nothing handled it — so
+the deliberate `.catch(() => {})` sites stay correctly quiet.
+
+Toasts carry a stable id derived from the message, so a session expiring
+mid-screen produces one toast rather than six. A non-request crash gets
+"Something went wrong" and never a type name or a stack — the person reading it
+cannot act on either.
 
 ## Tests
 

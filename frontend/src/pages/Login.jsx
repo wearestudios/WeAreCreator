@@ -50,7 +50,7 @@ export default function Login() {
                         <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-ember-500/80 align-middle" />
                         Welcome back
                     </p>
-                    <h1 className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight">
+                    <h1 className="mt-5 font-serif text-fluid-5xl leading-[0.95] tracking-tight">
                         Log in with <span className="italic">WhatsApp</span>
                     </h1>
                     <p className="mt-4 text-sm text-muted-foreground">

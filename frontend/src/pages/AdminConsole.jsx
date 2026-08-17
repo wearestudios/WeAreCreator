@@ -26,6 +26,7 @@ import {
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_TABS as IDS } from "@/constants/testIds";
 import { CommandPalette } from "@/components/admin/CommandPalette";
@@ -134,8 +135,16 @@ export default function AdminConsole() {
                         WeAre · Admin console
                     </p>
                     {/* Mounted in the shell so ⌘K works on every screen under
-                        /admin, detail pages included. */}
-                    <CommandPalette />
+                        /admin, detail pages included — and boxed off, because
+                        a search result with an unexpected shape must not be
+                        able to take the console down with it. */}
+                    <ErrorBoundary
+                        variant="section"
+                        name="command-palette"
+                        label="Search is unavailable"
+                    >
+                        <CommandPalette />
+                    </ErrorBoundary>
                 </div>
 
                 {/* A scrolling strip rather than a wrapping grid: nine tabs
@@ -190,8 +199,21 @@ export default function AdminConsole() {
                     })}
                 </nav>
 
+                {/* The console's own screen, boxed off from its chrome.
+                    Forty endpoints sit behind these routes and any of them can
+                    return a shape nobody expected; when one does, the tab strip
+                    and the badge counts stay up and the admin can click
+                    somewhere else. `resetOn` is the path, so doing that clears
+                    the fallback rather than carrying it to the next screen. */}
                 <div className="mt-10">
-                    <Outlet context={{ reloadCounts: loadCounts, feePercent }} />
+                    <ErrorBoundary
+                        variant="section"
+                        name="admin-screen"
+                        label="This screen couldn't load"
+                        resetOn={pathname}
+                    >
+                        <Outlet context={{ reloadCounts: loadCounts, feePercent }} />
+                    </ErrorBoundary>
                 </div>
             </main>
         </div>

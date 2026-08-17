@@ -138,7 +138,7 @@ const StatTile = ({ label, value, Icon, highlight }) => (
             "rounded-md border p-5 transition-colors duration-200 " +
             (highlight
                 ? "border-ember-500/40 bg-ember-500/10"
-                : "border-white/10 bg-card")
+                : "border-white/10 bg-card grain-surface")
         }
     >
         <div className="flex items-center justify-between">

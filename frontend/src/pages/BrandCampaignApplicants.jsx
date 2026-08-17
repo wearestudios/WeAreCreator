@@ -18,6 +18,7 @@ import {
     X,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { SafeSection } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
 import {
@@ -907,6 +908,12 @@ export default function BrandCampaignApplicants() {
                 </div>
                 </StickyBar>
 
+                {/* The board itself. One applicant with an unexpected shape —
+                    a null compensation, a state the pill doesn't know — used to
+                    take the campaign header, the filters and the suggestions
+                    panel down with it, on the one screen a brand uses to decide
+                    who gets booked. */}
+                <SafeSection name="applicant-board" label="The applicant list couldn't load">
                 <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
                     {visible.length === 0 ? (
                         <ListEmptyState
@@ -942,10 +949,15 @@ export default function BrandCampaignApplicants() {
                         </ul>
                     )}
                 </div>
+                </SafeSection>
 
                 {/* Applicants are who came to you. This is who to go and ask —
-                    same page, because they are two halves of filling a brief. */}
-                <SuggestedCreators campaignId={id} />
+                    same page, because they are two halves of filling a brief.
+                    Separately boxed: the ranking is the newest code on this
+                    screen and the least essential to it. */}
+                <SafeSection name="suggested-creators" label="Suggestions couldn't load">
+                    <SuggestedCreators campaignId={id} />
+                </SafeSection>
             </main>
 
             <AcceptDialog

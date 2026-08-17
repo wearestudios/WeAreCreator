@@ -5,7 +5,7 @@
 // this is used one-handed while holding a clipboard or a phone to your ear.
 // Actions that cost something (no-show, reschedule) open a sheet from the
 // bottom rather than firing on the tap that reached them.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     CalendarClock,
@@ -13,9 +13,12 @@ import {
     ChevronDown,
     PartyPopper,
     Phone,
+    UploadCloud,
     UserX,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { enqueue } from "@/lib/offlineQueue";
+import QueueBanner from "@/components/manager/QueueBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -48,6 +51,11 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
     const [rescheduleFor, setRescheduleFor] = useState(null);
     // Rows the screen is showing as done before the server has confirmed it.
     const [optimistic, setOptimistic] = useState({});
+    // Rows whose check-in is on the offline queue. Kept apart from `optimistic`
+    // because these get a visible "waiting to sync" marker: the manager should
+    // be able to tell the difference between done and going-to-be-done without
+    // reading the banner at the top of a long list.
+    const [queued, setQueued] = useState({});
 
     // The roster as the screen shows it: the server's answer, with any
     // not-yet-confirmed check-ins applied on top. Everything below — the
@@ -55,13 +63,36 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
     // optimistic tap moves all of them together rather than just the row.
     const shown = useMemo(
         () =>
-            (roster || []).map((r) =>
-                optimistic[r.collaboration_id]
-                    ? { ...r, attendance: optimistic[r.collaboration_id] }
-                    : r,
-            ),
-        [roster, optimistic],
+            (roster || []).map((r) => {
+                const pending = queued[r.collaboration_id];
+                const override = optimistic[r.collaboration_id];
+                if (!pending && !override) return r;
+                return {
+                    ...r,
+                    attendance: override || "attended",
+                    _queued: Boolean(pending),
+                };
+            }),
+        [roster, optimistic, queued],
     );
+
+    // Once the server's own roster says attended, the local marker has done its
+    // job. Without this a synced row would keep saying "waiting" until the page
+    // was reloaded.
+    useEffect(() => {
+        if (!roster) return;
+        setQueued((s) => {
+            const next = { ...s };
+            let changed = false;
+            for (const r of roster) {
+                if (next[r.collaboration_id] && r.attendance !== "expected") {
+                    delete next[r.collaboration_id];
+                    changed = true;
+                }
+            }
+            return changed ? next : s;
+        });
+    }, [roster]);
 
     const rows = useMemo(() => {
         if (filter === "all") return shown;
@@ -91,12 +122,27 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
     };
 
     // Check-in is optimistic: the row flips the moment you tap it, because you
-    // are looking at the person you just checked in, not at the phone. A
-    // failure puts it straight back and says so — but the common case is that
-    // it worked, and waiting on a round trip in a basement with one bar makes
-    // the whole queue feel broken.
+    // are looking at the person you just checked in, not at the phone.
+    //
+    // **A network failure does not roll it back — it queues it.** Reverting was
+    // the old behaviour and it is wrong here: the manager has somebody in front
+    // of them, the check-in did happen in the room, and asking them to notice a
+    // toast and tap Retry while a queue forms is asking them to do the network's
+    // job. So the request goes on disk and replays itself, the row stays
+    // checked in, and the banner says how many are waiting.
+    //
+    // A refusal is different. A 409 ("already checked in", "this just moved")
+    // is the server telling us the truth about state, so that one does revert
+    // and say why — queueing it would replay a request that can never succeed.
     const checkIn = async (row) => {
         const id = row.collaboration_id;
+        const drop = () =>
+            setOptimistic((m) => {
+                const next = { ...m };
+                delete next[id];
+                return next;
+            });
+
         setOptimistic((m) => ({ ...m, [id]: "attended" }));
         setBusyId(id);
         try {
@@ -106,18 +152,25 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
             await onChanged?.();
             // Only drop the local override once the refreshed roster carries
             // the new state, or the row would flicker back for a frame.
-            setOptimistic((m) => {
-                const next = { ...m };
-                delete next[id];
-                return next;
-            });
+            drop();
         } catch (e) {
-            setOptimistic((m) => {
-                const next = { ...m };
-                delete next[id];
-                return next;
-            });
-            notifyError(e, { onRetry: () => checkIn(row) });
+            const status = e?.response?.status;
+            const networkish = !e?.response || status === 408 || status === 429 || status >= 500;
+            if (networkish) {
+                enqueue({
+                    key: `check-in:${id}`,
+                    url: `/manager/collaborations/${id}/check-in`,
+                    label: `Check-in for ${row.name || "a creator"}`,
+                });
+                // The override stays until a refreshed roster shows `attended`,
+                // so the row reads as done for as long as the queue holds it.
+                setQueued((s) => ({ ...s, [id]: true }));
+                notifySuccess(`${row.name || "Creator"} checked in — will sync`);
+                setOpenId(null);
+            } else {
+                drop();
+                notifyError(e);
+            }
         } finally {
             setBusyId(null);
         }
@@ -129,6 +182,10 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
 
     return (
         <section data-testid={IDS.section} className="space-y-5">
+            {/* Above the progress figure, because a queued check-in is counted
+                in that figure and the manager should know why. */}
+            <QueueBanner />
+
             {/* Progress first: the only number that matters mid-shift. */}
             <div
                 data-testid={IDS.progress}
@@ -214,6 +271,15 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                                     value={row.attendance}
                                                     testid={IDS.done(row.collaboration_id)}
                                                 />
+                                            )}
+                                            {row._queued && (
+                                                <span
+                                                    data-testid={IDS.queued(row.collaboration_id)}
+                                                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-amber-200"
+                                                >
+                                                    <UploadCloud className="h-3 w-3" />
+                                                    Waiting
+                                                </span>
                                             )}
                                         </div>
                                         <p className="mt-1.5 truncate text-sm">{row.name}</p>

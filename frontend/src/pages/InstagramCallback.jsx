@@ -99,7 +99,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "success" && (
                     <div data-testid={IDS.success} className="mt-6">
-                        <h1 className="font-serif text-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
                             Connected.
                         </h1>
                         <p className="mt-4 inline-flex items-center gap-2 text-sm text-emerald-300">
@@ -115,7 +115,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "not_professional" && (
                     <div className="mt-6 space-y-6">
-                        <h1 className="font-serif text-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
                             Almost — one setting to change.
                         </h1>
                         <NotProfessionalHelp testid={IDS.notProfessional} message={state.message} />
@@ -147,7 +147,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "error" && (
                     <div data-testid={IDS.error} className="mt-6 space-y-6">
-                        <h1 className="font-serif text-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
                             That didn't go through.
                         </h1>
                         <p className="flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">

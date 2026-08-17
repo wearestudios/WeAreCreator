@@ -11,6 +11,7 @@ import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { useAdminConsole } from "@/pages/AdminConsole";
+import { SafeSection } from "@/components/ErrorBoundary";
 import Overview from "@/components/admin/Overview";
 import {
     ExportsPanel,
@@ -36,10 +37,23 @@ export const OverviewRoute = () => {
     const { reloadCounts } = useAdminConsole();
     return (
         <div className="space-y-12">
-            <HealthPanel />
-            <IntelligencePanel />
-            <Overview onChanged={reloadCounts} />
-            <ExportsPanel />
+            {/* Four independent panels behind four independent endpoints, so
+                they get four boundaries. Health degrading because one check
+                returned an unexpected row should not also cost the admin the
+                exports, and one shared boundary around all four would mean
+                exactly that. */}
+            <SafeSection name="health" label="Health checks couldn't load">
+                <HealthPanel />
+            </SafeSection>
+            <SafeSection name="intelligence" label="Activity charts couldn't load">
+                <IntelligencePanel />
+            </SafeSection>
+            <SafeSection name="overview" label="The overview couldn't load">
+                <Overview onChanged={reloadCounts} />
+            </SafeSection>
+            <SafeSection name="exports" label="Exports couldn't load">
+                <ExportsPanel />
+            </SafeSection>
         </div>
     );
 };
