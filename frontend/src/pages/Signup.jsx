@@ -112,7 +112,7 @@ export default function Signup() {
                         <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-ember-500/80 align-middle" />
                         Create account
                     </p>
-                    <h1 className="mt-5 font-serif text-5xl leading-[0.95] tracking-tight">
+                    <h1 className="mt-5 font-serif text-fluid-5xl leading-[0.95] tracking-tight">
                         Join <span className="italic">WeAre</span> Creators
                     </h1>
                     <p className="mt-4 text-sm text-muted-foreground">
@@ -142,7 +142,7 @@ export default function Signup() {
                                             "group relative rounded-md border p-4 text-left transition-colors duration-200 " +
                                             (active
                                                 ? "border-ember-500 bg-ember-500/10"
-                                                : "border-white/10 bg-card hover:border-white/25")
+                                                : "border-white/10 bg-card grain-surface hover:border-white/25")
                                         }
                                     >
                                         <Icon className={"h-5 w-5 " + (active ? "text-ember-500" : "text-muted-foreground")} />

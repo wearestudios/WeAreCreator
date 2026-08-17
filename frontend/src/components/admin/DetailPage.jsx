@@ -112,7 +112,9 @@ export const Stat = ({ label, value, testid, highlight }) => (
         data-testid={testid}
         className={
             "rounded-md border p-5 " +
-            (highlight ? "border-ember-500/40 bg-ember-500/10" : "border-white/10 bg-card")
+            (highlight
+                ? "border-ember-500/40 bg-ember-500/10"
+                : "border-white/10 bg-card grain-surface")
         }
     >
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">

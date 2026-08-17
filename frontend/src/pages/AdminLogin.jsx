@@ -39,7 +39,7 @@ export default function AdminLogin() {
                     WeAre <span className="text-ember-500">Creators</span>
                 </Link>
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Team admin</p>
-                <h1 className="mt-3 font-serif text-4xl leading-none tracking-tight">
+                <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
                     Sign in to the console
                 </h1>
                 <p className="mt-4 text-sm text-muted-foreground">

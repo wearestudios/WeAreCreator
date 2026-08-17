@@ -40,6 +40,8 @@ module.exports = {
             // at the minimum. Line heights match what the pair emitted at its
             // larger size, which is the one most of the reading happens at.
             fontSize: {
+                // xl (20px) → 2xl (24px)
+                "fluid-2xl": ["clamp(1.25rem, 1.146rem + 0.442vw, 1.5rem)", { lineHeight: "1.333" }],
                 // 2xl (24px) → 3xl (30px)
                 "fluid-3xl": ["clamp(1.5rem, 1.345rem + 0.663vw, 1.875rem)", { lineHeight: "1.2" }],
                 // 3xl (30px) → 4xl (36px)

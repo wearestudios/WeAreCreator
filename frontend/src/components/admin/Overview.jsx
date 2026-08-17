@@ -273,7 +273,7 @@ export default function Overview({ onChanged }) {
                                     "rounded-md border p-5 text-left transition-colors duration-200 " +
                                     (on
                                         ? "border-ember-500 bg-ember-500/10"
-                                        : "border-white/10 bg-card hover:border-ember-500/40")
+                                        : "border-white/10 bg-card grain-surface hover:border-ember-500/40")
                                 }
                             >
                                 <div className="flex items-center justify-between gap-2">

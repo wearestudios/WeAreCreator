@@ -641,6 +641,44 @@ second one to `public/index.html`.
 In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
 `border-white/10` on `bg-card` surfaces, ember for CTAs and accents only.
 
+### The four foundations
+
+All four live in `src/index.css` and `tailwind.config.js` rather than at call
+sites, so a new component gets them by using the ordinary classes.
+
+- **Grain.** One texture, `--grain-texture`, applied three ways: `.grain-page`
+  (the ground, `background-attachment: fixed`, so it reads as paper rather than
+  a pattern scrolling behind the text), `.grain-surface` (an extra background
+  layer on the element, inheriting its radius) and `.media-frame`. All blend
+  `overlay`, measured: the page ground lifts sRGB 11 → 12.8, a card 17 → 18.7.
+  `soft-light` was tried and took the ground to 15.6, which reads as a different
+  colour rather than a texture.
+  - **Never on a gradient** — both set `background-image` and one silently wins.
+  - **Never on a translucent surface** (`bg-card/40`). The blend runs against
+    the element's own colour before it composites over the page, so at 40% alpha
+    there is nothing to attenuate the noise against and the panel lifts to
+    nearly 40. Those panels sit on a grained ground already.
+- **Fluid type.** Eight `text-fluid-*` steps, each a `clamp()` whose minimum and
+  maximum are the two Tailwind sizes the responsive pair it replaced used, so
+  nothing is bigger or smaller at either end — it just stops jumping. The
+  preferred term interpolates over 375px→1280px, so the whole phone range is
+  fluid rather than pinned at the minimum. **No heading uses a flat `text-*`
+  size.** An explicit `leading-*` still wins over the step's own line-height
+  (Tailwind emits lineHeight after fontSize), so a converted heading keeps its
+  leading.
+- **Media frames.** `.media-frame` reserves the box and tints it, so an empty
+  frame reads as a surface that has not filled rather than a hole. Every `<img>`
+  in the app is inside one, out of flow, or carries an aspect ratio.
+  - When checking this, do **not** ask whether `getComputedStyle(img).height` is
+    non-zero. Computed style resolves `height: auto` to the used pixel value
+    once layout has run, so that test passes for a completely unreserved image
+    and the whole check silently becomes vacuous. Ask for an aspect ratio, out-
+    of-flow positioning, `width`+`height` attributes, or a framed ancestor.
+- **Elevation.** Hairline border plus surface tint on anything that sits in the
+  page; `box-shadow` only on things that genuinely float — dialogs, dropdowns,
+  popovers, toasts. Zero shadows outside `components/ui/`, checked by walking
+  every element on a rendered page rather than by grepping for `shadow-`.
+
 ## data-testid convention
 
 Every interactive or informational element carries a `data-testid`, kebab-case and
