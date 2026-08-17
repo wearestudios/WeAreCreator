@@ -10,6 +10,7 @@ import { ArrowLeft, ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { ADMIN_DETAIL as IDS, BREADCRUMBS } from "@/constants/testIds";
 
 /**
@@ -78,7 +79,18 @@ export const Section = ({ id, title, count, action, children, className = "" }) 
             </h2>
             {action}
         </div>
-        <div className="mt-4">{children}</div>
+        {/* Every panel on every detail page is boxed off here rather than at
+          * the twenty-odd call sites. A detail page is several independent
+          * endpoints stacked up — applicants, notes, performance, the audit
+          * trail — and one of them returning a row nobody expected should cost
+          * that panel, not the page. Doing it in the shared primitive is also
+          * the only version that stays true: a panel added next month is
+          * covered by using Section at all.
+          *
+          * The heading stays outside, so a broken panel still says which one. */}
+        <ErrorBoundary variant="section" name={`detail-${id}`} label={`${title} couldn't load`}>
+            <div className="mt-4">{children}</div>
+        </ErrorBoundary>
     </section>
 );
 

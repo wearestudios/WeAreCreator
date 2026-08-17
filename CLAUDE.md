@@ -725,6 +725,78 @@ simulation you cannot read the login code, so the accounts would be unusable
 anyway. Numbers are `+9199000000NN`, patterned so one in a production database
 is a self-announcing bug.
 
+## When something breaks
+
+Three layers, in `components/ErrorBoundary.jsx`, `lib/errorLog.js` and
+`lib/globalErrors.js`. Before them a render error anywhere unmounted the whole
+tree, and the user's evidence was a white page — indistinguishable from a
+network failure, a bad deploy, or the app not existing.
+
+- **Root boundary**, mounted in `App.js` *outside* `AuthProvider` and
+  `BrowserRouter`. Those can throw too, so a boundary inside them goes down with
+  them. Its fallback therefore uses a plain `<a href="/">` and
+  `location.reload()` and touches no router — a `<Link>` in a fallback that may
+  be standing in for a broken router is a fallback that breaks.
+- **Route boundary** (`RouteBoundary`) inside the router, `resetOn={pathname}`.
+  The root one would also catch a page crash but could never un-catch it: the
+  fallback would survive navigating somewhere that works. It also sits *below*
+  `ImpersonationBanner`, so a page crash never leaves an admin acting as
+  somebody else with nothing on screen saying so.
+- **Section boundaries** (`SafeSection`) around independent panels: the four
+  admin overview panels, the `<Outlet>` and the ⌘K palette in the console shell,
+  the creator dashboard's six sections, the applicant board and the suggestions
+  panel. Named `SafeSection` because `admin/DetailPage.jsx` already exports a
+  `Section` that means a titled block.
+  - Every panel on every admin **detail** page is covered by one change:
+    `DetailPage`'s `Section` wraps its own children. Doing it in the shared
+    primitive rather than at twenty call sites is the only version that stays
+    true — a panel added next month is covered by using `Section` at all. The
+    heading stays outside the boundary, so a broken panel still says which one.
+  - `Try again` bumps a key and remounts, so a component that threw on bad state
+    gets a fresh one rather than the state that broke it.
+
+### What a crash report may contain
+
+`logError` records the component, the route, the **role**, the error and the
+component stack. It must never record a name, phone number, email, address, UPI
+id or PAN — this product handles all of them, and a log line is a data store
+nobody audits because logs feel like plumbing.
+
+- `redact()` scrubs message, stack and component stack. The patterns are blunt
+  on purpose: personal data reaches a log by somebody interpolating a record
+  into an error, and that can be any shape.
+- **The query string is dropped whole, not filtered.** ⌘K searches on phone
+  numbers, so `?q=%2B919876543210` is a URL this app really produces. Path
+  segments stay — an ObjectId is opaque and "which creator's page crashed" is
+  most of the debugging value.
+- The role is published to a module by `AuthContext`, **inside `fetchMe` before
+  `setUser`**, not only in an effect. React runs effects after a commit, and a
+  child that throws during the render a state change causes never reaches one —
+  so an effect-only version filed every first-render crash against `anonymous`,
+  which is exactly the crash you most want the role for.
+- The sink is the console plus a bounded ring at `window.__weareErrors()`.
+  Everything in the ring went through `redact` on the way in, so pointing it at
+  a real collector cannot become a privacy change by accident.
+
+### Failures nobody was listening for
+
+`installGlobalErrorHandlers()` in `App.js` at module load. `unhandledrejection`
+covers a request whose `.then()` chain had no `.catch()` — the spinner that
+spins forever; `error` covers a throw in a callback or timer, which no boundary
+can see.
+
+**Deliberately not an axios interceptor.** Around sixty call sites already catch
+their own failures and say something better than a generic message ("Accept the
+creator first"). An interceptor cannot know whether a caller is about to handle
+the rejection, so it would double-toast every one of them. The browser knows
+exactly that, and only fires `unhandledrejection` when nothing handled it — so
+the deliberate `.catch(() => {})` sites stay correctly quiet.
+
+Toasts carry a stable id derived from the message, so a session expiring
+mid-screen produces one toast rather than six. A non-request crash gets
+"Something went wrong" and never a type name or a stack — the person reading it
+cannot act on either.
+
 ## Tests
 
 ```bash
