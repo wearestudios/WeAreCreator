@@ -1,0 +1,21 @@
+# Everything needed to test or work on the backend, and nothing the running
+# app needs. Install with:
+#
+#     pip install -r requirements-dev.txt
+#
+# It pulls in requirements.txt first, so this one file is enough for a dev
+# machine and for CI. A production build installs requirements.txt only and
+# never sees any of this.
+
+-r requirements.txt
+
+# --- Tests ---
+pytest>=8.0.0
+pytest-xdist>=3.6.0       # pytest.ini's addopts pass -n/--dist; required_plugins enforces it
+requests>=2.31.0          # the integration suite in tests/ drives the API over real HTTP
+
+# --- Formatting and static checks ---
+black>=24.1.1
+isort>=5.13.2
+flake8>=7.0.0
+mypy>=1.8.0

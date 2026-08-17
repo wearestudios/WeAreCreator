@@ -40,8 +40,12 @@ services:
       # Compose networking overrides whatever host is in .env.
       MONGO_URL: mongodb://mongo:27017
       CORS_ORIGINS: http://localhost:3000
+    # The dev set, not the runtime one: this stack mounts the source and runs
+    # with --reload, and `pytest tests/` is meant to be runnable against it.
+    # requirements-dev.txt pulls in requirements.txt, so the app still gets
+    # exactly what production gets.
     command: >
-      sh -c "pip install --quiet -r requirements.txt &&
+      sh -c "pip install --quiet -r requirements-dev.txt &&
              uvicorn server:app --host 0.0.0.0 --port 8001 --reload"
 
   frontend:

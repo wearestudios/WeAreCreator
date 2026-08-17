@@ -890,8 +890,24 @@ cannot act on either.
 
 ## Tests
 
+Dependencies are split in two. `requirements.txt` is the **runtime** set —
+what a production build installs and nothing else — and `requirements-dev.txt`
+pulls it in and adds pytest, xdist, `requests` (the integration suite drives
+the API over real HTTP) and the linters. Install the second one on any machine
+you develop or run tests on; CI and `docker compose` both use it, and the
+container the app runs in does not.
+
+Three runtime entries are never imported and must not be dropped for looking
+unused: `uvicorn` runs the process, `email-validator` is what lets pydantic
+build an `EmailStr`, and `python-multipart` is what lets FastAPI parse
+`Form()`/`UploadFile` — the brand documents and the profile image. `runtime.txt`
+pins **python-3.11**, matching `python:3.11-slim` in `docker-compose.yml`;
+without it a host picks its own default and 3.13 makes `pymongo==4.6.3` compile
+from source.
+
 ```bash
 cd backend
+pip install -r requirements-dev.txt
 pytest tests/unit          # pure functions; runs anywhere, no services needed
 pytest tests/              # full suite; needs a live backend + MongoDB
 ```

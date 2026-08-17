@@ -1,29 +1,37 @@
+# Runtime dependencies only. Anything needed to *develop or test* the app —
+# pytest, formatters, linters — lives in requirements-dev.txt, so a production
+# build installs neither them nor their trees.
+#
+# Every entry here is either imported by server.py or required by something it
+# does. Three of them are never imported and must not be removed on that basis:
+#
+#   uvicorn            the process that runs the app
+#   email-validator    pydantic's EmailStr refuses to build a model without it
+#   python-multipart   FastAPI's Form()/UploadFile refuse to parse without it
+#
+# Pinned exactly where a version has bitten us, floored otherwise.
+
+# --- Web layer ---
+# 0.110.1 is pinned deliberately: 0.141 silently breaks include_router, so the
+# sub-routers mount but their routes never match.
 fastapi==0.110.1
 uvicorn==0.25.0
-boto3>=1.34.129
-requests-oauthlib>=2.0.0
-cryptography>=42.0.8
-python-dotenv>=1.0.1
+python-multipart>=0.0.9   # Form()/UploadFile — brand documents, profile images
+
+# --- Data ---
+motor==3.3.1
 pymongo==4.6.3
 pydantic>=2.6.4
-email-validator>=2.2.0
+email-validator>=2.2.0    # pydantic EmailStr
+
+# --- Auth and secrets ---
 pyjwt>=2.10.1
 bcrypt==4.1.3
-passlib>=1.7.4
-tzdata>=2024.2
-motor==3.3.1
-pytest>=8.0.0
-pytest-xdist>=3.6.0
-black>=24.1.1
-isort>=5.13.2
-flake8>=7.0.0
-mypy>=1.8.0
-python-jose>=3.3.0
-requests>=2.31.0
-pandas>=2.2.0
-numpy>=1.26.0
-python-multipart>=0.0.9
-jq>=1.6.0
-typer>=0.9.0
-emergentintegrations==0.2.0
+cryptography>=42.0.8      # Fernet, for the encrypted Instagram tokens
+
+# --- Outbound HTTP: AiSensy (WhatsApp OTP) and the Instagram Graph API ---
 httpx==0.28.1
+
+# --- Config ---
+python-dotenv>=1.0.1
+tzdata>=2024.2            # zoneinfo data; the slim images ship without it
