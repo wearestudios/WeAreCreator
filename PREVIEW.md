@@ -75,7 +75,9 @@ Without Docker, run the three pieces yourself:
 # MongoDB on :27017, then…
 
 cd backend
-pip install -r requirements.txt
+# requirements.txt is the runtime set; -dev.txt pulls it in and adds pytest
+# and the linters. Use -dev.txt on a machine you develop on.
+pip install -r requirements-dev.txt
 uvicorn server:app --reload --port 8001
 
 cd frontend
