@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
+import { installOfflineQueue } from "@/lib/offlineQueue";
 import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -43,6 +44,9 @@ import { Terms, Privacy } from "@/pages/Legal";
 // Attached at module load rather than in an effect, so a rejection thrown
 // while the first render is still in flight is already covered.
 installGlobalErrorHandlers();
+// Drains anything a previous session left behind before the first render, so a
+// manager whose phone died mid-shift finds their check-ins already sent.
+installOfflineQueue();
 
 /**
  * The second layer: a crash inside a page, caught below the router.

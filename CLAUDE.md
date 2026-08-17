@@ -744,6 +744,59 @@ place and has to be measured against it.
   Landing's below-fold brief grid. When checking this, confirm the skeleton
   actually rendered — a page that redirects to `/login` also scores zero.
 
+## The campaign manager, and the venue
+
+A manager reads `ManagerHome` either the night before a shoot or standing in the
+venue on the day, and those two moments want opposite things. So the day's work
+is a section of its own, at full size, with a direct route into day-of mode
+(`/manager/campaigns/:id?mode=day-of`); everything else is smaller below it and
+anything already finished is folded shut but kept, because performance still
+gets recorded days later.
+
+- `isToday` compares at **local midnight**, not on the ISO string — a 19:00
+  event reads as tomorrow in UTC for everybody using this. It answers for both
+  shapes: an event's single date, and a personal table's window that *contains*
+  today.
+- `attentionFor` only speaks about today and the next two days. Every signal it
+  raises is otherwise silent — no notification, no queue — and each is a thing
+  the manager finds out about from a phone call: no slots, unbooked places,
+  fewer creators than the brief asked for, no venue address on the day. It stays
+  short deliberately; a list of eleven warnings is a list nobody reads standing
+  up.
+
+### Check-ins survive the venue's wifi
+
+`lib/offlineQueue.js`. A manager checking twenty people into a basement is the
+worst network in the product and the least forgiving moment to be in it: there
+is a person in front of them, and a check-in that silently failed surfaces days
+later as an attendance record that disagrees with the room.
+
+- **A network failure queues rather than rolls back.** The row stays checked in
+  and gets a "waiting" marker; the request goes to `localStorage` and replays
+  itself. The old behaviour — revert and raise a Retry toast — asks somebody
+  mid-queue to notice a toast and tap it, which is asking them to do the
+  network's job.
+- **A 4xx drops the item; only no-response, 408, 429 and 5xx retry.** The
+  check-in route answers **409 "They're already checked in"**, so on a replay a
+  409 means the work landed. Treating it as retryable would loop forever on
+  something that already succeeded — a unit of this is pinned by a test that
+  queues a check-in for an already-attended collaboration.
+- **Backoff is for timers, not for people.** `flush({ force: true })` ignores
+  both the backoff and `navigator.onLine`, and is what "Try now", the `online`
+  event and returning to the tab all use. Honouring a two-minute wait after an
+  explicit tap makes the button look broken — and `onLine` is a hint that lies
+  on captive portals.
+- `enqueue` keys on the action (`check-in:<id>`), so a second tap replaces
+  rather than stacks.
+- `QueueBanner` shows nothing when online and empty. A permanent "connected"
+  badge trains the manager to stop looking at the corner of the screen that will
+  one day say four check-ins have not gone through.
+
+Verified against a stub that fails check-ins on demand: the queue survives a
+full page reload, drains when the server recovers, and both check-ins reach the
+server. Breaking either rule — persistence, or 409-as-retryable — fails the
+suite.
+
 ## Local test accounts
 
 `backend/seed_personas.py` seeds one signed-in-able account per persona —

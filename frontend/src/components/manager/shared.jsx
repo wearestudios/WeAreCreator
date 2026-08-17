@@ -207,3 +207,102 @@ export const BigButton = ({ children, busy, className = "", ...props }) => (
         {children}
     </Button>
 );
+
+// ---------------------------------------------------------------------------
+// Today, and what the day looks like
+// ---------------------------------------------------------------------------
+
+/** Local midnight, because "today" is the manager's day, not UTC's. */
+const startOfDay = (d) => {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    return x;
+};
+
+/**
+ * Is this campaign happening today?
+ *
+ * Two shapes to answer for: an event campaign has one date, a personal table
+ * runs over a window a creator books into — and a window that contains today
+ * is as much "on today" as a launch is. Compared at local midnight rather than
+ * on the ISO string, or a 19:00 event reads as tomorrow for anybody east of
+ * Greenwich, which is everybody using this.
+ */
+export function isToday(campaign, now = new Date()) {
+    const today = startOfDay(now).getTime();
+    const day = (iso) => (iso ? startOfDay(new Date(iso)).getTime() : null);
+    const event = day(campaign?.event_date);
+    if (event !== null) return event === today;
+    const from = day(campaign?.start_date);
+    const to = day(campaign?.end_date);
+    if (from === null && to === null) return false;
+    return (from === null || from <= today) && (to === null || to >= today);
+}
+
+/** Days until it starts. Negative once it has been and gone. */
+export function daysUntil(campaign, now = new Date()) {
+    const when = campaign?.event_date || campaign?.start_date;
+    if (!when) return null;
+    const diff = startOfDay(new Date(when)).getTime() - startOfDay(now).getTime();
+    return Math.round(diff / 86400000);
+}
+
+/**
+ * What is wrong with this campaign that nothing else will tell you.
+ *
+ * Every one of these is silent otherwise: no notification fires, nothing sits
+ * in a queue, and the manager finds out when a brand rings up or when six
+ * creators arrive to find four tables. The thresholds are deliberately tight
+ * because a manager reads this standing up — a list of eleven warnings is a
+ * list nobody reads.
+ */
+export function attentionFor(campaign, now = new Date()) {
+    const out = [];
+    const today = isToday(campaign, now);
+    const days = daysUntil(campaign, now);
+    const soon = today || (days !== null && days >= 0 && days <= 2);
+    if (!soon) return out;
+
+    // Nowhere for anybody to book. On the day, this is the whole shoot.
+    if ((campaign.slot_count || 0) === 0) {
+        out.push({
+            key: "no-slots",
+            severity: today ? "urgent" : "warn",
+            text: today ? "No slots — nobody can be checked in" : "No slots set up yet",
+        });
+    } else if ((campaign.slot_booked || 0) < (campaign.slot_capacity || 0)) {
+        const left = (campaign.slot_capacity || 0) - (campaign.slot_booked || 0);
+        out.push({
+            key: "places-left",
+            severity: today ? "warn" : "info",
+            text: `${left} ${left === 1 ? "place" : "places"} still unbooked`,
+        });
+    }
+
+    // Fewer confirmed creators than the brief asked for.
+    const needed = campaign.creators_needed || 0;
+    const filled = campaign.filled_slots || 0;
+    if (needed > 0 && filled < needed) {
+        out.push({
+            key: "underfilled",
+            severity: today ? "urgent" : "warn",
+            text: `${filled} of ${needed} creators confirmed`,
+        });
+    }
+
+    // A shoot today with no address is a phone call you are about to receive.
+    if (today && !campaign.venue_address) {
+        out.push({
+            key: "no-venue",
+            severity: "warn",
+            text: "No venue address on the brief",
+        });
+    }
+    return out;
+}
+
+export const SEVERITY_TONE = {
+    urgent: "border-red-500/30 bg-red-500/10 text-red-200",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+    info: "border-white/10 bg-white/5 text-muted-foreground",
+};

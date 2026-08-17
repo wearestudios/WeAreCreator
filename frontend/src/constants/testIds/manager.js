@@ -16,6 +16,32 @@ export const MANAGER_HOME = {
 	cardWhen: (id) => `manager-campaign-when-${id}`,
 	cardSlots: (id) => `manager-campaign-slots-${id}`,
 	cardCreators: (id) => `manager-campaign-creators-${id}`,
+
+	// Today, and what is wrong today. Grouped ids rather than one flat list,
+	// because "is the today section on screen" and "is this campaign in it"
+	// are different questions a test wants to ask separately.
+	todaySection: 'manager-home-today',
+	todayCount: 'manager-home-today-count',
+	todayEmpty: 'manager-home-today-empty',
+	upcomingSection: 'manager-home-upcoming',
+	upcomingEmpty: 'manager-home-upcoming-empty',
+	pastSection: 'manager-home-past',
+	pastToggle: 'manager-home-past-toggle',
+	attention: 'manager-home-attention',
+	attentionItem: (id, key) => `manager-attention-${id}-${key}`,
+	cardAttention: (id) => `manager-campaign-attention-${id}`,
+	cardToday: (id) => `manager-campaign-today-${id}`,
+	cardOpen: (id) => `manager-campaign-open-${id}`,
+	cardDayOf: (id) => `manager-campaign-day-of-${id}`,
+	cardCall: (id) => `manager-campaign-call-${id}`,
+	error: 'manager-home-error',
+};
+
+// The offline queue's one visible surface.
+export const MANAGER_QUEUE = {
+	banner: 'manager-queue-banner',
+	message: 'manager-queue-message',
+	retry: 'manager-queue-retry',
 };
 
 export const MANAGER_CAMPAIGN = {
@@ -81,6 +107,8 @@ export const MANAGER_DAY_OF = {
 	reschedule: (id) => `manager-day-of-reschedule-${id}`,
 	call: (id) => `manager-day-of-call-${id}`,
 	done: (id) => `manager-day-of-done-${id}`,
+	// A check-in that is on the queue rather than on the server.
+	queued: (id) => `manager-day-of-queued-${id}`,
 };
 
 export const MANAGER_NO_SHOW = {
