@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SUGGESTED_CREATORS as T } from "@/constants/testIds";
+import { tierByValue } from "@/lib/followerTiers";
 
 const COMPONENT_LABEL = {
     niche: "Niche match",
@@ -37,12 +38,11 @@ const COMPONENT_LABEL = {
     delivery: "Delivered here before",
 };
 
-const TIER_LABEL = {
-    nano: "nano",
-    micro: "micro",
-    mid: "mid-tier",
-    macro: "macro",
-};
+// The tier names come from `FOLLOWER_TIERS` now — there is no separate
+// "nano", and no second spelling of "mid". A panel that labels a band
+// differently from the filter that produces it is the split these tiers
+// exist to end.
+const tierName = (key) => (tierByValue(key) || {}).label || key;
 
 const formatCompact = (n) => {
     if (typeof n !== "number") return null;
@@ -207,10 +207,14 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
                         className="rounded-md border border-white/10 bg-background/40 px-4 py-3 text-xs text-muted-foreground"
                     >
                         <div className="text-[10px] uppercase tracking-[0.2em]">
-                            This budget suits
+                            {/* Whether the brand told us, or we read it off
+                                the fee. One of those is worth arguing with;
+                                the other is worth correcting on the profile,
+                                and a brand can only tell if we say which. */}
+                            {tier.stated ? "You're looking for" : "This budget suits"}
                         </div>
                         <div className="mt-1 text-foreground/85">
-                            {TIER_LABEL[tier.label] || tier.label} creators
+                            {tierName(tier.label)} creators
                             {typeof tier.min_followers === "number" && (
                                 <>
                                     {" "}

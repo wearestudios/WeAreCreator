@@ -164,7 +164,7 @@ const StatTile = ({ label, value, Icon, highlight }) => (
     </div>
 );
 
-export default function BrandDashboardView({ user }) {
+export default function BrandDashboardView({ user, justOnboarded = false }) {
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
     const [busyId, setBusyId] = useState(null);
@@ -341,6 +341,47 @@ export default function BrandDashboardView({ user }) {
                                 </Link>
                             </div>
                         </header>
+
+                        {/* What happens next, said once, on the way in from
+                            onboarding. A brand that has just filled in a form
+                            and landed on an empty dashboard has no idea
+                            whether anything is happening — and the honest
+                            answer is "not until you post a brief, and then
+                            not instantly", which is much better said than
+                            discovered over three silent days. */}
+                        {justOnboarded && (
+                            <div
+                                data-testid="brand-what-happens-next"
+                                className="mt-8 rounded-md border border-ember-500/30 bg-ember-500/10 p-5 md:p-6"
+                            >
+                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                                    <Sparkles className="h-4 w-4" />
+                                    What happens next
+                                </p>
+                                <ol className="mt-4 space-y-3 text-sm leading-relaxed text-foreground/90">
+                                    <li>
+                                        <span className="text-ember-500">1 ·</span> We check
+                                        your business details. That usually takes a working
+                                        day, and we'll WhatsApp you either way.
+                                    </li>
+                                    <li>
+                                        <span className="text-ember-500">2 ·</span> Post your
+                                        first brief. You can write and save it now — it goes
+                                        in front of creators once you're verified.
+                                    </li>
+                                    <li>
+                                        <span className="text-ember-500">3 ·</span> Expect the
+                                        first applications within a day or two of going live,
+                                        and most of them inside the first week. A brief with a
+                                        cover image and a clear fee fills faster than one
+                                        without.
+                                    </li>
+                                </ol>
+                                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                                    Nothing to chase in the meantime — we'll come to you.
+                                </p>
+                            </div>
+                        )}
 
                         {profileMissing && (
                             <div

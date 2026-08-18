@@ -398,6 +398,22 @@ def _brand_contact_from(source) -> dict:
     return out
 
 
+# What the person registering a brand does there. A **suggestion list, not an
+# enum**: `manager_designation` stays free text, so every brand that signed up
+# before this typed whatever they liked and their value still reads as a
+# sentence in the console and in an export. The list exists to stop the next
+# thousand being "mktg", "Mktg." and "marketing head" — narrowing what people
+# type without invalidating what they already typed.
+CONTACT_ROLE_SUGGESTIONS = (
+    "Owner",
+    "Marketing Manager",
+    "PR",
+    "General Manager",
+    "Operations",
+    "Other",
+)
+
+
 class BrandContactSignup(BaseModel):
     """The one named person a brand registers behind.
 
@@ -675,6 +691,146 @@ class BrandOutlet(BaseModel):
     place_id: Optional[str] = Field(default=None, max_length=200)
 
 
+# ---------------------------------------------------------------------------
+# Audience size, in one vocabulary
+#
+# There used to be two. The suggestion scorer had four bands named nano /
+# micro / mid / macro with its own boundaries, while every human-facing
+# surface described followers in raw numbers — so a brand reading "micro"
+# somewhere and picking "1K–10K" somewhere else were talking about different
+# people. **`FOLLOWER_TIERS` is the only vocabulary now**, three tiers, and the
+# budget map below returns one of its keys rather than a fourth name.
+# ---------------------------------------------------------------------------
+
+# key, floor, ceiling (None = open), label, the range as a person reads it.
+FOLLOWER_TIERS = (
+    ("micro", 1_000, 10_000, "Micro", "1K–10K"),
+    ("mid", 10_000, 100_000, "Mid", "10K–100K"),
+    ("macro", 100_000, None, "Macro", "100K+"),
+)
+FOLLOWER_TIER_KEYS = tuple(t[0] for t in FOLLOWER_TIERS)
+# What a brand picks: one of the three, or "any" — which is a real answer and
+# not a missing one. Most brands genuinely don't mind.
+FollowerTier = Literal["micro", "mid", "macro", "any"]
+
+
+def _tier_bounds(key: Optional[str]) -> Optional[tuple]:
+    for tier_key, low, high, _, _ in FOLLOWER_TIERS:
+        if tier_key == key:
+            return low, high
+    return None
+
+
+def _tier_for_followers(followers) -> Optional[str]:
+    """Which tier an audience actually sits in. None when we don't know."""
+    if not isinstance(followers, int) or followers <= 0:
+        return None
+    for key, low, high, _, _ in FOLLOWER_TIERS:
+        if followers >= low and (high is None or followers < high):
+            return key
+    # Below the smallest floor: still the smallest tier, not "no tier". A
+    # 400-follower account is a very small micro, not an unclassifiable one.
+    return FOLLOWER_TIERS[0][0]
+
+
+# Budget per creator → the tier that budget is realistically buying. Rupees,
+# ascending; the last has no upper bound. Returns a `FOLLOWER_TIERS` key, so
+# the guess and the brand's stated preference speak the same language.
+#
+# **The boundaries moved when the vocabulary did.** They used to be
+# 3k/10k/30k against four bands whose edges were 1k/10k/50k/200k. Keeping
+# those numbers against the three tiers would have quietly made ₹8,000 buy a
+# 1k–10k creator where it used to buy 10k–50k — a re-tuning nobody asked for,
+# smuggled in under a renaming. These are picked so the same fee buys roughly
+# the same audience it did before.
+CREATOR_REACH_TIERS = (
+    (5_000, "micro"),
+    (25_000, "mid"),
+    (float("inf"), "macro"),
+)
+
+
+# ---------------------------------------------------------------------------
+# What a brand is looking for
+#
+# Standing preferences on the brand profile, not on one brief: a café that
+# works with micro food creators wants that on every campaign it ever posts,
+# and re-deriving it from each brief's budget was a guess where an answer was
+# available. All three feed `score_creator_for_campaign`.
+# ---------------------------------------------------------------------------
+
+# key, label, the platform that carries it. Three of the four are Instagram,
+# which is the honest picture rather than a modelling failure — the one that
+# is not is exactly the one a brand gets wrong by assuming.
+CONTENT_TYPES = (
+    ("reels", "Reels", "instagram"),
+    ("stories", "Stories", "instagram"),
+    ("static_posts", "Static posts", "instagram"),
+    ("shorts", "YouTube Shorts", "youtube"),
+)
+CONTENT_TYPE_KEYS = tuple(c[0] for c in CONTENT_TYPES)
+CONTENT_TYPE_PLATFORM = {key: platform for key, _, platform in CONTENT_TYPES}
+
+# What a brand typically pays one creator. Bands rather than a number, because
+# a number here would read as a commitment and get argued about; the point is
+# to rank suggestions on a brief with no fee of its own.
+# key, floor, ceiling (None = open), label.
+BUDGET_BANDS = (
+    ("under_5k", 0, 5_000, "Under ₹5,000"),
+    ("5k_15k", 5_000, 15_000, "₹5,000–15,000"),
+    ("15k_40k", 15_000, 40_000, "₹15,000–40,000"),
+    ("over_40k", 40_000, None, "₹40,000+"),
+)
+BUDGET_BAND_KEYS = tuple(b[0] for b in BUDGET_BANDS)
+
+
+def _budget_band_midpoint(key: Optional[str]) -> Optional[float]:
+    """A band as one number, for the places that need a fee and have none.
+
+    The midpoint, or the floor on the open-ended band — a band is a range and
+    the reach map takes a figure, so something has to stand in for it. Deliberately
+    not stored: this is an inference and it should read like one at every call site.
+    """
+    for band_key, low, high, _ in BUDGET_BANDS:
+        if band_key == key:
+            return (low + high) / 2 if high is not None else float(low)
+    return None
+
+
+def _clean_content_types(rows) -> list:
+    """The formats a brand asked for, in the order the enum declares them."""
+    wanted = {str(r).strip().lower() for r in (rows or []) if r}
+    return [key for key in CONTENT_TYPE_KEYS if key in wanted]
+
+
+def _content_fit(profile: dict, wanted: list) -> Optional[float]:
+    """The share of the requested formats this creator can actually post.
+
+    None when the brand asked for nothing — an unstated preference is an
+    unknown like any other, and scoring it at zero would push every creator
+    down for a question the brand skipped.
+
+    Read off the platforms the creator says they post on, which is a fact they
+    stated, rather than off their niches, which are prose.
+    """
+    if not wanted:
+        return None
+    platforms = {
+        str(p).strip().lower() for p in (profile or {}).get("platforms") or [] if p
+    }
+    if not platforms:
+        return None
+    hit = sum(1 for key in wanted if CONTENT_TYPE_PLATFORM.get(key) in platforms)
+    return hit / len(wanted)
+
+# Signals with nothing behind them score here rather than at zero. A creator
+# whose engagement we have never measured is an unknown, not a bad bet, and
+# scoring unknowns at zero would rank every creator without a connected
+# Instagram account below every creator with a poor one.
+_UNKNOWN_SIGNAL = 0.5
+
+
+
 class BrandProfileUpdate(BaseModel):
     """Payload for brand onboarding / profile edits.
 
@@ -692,6 +848,10 @@ class BrandProfileUpdate(BaseModel):
     # where it actually is. None of it is evidence of anything — it exists so a
     # creator deciding whether to pitch has something to read besides a name.
     about: Optional[str] = Field(default=None, max_length=1500)
+    # One line, shown on every campaign card this brand posts. Separate from
+    # `about` and short on purpose: a card has room for a clause, and taking
+    # the first sentence of a paragraph gives you half of one.
+    tagline: Optional[str] = Field(default=None, max_length=90)
     city: Optional[str] = Field(default=None, max_length=80)
     outlets: list[BrandOutlet] = Field(default_factory=list, max_length=25)
 
@@ -710,6 +870,16 @@ class BrandProfileUpdate(BaseModel):
     instagram_handle: Optional[str] = Field(default=None, max_length=60)
     facebook_url: Optional[str] = Field(default=None, max_length=300)
     linkedin_url: Optional[str] = Field(default=None, max_length=300)
+
+    # What this brand is looking for, as a standing preference rather than a
+    # line on one brief. All three feed `score_creator_for_campaign` — a café
+    # that works with micro food creators wants that on every campaign it
+    # posts, and re-deriving it from each budget was a guess where an answer
+    # was available. None of it is required for verification: it is what we
+    # rank on, not evidence of anything.
+    content_types: Optional[list[str]] = Field(default=None, max_length=10)
+    preferred_follower_tier: Optional[FollowerTier] = None
+    typical_budget_band: Optional[str] = Field(default=None, max_length=20)
 
     # Who is actually asking, and on what authority. The whole point of this
     # feature: an account is a person claiming to represent a business.
@@ -5570,8 +5740,15 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "areas": doc.get("areas") or [],
         # What a creator reads on the public page.
         "about": doc.get("about"),
+        "tagline": doc.get("tagline"),
         "city": doc.get("city"),
         "outlets": doc.get("outlets") or [],
+        # What they're looking for. Read back so the form can re-seed rather
+        # than default — a brand editing its address must not silently reset
+        # the preferences the ranking has been using.
+        "content_types": _clean_content_types(doc.get("content_types")),
+        "preferred_follower_tier": doc.get("preferred_follower_tier"),
+        "typical_budget_band": doc.get("typical_budget_band"),
         # The business as claimed, which is what documents get checked against.
         "legal_entity_name": doc.get("legal_entity_name"),
         "gst_number": doc.get("gst_number"),
@@ -6058,6 +6235,23 @@ async def _brand_profile_response(profile: dict) -> dict:
         "max_image_bytes": max_upload_bytes(),
         "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
     }
+    # The three option lists, from the server rather than copied into the
+    # form. A dropdown offering a value the API refuses is a dead control, and
+    # a tier label that disagrees with the one the ranking reports is exactly
+    # the vocabulary split these tiers exist to end.
+    out["preferences"] = {
+        "content_types": [
+            {"value": key, "label": label} for key, label, _ in CONTENT_TYPES
+        ],
+        "follower_tiers": [
+            {"value": key, "label": label, "range": human}
+            for key, _, _, label, human in FOLLOWER_TIERS
+        ]
+        + [{"value": "any", "label": "Any", "range": "No preference"}],
+        "budget_bands": [
+            {"value": key, "label": label} for key, _, _, label in BUDGET_BANDS
+        ],
+    }
     return out
 
 
@@ -6096,6 +6290,7 @@ async def update_brand_profile(
 
     text("business_name", payload.business_name)
     text("about", payload.about)
+    text("tagline", payload.tagline)
     text("legal_entity_name", payload.legal_entity_name)
     text("registered_address", payload.registered_address)
     text("contact_person_name", payload.contact_person_name)
@@ -6115,6 +6310,16 @@ async def update_brand_profile(
         update["city"] = _canonical_city(payload.city)
     if "outlets" in sent:
         update["outlets"] = _clean_outlets(payload.outlets)
+    if "content_types" in sent:
+        update["content_types"] = _clean_content_types(payload.content_types)
+    if "preferred_follower_tier" in sent:
+        # "any" is a real answer and is stored as one; it means "we don't
+        # mind", which is different from a brand that never reached the
+        # question. Only the three tier keys steer the ranking.
+        update["preferred_follower_tier"] = payload.preferred_follower_tier
+    if "typical_budget_band" in sent:
+        band = (payload.typical_budget_band or "").strip()
+        update["typical_budget_band"] = band if band in BUDGET_BAND_KEYS else None
     if "gst_number" in sent:
         update["gst_number"] = _clean_gstin(payload.gst_number)
     if "website" in sent:
@@ -7447,8 +7652,18 @@ async def brand_directory_filters(
 CREATOR_MATCH_WEIGHTS = {
     # What they cover and what they make, against the brief. The strongest
     # signal by far — a food creator on a food brief is most of the decision.
-    "niche": 30,
-    "genre": 15,
+    #
+    # These two used to be 30 and 15. `content_fit` came out of *their* budget
+    # rather than out of city or reliability, on purpose: it measures the same
+    # thing they do — "does this creator's work look like what is being asked
+    # for" — at a finer and more factual grain, because which formats somebody
+    # actually posts is a fact and a niche is a description.
+    "niche": 25,
+    "genre": 10,
+    # Whether they can make the formats the brand asked for at all. A brand
+    # that needs YouTube Shorts and a creator with no YouTube is not a weak
+    # match, it is not a match.
+    "content_fit": 10,
     # Being in the city. Not decisive on its own (a creator travels) but a
     # campaign with a venue is much easier to fill locally.
     "city": 20,
@@ -7461,29 +7676,37 @@ CREATOR_MATCH_WEIGHTS = {
     "delivery": 10,
 }
 
-# Budget per creator → the follower band that budget is realistically buying.
-# Rupees, ascending; the last band has no upper bound.
-CREATOR_REACH_TIERS = (
-    (3_000, 1_000, 10_000, "nano"),
-    (10_000, 10_000, 50_000, "micro"),
-    (30_000, 50_000, 200_000, "mid"),
-    (float("inf"), 200_000, None, "macro"),
-)
-
-# Signals with nothing behind them score here rather than at zero. A creator
-# whose engagement we have never measured is an unknown, not a bad bet, and
-# scoring unknowns at zero would rank every creator without a connected
-# Instagram account below every creator with a poor one.
-_UNKNOWN_SIGNAL = 0.5
-
 
 def _reach_tier(budget: Optional[float]) -> tuple:
-    """The follower band a budget is buying: (low, high_or_None, label)."""
+    """The follower band a budget is buying: (low, high_or_None, key)."""
     amount = float(budget or 0)
-    for ceiling, low, high, label in CREATOR_REACH_TIERS:
+    key = CREATOR_REACH_TIERS[-1][1]
+    for ceiling, tier_key in CREATOR_REACH_TIERS:
         if amount < ceiling:
-            return low, high, label
-    return CREATOR_REACH_TIERS[-1][1], CREATOR_REACH_TIERS[-1][2], CREATOR_REACH_TIERS[-1][3]
+            key = tier_key
+            break
+    low, high = _tier_bounds(key)
+    return low, high, key
+
+
+def _wanted_reach_tier(campaign: Optional[dict], brand: Optional[dict]) -> tuple:
+    """The audience this brief is looking for: (low, high_or_None, key, stated).
+
+    **A stated preference beats an inferred one.** The budget map is a guess
+    about what a fee buys; a brand that answered "we work with micro creators"
+    has told us, and inferring over the top of that is ignoring the answer.
+    A brand's typical budget band stands in when the campaign has no fee of
+    its own — a barter brief, or a draft where the number isn't in yet.
+    """
+    stated = (brand or {}).get("preferred_follower_tier")
+    if stated in FOLLOWER_TIER_KEYS:
+        low, high = _tier_bounds(stated)
+        return low, high, stated, True
+    budget = (campaign or {}).get("budget_per_creator")
+    if not budget:
+        budget = _budget_band_midpoint((brand or {}).get("typical_budget_band"))
+    low, high, key = _reach_tier(budget)
+    return low, high, key, False
 
 
 def _reach_fit(followers: Optional[int], budget: Optional[float]) -> Optional[float]:
@@ -7497,6 +7720,10 @@ def _reach_fit(followers: Optional[int], budget: Optional[float]) -> Optional[fl
     if not isinstance(followers, int) or followers <= 0:
         return None
     low, high, _ = _reach_tier(budget)
+    return _fit_within(followers, low, high)
+
+
+def _fit_within(followers: int, low: int, high: Optional[int]) -> float:
     if followers < low:
         return max(0.0, followers / low)
     if high is not None and followers > high:
@@ -7590,6 +7817,7 @@ def score_creator_for_campaign(
     profile: dict,
     campaign: dict,
     *,
+    brand: Optional[dict] = None,
     delivery: Optional[dict] = None,
     weights: Optional[dict] = None,
 ) -> dict:
@@ -7619,8 +7847,19 @@ def score_creator_for_campaign(
     city_match = bool(campaign_city) and campaign_city in creator_places
 
     followers = profile.get("follower_count")
-    fit = _reach_fit(followers if isinstance(followers, int) else None,
-                     campaign.get("budget_per_creator"))
+    # What audience this brief wants: the brand's stated tier if they set one,
+    # the budget's guess otherwise. Passing the brand rather than folding its
+    # preferences onto the campaign keeps this function honest about where
+    # each input came from.
+    low, high, wanted_tier, tier_stated = _wanted_reach_tier(campaign, brand)
+    fit = (
+        _fit_within(followers, low, high)
+        if isinstance(followers, int) and followers > 0
+        else None
+    )
+
+    wanted_content = _clean_content_types((brand or {}).get("content_types"))
+    content = _content_fit(profile, wanted_content)
 
     rate = profile.get("engagement_rate")
     # 3% is a good engagement rate on Instagram; anything at or above it takes
@@ -7634,6 +7873,9 @@ def score_creator_for_campaign(
     components = {
         "niche": round(w["niche"] * (1.0 if niches else 0.0), 1),
         "genre": round(w["genre"] * (1.0 if genres else 0.0), 1),
+        "content_fit": round(
+            w["content_fit"] * (_UNKNOWN_SIGNAL if content is None else content), 1
+        ),
         "city": round(w["city"] * (1.0 if city_match else 0.0), 1),
         "reach_fit": round(w["reach_fit"] * (_UNKNOWN_SIGNAL if fit is None else fit), 1),
         "engagement": round(
@@ -7655,7 +7897,23 @@ def score_creator_for_campaign(
         bits.append(f"based in {campaign.get('area')}")
     reach = _human_followers(followers if isinstance(followers, int) else None)
     if reach:
-        bits.append(f"{reach} followers")
+        tier = _tier_for_followers(followers)
+        label = next((t[3] for t in FOLLOWER_TIERS if t[0] == tier), None)
+        bits.append(f"{reach} followers" + (f" ({label.lower()})" if label else ""))
+    # Only when it's a miss. "Posts reels" on a brief asking for reels is
+    # noise; "no YouTube" on one asking for Shorts is the reason to look
+    # elsewhere, and it is the only version of this a brand can act on.
+    if content is not None and content < 1.0:
+        gaps = sorted(
+            {
+                CONTENT_TYPE_PLATFORM[key]
+                for key in wanted_content
+                if CONTENT_TYPE_PLATFORM.get(key)
+                not in {str(p).strip().lower() for p in profile.get("platforms") or []}
+            }
+        )
+        if gaps:
+            bits.append("no " + _and_list([g.title() for g in gaps]))
     if isinstance(rate, (int, float)) and rate >= 3.0:
         bits.append(f"{rate:g}% engagement")
     if completed:
@@ -7678,11 +7936,19 @@ def score_creator_for_campaign(
             name
             for name, value in (
                 ("reach_fit", fit),
+                ("content_fit", content),
                 ("engagement", engagement),
                 ("delivery", reliability),
             )
             if value is None
         ],
+        # Which audience this was ranked against, and whether the brand said
+        # so or we guessed from the fee. A brand seeing "ranked for micro"
+        # beside a list of micro creators can argue with it; one seeing only
+        # the list cannot.
+        "wanted_tier": wanted_tier,
+        "wanted_tier_stated": tier_stated,
+        "wanted_content_types": wanted_content,
     }
 
 
@@ -7782,11 +8048,14 @@ async def _suggest_creators_for_campaign(
 
     profiles = await db.creator_profiles.find(query).to_list(length=500)
     history = await _delivery_history([p["user_id"] for p in profiles])
+    # What this brand told us it is looking for, once for the whole page. A
+    # standing preference beats re-deriving it from each brief's budget.
+    brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
 
     scored = []
     for profile in profiles:
         result = score_creator_for_campaign(
-            profile, campaign, delivery=history.get(profile["user_id"])
+            profile, campaign, brand=brand, delivery=history.get(profile["user_id"])
         )
         scored.append(
             {
@@ -7808,7 +8077,7 @@ async def _suggest_creators_for_campaign(
     limit = max(1, min(int(limit or 20), 100))
     offset = max(0, int(offset or 0))
     page = scored[offset:offset + limit]
-    low, high, tier = _reach_tier(campaign.get("budget_per_creator"))
+    low, high, tier, stated = _wanted_reach_tier(campaign, brand)
     return {
         "campaign": {
             "id": str(campaign["_id"]),
@@ -7819,8 +8088,19 @@ async def _suggest_creators_for_campaign(
             "compensation_type": _compensation_type(campaign),
         },
         # Shown in the panel so the ranking explains itself before a brand has
-        # to ask why a 500k creator isn't at the top of a ₹4,000 brief.
-        "budget_tier": {"label": tier, "min_followers": low, "max_followers": high},
+        # to ask why a 500k creator isn't at the top of a ₹4,000 brief. `stated`
+        # is the difference between "you told us micro" and "we read micro off
+        # the fee" — one of those is worth arguing with and the other is worth
+        # correcting on the profile.
+        "budget_tier": {
+            "label": tier,
+            "min_followers": low,
+            "max_followers": high,
+            "stated": stated,
+        },
+        # What the brand said it wants made, so the panel can say the ranking
+        # is using it rather than leaving it as an invisible thumb on a scale.
+        "wanted_content_types": _clean_content_types(brand.get("content_types")),
         "weights": CREATOR_MATCH_WEIGHTS,
         "total": len(scored),
         "limit": limit,
@@ -15868,8 +16148,11 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "campaign_type": doc.get("campaign_type"),
         "cover_image_url": doc.get("cover_image_url"),
         # The brand's mark travels with the brand's name, so a card can show
-        # both without a second request.
+        # both without a second request — and so does the one line that says
+        # what they are. A card carrying only a name makes every unfamiliar
+        # brand look the same, which is most of them to most creators.
         "brand_logo_url": (brand or {}).get("logo_url"),
+        "brand_tagline": (brand or {}).get("tagline"),
         # A creator deciding whether to give up a day wants to know whose
         # WhatsApp they will be on. Carries no contact detail — just which of
         # us they will be dealing with.
@@ -18161,6 +18444,7 @@ _PUBLIC_BRAND_FIELDS = (
     "business_name",
     "logo_url",
     "category",
+    "tagline",
     "about",
     "city",
     "outlets",
@@ -18229,6 +18513,12 @@ def _brand_summary(brand: dict, live: int) -> str:
         bits.append(brand["city"])
     if live:
         bits.append(f"{live} open {'brief' if live == 1 else 'briefs'}")
+    # The tagline first: it was written to be one line, which is what a
+    # preview and a meta description are. Falling straight to `about` meant
+    # slicing a paragraph and hoping the cut landed somewhere sensible.
+    tagline = (brand.get("tagline") or "").strip()
+    if tagline:
+        return tagline[:180]
     about = (brand.get("about") or "").strip()
     if about:
         first = about.split("\n")[0].strip()
@@ -18279,7 +18569,12 @@ def _brand_page_html(
     )
 
     about_html = (
-        f'<div class="about">{e(brand.get("about"))}</div>' if brand.get("about") else ""
+        (
+            f'<div class="tagline">{e(brand.get("tagline"))}</div>'
+            if brand.get("tagline")
+            else ""
+        )
+        + (f'<div class="about">{e(brand.get("about"))}</div>' if brand.get("about") else "")
     )
 
     links = "".join(
@@ -18414,6 +18709,7 @@ section{{margin-top:2.5rem}}
 .chips{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}}
 .chip{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}}
 .tick{{color:#F05D14}}
+.tagline{{font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.4;color:rgba(245,241,236,.95);margin-bottom:.75rem}}
 .about{{white-space:pre-line;color:rgba(245,241,236,.9)}}
 .links{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.75rem}}
 .out{{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}}

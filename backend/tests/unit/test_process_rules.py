@@ -4596,6 +4596,11 @@ class TestCreatorSuggestionScoring:
         "budget_per_creator": 8000,
     }
 
+    # What this brand says it wants. Every signal stated, so "a perfect match"
+    # is a thing that can exist — with nothing stated, content_fit is an
+    # unknown and scores at the midpoint like every other unknown.
+    BRAND = {"content_types": ["reels", "stories"]}
+
     def _profile(self, **over):
         base = {
             "niches": ["brunch"],
@@ -4603,6 +4608,7 @@ class TestCreatorSuggestionScoring:
             "city": "Indiranagar",
             "follower_count": 24000,
             "engagement_rate": 4.2,
+            "platforms": ["instagram"],
         }
         base.update(over)
         return base
@@ -4613,7 +4619,10 @@ class TestCreatorSuggestionScoring:
 
     def test_a_perfect_match_scores_full_marks(self):
         result = server.score_creator_for_campaign(
-            self._profile(), self.CAMPAIGN, delivery={"completed": 3, "on_time": 3}
+            self._profile(),
+            self.CAMPAIGN,
+            brand=self.BRAND,
+            delivery={"completed": 3, "on_time": 3},
         )
         assert result["score"] == 100
 
@@ -4652,7 +4661,7 @@ class TestCreatorSuggestionScoring:
     @pytest.mark.parametrize(
         "budget,followers,expect_full",
         [
-            (2_000, 5_000, True),      # nano brief, nano creator
+            (2_000, 5_000, True),      # micro brief, micro creator
             (8_000, 24_000, True),     # micro brief, micro creator
             (50_000, 400_000, True),   # macro brief, macro creator
             (2_000, 900_000, False),   # nobody with 900k turns up for ₹2,000

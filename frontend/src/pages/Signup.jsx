@@ -8,6 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import OtpForm from "@/components/OtpForm";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { CONTACT_ROLES, OTHER_ROLE } from "@/lib/contactRoles";
 
 const ROLE_OPTIONS = [
     {
@@ -40,7 +48,13 @@ export default function Signup() {
     // here rather than later because the audit log should say a name from the
     // first action, and because verification asks for exactly these three.
     const [managerName, setManagerName] = useState("");
-    const [managerDesignation, setManagerDesignation] = useState("");
+    // A picked role, plus the box "Other" opens. What gets sent is one
+    // string either way — the server keeps this free text, so an unusual role
+    // is still a role rather than a value the form has no slot for.
+    const [roleOption, setRoleOption] = useState("");
+    const [roleOther, setRoleOther] = useState("");
+    const managerDesignation =
+        roleOption === OTHER_ROLE ? roleOther : roleOption;
     const [managerEmail, setManagerEmail] = useState("");
     const isBrand = role === "brand";
     // Consent is recorded against the account, so it has to be an actual act.
@@ -272,16 +286,45 @@ export default function Signup() {
                                             >
                                                 Your role there
                                             </Label>
-                                            <Input
-                                                id="manager-designation"
-                                                data-testid="signup-manager-designation-input"
-                                                value={managerDesignation}
-                                                onChange={(e) =>
-                                                    setManagerDesignation(e.target.value)
-                                                }
-                                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                                placeholder="e.g. Marketing Lead"
-                                            />
+                                            <Select
+                                                value={roleOption}
+                                                onValueChange={setRoleOption}
+                                            >
+                                                <SelectTrigger
+                                                    id="manager-designation"
+                                                    data-testid="signup-manager-designation-input"
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                                >
+                                                    <SelectValue placeholder="Pick one" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {CONTACT_ROLES.map((r) => (
+                                                        <SelectItem
+                                                            key={r}
+                                                            value={r}
+                                                            data-testid={`signup-role-${r
+                                                                .toLowerCase()
+                                                                .replace(/\s+/g, "-")}`}
+                                                        >
+                                                            {r}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            {/* "Other" stored as the word
+                                                "Other" tells a reviewer
+                                                nothing, so it opens a box
+                                                instead of ending the
+                                                question. */}
+                                            {roleOption === OTHER_ROLE && (
+                                                <Input
+                                                    data-testid="signup-manager-role-other"
+                                                    value={roleOther}
+                                                    onChange={(e) => setRoleOther(e.target.value)}
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    placeholder="e.g. Head of Partnerships"
+                                                />
+                                            )}
                                         </div>
                                         <div>
                                             <Label

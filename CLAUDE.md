@@ -235,16 +235,66 @@ database, no hidden term; `CREATOR_MATCH_WEIGHTS` sums to 100 and is the only
 tuning knob. The components ship with every result, so a brand can see why
 somebody was suggested.
 
-- Signals: niche and genre overlap with the brief, city match, follower count
-  against the budget tier (`CREATOR_REACH_TIERS`), engagement rate, past on-time
-  delivery here. `CAMPAIGN_CATEGORY_SYNONYMS` bridges the category enum to the
-  words creators actually use — nobody writes "fnb" about themselves.
+- Signals: niche and genre overlap with the brief, whether the creator can post
+  the formats the brand asked for, city match, follower count against the wanted
+  tier, engagement rate, past on-time delivery here. `CAMPAIGN_CATEGORY_SYNONYMS`
+  bridges the category enum to the words creators actually use — nobody writes
+  "fnb" about themselves.
 - **An unmeasured signal scores at the midpoint, never zero.** A creator with no
   connected Instagram has an unknown engagement rate, not a bad one, and scoring
   unknowns at zero would bury everyone who has never worked here — which is
-  everyone, at the start. `unknown_signals` names them so the UI can say so.
+  everyone, at the start. `unknown_signals` names them so the UI can say so. The
+  same applies to a *brand* that skipped a question: an unstated content
+  preference is an unknown, not a zero for everybody.
 - Anyone who already applied or was invited is excluded. Filters for niche, city
   and follower range; paginated. Admins can call it on any campaign.
+
+### Audience size, in one vocabulary
+
+There used to be two. The scorer had four bands named nano / micro / mid /
+macro with its own boundaries, while every screen a person reads described
+followers in raw numbers and the directory filter offered "10k+ / 50k+ / 100k+
+/ 500k+". A brand seeing "micro" in one place and picking "10k+" in another
+were talking about different people.
+
+**`FOLLOWER_TIERS` is the only vocabulary** — micro 1K–10K, mid 10K–100K, macro
+100K+ — and `CREATOR_REACH_TIERS` (budget → expected audience) returns one of
+its keys rather than a fourth name. `lib/followerTiers.js` mirrors it and a
+test fails if they drift. **The budget boundaries moved when the vocabulary
+did**, picked so the same fee buys roughly the same audience it did before:
+keeping the old numbers against the new bands would have made ₹8,000 buy a
+1k–10k creator where it used to buy 10k–50k, which is a re-tuning smuggled in
+under a renaming.
+
+### What a brand is looking for
+
+`content_types`, `preferred_follower_tier` and `typical_budget_band` on the
+brand profile, captured in onboarding and editable after. Standing preferences,
+not lines on one brief: a café that works with micro food creators wants that
+on every campaign it posts, and re-deriving it from each fee was a guess where
+an answer was available. None of them are in `_BRAND_REQUIRED_FIELDS` — this is
+what we rank on, not evidence of anything.
+
+- **A stated preference beats an inferred one.** `_wanted_reach_tier` takes the
+  brand's tier when it set one and falls back to the budget map otherwise; the
+  typical band stands in when a brief has no fee of its own (barter, or a
+  draft). `budget_tier.stated` travels with the response so the panel can say
+  "you're looking for" rather than "this budget suits" — one of those is worth
+  arguing with and the other is worth correcting on the profile.
+- `"any"` is a real answer, stored as one, and does **not** steer the ranking.
+  It means "we don't mind", which is different from never reaching the question.
+- `content_fit` is a new weight worth 10, and it came out of `niche` (30→25) and
+  `genre` (15→10) rather than out of city or reliability: it measures the same
+  thing they do at a finer, factual grain — which formats somebody actually
+  posts is a fact, a niche is a description. Read off `platforms`, so an empty
+  profile is an unknown rather than a zero. The reason line names **only the
+  gap** ("no YouTube"), because a match is not something to act on.
+- The brand's own half of its identity: a `tagline` (90 characters, on every
+  campaign card it posts and first in the share preview — it was written to be
+  one line) beside `about` (a paragraph, on the public page). And
+  `CONTACT_ROLE_SUGGESTIONS` at signup, which is **a suggestion list, not an
+  enum** — the designation stays free text so every value typed before it still
+  reads as a sentence, and "Other" opens a box rather than storing the word.
 
 ## Creator onboarding
 

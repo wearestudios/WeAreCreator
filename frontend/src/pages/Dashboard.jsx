@@ -407,7 +407,7 @@ export default function Dashboard() {
         return <CreatorHome user={user} justOnboarded={justOnboarded} />;
     }
     if (isBrandSide(user.role)) {
-        return <BrandDashboardView user={user} />;
+        return <BrandDashboardView user={user} justOnboarded={justOnboarded} />;
     }
     // Admins have no dashboard of their own — the console is their home.
     return <Navigate to={homePathFor(user.role)} replace />;
