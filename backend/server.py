@@ -11,6 +11,7 @@ import json
 from html import escape as html_escape
 import os
 import re
+import sys
 import logging
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
@@ -47,6 +48,87 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("wearecreators")
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+#
+# Three variables have no default and no sensible fallback: without them the
+# process cannot connect to a database or sign a cookie. They used to surface
+# as a bare `KeyError: 'JWT_SECRET'` — MONGO_URL and DB_NAME at import, but
+# JWT_SECRET only when somebody tried to log in, because `_jwt_secret()` reads
+# it per call. A deploy missing it looked healthy, served the marketing page,
+# and 500'd the first person who tried to sign in.
+#
+# So they are checked here, before the first read below, and the process
+# refuses to start with all of them named at once — one boot, one list, rather
+# than fixing them one restart at a time.
+_ENV_REQUIRED = (
+    ("MONGO_URL", "MongoDB connection string, e.g. mongodb://localhost:27017"),
+    ("DB_NAME", "Database name, e.g. wearecreators"),
+    ("JWT_SECRET", "Signs the auth cookies. Any long random string."),
+)
+
+# These have defaults that let the process start, and each one silently breaks
+# something a person will notice long after boot. They warn rather than exit:
+# a laptop and the unit suite legitimately run without an admin account, and
+# refusing to boot over CORS would be worse than saying so loudly when the
+# real cause might be a proxy setting the header instead.
+_ENV_PRODUCTION = (
+    ("ADMIN_EMAIL", "no admin account is seeded, so nobody can sign in at /admin"),
+    ("ADMIN_PASSWORD", "no admin account is seeded, so nobody can sign in at /admin"),
+    ("CORS_ORIGINS", "the browser will block every call from the frontend"),
+)
+
+
+def _is_production() -> bool:
+    """Same signal `_simulation_allowed` uses, read the same way."""
+    env = os.environ.get("APP_ENV", os.environ.get("ENV", "")).strip().lower()
+    return env not in ("dev", "development", "local", "test")
+
+
+def validate_environment(*, exit_on_missing: bool = True) -> list:
+    """Name everything missing, once, at boot.
+
+    Returns the list of missing required variables so a test can call it
+    without ending the process.
+    """
+    missing = [(k, why) for k, why in _ENV_REQUIRED if not os.environ.get(k, "").strip()]
+
+    if missing:
+        lines = [
+            "",
+            "Refusing to start: required environment variables are missing.",
+            "",
+        ]
+        lines += [f"  {k:<12} {why}" for k, why in missing]
+        lines += [
+            "",
+            f"Set them in {ROOT_DIR / '.env'} (copy .env.example) or in the",
+            "host's environment, then start again. See backend/.env.example for",
+            "every variable this app reads.",
+            "",
+        ]
+        print("\n".join(lines), file=sys.stderr, flush=True)
+        if exit_on_missing:
+            raise SystemExit(1)
+
+    # Warnings are worth having even when something is missing above, so the
+    # operator fixes everything in one pass rather than discovering the next
+    # problem after the next restart.
+    if _is_production():
+        for key, breaks in _ENV_PRODUCTION:
+            if not os.environ.get(key, "").strip():
+                logger.warning(
+                    "%s is not set — %s. Set APP_ENV=development to silence this "
+                    "on a local machine.",
+                    key,
+                    breaks,
+                )
+    return missing
+
+
+validate_environment()
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
@@ -94,7 +176,21 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def _jwt_secret() -> str:
-    return os.environ["JWT_SECRET"]
+    """The signing key, guaranteed present by `validate_environment()` at boot.
+
+    Kept as a lookup rather than a frozen constant so a test can set the
+    variable and have it take effect; the RuntimeError is unreachable in a
+    process that started normally, and exists so that if it ever is reached it
+    says which variable rather than raising a bare KeyError from inside a
+    login request.
+    """
+    secret = os.environ.get("JWT_SECRET", "").strip()
+    if not secret:
+        raise RuntimeError(
+            "JWT_SECRET is not set. The process should not have started; "
+            "see validate_environment()."
+        )
+    return secret
 
 
 def create_access_token(user_id: str, email: str, role: str) -> str:

@@ -5,7 +5,7 @@ Two-sided marketplace web app for Bengaluru connecting food & lifestyle content 
 with restaurants, cafés, and lifestyle brands for paid collaboration campaigns. Three user
 roles: CREATOR, BRAND, ADMIN. Dark premium theme, burnt-orange accent, elegant serif +
 clean sans, mobile-first. Foundation only for first build: auth + DB + role-based access +
-placeholder home + login/signup. GitHub sync via Emergent UI.
+placeholder home + login/signup.
 
 ## Stack (confirmed)
 - Backend: FastAPI + Motor (MongoDB), JWT email/password auth, bcrypt
