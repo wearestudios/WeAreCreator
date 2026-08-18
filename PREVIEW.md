@@ -210,13 +210,17 @@ Railway URL:
 ```json
 { "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" },
 { "source": "/brands/:id", "destination": "https://your-api.up.railway.app/brands/:id" },
+{ "source": "/for-brands", "destination": "https://your-api.up.railway.app/for-brands" },
 { "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
 ```
 
-All three or none: `/brands/{id}` is the brand's public page, linked from every
-campaign card and from every shared brief, and `/sitemap.xml` is what makes
-both findable by a search engine (robots.txt points at it). Shipping the brief
-proxy without the brand one means every brand link opens the SPA's 404.
+All four or none. `/brands/{id}` is the brand's public page, linked from every
+campaign card and from every shared brief; `/for-brands` is the pitch page the
+navbar and the landing's brand toggle link to, and the one you would send a
+venue owner on WhatsApp; and `/sitemap.xml` is what makes them findable by a
+search engine (robots.txt points at it). Shipping the brief proxy without the
+others means those links open the SPA's 404 — and the two nav entries are real
+anchors precisely so the browser asks the server, which is the whole point.
 
 The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
 the backend's own origin and links will point straight at it. That works
