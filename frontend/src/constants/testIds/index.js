@@ -17,6 +17,7 @@ export * from './application';
 export * from './auth';
 export * from './brand';
 export * from './dense';
+export * from './drafts';
 export * from './execution';
 export * from './creator';
 export * from './imagery';

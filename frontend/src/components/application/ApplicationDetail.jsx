@@ -33,6 +33,7 @@ import BrandName from "@/components/BrandName";
 import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
+import DraftReview from "./DraftReview";
 import LifecycleBar from "./LifecycleBar";
 
 const formatRupees = (n) =>
@@ -458,6 +459,21 @@ export default function ApplicationDetail({
                                     </Button>
                                 )}
                             </div>
+                        </Section>
+                    )}
+
+                    {/* The draft, where the campaign reviews one. `draft` is
+                        null — not an empty object — on a campaign that
+                        doesn't, so the panel is absent rather than a section
+                        explaining that there is nothing in it. */}
+                    {app.draft && (
+                        <Section id="draft" title="Draft review">
+                            <DraftReview
+                                collaborationId={id}
+                                draft={app.draft}
+                                canReview={actions.can_review_draft}
+                                onDecided={load}
+                            />
                         </Section>
                     )}
 

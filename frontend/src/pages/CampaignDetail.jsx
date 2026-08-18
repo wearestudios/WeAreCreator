@@ -59,6 +59,8 @@ const STATE_LABEL = {
     commercial_agreed: "Fee agreed",
     slot_booked: "Slot booked",
     attended: "Attended",
+    draft_submitted: "Draft in review",
+    draft_approved: "Draft approved",
     content_submitted: "In review",
     content_approved: "Approved",
     in_payment: "Payment in progress",

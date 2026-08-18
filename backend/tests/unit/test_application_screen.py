@@ -164,7 +164,21 @@ def test_a_personal_table_tells_the_creator_to_pick_a_time():
 
 
 def test_the_lifecycle_carries_every_step_in_order():
+    """The ladder the campaign actually walks. With draft review off — which
+    is what an absent campaign reads as — that is the ten steps this had
+    before the stage existed."""
     bar = server._lifecycle_for({"state": "accepted"})
+
+    assert [s["state"] for s in bar["steps"]] == server._collab_ladder(None)
+    assert not any(
+        s["state"] in server.DRAFT_REVIEW_STATES for s in bar["steps"]
+    )
+
+
+def test_the_lifecycle_grows_two_steps_where_drafts_are_reviewed():
+    bar = server._lifecycle_for(
+        {"state": "accepted"}, {"requires_draft_approval": True}
+    )
 
     assert [s["state"] for s in bar["steps"]] == server.COLLAB_STATE_ORDER
 
@@ -178,8 +192,9 @@ def test_the_lifecycle_marks_exactly_one_step_current():
 def test_the_lifecycle_marks_everything_before_it_done():
     bar = server._lifecycle_for({"state": "attended"})
     done = [s["state"] for s in bar["steps"] if s["done"]]
+    ladder = server._collab_ladder(None)
 
-    assert done == server.COLLAB_STATE_ORDER[: server.COLLAB_STATE_ORDER.index("attended")]
+    assert done == ladder[: ladder.index("attended")]
 
 
 def test_an_exit_is_not_a_step_on_the_bar():

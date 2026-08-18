@@ -86,6 +86,10 @@ export default function PostCampaign() {
     // Public unless the brand says otherwise — an invite-only brief that
     // nobody meant to hide is merely unfindable, which is worse than wrong.
     const [visibility, setVisibility] = useState("public");
+    // On by default here for the same reason the server defaults it on for a
+    // brand-run brief: whoever is paying for the work should see it before
+    // the creator's audience does. Off is a deliberate choice to make.
+    const [requiresDraft, setRequiresDraft] = useState(true);
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -143,6 +147,10 @@ export default function PostCampaign() {
                     setCompensationType(data.compensation_type || "fixed");
                     setExecutionOwner(data.execution_owner || "brand");
                     setVisibility(data.visibility === "private" ? "private" : "public");
+                    // Re-seeded rather than defaulted, or fixing a typo on a
+                    // brief that doesn't review drafts would quietly turn the
+                    // stage on for everybody already working it.
+                    setRequiresDraft(Boolean(data.requires_draft_approval));
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -232,6 +240,7 @@ export default function PostCampaign() {
                   execution_owner: executionOwner,
               }),
         visibility,
+        requires_draft_approval: requiresDraft,
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
@@ -738,6 +747,50 @@ export default function PostCampaign() {
                                     have a public share page.
                                 </p>
                             )}
+                        </div>
+
+                        {/* The draft gate. A checkbox rather than a two-card
+                            picker: unlike execution owner and visibility this
+                            has an obvious default and no second story to
+                            tell. */}
+                        <div>
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Before anything is published
+                            </Label>
+                            <label
+                                htmlFor="pc-requires-draft"
+                                className={
+                                    "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
+                                    (requiresDraft
+                                        ? "border-ember-500 bg-ember-500/10"
+                                        : "border-white/10 bg-card/60 hover:border-white/25")
+                                }
+                            >
+                                <input
+                                    id="pc-requires-draft"
+                                    data-testid="pc-requires-draft"
+                                    type="checkbox"
+                                    checked={requiresDraft}
+                                    onChange={(e) => setRequiresDraft(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 flex-none accent-ember-500"
+                                />
+                                <span className="min-w-0">
+                                    <span
+                                        className={
+                                            "block text-sm " +
+                                            (requiresDraft ? "text-ember-500" : "text-foreground")
+                                        }
+                                    >
+                                        Review the draft first
+                                    </span>
+                                    <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                        The creator sends the cut for approval after
+                                        the shoot. Nothing goes live until you've said
+                                        yes — or asked for a change. Leave it off and
+                                        they post, then send you the link.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
 
                         <div className="grid gap-5 md:grid-cols-2">

@@ -907,6 +907,12 @@ class PostCampaignPayload(BaseModel):
     # Findable by every verified creator, or invite-only. Defaults to public
     # because that is what posting a brief means unless you say otherwise.
     visibility: CampaignVisibility = DEFAULT_CAMPAIGN_VISIBILITY
+    # Review the work before it goes live. `None` here means "decide from
+    # execution_owner" — a brand running its own campaign gets the gate on by
+    # default, because the brand seeing the content after the creator's
+    # audience is the problem this exists to fix. An explicit false turns it
+    # off and the lifecycle behaves exactly as it did before.
+    requires_draft_approval: Optional[bool] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -977,6 +983,7 @@ class UpdateCampaignPayload(BaseModel):
     # applied, and everyone invited, keep read and apply access — the doors are
     # in _creator_may_see, not here.
     visibility: Optional[CampaignVisibility] = None
+    requires_draft_approval: Optional[bool] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -1209,11 +1216,41 @@ COLLAB_STATE_ORDER = [
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The draft gate: the reviewer sees the content BEFORE the creator's
+    # audience does. Optional per campaign — `requires_draft_approval` — and
+    # skipped entirely from the ladder when off, so a campaign without it
+    # behaves exactly as before these two states existed.
+    "draft_submitted",
+    "draft_approved",
     "content_submitted",
     "content_approved",
     "in_payment",
     "closed",
 ]
+
+# The optional pair, named once so every "skip them when off" reads the same.
+DRAFT_REVIEW_STATES = ("draft_submitted", "draft_approved")
+
+
+def _requires_draft_approval(campaign: dict) -> bool:
+    """Does this campaign gate publication behind a draft review?
+
+    Absent reads **False** — this is the whole migration story. Campaigns
+    written before the field existed never see the draft states, so every
+    in-flight collaboration keeps the exact path it was on; there is no
+    backfill, deliberately. New brand-run campaigns default it on at creation
+    (see create_brand_campaign) — the *creation* default and the *reader*
+    default differ on purpose, because one is a policy for new work and the
+    other is a promise to old work.
+    """
+    return bool((campaign or {}).get("requires_draft_approval"))
+
+
+def _collab_ladder(campaign: Optional[dict]) -> list:
+    """The state order this campaign actually walks."""
+    if _requires_draft_approval(campaign):
+        return COLLAB_STATE_ORDER
+    return [s for s in COLLAB_STATE_ORDER if s not in DRAFT_REVIEW_STATES]
 
 # Once a collaboration is in one of these, nothing may move it again.
 TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled")
@@ -1226,6 +1263,8 @@ COLLAB_GROUP_ONGOING = (
     "commercial_agreed",
     "slot_booked",
     "attended",
+    "draft_submitted",
+    "draft_approved",
     "content_submitted",
     "content_approved",
     "in_payment",
@@ -1680,6 +1719,12 @@ NOTIFY_EVENTS = {
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
     "question_answered": "Your question was answered",
+    # Draft review. `draft_submitted` routes on execution_owner like an
+    # application does; the other two are the creator being told the outcome,
+    # and the second of them carries the note that says what to change.
+    "draft_submitted": "A draft is waiting for your review",
+    "draft_approved": "Your draft was approved",
+    "draft_changes_requested": "Changes were asked for on your draft",
 }
 
 
@@ -1936,13 +1981,57 @@ def sniff_document_type(head: bytes) -> Optional[tuple]:
     return sniff_image_type(head)
 
 
-async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
-    """Validate and write a document outside the public upload directory.
+# A draft is what came off a phone: a cut of a reel, or a still. Video needs its
+# own table because the magic is not at offset 0 — an MP4/MOV starts with a
+# four-byte box length and then "ftyp", so the check is at 4, and WebM is
+# Matroska's EBML header.
+_VIDEO_FTYP_BRANDS = {
+    b"isom": ("video/mp4", ".mp4"),
+    b"iso2": ("video/mp4", ".mp4"),
+    b"mp41": ("video/mp4", ".mp4"),
+    b"mp42": ("video/mp4", ".mp4"),
+    b"avc1": ("video/mp4", ".mp4"),
+    b"qt  ": ("video/quicktime", ".mov"),
+}
+
+ACCEPTED_DRAFT_MIMES = frozenset(
+    {mime for mime, _ in _VIDEO_FTYP_BRANDS.values()}
+    | {"video/webm"}
+    | set(ACCEPTED_IMAGE_MIMES)
+)
+
+
+def sniff_draft_type(head: bytes) -> Optional[tuple]:
+    """Identify a draft from its leading bytes: a video, or any image.
+
+    Same rule as everywhere else — the type comes from the bytes and never from
+    the filename — so "reel.mp4" that is really something else is refused
+    rather than stored and served back with a video content-type.
+    """
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in _VIDEO_FTYP_BRANDS:
+            return _VIDEO_FTYP_BRANDS[brand]
+        # An ftyp box we do not know is still an ISO-BMFF container; treat it
+        # as MP4 rather than refusing a legitimate phone export.
+        return "video/mp4", ".mp4"
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video/webm", ".webm"
+    return sniff_image_type(head)
+
+
+async def _store_private_upload(
+    file: UploadFile, *, prefix: str, sniffer=None, kind: str = "Documents"
+) -> dict:
+    """Validate and write a file outside the public upload directory.
 
     Returns the stored metadata. Deliberately never returns a URL: there isn't
     one, and a caller that can't accidentally be handed a link can't
-    accidentally render it.
+    accidentally render it. That property is exactly why an unpublished draft
+    lives here too — the whole point of the review stage is that the work is
+    not public yet.
     """
+    sniffer = sniffer or sniff_document_type
     limit = max_upload_bytes()
     chunk_size = 64 * 1024
 
@@ -1950,11 +2039,15 @@ async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
     if not first:
         raise HTTPException(status_code=422, detail="That file is empty.")
 
-    sniffed = sniff_document_type(first)
+    sniffed = sniffer(first)
     if not sniffed:
         raise HTTPException(
             status_code=422,
-            detail="Please upload a PDF, JPEG, PNG, WebP or GIF.",
+            detail=(
+                "Please upload a video (MP4, MOV, WebM) or an image."
+                if sniffer is not sniff_document_type
+                else "Please upload a PDF, JPEG, PNG, WebP or GIF."
+            ),
         )
     mime, ext = sniffed
 
@@ -1971,7 +2064,7 @@ async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
                 if written > limit:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"Documents must be under {limit // (1024 * 1024)}MB.",
+                        detail=f"{kind} must be under {limit // (1024 * 1024)}MB.",
                     )
                 out.write(chunk)
                 chunk = await file.read(chunk_size)
@@ -4275,8 +4368,12 @@ def _serialize_collab_row(
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
         "state": state,
-        # The creator can submit or re-submit right up until it's approved.
-        "can_submit_content": state in ("attended", "content_submitted"),
+        # The creator can submit or re-submit right up until it's approved —
+        # from `attended` normally, and from `draft_approved` where the
+        # campaign reviews the cut first. The flag has to agree with what
+        # `submit_collab_content` will actually accept.
+        "can_submit_content": state == "content_submitted"
+        or state == ("draft_approved" if _requires_draft_approval(campaign) else "attended"),
         "created_at": _iso(collab.get("created_at")),
     }
 
@@ -4446,7 +4543,30 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     if state == "slot_booked":
         return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
     if state == "attended":
+        if _requires_draft_approval(campaign):
+            # The whole point of the stage: nothing is published until it has
+            # been looked at, so the ask here is a draft, not a live link.
+            note = (collab.get("draft_revision_note") or "").strip()
+            return {
+                "action": "submit_draft",
+                "label": (
+                    f"Changes requested: {note}" if note else "Submit your draft for review."
+                ),
+                "waiting_on": "you",
+            }
         return {"action": "submit_content", "label": "Submit your content.", "waiting_on": "you"}
+    if state == "draft_submitted":
+        return {
+            "action": "resubmit_draft",
+            "label": "Your draft is being reviewed. You can still replace it.",
+            "waiting_on": "brand",
+        }
+    if state == "draft_approved":
+        return {
+            "action": "submit_content",
+            "label": "Draft approved — publish it, then drop the live link.",
+            "waiting_on": "you",
+        }
     if state == "content_submitted":
         return {
             "action": "resubmit_content",
@@ -4722,6 +4842,9 @@ async def get_creator_dashboard(
                 "slot_starts_at": _iso(c.get("scheduled_at")),
                 "can_cancel_slot": bool(c.get("slot_id")),
                 "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+                # Absent on a campaign that doesn't review drafts, so the card
+                # has nothing to render rather than an empty panel.
+                "draft": _serialize_draft(c) if _requires_draft_approval(camp) else None,
                 "next_action": _creator_next_action(c, camp, can_be_paid),
             }
         )
@@ -4810,17 +4933,30 @@ async def submit_collab_content(
     if not collab:
         raise HTTPException(status_code=404, detail="Collaboration not found")
 
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
     # Submitting is allowed from `attended`, and re-submitting from
     # `content_submitted` — a creator must be able to fix a wrong link, or
     # respond to a change request, without an admin unpicking the state by hand.
-    if collab.get("state") not in ("attended", "content_submitted"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Content can be submitted once the collaboration is marked attended, "
-                "and changed any time before it's approved."
-            ),
+    #
+    # On a campaign that reviews drafts, `attended` is not one of the doors:
+    # the whole stage exists so the brand sees the work before the creator's
+    # audience does, and accepting a live link from `attended` would be the
+    # route around it.
+    if _requires_draft_approval(campaign):
+        allowed = ("draft_approved", "content_submitted")
+        refusal = (
+            "This campaign reviews drafts before publication. Submit your draft "
+            "first — the live link goes in once it's approved."
         )
+    else:
+        allowed = ("attended", "content_submitted")
+        refusal = (
+            "Content can be submitted once the collaboration is marked attended, "
+            "and changed any time before it's approved."
+        )
+    if collab.get("state") not in allowed:
+        raise HTTPException(status_code=400, detail=refusal)
 
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
@@ -4851,7 +4987,6 @@ async def submit_collab_content(
     # brand manager's own decision, so it goes to them by name rather than to
     # the brand account — the same person today, but the routing shouldn't be
     # what depends on that.
-    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if campaign:
         await notify_brand_manager(
             campaign["brand_id"],
@@ -5247,6 +5382,7 @@ def _serialize_brand_campaign(
         "title": doc.get("title"),
         # Never None: the owner's console prints one of two words on every row.
         "visibility": _campaign_visibility(doc),
+        "requires_draft_approval": _requires_draft_approval(doc),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
@@ -6034,6 +6170,15 @@ async def create_brand_campaign(
         "compensation_type": payload.compensation_type,
         "execution_owner": payload.execution_owner,
         "visibility": payload.visibility,
+        # Defaults on for a brand running its own campaign and off when they
+        # have handed execution to us — our own managers are the reviewers
+        # either way, and a gate we impose on ourselves by default is process
+        # for its own sake. Either can be set explicitly.
+        "requires_draft_approval": (
+            payload.execution_owner != "weare"
+            if payload.requires_draft_approval is None
+            else bool(payload.requires_draft_approval)
+        ),
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -6540,10 +6685,14 @@ async def list_campaign_applicants(
             "in_progress": sum(
                 1
                 for r in rows
-                if r["state"] in ("accepted", "commercial_agreed", "slot_booked", "attended")
+                if r["state"]
+                in ("accepted", "commercial_agreed", "slot_booked", "attended", "draft_approved")
             ),
+            # Both review steps under one count: from the board's side "there
+            # is something of mine to look at" is one job, whichever end of
+            # the shoot it came from.
             "needs_content_review": sum(
-                1 for r in rows if r["state"] == "content_submitted"
+                1 for r in rows if r["state"] in ("draft_submitted", "content_submitted")
             ),
             "closed": sum(
                 1 for r in rows if r["state"] in ("closed", "declined", "cancelled")
@@ -7684,36 +7833,56 @@ api_router.include_router(brand_router)
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
-def _next_collab_state(current: str) -> Optional[str]:
-    """The next step on the happy path, or None at the end / on an exit state."""
+def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
+    """The next step on this campaign's happy path, or None at the end.
+
+    Takes the campaign because the ladder is now per-campaign: with draft
+    review off, `attended` steps straight to `content_submitted` exactly as it
+    always did. A caller without the campaign in hand gets the draft-free
+    ladder — the safe reading for everything written before the field existed.
+    """
+    ladder = _collab_ladder(campaign)
+    if current in DRAFT_REVIEW_STATES and current not in ladder:
+        # A collaboration standing on a draft state is on the draft ladder,
+        # whatever the caller failed to pass.
+        ladder = COLLAB_STATE_ORDER
     try:
-        idx = COLLAB_STATE_ORDER.index(current)
+        idx = ladder.index(current)
     except ValueError:
         return None  # declined / cancelled have no "next"
-    if idx + 1 >= len(COLLAB_STATE_ORDER):
+    if idx + 1 >= len(ladder):
         return None
-    return COLLAB_STATE_ORDER[idx + 1]
+    return ladder[idx + 1]
 
 
-def _previous_collab_state(current: str) -> Optional[str]:
+def _previous_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
     """The step before this one, or None at the start / on an exit state.
 
-    The mirror of `_next_collab_state`. Terminal exits are not on the ladder, so
-    they have no previous step either — coming back from one is a different
-    decision, not a step backwards.
+    The exact mirror of `_next_collab_state`, campaign and all: reverting a
+    campaign that doesn't review drafts must not land on `draft_approved`, a
+    state nothing on that campaign can ever leave.
     """
+    ladder = _collab_ladder(campaign)
+    if current in DRAFT_REVIEW_STATES and current not in ladder:
+        ladder = COLLAB_STATE_ORDER
     try:
-        idx = COLLAB_STATE_ORDER.index(current)
+        idx = ladder.index(current)
     except ValueError:
         return None
     if idx == 0:
         return None
-    return COLLAB_STATE_ORDER[idx - 1]
+    return ladder[idx - 1]
 
 
 # Steps only the brand may take. The admin console shows them as waiting on the
 # brand rather than offering an Advance button that bypasses the buyer.
 _BRAND_OWNED_TRANSITIONS = {"accepted", "content_approved"}
+
+# Steps the admin advance endpoint refuses for a different reason: they are
+# not decisions to fabricate. A draft has to actually arrive (the creator's
+# upload) and actually be reviewed (the reviewer's own endpoints, which
+# admins may also call).
+_DRAFT_OWNED_TRANSITIONS = set(DRAFT_REVIEW_STATES)
 
 
 # Who has to do something next, and what. One table, read by every surface —
@@ -7732,6 +7901,10 @@ _NEXT_ACTION = {
     "commercial_agreed": ("creator", "Book a slot", "The creator picks their place."),
     "slot_booked": ("creator", "Turn up", "Attendance is marked on the day."),
     "attended": ("creator", "Submit the content", "Links to what they published."),
+    # The reviewer here follows execution_owner, like content review does —
+    # "brand" is the owner vocabulary for "not us and not the creator".
+    "draft_submitted": ("brand", "Review the draft", "Approve it, or send it back with a note, before anything goes live."),
+    "draft_approved": ("creator", "Publish and submit the live link", "The draft is approved — post it, then drop the link."),
     "content_submitted": ("brand", "Approve or request changes", "The brand reviews the content."),
     "content_approved": ("admin", "Move into payment", "Raise the payout."),
     "in_payment": ("admin", "Record the payout", "Mark it paid to close this out."),
@@ -7753,6 +7926,13 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
         label = "Pick a time"
         detail = "The creator chooses a time inside the campaign's window."
 
+    # On a campaign that reviews drafts, what follows attendance is a draft,
+    # not a live link. The state is the same; the instruction is not, and the
+    # creator is the one who has to act on the difference.
+    if state == "attended" and _requires_draft_approval(campaign):
+        label = "Submit the draft"
+        detail = "The draft is reviewed before anything is published."
+
     return {
         "state": state,
         "owner": owner,
@@ -7771,13 +7951,21 @@ def _lifecycle_for(collab: dict, campaign: Optional[dict] = None) -> dict:
     somebody the wrong thing.
     """
     state = collab.get("state", "applied")
+    # The ladder is per-campaign: five steps after attendance on a campaign
+    # that reviews drafts, three on one that doesn't. A collaboration already
+    # standing on a draft state draws the draft ladder whatever the campaign
+    # now says — a toggle flipped mid-flight must not erase the step somebody
+    # is on.
+    ladder = _collab_ladder(campaign)
+    if state in DRAFT_REVIEW_STATES and state not in ladder:
+        ladder = COLLAB_STATE_ORDER
     try:
-        current_index = COLLAB_STATE_ORDER.index(state)
+        current_index = ladder.index(state)
     except ValueError:
         current_index = -1  # declined / cancelled are not on the ladder
 
     steps = []
-    for i, step in enumerate(COLLAB_STATE_ORDER):
+    for i, step in enumerate(ladder):
         owner, label, _ = _NEXT_ACTION.get(step, (None, step, ""))
         steps.append(
             {
@@ -9511,6 +9699,10 @@ FILL_WARNING_RATIO = 0.7       # below this share of the brief, it is short
 SLOT_WARNING_DAYS = 2
 # Attended, and no content since. A creator needs a few days to edit and post.
 CONTENT_OVERDUE_DAYS = 7
+# A draft sent up and nobody has looked at it. Shorter than the others because
+# the creator is blocked while it waits, and because this is the one stage in
+# the ladder where *we* are the ones holding somebody up.
+DRAFT_REVIEW_OVERDUE_DAYS = 2
 # Approved work with money still sitting here.
 PAYMENT_OVERDUE_DAYS = 7
 # A brand that submitted documents and heard nothing.
@@ -9629,9 +9821,13 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         }
     )
 
-    # 3. Turned up, never posted.
+    # 3. Turned up, never posted. `draft_approved` counts: the reviewer has
+    # said yes and the work is still not out, which is the same problem.
     overdue = await db.collaborations.find(
-        {"state": "attended", "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)}}
+        {
+            "state": {"$in": ["attended", "draft_approved"]},
+            "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)},
+        }
     ).to_list(length=500)
     names = await _creator_names_for([c["creator_id"] for c in overdue])
     camp_titles = await _campaign_titles_for([c["campaign_id"] for c in overdue])
@@ -9639,7 +9835,7 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         {
             "key": "content_overdue",
             "label": "Content overdue",
-            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing submitted.",
+            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing published.",
             "items": [
                 {
                     "id": str(c["_id"]),
@@ -9650,6 +9846,39 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
                     "at": _iso(c.get("updated_at")),
                 }
                 for c in overdue
+            ],
+        }
+    )
+
+    # 3b. A draft nobody has looked at. The stage this guards is the one place
+    # in the ladder where the delay is ours: the creator has done the work, is
+    # blocked from publishing, and no notification fires twice.
+    stale_drafts = await db.collaborations.find(
+        {
+            "state": "draft_submitted",
+            "updated_at": {"$lte": _days_ago(DRAFT_REVIEW_OVERDUE_DAYS)},
+        }
+    ).to_list(length=500)
+    names = await _creator_names_for([c["creator_id"] for c in stale_drafts])
+    camp_titles = await _campaign_titles_for([c["campaign_id"] for c in stale_drafts])
+    checks.append(
+        {
+            "key": "draft_review_overdue",
+            "label": "Drafts waiting on a review",
+            "blurb": (
+                f"Sent more than {DRAFT_REVIEW_OVERDUE_DAYS} days ago. The creator "
+                "can't publish until somebody looks."
+            ),
+            "items": [
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp_titles.get(c['campaign_id']) or 'Campaign'} · sent {timeago_days(c.get('updated_at'), now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "warning",
+                    "at": _iso(c.get("updated_at")),
+                }
+                for c in stale_drafts
             ],
         }
     )
@@ -9765,6 +9994,7 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
             "fill_warning_ratio": FILL_WARNING_RATIO,
             "slot_warning_days": SLOT_WARNING_DAYS,
             "content_overdue_days": CONTENT_OVERDUE_DAYS,
+            "draft_review_overdue_days": DRAFT_REVIEW_OVERDUE_DAYS,
             "payment_overdue_days": PAYMENT_OVERDUE_DAYS,
             "verification_overdue_days": VERIFICATION_OVERDUE_DAYS,
             "profile_stale_days": PROFILE_STALE_DAYS,
@@ -12478,14 +12708,21 @@ async def list_all_collaborations(
         row = _serialize_admin_collab(
             c, camp, brand_name, creator_user, creator_profile, payment
         )
-        next_state = _next_collab_state(row["state"])
+        next_state = _next_collab_state(row["state"], camp)
         row["next_state"] = next_state
         # Tell the console which button, if any, belongs to it — the brand owns
-        # accepting and approving, and the API will refuse if we bypass them.
+        # accepting and approving, the creator and the reviewer own the draft,
+        # and the API will refuse if we bypass any of them.
         row["next_owner"] = (
-            "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
+            "brand"
+            if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
+            else "creator"
+            if next_state == "draft_submitted"
+            else "admin"
         )
-        row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+        row["can_advance"] = bool(next_state) and next_state not in (
+            _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS
+        )
         row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
         by_state.setdefault(row["state"], []).append(row)
     return {"by_state": by_state, "total": len(collabs)}
@@ -12535,10 +12772,18 @@ async def get_admin_collaboration_detail(
         creator_profile,
         payment,
     )
-    next_state = _next_collab_state(row["state"])
+    next_state = _next_collab_state(row["state"], campaign)
     row["next_state"] = next_state
-    row["next_owner"] = "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
-    row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+    row["next_owner"] = (
+        "brand"
+        if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
+        else "creator"
+        if next_state == "draft_submitted"
+        else "admin"
+    )
+    row["can_advance"] = bool(next_state) and next_state not in (
+        _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS
+    )
     row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
 
     slot = None
@@ -12588,8 +12833,10 @@ async def get_admin_collaboration_detail(
             for e in events
         ],
         # The order the states actually run in, so the page can draw the ones
-        # still ahead rather than only the ones already behind.
-        "state_order": list(COLLAB_STATE_ORDER),
+        # still ahead rather than only the ones already behind. Per-campaign:
+        # the two draft steps are only on the ladder where the campaign asked
+        # for them.
+        "state_order": list(_collab_ladder(campaign)),
         "terminal_states": list(TERMINAL_COLLAB_STATES),
         # Whether there is anything to measure yet, decided here rather than by
         # the UI keeping its own copy of the delivered set.
@@ -12636,7 +12883,12 @@ async def advance_collaboration(
             detail="This collaboration is awaiting payment — use Mark as paid to close it.",
         )
 
-    to_state = _next_collab_state(current)
+    # The ladder depends on the campaign, so read it before deciding what
+    # "next" even means: on a campaign that reviews drafts, what follows
+    # attendance is a draft, not the live link.
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
+    to_state = _next_collab_state(current, campaign)
     if not to_state:
         raise HTTPException(
             status_code=400, detail="Collaboration is already at the final state"
@@ -12649,6 +12901,18 @@ async def advance_collaboration(
                 "approve content from their dashboard."
             ),
         )
+    if to_state in _DRAFT_OWNED_TRANSITIONS:
+        # Not a step to fabricate from the console: a draft has to actually
+        # arrive, and it has to actually be looked at. Both happen on the
+        # draft routes, which admins may call.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This campaign reviews drafts before publication. The creator "
+                "submits the draft and a reviewer approves it — neither is a "
+                "step to mark from here."
+            ),
+        )
 
     now = datetime.now(timezone.utc)
     update: dict = {"state": to_state, "updated_at": now}
@@ -12657,10 +12921,9 @@ async def advance_collaboration(
         # What the amount must be depends on how the brief pays. This used to
         # demand a figure whatever the campaign was, which left every barter
         # collaboration stuck at `accepted` for good.
-        agreed_campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
-        if not agreed_campaign:
+        if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        resolved = _resolve_agreed_amount(agreed_campaign, payload.agreed_amount)
+        resolved = _resolve_agreed_amount(campaign, payload.agreed_amount)
         if resolved is not None:
             update["agreed_amount"] = resolved
         update["agreed_at"] = now
@@ -12743,7 +13006,6 @@ async def advance_collaboration(
         after={k: v for k, v in update.items() if k != "updated_at"},
     )
 
-    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     campaign_title = (campaign or {}).get("title") or "your collaboration"
     if to_state == "commercial_agreed":
         # The next move is the creator's, so say so — this is the message that
@@ -12779,7 +13041,7 @@ async def advance_collaboration(
         "state": updated["state"],
         "agreed_amount": updated.get("agreed_amount"),
         "scheduled_at": _iso(updated.get("scheduled_at")),
-        "next_state": _next_collab_state(updated["state"]),
+        "next_state": _next_collab_state(updated["state"], campaign),
     }
 
 
@@ -12824,7 +13086,12 @@ async def revert_collaboration(
             ),
         )
 
-    to_state = _previous_collab_state(current)
+    # Same reason `advance` reads it: the step behind depends on which ladder
+    # this campaign walks, and landing on `draft_approved` where drafts are
+    # not reviewed would be a state nothing can leave.
+    revert_campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
+    to_state = _previous_collab_state(current, revert_campaign)
     if not to_state:
         raise HTTPException(
             status_code=409,
@@ -14886,7 +15153,11 @@ async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
                     "no_show"
                     if state in ("declined", "cancelled")
                     else "attended"
-                    if state in ("attended", "content_submitted", "content_approved",
+                    # Everything past the shoot, draft states included: a
+                    # creator who turned up and sent a cut must not read back
+                    # as still expected on the door roster.
+                    if state in ("attended", "draft_submitted", "draft_approved",
+                                 "content_submitted", "content_approved",
                                  "in_payment", "closed")
                     else "expected"
                 ),
@@ -15316,6 +15587,8 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         # serialisation has already passed the invited-or-applied gate, and
         # telling them it is invite-only is telling them something flattering.
         "visibility": _campaign_visibility(doc),
+        # The creator needs to know before they shoot that a draft comes first.
+        "requires_draft_approval": _requires_draft_approval(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign
@@ -16827,6 +17100,353 @@ async def unanswered_questions(user: dict = Depends(require_roles("admin"))):
 api_router.include_router(questions_router)
 
 
+# --- The draft gate ----------------------------------------------------------
+#
+# Before this, a creator submitted a link to something already published: the
+# brand's first sight of the work was after the creator's audience had it. The
+# draft states put a review in front of publication — the creator uploads the
+# cut (or an unlisted link), the reviewer approves it or sends it back with a
+# note, and only then does the creator publish and submit the live link exactly
+# as before.
+#
+# Optional per campaign, and **absent reads off**: every collaboration already
+# in flight keeps the path it started on, because there is no backfill and
+# `_requires_draft_approval` reads a missing field as False. New brand-run
+# campaigns get it on at creation.
+#
+# The file lives in PRIVATE_UPLOAD_DIR for the reason a verification document
+# does — an unpublished draft is the one thing on this platform that must not
+# be one guessed URL away from the internet.
+
+drafts_router = APIRouter(prefix="/drafts", tags=["drafts"])
+
+
+class DraftLinkPayload(BaseModel):
+    """An unlisted link, for creators who would rather not upload 400MB."""
+
+    draft_url: str = Field(min_length=1, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class DraftDecisionPayload(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+async def _draft_reviewable_or_404(collab_id: str, user: dict) -> tuple:
+    """Load a collaboration whose draft this caller may review.
+
+    The reviewer follows `execution_owner`, exactly the rule the question
+    threads use — admins always, the assigned WeAre manager on a weare-run
+    campaign, the owning brand on a brand-run one — so it goes through the
+    same reader rather than a second copy that could drift. 404 rather than
+    403 behind all three, so a collaboration id tells a stranger nothing.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return collab, campaign
+
+
+def _serialize_draft(collab: dict) -> dict:
+    """What the review screens read. Never the stored path — the bytes come
+    out of the audited download route or not at all."""
+    draft = collab.get("draft") or {}
+    return {
+        "state": collab.get("state"),
+        "submitted_at": _iso(draft.get("submitted_at")),
+        "kind": draft.get("kind"),
+        "draft_url": draft.get("draft_url"),
+        "original_name": draft.get("original_name"),
+        "mime": draft.get("mime"),
+        "size": draft.get("size"),
+        "note": draft.get("note"),
+        # Every send-back increments this. Two revisions is a conversation;
+        # five is a brief that was never clear, and only a counter shows that.
+        "revision_count": int(collab.get("draft_revision_count") or 0),
+        "revision_note": collab.get("draft_revision_note"),
+        "approved_at": _iso(collab.get("draft_approved_at")),
+        "has_file": bool(draft.get("stored_name")),
+    }
+
+
+async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -> dict:
+    """Attach a draft and move to draft_submitted. Shared by both submit
+    routes so a file draft and a link draft cannot diverge in what they do to
+    the state, the audit line or the notification."""
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": {"$in": ["attended", "draft_submitted"]}},
+        {
+            "$set": {
+                "state": "draft_submitted",
+                "draft": {**draft, "submitted_at": now},
+                # A fresh draft answers the outstanding request.
+                "draft_revision_note": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409,
+            detail="This just moved — reload and try again.",
+        )
+
+    await audit(
+        user, "collaboration.submit_draft", "collaboration", collab["_id"],
+        before={"state": collab.get("state")},
+        after={"state": "draft_submitted", "kind": draft.get("kind")},
+        **_campaign_audit_context(campaign),
+    )
+
+    line = (
+        f"{user.get('name') or 'A creator'} sent a draft for review on "
+        f"“{campaign.get('title')}”."
+    )
+    # Routed like everything else that needs a decision on a campaign.
+    if _weare_runs(campaign):
+        await notify_weare_team(
+            campaign, "draft_submitted", title="A draft is waiting for review", body=line
+        )
+    else:
+        await notify_brand_manager(
+            campaign.get("brand_id"),
+            "draft_submitted",
+            title="A draft is waiting for review",
+            body=line,
+            link=f"/brand/applications/{str(collab['_id'])}",
+        )
+    return _serialize_draft(updated)
+
+
+async def _own_collab_for_draft(collab_id: str, user: dict) -> tuple:
+    """The creator's own collaboration, ready for a draft."""
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    if not _requires_draft_approval(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign doesn't use draft review — submit your live link instead.",
+        )
+    if collab.get("state") not in ("attended", "draft_submitted"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A draft can be sent once you're marked attended, and replaced "
+                "any time before it's approved."
+            ),
+        )
+    return collab, campaign
+
+
+@drafts_router.post("/{collab_id}/file")
+async def submit_draft_file(
+    collab_id: str,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(default=None),
+    user: dict = Depends(require_roles("creator")),
+):
+    """Upload the cut itself. Private storage — this is unpublished work."""
+    collab, campaign = await _own_collab_for_draft(collab_id, user)
+    stored = await _store_private_upload(
+        file, prefix=f"draft-{collab_id}", sniffer=sniff_draft_type, kind="Drafts"
+    )
+    return await _record_draft(
+        collab, campaign, user,
+        {
+            "kind": "file",
+            "stored_name": stored.get("stored_name"),
+            "original_name": stored.get("original_name"),
+            "mime": stored.get("mime"),
+            "size": stored.get("size"),
+            "note": (note or "").strip() or None,
+            "draft_url": None,
+        },
+    )
+
+
+@drafts_router.post("/{collab_id}/link")
+async def submit_draft_link(
+    collab_id: str,
+    payload: DraftLinkPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """An unlisted link instead — a private YouTube upload, a Drive file.
+
+    The alternative to a 400MB upload on mobile data, which is most of why a
+    creator would otherwise skip the gate and just publish.
+    """
+    collab, campaign = await _own_collab_for_draft(collab_id, user)
+    url = payload.draft_url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=422, detail="The draft link must start with http:// or https://"
+        )
+    return await _record_draft(
+        collab, campaign, user,
+        {
+            "kind": "link",
+            "draft_url": url,
+            "note": (payload.note or "").strip() or None,
+            "stored_name": None,
+            "original_name": None,
+            "mime": None,
+            "size": None,
+        },
+    )
+
+
+@drafts_router.get("/{collab_id}")
+async def read_draft(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    collab, _campaign = await _draft_reviewable_or_404(collab_id, user)
+    return _serialize_draft(collab)
+
+
+@drafts_router.get("/{collab_id}/file")
+async def download_draft_file(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Stream the draft to its reviewer. The only way these bytes leave.
+
+    Audited like the brand-document download, and for the same reason: this is
+    somebody's unpublished work, and who looked at it is worth knowing.
+    """
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    draft = collab.get("draft") or {}
+    path = _private_upload_path(draft.get("stored_name"))
+    if not path:
+        raise HTTPException(status_code=404, detail="There's no draft file here.")
+
+    await audit(
+        user, "collaboration.draft_view", "collaboration", collab["_id"],
+        after={"kind": draft.get("kind")},
+        **_campaign_audit_context(campaign),
+    )
+    return FileResponse(
+        path,
+        media_type=draft.get("mime") or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{draft.get("original_name") or "draft"}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@drafts_router.post("/{collab_id}/approve")
+async def approve_draft(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted"},
+        {"$set": {
+            "state": "draft_approved",
+            "draft_approved_at": now,
+            "draft_approved_by": ObjectId(user["_id"]),
+            "draft_revision_note": None,
+            "updated_at": now,
+        }},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="There's no draft waiting for review here."
+        )
+
+    await audit(
+        user, "collaboration.approve_draft", "collaboration", collab["_id"],
+        before={"state": "draft_submitted"}, after={"state": "draft_approved"},
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "draft_approved",
+        title="Your draft was approved",
+        body=f"{campaign.get('title')} — publish it, then drop the live link.",
+        link="/dashboard",
+    )
+    return _serialize_draft(updated)
+
+
+@drafts_router.post("/{collab_id}/request-changes")
+async def request_draft_changes(
+    collab_id: str,
+    payload: DraftDecisionPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Send it back with a note, and count the round trip."""
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    note = (payload.note or "").strip()
+    if not note:
+        raise HTTPException(
+            status_code=422, detail="Tell the creator what needs to change."
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted"},
+        {
+            # Back to "shoot done, draft owed" — the same shape as the live
+            # content request-changes, which returns to `attended` too.
+            "$set": {
+                "state": "attended",
+                "draft_revision_note": note,
+                "updated_at": now,
+            },
+            "$inc": {"draft_revision_count": 1},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="There's no draft waiting for review here."
+        )
+
+    await audit(
+        user, "collaboration.request_draft_changes", "collaboration", collab["_id"],
+        before={"state": "draft_submitted"}, after={"state": "attended"},
+        note=note,
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "draft_changes_requested",
+        title="Changes asked for on your draft",
+        body=f"{campaign.get('title')} — {note[:160]}",
+        link="/dashboard",
+    )
+    return _serialize_draft(updated)
+
+
+api_router.include_router(drafts_router)
+
+
 # --- One application, on its own ------------------------------------------
 #
 # Everything a single application needs, in one call, for one screen that the
@@ -16884,6 +17504,9 @@ async def get_application(
         # between the creator and our team. Decided here so the shared screen
         # never asks what role is looking.
         "questions_enabled": _question_staff_may_see(campaign, user),
+        # The draft, when the campaign reviews one. Absent — not empty — on a
+        # campaign that doesn't, so the panel is missing rather than blank.
+        "draft": _serialize_draft(collab) if _requires_draft_approval(campaign) else None,
         "campaign": {
             "id": str(campaign["_id"]),
             "title": campaign.get("title"),
@@ -16926,10 +17549,16 @@ async def get_application(
             and state in ("accepted", "commercial_agreed"),
             "can_review_content": state == "content_submitted"
             and (is_admin or is_brand_side(user)),
+            # Who reviews a draft follows execution_owner, so the same reader
+            # the questions panel uses answers it: a brand on a weare-run
+            # campaign is not the reviewer, and never sees the button.
+            "can_review_draft": state == "draft_submitted"
+            and _question_staff_may_see(campaign, user),
             "can_advance": is_admin
             and state not in TERMINAL_COLLAB_STATES
-            and _next_collab_state(state) not in _BRAND_OWNED_TRANSITIONS
-            and _next_collab_state(state) is not None,
+            and _next_collab_state(state, campaign)
+            not in (_BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS)
+            and _next_collab_state(state, campaign) is not None,
         },
     }
 

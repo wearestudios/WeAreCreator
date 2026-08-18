@@ -771,19 +771,25 @@ refuses it with the actual reason instead.
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:
 
 ```
-applied → verified → accepted → commercial_agreed → slot_booked
-        → attended → content_submitted → content_approved → in_payment → closed
+applied → verified → accepted → commercial_agreed → slot_booked → attended
+        → [draft_submitted → draft_approved] → content_submitted
+        → content_approved → in_payment → closed
 ```
 
 Plus two terminal exits that are **not** steps: `declined`, `cancelled`
-(`TERMINAL_COLLAB_STATES`). Who moves each step matters:
+(`TERMINAL_COLLAB_STATES`). The bracketed pair is optional per campaign — see
+"The draft gate" below. Who moves each step matters:
 
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
   The admin `advance` endpoint refuses these with 409 by design.
+- **Reviewer** (brand or WeAre, per `execution_owner`) — `draft_approved`, and
+  sending it back to `attended`. `advance` refuses both
+  (`_DRAFT_OWNED_TRANSITIONS`) for a different reason: they are not decisions to
+  fabricate.
 - **Creator** — `slot_booked` (booking their own place, and cancelling it back to
-  `commercial_agreed` up to 24h before) and `content_submitted`, and may resubmit
-  until the brand approves.
+  `commercial_agreed` up to 24h before), `draft_submitted` and
+  `content_submitted`, and may resubmit either until it is approved.
 
 Booking is atomic and lives in exactly one function, `_claim_slot`: a conditional
 `$inc` on `booked_count` under `{"$expr": {"$lt": ["$booked_count", "$capacity"]}}`,
@@ -806,6 +812,54 @@ Rules to preserve when touching this:
   both, and a unit test fails if a stray reference reappears.
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
+
+### The draft gate
+
+`content_submitted` carried a link to something already live, so the brand's
+first sight of the content was after the creator's followers had had theirs and
+"can we change the caption" was a request to delete a post.
+`draft_submitted → draft_approved` sit between `attended` and
+`content_submitted`, and the routes are `/drafts/{collab_id}/…`.
+
+- **Optional per campaign, and absent reads off.** `_requires_draft_approval`
+  returns False for a campaign with no such field, which is every campaign
+  written before it existed. **There is no backfill, deliberately** — that is
+  the whole migration guarantee: anything already past `attended` keeps the path
+  it started on, because the two states are simply not on its ladder. New
+  brand-run campaigns default it *on* at creation; the creation default and the
+  reader default differ on purpose, because one is a policy for new work and the
+  other is a promise to old work.
+- **`_collab_ladder(campaign)` is the one reader of "which states does this
+  campaign walk"**, and `_next_collab_state` / `_previous_collab_state` /
+  `_lifecycle_for` all take the campaign. A collaboration *standing* on a draft
+  state falls back to the full ladder whatever the campaign now says — a toggle
+  flipped mid-flight must not strand somebody on a state with no way forward.
+- **A live link is refused before the draft is approved.** `submit_collab_content`
+  accepts from `draft_approved` on a reviewing campaign and from `attended`
+  otherwise; accepting `attended` on both would be the route around the gate.
+  `can_submit_content` on the creator's row mirrors it exactly.
+- **Two ways in, because one of them fails on the phone this runs on.** A
+  finished reel is often several hundred megabytes and a creator on mobile data
+  would publish it rather than watch a bar crawl, so an unlisted link is a
+  first-class option. Both routes go through `_record_draft`, so the file and the
+  link cannot diverge in state, audit or notification.
+- **The file lands in `PRIVATE_UPLOAD_DIR`** — the same reasoning as the brand's
+  verification documents, and the opposite of a cover image. An unpublished draft
+  is the one thing here that must not be one guessed URL away from the internet.
+  `_serialize_draft` returns no path; the only way out is
+  `GET /drafts/{id}/file`, audited. `sniff_draft_type` reads the leading bytes
+  (ISO-BMFF `ftyp` at offset 4, EBML for WebM, the image signatures) and refuses
+  a PDF, which is a valid *document* and not a draft.
+- **The reviewer follows `execution_owner`**, through `_question_staff_may_see` —
+  the same reader the question threads use, not a second copy. 404 behind all
+  three doors.
+- **A send-back requires a note** and `$inc`s `draft_revision_count`. Two
+  revisions is a conversation; five is a brief that was never clear, and only a
+  counter shows the difference. The note rides back to the creator's card as
+  their next action, and a new draft clears it while the count survives.
+- A draft is **not** in `DELIVERED_COLLAB_STATES` — performance is measured on
+  published content, and a draft has no reach — but both states are in
+  `COLLAB_GROUP_ONGOING`, and `_roster_rows` counts them as having turned up.
 
 ## Who runs a campaign
 
@@ -974,9 +1028,12 @@ doing, then its own numbers, then the exports. A campaign quietly underfilling
 four days before the shoot generates no notification and sits in no queue — it
 is discovered when the brand rings up, unless something looks for it.
 
-`GET /admin/health` runs six checks: underfilling campaigns near their day,
-accepted creators with no slot, content overdue after attendance, payments
-sitting unpaid, brands waiting on our verification, and profiles that stalled.
+`GET /admin/health` runs seven checks: underfilling campaigns near their day,
+accepted creators with no slot, content overdue after attendance, drafts nobody
+has reviewed, payments sitting unpaid, brands waiting on our verification, and
+profiles that stalled. The draft one has the shortest fuse
+(`DRAFT_REVIEW_OVERDUE_DAYS`, 2) because it is the only row where the delay is
+*ours*: the creator has done the work and cannot publish until somebody looks.
 Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
 …) because each is a judgement about how much slack the operation has, and they
 travel back in the response so the panel quotes the server's numbers rather than

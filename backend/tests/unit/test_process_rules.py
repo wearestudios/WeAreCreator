@@ -103,10 +103,30 @@ class TestCollaborationStateMachine:
         assert server._next_collab_state("closed") is None
 
     def test_happy_path_walks_forward_one_step_at_a_time(self):
-        walked = ["applied"]
-        while (nxt := server._next_collab_state(walked[-1])) is not None:
-            walked.append(nxt)
-        assert walked == server.COLLAB_STATE_ORDER
+        """Both ladders, because there are now two. A campaign that reviews
+        drafts walks the full order; one that doesn't — which is what an
+        absent campaign reads as, and so what every collaboration written
+        before the field existed keeps — walks the eight it always did."""
+        for campaign, expected in (
+            ({"requires_draft_approval": True}, server.COLLAB_STATE_ORDER),
+            (None, server._collab_ladder(None)),
+            ({}, server._collab_ladder(None)),
+        ):
+            walked = ["applied"]
+            while (nxt := server._next_collab_state(walked[-1], campaign)) is not None:
+                walked.append(nxt)
+            assert walked == expected
+
+    def test_the_draft_states_are_the_only_optional_ones(self):
+        assert set(server.COLLAB_STATE_ORDER) - set(server._collab_ladder(None)) == set(
+            server.DRAFT_REVIEW_STATES
+        )
+
+    def test_a_collaboration_standing_on_a_draft_state_still_has_a_next_step(self):
+        """The toggle can be turned off under somebody mid-review. They must
+        not be stranded on a state with no way forward."""
+        assert server._next_collab_state("draft_submitted", {}) == "draft_approved"
+        assert server._next_collab_state("draft_approved", {}) == "content_submitted"
 
     def test_brand_owns_accepting_and_approving(self):
         # An admin advancing through these would cut the buyer out of the
@@ -1071,9 +1091,17 @@ class TestRejectionsCarryAReason:
 
 class TestReversal:
     def test_the_step_back_mirrors_the_step_forward(self):
-        for state in server.COLLAB_STATE_ORDER[1:]:
-            back = server._previous_collab_state(state)
-            assert server._next_collab_state(back) == state
+        """On whichever ladder the campaign walks. Reverting has to be the
+        exact inverse of advancing or a revert lands somewhere advance can
+        never leave."""
+        for campaign in ({"requires_draft_approval": True}, None):
+            ladder = server._collab_ladder(campaign)
+            for state in ladder[1:]:
+                back = server._previous_collab_state(state, campaign)
+                assert server._next_collab_state(back, campaign) == state
+
+    def test_a_draft_free_campaign_never_reverts_into_a_draft_state(self):
+        assert server._previous_collab_state("content_submitted", None) == "attended"
 
     def test_the_first_step_has_nothing_behind_it(self):
         assert server._previous_collab_state(server.COLLAB_STATE_ORDER[0]) is None
@@ -3773,7 +3801,11 @@ class TestDocumentSniffing:
         import inspect
 
         src = inspect.getsource(server._store_private_upload)
-        assert "sniff_document_type(first)" in src
+        # The sniffer is a parameter now — documents here, video and stills on
+        # the draft route — but it still reads the leading bytes, and the
+        # default is still the document one.
+        assert "sniffer(first)" in src
+        assert "sniffer = sniffer or sniff_document_type" in src
         assert "file.filename" in src
         # The client's name is a label only — it must not reach the path.
         stored = src[src.index("stored_name = "):src.index("path = PRIVATE_UPLOAD_DIR")]

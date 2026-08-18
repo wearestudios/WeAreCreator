@@ -28,6 +28,8 @@ const STEP_LABEL = {
     commercial_agreed: "Fee agreed",
     slot_booked: "Slot booked",
     attended: "Attended",
+    draft_submitted: "Draft in",
+    draft_approved: "Draft approved",
     content_submitted: "Content in",
     content_approved: "Content approved",
     in_payment: "In payment",
