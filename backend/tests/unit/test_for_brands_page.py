@@ -6,8 +6,13 @@ has one audience and asks once.
 **Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason:**
 the crawler that builds the WhatsApp preview does not run JavaScript, so Open
 Graph tags injected by React are tags nobody ever sees. It is also the page a
-person lands on, not a crawler-only shim — and it loads no third-party asset,
-because "loads fast on a phone at a venue" was the requirement.
+person lands on, not a crawler-only shim.
+
+**"Loads fast" and "same design system" are both requirements**, and they pull
+against each other: Fraunces is the most recognisable part of that system, and
+a page in Georgia is visibly not the brand. The resolution is to load the font
+without blocking — the stylesheet arrives at low priority and swaps in, so text
+paints immediately in the fallback. Nothing else is fetched at all.
 
 **Every proof number is counted, never written down.** A hardcoded "500+
 creators" is a claim that was true on the day somebody typed it, on the one
@@ -63,23 +68,69 @@ def test_it_carries_its_own_open_graph_tags():
 
 
 def test_the_preview_speaks_to_brands_not_to_creators():
-    """It is the same site, but this link is sent to a venue owner. A card
-    reading "join as a creator" is a card for the wrong person."""
+    """It is the same site, but this link is sent to a venue owner. The card
+    has to read as an offer *to a brand*, not an invitation to a creator —
+    "creators" appearing as the thing being offered is right; "join", "apply"
+    or "pitch" would mean the card is addressed to the wrong person."""
     html = page(FULL)
-    title = re.search(r'og:title" content="([^"]+)"', html).group(1)
-    desc = re.search(r'og:description" content="([^"]+)"', html).group(1)
+    title = re.search(r'og:title" content="([^"]+)"', html).group(1).lower()
+    desc = re.search(r'og:description" content="([^"]+)"', html).group(1).lower()
 
-    assert "creator" not in title.lower() or "with creators" in title.lower()
-    assert "brief" in desc.lower() or "campaign" in desc.lower()
+    for creator_facing in ("join as", "apply to", "get paid", "pitch on"):
+        assert creator_facing not in title and creator_facing not in desc
+    assert "brief" in desc or "campaign" in desc
 
 
-def test_it_loads_nothing_from_a_third_party():
-    """"Must preview well and load fast" — a render-blocking font request on
-    a venue's wifi is the opposite. The other two server-rendered pages make
-    the same trade, so all three agree."""
+def test_nothing_blocks_the_first_paint():
+    """"Previews well and loads fast" and "same dark premium system as the
+    main landing" pull against each other: Fraunces is the most recognisable
+    part of that system, and a page in Georgia is visibly not the brand.
+
+    The resolution is not to drop one — it is to load the font **without
+    blocking**. `media="print"` makes the browser fetch the stylesheet at low
+    priority and apply nothing; the `onload` swap turns it on once it has
+    arrived. Text paints immediately in the fallback and swaps, so the page is
+    readable on a venue's wifi before the font exists.
+
+    Everything else stays inline: no script, no CDN, no image host."""
     html = page(FULL)
-    for offsite in ("fonts.googleapis", "fonts.gstatic", "cdn.", "<script src"):
+
+    assert 'media="print"' in html and "this.media='all'" in html
+    assert "display=swap" in html
+    assert '<noscript><link rel="stylesheet"' in html, "no font at all without JS"
+    # A plain stylesheet link would block, which is the thing being avoided.
+    assert '<link rel="stylesheet" href=' not in html.split("<noscript>")[0]
+    for offsite in ("cdn.", "<script src", "unpkg", "jsdelivr"):
         assert offsite not in html
+
+
+def test_it_wears_the_same_design_system_as_the_app():
+    """Fraunces for headings, Inter Tight for body, the ember accent, the
+    tinted near-black rather than pure #000, and the grain that stops the
+    whole thing reading as flat digital colour."""
+    html = page(FULL)
+
+    assert "Fraunces" in html and "Inter Tight" in html
+    assert "Inter'" not in html and "Roboto" not in html, "banned heading faces"
+    assert "#F05D14" in html
+    assert "#000000" not in html and "background:#000;" not in html
+    assert "feTurbulence" in html, "no grain"
+    assert "mix-blend-mode:overlay" in html
+
+
+def test_it_has_the_navigation_bar_the_guidelines_require():
+    """"MUST have a visible navigation bar on desktop with Logo, 3-5 links,
+    and CTA. DO NOT use completely transparent background."
+
+    It is also the practical fix: somebody arriving from WhatsApp had no way
+    into the rest of the site except a line in the footer."""
+    html = page(FULL)
+    nav = html[html.index('<nav class="nav"') : html.index("</nav>")]
+
+    assert 'class="mark"' in nav, "no logo"
+    assert 3 <= nav.count('class="navlink"') + nav.count('class="navcta"') <= 5
+    assert 'class="navcta"' in nav, "no CTA"
+    assert "backdrop-filter" in html, "glassmorphism, never transparent"
 
 
 def test_it_is_in_the_sitemap():

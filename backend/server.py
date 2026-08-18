@@ -19319,25 +19319,52 @@ def _for_brands_html(stats: dict, request_base: str = "") -> str:
 <meta property="og:site_name" content="WeAre Creators">
 <meta property="og:locale" content="en_IN">
 <meta property="og:url" content="{url}">
-<meta property="og:title" content="Fill your venue with creators who actually turn up">
+<meta property="og:title" content="Creators who turn up, for the launch you are planning">
 <meta property="og:description" content="{e(summary)}">
 <meta property="og:image" content="{og_image}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Fill your venue with creators who actually turn up">
+<meta name="twitter:title" content="Creators who turn up, for the launch you are planning">
 <meta name="twitter:description" content="{e(summary)}">
 <meta name="twitter:image" content="{og_image}">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter+Tight:wght@300..700&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter+Tight:wght@300..700&display=swap"></noscript>
 <style>
 *{{box-sizing:border-box}}
-body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.65 'Inter Tight',system-ui,-apple-system,sans-serif}}
+body{{margin:0;background:#0B0A09;color:#F5F1EC;position:relative;
+  font:16px/1.65 'Inter Tight',ui-sans-serif,system-ui,-apple-system,sans-serif}}
+/* The same texture `.grain-page` uses in the app, inline because this page
+   loads none of our stylesheets. Fixed, so it reads as paper rather than a
+   pattern scrolling behind the text, and blended `overlay` so it lifts the
+   ground instead of recolouring it. */
+body::before{{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");mix-blend-mode:overlay;opacity:.06}}
+.wrap{{position:relative;z-index:1}}
+.nav{{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.6);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  border-bottom:1px solid rgba(255,255,255,.1)}}
+.navin{{max-width:52rem;margin:0 auto;padding:0 1.5rem;height:4rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem}}
+.mark{{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;
+  font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-size:1.1rem}}
+.tile{{width:1.75rem;height:1.75rem;display:grid;place-items:center;border-radius:.375rem;
+  background:#F05D14;color:#0B0A09;font-size:.85rem}}
+.navlinks{{display:none;gap:1.5rem}}
+@media(min-width:52rem){{.navlinks{{display:flex}}}}
+.navlink{{font-size:.85rem;color:#9C938B;text-decoration:none}}
+.navlink:hover{{color:#F5F1EC}}
+.navcta{{display:inline-flex;align-items:center;min-height:2.25rem;padding:0 1rem;
+  border-radius:999px;background:#F05D14;color:#0B0A09;font-size:.85rem;
+  font-weight:500;text-decoration:none;white-space:nowrap}}
 a{{color:inherit}}
 .wrap{{max-width:52rem;margin:0 auto;padding:3rem 1.5rem 4rem}}
 .eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#F05D14}}
-h1{{font-family:Fraunces,Georgia,serif;font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);line-height:1.02;
+h1{{font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);line-height:1.02;
   letter-spacing:-.02em;margin:1rem 0 0}}
 h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1.5rem}}
-h3{{font-family:Fraunces,Georgia,serif;font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
+h3{{font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
 p{{margin:.6rem 0 0;color:rgba(245,241,236,.82)}}
 .sub{{margin-top:1.5rem;font-size:1.05rem;max-width:38rem}}
 section{{margin-top:4rem}}
@@ -19353,7 +19380,7 @@ ul{{list-style:none;margin:0;padding:0}}
   padding:1.5rem 1.6rem}}
 .expect p{{color:rgba(245,241,236,.92)}}
 .figs{{display:flex;flex-wrap:wrap;gap:2.5rem}}
-.fig{{display:block;font-family:Fraunces,Georgia,serif;font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
+.fig{{display:block;font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
 .cap{{display:block;margin-top:.4rem;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:#9C938B}}
 .note{{margin-top:1.75rem;font-size:.85rem;color:#9C938B}}
 .cta{{margin-top:4rem;border-top:1px solid rgba(255,255,255,.1);padding-top:2.5rem}}
@@ -19362,10 +19389,22 @@ ul{{list-style:none;margin:0;padding:0}}
 footer{{margin-top:3.5rem;color:#9C938B;font-size:.82rem;line-height:1.7}}
 footer a{{color:#C9C1B8}}
 </style>
-</head><body><div class="wrap">
+</head><body>
+
+<nav class="nav"><div class="navin">
+  <a class="mark" href="{app_base}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
+  <div class="navlinks">
+    <a class="navlink" href="{app_base}/campaigns">Live briefs</a>
+    <a class="navlink" href="#how">How it works</a>
+    <a class="navlink" href="{app_base}/login">Log in</a>
+  </div>
+  <a class="navcta" href="{app_base}/signup?role=brand">Post a campaign</a>
+</div></nav>
+
+<div class="wrap">
 
 <p class="eyebrow">For brands \u00b7 Bengaluru</p>
-<h1>Fill your venue with creators who actually turn up.</h1>
+<h1>Fill the room. Launch the thing. With creators who turn up.</h1>
 <p class="sub">
   Two ways to work with us: post a brief yourself and pick from the creators who
   apply, or hand the campaign to the WeAre team and we will run it end to end.
@@ -19381,7 +19420,7 @@ footer a{{color:#C9C1B8}}
   <ul class="props">{props}</ul>
 </section>
 
-<section>
+<section id="how">
   <h2>How it works</h2>
   <ul class="steps">{steps}</ul>
 </section>

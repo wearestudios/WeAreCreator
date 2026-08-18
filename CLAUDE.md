@@ -734,10 +734,23 @@ toggle are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
 lands on the SPA's catch-all. It is in the sitemap: the one public page here
 somebody might search for rather than be sent.
 
-- **It loads nothing from a third party** — no font stylesheet, no script. The
-  requirement was "previews well and loads fast", and a render-blocking Google
-  Fonts request on a venue's wifi is the opposite. All three rendered pages
-  make the same trade.
+- **The font loads without blocking.** "Previews well and loads fast" and
+  "same dark premium system as the main landing" pull against each other —
+  Fraunces is the most recognisable part of that system, and a page in Georgia
+  is visibly not the brand. So the stylesheet goes on `media="print"` with an
+  `onload` swap: the browser fetches it at low priority and applies nothing
+  until it arrives, text paints immediately in the fallback, and a `<noscript>`
+  copy covers the rest. Measured at **74ms to a painted headline with the font
+  request blocked outright**. Nothing else is fetched: no script, no CDN, no
+  image host. (`/c/{id}` and `/brands/{id}` still ship no webfont at all — they
+  are previews of somebody else's content, not our pitch.)
+- **It has a navigation bar**, which the design guidelines require on desktop
+  and which is also the practical fix: somebody arriving from WhatsApp had no
+  way into the rest of the site except a line in the footer. Glassmorphism per
+  the component rules, never transparent; the links collapse below 832px and
+  the logo and CTA stay.
+- The grain comes from the same `feTurbulence` texture `.grain-page` uses,
+  inlined because this page loads none of our stylesheets.
 - **Every proof figure is counted, never written down.** `_for_brands_stats`
   queries them, and each appears only above a floor: a strip reading "3
   creators" is not proof, it is a reason to close the tab, and the honest move
@@ -750,7 +763,11 @@ somebody might search for rather than be sent.
   "every city", "pan-India", "guaranteed" and the rest, and requires the word
   Bengaluru. Same rule as everywhere else here.
 - Two CTAs — hero and close — and they say **the same words**, so the page asks
-  once in two places rather than offering a choice of doors.
+  once in two places rather than offering a choice of doors. The nav's own
+  button is the same words again.
+- The headline covers **both** shapes of work — "Fill the room. Launch the
+  thing." A venue-only headline reads past the label launching a collection,
+  which the main landing already names as one of the four audiences.
 
 ### The shareable page
 
