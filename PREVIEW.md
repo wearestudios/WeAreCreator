@@ -217,6 +217,16 @@ immediately but the URL is the API host, which is uglier to read out.
 Until one of the two is done, a shared link opens the React app and previews as
 the generic site card.
 
+The preview image is the campaign's own cover, built as an absolute URL against
+the backend's origin — the host that serves `/uploads`. Only `/c/*` needs
+proxying; the image URL points straight at the API host either way, so a
+crawler can fetch it without a second rewrite. Briefs with no cover fall back to
+the site card, and to a generated tint in the page itself.
+
+Uploaded images live on the API container's disk, so `UPLOAD_DIR` should point
+at a mounted volume in production — otherwise every deploy loses the covers and
+logos and the pages fall back to their generated versions.
+
 ### Deploying the frontend to Vercel
 
 `frontend/vercel.json` rewrites everything to `/index.html` so react-router

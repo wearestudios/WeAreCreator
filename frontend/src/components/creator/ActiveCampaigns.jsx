@@ -31,6 +31,7 @@ import {
     formatRupees,
     stageIndexFor,
 } from "./shared";
+import BrandAvatar from "@/components/BrandAvatar";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 
@@ -210,9 +211,12 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
         >
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        {collab.brand_name || "Brand"}
-                        {collab.area ? ` · ${collab.area}` : ""}
+                    <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <BrandAvatar brand={collab} size="h-6 w-6" />
+                        <span className="truncate">
+                            {collab.brand_name || "Brand"}
+                            {collab.area ? ` · ${collab.area}` : ""}
+                        </span>
                     </p>
                     <Link
                         to={`/campaigns/${collab.campaign_id}`}

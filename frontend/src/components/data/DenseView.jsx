@@ -277,7 +277,32 @@ export function ListSkeleton({ rows = 5, testid }) {
 }
 
 /** A card in a grid: title, meta line, body, a footer row of controls. */
-export function CardSkeleton() {
+export function CardSkeleton({ cover = false }) {
+    if (cover) {
+        // A card with a picture on it: the picture is most of the card's
+        // height, so a skeleton that leaves it out is a skeleton that shifts by
+        // the height of the picture. The 16/9 box matches CampaignCover's.
+        return (
+            <div className="overflow-hidden rounded-lg border border-white/10 bg-card grain-surface">
+                <Skeleton className="aspect-[16/9] w-full rounded-none" />
+                <div className="p-6 md:p-7">
+                    <Skeleton className="h-5 w-3/4" />
+                    <div className="mt-3 flex gap-3">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-3 w-16" />
+                    </div>
+                    <div className="mt-6 space-y-2">
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-5/6" />
+                    </div>
+                    <div className="mt-7 flex items-center justify-between">
+                        <Skeleton className="h-7 w-24" />
+                        <Skeleton className="h-8 w-8 rounded-full" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
     return (
         <div className="rounded-lg border border-white/10 bg-card p-6 grain-surface md:p-7">
             <Skeleton className="h-5 w-3/4" />
@@ -297,7 +322,12 @@ export function CardSkeleton() {
     );
 }
 
-export function CardGridSkeleton({ cards = 6, columns = "sm:grid-cols-2 lg:grid-cols-3", testid }) {
+export function CardGridSkeleton({
+    cards = 6,
+    columns = "sm:grid-cols-2 lg:grid-cols-3",
+    cover = false,
+    testid,
+}) {
     return (
         <div
             data-testid={testid || DENSE.skeleton}
@@ -305,7 +335,7 @@ export function CardGridSkeleton({ cards = 6, columns = "sm:grid-cols-2 lg:grid-
             className={`grid grid-cols-1 gap-5 ${columns}`}
         >
             {Array.from({ length: cards }).map((_, i) => (
-                <CardSkeleton key={i} />
+                <CardSkeleton key={i} cover={cover} />
             ))}
         </div>
     );

@@ -27,6 +27,8 @@ import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
+import BrandAvatar from "@/components/BrandAvatar";
+import ImageUploadField from "@/components/ImageUploadField";
 import { Button } from "@/components/ui/button";
 import {
     Select,
@@ -47,6 +49,7 @@ import {
 import {
     ADMIN_CAMPAIGN_PAGE as IDS,
     ADMIN_DETAIL as DIDS,
+    COVER,
 } from "@/constants/testIds";
 import {
     AuditTrail,
@@ -410,13 +413,38 @@ export default function CampaignDetailPage() {
                         </Section>
 
                         <div className="space-y-8">
+                            <Section id="cover" title="Cover image">
+                                <Panel>
+                                    {/* The same control the brand's own form
+                                        uses, against the same route — an admin
+                                        fixing a brief should not be editing it
+                                        through a different door. */}
+                                    <ImageUploadField
+                                        hint="Shown on the brief and on shared links. Optional — a brief with none gets a generated cover."
+                                        shape="cover"
+                                        value={campaign.cover_image_url}
+                                        onChange={loadDetail}
+                                        endpoint={`/brand/campaigns/${id}/cover`}
+                                        responseKey="cover_image_url"
+                                        testids={{
+                                            input: COVER.input,
+                                            choose: COVER.choose,
+                                            remove: COVER.remove,
+                                            preview: COVER.preview,
+                                            error: COVER.error,
+                                        }}
+                                    />
+                                </Panel>
+                            </Section>
+
                             <Section id="brand" title="Brand">
                                 <Panel>
                                     <Link
                                         to={`/admin/brands/${detail.brand.user_id}`}
                                         data-testid={IDS.brandLink}
-                                        className="font-serif text-xl transition-colors duration-200 hover:text-ember-500"
+                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-200 hover:text-ember-500"
                                     >
+                                        <BrandAvatar brand={detail.brand} />
                                         {detail.brand.business_name || "Unknown brand"}
                                     </Link>
                                     <dl className="mt-5 space-y-4">

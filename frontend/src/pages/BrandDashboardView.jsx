@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ExecutionBadge from "@/components/ExecutionBadge";
+import CampaignCover from "@/components/CampaignCover";
 import { EXECUTION_FILTERS, executionOwner } from "@/lib/execution";
 import { EXECUTION } from "@/constants/testIds";
 import { Link } from "react-router-dom";
@@ -494,6 +495,13 @@ export default function BrandDashboardView({ user }) {
                                                     className="flex flex-col gap-4 px-5 py-5 md:px-6 md:py-6"
                                                 >
                                                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
+                                                        {/* Small, but present: this is where a
+                                                            brand notices a brief went out with
+                                                            no picture on it. */}
+                                                        <CampaignCover
+                                                            campaign={c}
+                                                            className="w-24 flex-none"
+                                                        />
                                                         <div className="min-w-0 flex-1">
                                                             <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                                                                 {CAT_LABEL[c.category] || c.category || "—"}

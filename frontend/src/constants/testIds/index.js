@@ -19,6 +19,7 @@ export * from './brand';
 export * from './dense';
 export * from './execution';
 export * from './creator';
+export * from './imagery';
 export * from './landing';
 export * from './manager';
 export * from './profile';

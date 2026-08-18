@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { DetailShell, Field, Section, Stat } from "@/components/admin/DetailPage";
 import { BrandLink, CampaignLink, CreatorLink } from "@/components/admin/links";
 import WorkNotes from "@/components/brand/WorkNotes";
+import BrandAvatar from "@/components/BrandAvatar";
 import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
@@ -328,14 +329,20 @@ export default function ApplicationDetail({
                                 )}
                             </Field>
                             <Field label="Brand">
-                                {entityLinks ? (
-                                    <BrandLink
-                                        id={app.campaign?.brand_id}
-                                        name={app.campaign?.brand_name}
+                                <span className="inline-flex items-center gap-2">
+                                    <BrandAvatar
+                                        brand={app.campaign}
+                                        size="h-5 w-5"
                                     />
-                                ) : (
-                                    app.campaign?.brand_name || "—"
-                                )}
+                                    {entityLinks ? (
+                                        <BrandLink
+                                            id={app.campaign?.brand_id}
+                                            name={app.campaign?.brand_name}
+                                        />
+                                    ) : (
+                                        app.campaign?.brand_name || "—"
+                                    )}
+                                </span>
                             </Field>
                             <Field label="Status">{app.campaign?.status || "—"}</Field>
                             <Field label="Area">{app.campaign?.area || "—"}</Field>

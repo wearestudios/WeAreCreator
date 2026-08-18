@@ -23,6 +23,8 @@ import { api, formatApiError } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
+import BrandAvatar from "@/components/BrandAvatar";
+import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -110,76 +112,89 @@ const CampaignCard = ({ c, index }) => (
         <Link
             to={`/campaigns/${c.id}`}
             data-testid={`campaign-card-${c.id}`}
-            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 p-7 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
+            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
         >
             {/* editorial accent line */}
-            <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
+            <span className="absolute inset-x-0 top-0 z-10 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
 
-            <div className="flex items-start justify-between gap-3">
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    {c.brand_name || "Brand"}
-                </div>
-                <TagBadge status={c.status} />
-            </div>
+            {/* The box is reserved, so a list of twenty briefs does not reflow
+                as their covers arrive. */}
+            <CampaignCover
+                campaign={c}
+                rounded="rounded-none"
+                className="border-0 border-b"
+            />
 
-            <h3 className="mt-5 font-serif text-[26px] leading-[1.05] tracking-tight text-foreground">
-                {c.title}
-            </h3>
-
-            <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-                {c.deliverables}
-            </p>
-
-            <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {c.area && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1">
-                        <MapPin className="h-3 w-3" />
-                        {c.area}
-                    </span>
-                )}
-                {c.category && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 uppercase tracking-[0.15em]">
-                        {CAT_LABEL[c.category] || c.category}
-                    </span>
-                )}
-                {/* Who you'd be dealing with, on the card — it changes whose
-                    WhatsApp answers on the day, which is worth knowing before
-                    you open the brief, not after you apply. */}
-                <ExecutionBadge campaign={c} audience="creator" />
-            </div>
-
-            <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">
-                <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        {isBarter(c) ? "What you get" : "Budget / creator"}
+            <div className="flex flex-1 flex-col p-7">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                        <BrandAvatar brand={c} size="h-7 w-7" />
+                        <div className="truncate text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            {c.brand_name || "Brand"}
+                        </div>
                     </div>
-                    {/* A barter brief carries whatever budget it was posted
-                      * with, so the rupee figure has to be suppressed rather
-                      * than trusted — see lib/compensation.js. */}
-                    <div className="mt-1 flex items-baseline gap-1 font-serif text-[32px] leading-none text-foreground">
-                        {isBarter(c) ? (
-                            "Barter"
-                        ) : (
-                            <>
-                                <IndianRupee className="h-5 w-5 text-ember-500" />
-                                {formatCompensation(c).amount ?? "—"}
-                            </>
+                    <TagBadge status={c.status} />
+                </div>
+
+                <h3 className="mt-5 font-serif text-[26px] leading-[1.05] tracking-tight text-foreground">
+                    {c.title}
+                </h3>
+
+                <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                    {c.deliverables}
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {c.area && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1">
+                            <MapPin className="h-3 w-3" />
+                            {c.area}
+                        </span>
+                    )}
+                    {c.category && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 uppercase tracking-[0.15em]">
+                            {CAT_LABEL[c.category] || c.category}
+                        </span>
+                    )}
+                    {/* Who you'd be dealing with, on the card — it changes whose
+                        WhatsApp answers on the day, which is worth knowing before
+                        you open the brief, not after you apply. */}
+                    <ExecutionBadge campaign={c} audience="creator" />
+                </div>
+
+                <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            {isBarter(c) ? "What you get" : "Budget / creator"}
+                        </div>
+                        {/* A barter brief carries whatever budget it was posted
+                          * with, so the rupee figure has to be suppressed rather
+                          * than trusted — see lib/compensation.js. */}
+                        <div className="mt-1 flex items-baseline gap-1 font-serif text-[32px] leading-none text-foreground">
+                            {isBarter(c) ? (
+                                "Barter"
+                            ) : (
+                                <>
+                                    <IndianRupee className="h-5 w-5 text-ember-500" />
+                                    {formatCompensation(c).amount ?? "—"}
+                                </>
+                            )}
+                        </div>
+                        {formatCompensation(c).suffix && (
+                            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                                {formatCompensation(c).suffix}
+                            </div>
                         )}
                     </div>
-                    {formatCompensation(c).suffix && (
-                        <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ember-500">
-                            {formatCompensation(c).suffix}
-                        </div>
-                    )}
-                </div>
-                <div className="flex flex-none items-center gap-2">
-                    <ShareButton
-                        campaignId={c.id}
-                        title={c.title}
-                        summary={c.deliverables}
-                        variant="icon"
-                    />
-                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
+                    <div className="flex flex-none items-center gap-2">
+                        <ShareButton
+                            campaignId={c.id}
+                            title={c.title}
+                            summary={c.deliverables}
+                            variant="icon"
+                        />
+                        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
+                    </div>
                 </div>
             </div>
         </Link>
@@ -616,6 +631,10 @@ export default function Campaigns() {
                             <CardGridSkeleton
                                 cards={6}
                                 columns="md:grid-cols-2 lg:grid-cols-3"
+                                // The cards carry covers now, and a skeleton
+                                // without one shifts the whole grid by the
+                                // height of a 16:9 box when they arrive.
+                                cover
                                 testid="campaigns-skeleton"
                             />
                         </div>

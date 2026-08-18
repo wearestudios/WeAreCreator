@@ -157,6 +157,10 @@ export function DetailShell({
     crumbs,
     kicker,
     title,
+    // A mark beside the name — a brand's logo, a creator's photo. Optional, and
+    // sized so its absence changes nothing: the fallback monogram occupies the
+    // same box, so a record with no picture does not lay out differently.
+    avatar,
     subtitle,
     aside,
     loading,
@@ -233,12 +237,15 @@ export function DetailShell({
                                     {kicker}
                                 </p>
                             )}
-                            <h1
-                                data-testid={IDS.title}
-                                className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight"
-                            >
-                                {title}
-                            </h1>
+                            <div className="mt-3 flex items-center gap-3">
+                                {avatar}
+                                <h1
+                                    data-testid={IDS.title}
+                                    className="min-w-0 font-serif text-fluid-4xl leading-none tracking-tight"
+                                >
+                                    {title}
+                                </h1>
+                            </div>
                             {subtitle && (
                                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                                     {subtitle}

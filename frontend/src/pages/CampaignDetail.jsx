@@ -25,6 +25,8 @@ import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
+import BrandAvatar from "@/components/BrandAvatar";
+import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -466,7 +468,7 @@ export default function CampaignDetail() {
                 <Navbar />
                 <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
                     <LoadingAnnouncement>Loading campaign…</LoadingAnnouncement>
-                    <DetailPageSkeleton testid="campaign-detail-skeleton" />
+                    <DetailPageSkeleton testid="campaign-detail-skeleton" cover />
                 </main>
             </div>
         );
@@ -528,7 +530,8 @@ export default function CampaignDetail() {
                         />
                         {isLive ? "Live" : "Upcoming"}
                     </span>
-                    <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <BrandAvatar brand={campaign} size="h-6 w-6" />
                         {campaign.brand_name || "Brand"}
                     </span>
                 </div>
@@ -552,6 +555,16 @@ export default function CampaignDetail() {
                     <ExecutionBadge campaign={campaign} audience="creator" />
                     <ExecutionNote campaign={campaign} audience="creator" className="min-w-0" />
                 </div>
+
+                {/* Below the header rather than above it: the eyebrow, the
+                    title and the brand are what a creator is deciding on, and a
+                    16:9 band at this width pushes all three off a phone screen
+                    if it goes first. The picture is a pixel of scroll away. */}
+                <CampaignCover
+                    campaign={campaign}
+                    priority
+                    className="mt-8 max-w-3xl"
+                />
 
                 <div className="mt-10 grid gap-10 md:grid-cols-12">
                     <div className="md:col-span-8">

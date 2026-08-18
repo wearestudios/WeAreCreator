@@ -40,6 +40,8 @@ import {
     LANDING_STUDIO as STUDIO_IDS,
 } from "@/constants/testIds";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
+import BrandAvatar from "@/components/BrandAvatar";
+import CampaignCover from "@/components/CampaignCover";
 
 // ---------------------------------------------------------------------------
 // Hero deck
@@ -574,31 +576,37 @@ function BriefCardSkeleton() {
     return (
         <div
             aria-hidden="true"
-            className="flex flex-col rounded-lg border border-white/10 bg-card p-7 grain-surface"
+            className="flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card grain-surface"
         >
-            <div className="flex items-center justify-between">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-3 w-20" />
-            </div>
-            {/* text-fluid-2xl leading-tight — 20px on a phone, 24 on a
-              * laptop — and titles routinely wrap to two lines. The bar
-              * heights follow the line box, not the font size: line-height is
-              * what occupies the space. */}
-            <Skeleton className="mt-5 h-[1.5625rem] w-full md:h-[1.875rem]" />
-            <Skeleton className="mt-1.5 h-[1.5625rem] w-2/3 md:h-[1.875rem]" />
-            <Skeleton className="mt-2 h-3 w-24" />
-            <div className="mt-4 flex-1 space-y-1.5">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-5/6" />
-                <Skeleton className="hidden h-3 w-full md:block" />
-                <Skeleton className="hidden h-3 w-4/6 md:block" />
-            </div>
-            <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
-                <div>
-                    <Skeleton className="h-2.5 w-20" />
-                    <Skeleton className="mt-1 h-7 w-24" />
+            {/* Matches CampaignCover's 16/9 box exactly — the cover is the
+              * tallest single element on the card, so getting this wrong costs
+              * more than everything below it put together. */}
+            <Skeleton className="aspect-[16/9] w-full rounded-none" />
+            <div className="flex flex-1 flex-col p-7">
+                <div className="flex items-center justify-between">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-3 w-20" />
                 </div>
-                <Skeleton className="h-2.5 w-16" />
+                {/* text-fluid-2xl leading-tight — 20px on a phone, 24 on a
+                  * laptop — and titles routinely wrap to two lines. The bar
+                  * heights follow the line box, not the font size: line-height is
+                  * what occupies the space. */}
+                <Skeleton className="mt-5 h-[1.5625rem] w-full md:h-[1.875rem]" />
+                <Skeleton className="mt-1.5 h-[1.5625rem] w-2/3 md:h-[1.875rem]" />
+                <Skeleton className="mt-2 h-3 w-24" />
+                <div className="mt-4 flex-1 space-y-1.5">
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-5/6" />
+                    <Skeleton className="hidden h-3 w-full md:block" />
+                    <Skeleton className="hidden h-3 w-4/6 md:block" />
+                </div>
+                <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
+                    <div>
+                        <Skeleton className="h-2.5 w-20" />
+                        <Skeleton className="mt-1 h-7 w-24" />
+                    </div>
+                    <Skeleton className="h-2.5 w-16" />
+                </div>
             </div>
         </div>
     );
@@ -678,43 +686,51 @@ function LiveBriefs() {
                                       delay: idx * 0.06,
                                       ease: [0.22, 1, 0.36, 1],
                                   }}
-                                  className="group flex flex-col rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50 grain-surface"
+                                  className="group flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card transition-colors duration-300 hover:border-ember-500/50 grain-surface"
                               >
-                                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                      <span>{CAT_LABEL[b.category] || b.category}</span>
-                                      {b.area && <span>{b.area}</span>}
-                                  </div>
-                                  <h3 className="mt-5 font-serif text-fluid-2xl leading-tight tracking-tight">
-                                      {b.title}
-                                  </h3>
-                                  <p className="mt-2 text-xs uppercase tracking-[0.15em] text-ember-500">
-                                      {b.brand_name || "Brand"}
-                                  </p>
-                                  <p className="mt-4 flex-1 text-sm leading-relaxed text-muted-foreground">
-                                      {b.teaser}
-                                  </p>
-                                  <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
-                                      <div>
-                                          <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                              {isBarter(b) ? "What you get" : "Per creator"}
-                                          </div>
-                                          <div className="mt-1 flex items-baseline font-serif text-3xl">
-                                              {isBarter(b) ? (
-                                                  "Barter"
-                                              ) : (
-                                                  <>
-                                                      <IndianRupee className="h-5 w-5 text-ember-500" />
-                                                      {formatCompensation(b).amount ?? "—"}
-                                                  </>
-                                              )}
-                                          </div>
+                                  <CampaignCover
+                                      campaign={b}
+                                      rounded="rounded-none"
+                                      className="border-0 border-b"
+                                  />
+                                  <div className="flex flex-1 flex-col p-7">
+                                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                          <span>{CAT_LABEL[b.category] || b.category}</span>
+                                          {b.area && <span>{b.area}</span>}
                                       </div>
-                                      {b.spots_left > 0 && (
-                                          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                              {b.spots_left}{" "}
-                                              {b.spots_left === 1 ? "spot" : "spots"} left
-                                          </span>
-                                      )}
+                                      <h3 className="mt-5 font-serif text-fluid-2xl leading-tight tracking-tight">
+                                          {b.title}
+                                      </h3>
+                                      <p className="mt-2 flex items-center gap-2 text-xs uppercase tracking-[0.15em] text-ember-500">
+                                          <BrandAvatar brand={b} size="h-5 w-5" />
+                                          {b.brand_name || "Brand"}
+                                      </p>
+                                      <p className="mt-4 flex-1 text-sm leading-relaxed text-muted-foreground">
+                                          {b.teaser}
+                                      </p>
+                                      <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
+                                          <div>
+                                              <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                                  {isBarter(b) ? "What you get" : "Per creator"}
+                                              </div>
+                                              <div className="mt-1 flex items-baseline font-serif text-3xl">
+                                                  {isBarter(b) ? (
+                                                      "Barter"
+                                                  ) : (
+                                                      <>
+                                                          <IndianRupee className="h-5 w-5 text-ember-500" />
+                                                          {formatCompensation(b).amount ?? "—"}
+                                                      </>
+                                                  )}
+                                              </div>
+                                          </div>
+                                          {b.spots_left > 0 && (
+                                              <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                                  {b.spots_left}{" "}
+                                                  {b.spots_left === 1 ? "spot" : "spots"} left
+                                              </span>
+                                          )}
+                                      </div>
                                   </div>
                               </motion.article>
                           ))}

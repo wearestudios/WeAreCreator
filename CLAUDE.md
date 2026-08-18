@@ -477,6 +477,80 @@ so what the preview promised is what opens.
   WhatsApp and Instagram in one tap — and copies otherwise. Dismissing the sheet
   rejects with `AbortError` and must not raise a toast: that is a decision, not
   a failure. It `stopPropagation`s because the card it sits on is a link.
+- `og:image` is the brief's **own cover**, absolute, with the site card as the
+  fallback — a link that previews the same as every other link is a link nobody
+  taps. `_absolute_media_url` builds it against `request.base_url`, the backend,
+  which is the host that mounts `/uploads`; `_share_base()` would be wrong, as
+  only `/c/*` is proxied to the frontend. The declared `og:image:width/height`
+  are emitted **only for the site card**, whose size we know — a wrong one is
+  worse than none, because some crawlers lay the card out from it.
+
+## A picture on the brief, a mark on the brand
+
+`cover_image_url` on a campaign and `logo_url` on a brand profile. Before them
+every listing was the same grey rectangle, which is the strongest argument
+against reading any of them.
+
+- **The value is a path we issued.** Both are set by uploading a file to their
+  own route — `POST`/`DELETE /brand/campaigns/{id}/cover` and
+  `/brand/profile/logo` — never by a field on an edit payload, so there is no
+  way to point a campaign at somebody else's server. Both go through
+  `_replace_image` → `_store_upload`, the same function the creator's profile
+  photo uses: the type comes from the leading bytes, the stored name is ours and
+  random, the ceiling is enforced while streaming.
+- They land in `UPLOAD_DIR`, which is `app.mount`ed — the exact opposite of the
+  brand's verification documents. A cover is meant to be seen by strangers.
+- `_replace_image` writes the new file, points the record at it, and **only then**
+  deletes the old one. The other order leaves a record pointing at nothing when
+  the write fails, and a broken image is worse than an out-of-date one.
+- The cover is the brand's **or an admin's**, via `_own_campaign_or_404`, and
+  audited both ways. It is deliberately **not** behind `_verified_brand_or_403`:
+  a cover on a draft reaches nobody, and publish already has the gate.
+- Neither is behind verification, and the logo is **not locked when a brand is
+  verified** — it is how a business is recognised, not evidence of who it is.
+- `ACCEPTED_IMAGE_MIMES` is derived from `_IMAGE_SIGNATURES` for the same reason
+  `ACCEPTED_DOCUMENT_MIMES` is, and rides on `GET /brand/profile` as
+  `uploads.accepted_image_mime_types` / `max_image_bytes`, so the browser
+  pre-check uses the server's numbers rather than a copy that drifts.
+
+`components/ImageUploadField.jsx` is the one control for both, in two modes: it
+uploads on pick when given an `endpoint`, and holds the `File` behind an object
+URL when not — because a cover has to be pickable on a brief that does not exist
+yet. `PostCampaign` sends the held file the moment the campaign is created, and
+if *that* fails it says so and keeps the brief; losing a filled-in form over a
+picture would be the wrong trade.
+
+### No picture is a state, not a hole
+
+`CampaignCover` draws either the image or a generated fallback — the brand's
+initial on a tint derived from the campaign's id — inside an `aspect-[16/9]`
+container. `BrandAvatar` is the same idea at avatar size, and mirrors
+`CreatorAvatar` exactly: the two appear on the same screens, so two fallback
+treatments there would read as two kinds of account. A logo is `object-contain`
+where a photo is `object-cover`, because cropping a mark to fill a square cuts
+it in half.
+
+- `_cover_hue` and `coverHue` in `frontend/src/lib/cover.js` **must agree** —
+  the card in the app and the server-rendered share page of the same brief are
+  the same colour. Both are FNV-1a; the first version summed character codes and
+  was measured to be useless, putting ids that differ in their last byte (which
+  is what consecutive ObjectIds are) two degrees apart.
+- **The ratio is on the container, never on the `<img>`**, so an image that
+  never arrives still occupies the space it claimed.
+- **The generated branch carries no `.media-frame`.** Both it and the gradient
+  set `background-image` and one would silently win — the same rule the design
+  foundations state for grain.
+- On CampaignDetail the cover sits **below** the title and the share row, not
+  above them: a 16:9 band at the column's width pushes the eyebrow, the title
+  and the brand off a phone screen, and those are what a creator is deciding on.
+- Every skeleton standing in for a card or a detail page reserves the same box:
+  `CardSkeleton({cover})`, `DetailPageSkeleton({cover})` and Landing's
+  `BriefCardSkeleton`. Measured with the API delayed 700ms and the images 500ms,
+  and with the skeletons confirmed to have actually rendered (`campaigns-skeleton`,
+  `campaign-detail-skeleton` — otherwise the measurement is vacuous): CLS is
+  0.0000 on CampaignDetail with and without a cover, and **unchanged** at 0.0028
+  (campaigns) and 0.0014 (landing), both measured identically on the build
+  before this change and so not the covers.
 
 
 ## What a brief pays

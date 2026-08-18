@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { notifySuccess } from "@/lib/feedback";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowRight,
@@ -18,8 +18,12 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { EXECUTION_OPTIONS } from "@/lib/execution";
-import { EXECUTION } from "@/constants/testIds";
+import { COVER, EXECUTION } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
+import ImageUploadField, {
+    FALLBACK_IMAGE_MIMES,
+    FALLBACK_MAX_IMAGE_BYTES,
+} from "@/components/ImageUploadField";
 import {
     FormPageSkeleton,
     LoadingAnnouncement,
@@ -86,6 +90,12 @@ export default function PostCampaign() {
     const [eventDate, setEventDate] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    // The cover, which has two lives. On an existing campaign it uploads
+    // straight away against its own route. On a new one there is no id to
+    // upload against yet, so the File waits here and goes up the moment the
+    // campaign is created.
+    const [coverUrl, setCoverUrl] = useState(null);
+    const [pendingCover, setPendingCover] = useState(null);
     const [venueAddress, setVenueAddress] = useState("");
     const [venueInstructions, setVenueInstructions] = useState("");
     const [onSiteContact, setOnSiteContact] = useState("");
@@ -138,6 +148,7 @@ export default function PostCampaign() {
                     // edit and saving wiped the venue, the arrival
                     // instructions and the on-site contact, which are the
                     // three things a creator needs to turn up.
+                    setCoverUrl(data.cover_image_url || null);
                     setVenueAddress(data.venue_address || "");
                     setVenueInstructions(data.venue_instructions || "");
                     setOnSiteContact(data.on_site_contact || "");
@@ -264,6 +275,21 @@ export default function PostCampaign() {
             }
 
             const { data } = await api.post("/brand/campaigns", buildPayload(status));
+            if (pendingCover) {
+                const body = new FormData();
+                body.append("file", pendingCover);
+                try {
+                    await api.post(`/brand/campaigns/${data.id}/cover`, body, {
+                        headers: { "Content-Type": undefined },
+                    });
+                } catch {
+                    // The brief exists and is the thing that mattered. Losing
+                    // it over a picture, and making somebody retype the whole
+                    // form, would be the wrong trade — the cover can be added
+                    // from the edit screen.
+                    notifyError("Campaign saved, but the cover image didn't upload. Add it from Edit.");
+                }
+            }
             notifySuccess(
                 isDraft
                     ? "Draft saved to your dashboard"
@@ -511,6 +537,40 @@ export default function PostCampaign() {
                                 onChange={(e) => setDeliverables(e.target.value)}
                                 className="mt-2 min-h-[92px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
                                 placeholder="e.g. 1 Instagram reel (30-45s) + 3 stories, tag @yourbrand"
+                            />
+                        </div>
+                        <div>
+                            {/* Optional, and said so: a brief with no picture
+                                still gets a generated cover, so this is never
+                                the thing standing between a brand and posting. */}
+                            <ImageUploadField
+                                label="Cover image (optional)"
+                                hint="Shown on the brief in the app and on the link when it's shared. Landscape, 16:9 — a photo of the place or the product works best."
+                                shape="cover"
+                                value={coverUrl}
+                                onChange={setCoverUrl}
+                                onFile={setPendingCover}
+                                endpoint={
+                                    isEditing
+                                        ? `/brand/campaigns/${editingId}/cover`
+                                        : undefined
+                                }
+                                responseKey="cover_image_url"
+                                maxBytes={
+                                    brandProfile?.uploads?.max_image_bytes ||
+                                    FALLBACK_MAX_IMAGE_BYTES
+                                }
+                                acceptedMimes={
+                                    brandProfile?.uploads?.accepted_image_mime_types ||
+                                    FALLBACK_IMAGE_MIMES
+                                }
+                                testids={{
+                                    input: COVER.input,
+                                    choose: COVER.choose,
+                                    remove: COVER.remove,
+                                    preview: COVER.preview,
+                                    error: COVER.error,
+                                }}
                             />
                         </div>
                     </section>

@@ -1711,6 +1711,15 @@ def max_upload_bytes() -> int:
     return int(max(0.1, min(mb, 25)) * 1024 * 1024)
 
 
+# Derived from the signature table for the same reason ACCEPTED_DOCUMENT_MIMES
+# is: an `accept=` attribute that offers a format the sniffer will reject invites
+# the file and then refuses it, which on a phone is a minute of upload wasted.
+ACCEPTED_IMAGE_MIMES = frozenset(
+    [mime for _, mime, _ in _IMAGE_SIGNATURES]
+    + ["image/webp"]  # two-part magic, so it isn't in _IMAGE_SIGNATURES
+)
+
+
 def sniff_image_type(head: bytes) -> Optional[tuple]:
     """Identify an image from its leading bytes.
 
@@ -4132,13 +4141,16 @@ def _serialize_collab_row(
     collab: dict,
     campaign: Optional[dict],
     brand_name: Optional[str],
+    brand_logo_url: Optional[str] = None,
 ) -> dict:
     state = collab.get("state", "applied")
     return {
         "id": str(collab["_id"]),
         "campaign_id": str(collab["campaign_id"]),
         "campaign_title": (campaign or {}).get("title"),
+        "cover_image_url": (campaign or {}).get("cover_image_url"),
         "brand_name": brand_name,
+        "brand_logo_url": brand_logo_url,
         "area": (campaign or {}).get("area"),
         "category": (campaign or {}).get("category"),
         "quoted_rate": collab.get("quoted_rate"),
@@ -4467,7 +4479,9 @@ async def get_creator_dashboard(
         camp = campaign_map.get(collab["campaign_id"])
         brand = brand_map.get(camp["brand_id"]) if camp else None
         brand_name = (brand or {}).get("business_name") or (brand or {}).get("name")
-        return _serialize_collab_row(collab, camp, brand_name)
+        return _serialize_collab_row(
+            collab, camp, brand_name, (brand or {}).get("logo_url")
+        )
 
     applications = [_row(c) for c in collabs]
     upcoming = [r for r in applications if r["state"] in _UPCOMING_STATES]
@@ -5041,6 +5055,7 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "id": str(doc["_id"]),
         "user_id": str(doc["user_id"]),
         "business_name": doc.get("business_name"),
+        "logo_url": doc.get("logo_url"),
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
         # The business as claimed, which is what documents get checked against.
@@ -5094,6 +5109,7 @@ def _serialize_brand_campaign(
         "city": doc.get("city") or DEFAULT_CAMPAIGN_CITY,
         "creators_needed": needed,
         "campaign_type": doc.get("campaign_type"),
+        "cover_image_url": doc.get("cover_image_url"),
         # Who runs it, which decides where applications land. Always sent, and
         # always through the reader — a missing value is "brand", never null,
         # because every surface showing this has to say one of two words.
@@ -5512,6 +5528,13 @@ async def _brand_profile_response(profile: dict) -> dict:
         "max_document_bytes": max_upload_bytes(),
         "accepted_mime_types": sorted(ACCEPTED_DOCUMENT_MIMES),
         "max_documents": MAX_BRAND_DOCUMENTS,
+    }
+    # The same telling-rather-than-copying rule for the pictures: the logo on
+    # this page and the cover on a brief both land through `_store_upload`, so
+    # the browser can refuse an oversized file before a byte moves.
+    out["uploads"] = {
+        "max_image_bytes": max_upload_bytes(),
+        "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
     }
     return out
 
@@ -6382,6 +6405,118 @@ async def _brand_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict]:
     if user.get("role") != "admin" and campaign.get("brand_id") != _brand_scope(user):
         raise HTTPException(status_code=404, detail="Application not found")
     return collab, campaign
+
+
+# --- Imagery -----------------------------------------------------------------
+#
+# Both of these go through `_store_upload`, the same function the creator's
+# profile photo uses: the type comes from the magic bytes and never from the
+# client's filename, the stored name is ours and random, and the size ceiling is
+# enforced while streaming rather than after the whole file is in memory.
+#
+# They land in UPLOAD_DIR, which is mounted as static files — correct here, and
+# the opposite of the brand's verification documents, which carry a registered
+# address and go to PRIVATE_UPLOAD_DIR. A cover image and a logo are meant to be
+# seen by strangers; that is the point of them.
+
+
+async def _replace_image(
+    collection, query: dict, field: str, file, *, prefix: str, missing: str
+) -> str:
+    """Store a new image, point the record at it, then delete the old file.
+
+    That order matters: deleting first would leave a record pointing at nothing
+    if the write failed, and a broken image is worse than an out-of-date one.
+    """
+    existing = await collection.find_one(query)
+    if not existing:
+        raise HTTPException(status_code=404, detail=missing)
+
+    public_url, _path = await _store_upload(file, prefix=prefix)
+    previous = existing.get(field)
+    await collection.update_one(
+        query, {"$set": {field: public_url, "updated_at": datetime.now(timezone.utc)}}
+    )
+    if previous and previous != public_url:
+        _delete_upload(previous)
+    return public_url
+
+
+@brand_router.post("/campaigns/{campaign_id}/cover")
+async def upload_campaign_cover(
+    campaign_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """The picture on the brief.
+
+    Deliberately its own route rather than a field on the edit payload: the
+    value is a path we issued, so it is set by storing a file, never by
+    accepting a URL from the client.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    url = await _replace_image(
+        db.campaigns,
+        {"_id": campaign["_id"]},
+        "cover_image_url",
+        file,
+        prefix=f"campaign-{campaign_id}",
+        missing="Campaign not found",
+    )
+    await audit(
+        user, "campaign.cover_upload", "campaign", campaign["_id"],
+        **_campaign_audit_context(campaign),
+    )
+    return {"cover_image_url": url}
+
+
+@brand_router.delete("/campaigns/{campaign_id}/cover")
+async def delete_campaign_cover(
+    campaign_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {"cover_image_url": None, "updated_at": datetime.now(timezone.utc)}},
+    )
+    _delete_upload(campaign.get("cover_image_url"))
+    await audit(
+        user, "campaign.cover_removed", "campaign", campaign["_id"],
+        **_campaign_audit_context(campaign),
+    )
+    return {"cover_image_url": None}
+
+
+@brand_router.post("/profile/logo")
+async def upload_brand_logo(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """The brand's own mark, shown wherever the brand is named."""
+    url = await _replace_image(
+        db.brand_profiles,
+        {"user_id": _brand_scope(user)},
+        "logo_url",
+        file,
+        prefix=f"brand-{_brand_scope(user)}",
+        missing="Brand profile not found",
+    )
+    return {"logo_url": url}
+
+
+@brand_router.delete("/profile/logo")
+async def delete_brand_logo(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    scope = _brand_scope(user)
+    profile = await db.brand_profiles.find_one({"user_id": scope})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand profile not found")
+    await db.brand_profiles.update_one(
+        {"user_id": scope},
+        {"$set": {"logo_url": None, "updated_at": datetime.now(timezone.utc)}},
+    )
+    _delete_upload(profile.get("logo_url"))
+    return {"logo_url": None}
 
 
 @brand_router.post("/collaborations/{collab_id}/accept")
@@ -8990,6 +9125,7 @@ async def _build_campaign_report(campaign: dict) -> dict:
             "id": str(cid),
             "title": campaign.get("title"),
             "brand_name": brand.get("business_name") or brand.get("name"),
+            "brand_logo_url": brand.get("logo_url"),
             "category": campaign.get("category"),
             "area": campaign.get("area"),
             "status": campaign.get("status"),
@@ -10437,6 +10573,7 @@ async def list_all_campaigns(
                 "id": str(d["_id"]),
                 "brand_id": str(d["brand_id"]),
                 "brand_name": brand.get("business_name") or brand.get("name"),
+                "brand_logo_url": brand.get("logo_url"),
                 "title": d.get("title"),
                 "brief": d.get("brief"),
                 "deliverables": d.get("deliverables"),
@@ -10448,6 +10585,7 @@ async def list_all_campaigns(
                 "campaign_type": d.get("campaign_type"),
                 "event_date": _iso(d.get("event_date")),
                 "execution_owner": _execution_owner(d),
+                "cover_image_url": d.get("cover_image_url"),
                 "manager_id": str(d["manager_id"]) if d.get("manager_id") else None,
                 "manager_name": d.get("manager_name"),
                 "status": d.get("status"),
@@ -10501,6 +10639,8 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
             "brand_id": str(d["brand_id"]),
             "brand_name": (brand_map.get(d["brand_id"]) or {}).get("business_name")
             or (brand_map.get(d["brand_id"]) or {}).get("name"),
+            "brand_logo_url": (brand_map.get(d["brand_id"]) or {}).get("logo_url"),
+            "cover_image_url": d.get("cover_image_url"),
             # A brief can be sitting here from a brand we since un-verified.
             "brand_verified": d["brand_id"] in verified_brand_ids,
             "title": d.get("title"),
@@ -10663,6 +10803,7 @@ async def get_admin_campaign_detail(
         "brand": {
             "user_id": str(campaign["brand_id"]),
             "business_name": brand.get("business_name") or brand_account.get("name"),
+            "logo_url": brand.get("logo_url"),
             "category": brand.get("category"),
             "verified": bool(brand.get("verified", False)),
             "verification_state": _brand_verification_state(brand),
@@ -11576,6 +11717,7 @@ def _admin_brand_fields(p: dict, u: dict) -> dict:
         "user_id": str(p["user_id"]),
         "profile_id": str(p["_id"]),
         "business_name": p.get("business_name"),
+        "logo_url": p.get("logo_url"),
         "category": p.get("category"),
         "areas": p.get("areas") or [],
         "verified": bool(p.get("verified", False)),
@@ -13562,6 +13704,7 @@ async def admin_campaign_applicants(
             "title": campaign.get("title"),
             "brand_id": str(campaign["brand_id"]),
             "brand_name": brand.get("business_name") or brand.get("name"),
+            "brand_logo_url": brand.get("logo_url"),
             "campaign_type": campaign.get("campaign_type"),
             "execution_owner": _execution_owner(campaign),
             "status": campaign.get("status"),
@@ -14283,6 +14426,7 @@ async def list_managed_campaigns(
                 "id": str(d["_id"]),
                 "title": d.get("title"),
                 "brand_name": brand.get("business_name") or brand.get("name"),
+                "brand_logo_url": brand.get("logo_url"),
                 "campaign_type": d.get("campaign_type"),
                 "status": d.get("status"),
                 "area": d.get("area"),
@@ -15012,6 +15156,10 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "city": doc.get("city") or DEFAULT_CAMPAIGN_CITY,
         "creators_needed": doc.get("creators_needed"),
         "campaign_type": doc.get("campaign_type"),
+        "cover_image_url": doc.get("cover_image_url"),
+        # The brand's mark travels with the brand's name, so a card can show
+        # both without a second request.
+        "brand_logo_url": (brand or {}).get("logo_url"),
         # A creator deciding whether to give up a day wants to know whose
         # WhatsApp they will be on. Carries no contact detail — just which of
         # us they will be dealing with.
@@ -15102,7 +15250,7 @@ async def _sync_campaign_fill(campaign_id: ObjectId) -> None:
 
 
 async def _load_brand_map(brand_ids: list) -> dict:
-    """Return { brand_id (ObjectId): { business_name, name } } for the given ids."""
+    """Return { brand_id (ObjectId): { business_name, name, logo_url } }."""
     if not brand_ids:
         return {}
     unique_ids = list({b for b in brand_ids})
@@ -15125,6 +15273,9 @@ async def _load_brand_map(brand_ids: list) -> dict:
         out[uid] = {
             "business_name": (p or {}).get("business_name"),
             "name": (u or {}).get("name"),
+            # Carried here so every caller that already loads the brand for its
+            # name gets the mark too, rather than each one fetching again.
+            "logo_url": (p or {}).get("logo_url"),
         }
     return out
 
@@ -15776,6 +15927,8 @@ async def public_campaign_preview(limit: int = 6):
                 "id": str(d["_id"]),
                 "title": d.get("title"),
                 "brand_name": brand.get("business_name") or brand.get("name"),
+                "brand_logo_url": brand.get("logo_url"),
+                "cover_image_url": d.get("cover_image_url"),
                 "category": d.get("category"),
                 "area": d.get("area"),
                 "budget_per_creator": d.get("budget_per_creator"),
@@ -16071,6 +16224,7 @@ async def get_application(
             "area": campaign.get("area"),
             "brand_id": str(campaign["brand_id"]),
             "brand_name": brand.get("business_name") or brand.get("name"),
+            "brand_logo_url": brand.get("logo_url"),
             "creators_needed": int(campaign.get("creators_needed") or 1),
             "event_date": _iso(campaign.get("event_date")),
             "start_date": _iso(campaign.get("start_date")),
@@ -16154,6 +16308,42 @@ def _share_url(campaign_id: str) -> str:
     return f"{_share_base()}{SHARE_PATH}/{campaign_id}"
 
 
+def _absolute_media_url(url: Optional[str], base: str) -> str:
+    """An uploaded file's path, made absolute against the host serving it.
+
+    A preview crawler is handed the tag and no page to resolve it against, so a
+    relative `/uploads/…` is a broken image in every WhatsApp card. The base is
+    the origin *this* request arrived on, which is the backend — the host that
+    actually mounts UPLOAD_URL_PREFIX. `_share_base()` would be wrong here: it
+    is the frontend, where only `/c/*` is proxied.
+    """
+    if not url:
+        return ""
+    if url.startswith(("http://", "https://")):
+        return url
+    return f"{(base or '').rstrip('/')}{url}"
+
+
+def _cover_hue(seed: str) -> int:
+    """The hue of the generated fallback cover, derived from the campaign id.
+
+    A brief with no picture still has to look like itself rather than like every
+    other brief, so the tint is a function of the id — stable across renders,
+    different between neighbours in a list. `frontend/src/lib/cover.js` computes
+    the same number the same way, so the card in the app and the server-rendered
+    share page of the same brief are the same colour.
+
+    FNV-1a rather than a sum of character codes, which was the first version and
+    was measured to be useless: ids that differ in their last byte — which is
+    what consecutive ObjectIds are — came out two degrees apart, so a row of
+    coverless briefs was a row of the same rectangle.
+    """
+    h = 2166136261
+    for ch in (seed or "?"):
+        h = ((h ^ ord(ch)) * 16777619) & 0xFFFFFFFF
+    return h % 360
+
+
 def _share_summary(campaign: dict, brand: dict) -> str:
     """The one line that appears under the title in a WhatsApp preview.
 
@@ -16174,7 +16364,9 @@ def _share_summary(campaign: dict, brand: dict) -> str:
     return " · ".join(bits) or "A paid brief on WeAre Creators."
 
 
-def _share_page_html(campaign: dict, brand: dict, spots_left: int) -> str:
+def _share_page_html(
+    campaign: dict, brand: dict, spots_left: int, media_base: str = ""
+) -> str:
     """One page, no framework, everything escaped.
 
     Light-on-dark to match the product, inline CSS because a stylesheet is a
@@ -16204,6 +16396,31 @@ def _share_page_html(campaign: dict, brand: dict, spots_left: int) -> str:
     when_label = e((when or "")[:10] or "To be confirmed")
     where = e(", ".join(x for x in (campaign.get("area"), campaign.get("city")) if x) or "—")
 
+    # The brief's own picture is the preview card, and the site card is only the
+    # fallback — a shared link that looks like every other shared link is a link
+    # nobody taps.
+    cover = _absolute_media_url(campaign.get("cover_image_url"), media_base)
+    og_image = e(cover or f"{app_base}/og-image.png")
+    # The dimensions are only declared for the site card, whose size we know. A
+    # cover is whatever the brand uploaded, and a wrong og:image:width is worse
+    # than none — some crawlers lay the card out from it without checking.
+    og_image_size = (
+        ""
+        if cover
+        else '\n<meta property="og:image:width" content="1200">'
+        '\n<meta property="og:image:height" content="630">'
+    )
+    hue = _cover_hue(cid)
+    initial = e((brand.get("business_name") or campaign.get("title") or "?").strip()[:1].upper())
+    cover_html = (
+        f'<div class="cover"><img src="{e(cover)}" alt="" loading="eager"></div>'
+        if cover
+        else (
+            f'<div class="cover fallback" style="--h:{hue}" aria-hidden="true">'
+            f"<span>{initial}</span></div>"
+        )
+    )
+
     rows = "".join(
         f'<div class="row"><dt>{e(label)}</dt><dd>{value}</dd></div>'
         for label, value in (
@@ -16230,18 +16447,25 @@ def _share_page_html(campaign: dict, brand: dict, spots_left: int) -> str:
 <meta property="og:url" content="{url}">
 <meta property="og:title" content="{title} — {brand_name}">
 <meta property="og:description" content="{summary}">
-<meta property="og:image" content="{app_base}/og-image.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
+<meta property="og:image" content="{og_image}">{og_image_size}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{title} — {brand_name}">
 <meta name="twitter:description" content="{summary}">
-<meta name="twitter:image" content="{app_base}/og-image.png">
+<meta name="twitter:image" content="{og_image}">
 <style>
 *{{box-sizing:border-box}}
 body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
 .wrap{{max-width:44rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}}
 .eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B}}
+/* The box is reserved before the image arrives, so the headline below it does
+   not jump when it does. */
+.cover{{aspect-ratio:16/9;margin-bottom:2rem;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03)}}
+.cover img{{width:100%;height:100%;object-fit:cover;display:block}}
+/* The same two layers as coverGradient() in frontend/src/lib/cover.js. */
+.fallback{{display:grid;place-items:center;background:
+  radial-gradient(120% 120% at 20% 0%,hsl(var(--h) 42% 32%) 0%,transparent 62%),
+  linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
+.fallback span{{font-family:Fraunces,Georgia,serif;font-size:clamp(3rem,12vw,5.5rem);color:rgba(245,241,236,.55);line-height:1}}
 h1{{font-family:Fraunces,Georgia,serif;font-size:clamp(2rem,6vw,3rem);line-height:1.05;margin:.75rem 0 0;letter-spacing:-.02em}}
 .brand{{margin-top:.75rem;color:#F05D14;font-size:.9rem}}
 .card{{margin-top:2rem;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.5rem}}
@@ -16257,6 +16481,7 @@ dd{{margin:0;flex:1;min-width:0}}
 footer{{margin-top:3rem;color:#7d766f;font-size:.78rem}}
 a{{color:inherit}}
 </style></head><body><div class="wrap">
+{cover_html}
 <p class="eyebrow">Paid brief · Open to verified creators</p>
 <h1>{title}</h1>
 <p class="brand">{brand_name}</p>
@@ -16274,7 +16499,7 @@ a{{color:inherit}}
 
 
 @app.get(SHARE_PATH + "/{campaign_id}", include_in_schema=False)
-async def public_campaign_page(campaign_id: str):
+async def public_campaign_page(campaign_id: str, request: Request):
     """One brief, readable by anyone with the link. No account, no API prefix.
 
     Only live briefs from verified brands, the same rule the shop window uses:
@@ -16296,7 +16521,14 @@ async def public_campaign_page(campaign_id: str):
     needed = int(campaign.get("creators_needed") or 1)
     filled = (await _filled_counts_for([oid])).get(oid, 0)
     return Response(
-        content=_share_page_html(campaign, brand_profile, needed - filled),
+        content=_share_page_html(
+            campaign,
+            brand_profile,
+            needed - filled,
+            # This request's own origin, because the backend is what mounts
+            # /uploads. Not _share_base(), which is the frontend.
+            media_base=str(request.base_url),
+        ),
         media_type="text/html; charset=utf-8",
         # Public and safe to cache briefly — a crawler and a person often fetch
         # it seconds apart, and the spots-left figure is the only thing that

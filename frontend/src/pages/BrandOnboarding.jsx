@@ -49,7 +49,11 @@ import {
 import VerificationDocuments, {
     VerificationDocumentsSkeleton,
 } from "@/components/brand/VerificationDocuments";
-import { BRAND_VERIFICATION as IDS } from "@/constants/testIds";
+import { BRAND_LOGO, BRAND_VERIFICATION as IDS } from "@/constants/testIds";
+import ImageUploadField, {
+    FALLBACK_IMAGE_MIMES,
+    FALLBACK_MAX_IMAGE_BYTES,
+} from "@/components/ImageUploadField";
 
 const CATEGORY_OPTIONS = [
     { value: "fnb", label: "F&B" },
@@ -258,6 +262,11 @@ export default function BrandOnboarding() {
     const [contactName, setContactName] = useState("");
     const [contactDesignation, setContactDesignation] = useState("");
     const [contactEmail, setContactEmail] = useState("");
+    // The logo uploads against its own route the moment it is picked, rather
+    // than riding on Save — it is a file, not a field, and there is no partial
+    // save of half a picture.
+    const [logoUrl, setLogoUrl] = useState(null);
+    const [uploads, setUploads] = useState(null);
 
     const [touched, setTouched] = useState({});
     const touch = (k) => setTouched((t) => ({ ...t, [k]: true }));
@@ -282,6 +291,8 @@ export default function BrandOnboarding() {
             setContactName(data.contact_person_name || user?.name || "");
             setContactDesignation(data.contact_person_designation || "");
             setContactEmail(data.contact_email || "");
+            setLogoUrl(data.logo_url || null);
+            setUploads(data.uploads || null);
             setVerification(data.verification || null);
         },
         [user],
@@ -493,6 +504,32 @@ export default function BrandOnboarding() {
                             maxLength={140}
                             disabled={fieldsLocked}
                             placeholder="e.g. Blue Tokai Coffee Roasters"
+                        />
+
+                        {/* Not locked with the rest once verified: a logo is
+                            how a brand is recognised, not evidence of who it
+                            is, and a rebrand should not need a support ticket. */}
+                        <ImageUploadField
+                            label="Logo"
+                            hint="Shown wherever your brand is named — on your briefs, in a creator's applications, and in our console. A square PNG with a transparent background looks best."
+                            shape="square"
+                            value={logoUrl}
+                            onChange={setLogoUrl}
+                            endpoint="/brand/profile/logo"
+                            responseKey="logo_url"
+                            maxBytes={
+                                uploads?.max_image_bytes || FALLBACK_MAX_IMAGE_BYTES
+                            }
+                            acceptedMimes={
+                                uploads?.accepted_image_mime_types || FALLBACK_IMAGE_MIMES
+                            }
+                            testids={{
+                                input: BRAND_LOGO.input,
+                                choose: BRAND_LOGO.choose,
+                                remove: BRAND_LOGO.remove,
+                                preview: BRAND_LOGO.preview,
+                                error: BRAND_LOGO.error,
+                            }}
                         />
 
                         <div>
