@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import CampaignCover from "@/components/CampaignCover";
+import { isPrivate } from "@/lib/visibility";
 import { EXECUTION_FILTERS, executionOwner } from "@/lib/execution";
 import { EXECUTION } from "@/constants/testIds";
 import { Link } from "react-router-dom";
@@ -13,6 +14,7 @@ import {
     Eye,
     IndianRupee,
     Loader2,
+    Lock,
     MapPin,
     MessageSquare,
     Pause,
@@ -32,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSkeleton } from "@/components/data/DenseView";
-import { BRAND_CAMPAIGN_CONTROLS } from "@/constants/testIds";
+import { BRAND_CAMPAIGN_CONTROLS, VISIBILITY } from "@/constants/testIds";
 import {
     Dialog,
     DialogContent,
@@ -518,6 +520,28 @@ export default function BrandDashboardView({ user }) {
                                                                 {c.title}
                                                             </div>
                                                             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                                                {/* The owner always knows which shelf a
+                                                                    brief is on — a private one that the
+                                                                    brand believes is public gets zero
+                                                                    applicants and no explanation. */}
+                                                                <span
+                                                                    data-testid={VISIBILITY.badge(c.id)}
+                                                                    className={
+                                                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] " +
+                                                                        (isPrivate(c)
+                                                                            ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
+                                                                            : "border-white/10 text-muted-foreground")
+                                                                    }
+                                                                >
+                                                                    {isPrivate(c) ? (
+                                                                        <>
+                                                                            <Lock className="h-3 w-3" />
+                                                                            Invite-only
+                                                                        </>
+                                                                    ) : (
+                                                                        "Public"
+                                                                    )}
+                                                                </span>
                                                                 <span className="inline-flex items-center gap-1">
                                                                     {isBarter(c) ? (
                                                                         "Barter"

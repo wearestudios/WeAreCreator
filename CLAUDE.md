@@ -482,6 +482,25 @@ filter applied by default**, and narrows on `city`, `area`, `category`,
 in `X-Total-Count`; it used to be a bare array capped at 200 with no way to know
 anything had been cut off.
 
+**The default order is "most relevant first."** `score_campaign_for_creator` is
+the mirror of `score_creator_for_campaign` — same vocabulary (`_campaign_terms`,
+the category synonyms), pointed the other way: niche/genre overlap saturating at
+three matched terms, city, neighbourhood. Pure and DB-free, so the ranking runs
+in Python over the newest `_RELEVANCE_SCAN_CAP` matches and then slices, keeping
+pagination and the count header honest. An empty profile scores everything 0 and
+the sort falls through to recency — the old order, and the right one for
+somebody we know nothing about. **It deliberately knows nothing about money**:
+a barter brief ranks on fit exactly like a paid one, or "most relevant" quietly
+becomes "paid first". Explicit `sort=newest|budget_desc|budget_asc` still mean
+what they say. The "Live pool" masthead figure is gone — it summed
+`budget_per_creator` across the feed, a number barter made a lie.
+
+- **A money filter says nothing about barter.** A barter brief keeps its
+  vestigial budget, so `budget_min/max` used to surface a barter stay whose
+  leftover number happened to land in the range. The filter now ANDs in
+  `{"compensation_type": {"$ne": "barter"}}`; combined with an explicit
+  `compensation_type=barter` it returns the empty set, which is the honest
+  answer to "barter briefs priced ₹5k–15k".
 - **`city` on a campaign is new.** Campaigns carried only `area`, the free-text
   neighbourhood, so "briefs in my city" was unanswerable even though a creator's
   city is a canonical dropdown. It goes through `_canonical_city`, the same
@@ -490,12 +509,47 @@ anything had been cut off.
   all** — campaigns predate both, and a filter that only works after a migration
   has run returns nothing on a box that has not restarted. Same trap as
   `execution_owner` and `showcase`.
-- The keyword search appends to `$and` rather than assigning `$or`, because the
-  compensation filter may already own that key and a second assignment silently
-  drops the first.
+- Every clause that wants `$and` — the default-city filter, the keyword
+  search, the barter exclusion, the visibility cut — **appends via
+  `setdefault`, never assigns**: an assignment among the appends silently
+  drops whatever came before it, and a unit test greps the handler for the
+  bare form.
 - `/campaigns/filters` returns distinct values, not the full enums: offering a
   category with no live brief in it is a filter whose only outcome is an empty
   list.
+
+### Public and invite-only briefs
+
+`visibility` on a campaign, `public` or `private` (`CampaignVisibility`).
+Public is the shop window; private is invite-only and **enforced server-side on
+every campaign read and on apply** — the pickers and pills are a courtesy on
+top. `_campaign_visibility(doc)` is the one reader (absent reads `public`,
+campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
+`$ne: "private"` for the usual pre-migration reason.
+
+- **Two doors into a private brief, in `_creator_may_see` /
+  `_visible_campaign_ids_for_creator`**: an invitation row in
+  `campaign_invitations`, or an active collaboration — a brand flipping a live
+  brief private must not vanish it from the people already on it. Everyone
+  else gets a **404, not a 403**: whether the campaign exists is itself what
+  the privacy protects.
+- The cut applies to browse (folded into the same query as the filters, so
+  pagination and the count stay right), the detail read, apply, the `/c/{id}`
+  share page, the sitemap, the landing preview, the brand page's shelf, the
+  suggestions panel, and `/campaigns/filters` — a private brief's
+  neighbourhood showing up as a dropdown option would announce its existence.
+  Admins see everything; the owning brand reaches its own through the
+  ownership checks it already had.
+- The brand picks at post time (`PostCampaignPayload`, defaulting to public)
+  and may change it on edit; the edit round-trip in `PostCampaign` re-seeds
+  the picker so fixing a typo doesn't silently flip a private brief public.
+  Every owner-facing row prints one of the two words — a brand reading
+  nothing would have to guess the default — and a creator who can see a
+  private brief gets an "Invite-only" pill, which for them is true and
+  flattering. **No Share button on a private brief**: its public page 404s by
+  design, so the button would copy a dead link. Absent, not disabled.
+- `lib/visibility.js` mirrors the reader (absent means public) and holds the
+  two options' wording.
 
 ### The shareable page
 
@@ -595,9 +649,9 @@ it in half.
   silently ignores the latter, so every "375px" number taken with it was really
   1280 and mobile-only shifts passed unseen. At real widths: CampaignDetail
   0.0000 with and without a cover; landing 0.0042/0.0011 (375/1280); campaigns
-  0.0016/0.0050 — down from 0.0718 at 375, which was the Live pool aside
-  mounting only after the fetch and pushing the filter bar down ~120px, and is
-  why that aside now renders a same-shape skeleton while loading.
+  0.0000/0.0047 — the 0.0718 at 375 was the Live pool aside mounting only
+  after the fetch and pushing the filter bar down ~120px; the aside has since
+  been removed outright, which is also why the number improved again.
 
 
 ## What a brief pays

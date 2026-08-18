@@ -18,7 +18,8 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { EXECUTION_OPTIONS } from "@/lib/execution";
-import { COVER, EXECUTION } from "@/constants/testIds";
+import { VISIBILITY_OPTIONS } from "@/lib/visibility";
+import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
@@ -82,6 +83,9 @@ export default function PostCampaign() {
     // unless you say otherwise, and a campaign quietly landing in the WeAre
     // queue is work nobody agreed to. Mirrors DEFAULT_EXECUTION_OWNER.
     const [executionOwner, setExecutionOwner] = useState("brand");
+    // Public unless the brand says otherwise — an invite-only brief that
+    // nobody meant to hide is merely unfindable, which is worse than wrong.
+    const [visibility, setVisibility] = useState("public");
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -138,6 +142,7 @@ export default function PostCampaign() {
                     // the form never round-trips it back to "fixed".
                     setCompensationType(data.compensation_type || "fixed");
                     setExecutionOwner(data.execution_owner || "brand");
+                    setVisibility(data.visibility === "private" ? "private" : "public");
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -226,6 +231,7 @@ export default function PostCampaign() {
                   compensation_type: compensationType,
                   execution_owner: executionOwner,
               }),
+        visibility,
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
@@ -681,6 +687,57 @@ export default function PostCampaign() {
                                     );
                                 })}
                             </div>
+                        </div>
+
+                        <div>
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Who can find this brief
+                            </Label>
+                            <div
+                                data-testid={VISIBILITY.picker}
+                                role="radiogroup"
+                                aria-label="Who can find this brief"
+                                className="mt-3 grid gap-3 sm:grid-cols-2"
+                            >
+                                {VISIBILITY_OPTIONS.map((opt) => {
+                                    const on = visibility === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={VISIBILITY.option(opt.value)}
+                                            onClick={() => setVisibility(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                            }
+                                        >
+                                            <span
+                                                className={
+                                                    "block text-sm " +
+                                                    (on ? "text-ember-500" : "text-foreground")
+                                                }
+                                            >
+                                                {opt.label}
+                                            </span>
+                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                                {opt.hint}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {visibility === "private" && (
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Invite creators from the campaign page once it's
+                                    live — nobody else will ever see it, and it won't
+                                    have a public share page.
+                                </p>
+                            )}
                         </div>
 
                         <div className="grid gap-5 md:grid-cols-2">

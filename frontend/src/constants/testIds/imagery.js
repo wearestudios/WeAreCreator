@@ -33,6 +33,13 @@ export const BRAND_PAGE = {
 	preview: "brand-page-preview",
 };
 
+// Campaign visibility: the picker on the post form and the badge on rows.
+export const VISIBILITY = {
+	picker: "campaign-visibility-picker",
+	option: (v) => `campaign-visibility-${v}`,
+	badge: (id) => `campaign-visibility-badge-${id}`,
+};
+
 export const BRAND_LOGO = {
 	image: (id) => `brand-logo-${id}`,
 	monogram: (id) => `brand-logo-monogram-${id}`,

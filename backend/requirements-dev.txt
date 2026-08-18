@@ -13,6 +13,9 @@
 pytest>=8.0.0
 pytest-xdist>=3.6.0       # pytest.ini's addopts pass -n/--dist; required_plugins enforces it
 requests>=2.31.0          # the integration suite in tests/ drives the API over real HTTP
+mongomock-motor>=0.0.29   # drives the real endpoint functions against an in-memory
+                          # Mongo in tests/unit — the visibility and leak tests *run*
+                          # the handlers rather than reading their source
 
 # --- Formatting and static checks ---
 black>=24.1.1

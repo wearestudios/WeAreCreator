@@ -26,6 +26,7 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
+import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import BrandAvatar from "@/components/BrandAvatar";
 import ImageUploadField from "@/components/ImageUploadField";
@@ -388,6 +389,15 @@ export default function CampaignDetailPage() {
                                     </Field>
                                     <Field label="Compensation">
                                         {compensationLabel(campaign)}
+                                    </Field>
+                                    <Field label="Visibility">
+                                        {visibilityLabel(campaign)}
+                                        {isPrivate(campaign) && (
+                                            <span className="mt-1 block text-xs text-muted-foreground">
+                                                Invite-only — reachable through invites,
+                                                never through browse or the share page.
+                                            </span>
+                                        )}
                                     </Field>
                                     <Field label="Venue" className="sm:col-span-3">
                                         {campaign.venue_address}

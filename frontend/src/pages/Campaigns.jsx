@@ -6,6 +6,7 @@ import {
     IndianRupee,
     ArrowRight,
     Filter,
+    Lock,
     Sparkles,
     Search,
     ArrowDownUp,
@@ -18,10 +19,10 @@ import {
     ResultCount,
     StickyBar,
 } from "@/components/data/DenseView";
-import { STICKY_BAR } from "@/constants/testIds";
-import { Skeleton } from "@/components/ui/skeleton";
+import { STICKY_BAR, VISIBILITY } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
+import { isPrivate } from "@/lib/visibility";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import BrandName from "@/components/BrandName";
@@ -70,16 +71,15 @@ const BUDGET_BUCKETS = [
     { value: "50p", label: "₹50k+", min: 50001, max: null },
 ];
 
+// "Most relevant" is the server ranking briefs against this creator's own
+// profile — niches, city, neighbourhood. For a profile that matches nothing it
+// degrades to newest-first, so the option is never worse than the old default.
 const SORT_OPTIONS = [
+    { value: "relevant", label: "Most relevant first" },
     { value: "newest", label: "Newest first" },
     { value: "budget_desc", label: "Budget: high to low" },
     { value: "budget_asc", label: "Budget: low to high" },
 ];
-
-const formatMoney = (n) =>
-    typeof n === "number"
-        ? "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 })
-        : "—";
 
 const TagBadge = ({ status }) => {
     const isLive = status === "open";
@@ -103,6 +103,19 @@ const TagBadge = ({ status }) => {
         </span>
     );
 };
+
+// Told only to people who can already see the brief — for a creator that
+// means they were invited, which is worth saying out loud on the card.
+const InviteOnlyPill = ({ campaign }) =>
+    isPrivate(campaign) ? (
+        <span
+            data-testid={VISIBILITY.badge(campaign.id)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+        >
+            <Lock className="h-3 w-3" />
+            Invite-only
+        </span>
+    ) : null;
 
 const CampaignCard = ({ c, index }) => (
     <motion.div
@@ -138,7 +151,10 @@ const CampaignCard = ({ c, index }) => (
                         lift
                         className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
                     />
-                    <TagBadge status={c.status} />
+                    <span className="flex flex-none items-center gap-1.5">
+                        <InviteOnlyPill campaign={c} />
+                        <TagBadge status={c.status} />
+                    </span>
                 </div>
 
                 <h3 className="mt-5 font-serif text-[26px] leading-[1.05] tracking-tight text-foreground">
@@ -201,13 +217,18 @@ const CampaignCard = ({ c, index }) => (
                         )}
                     </div>
                     <div className="flex flex-none items-center gap-2">
-                        <ShareButton
-                            campaignId={c.id}
-                            title={c.title}
-                            summary={c.deliverables}
-                            variant="icon"
-                            className="relative z-10"
-                        />
+                        {/* A private brief has no public page — /c/{id} 404s
+                            by design — so a share button on it would copy a
+                            dead link. Absent, not disabled. */}
+                        {!isPrivate(c) && (
+                            <ShareButton
+                                campaignId={c.id}
+                                title={c.title}
+                                summary={c.deliverables}
+                                variant="icon"
+                                className="relative z-10"
+                            />
+                        )}
                         <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
                     </div>
                 </div>
@@ -228,7 +249,7 @@ export default function Campaigns() {
     const [campaignType, setCampaignType] = useState(ANY);
     const [compensation, setCompensation] = useState(ANY);
     const [budget, setBudget] = useState(ANY);
-    const [sort, setSort] = useState("newest");
+    const [sort, setSort] = useState("relevant");
     const [q, setQ] = useState("");
     const [debouncedQ, setDebouncedQ] = useState("");
     const [filters, setFilters] = useState({
@@ -274,7 +295,8 @@ export default function Campaigns() {
         const bucket = BUDGET_BUCKETS.find((b) => b.value === budget);
         if (bucket && bucket.min !== null) params.budget_min = bucket.min;
         if (bucket && bucket.max !== null) params.budget_max = bucket.max;
-        if (sort && sort !== "newest") params.sort = sort;
+        // "relevant" is the server's default, so it travels as an absence.
+        if (sort && sort !== "relevant") params.sort = sort;
         if (debouncedQ) params.q = debouncedQ;
         api.get("/campaigns", { params })
             .then(({ data, headers }) => {
@@ -304,22 +326,7 @@ export default function Campaigns() {
         category !== ANY ||
         budget !== ANY ||
         debouncedQ.length > 0 ||
-        sort !== "newest";
-
-    // Barter briefs are left out: their stored budget is a leftover from
-    // whatever they were before, and adding it here would inflate a figure
-    // that is meant to say how much cash is on the feed.
-    const totalBudget = useMemo(() => {
-        if (!Array.isArray(items) || items.length === 0) return 0;
-        return items.reduce(
-            (acc, c) =>
-                acc +
-                (!isBarter(c) && typeof c.budget_per_creator === "number"
-                    ? c.budget_per_creator
-                    : 0),
-            0,
-        );
-    }, [items]);
+        sort !== "relevant";
 
     // One chip per filter that is actually doing something. `sort` is left out
     // on purpose: it changes the order, not the set, so calling it a filter
@@ -412,35 +419,6 @@ export default function Campaigns() {
                             travel and hospitality. Tap any card to see the full brief.
                         </p>
                     </div>
-                    {/* Rendered while loading too, as a skeleton of the same
-                        shape. Mounting this only when the data lands grew the
-                        masthead by ~120px on a phone — measured at 0.0718 CLS,
-                        the whole filter bar and grid jumping down. Only the
-                        confirmed-empty case omits it, and that swaps to the
-                        empty state anyway. */}
-                    {(items === null || items.length > 0) && (
-                        <div className="md:col-span-4 md:text-right">
-                            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                Live pool
-                            </div>
-                            {items === null ? (
-                                <div aria-hidden="true" className="md:flex md:flex-col md:items-end">
-                                    <Skeleton className="mt-1 h-12 w-44" />
-                                    <Skeleton className="mt-2 h-3 w-28" />
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="mt-1 font-serif text-5xl leading-none text-foreground">
-                                        {formatMoney(totalBudget)}
-                                    </div>
-                                    <div className="mt-2 text-xs text-muted-foreground">
-                                        across {items.length}{" "}
-                                        {items.length === 1 ? "campaign" : "campaigns"}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    )}
                 </div>
 
                 {/* Filters bar. Sticky, so the thing you filtered by is still

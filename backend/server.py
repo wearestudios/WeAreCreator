@@ -808,6 +808,77 @@ def _execution_owner_query(value: str) -> dict:
     return {"execution_owner": {"$ne": "weare"}}
 
 
+# --- Campaign visibility -----------------------------------------------------
+#
+# "public" is the shop window: every verified creator can find it, and it may
+# also be promoted to the open internet through /c/{id} and the brand's page.
+# "private" is invite-only: it never appears in browse, search, suggestions,
+# the share page, the sitemap or the filter options, and only creators who were
+# actually invited — or who already hold an application on it, because a brand
+# may flip a live brief private after people applied — can read or pitch on it.
+#
+# The gate is server-side on every campaign read and on apply, never only in
+# the UI. Admins see everything; a brand always sees its own, which the
+# ownership checks already guarantee.
+
+CampaignVisibility = Literal["public", "private"]
+CAMPAIGN_VISIBILITIES = ("public", "private")
+# Campaigns written before this field existed were all findable, so absent
+# reads as public — and every filter matches on `$ne: "private"` rather than
+# equality, the same pre-migration trap as execution_owner and showcase.
+DEFAULT_CAMPAIGN_VISIBILITY = "public"
+
+
+def _campaign_visibility(campaign: dict) -> str:
+    """The one reader. Pure and DB-free, like `_execution_owner`."""
+    value = (campaign or {}).get("visibility")
+    return value if value in CAMPAIGN_VISIBILITIES else DEFAULT_CAMPAIGN_VISIBILITY
+
+
+def _is_private(campaign: dict) -> bool:
+    return _campaign_visibility(campaign) == "private"
+
+
+# The clause every open-shelf query carries. A helper rather than an inline
+# dict so the next listing surface gets the `$ne` shape by importing the rule,
+# not by remembering it.
+PUBLIC_CAMPAIGN_QUERY = {"visibility": {"$ne": "private"}}
+
+
+async def _visible_campaign_ids_for_creator(creator_oid: ObjectId) -> list:
+    """Private campaigns this creator may see anyway.
+
+    Two doors: an invitation row, or an application they already hold — a brand
+    flipping a live brief private must not vanish it from the people already on
+    it. Ids, not documents: the caller folds them into its own query so status
+    filters and pagination still apply once, in one place.
+    """
+    invited = await db.campaign_invitations.distinct(
+        "campaign_id", {"creator_id": creator_oid}
+    )
+    applied = await db.collaborations.distinct(
+        "campaign_id", {"creator_id": creator_oid, "active": True}
+    )
+    return list({*invited, *applied})
+
+
+async def _creator_may_see(campaign: dict, creator_oid: ObjectId) -> bool:
+    """May this creator read this one campaign? Public: yes. Private: only
+    through one of the two doors above."""
+    if not _is_private(campaign):
+        return True
+    cid = campaign["_id"]
+    if await db.campaign_invitations.find_one(
+        {"campaign_id": cid, "creator_id": creator_oid}, {"_id": 1}
+    ):
+        return True
+    return bool(
+        await db.collaborations.find_one(
+            {"campaign_id": cid, "creator_id": creator_oid, "active": True}, {"_id": 1}
+        )
+    )
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
@@ -833,6 +904,9 @@ class PostCampaignPayload(BaseModel):
     # is what posting a brief means unless you say otherwise — and because a
     # campaign silently landing in the WeAre queue is work nobody agreed to.
     execution_owner: ExecutionOwner = DEFAULT_EXECUTION_OWNER
+    # Findable by every verified creator, or invite-only. Defaults to public
+    # because that is what posting a brief means unless you say otherwise.
+    visibility: CampaignVisibility = DEFAULT_CAMPAIGN_VISIBILITY
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -898,6 +972,11 @@ class UpdateCampaignPayload(BaseModel):
     # dropdown — `_refuse_late_execution_handover` is what enforces that, and
     # the admin route skips it.
     execution_owner: Optional[ExecutionOwner] = None
+    # A brand may open a private brief up or pull a public one back at any
+    # editable stage. Going private does not evict anyone: creators who already
+    # applied, and everyone invited, keep read and apply access — the doors are
+    # in _creator_may_see, not here.
+    visibility: Optional[CampaignVisibility] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -4408,6 +4487,10 @@ async def _suggested_campaigns(
             {
                 "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
                 "_id": {"$nin": list(exclude_ids)},
+                # A recommendation is a disclosure. Private briefs reach a
+                # creator through their invitation and the browse list's
+                # invited-door, never through "you might like".
+                **PUBLIC_CAMPAIGN_QUERY,
             }
         )
         .sort("created_at", -1)
@@ -5158,6 +5241,8 @@ def _serialize_brand_campaign(
     return {
         "id": str(doc["_id"]),
         "title": doc.get("title"),
+        # Never None: the owner's console prints one of two words on every row.
+        "visibility": _campaign_visibility(doc),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
@@ -5944,6 +6029,7 @@ async def create_brand_campaign(
         "campaign_type": payload.campaign_type,
         "compensation_type": payload.compensation_type,
         "execution_owner": payload.execution_owner,
+        "visibility": payload.visibility,
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -10647,6 +10733,7 @@ async def list_all_campaigns(
                 "brand_name": brand.get("business_name") or brand.get("name"),
                 "brand_logo_url": brand.get("logo_url"),
                 "title": d.get("title"),
+                "visibility": _campaign_visibility(d),
                 "brief": d.get("brief"),
                 "deliverables": d.get("deliverables"),
                 "budget_per_creator": d.get("budget_per_creator"),
@@ -15221,6 +15308,10 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
         "compensation_type": _compensation_type(doc),
+        # Safe on a creator-facing row: anyone receiving a private campaign's
+        # serialisation has already passed the invited-or-applied gate, and
+        # telling them it is invite-only is telling them something flattering.
+        "visibility": _campaign_visibility(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign
@@ -15352,6 +15443,66 @@ async def _load_brand_map(brand_ids: list) -> dict:
     return out
 
 
+# The mirror of `score_creator_for_campaign`, pointed the other way: not "who
+# fits this brief" but "which briefs look like this creator's work". Same
+# vocabulary (`_campaign_terms`, `_overlap`), so the two ends of the market are
+# matched on one definition of fit rather than two that drift.
+CREATOR_FEED_WEIGHTS = {"work_match": 50, "city": 30, "neighbourhood": 20}
+
+
+def score_campaign_for_creator(campaign: dict, profile: Optional[dict]) -> float:
+    """How much this brief looks like this creator's work. Pure, no DB.
+
+    An empty or missing profile scores everything 0, which makes the sort fall
+    through to recency — the feed's old order, and the right one for somebody
+    we know nothing about. Deliberately **no budget or compensation term**: a
+    barter brief must rank on fit exactly like a paid one, or "most relevant
+    first" quietly becomes "paid first" and barter drops to the bottom of every
+    feed — the invisible version of the bug where it was missing outright.
+    """
+    if not profile:
+        return 0.0
+    score = 0.0
+
+    words = {
+        str(w).lower().strip()
+        for w in (profile.get("niches") or []) + (profile.get("genres") or [])
+        if str(w).strip()
+    }
+    if words:
+        terms = _campaign_terms(campaign)
+        matched = sum(1 for w in words if w in terms)
+        if matched:
+            # Two matched terms are a stronger signal than one, but five are
+            # not five times stronger — saturate at three so a creator with a
+            # long tag list doesn't pin every brief to the top.
+            score += CREATOR_FEED_WEIGHTS["work_match"] * min(matched, 3) / 3
+
+    campaign_city = ((campaign.get("city") or DEFAULT_CAMPAIGN_CITY)).lower().strip()
+    if campaign_city and campaign_city == (profile.get("city") or "").lower().strip():
+        score += CREATOR_FEED_WEIGHTS["city"]
+
+    # The brief's neighbourhood against where the creator says they are —
+    # most of this work is in-person, and Indiranagar to Indiranagar is a
+    # different proposition from Indiranagar to Whitefield.
+    campaign_area = (campaign.get("area") or "").lower().strip()
+    creator_places = {
+        (profile.get("city") or "").lower().strip(),
+        (profile.get("address") or "").lower().strip(),
+    }
+    if campaign_area and campaign_area in creator_places:
+        score += CREATOR_FEED_WEIGHTS["neighbourhood"]
+
+    return score
+
+
+# "Most relevant first" ranks in Python, because the score needs the creator's
+# profile and Mongo doesn't have it. The scan is capped: ranking the newest N
+# rather than everything is the honest trade, and N is far above what the feed
+# holds today.
+_RELEVANCE_SCAN_CAP = 500
+
+
 @campaigns_router.get("")
 async def list_campaigns(
     city: Optional[str] = None,
@@ -15362,16 +15513,19 @@ async def list_campaigns(
     budget_min: Optional[float] = None,
     budget_max: Optional[float] = None,
     q: Optional[str] = None,
-    sort: Optional[str] = None,  # "newest" | "budget_desc" | "budget_asc"
+    sort: Optional[str] = None,  # "relevant" (default) | "newest" | "budget_desc" | "budget_asc"
     limit: int = 200,
     offset: int = 0,
     user: dict = Depends(require_roles("creator", "admin")),
 ):
-    """Every live brief, with the filters to narrow it down.
+    """Every live brief this caller may see, most relevant first.
 
     No filter is applied by default — a creator sees everything that is open
     or upcoming and narrows from there, rather than being shown a slice
-    somebody else chose.
+    somebody else chose. Private briefs are the one cut that is not a filter:
+    they appear only to creators who were invited or already applied, and to
+    admins. Ordering defaults to relevance against the creator's own profile,
+    falling back to recency for anyone we know nothing about.
     """
     await _expire_stale_campaigns()
     limit = max(1, min(int(limit or 200), 200))
@@ -15383,9 +15537,11 @@ async def list_campaigns(
         # box that has not restarted. Same shape as execution_owner.
         canonical = _canonical_city(city)
         if canonical == DEFAULT_CAMPAIGN_CITY:
-            query["$and"] = [
+            # Appended, never assigned: the visibility clause below owns a slot
+            # in $and too, and an assignment here would silently drop it.
+            query.setdefault("$and", []).append(
                 {"$or": [{"city": canonical}, {"city": {"$exists": False}}, {"city": None}]}
-            ]
+            )
         else:
             query["city"] = canonical
     if area:
@@ -15421,6 +15577,13 @@ async def list_campaigns(
         if budget_max is not None:
             budget_q["$lte"] = budget_max
         query["budget_per_creator"] = budget_q
+        # A barter brief keeps whatever budget it was posted with, so without
+        # this a money filter would include or exclude barter by a number that
+        # means nothing — "₹5k–15k" surfaced a barter stay whose vestigial
+        # budget happened to be 5000. Combined with an explicit
+        # compensation_type=barter above, the two clauses AND to an empty set,
+        # which is the honest answer to "barter briefs priced ₹5k–15k".
+        query.setdefault("$and", []).append({"compensation_type": {"$ne": "barter"}})
     if q:
         # Case-insensitive keyword match against title / brief / deliverables.
         # Pushed into $and rather than assigned to $or, because the
@@ -15437,20 +15600,58 @@ async def list_campaigns(
             }
         )
 
-    sort_key: list = [("created_at", -1)]
-    if sort == "budget_desc":
-        sort_key = [("budget_per_creator", -1), ("created_at", -1)]
-    elif sort == "budget_asc":
-        sort_key = [("budget_per_creator", 1), ("created_at", -1)]
+    # The visibility cut. Not a filter a creator can remove: private briefs are
+    # in this list only through one of the two doors — an invitation, or an
+    # application they already hold. Admins see everything; brands don't browse
+    # this list at all (their own campaigns live on their dashboard).
+    profile = None
+    if user["role"] == "creator":
+        creator_oid = ObjectId(user["_id"])
+        allowed = await _visible_campaign_ids_for_creator(creator_oid)
+        query.setdefault("$and", []).append(
+            {"$or": [PUBLIC_CAMPAIGN_QUERY, {"_id": {"$in": allowed}}]}
+        )
+        profile = await db.creator_profiles.find_one({"user_id": creator_oid})
 
     total = await db.campaigns.count_documents(query)
-    docs = (
-        await db.campaigns.find(query)
-        .sort(sort_key)
-        .skip(offset)
-        .limit(limit)
-        .to_list(length=limit)
-    )
+
+    if sort in ("budget_desc", "budget_asc", "newest"):
+        sort_key: list = [("created_at", -1)]
+        if sort == "budget_desc":
+            sort_key = [("budget_per_creator", -1), ("created_at", -1)]
+        elif sort == "budget_asc":
+            sort_key = [("budget_per_creator", 1), ("created_at", -1)]
+        docs = (
+            await db.campaigns.find(query)
+            .sort(sort_key)
+            .skip(offset)
+            .limit(limit)
+            .to_list(length=limit)
+        )
+    else:
+        # "relevant", the default. Scored in Python against the caller's own
+        # profile — Mongo doesn't have it — over the newest _RELEVANCE_SCAN_CAP
+        # matches, then sliced, so pagination and X-Total-Count still hold.
+        # `-created` in the key keeps the tiebreak (and the whole order, for a
+        # profile that matches nothing) newest-first, which is the old
+        # behaviour and the right one for a creator we know nothing about.
+        pool = (
+            await db.campaigns.find(query)
+            .sort([("created_at", -1)])
+            .limit(_RELEVANCE_SCAN_CAP)
+            .to_list(length=_RELEVANCE_SCAN_CAP)
+        )
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        def _created(d):
+            value = d.get("created_at")
+            if isinstance(value, datetime):
+                return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return epoch
+        pool.sort(
+            key=lambda d: (-score_campaign_for_creator(d, profile), -_created(d).timestamp())
+        )
+        docs = pool[offset : offset + limit]
+
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
     rows = [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
     # The list used to be a bare array capped at 200 with no way to know
@@ -15472,7 +15673,10 @@ async def campaign_filters(
     live brief in it is a filter whose only outcome is an empty list.
     """
     await _expire_stale_campaigns()
-    base = {"status": {"$in": list(_LIVE_STATUSES)}}
+    # Public only. A private brief's neighbourhood showing up as a filter
+    # option would announce its existence to everyone the privacy is for —
+    # and an invited creator losing one dropdown entry costs nothing.
+    base = {"status": {"$in": list(_LIVE_STATUSES)}, **PUBLIC_CAMPAIGN_QUERY}
     areas = await db.campaigns.distinct("area", base)
     categories = await db.campaigns.distinct("category", base)
     cities = await db.campaigns.distinct("city", base)
@@ -15541,9 +15745,14 @@ async def get_campaign(
     if is_brand_side(user):
         if doc.get("brand_id") != _brand_scope(user):
             raise HTTPException(status_code=404, detail="Campaign not found")
-    elif user["role"] != "admin" and doc.get("status") not in _LIVE_STATUSES:
+    elif user["role"] != "admin":
         # Creators can only view live/upcoming campaigns. Admins see anything.
-        raise HTTPException(status_code=404, detail="Campaign not found")
+        if doc.get("status") not in _LIVE_STATUSES:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        # A private brief answers 404, not 403 — whether it exists is itself
+        # what the privacy protects. Same reasoning as _own_campaign_or_404.
+        if not await _creator_may_see(doc, ObjectId(user["_id"])):
+            raise HTTPException(status_code=404, detail="Campaign not found")
 
     brand_map = await _load_brand_map([doc["brand_id"]])
     payload = _serialize_campaign(doc, brand_map.get(doc["brand_id"]))
@@ -15655,6 +15864,12 @@ async def apply_to_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     creator_oid = ObjectId(user["_id"])
+
+    # Invite-only means invite-only at the API, not in the UI: a private brief
+    # takes pitches solely from creators holding an invitation (or an existing
+    # application, which the duplicate check below turns into its own 409).
+    if not await _creator_may_see(campaign, creator_oid):
+        raise HTTPException(status_code=404, detail="Campaign not found")
 
     # Verification has to gate something, or the 48-hour review is decoration.
     # Browsing stays open to everyone — a creator deciding whether this is worth
@@ -15981,7 +16196,9 @@ async def public_campaign_preview(limit: int = 6):
 
     docs = (
         await db.campaigns.find(
-            {"status": "open", "brand_id": {"$in": verified_ids}}
+            # Public only — this is the open internet, which is the audience
+            # a private brief is private *from*.
+            {"status": "open", "brand_id": {"$in": verified_ids}, **PUBLIC_CAMPAIGN_QUERY}
         )
         .sort("created_at", -1)
         .to_list(length=limit)
@@ -16012,7 +16229,7 @@ async def public_campaign_preview(limit: int = 6):
     return {
         "campaigns": out,
         "total_open": await db.campaigns.count_documents(
-            {"status": "open", "brand_id": {"$in": verified_ids}}
+            {"status": "open", "brand_id": {"$in": verified_ids}, **PUBLIC_CAMPAIGN_QUERY}
         ),
     }
 
@@ -16602,6 +16819,10 @@ async def public_campaign_page(campaign_id: str, request: Request):
     campaign = await db.campaigns.find_one({"_id": oid})
     if not campaign or campaign.get("status") not in LIVE_CAMPAIGN_STATUSES:
         raise HTTPException(status_code=404, detail="That brief isn't available.")
+    # A private brief has no public page at all — not a login wall, a 404, so
+    # the link says nothing about whether the campaign exists.
+    if _is_private(campaign):
+        raise HTTPException(status_code=404, detail="That brief isn't available.")
 
     brand_profile = await db.brand_profiles.find_one({"user_id": campaign["brand_id"]}) or {}
     if not brand_profile.get("verified"):
@@ -16974,7 +17195,10 @@ async def public_brand_page(brand_id: str, request: Request):
 
     campaigns = (
         await db.campaigns.find(
-            {"brand_id": oid, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)}}
+            # The page is public, so its brief shelf is too. A brand's private
+            # briefs are its own business — literally the feature.
+            {"brand_id": oid, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
+             **PUBLIC_CAMPAIGN_QUERY}
         )
         .sort("created_at", -1)
         .to_list(length=24)
@@ -17006,7 +17230,9 @@ async def public_sitemap():
     ]
     campaigns = (
         await db.campaigns.find(
-            {"brand_id": {"$in": brand_ids}, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)}},
+            {"brand_id": {"$in": brand_ids}, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
+             # "Not indexable" starts with not being listed for indexing.
+             **PUBLIC_CAMPAIGN_QUERY},
             {"_id": 1, "updated_at": 1},
         ).to_list(length=5000)
         if brand_ids

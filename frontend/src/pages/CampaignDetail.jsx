@@ -10,6 +10,7 @@ import {
     IndianRupee,
     Info,
     Loader2,
+    Lock,
     MapPin,
     Send,
     ShieldCheck,
@@ -25,6 +26,8 @@ import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
+import { isPrivate } from "@/lib/visibility";
+import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
@@ -535,6 +538,17 @@ export default function CampaignDetail() {
                         avatarSize="h-6 w-6"
                         className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
                     />
+                    {/* Anyone reading a private brief was invited onto it —
+                        the pill is the page saying so. */}
+                    {isPrivate(campaign) && (
+                        <span
+                            data-testid={VISIBILITY.badge(campaign.id)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+                        >
+                            <Lock className="h-3 w-3" />
+                            Invite-only
+                        </span>
+                    )}
                 </div>
 
                 <h1
@@ -548,11 +562,15 @@ export default function CampaignDetail() {
                     deciding whether to give up a day is deciding partly on who
                     they will be dealing with when something goes wrong. */}
                 <div className="mt-5 flex flex-wrap items-center gap-3">
-                    <ShareButton
-                        campaignId={campaign.id}
-                        title={campaign.title}
-                        summary={campaign.deliverables}
-                    />
+                    {/* No share on a private brief: its /c/ page 404s by
+                        design, so the button would copy a dead link. */}
+                    {!isPrivate(campaign) && (
+                        <ShareButton
+                            campaignId={campaign.id}
+                            title={campaign.title}
+                            summary={campaign.deliverables}
+                        />
+                    )}
                     <ExecutionBadge campaign={campaign} audience="creator" />
                     <ExecutionNote campaign={campaign} audience="creator" className="min-w-0" />
                 </div>
