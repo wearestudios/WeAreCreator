@@ -180,6 +180,14 @@ def _documented_variables():
     return set(re.findall(r"^\s*#?\s*([A-Z_][A-Z0-9_]*)=", ENV_EXAMPLE.read_text(), re.M))
 
 
+# Standalone operator tools that happen to live in backend/ but are not the
+# app. `.env.example` documents how to *configure the running service*, so a
+# one-off script's input is not a gap in it — and CHECK_PASSWORD in particular
+# must never appear there, since the file is copied to .env and a password does
+# not belong in one.
+_NOT_APP_MODULES = {"diagnose_admin_login.py"}
+
+
 def _variables_read_by_the_backend():
     """Every literal os.environ read across the backend's own modules.
 
@@ -187,7 +195,7 @@ def _variables_read_by_the_backend():
     and `os.getenv("X")` are all reads, and a regex catches some of them.
     """
     found = set()
-    for path in BACKEND_ROOT.glob("*.py"):
+    for path in (p for p in BACKEND_ROOT.glob("*.py") if p.name not in _NOT_APP_MODULES):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if (

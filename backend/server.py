@@ -2075,6 +2075,122 @@ def _simulation_allowed() -> bool:
     return env in ("dev", "development", "local", "test")
 
 
+def _aisensy_configured() -> bool:
+    """Whether anything at all is set up to really send WhatsApp messages.
+
+    Deliberately `or`, not `and`, even though `_send_aisensy_otp` needs both
+    before it will send: this reads as "is there any sign real delivery is
+    wired up here", and it gates the fixed test code. Being too strict costs
+    somebody a confusing staging setup; being too loose sends a code everybody
+    knows to a real phone.
+    """
+    return bool(
+        os.environ.get("AISENSY_API_KEY", "").strip()
+        or os.environ.get("AISENSY_CAMPAIGN_NAME", "").strip()
+    )
+
+
+# A code that never changes turns "read the OTP out of the Railway log" into
+# "type 123456", which is the difference between testing signup once and
+# testing it twenty times. It is also, obviously, a login bypass for anybody
+# who knows the number — so it is fenced in on four sides, and every one of
+# them has to be open before a fixed code is used.
+_OTP_TEST_CODE_RE = re.compile(r"^\d{6}$")
+
+# Only the names that mean production. Not `_is_production()`, which treats an
+# unset APP_ENV as production too — that is the right default for deciding
+# whether to warn about a missing admin account, but it would refuse the fixed
+# code on a staging box labelled APP_ENV=staging, which is exactly where this
+# is meant to be usable.
+_PRODUCTION_ENV_NAMES = ("production", "prod", "live")
+
+
+def _fixed_test_otp_refusal() -> Optional[str]:
+    """Why OTP_TEST_CODE must not be honoured, or None if it may be.
+
+    Returns None when the variable is unset — there is nothing to refuse.
+    Split out from `_fixed_test_otp` so both the startup warning and the tests
+    can ask the question without a side effect.
+    """
+    raw = os.environ.get("OTP_TEST_CODE", "").strip()
+    if not raw:
+        return None
+
+    if not _OTP_TEST_CODE_RE.match(raw):
+        return (
+            "it is not six digits, and the form and the WhatsApp template both "
+            "assume a 6-digit code"
+        )
+    env = os.environ.get("APP_ENV", os.environ.get("ENV", "")).strip().lower()
+    if env in _PRODUCTION_ENV_NAMES:
+        return f"APP_ENV/ENV is {env!r}"
+    if _aisensy_configured():
+        return (
+            "AiSensy is configured, so codes are really being delivered to real "
+            "phones — a fixed one would be a login bypass"
+        )
+    if not _simulation_allowed():
+        return "OTP simulation is not permitted in this environment"
+    return None
+
+
+def _fixed_test_otp() -> Optional[str]:
+    """The fixed code to issue instead of a random one, or None.
+
+    Loud on both branches on purpose. When it is refused that is a
+    misconfiguration somebody needs to see; when it is used, every single OTP
+    says so, because the failure mode this is guarding against is a staging
+    setting quietly riding along into production.
+    """
+    raw = os.environ.get("OTP_TEST_CODE", "").strip()
+    if not raw:
+        return None
+
+    refusal = _fixed_test_otp_refusal()
+    if refusal:
+        logger.error(
+            "OTP_TEST_CODE is set but is being IGNORED because %s. A random code "
+            "was issued instead. Unset OTP_TEST_CODE to silence this.",
+            refusal,
+        )
+        return None
+
+    logger.warning(
+        "FIXED TEST OTP in use — never enable in production. Every code issued "
+        "from this process is the same one, so anybody who knows a phone number "
+        "can sign in as them. Unset OTP_TEST_CODE before this environment is "
+        "reachable by anyone else."
+    )
+    return raw
+
+
+def warn_about_fixed_test_otp() -> None:
+    """Say at boot whether OTP_TEST_CODE is on, so it can't ride along unseen.
+
+    Called from the startup event rather than from `validate_environment()`,
+    which runs at import before these helpers are defined. The point is that
+    the state is announced once per deploy, in the first few lines of the log,
+    where somebody reading a deploy notices it — rather than only in the middle
+    of a request nobody is watching.
+    """
+    raw = os.environ.get("OTP_TEST_CODE", "").strip()
+    if not raw:
+        return
+    refusal = _fixed_test_otp_refusal()
+    if refusal:
+        logger.error(
+            "OTP_TEST_CODE is set but will be IGNORED because %s. Every code will "
+            "be random. Unset it to silence this.",
+            refusal,
+        )
+    else:
+        logger.warning(
+            "FIXED TEST OTP is ENABLED — never enable in production. Every OTP "
+            "this process issues will be the same fixed code. This must not be "
+            "set anywhere real users can sign in."
+        )
+
+
 # Every OTP refusal the client has to behave differently about carries a code,
 # not just a sentence. The prose is for the person; the code is for the form,
 # which has to decide whether to start a countdown, offer a resend, or send
@@ -2492,7 +2608,14 @@ async def request_otp(payload: OtpRequestInput):
         )
 
     # Generate + send -----------------------------------------------------
-    code = f"{_secrets.randbelow(1_000_000):06d}"
+    # The fixed test code replaces the *value* and nothing else: it is hashed,
+    # stored, expired, counted and locked out exactly like a random one, so the
+    # TTL, the attempt limit and both rate limits stay on and stay testable.
+    # There is deliberately no shortcut in the verify path — a fixed code is
+    # accepted there because it is the code that was issued, not because
+    # anything checks for it.
+    fixed_code = _fixed_test_otp()
+    code = fixed_code or f"{_secrets.randbelow(1_000_000):06d}"
     if payload.name:
         display_name = payload.name
     elif existing_user:
@@ -2525,6 +2648,12 @@ async def request_otp(payload: OtpRequestInput):
         "mode": mode,
         "resend_available_in": cooldown,
         "expires_in": _otp_ttl(),
+        # Says only *that* a fixed code is in force, never what it is. The
+        # screen needs to explain why the same six digits keep working; it does
+        # not need to be told them, and a response body is the one place a code
+        # must never appear — it is what a browser extension, a proxy log or a
+        # screenshot picks up.
+        "test_mode": bool(fixed_code),
     }
 
 
@@ -15058,6 +15187,11 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
+    # First, before any of the slow work: whether this process will hand out a
+    # fixed login code. It belongs at the top of the deploy log, not buried
+    # under index maintenance.
+    warn_about_fixed_test_otp()
+
     # users
     # NOTE: partial-unique indexes on email + phone because creators/brands now
     # sign up with phone only (email may be null), and admins have email but

@@ -144,11 +144,16 @@ export default function OtpForm({
             // The server's number, not ours.
             setCooldown(res.resend_available_in || 30);
             setNotice(
-                res.mode === "simulation"
-                    ? "Simulation mode — the code is in the server log, not on WhatsApp."
-                    : isResend
-                      ? "New code sent."
-                      : "Code sent.",
+                // Most specific first. `test_mode` implies simulation, so the
+                // plain simulation notice would otherwise win and send somebody
+                // to the log to read a code they were told at setup.
+                res.test_mode
+                    ? "Test mode — this environment issues one fixed code. Never enabled in production."
+                    : res.mode === "simulation"
+                      ? "Simulation mode — the code is in the server log, not on WhatsApp."
+                      : isResend
+                        ? "New code sent."
+                        : "Code sent.",
             );
         },
         [applyFailure, normalized, onRequest, phoneProblem],

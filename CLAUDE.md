@@ -72,6 +72,36 @@ matching English means a copy edit breaks a login screen:
 - `locked_out` is raised at two sites, before the comparison and after the
   decrement, or the fifth wrong code reads as a sixth.
 
+### The fixed test code
+
+`OTP_TEST_CODE` issues one fixed six-digit code for every request, so testing
+signup doesn't mean reading a code out of the deploy log each time. It is a
+login bypass for anyone who knows a phone number, so it is fenced on four
+sides and **all four must be open**: the value is six digits, `APP_ENV`/`ENV`
+is not `production|prod|live`, no AiSensy credential is set, and
+`_simulation_allowed()`. Refusal is logged as an error, use is logged as a
+warning on *every* code, and `warn_about_fixed_test_otp()` announces the state
+at boot — the failure this guards against is a staging setting riding quietly
+into production.
+
+- **The production check is independent of `_simulation_allowed()`**, which
+  returns true for `ALLOW_OTP_SIMULATION=true` whatever `APP_ENV` says. Leaning
+  on it alone would let `APP_ENV=production ALLOW_OTP_SIMULATION=true` hand out
+  a fixed code; a unit test pins exactly that combination.
+- It is deliberately **not** `_is_production()`, which reads an unset `APP_ENV`
+  as production. That is right for warning about a missing admin account and
+  wrong here — it would refuse the code on a box labelled `APP_ENV=staging`,
+  which is where this is meant to work.
+- **Only the value is fixed, never the safeguards.** The code is hashed,
+  stored, expired, counted and locked out exactly like a random one, and
+  `verify_otp` has no branch for it — it is accepted there because it is the
+  code that was issued. TTL, resend cooldown, hourly limit and attempt lockout
+  all stay on and stay testable; unit tests assert the absence of a shortcut.
+- The response carries `test_mode` as a **boolean and never the code** — a
+  response body is the one place a live code must not appear. `OtpForm` reads
+  it before the plain simulation notice, which is less specific and would
+  otherwise send somebody to the log for a code they already know.
+
 Validation is inline and fires on blur, not on submit: `validatePhone` names
 the three distinct problems (no country code, too short, not an Indian mobile)
 rather than answering all of them with "invalid". A plain-string `detail` still
