@@ -611,7 +611,7 @@ export default function CampaignDetailPage() {
                                                         </span>
                                                         <StatePill state={a.state} />
                                                         <Link
-                                                            to={`/admin/collaborations/${a.collaboration_id}`}
+                                                            to={`/admin/applications/${a.collaboration_id}`}
                                                             className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                                                         >
                                                             Open

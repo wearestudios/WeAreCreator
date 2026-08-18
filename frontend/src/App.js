@@ -35,6 +35,7 @@ import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
 import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
 import AdminBrandDetail from "@/components/admin/BrandDetailPage";
 import AdminCollaborationDetail from "@/components/admin/CollaborationDetailPage";
+import ApplicationDetail from "@/components/application/ApplicationDetail";
 import ManagerHome from "@/pages/ManagerHome";
 import ManagerCampaign from "@/pages/ManagerCampaign";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
@@ -150,6 +151,18 @@ function App() {
                             }
                         />
                         <Route
+                            path="/brand/applications/:id"
+                            element={
+                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
+                                    <ApplicationDetail
+                                        backTo="/brand/dashboard"
+                                        backLabel="Dashboard"
+                                        standalone
+                                    />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
                             path="/brand/creators"
                             element={
                                 <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
@@ -222,6 +235,25 @@ function App() {
                             <Route
                                 path="collaborations/:id"
                                 element={<AdminCollaborationDetail />}
+                            />
+                            {/* One application, on its own page. Same
+                                component as the brand's route below — the two
+                                consoles reading one application through one
+                                implementation is what stops them describing it
+                                differently. */}
+                            <Route
+                                path="applications/:id"
+                                element={
+                                    <ApplicationDetail
+                                        backTo="/admin/campaigns"
+                                        backLabel="Campaigns"
+                                        crumbs={[
+                                            { label: "Console", to: "/admin" },
+                                            { label: "Applications" },
+                                        ]}
+                                        entityLinks
+                                    />
+                                }
                             />
                             <Route path="audit" element={<AuditRoute />} />
                             {/* A bad path under /admin lands on the console

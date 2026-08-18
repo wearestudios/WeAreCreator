@@ -454,9 +454,16 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                                 className="aspect-square h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
                             />
                         )}
-                        <span className="font-serif text-2xl leading-tight">
+                        {/* The name is the way in to the application's own
+                            page — the board answers "who applied", that screen
+                            answers "what do I do about this one". */}
+                        <Link
+                            to={`/brand/applications/${a.id}`}
+                            data-testid={`applicant-open-${a.id}`}
+                            className="font-serif text-2xl leading-tight transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        >
                             {c.name || "Creator"}
-                        </span>
+                        </Link>
                         <StatePill state={a.state} />
                     </div>
 

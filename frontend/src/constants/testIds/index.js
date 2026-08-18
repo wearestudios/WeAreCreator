@@ -12,6 +12,7 @@
 //   3. Re-export here: `export * from './<feature>';`
 
 export * from './admin';
+export * from './application';
 export * from './auth';
 export * from './brand';
 export * from './dense';

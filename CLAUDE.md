@@ -434,6 +434,53 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+## One application, on its own screen
+
+`components/application/ApplicationDetail.jsx`, rendered at **two routes off one
+component**: `/admin/applications/:id` and `/brand/applications/:id`. Sharing it
+is the point — the admin and the brand used to read the same collaboration
+through different endpoints and describe it differently, which is how an
+approved application went on showing as pending in one console and approved in
+the other.
+
+- `GET /applications/{id}` serves both. Access is `_note_readable_collab_or_404`
+  — the same three doors as the work notes the screen embeds, a 404 behind all
+  of them — and the creator block goes through `_brand_visible_creator`, so the
+  shared payload carries no contact detail for either role.
+- **The client never asks "am I an admin".** Every action arrives in `actions`,
+  decided server-side, so neither console offers a button the API will refuse.
+  A unit test greps the component for role checks.
+- `_NEXT_ACTION` is one table saying who is waited on at each state, and
+  `_lifecycle_for` ships the whole ladder with the response. The status bar
+  draws what it is given; rebuilding `COLLAB_STATE_ORDER` in the client would be
+  a second copy of the state machine to keep in step.
+- An exit (`declined`, `cancelled`) is **the bar stopping, not an eleventh
+  step** — it is said in words rather than drawn as a box.
+
+### What a brief pays, at the fee step
+
+`_resolve_agreed_amount(campaign, supplied)` is the only place that decides, and
+**both writers go through it** — the admin's `advance_collaboration` and the
+brand's `brand_record_agreed_amount`. Two paths to one state is how two states
+drift apart.
+
+- `negotiated` — an amount is **required**; there is no fee until somebody
+  agrees one. The UI disables the button rather than producing a 422.
+- `fixed` — prefilled from `budget_per_creator` and **locked**. A supplied
+  figure is accepted only if it matches, so a stale form cannot rewrite a
+  commercial per creator.
+- `barter` — **no amount, and `None` rather than `0`**. Zero reads as "agreed,
+  nothing" on every surface that shows money.
+
+This step used to demand a figure whatever the campaign was, so a **barter
+collaboration could never leave `accepted`** — and `AgreedAmountPayload.agreed_amount`
+is now optional for that reason: the model cannot see the campaign, so it must
+not decide.
+
+After the fee, **the next action is the creator's** — they book, or on a
+`personal_table` they pick a time inside the window. Both notifications say so;
+neither quotes a rupee figure on a barter brief.
+
 ## Content performance
 
 `content_url` was collected on every delivery and read by nobody. It is the

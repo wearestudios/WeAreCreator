@@ -831,7 +831,10 @@ class AgreedAmountPayload(BaseModel):
     up in the audit log and, when supplied, in the work notes thread.
     """
 
-    agreed_amount: float = Field(ge=0)
+    # Optional because a barter brief has no figure to send. Which of the three
+    # kinds may — or must — carry one is decided by `_resolve_agreed_amount`
+    # against the campaign, not by this model, which cannot see it.
+    agreed_amount: Optional[float] = Field(default=None, ge=0)
     note: Optional[str] = Field(default=None, max_length=1000)
 
 
@@ -6790,7 +6793,11 @@ async def brand_record_agreed_amount(
             ),
         )
 
-    amount = round(float(payload.agreed_amount), 2)
+    # The same resolver the admin's advance path uses, so the two cannot
+    # disagree about what a negotiated brief requires or a barter one refuses.
+    # This used to take any float, which meant barter was unreachable here too
+    # and a fixed fee could be quietly rewritten per creator.
+    amount = _resolve_agreed_amount(campaign, payload.agreed_amount)
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": state},  # precondition, never a blind write
@@ -6830,7 +6837,11 @@ async def brand_record_agreed_amount(
                 "author_id": ObjectId(user["_id"]),
                 "author_name": user.get("name"),
                 "author_role": user.get("role"),
-                "body": f"Agreed ₹{amount:,.0f}. {payload.note.strip()}",
+                "body": (
+                    f"Agreed ₹{amount:,.0f}. {payload.note.strip()}"
+                    if amount is not None
+                    else f"Barter agreed. {payload.note.strip()}"
+                ),
                 "created_at": now,
             }
         )
@@ -6838,9 +6849,12 @@ async def brand_record_agreed_amount(
         collab["creator_id"],
         "commercial_agreed",
         title="Your fee has been agreed",
+        # Whose move it is now, said plainly: after this the creator books,
+        # and a barter brief has no figure to put in front of them.
         body=(
-            f"₹{amount:,.0f} agreed for “{campaign.get('title')}”. "
-            "You can book your slot now."
+            (f"₹{amount:,.0f} agreed" if amount is not None else "Barter confirmed")
+            + f" for “{campaign.get('title')}”. "
+            + _next_action({"state": "commercial_agreed"}, campaign)["detail"]
         ),
         link="/dashboard",
     )
@@ -6937,6 +6951,173 @@ def _previous_collab_state(current: str) -> Optional[str]:
 # Steps only the brand may take. The admin console shows them as waiting on the
 # brand rather than offering an Advance button that bypasses the buyer.
 _BRAND_OWNED_TRANSITIONS = {"accepted", "content_approved"}
+
+
+# Who has to do something next, and what. One table, read by every surface —
+# the admin's application screen, the brand's, and the creator's — so they
+# cannot describe the same collaboration differently. The applicant board and
+# the console once disagreed about whether an approved application was still
+# pending; that was two places deciding the same thing separately.
+#
+# `owner` is who is being waited on, which is not always who may write the
+# next state: at `slot_booked` we are waiting for the shoot to happen, and the
+# record is then updated by whoever is at the door.
+_NEXT_ACTION = {
+    "applied": ("admin", "Approve the profile", "We check the creator before any brand sees them."),
+    "verified": ("brand", "Accept or decline", "Approved by us. The brand decides."),
+    "accepted": ("admin", "Agree the amount", "Record what was negotiated offline."),
+    "commercial_agreed": ("creator", "Book a slot", "The creator picks their place."),
+    "slot_booked": ("creator", "Turn up", "Attendance is marked on the day."),
+    "attended": ("creator", "Submit the content", "Links to what they published."),
+    "content_submitted": ("brand", "Approve or request changes", "The brand reviews the content."),
+    "content_approved": ("admin", "Move into payment", "Raise the payout."),
+    "in_payment": ("admin", "Record the payout", "Mark it paid to close this out."),
+    "closed": (None, "Nothing — this is finished", ""),
+    "declined": (None, "Nothing — the brand passed", ""),
+    "cancelled": (None, "Nothing — this was cancelled", ""),
+}
+
+
+def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
+    """What has to happen next on this collaboration, and whose job it is."""
+    state = collab.get("state", "applied")
+    owner, label, detail = _NEXT_ACTION.get(state, (None, "—", ""))
+
+    # A personal table is a window the creator picks a time inside; a launch
+    # has one time everybody shares. Same step, different instruction, and the
+    # creator is the one who has to act on the difference.
+    if state == "commercial_agreed" and (campaign or {}).get("campaign_type") == "personal_table":
+        label = "Pick a time"
+        detail = "The creator chooses a time inside the campaign's window."
+
+    return {
+        "state": state,
+        "owner": owner,
+        "label": label,
+        "detail": detail,
+        "is_final": state in TERMINAL_COLLAB_STATES,
+    }
+
+
+def _lifecycle_for(collab: dict, campaign: Optional[dict] = None) -> dict:
+    """The whole ladder plus where this one stands — what a status bar draws.
+
+    Every step ships with the response rather than being rebuilt in the client,
+    for the same reason `_next_action` is one table: two implementations of a
+    state machine drift, and the drift shows up as a screen confidently telling
+    somebody the wrong thing.
+    """
+    state = collab.get("state", "applied")
+    try:
+        current_index = COLLAB_STATE_ORDER.index(state)
+    except ValueError:
+        current_index = -1  # declined / cancelled are not on the ladder
+
+    steps = []
+    for i, step in enumerate(COLLAB_STATE_ORDER):
+        owner, label, _ = _NEXT_ACTION.get(step, (None, step, ""))
+        steps.append(
+            {
+                "state": step,
+                "owner": owner,
+                "action": label,
+                "done": current_index >= 0 and i < current_index,
+                "current": i == current_index,
+            }
+        )
+
+    return {
+        "steps": steps,
+        "current": state,
+        "current_index": current_index,
+        # An exit is not a step on the bar; it is the bar stopping.
+        "exited": state in TERMINAL_COLLAB_STATES and state != "closed",
+        "next_action": _next_action(collab, campaign),
+    }
+
+
+def _commercial_for(campaign: dict, collab: dict) -> dict:
+    """What this collaboration pays, and what the fee step may ask for.
+
+    Three kinds of money need three different forms, and the server decides
+    which rather than the client inferring it from a budget that a barter brief
+    still carries (it keeps whatever it was posted with, so an admin switching
+    it back is not lossy).
+    """
+    ctype = _compensation_type(campaign)
+    budget = campaign.get("budget_per_creator")
+    return {
+        # The type goes with the figure, always and immediately: a rupee amount
+        # with no word beside it reads as cash, and a barter brief keeps the
+        # budget it was posted with.
+        "budget_per_creator": budget,
+        "compensation_type": ctype,
+        "quoted_rate": collab.get("quoted_rate"),
+        "agreed_amount": collab.get("agreed_amount"),
+        "agreed_at": _iso(collab.get("agreed_at")),
+        # How the fee field behaves: typed, fixed to the brief, or absent.
+        "amount_required": ctype == "negotiated",
+        "amount_locked": ctype == "fixed",
+        "amount_applies": ctype != "barter",
+        "locked_amount": budget if ctype == "fixed" else None,
+    }
+
+
+def _resolve_agreed_amount(campaign: dict, supplied) -> Optional[float]:
+    """The amount to record when a collaboration reaches `commercial_agreed`.
+
+    Barter used to be unreachable: this step demanded a figure, and a barter
+    brief has none, so such a collaboration could never leave `accepted`.
+    Fixed made an admin retype a number already on the brief, which is a
+    chance to type a different one.
+
+    Raises HTTPException so every caller refuses identically.
+    """
+    ctype = _compensation_type(campaign)
+
+    if ctype == "barter":
+        # A meal or a stay. Recording ₹0 would read as "agreed, nothing" on
+        # every surface that shows money; absent is the truth.
+        if supplied is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="This is a barter campaign — there is no amount to agree.",
+            )
+        return None
+
+    if ctype == "fixed":
+        budget = campaign.get("budget_per_creator")
+        if budget is None:
+            raise HTTPException(
+                status_code=422,
+                detail="This fixed-fee campaign has no budget set, so there is nothing to agree.",
+            )
+        # The brief's number is the fee. A supplied one is accepted only if it
+        # agrees, so a stale form cannot quietly rewrite the commercial.
+        if supplied is not None and round(float(supplied), 2) != round(float(budget), 2):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"This is a fixed-fee campaign — the fee is ₹{float(budget):,.0f} "
+                    "and is set by the brief, not per creator."
+                ),
+            )
+        return round(float(budget), 2)
+
+    if supplied is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Record the agreed amount before approving this — a negotiated "
+                "brief has no fee until somebody agrees one."
+            ),
+        )
+    amount = round(float(supplied), 2)
+    if amount <= 0:
+        raise HTTPException(
+            status_code=422, detail="The agreed amount has to be more than zero."
+        )
+    return amount
 
 # States a collaboration can be declined from: before the brand has taken the
 # creator on. After that it is a cancellation, which is a different admission.
@@ -11665,12 +11846,15 @@ async def advance_collaboration(
     update: dict = {"state": to_state, "updated_at": now}
 
     if to_state == "commercial_agreed":
-        if payload.agreed_amount is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Agreed amount is required when moving to commercial_agreed",
-            )
-        update["agreed_amount"] = round(float(payload.agreed_amount), 2)
+        # What the amount must be depends on how the brief pays. This used to
+        # demand a figure whatever the campaign was, which left every barter
+        # collaboration stuck at `accepted` for good.
+        agreed_campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+        if not agreed_campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        resolved = _resolve_agreed_amount(agreed_campaign, payload.agreed_amount)
+        if resolved is not None:
+            update["agreed_amount"] = resolved
         update["agreed_at"] = now
         update["agreed_by"] = ObjectId(user["_id"])
 
@@ -11754,11 +11938,21 @@ async def advance_collaboration(
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     campaign_title = (campaign or {}).get("title") or "your collaboration"
     if to_state == "commercial_agreed":
+        # The next move is the creator's, so say so — this is the message that
+        # turns "agreed" into somebody booking a slot. A barter brief has no
+        # amount to quote, and inventing ₹0 here would read as an insult.
+        agreed_value = update.get("agreed_amount")
+        booking = _next_action({"state": "commercial_agreed"}, campaign)["label"].lower()
+        terms = (
+            f"agreed at ₹{agreed_value:,.0f}"
+            if agreed_value is not None
+            else "confirmed — this one's a barter brief"
+        )
         await notify(
             collab["creator_id"],
             "commercial_agreed",
             title="Fee agreed",
-            body=f"{campaign_title} — agreed at ₹{update['agreed_amount']:,.0f}.",
+            body=f"{campaign_title} — {terms}. Over to you: {booking}.",
             link="/dashboard",
         )
     elif to_state == "slot_booked":
@@ -15166,6 +15360,107 @@ async def add_collaboration_note(
 
 
 api_router.include_router(notes_router)
+
+
+# --- One application, on its own ------------------------------------------
+#
+# Everything a single application needs, in one call, for one screen that the
+# admin and the brand both open. The two used to read the same collaboration
+# through different endpoints and describe it differently — an approved
+# application showing as pending in one and approved in the other — so the
+# lifecycle, the next action and the commercial terms are computed here, once,
+# and both consoles render what they are given.
+#
+# Access is `_note_readable_collab_or_404`: the same three doors as the work
+# notes this screen embeds, and a 404 behind all of them.
+
+application_router = APIRouter(prefix="/applications", tags=["applications"])
+
+
+@application_router.get("/{collab_id}")
+async def get_application(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """One application: where it stands, who it is, what it pays, what's next."""
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+
+    creator_user = await db.users.find_one({"_id": collab["creator_id"]})
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    payment = await db.payments.find_one({"collaboration_id": collab["_id"]})
+    brand_map = await _load_brand_map([campaign["brand_id"]])
+    brand = brand_map.get(campaign["brand_id"]) or {}
+
+    state = collab.get("state", "applied")
+    is_admin = (user or {}).get("role") == "admin"
+
+    return {
+        "id": str(collab["_id"]),
+        "state": state,
+        "pitch": collab.get("pitch"),
+        "applied_at": _iso(collab.get("created_at")),
+        "updated_at": _iso(collab.get("updated_at")),
+        "scheduled_at": _iso(collab.get("scheduled_at")),
+        "location_note": collab.get("location_note"),
+        "exit_reason": collab.get("exit_reason"),
+        "revision_note": collab.get("revision_note"),
+        "content_urls": collab.get("content_urls")
+        or ([collab["content_url"]] if collab.get("content_url") else []),
+        # The status bar, and whose move it is.
+        "lifecycle": _lifecycle_for(collab, campaign),
+        "commercial": _commercial_for(campaign, collab),
+        # The same allow-listed projection every brand-facing surface uses. An
+        # admin screen could show more, but this screen is one component and a
+        # phone number that only appears for one role is a phone number waiting
+        # to be rendered for the other.
+        "creator": _brand_visible_creator(profile, creator_user),
+        "campaign": {
+            "id": str(campaign["_id"]),
+            "title": campaign.get("title"),
+            "status": campaign.get("status"),
+            "campaign_type": campaign.get("campaign_type"),
+            "category": campaign.get("category"),
+            "area": campaign.get("area"),
+            "brand_id": str(campaign["brand_id"]),
+            "brand_name": brand.get("business_name") or brand.get("name"),
+            "creators_needed": int(campaign.get("creators_needed") or 1),
+            "event_date": _iso(campaign.get("event_date")),
+            "start_date": _iso(campaign.get("start_date")),
+            "end_date": _iso(campaign.get("end_date")),
+        },
+        "payment": (
+            {
+                "state": payment.get("state"),
+                "brand_invoice_amount": payment.get("brand_invoice_amount"),
+                "brand_invoice_state": payment.get("brand_invoice_state"),
+            }
+            if payment
+            else None
+        ),
+        # Decided server-side so neither console offers a button the API will
+        # refuse — the brand owns exactly two transitions and no more.
+        "actions": {
+            "can_approve_profile": is_admin and state == "applied",
+            "can_accept": state == "verified" and (is_admin or is_brand_side(user)),
+            "can_decline": state in ("applied", "verified", "accepted")
+            and (is_admin or is_brand_side(user)),
+            # The brand records the fee too — they are the ones who negotiated
+            # it. Mirrors POST /brand/collaborations/{id}/agreed-amount, which
+            # takes BRAND_ROLES and admin and accepts both `accepted` (agree
+            # it) and `commercial_agreed` (correct it).
+            "can_agree_commercial": (is_admin or is_brand_side(user))
+            and state in ("accepted", "commercial_agreed"),
+            "can_review_content": state == "content_submitted"
+            and (is_admin or is_brand_side(user)),
+            "can_advance": is_admin
+            and state not in TERMINAL_COLLAB_STATES
+            and _next_collab_state(state) not in _BRAND_OWNED_TRANSITIONS
+            and _next_collab_state(state) is not None,
+        },
+    }
+
+
+api_router.include_router(application_router)
 
 
 # --- Admin sample route ----------------------------------------------------
