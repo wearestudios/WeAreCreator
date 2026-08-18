@@ -712,6 +712,37 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
 - `lib/visibility.js` mirrors the reader (absent means public) and holds the
   two options' wording.
 
+### The page we send a venue owner
+
+`GET /for-brands`. The landing page speaks to both sides at once because it has
+to; this one has a single audience and asks once.
+
+**Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason** —
+the crawler that builds a WhatsApp preview does not run JavaScript, so Open
+Graph tags injected by React are tags nobody ever sees. Vercel must proxy
+`/for-brands` alongside the other two; the nav entry and the landing's brand
+toggle are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
+lands on the SPA's catch-all. It is in the sitemap: the one public page here
+somebody might search for rather than be sent.
+
+- **It loads nothing from a third party** — no font stylesheet, no script. The
+  requirement was "previews well and loads fast", and a render-blocking Google
+  Fonts request on a venue's wifi is the opposite. All three rendered pages
+  make the same trade.
+- **Every proof figure is counted, never written down.** `_for_brands_stats`
+  queries them, and each appears only above a floor: a strip reading "3
+  creators" is not proof, it is a reason to close the tab, and the honest move
+  at that size is silence rather than rounding up. With nothing to say, the
+  whole section is absent. "Campaigns run" counts campaigns that reached
+  `in_progress` or beyond — a count of posted briefs would be a count of
+  abandoned drafts. A test strips the markup and fails on any bare numeral in
+  the copy, which is where a "500+" would otherwise hide.
+- Claims stay inside what the operation can back: a test fails the page for
+  "every city", "pan-India", "guaranteed" and the rest, and requires the word
+  Bengaluru. Same rule as everywhere else here.
+- Two CTAs — hero and close — and they say **the same words**, so the page asks
+  once in two places rather than offering a choice of doors.
+
 ### The shareable page
 
 `GET /c/{id}` — a public brief, outside the `/api` prefix, no account needed.

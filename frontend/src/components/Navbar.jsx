@@ -79,7 +79,10 @@ const ROLE_LABEL = {
 const MARKETING_LINKS = [
     { href: "#how-it-works", label: "How it works", testId: "nav-how" },
     { href: "#why", label: "Why WeAre", testId: "nav-why" },
-    { to: "/signup?role=brand", label: "For brands →", testId: "nav-for-brands" },
+    // A real <a>, not a <Link>: /for-brands is server-rendered by the backend
+    // like /c/:id and /brands/:id, so the router must not intercept it — a
+    // client-side navigation would land on the SPA's catch-all instead.
+    { href: "/for-brands", label: "For brands →", testId: "nav-for-brands" },
 ];
 
 export const Navbar = () => {

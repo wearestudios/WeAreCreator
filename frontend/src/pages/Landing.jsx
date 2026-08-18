@@ -779,6 +779,11 @@ const CLOSING = {
         cta: "Post a campaign",
         to: "/signup?role=brand",
         testid: CLOSING_IDS.buttonBrand,
+        // The longer read, for somebody not ready to sign up yet. Brand mode
+        // only — a creator has no use for it, and the page's whole rule is
+        // that it asks once. A real <a>: /for-brands is server-rendered by
+        // the backend, so the router must not intercept it.
+        learnMore: { href: "/for-brands", label: "Or read how it works for brands" },
     },
 };
 
@@ -880,6 +885,15 @@ function ClosingCta() {
                                         <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                     </Button>
                                 </Link>
+                                {copy.learnMore && (
+                                    <a
+                                        href={copy.learnMore.href}
+                                        data-testid="closing-for-brands-link"
+                                        className="-my-2 min-h-[2.75rem] py-2 md:my-0 md:min-h-0 md:py-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background inline-flex items-center text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline"
+                                    >
+                                        {copy.learnMore.label}
+                                    </a>
+                                )}
                                 <a
                                     href={MANAGED_MAILTO}
                                     data-testid={CLOSING_IDS.managedLink}

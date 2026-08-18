@@ -19137,6 +19137,274 @@ async def public_brand_page(brand_id: str, request: Request):
     )
 
 
+# --- The page we send a venue owner ------------------------------------------
+#
+# This is the link that goes on WhatsApp to somebody who has never heard of us,
+# so it is **server-rendered like /c/{id} and /brands/{id}, and for the same
+# reason**: the crawler that builds the preview does not run JavaScript, and a
+# page whose Open Graph tags are injected by React previews as the generic site
+# card. It is also the page a person lands on, not a crawler-only shim.
+#
+# The landing page speaks to both sides at once because it has to. This one has
+# a single audience and asks once.
+
+
+FOR_BRANDS_PATH = "/for-brands"
+
+
+async def _for_brands_stats() -> dict:
+    """Real numbers for the proof strip, or nothing.
+
+    **Every figure is counted, never written down.** A hardcoded "500+
+    creators" is a claim that was true on the day somebody typed it, on a page
+    whose whole job is to be believed by a stranger.
+
+    Each is returned only when it is worth saying out loud. A proof strip
+    reading "3 creators" is not proof, it is a reason to close the tab — and
+    the honest move at that size is to say nothing rather than to round up.
+    """
+    creators = await db.creator_profiles.count_documents(
+        {"verification_status": "verified"}
+    )
+    # Campaigns that actually happened — somebody shot something. A count of
+    # posted briefs would include every draft anybody abandoned.
+    campaigns = await db.campaigns.count_documents(
+        {"status": {"$in": ["in_progress", "completed", "closed"]}}
+    )
+    cities = len(
+        [
+            c
+            for c in await db.creator_profiles.distinct(
+                "city", {"verification_status": "verified"}
+            )
+            if c
+        ]
+    )
+    out = {}
+    if creators >= 10:
+        out["creators"] = creators
+    if campaigns >= 5:
+        out["campaigns"] = campaigns
+    if cities >= 2:
+        out["cities"] = cities
+    return out
+
+
+_FOR_BRANDS_VALUE_PROPS = (
+    (
+        "Creators we have actually checked",
+        "Every creator on the platform is reviewed by a person before a brand "
+        "can see them \u2014 the account, the work, whether the audience looks "
+        "real. Where a creator has connected Instagram, the follower count and "
+        "engagement rate on their profile are read from Instagram itself, and "
+        "the ones we could not verify say so rather than quietly passing as "
+        "measured.",
+    ),
+    (
+        "The money settled before the shoot",
+        "The rate is agreed and recorded against the booking before anybody "
+        "turns up, so there is no negotiation on the day and no invoice "
+        "surprise afterwards. We collect from you and pay the creator, which "
+        "means one payment for you and one chase for us.",
+    ),
+    (
+        "An agency behind the platform",
+        "WeAre Studios runs campaigns for a living. Post the brief and run it "
+        "yourself, or hand it over and we will staff it, book the slots, stand "
+        "at the door on the day and send you the numbers afterwards. Same "
+        "platform either way \u2014 you choose per campaign, not per contract.",
+    ),
+)
+
+_FOR_BRANDS_STEPS = (
+    (
+        "Post your brief",
+        "What you want made, the budget per creator, the dates, and which days "
+        "and hours your venue can actually take people. Ten minutes.",
+    ),
+    (
+        "Review the shortlist",
+        "Creators apply, and we rank them against the brief \u2014 with the "
+        "reason on every card, so you can argue with it. Accept the ones you "
+        "want, or invite creators directly.",
+    ),
+    (
+        "They shoot at your venue",
+        "On slots they booked themselves, inside the windows you set. Your "
+        "campaign manager has the roster and the phone numbers; you get told "
+        "what changed.",
+    ),
+    (
+        "Approve, then see what it did",
+        "Turn on draft review and nothing is published until you have said yes "
+        "\u2014 or asked for a change. Afterwards, reach, engagement and cost "
+        "per thousand on one report.",
+    ),
+)
+
+
+def _for_brands_html(stats: dict, request_base: str = "") -> str:
+    """No framework, everything escaped, one CTA."""
+    e = html_escape
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    url = e(f"{_share_base()}{FOR_BRANDS_PATH}")
+    summary = (
+        "Post a brief and meet a shortlist of verified Bengaluru creators, or "
+        "hand the whole campaign to the WeAre team. Rates agreed before the "
+        "shoot, content approved before it goes live."
+    )
+    og_image = e(f"{app_base}/og-image.png")
+
+    props = "".join(
+        f'<li><h3>{e(title)}</h3><p>{e(body)}</p></li>'
+        for title, body in _FOR_BRANDS_VALUE_PROPS
+    )
+    steps = "".join(
+        f'<li><span class="n">{i + 1}</span><div><h3>{e(title)}</h3>'
+        f"<p>{e(body)}</p></div></li>"
+        for i, (title, body) in enumerate(_FOR_BRANDS_STEPS)
+    )
+
+    # Counted, never written down — and absent entirely when there is not
+    # enough to say. See `_for_brands_stats`.
+    proof = "".join(
+        f'<li><span class="fig">{stats[key]}</span>'
+        f'<span class="cap">{e(label)}</span></li>'
+        for key, label in (
+            ("creators", "verified creators"),
+            ("campaigns", "campaigns run"),
+            ("cities", "cities"),
+        )
+        if key in stats
+    )
+    proof_block = (
+        f'<section class="proof"><h2>Where we are today</h2>'
+        f'<ul class="figs">{proof}</ul>'
+        "<p class=\"note\">Counted from the platform, not rounded up. "
+        "Bengaluru first \u2014 that is where our team can stand at the door.</p>"
+        "</section>"
+        if proof
+        else ""
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>For brands \u2014 WeAre Creators</title>
+<meta name="description" content="{e(summary)}">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{url}">
+<meta property="og:title" content="Fill your venue with creators who actually turn up">
+<meta property="og:description" content="{e(summary)}">
+<meta property="og:image" content="{og_image}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Fill your venue with creators who actually turn up">
+<meta name="twitter:description" content="{e(summary)}">
+<meta name="twitter:image" content="{og_image}">
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.65 'Inter Tight',system-ui,-apple-system,sans-serif}}
+a{{color:inherit}}
+.wrap{{max-width:52rem;margin:0 auto;padding:3rem 1.5rem 4rem}}
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#F05D14}}
+h1{{font-family:Fraunces,Georgia,serif;font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);line-height:1.02;
+  letter-spacing:-.02em;margin:1rem 0 0}}
+h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1.5rem}}
+h3{{font-family:Fraunces,Georgia,serif;font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
+p{{margin:.6rem 0 0;color:rgba(245,241,236,.82)}}
+.sub{{margin-top:1.5rem;font-size:1.05rem;max-width:38rem}}
+section{{margin-top:4rem}}
+ul{{list-style:none;margin:0;padding:0}}
+.props li{{border-top:1px solid rgba(255,255,255,.1);padding:1.75rem 0}}
+.props li:last-child{{border-bottom:1px solid rgba(255,255,255,.1)}}
+.steps li{{display:flex;gap:1.25rem;padding:1.5rem 0;border-top:1px solid rgba(255,255,255,.1)}}
+.steps li:last-child{{border-bottom:1px solid rgba(255,255,255,.1)}}
+.n{{flex:none;width:2rem;height:2rem;display:grid;place-items:center;border-radius:999px;
+  border:1px solid rgba(240,93,20,.4);background:rgba(240,93,20,.12);color:#F05D14;
+  font-size:.8rem;font-variant-numeric:tabular-nums}}
+.expect{{border:1px solid rgba(240,93,20,.3);background:rgba(240,93,20,.08);border-radius:.5rem;
+  padding:1.5rem 1.6rem}}
+.expect p{{color:rgba(245,241,236,.92)}}
+.figs{{display:flex;flex-wrap:wrap;gap:2.5rem}}
+.fig{{display:block;font-family:Fraunces,Georgia,serif;font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
+.cap{{display:block;margin-top:.4rem;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:#9C938B}}
+.note{{margin-top:1.75rem;font-size:.85rem;color:#9C938B}}
+.cta{{margin-top:4rem;border-top:1px solid rgba(255,255,255,.1);padding-top:2.5rem}}
+.btn{{display:inline-flex;align-items:center;justify-content:center;min-height:3rem;padding:0 1.75rem;
+  border-radius:999px;background:#F05D14;color:#0B0A09;font-weight:500;text-decoration:none}}
+footer{{margin-top:3.5rem;color:#9C938B;font-size:.82rem;line-height:1.7}}
+footer a{{color:#C9C1B8}}
+</style>
+</head><body><div class="wrap">
+
+<p class="eyebrow">For brands \u00b7 Bengaluru</p>
+<h1>Fill your venue with creators who actually turn up.</h1>
+<p class="sub">
+  Two ways to work with us: post a brief yourself and pick from the creators who
+  apply, or hand the campaign to the WeAre team and we will run it end to end.
+  Either way the rate is agreed before the shoot and the content is yours to
+  approve before it goes live.
+</p>
+<p style="margin-top:2rem">
+  <a class="btn" href="{app_base}/signup?role=brand">Post a campaign</a>
+</p>
+
+<section>
+  <h2>Why brands use us</h2>
+  <ul class="props">{props}</ul>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <ul class="steps">{steps}</ul>
+</section>
+
+<section>
+  <div class="expect">
+    <h3>What happens after you sign up</h3>
+    <p>
+      We check your business details first \u2014 usually within a working day,
+      and you hear from us either way. You can write your first brief while you
+      wait; it goes in front of creators the moment you are verified. Expect the
+      first applications within a day or two of going live, and most of them
+      inside the first week. A brief with a cover image and a clear fee fills
+      faster than one without.
+    </p>
+  </div>
+</section>
+
+{proof_block}
+
+<div class="cta">
+  <a class="btn" href="{app_base}/signup?role=brand">Post a campaign</a>
+</div>
+
+<footer>
+  WeAre Creators is the platform WeAre Studios runs its campaigns on. Creators
+  are reviewed by our team before a brand can see them, and brands are checked
+  before a brief reaches a creator.
+  <br><a href="{app_base}/">Back to the main site</a>
+</footer>
+
+</div></body></html>"""
+
+
+@app.get(FOR_BRANDS_PATH, include_in_schema=False)
+async def for_brands_page(request: Request):
+    """The page we send a venue owner. No account, no API prefix."""
+    return Response(
+        content=_for_brands_html(await _for_brands_stats(), str(request.base_url)),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=600"},
+    )
+
+
 @app.get("/sitemap.xml", include_in_schema=False)
 async def public_sitemap():
     """Every public page, so "indexable" means something.
@@ -19162,7 +19430,10 @@ async def public_sitemap():
         else []
     )
 
-    urls = [(_brand_page_url(str(b)), None) for b in brand_ids]
+    # The one page here that is not about a specific brand or brief, and the
+    # only one a stranger might search for rather than be sent.
+    urls = [(f"{_share_base()}{FOR_BRANDS_PATH}", None)]
+    urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
 
     body = "".join(
