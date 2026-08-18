@@ -10,6 +10,9 @@ export const CREATOR_HOME = {
 	error: 'dashboard-error',
 	skeleton: 'creator-home-skeleton',
 	refresh: 'creator-home-refresh',
+	// The drawers below the live work.
+	tabs: 'creator-home-tabs',
+	tab: (v) => `creator-home-tab-${v}`,
 };
 
 export const CREATOR_HERO = {

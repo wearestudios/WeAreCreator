@@ -275,6 +275,33 @@ it takes:
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
 
+## The creator's home
+
+`pages/Dashboard.jsx` + `components/creator/`. The rule the layout answers to:
+**status, active work and the next action are visible without scrolling.**
+
+- The header opens with the photo at portrait size (`h-28` → `md:h-40`, the
+  monogram holding the same box), the verification badge, the handle, and the
+  three headline stats — lifetime earned (a one-shot `CountUp`), campaigns
+  completed, pending. Status banners and the completeness nudge sit directly
+  under it, outside any tab: a blocked account is not a section, it is the
+  situation.
+- **The live work never goes behind a tab.** Each active card leads with a
+  16:5 slice of the campaign's cover (`md:max-h-44` — aspect-ratio yields to
+  max-height, which is what stops a full-width card growing a 350px wall of
+  tint), the animated lifecycle tracker, the next action in plain words with
+  whose move it is, and **one** primary button — every action variant fills
+  the same `IDS.primary` slot.
+- Everything a creator consults rather than acts on — suggestions, past
+  pitches, the ledger — lives in Radix tabs below, each drawer keeping its own
+  `SafeSection`, the strip `overflow-x-auto` so three labels don't wrap and
+  eat the fold at 390px.
+- Motion is entrance-only (`Reveal` staggers by index, the tracker fills as
+  one stroke, nothing loops) and everything checks `prefers-reduced-motion` —
+  verified by emulation: under `reduce` the money's first paint is its final
+  value. `HomeSkeleton` mirrors the new arrangement (photo box, cover strip,
+  tab strip); CLS measured 0.0000 at 390 and 1280 with the payload delayed.
+
 ## What a creator says about themselves
 
 The suggestion lists were food and nothing but food — cafe, brunch, bakery,

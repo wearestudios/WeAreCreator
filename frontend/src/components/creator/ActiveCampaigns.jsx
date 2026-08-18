@@ -32,6 +32,7 @@ import {
     stageIndexFor,
 } from "./shared";
 import BrandAvatar from "@/components/BrandAvatar";
+import CampaignCover from "@/components/CampaignCover";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 
@@ -207,8 +208,26 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
             data-testid={IDS.card(collab.id)}
             whileHover={still ? undefined : { y: -2 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20 md:p-7 grain-surface"
+            className="overflow-hidden rounded-md border border-white/10 bg-card transition-colors duration-200 hover:border-white/20 grain-surface"
         >
+            {/* A slim slice of the campaign's own cover, so a card of work
+                reads as a place rather than a form. 16:5, not 16:9 — this is
+                a work card and the tracker below it is the point. */}
+            <CampaignCover
+                campaign={{
+                    id: collab.campaign_id,
+                    cover_image_url: collab.cover_image_url,
+                    brand_name: collab.brand_name,
+                    title: collab.campaign_title,
+                }}
+                ratio="aspect-[16/5]"
+                rounded="rounded-none"
+                // aspect-ratio yields to max-height: on a phone the strip is
+                // 16:5 of the card, on a desktop-width card it stops growing
+                // at 11rem instead of becoming a 350px wall of tint.
+                className="border-0 border-b md:max-h-44"
+            />
+            <div className="p-6 md:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                     <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -307,6 +326,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
                     )}
                 </div>
             )}
+            </div>
         </motion.li>
     );
 };

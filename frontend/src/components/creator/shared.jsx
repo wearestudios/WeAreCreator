@@ -281,13 +281,20 @@ export const CardSkeleton = () => (
 );
 
 export const HomeSkeleton = ({ testid }) => (
-    <div data-testid={testid} className="space-y-14">
+    <div data-testid={testid} className="space-y-10 md:space-y-12">
+        {/* The header: a photo the size the real one now is, beside the name,
+            with the earnings card on the right. */}
         <div className="grid gap-8 md:grid-cols-12">
             <div className="md:col-span-7">
                 <Skeleton className="h-3 w-28" />
-                <Skeleton className="mt-5 h-20 w-20 rounded-md" />
-                <Skeleton className="mt-5 h-10 w-3/4" />
-                <Skeleton className="mt-4 h-3 w-40" />
+                <div className="mt-5 flex items-center gap-5 md:gap-7">
+                    <Skeleton className="h-28 w-28 flex-none rounded-lg sm:h-32 sm:w-32 md:h-40 md:w-40" />
+                    <div className="min-w-0 flex-1">
+                        <Skeleton className="h-10 w-3/4" />
+                        <Skeleton className="mt-3 h-6 w-28 rounded-full" />
+                    </div>
+                </div>
+                <Skeleton className="mt-5 h-3 w-40" />
             </div>
             <div className="grid grid-cols-2 gap-4 md:col-span-5 md:grid-cols-1">
                 <Skeleton className="h-28 rounded-md" />
@@ -296,7 +303,15 @@ export const HomeSkeleton = ({ testid }) => (
         </div>
         <div className="space-y-4">
             <Skeleton className="h-3 w-36" />
-            <CardSkeleton />
+            {/* The active card leads with its cover strip now. */}
+            <div className="overflow-hidden rounded-md border border-white/10">
+                <Skeleton className="aspect-[16/5] w-full rounded-none" />
+                <CardSkeleton />
+            </div>
+        </div>
+        {/* The tab strip, and the first drawer's grid. */}
+        <div className="space-y-8">
+            <Skeleton className="h-12 w-full max-w-sm rounded-full" />
             <CardSkeleton />
         </div>
     </div>
