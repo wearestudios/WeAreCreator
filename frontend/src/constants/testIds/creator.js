@@ -132,6 +132,8 @@ export const CREATOR_SUBMIT_CONTENT = {
 // with the old single-shot onboarding form keep their exact values, so tests
 // written against them still find the same control.
 export const CREATOR_ONBOARDING = {
+	facebook: 'creator-onboarding-facebook',
+	about: 'creator-onboarding-about',
 	page: 'creator-onboarding-page',
 	skeleton: 'onboarding-skeleton',
 	error: 'onboarding-error',

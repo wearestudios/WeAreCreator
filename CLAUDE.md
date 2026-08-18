@@ -234,6 +234,56 @@ it takes:
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
 
+## What a creator says about themselves
+
+The suggestion lists were food and nothing but food — cafe, brunch, bakery,
+brewery, home chef — on a platform that accepts every category. That list told
+a fashion or gaming creator they were in the wrong place before they had typed
+anything. `CREATOR_TAXONOMY` is fifteen groups spanning every category, with
+the food terms kept *inside* the food group; `lib/taxonomy.js` mirrors it and a
+unit test fails if the two drift. `niches` and `genres` are still free text —
+this is a starting point, not an enum.
+
+**City is a closed list** (`INDIAN_CITIES`), because free text cannot be
+reconciled: "Bangalore", "bangalore", "Bengaluru " and "BLR" are four rows in a
+filter and one city in reality, so a brand filtering the directory found a
+fraction of the people in it. `_canonical_city` folds the aliases and 422s on
+anything else, naming what is allowed; an empty city is still allowed, because
+the profile is built over sittings and refusing it would block partial saves.
+The **neighbourhood stays free text and stays optional** — it is not in
+`_PROFILE_COMPLETENESS_FIELDS`, and neither is YouTube unless the creator says
+they post there.
+
+`about` is the one field on the form whose shape the creator chose. It is
+optional on purpose: putting it in completeness would drop every existing
+creator below 100% and silently un-submit them. `facebook_url` is optional for
+the same reason and is deliberately **not** in `CREATOR_PLATFORMS`, which would
+make it a completeness question for anyone who ticked it.
+
+### The address, and the pin
+
+Two things that look like one. `full_address` is what gets printed on a
+delivery label; `location_lat`/`location_lng`/`location_place_id` are what
+somebody navigates to. Places autocomplete lands on the street about as often
+as the building, so the pin is **draggable** — a precise-looking coordinate
+that is precisely wrong is worse than none.
+
+- Dragging moves **only the coordinates**. Reverse-geocoding the drag would
+  replace "2nd floor, above the pharmacy" with a street name, which is exactly
+  what a courier needed.
+- `REACT_APP_GOOGLE_MAPS_API_KEY` is read from the environment and never
+  hardcoded; a test greps the whole frontend for an `AIza…` literal. It is a
+  browser key, so referrer restrictions in the Google console are the actual
+  protection.
+- **Absent is a supported state**, the same shape as Instagram: `mapsConfigured()`
+  is false, no script is injected, the field is a plain textarea, and a saved
+  pin still shows as a static image and a Maps link. Verified by rendering with
+  no key — every field present, zero requests to Google.
+- **The pin is never brand-visible.** A coordinate on somebody's front door is
+  their home address to five decimal places. It is off the allow-list and named
+  in `BRAND_FORBIDDEN_CREATOR_FIELDS` so the leak test looks for it. `about` and
+  `facebook_url` *are* brand-visible — they were written to be read.
+
 ## Instagram stats
 
 Official numbers come from **"Instagram API with Instagram Login"**, never the

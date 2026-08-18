@@ -453,6 +453,77 @@ CreatorPlatform = Literal["instagram", "youtube"]
 CREATOR_PLATFORMS = ("instagram", "youtube")
 
 
+# What a creator makes and covers, offered as suggestions.
+#
+# These were food and nothing but food — cafe, brunch, bakery, brewery, home
+# chef — which is a list that tells a fashion or gaming creator this platform
+# is not for them before they have typed anything. We take creators of every
+# category, so the suggestions have to span every category, with the food
+# subcategories kept *inside* the food group rather than standing in for the
+# whole taxonomy.
+#
+# Grouped rather than flat because fifteen headings with subcategories under
+# them is scannable and ninety chips are not. The values stay lowercase free
+# text — `niches`/`genres` are not enums and a creator may still type their
+# own — so this is a starting point, not a constraint.
+CREATOR_TAXONOMY = (
+    ("Food & Drink", (
+        "food", "cafe", "brunch", "bakery", "fine dining", "street food",
+        "coffee", "desserts", "cocktails", "brewery", "home chef", "vegan",
+    )),
+    ("Fashion", ("fashion", "streetwear", "ethnic wear", "thrift", "styling", "luxury")),
+    ("Beauty", ("beauty", "skincare", "makeup", "haircare", "fragrance", "grooming")),
+    ("Travel", ("travel", "hotels", "weekend trips", "adventure", "solo travel", "budget travel")),
+    ("Fitness & Wellness", ("fitness", "gym", "yoga", "running", "nutrition", "mental health")),
+    ("Tech", ("tech", "gadgets", "phones", "apps", "ai", "photography gear")),
+    ("Gaming", ("gaming", "esports", "mobile gaming", "streaming", "game reviews")),
+    ("Home & Interiors", ("home", "interiors", "decor", "diy", "plants", "organisation")),
+    ("Parenting", ("parenting", "new parents", "kids activities", "family", "baby products")),
+    ("Finance", ("finance", "investing", "personal finance", "startups", "career")),
+    ("Art & Design", ("art", "design", "illustration", "crafts", "photography")),
+    ("Music", ("music", "singing", "instruments", "production", "gigs")),
+    ("Comedy", ("comedy", "sketch", "standup", "memes", "relatable")),
+    ("Automotive", ("automotive", "cars", "bikes", "ev", "reviews")),
+    ("Pets", ("pets", "dogs", "cats", "pet care")),
+)
+
+# Flat, for anything that needs to ask "is this a term we know".
+CREATOR_TAXONOMY_TERMS = tuple(
+    term for _, terms in CREATOR_TAXONOMY for term in terms
+)
+
+
+# The cities a creator can say they are in. A closed list because free text
+# cannot be reconciled: "Bangalore", "bangalore", "Bengaluru " and "BLR" are
+# four rows in a filter and one city in reality, and a brand filtering the
+# directory finds a quarter of the people each time.
+#
+# The product is Bengaluru-first, which is why it leads; the rest are open for
+# where we expand next rather than a claim to operate there today.
+INDIAN_CITIES = (
+    "Bengaluru",
+    "Mumbai",
+    "Delhi NCR",
+    "Hyderabad",
+    "Chennai",
+    "Pune",
+    "Kolkata",
+    "Ahmedabad",
+    "Jaipur",
+    "Chandigarh",
+    "Kochi",
+    "Goa",
+    "Lucknow",
+    "Indore",
+    "Coimbatore",
+    "Surat",
+    "Nagpur",
+    "Bhubaneswar",
+    "Guwahati",
+    "Dehradun",
+)
+
+
 class CreatorProfileUpdate(BaseModel):
     """Payload for the creator profile builder.
 
@@ -473,6 +544,13 @@ class CreatorProfileUpdate(BaseModel):
     # rather than a generic "links" bag, because completeness has to be able to
     # ask for the one that matches a platform they said they post on.
     youtube_url: Optional[str] = Field(default=None, max_length=300)
+    # Optional, like YouTube. Some creators' audience is on Facebook and
+    # nowhere else; asking for it costs nothing and not asking loses them.
+    facebook_url: Optional[str] = Field(default=None, max_length=300)
+    # In their own words. Everything else about a creator on this form is a
+    # field somebody else chose the shape of; this is the one place they get to
+    # say what they actually do.
+    about: Optional[str] = Field(default=None, max_length=1500)
     email: Optional[EmailStr] = None
     city: Optional[str] = Field(default=None, max_length=80)
     # `address` is the neighbourhood a brand filters on ("Indiranagar");
@@ -480,6 +558,16 @@ class CreatorProfileUpdate(BaseModel):
     # two fields rather than one overloaded one.
     address: Optional[str] = Field(default=None, max_length=500)
     full_address: Optional[str] = Field(default=None, max_length=500)
+    # The pin, from Google Places or dragged by the creator.
+    #
+    # The text address is what gets printed on a delivery label; this is what
+    # somebody actually navigates to. They are not the same thing and neither
+    # replaces the other — autocomplete routinely lands on the street rather
+    # than the building, which is exactly the error a courier cannot recover
+    # from at 9pm.
+    location_lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    location_lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_place_id: Optional[str] = Field(default=None, max_length=300)
     niches: list[str] = Field(default_factory=list, max_length=25)
     # What they make (food, travel, comedy) as opposed to `niches`, which is
     # what they cover for a brand (cafe, brunch). Kept apart because a brand
@@ -2934,11 +3022,16 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "instagram_handle": doc.get("instagram_handle"),
         "instagram_profile_url": doc.get("instagram_profile_url"),
         "youtube_url": doc.get("youtube_url"),
+        "facebook_url": doc.get("facebook_url"),
+        "about": doc.get("about"),
         "profile_image_url": doc.get("profile_image_url"),
         "email": doc.get("email"),
         "city": doc.get("city"),
         "address": doc.get("address"),
         "full_address": doc.get("full_address"),
+        "location_lat": doc.get("location_lat"),
+        "location_lng": doc.get("location_lng"),
+        "location_place_id": doc.get("location_place_id"),
         "niches": doc.get("niches") or [],
         "genres": doc.get("genres") or [],
         "platforms": doc.get("platforms") or [],
@@ -2969,6 +3062,60 @@ YOUTUBE_URL_RE = re.compile(
     r"^https?://(www\.|m\.)?(youtube\.com/(channel/|c/|user/|@)?[\w\-.]+|youtu\.be/[\w\-]+)/?",
     re.IGNORECASE,
 )
+
+
+# Spellings that are the same city. Free text let all of these into the
+# directory at once, so a brand filtering on Bengaluru found a fraction of the
+# creators actually in Bengaluru. Matching is case- and space-insensitive, so
+# only genuinely different words need a line here.
+_CITY_ALIASES = {
+    "bangalore": "Bengaluru",
+    "blr": "Bengaluru",
+    "bombay": "Mumbai",
+    "new delhi": "Delhi NCR",
+    "delhi": "Delhi NCR",
+    "gurgaon": "Delhi NCR",
+    "gurugram": "Delhi NCR",
+    "noida": "Delhi NCR",
+    "madras": "Chennai",
+    "calcutta": "Kolkata",
+    "cochin": "Kochi",
+    "trivandrum": "Kochi",
+    "poona": "Pune",
+    "baroda": "Ahmedabad",
+    "panaji": "Goa",
+    "panjim": "Goa",
+}
+
+_CITY_BY_KEY = {c.lower(): c for c in INDIAN_CITIES}
+
+
+def _canonical_city(raw: Optional[str]) -> Optional[str]:
+    """One spelling per city, or a refusal naming the ones we know.
+
+    A dropdown on the form is what stops most of this, but the form is not the
+    only way in — and a value that arrives by any other route still has to be
+    reconcilable, because "which creators are in Bengaluru" is the question the
+    directory exists to answer.
+
+    Clearing the field is allowed: the profile is built up over sittings and an
+    empty city is an unfinished one, not an invalid one.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return None
+    key = " ".join(value.lower().split())
+    if key in _CITY_BY_KEY:
+        return _CITY_BY_KEY[key]
+    if key in _CITY_ALIASES:
+        return _CITY_ALIASES[key]
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"We don't have {value!r} on the list yet. Pick the closest city — "
+            f"currently {', '.join(INDIAN_CITIES[:6])} and more."
+        ),
+    )
 
 
 def _clean_youtube_url(raw: Optional[str]) -> Optional[str]:
@@ -3771,14 +3918,27 @@ async def update_creator_profile(
         update["instagram_profile_url"] = (payload.instagram_profile_url or "").strip() or None
     if "youtube_url" in sent:
         update["youtube_url"] = _clean_youtube_url(payload.youtube_url)
+    if "facebook_url" in sent:
+        update["facebook_url"] = (payload.facebook_url or "").strip() or None
+    if "about" in sent:
+        update["about"] = (payload.about or "").strip() or None
     if "email" in sent:
         update["email"] = (payload.email or "").lower().strip() or None
     if "city" in sent:
-        update["city"] = (payload.city or "").strip() or None
+        update["city"] = _canonical_city(payload.city)
     if "address" in sent:
         update["address"] = (payload.address or "").strip() or None
     if "full_address" in sent:
         update["full_address"] = (payload.full_address or "").strip() or None
+    # The pin. Written as a set or not at all: half a coordinate pair is a
+    # point in the sea off Ghana, and a place_id with no coordinates is a
+    # lookup we would have to make on every read.
+    for key in ("location_lat", "location_lng", "location_place_id"):
+        if key in sent:
+            value = getattr(payload, key)
+            if isinstance(value, str):
+                value = value.strip() or None
+            update[key] = value
     if "niches" in sent:
         update["niches"] = [n.strip().lower() for n in payload.niches if n and n.strip()]
     if "genres" in sent:
@@ -5876,6 +6036,10 @@ _BRAND_VISIBLE_CREATOR_FIELDS = (
     "instagram_profile_url",
     "youtube_url",
     "youtube_handle",
+    "facebook_url",
+    # Their own description of themselves. This is what they wrote *for* a
+    # brand to read, so it is the one long-form field that belongs here.
+    "about",
     "follower_count",
     "follower_count_source",
     "follower_count_verified",
@@ -5904,6 +6068,12 @@ BRAND_FORBIDDEN_CREATOR_FIELDS = (
     "contact_email",
     "full_address",
     "address",
+    # A pin on somebody's front door is the address again, to five decimal
+    # places. The allow-list already keeps these out; naming them here is what
+    # makes the leak test look for them.
+    "location_lat",
+    "location_lng",
+    "location_place_id",
     "payout_upi",
     "payout_account_name",
     "pan",
@@ -5932,6 +6102,11 @@ def _brand_visible_creator(profile: Optional[dict], account: Optional[dict] = No
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
         "youtube_url": profile.get("youtube_url"),
+        "facebook_url": profile.get("facebook_url"),
+        # What they wrote about themselves, for a brand to read. The only
+        # long-form field on this surface, and the only one they chose the
+        # words of.
+        "about": profile.get("about"),
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),
         "engagement_rate": profile.get("engagement_rate"),
@@ -7326,6 +7501,12 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "phone": user.get("phone"),
         "instagram_handle": profile.get("instagram_handle"),
         "instagram_profile_url": profile.get("instagram_profile_url"),
+        "youtube_url": profile.get("youtube_url"),
+        "facebook_url": profile.get("facebook_url"),
+        # What they say about themselves, which is most of what a reviewer is
+        # actually judging — and was the one thing the review screen could not
+        # show, because nothing collected it.
+        "about": profile.get("about"),
         "profile_image_url": profile.get("profile_image_url"),
         "city": profile.get("city"),
         "address": profile.get("address"),
@@ -7333,6 +7514,11 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "genres": profile.get("genres") or [],
         "platforms": profile.get("platforms") or [],
         "full_address": profile.get("full_address"),
+        # Staff-side, and the point of collecting it: the label says where to
+        # post, the pin says where to actually go.
+        "location_lat": profile.get("location_lat"),
+        "location_lng": profile.get("location_lng"),
+        "location_place_id": profile.get("location_place_id"),
         "base_rate": profile.get("base_rate"),
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),

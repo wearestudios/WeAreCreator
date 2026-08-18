@@ -7,6 +7,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Instagram, MapPin, Send, Youtube } from "lucide-react";
 
+import { googleMapsLink } from "@/lib/googleMaps";
+import { ADDRESS } from "@/constants/testIds";
+
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { Button } from "@/components/ui/button";
@@ -104,6 +107,18 @@ export default function CreatorDetailPage() {
     };
 
     const creator = data?.creator;
+
+    // A pin when we have one, a text search when we don't — either beats
+    // copying an address out by hand at the point somebody is trying to find
+    // a flat.
+    const mapsLink = creator
+        ? googleMapsLink({
+              lat: creator.location_lat,
+              lng: creator.location_lng,
+              placeId: creator.location_place_id,
+              address: creator.full_address,
+          })
+        : null;
     const ig = data?.instagram;
     const suspended = creator?.status === "suspended";
 
@@ -242,6 +257,17 @@ export default function CreatorDetailPage() {
                                         </p>
                                     </div>
                                 </div>
+                                {/* Their own words, before the fields somebody
+                                    else chose the shape of. This is most of
+                                    what a reviewer is actually judging. */}
+                                {creator.about && (
+                                    <p
+                                        data-testid="admin-creator-about"
+                                        className="mt-6 whitespace-pre-line border-t border-white/10 pt-6 text-sm leading-relaxed text-foreground/90"
+                                    >
+                                        {creator.about}
+                                    </p>
+                                )}
                                 <dl className="mt-7 grid gap-5 border-t border-white/10 pt-6 sm:grid-cols-3">
                                     <Field label="Base rate">
                                         {creator.base_rate != null
@@ -269,6 +295,31 @@ export default function CreatorDetailPage() {
                                     </Field>
                                     <Field label="Payout ready">
                                         {creator.payout_ready ? "Yes" : "No — UPI or PAN missing"}
+                                    </Field>
+                                    <Field label="City">{creator.city}</Field>
+                                    <Field label="Neighbourhood">{creator.address}</Field>
+                                    <Field label="Address" className="sm:col-span-3">
+                                        <span className="block whitespace-pre-line">
+                                            {creator.full_address || "—"}
+                                        </span>
+                                        {/* The label is what gets printed; the
+                                            pin is what somebody navigates to,
+                                            and they are routinely not the same
+                                            spot. One tap to the real one. */}
+                                        {mapsLink && (
+                                            <a
+                                                href={mapsLink}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                data-testid={ADDRESS.openInMaps}
+                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:text-ember-400 md:min-h-0"
+                                            >
+                                                <MapPin className="h-3.5 w-3.5" />
+                                                {creator.location_lat != null
+                                                    ? "Open the pin in Google Maps"
+                                                    : "Search this address in Google Maps"}
+                                            </a>
+                                        )}
                                     </Field>
                                     <Field label="UPI">{creator.payout_upi}</Field>
                                     <Field label="PAN">{creator.pan}</Field>

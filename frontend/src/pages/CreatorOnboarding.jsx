@@ -22,6 +22,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import {
     ArrowRight,
     Check,
+    Facebook,
     Instagram,
     Loader2,
     MapPin,
@@ -45,22 +46,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Navbar } from "@/components/Navbar";
 import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
 import InstagramConnect from "@/components/creator/InstagramConnect";
+import AddressPicker from "@/components/creator/AddressPicker";
+import { CREATOR_TAXONOMY, INDIAN_CITIES } from "@/lib/taxonomy";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
-const SUGGESTED_NICHES = [
-    "cafe", "brunch", "bakery", "fine dining", "coffee", "dessert",
-    "brewery", "cocktails", "home chef", "healthy", "street food",
-];
-
-// What they make, as opposed to what they cover for a brand.
-const SUGGESTED_GENRES = [
-    "food", "travel", "lifestyle", "fashion", "comedy", "fitness",
-    "beauty", "tech", "parenting", "music",
-];
-
-const SUGGESTED_CITIES = [
-    "Bengaluru", "Mumbai", "Delhi NCR", "Hyderabad", "Pune", "Chennai",
-    "Kolkata", "Goa", "Ahmedabad", "Jaipur", "Chandigarh", "Kochi",
-];
+// Suggestions come from the shared taxonomy, which spans every category we
+// accept. This file used to carry its own food-only list — cafe, brunch,
+// bakery, brewery, home chef — which told a fashion or gaming creator the
+// platform was not for them before they had typed anything.
 
 const PLATFORMS = [
     { value: "instagram", label: "Instagram", Icon: Instagram },
@@ -146,7 +145,9 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
         }
     };
 
-    const remaining = suggestions.filter((s) => !values.includes(s));
+    const groups = (suggestions || [])
+        .map(([name, terms]) => [name, terms.filter((t) => !values.includes(t))])
+        .filter(([, terms]) => terms.length > 0);
 
     return (
         <div className="space-y-3">
@@ -183,18 +184,31 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                     />
                 </div>
             </div>
-            {remaining.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                    {remaining.map((s) => (
-                        <button
-                            type="button"
-                            key={s}
-                            onClick={() => add(s)}
-                            data-testid={suggestId(s.replace(/\s+/g, "-"))}
-                            className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
-                        >
-                            + {s}
-                        </button>
+            {/* Grouped by category rather than one flat run. Eighty-seven chips
+                in a row is a wall; fifteen headings you can skim to your own
+                is a list. A group whose every term is already picked
+                disappears rather than sitting there empty. */}
+            {groups.length > 0 && (
+                <div className="space-y-3">
+                    {groups.map(([groupName, terms]) => (
+                        <div key={groupName}>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+                                {groupName}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap gap-2">
+                                {terms.map((s) => (
+                                    <button
+                                        type="button"
+                                        key={s}
+                                        onClick={() => add(s)}
+                                        data-testid={suggestId(s.replace(/\s+/g, "-"))}
+                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
+                                    >
+                                        + {s}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     ))}
                 </div>
             )}
@@ -241,6 +255,11 @@ export default function CreatorOnboarding() {
         instagram_handle: "",
         instagram_profile_url: "",
         youtube_url: "",
+        facebook_url: "",
+        about: "",
+        location_lat: null,
+        location_lng: null,
+        location_place_id: null,
         base_rate: "",
         follower_count: "",
         payout_upi: "",
@@ -269,6 +288,11 @@ export default function CreatorOnboarding() {
             instagram_handle: data.instagram_handle || "",
             instagram_profile_url: data.instagram_profile_url || "",
             youtube_url: data.youtube_url || "",
+            facebook_url: data.facebook_url || "",
+            about: data.about || "",
+            location_lat: data.location_lat ?? null,
+            location_lng: data.location_lng ?? null,
+            location_place_id: data.location_place_id || null,
             base_rate: data.base_rate ?? "",
             follower_count: data.follower_count ?? "",
             payout_upi: data.payout_upi || "",
@@ -371,6 +395,13 @@ export default function CreatorOnboarding() {
             instagram_handle: form.instagram_handle.trim() || null,
             instagram_profile_url: form.instagram_profile_url.trim() || null,
             youtube_url: form.youtube_url.trim() || null,
+            facebook_url: form.facebook_url.trim() || null,
+            about: form.about.trim() || null,
+            // Sent as a set. A coordinate without its pair is a point in the
+            // sea; the picker only ever writes them together.
+            location_lat: form.location_lat,
+            location_lng: form.location_lng,
+            location_place_id: form.location_place_id,
             base_rate: form.base_rate === "" ? null : Number(form.base_rate),
             follower_count: form.follower_count === "" ? null : Number(form.follower_count),
             payout_upi: form.payout_upi.trim() || null,
@@ -600,27 +631,35 @@ export default function CreatorOnboarding() {
 
                     <Section id="where" title="Where you are">
                         <div className="grid gap-5 md:grid-cols-2">
-                            <Field id="city" label="City">
-                                <Input
-                                    id="city"
-                                    data-testid={IDS.city}
-                                    list="city-suggestions"
-                                    value={form.city}
-                                    onChange={setText("city")}
-                                    maxLength={80}
-                                    className={inputClass}
-                                    placeholder="e.g. Bengaluru"
-                                />
-                                <datalist id="city-suggestions">
-                                    {SUGGESTED_CITIES.map((c) => (
-                                        <option value={c} key={c} />
-                                    ))}
-                                </datalist>
+                            <Field
+                                id="city"
+                                label="City"
+                                hint="Brands filter on this, so it has to be one we recognise."
+                            >
+                                <Select
+                                    value={form.city || undefined}
+                                    onValueChange={(v) => setForm((f) => ({ ...f, city: v }))}
+                                >
+                                    <SelectTrigger
+                                        id="city"
+                                        data-testid={IDS.city}
+                                        className={inputClass}
+                                    >
+                                        <SelectValue placeholder="Pick your city" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {INDIAN_CITIES.map((c) => (
+                                            <SelectItem key={c} value={c}>
+                                                {c}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </Field>
                             <Field
                                 id="address"
-                                label="Neighbourhood"
-                                hint="What brands filter on when they're planning a visit."
+                                label="Neighbourhood (optional)"
+                                hint="Indiranagar, Bandra, Koramangala — helps us pick who's nearby for a shoot. Skip it if you'd rather not say."
                             >
                                 <div className="relative mt-2">
                                     <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -636,20 +675,25 @@ export default function CreatorOnboarding() {
                                 </div>
                             </Field>
                         </div>
-                        <Field
-                            id="full-address"
-                            label="Full address"
-                            hint="Where product actually gets sent. Only the WeAre team sees this."
-                        >
-                            <Textarea
-                                id="full-address"
-                                data-testid={IDS.fullAddress}
-                                value={form.full_address}
-                                onChange={setText("full_address")}
-                                rows={2}
-                                maxLength={500}
-                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="Flat, street, area, city, PIN"
+                        <Field id="full-address" label="Full address">
+                            <AddressPicker
+                                address={form.full_address}
+                                lat={form.location_lat}
+                                lng={form.location_lng}
+                                placeId={form.location_place_id}
+                                onChange={(patch) =>
+                                    setForm((f) => ({
+                                        ...f,
+                                        ...("address" in patch
+                                            ? { full_address: patch.address }
+                                            : {}),
+                                        ...("lat" in patch ? { location_lat: patch.lat } : {}),
+                                        ...("lng" in patch ? { location_lng: patch.lng } : {}),
+                                        ...("placeId" in patch
+                                            ? { location_place_id: patch.placeId }
+                                            : {}),
+                                    }))
+                                }
                             />
                         </Field>
                     </Section>
@@ -658,7 +702,7 @@ export default function CreatorOnboarding() {
                         <ChipList
                             values={form.genres}
                             onChange={set("genres")}
-                            suggestions={SUGGESTED_GENRES}
+                            suggestions={CREATOR_TAXONOMY}
                             editorId={IDS.genres}
                             inputId={IDS.genresInput}
                             chipId={IDS.genreChip}
@@ -671,7 +715,7 @@ export default function CreatorOnboarding() {
                         <ChipList
                             values={form.niches}
                             onChange={set("niches")}
-                            suggestions={SUGGESTED_NICHES}
+                            suggestions={CREATOR_TAXONOMY}
                             editorId={IDS.niches}
                             inputId={IDS.nichesInput}
                             chipId={IDS.nicheChip}
@@ -778,6 +822,55 @@ export default function CreatorOnboarding() {
                                 </Field>
                             </motion.div>
                         )}
+
+                        {/* Facebook is not one of the platforms completeness
+                            asks about, so it is here unconditionally and
+                            optional. Some creators' audience is on Facebook
+                            and nowhere else; not asking loses them, asking
+                            costs a line. */}
+                        <Field
+                            id="fb-url"
+                            label="Facebook profile or page (optional)"
+                        >
+                            <div className="relative mt-2">
+                                <Facebook className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    id="fb-url"
+                                    data-testid={IDS.facebook}
+                                    type="url"
+                                    value={form.facebook_url}
+                                    onChange={setText("facebook_url")}
+                                    className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                    placeholder="https://facebook.com/yourpage"
+                                />
+                            </div>
+                        </Field>
+                    </Section>
+
+                    <Section
+                        id="about"
+                        title="About you"
+                        note="In your own words"
+                    >
+                        <Field
+                            id="about"
+                            label="Tell us about yourself"
+                            hint="What you make, who watches it, what you're good at. Brands read this, and it's the part of your profile that isn't a dropdown."
+                        >
+                            <Textarea
+                                id="about"
+                                data-testid={IDS.about}
+                                value={form.about}
+                                onChange={setText("about")}
+                                rows={5}
+                                maxLength={1500}
+                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                placeholder="I shoot food and travel around Bengaluru — mostly cafes, weekend trips and the odd hotel review…"
+                            />
+                            <p className="mt-1.5 text-right text-xs text-muted-foreground">
+                                {(form.about || "").length}/1500
+                            </p>
+                        </Field>
                     </Section>
 
                     <Section id="rates" title="Your rate">
