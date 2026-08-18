@@ -14,12 +14,14 @@ import {
     Building2,
     CheckCircle2,
     IndianRupee,
+    MessageCircleQuestion,
     Sparkles,
     Undo2,
     Users,
     Wallet,
     XCircle,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ADMIN_QUEUE as IDS } from "@/constants/testIds";
@@ -55,13 +57,16 @@ const NEXT_STEP_LABEL = {
 
 const KIND_META = {
     payment: { label: "Payout", Icon: Wallet, band: 0 },
+    // Above the pipeline work: a creator is literally waiting on a reply, and
+    // a question aged three days answers itself — they went elsewhere.
+    question: { label: "Question", Icon: MessageCircleQuestion, band: 0.5 },
     collaboration: { label: "Collaboration", Icon: Users, band: 1 },
     campaign: { label: "Campaign", Icon: Sparkles, band: 2 },
     brand: { label: "Brand", Icon: Building2, band: 3 },
     creator: { label: "Creator", Icon: BadgeCheck, band: 4 },
 };
 
-const KINDS = ["payment", "collaboration", "campaign", "brand", "creator"];
+const KINDS = ["payment", "question", "collaboration", "campaign", "brand", "creator"];
 
 export default function ActionQueue({ onChanged, feePercent }) {
     const [items, setItems] = useState(null);
@@ -76,7 +81,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
     const load = useCallback(async () => {
         setItems(null);
         try {
-            const [brands, campaigns, creators, changed, board] = await Promise.all([
+            const [brands, campaigns, creators, changed, board, questions] = await Promise.all([
                 api.get("/admin/brands/pending"),
                 api.get("/admin/campaigns/pending"),
                 api.get("/admin/creators/pending"),
@@ -84,9 +89,26 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 // to brands, still a decision waiting on us.
                 api.get("/admin/creators/changed"),
                 api.get("/admin/collaborations"),
+                // Threads whose last word is a creator's.
+                api.get("/questions/unanswered"),
             ]);
 
             const rows = [];
+
+            for (const q of questions.data) {
+                rows.push({
+                    id: `question-${q.campaign_id}-${q.creator_id}`,
+                    kind: "question",
+                    since: q.asked_at,
+                    primary: `“${q.body?.length > 120 ? q.body.slice(0, 120) + "…" : q.body}”`,
+                    secondary: [q.creator_name, q.campaign_title, q.brand_name]
+                        .filter(Boolean)
+                        .join(" · "),
+                    note: q.execution_owner === "weare" ? "Ours to answer" : "Brand-run — nudge or answer",
+                    link: `/admin/campaigns/${q.campaign_id}`,
+                    raw: q,
+                });
+            }
 
             for (const b of brands.data) {
                 // A brand we already refused is not waiting on us.
@@ -608,6 +630,19 @@ function QueueRow({ item, busy, onApprove, onReject, onRevert }) {
             </div>
 
             <div className="flex flex-none flex-wrap items-center gap-2 md:justify-end">
+                {item.kind === "question" ? (
+                    // Not an approve/reject: the reply box lives on the
+                    // campaign page's threads panel, one click away.
+                    <Link
+                        to={item.link}
+                        data-testid={IDS.row(item.id) + "-answer"}
+                        className="inline-flex h-8 items-center rounded-full bg-ember-500 px-4 text-xs text-black transition-colors duration-200 hover:bg-ember-400"
+                    >
+                        <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
+                        Answer
+                    </Link>
+                ) : (
+                    <>
                 {(collab || item.kind === "payment") && (
                     <Button
                         type="button"
@@ -646,6 +681,8 @@ function QueueRow({ item, busy, onApprove, onReject, onRevert }) {
                     )}
                     {nextLabel}
                 </Button>
+                    </>
+                )}
             </div>
         </li>
     );

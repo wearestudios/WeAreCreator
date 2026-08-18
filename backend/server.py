@@ -1676,6 +1676,10 @@ NOTIFY_EVENTS = {
     "brand_creator_cancelled": "A creator dropped off your campaign",
     "brand_creator_no_show": "A creator didn't turn up",
     "brand_campaign_updated": "WeAre changed something on your campaign",
+    # The question channel, both directions. Who receives campaign_question
+    # follows execution_owner, exactly like a new application.
+    "campaign_question": "A creator asked a question",
+    "question_answered": "Your question was answered",
 }
 
 
@@ -16449,6 +16453,380 @@ async def add_collaboration_note(
 api_router.include_router(notes_router)
 
 
+# --- Creator questions on a campaign ----------------------------------------
+#
+# A creator reading a brief had no way to ask anything — "is parking possible",
+# "can I bring a videographer" — short of applying and hoping. This is that
+# channel: one thread per (campaign, creator), asked from the campaign page,
+# answered by whoever runs the campaign.
+#
+# **It is not the work notes.** `collaboration_notes` is the internal paper
+# trail — brand, admin and the assigned manager, never the creator, and this
+# file keeps that so. Questions are the opposite shape: the creator is a party
+# to the thread, other creators never see it, and who answers follows
+# `execution_owner` — the brand's manager on a brand-run campaign, only the
+# WeAre side on a weare-run one, where the brand does not see the thread at
+# all. Both collections are append-only for the same reason: a record that can
+# be quietly rewritten is not a record.
+
+questions_router = APIRouter(prefix="/questions", tags=["questions"])
+
+
+class QuestionPayload(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+def _question_staff_may_see(campaign: dict, user: dict) -> bool:
+    """Which side of the house may read and answer this campaign's threads.
+
+    Admins always; the assigned WeAre manager on their own campaigns; the
+    owning brand **only when the campaign is brand-run** — handing a campaign
+    to WeAre hands the creator conversations with it, and a creator asking
+    "our team" a question has not agreed to the brand reading it.
+    """
+    role = (user or {}).get("role")
+    if role == "admin":
+        return True
+    if role == "campaign_manager":
+        return campaign.get("manager_id") == ObjectId(user["_id"])
+    if is_brand_side(user):
+        return campaign.get("brand_id") == _brand_scope(user) and not _weare_runs(campaign)
+    return False
+
+
+async def _question_campaign_or_404(campaign_id: str) -> dict:
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return campaign
+
+
+async def _creator_can_discuss(campaign: dict, creator_oid: ObjectId) -> bool:
+    """May this creator hold a thread here? The same doors as reading the
+    campaign, plus one: a creator already on the campaign can keep asking
+    after it leaves the live statuses — mid-shoot is when the questions come.
+    """
+    if not await _creator_may_see(campaign, creator_oid):
+        return False
+    if campaign.get("status") in LIVE_CAMPAIGN_STATUSES:
+        return True
+    return bool(
+        await db.collaborations.find_one(
+            {"campaign_id": campaign["_id"], "creator_id": creator_oid, "active": True},
+            {"_id": 1},
+        )
+    )
+
+
+def _serialize_question(doc: dict) -> dict:
+    return {
+        "id": str(doc["_id"]),
+        "campaign_id": str(doc["campaign_id"]),
+        "author_name": doc.get("author_name"),
+        # Stored, not joined, for the reason the notes store it — and reduced
+        # to two words before it leaves: a creator does not need to know
+        # whether "the team" today was an admin or the assigned manager, and a
+        # staff role name is one more thing a rename would break.
+        "from_creator": bool(doc.get("from_creator")),
+        "author_side": "creator" if doc.get("from_creator") else doc.get("author_side"),
+        "body": doc.get("body"),
+        "created_at": _iso(doc.get("created_at")),
+    }
+
+
+def _question_author_side(campaign: dict, user: dict) -> str:
+    """The word the creator sees beside an answer: who they are dealing with.
+    The same two words `execution_owner` prints everywhere else."""
+    if is_brand_side(user):
+        return "brand"
+    return "weare"
+
+
+async def _thread_docs(campaign_id, creator_id) -> list:
+    return (
+        await db.campaign_questions.find(
+            {"campaign_id": campaign_id, "creator_id": creator_id}
+        )
+        # _id as the tiebreak: a question and its answer can land in the same
+        # clock tick, and "which came last" decides whether a thread reads as
+        # answered. ObjectIds are monotonic; timestamps alone are not.
+        .sort([("created_at", 1), ("_id", 1)])
+        .to_list(length=500)
+    )
+
+
+def _thread_unanswered(docs: list) -> bool:
+    """A thread is waiting on us when its last word is the creator's."""
+    return bool(docs) and bool(docs[-1].get("from_creator"))
+
+
+@questions_router.get("/campaign/{campaign_id}")
+async def my_campaign_questions(
+    campaign_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The caller's own thread on this campaign. Nobody else's is reachable
+    from this route at all — the creator_id is the session, never a parameter.
+    """
+    campaign = await _question_campaign_or_404(campaign_id)
+    creator_oid = ObjectId(user["_id"])
+    if not await _creator_may_see(campaign, creator_oid):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    docs = await _thread_docs(campaign["_id"], creator_oid)
+    return {
+        "campaign_id": campaign_id,
+        "can_ask": await _creator_can_discuss(campaign, creator_oid),
+        # Who will answer, so the ask box can say so instead of "someone".
+        "answered_by": "weare" if _weare_runs(campaign) else "brand",
+        "questions": [_serialize_question(d) for d in docs],
+    }
+
+
+@questions_router.post("/campaign/{campaign_id}")
+async def ask_campaign_question(
+    campaign_id: str,
+    payload: QuestionPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    campaign = await _question_campaign_or_404(campaign_id)
+    creator_oid = ObjectId(user["_id"])
+    # The same 404 as the campaign read: a private brief's existence is not
+    # answered by its question box either.
+    if not await _creator_may_see(campaign, creator_oid):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if not await _creator_can_discuss(campaign, creator_oid):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has wrapped up, so questions on it are closed.",
+        )
+
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="A question needs something in it.")
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "campaign_id": campaign["_id"],
+        "creator_id": creator_oid,
+        "brand_id": campaign.get("brand_id"),
+        "author_id": creator_oid,
+        "author_name": user.get("name"),
+        "from_creator": True,
+        "author_side": None,
+        "body": body,
+        "created_at": now,
+    }
+    result = await db.campaign_questions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    await audit(
+        user, "campaign.question", "campaign", campaign["_id"],
+        after={"question_id": str(result.inserted_id)},
+        note=body[:500],
+        **_campaign_audit_context(campaign),
+    )
+
+    # Routed exactly like a new application, because it is the same question:
+    # who runs this campaign? `notify_weare_team` falls back to every admin
+    # when nobody is assigned, so a question on an unstaffed weare-run
+    # campaign still reaches someone.
+    line = f"{user.get('name') or 'A creator'} asked on “{campaign.get('title')}”: {body[:140]}"
+    if _weare_runs(campaign):
+        await notify_weare_team(
+            campaign, "campaign_question", title="A creator asked a question", body=line
+        )
+    else:
+        await notify_brand_manager(
+            campaign.get("brand_id"),
+            "campaign_question",
+            title="A creator asked a question",
+            body=line,
+            link=f"/brand/campaigns/{campaign_id}/applicants",
+        )
+    return _serialize_question(doc)
+
+
+@questions_router.get("/campaign/{campaign_id}/threads")
+async def campaign_question_threads(
+    campaign_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Every thread on one campaign, for whoever answers them.
+
+    The creator block goes through `_brand_visible_creator` — the reader may
+    be the brand, and a question is not an offer of a phone number.
+    """
+    campaign = await _question_campaign_or_404(campaign_id)
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    docs = (
+        await db.campaign_questions.find({"campaign_id": campaign["_id"]})
+        .sort([("created_at", 1), ("_id", 1)])
+        .to_list(length=2000)
+    )
+    by_creator: dict = {}
+    for d in docs:
+        by_creator.setdefault(d["creator_id"], []).append(d)
+
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": list(by_creator)}}
+        ).to_list(length=len(by_creator) or 1)
+    }
+    threads = [
+        {
+            "creator": _brand_visible_creator(profiles.get(creator_id)),
+            "creator_id": str(creator_id),
+            "unanswered": _thread_unanswered(thread),
+            "questions": [_serialize_question(d) for d in thread],
+        }
+        for creator_id, thread in by_creator.items()
+    ]
+    # Waiting threads first, then by most recent word.
+    threads.sort(
+        key=lambda t: (not t["unanswered"], t["questions"][-1]["created_at"] or ""),
+    )
+    return {"campaign_id": campaign_id, "threads": threads}
+
+
+@questions_router.get("/campaign/{campaign_id}/thread/{creator_id}")
+async def campaign_question_thread(
+    campaign_id: str,
+    creator_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """One creator's thread, for the application page."""
+    campaign = await _question_campaign_or_404(campaign_id)
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    try:
+        creator_oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    docs = await _thread_docs(campaign["_id"], creator_oid)
+    return {
+        "campaign_id": campaign_id,
+        "creator_id": creator_id,
+        "unanswered": _thread_unanswered(docs),
+        "questions": [_serialize_question(d) for d in docs],
+    }
+
+
+@questions_router.post("/campaign/{campaign_id}/thread/{creator_id}/reply")
+async def answer_campaign_question(
+    campaign_id: str,
+    creator_id: str,
+    payload: QuestionPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    campaign = await _question_campaign_or_404(campaign_id)
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    try:
+        creator_oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    # An answer needs a question. Replying into a void would start a thread the
+    # creator never opened, which is outreach, and outreach is the invite flow.
+    if not await db.campaign_questions.find_one(
+        {"campaign_id": campaign["_id"], "creator_id": creator_oid}, {"_id": 1}
+    ):
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="An answer needs something in it.")
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "campaign_id": campaign["_id"],
+        "creator_id": creator_oid,
+        "brand_id": campaign.get("brand_id"),
+        "author_id": ObjectId(user["_id"]),
+        "author_name": user.get("name"),
+        "from_creator": False,
+        "author_side": _question_author_side(campaign, user),
+        "body": body,
+        "created_at": now,
+    }
+    result = await db.campaign_questions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    await audit(
+        user, "campaign.question_answered", "campaign", campaign["_id"],
+        after={"question_id": str(result.inserted_id), "creator_id": creator_id},
+        note=body[:500],
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        creator_oid,
+        "question_answered",
+        title="Your question was answered",
+        body=f"On “{campaign.get('title')}”: {body[:140]}",
+        link=f"/campaigns/{campaign_id}",
+    )
+    return _serialize_question(doc)
+
+
+@questions_router.get("/unanswered")
+async def unanswered_questions(user: dict = Depends(require_roles("admin"))):
+    """Threads whose last word is a creator's, for the action queue.
+
+    A question nobody answered generates no state change and sits in no other
+    list — it is discovered when the creator stops applying, unless something
+    looks for it. Newest first, joined to the campaign and the creator's name
+    so a queue row reads as a sentence.
+    """
+    docs = (
+        await db.campaign_questions.find({})
+        # Same tiebreak as _thread_docs, reversed, and for the same reason.
+        .sort([("created_at", -1), ("_id", -1)])
+        .to_list(length=2000)
+    )
+    latest: dict = {}
+    for d in docs:  # newest first, so the first hit per thread is its last word
+        latest.setdefault((d["campaign_id"], d["creator_id"]), d)
+    waiting = [d for d in latest.values() if d.get("from_creator")]
+    waiting.sort(key=lambda d: _iso(d.get("created_at")) or "", reverse=True)
+    waiting = waiting[:100]
+
+    campaign_ids = list({d["campaign_id"] for d in waiting})
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+            length=len(campaign_ids) or 1
+        )
+    }
+    brand_map = await _load_brand_map(
+        [c["brand_id"] for c in campaigns.values()]
+    )
+    rows = []
+    for d in waiting:
+        c = campaigns.get(d["campaign_id"]) or {}
+        rows.append(
+            {
+                "campaign_id": str(d["campaign_id"]),
+                "campaign_title": c.get("title"),
+                "brand_name": (brand_map.get(c.get("brand_id")) or {}).get("business_name"),
+                "creator_id": str(d["creator_id"]),
+                "creator_name": d.get("author_name"),
+                "body": d.get("body"),
+                "asked_at": _iso(d.get("created_at")),
+                "execution_owner": _execution_owner(c),
+            }
+        )
+    return rows
+
+
+api_router.include_router(questions_router)
+
+
 # --- One application, on its own ------------------------------------------
 #
 # Everything a single application needs, in one call, for one screen that the
@@ -16501,6 +16879,11 @@ async def get_application(
         # phone number that only appears for one role is a phone number waiting
         # to be rendered for the other.
         "creator": _brand_visible_creator(profile, creator_user),
+        # Whether this caller may open the creator's question thread — false
+        # for a brand on a weare-run campaign, where the conversation is
+        # between the creator and our team. Decided here so the shared screen
+        # never asks what role is looking.
+        "questions_enabled": _question_staff_may_see(campaign, user),
         "campaign": {
             "id": str(campaign["_id"]),
             "title": campaign.get("title"),
@@ -17354,6 +17737,12 @@ async def _startup():
         [("collaboration_id", 1), ("created_at", 1)]
     )
     await db.collaboration_notes.create_index([("campaign_id", 1), ("created_at", 1)])
+    # One thread per (campaign, creator), read oldest-first; the queue scans
+    # newest-first across all of them.
+    await db.campaign_questions.create_index(
+        [("campaign_id", 1), ("creator_id", 1), ("created_at", 1)]
+    )
+    await db.campaign_questions.create_index([("created_at", -1)])
 
     # One login per brand, enforced by the database rather than by everybody
     # remembering. Partial, so it constrains brand managers and nothing else.

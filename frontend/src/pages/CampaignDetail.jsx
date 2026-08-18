@@ -27,6 +27,7 @@ import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
+import CampaignQuestions from "@/components/questions/CampaignQuestions";
 import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
@@ -610,6 +611,14 @@ export default function CampaignDetail() {
                                 {campaign.deliverables}
                             </p>
                         </section>
+
+                        {/* The page decides by audience, like the navbar does:
+                            the ask box belongs to the creator reading a brief,
+                            not to the brand or admin passing through. The
+                            component itself never asks. */}
+                        {user?.role === "creator" && (
+                            <CampaignQuestions campaignId={campaign.id} />
+                        )}
                     </div>
 
                     <aside className="md:col-span-4">

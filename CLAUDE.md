@@ -186,6 +186,47 @@ is itself not answered). **Creators never see them**, and the route doesn't
 accept the role at all. Append-only: no edit, no delete — a record that can be
 quietly rewritten is not a record. Every note is audited.
 
+## Creator questions on a campaign
+
+`campaign_questions`: one thread per (campaign, creator), asked from the
+campaign page, answered by whoever runs the campaign. **It is not the work
+notes** — those stay the internal paper trail creators never see; this thread
+has the creator as a party, and both are append-only for the same reason.
+
+- **One creator's thread is invisible to every other creator.** The creator
+  routes (`GET`/`POST /questions/campaign/{id}`) take no creator id at all:
+  the thread is the session's. Asking respects campaign visibility (the same
+  404 as the page), and a creator already on a campaign can keep asking after
+  it leaves the live statuses — mid-shoot is when the questions come — while
+  bystanders get a 409.
+- **Who answers follows `execution_owner`** (`_question_staff_may_see`):
+  admins always, the assigned WeAre manager on their campaigns, the owning
+  brand **only when the campaign is brand-run**. On a weare-run campaign the
+  brand does not see the thread at all — a creator asking "our team" a
+  question has not agreed to the brand reading it — and the application
+  page's `questions_enabled` flag says so, decided server-side like every
+  other action there. The staff thread payloads run the creator through
+  `_brand_visible_creator`; a leak test plants contact values and searches
+  the output.
+- Notifications route exactly like a new application: weare-run →
+  `notify_weare_team` (assigned manager, or every admin when unstaffed),
+  brand-run → the brand's manager. Answers notify the creator with a link
+  back to the campaign. Events `campaign_question` / `question_answered`.
+- Replying where nobody asked is refused — that would start a thread the
+  creator never opened, which is outreach, and outreach is the invite flow.
+- "Unanswered" = the thread's last word is the creator's, computed with
+  **`_id` as the timestamp tiebreak** — a question and its answer can land in
+  the same clock tick, and the flake that taught this is why every thread
+  read sorts on `(created_at, _id)`. `GET /questions/unanswered` feeds the
+  admin action queue, whose question rows link to the campaign page's
+  threads panel rather than growing their own reply box.
+- Surfaces: `CampaignQuestions` (the creator's ask box on CampaignDetail,
+  mounted by the page for creators only — the component itself never asks the
+  role), `QuestionThread` (one thread, on the application page),
+  `QuestionThreadsPanel` (all threads, admin campaign page and the brand
+  applicant board; hides itself on the staff routes' 404 and renders nothing
+  until somebody has asked).
+
 ## Suggesting creators
 
 `GET /brand/campaigns/{id}/suggested-creators` ranks verified creators against a

@@ -23,4 +23,5 @@ export * from './imagery';
 export * from './landing';
 export * from './manager';
 export * from './profile';
+export * from './questions';
 export * from './share';

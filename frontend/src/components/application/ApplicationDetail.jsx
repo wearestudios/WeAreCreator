@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { DetailShell, Field, Section, Stat } from "@/components/admin/DetailPage";
 import { BrandLink, CampaignLink, CreatorLink } from "@/components/admin/links";
 import WorkNotes from "@/components/brand/WorkNotes";
+import QuestionThread from "@/components/questions/QuestionThread";
 import BrandAvatar from "@/components/BrandAvatar";
 import BrandName from "@/components/BrandName";
 import { Navbar } from "@/components/Navbar";
@@ -457,6 +458,21 @@ export default function ApplicationDetail({
                                     </Button>
                                 )}
                             </div>
+                        </Section>
+                    )}
+
+                    {/* The creator's question thread — a different audience
+                        from the work notes below it, and the server says who
+                        gets it: questions_enabled is false for a brand on a
+                        weare-run campaign, where the thread is not theirs to
+                        read. */}
+                    {app.questions_enabled && app.campaign?.id && app.creator?.user_id && (
+                        <Section id="questions" title="Creator questions">
+                            <QuestionThread
+                                campaignId={app.campaign.id}
+                                creatorId={app.creator.user_id}
+                                emptyText="This creator hasn't asked anything."
+                            />
                         </Section>
                     )}
 

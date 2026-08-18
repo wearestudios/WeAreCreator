@@ -30,6 +30,7 @@ import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import BrandAvatar from "@/components/BrandAvatar";
 import ImageUploadField from "@/components/ImageUploadField";
+import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { Button } from "@/components/ui/button";
 import {
     Select,
@@ -446,6 +447,11 @@ export default function CampaignDetailPage() {
                                     />
                                 </Panel>
                             </Section>
+
+                            {/* Renders nothing until somebody has actually
+                                asked — an empty questions panel on every
+                                campaign is furniture. */}
+                            <QuestionThreadsPanel campaignId={id} />
 
                             <Section id="brand" title="Brand">
                                 <Panel>
