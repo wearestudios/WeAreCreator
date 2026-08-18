@@ -34,6 +34,7 @@ from fastapi import (
 )
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, JSONResponse
+from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -500,6 +501,10 @@ CREATOR_TAXONOMY_TERMS = tuple(
 #
 # The product is Bengaluru-first, which is why it leads; the rest are open for
 # where we expand next rather than a claim to operate there today.
+# Where a campaign runs unless the brand says otherwise. The product is
+# Bengaluru-first, so this is what it is rather than a placeholder.
+DEFAULT_CAMPAIGN_CITY = "Bengaluru"
+
 INDIAN_CITIES = (
     "Bengaluru",
     "Mumbai",
@@ -786,6 +791,11 @@ class PostCampaignPayload(BaseModel):
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
     campaign_type: CampaignType
+    # Which city this runs in, from the same canonical list creators pick from
+    # — a filter that compares a campaign's free text against a creator's
+    # dropdown value matches nothing. Defaults to Bengaluru because that is
+    # where the operation is; `area` stays the free-text neighbourhood inside it.
+    city: str = DEFAULT_CAMPAIGN_CITY
     # Typed as the full enum rather than the brand subset on purpose: a payload
     # that rejects "barter" as an unknown value would answer with pydantic's
     # "Input should be 'fixed' or 'negotiated'", which reads like a typo. The
@@ -847,6 +857,7 @@ class UpdateCampaignPayload(BaseModel):
     budget_per_creator: Optional[float] = Field(default=None, ge=0)
     category: Optional[CATEGORY_LITERAL] = None
     area: Optional[str] = Field(default=None, min_length=1, max_length=80)
+    city: Optional[str] = Field(default=None, max_length=80)
     creators_needed: Optional[int] = Field(default=None, ge=1, le=100)
     # campaign_type is deliberately absent: the type decides which date fields
     # exist, so changing it mid-flight would orphan whichever dates were set.
@@ -5080,6 +5091,7 @@ def _serialize_brand_campaign(
         "showcase_note": doc.get("showcase_note"),
         "category": doc.get("category"),
         "area": doc.get("area"),
+        "city": doc.get("city") or DEFAULT_CAMPAIGN_CITY,
         "creators_needed": needed,
         "campaign_type": doc.get("campaign_type"),
         # Who runs it, which decides where applications land. Always sent, and
@@ -5830,6 +5842,9 @@ async def create_brand_campaign(
         "budget_per_creator": float(payload.budget_per_creator),
         "category": payload.category,
         "area": payload.area.strip(),
+        # Through the same canonicaliser the creator's city goes through, so a
+        # filter can compare them at all.
+        "city": _canonical_city(payload.city) or DEFAULT_CAMPAIGN_CITY,
         "creators_needed": int(payload.creators_needed),
         "campaign_type": payload.campaign_type,
         "compensation_type": payload.compensation_type,
@@ -5909,6 +5924,8 @@ async def update_brand_campaign(
 
     # The same rule as creation, on the path that would otherwise go round it:
     # this loop copies whatever the payload carried, compensation_type included.
+    if "city" in update:
+        update["city"] = _canonical_city(update["city"]) or DEFAULT_CAMPAIGN_CITY
     _refuse_brand_barter(doc, update)
     _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
@@ -14990,6 +15007,9 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "compensation_type": _compensation_type(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
+        # Never null: a filter chip has to print a word, and every campaign
+        # ran somewhere even if it predates the field.
+        "city": doc.get("city") or DEFAULT_CAMPAIGN_CITY,
         "creators_needed": doc.get("creators_needed"),
         "campaign_type": doc.get("campaign_type"),
         # A creator deciding whether to give up a day wants to know whose
@@ -15111,20 +15131,66 @@ async def _load_brand_map(brand_ids: list) -> dict:
 
 @campaigns_router.get("")
 async def list_campaigns(
+    city: Optional[str] = None,
     area: Optional[str] = None,
     category: Optional[str] = None,
+    campaign_type: Optional[str] = None,
+    compensation_type: Optional[str] = None,
     budget_min: Optional[float] = None,
     budget_max: Optional[float] = None,
     q: Optional[str] = None,
     sort: Optional[str] = None,  # "newest" | "budget_desc" | "budget_asc"
+    limit: int = 200,
+    offset: int = 0,
     user: dict = Depends(require_roles("creator", "admin")),
 ):
+    """Every live brief, with the filters to narrow it down.
+
+    No filter is applied by default — a creator sees everything that is open
+    or upcoming and narrows from there, rather than being shown a slice
+    somebody else chose.
+    """
     await _expire_stale_campaigns()
+    limit = max(1, min(int(limit or 200), 200))
+    offset = max(0, int(offset or 0))
     query: dict = {"status": {"$in": list(_LIVE_STATUSES)}}
+    if city:
+        # Campaigns predate this field, and the backfill fills them in — but a
+        # filter that only works after a migration has run returns nothing on a
+        # box that has not restarted. Same shape as execution_owner.
+        canonical = _canonical_city(city)
+        if canonical == DEFAULT_CAMPAIGN_CITY:
+            query["$and"] = [
+                {"$or": [{"city": canonical}, {"city": {"$exists": False}}, {"city": None}]}
+            ]
+        else:
+            query["city"] = canonical
     if area:
         query["area"] = area
     if category:
         query["category"] = category
+    if campaign_type:
+        if campaign_type not in CampaignType.__args__:
+            raise HTTPException(
+                status_code=422,
+                detail=f"campaign_type must be one of: {', '.join(CampaignType.__args__)}.",
+            )
+        query["campaign_type"] = campaign_type
+    if compensation_type:
+        if compensation_type not in CompensationType.__args__:
+            raise HTTPException(
+                status_code=422,
+                detail=f"compensation_type must be one of: {', '.join(CompensationType.__args__)}.",
+            )
+        if compensation_type == DEFAULT_COMPENSATION_TYPE:
+            # Same reasoning: a campaign with no compensation_type is fixed.
+            query["$or"] = [
+                {"compensation_type": compensation_type},
+                {"compensation_type": {"$exists": False}},
+                {"compensation_type": None},
+            ]
+        else:
+            query["compensation_type"] = compensation_type
     if budget_min is not None or budget_max is not None:
         budget_q: dict = {}
         if budget_min is not None:
@@ -15134,12 +15200,19 @@ async def list_campaigns(
         query["budget_per_creator"] = budget_q
     if q:
         # Case-insensitive keyword match against title / brief / deliverables.
+        # Pushed into $and rather than assigned to $or, because the
+        # compensation filter above may already own that key — two $or
+        # assignments would silently drop the first.
         term = re.escape(q.strip())
-        query["$or"] = [
-            {"title": {"$regex": term, "$options": "i"}},
-            {"brief": {"$regex": term, "$options": "i"}},
-            {"deliverables": {"$regex": term, "$options": "i"}},
-        ]
+        query.setdefault("$and", []).append(
+            {
+                "$or": [
+                    {"title": {"$regex": term, "$options": "i"}},
+                    {"brief": {"$regex": term, "$options": "i"}},
+                    {"deliverables": {"$regex": term, "$options": "i"}},
+                ]
+            }
+        )
 
     sort_key: list = [("created_at", -1)]
     if sort == "budget_desc":
@@ -15147,20 +15220,54 @@ async def list_campaigns(
     elif sort == "budget_asc":
         sort_key = [("budget_per_creator", 1), ("created_at", -1)]
 
-    docs = await db.campaigns.find(query).sort(sort_key).to_list(length=200)
+    total = await db.campaigns.count_documents(query)
+    docs = (
+        await db.campaigns.find(query)
+        .sort(sort_key)
+        .skip(offset)
+        .limit(limit)
+        .to_list(length=limit)
+    )
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
-    return [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
+    rows = [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
+    # The list used to be a bare array capped at 200 with no way to know
+    # whether anything was cut off. Still an array for anything already reading
+    # it that way — the count rides in a header, which is additive.
+    return JSONResponse(
+        content=jsonable_encoder(rows),
+        headers={"X-Total-Count": str(total), "X-Returned-Count": str(len(rows))},
+    )
 
 
 @campaigns_router.get("/filters")
 async def campaign_filters(
     user: dict = Depends(require_roles("creator", "admin")),
 ):
-    """Distinct areas + categories + budget bounds across listable campaigns."""
+    """What is actually worth filtering by, across listable campaigns.
+
+    Distinct values rather than the full enums: offering a category with no
+    live brief in it is a filter whose only outcome is an empty list.
+    """
     await _expire_stale_campaigns()
     base = {"status": {"$in": list(_LIVE_STATUSES)}}
     areas = await db.campaigns.distinct("area", base)
     categories = await db.campaigns.distinct("category", base)
+    cities = await db.campaigns.distinct("city", base)
+    campaign_types = await db.campaigns.distinct("campaign_type", base)
+    compensation_types = await db.campaigns.distinct("compensation_type", base)
+    # A campaign with no city or compensation predates the field and reads as
+    # the default, so the option has to be offered even when no document
+    # literally stores it.
+    has_unset_city = await db.campaigns.count_documents(
+        {**base, "$or": [{"city": {"$exists": False}}, {"city": None}]}
+    )
+    if has_unset_city:
+        cities.append(DEFAULT_CAMPAIGN_CITY)
+    has_unset_comp = await db.campaigns.count_documents(
+        {**base, "$or": [{"compensation_type": {"$exists": False}}, {"compensation_type": None}]}
+    )
+    if has_unset_comp:
+        compensation_types.append(DEFAULT_COMPENSATION_TYPE)
 
     # Budget bounds — used by the UI to build a sensible range slider/bucket.
     budget_bounds = {"min": None, "max": None}
@@ -15179,8 +15286,15 @@ async def campaign_filters(
         break
 
     return {
+        # Cities in canonical order rather than alphabetical — Bengaluru leads
+        # because that is where the work is.
+        "cities": [c for c in INDIAN_CITIES if c in set(cities)],
         "areas": sorted([a for a in areas if a]),
         "categories": sorted([c for c in categories if c]),
+        "campaign_types": [t for t in CampaignType.__args__ if t in set(campaign_types)],
+        "compensation_types": [
+            t for t in CompensationType.__args__ if t in set(compensation_types)
+        ],
         "budget_bounds": budget_bounds,
     }
 
@@ -16005,6 +16119,192 @@ async def admin_ping(user: dict = Depends(require_roles("admin"))):
     return {"pong": True, "admin_email": user["email"]}
 
 
+
+# --- The shareable brief -----------------------------------------------------
+#
+# A campaign that cannot be sent to somebody is a campaign that only reaches
+# people already inside the product. This is the page a link opens.
+#
+# **Server-rendered, deliberately.** The app is a static SPA, and the crawlers
+# that build a link preview — WhatsApp, Instagram, X, Slack — do not run
+# JavaScript. Open Graph tags injected by React are tags no crawler ever sees,
+# so the preview has to come from HTML that already contains them at fetch
+# time. That means the backend serves this one, not the bundle.
+#
+# It is also the page a human lands on, rather than a crawler-only shim that
+# redirects: one page, so what was promised in the preview is what opens.
+
+SHARE_PATH = "/c"
+
+
+def _share_base() -> str:
+    """The origin share links are built from.
+
+    Defaults to the frontend's own origin so links look like the product. Set
+    PUBLIC_SHARE_BASE_URL when the backend is on a different host and you have
+    proxied /c/* to it — see PREVIEW.md.
+    """
+    return (
+        os.environ.get("PUBLIC_SHARE_BASE_URL", "").strip().rstrip("/")
+        or os.environ.get("CORS_ORIGINS", "").split(",")[0].strip().rstrip("/")
+    )
+
+
+def _share_url(campaign_id: str) -> str:
+    return f"{_share_base()}{SHARE_PATH}/{campaign_id}"
+
+
+def _share_summary(campaign: dict, brand: dict) -> str:
+    """The one line that appears under the title in a WhatsApp preview.
+
+    Money first, because that is what decides whether somebody taps.
+    """
+    bits = []
+    if _is_barter(campaign):
+        bits.append("Barter")
+    elif campaign.get("budget_per_creator") is not None:
+        rupees = f"₹{float(campaign['budget_per_creator']):,.0f}"
+        kind = _compensation_type(campaign)
+        bits.append(f"{rupees} per creator{' (negotiable)' if kind == 'negotiated' else ''}")
+    where = ", ".join(x for x in (campaign.get("area"), campaign.get("city")) if x)
+    if where:
+        bits.append(where)
+    if brand.get("business_name"):
+        bits.append(f"with {brand['business_name']}")
+    return " · ".join(bits) or "A paid brief on WeAre Creators."
+
+
+def _share_page_html(campaign: dict, brand: dict, spots_left: int) -> str:
+    """One page, no framework, everything escaped.
+
+    Light-on-dark to match the product, inline CSS because a stylesheet is a
+    second request a preview crawler will not make and a person on a bus does
+    not need.
+    """
+    e = html_escape
+    cid = str(campaign["_id"])
+    title = e(campaign.get("title") or "A brief on WeAre Creators")
+    brand_name = e(brand.get("business_name") or "A verified brand")
+    summary = e(_share_summary(campaign, brand))
+    url = e(_share_url(cid))
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    money = (
+        "Barter"
+        if _is_barter(campaign)
+        else (
+            f"₹{float(campaign['budget_per_creator']):,.0f} per creator"
+            if campaign.get("budget_per_creator") is not None
+            else "—"
+        )
+    )
+    if _compensation_type(campaign) == "negotiated" and not _is_barter(campaign):
+        money += " · negotiable"
+
+    when = _iso(campaign.get("event_date")) or _iso(campaign.get("start_date"))
+    when_label = e((when or "")[:10] or "To be confirmed")
+    where = e(", ".join(x for x in (campaign.get("area"), campaign.get("city")) if x) or "—")
+
+    rows = "".join(
+        f'<div class="row"><dt>{e(label)}</dt><dd>{value}</dd></div>'
+        for label, value in (
+            ("What it pays", e(money)),
+            ("Deliverables", e(campaign.get("deliverables") or "—")),
+            ("Where", where),
+            ("When", when_label),
+            ("Creators wanted", e(str(campaign.get("creators_needed") or 1))),
+            ("Spots left", e(str(max(0, spots_left)))),
+            ("Run by", "WeAre" if _weare_runs(campaign) else brand_name),
+        )
+    )
+
+    return f"""<!doctype html>
+<html lang="en-IN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — {brand_name} | WeAre Creators</title>
+<meta name="description" content="{summary}">
+<meta name="theme-color" content="#0B0A09">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{url}">
+<meta property="og:title" content="{title} — {brand_name}">
+<meta property="og:description" content="{summary}">
+<meta property="og:image" content="{app_base}/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title} — {brand_name}">
+<meta name="twitter:description" content="{summary}">
+<meta name="twitter:image" content="{app_base}/og-image.png">
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
+.wrap{{max-width:44rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}}
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B}}
+h1{{font-family:Fraunces,Georgia,serif;font-size:clamp(2rem,6vw,3rem);line-height:1.05;margin:.75rem 0 0;letter-spacing:-.02em}}
+.brand{{margin-top:.75rem;color:#F05D14;font-size:.9rem}}
+.card{{margin-top:2rem;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.5rem}}
+.row{{display:flex;gap:1rem;padding:.7rem 0;border-bottom:1px solid rgba(255,255,255,.07)}}
+.row:last-child{{border-bottom:0}}
+dt{{flex:0 0 9.5rem;font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:#9C938B}}
+dd{{margin:0;flex:1;min-width:0}}
+.brief{{margin-top:2rem;white-space:pre-line;color:rgba(245,241,236,.9)}}
+.cta{{margin-top:2.5rem;display:flex;flex-wrap:wrap;gap:.75rem}}
+.btn{{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}}
+.primary{{background:#F05D14;color:#0B0A09}}
+.ghost{{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}}
+footer{{margin-top:3rem;color:#7d766f;font-size:.78rem}}
+a{{color:inherit}}
+</style></head><body><div class="wrap">
+<p class="eyebrow">Paid brief · Open to verified creators</p>
+<h1>{title}</h1>
+<p class="brand">{brand_name}</p>
+<div class="card"><dl style="margin:0">{rows}</dl></div>
+<div class="brief">{e(campaign.get("brief") or "")}</div>
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=creator">Sign up to apply</a>
+  <a class="btn ghost" href="{app_base}/login">Log in</a>
+</div>
+<footer>
+  You need a verified WeAre Creators account to pitch on this brief.
+  <a href="{app_base}/campaigns">See every open brief</a>.
+</footer>
+</div></body></html>"""
+
+
+@app.get(SHARE_PATH + "/{campaign_id}", include_in_schema=False)
+async def public_campaign_page(campaign_id: str):
+    """One brief, readable by anyone with the link. No account, no API prefix.
+
+    Only live briefs from verified brands, the same rule the shop window uses:
+    an unverified brand can post and be seen by verified creators in-app, but
+    it is not promoted to the open internet under our name.
+    """
+    try:
+        oid = ObjectId(campaign_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="That brief isn't available.")
+    campaign = await db.campaigns.find_one({"_id": oid})
+    if not campaign or campaign.get("status") not in LIVE_CAMPAIGN_STATUSES:
+        raise HTTPException(status_code=404, detail="That brief isn't available.")
+
+    brand_profile = await db.brand_profiles.find_one({"user_id": campaign["brand_id"]}) or {}
+    if not brand_profile.get("verified"):
+        raise HTTPException(status_code=404, detail="That brief isn't available.")
+
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([oid])).get(oid, 0)
+    return Response(
+        content=_share_page_html(campaign, brand_profile, needed - filled),
+        media_type="text/html; charset=utf-8",
+        # Public and safe to cache briefly — a crawler and a person often fetch
+        # it seconds apart, and the spots-left figure is the only thing that
+        # moves. Short enough that a closed brief stops being shared quickly.
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 app.include_router(api_router)
 
 # Uploaded images are served straight off disk. Mounted outside /api because
@@ -16400,6 +16700,18 @@ async def _startup():
             "Backfilled execution_owner=%s on %d campaign(s)",
             DEFAULT_EXECUTION_OWNER,
             theirs.modified_count,
+        )
+
+    # 10. Campaigns predate `city`. They all ran in Bengaluru — that is where
+    #     the operation is and was — so this is what they are rather than a
+    #     default standing in for the unknown.
+    placed = await db.campaigns.update_many(
+        {"$or": [{"city": {"$exists": False}}, {"city": None}]},
+        {"$set": {"city": DEFAULT_CAMPAIGN_CITY}},
+    )
+    if placed.modified_count:
+        logger.info(
+            "Backfilled city=%s on %d campaign(s)", DEFAULT_CAMPAIGN_CITY, placed.modified_count
         )
 
     # The nudge loop. Off entirely when the interval is zero, so a deployment

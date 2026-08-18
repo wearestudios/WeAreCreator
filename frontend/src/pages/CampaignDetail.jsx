@@ -24,6 +24,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
+import ShareButton from "@/components/ShareButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -543,6 +544,11 @@ export default function CampaignDetail() {
                     deciding whether to give up a day is deciding partly on who
                     they will be dealing with when something goes wrong. */}
                 <div className="mt-5 flex flex-wrap items-center gap-3">
+                    <ShareButton
+                        campaignId={campaign.id}
+                        title={campaign.title}
+                        summary={campaign.deliverables}
+                    />
                     <ExecutionBadge campaign={campaign} audience="creator" />
                     <ExecutionNote campaign={campaign} audience="creator" className="min-w-0" />
                 </div>

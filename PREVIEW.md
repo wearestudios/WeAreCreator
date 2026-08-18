@@ -193,6 +193,30 @@ boot; set `APP_ENV=development` on a laptop to silence them.
 
 Full list with comments: `backend/.env.example`.
 
+### Shareable brief links, and the one deploy step they need
+
+Every live brief from a verified brand has a public page at `/c/{id}`. It is
+**server-rendered by the backend**, not by the React app, and that is not a
+style choice: the crawlers that build a WhatsApp, Instagram or Slack preview do
+not run JavaScript, so Open Graph tags the SPA sets at runtime are tags nobody
+ever sees. The page a person opens and the page a crawler scrapes are the same
+one, so the preview cannot promise something the link does not show.
+
+Out of the box the Share button copies `https://<frontend>/c/<id>`, which only
+works if that path reaches the backend. Add the proxy to `frontend/vercel.json`,
+above the catch-all, replacing the host with your Railway URL:
+
+```json
+{ "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" }
+```
+
+The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
+the backend's own origin and links will point straight at it. That works
+immediately but the URL is the API host, which is uglier to read out.
+
+Until one of the two is done, a shared link opens the React app and previews as
+the generic site card.
+
 ### Deploying the frontend to Vercel
 
 `frontend/vercel.json` rewrites everything to `/index.html` so react-router

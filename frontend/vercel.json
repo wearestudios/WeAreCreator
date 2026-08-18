@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "//": "Shareable brief pages are server-rendered by the backend, because a link-preview crawler does not run JavaScript. Point the destination at your API host and uncomment; until then /c/* falls through to the SPA and previews as the generic site card. See PREVIEW.md.",
+      "source": "/c/:id",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

@@ -22,6 +22,7 @@ import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import ExecutionBadge from "@/components/ExecutionBadge";
+import ShareButton from "@/components/ShareButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,6 +46,19 @@ const CAT_LABEL = {
 };
 
 // Editorial budget buckets — always relevant regardless of live data.
+// The words for the two enums the filters now cover. The API sends the raw
+// value; a creator should not have to read "personal_table".
+const TYPE_LABEL = {
+    launch: "Launch",
+    group_event: "Group event",
+    personal_table: "Your own slot",
+};
+const COMPENSATION_LABEL = {
+    fixed: "Fixed fee",
+    negotiated: "Negotiable",
+    barter: "Barter",
+};
+
 const BUDGET_BUCKETS = [
     { value: ANY, label: "Any budget", min: null, max: null },
     { value: "u5", label: "Under ₹5,000", min: null, max: 4999 },
@@ -158,7 +172,15 @@ const CampaignCard = ({ c, index }) => (
                         </div>
                     )}
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
+                <div className="flex flex-none items-center gap-2">
+                    <ShareButton
+                        campaignId={c.id}
+                        title={c.title}
+                        summary={c.deliverables}
+                        variant="icon"
+                    />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
+                </div>
             </div>
         </Link>
     </motion.div>
@@ -167,13 +189,26 @@ const CampaignCard = ({ c, index }) => (
 export default function Campaigns() {
     const [items, setItems] = useState(null);
     const [error, setError] = useState("");
+    // Every filter starts at ANY: the page opens showing everything live and
+    // the creator narrows from there, rather than being handed a slice
+    // somebody else chose.
+    const [city, setCity] = useState(ANY);
     const [area, setArea] = useState(ANY);
     const [category, setCategory] = useState(ANY);
+    const [campaignType, setCampaignType] = useState(ANY);
+    const [compensation, setCompensation] = useState(ANY);
     const [budget, setBudget] = useState(ANY);
     const [sort, setSort] = useState("newest");
     const [q, setQ] = useState("");
     const [debouncedQ, setDebouncedQ] = useState("");
-    const [filters, setFilters] = useState({ areas: [], categories: [] });
+    const [filters, setFilters] = useState({
+        cities: [],
+        areas: [],
+        categories: [],
+        campaign_types: [],
+        compensation_types: [],
+    });
+    const [total, setTotal] = useState(null);
 
     // Debounce keyword search input.
     useEffect(() => {
@@ -185,7 +220,15 @@ export default function Campaigns() {
     useEffect(() => {
         api.get("/campaigns/filters")
             .then(({ data }) => setFilters(data))
-            .catch(() => setFilters({ areas: [], categories: [] }));
+            .catch(() =>
+                setFilters({
+                    cities: [],
+                    areas: [],
+                    categories: [],
+                    campaign_types: [],
+                    compensation_types: [],
+                }),
+            );
     }, []);
 
     // Load list whenever filters change.
@@ -193,16 +236,24 @@ export default function Campaigns() {
         let cancelled = false;
         setItems(null);
         const params = {};
+        if (city !== ANY) params.city = city;
         if (area !== ANY) params.area = area;
         if (category !== ANY) params.category = category;
+        if (campaignType !== ANY) params.campaign_type = campaignType;
+        if (compensation !== ANY) params.compensation_type = compensation;
         const bucket = BUDGET_BUCKETS.find((b) => b.value === budget);
         if (bucket && bucket.min !== null) params.budget_min = bucket.min;
         if (bucket && bucket.max !== null) params.budget_max = bucket.max;
         if (sort && sort !== "newest") params.sort = sort;
         if (debouncedQ) params.q = debouncedQ;
         api.get("/campaigns", { params })
-            .then(({ data }) => {
-                if (!cancelled) setItems(data);
+            .then(({ data, headers }) => {
+                if (cancelled) return;
+                setItems(data);
+                // The server says how many matched, which is not the same as
+                // how many came back — the list is capped.
+                const seen = Number(headers?.["x-total-count"]);
+                setTotal(Number.isFinite(seen) ? seen : data.length);
             })
             .catch((err) => {
                 if (!cancelled) {
@@ -213,9 +264,12 @@ export default function Campaigns() {
         return () => {
             cancelled = true;
         };
-    }, [area, category, budget, sort, debouncedQ]);
+    }, [city, area, category, campaignType, compensation, budget, sort, debouncedQ]);
 
     const hasFilters =
+        city !== ANY ||
+        campaignType !== ANY ||
+        compensation !== ANY ||
         area !== ANY ||
         category !== ANY ||
         budget !== ANY ||
@@ -248,10 +302,31 @@ export default function Campaigns() {
             onRemove: () => setQ(""),
         },
         {
+            key: "city",
+            label: "City",
+            value: city === ANY ? "" : city,
+            onRemove: () => setCity(ANY),
+        },
+        {
             key: "area",
             label: "Area",
             value: area === ANY ? "" : area,
             onRemove: () => setArea(ANY),
+        },
+        {
+            key: "campaign_type",
+            label: "Type",
+            value: campaignType === ANY ? "" : TYPE_LABEL[campaignType] || campaignType,
+            onRemove: () => setCampaignType(ANY),
+        },
+        {
+            key: "compensation",
+            label: "Pays",
+            value:
+                compensation === ANY
+                    ? ""
+                    : COMPENSATION_LABEL[compensation] || compensation,
+            onRemove: () => setCompensation(ANY),
         },
         {
             key: "category",
@@ -271,6 +346,9 @@ export default function Campaigns() {
     ];
 
     const resetAll = () => {
+        setCity(ANY);
+        setCampaignType(ANY);
+        setCompensation(ANY);
         setArea(ANY);
         setCategory(ANY);
         setBudget(ANY);
@@ -348,6 +426,25 @@ export default function Campaigns() {
                         />
                     </div>
 
+                    <Select value={city} onValueChange={setCity}>
+                        <SelectTrigger
+                            data-testid="filter-city-trigger"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                        >
+                            <SelectValue placeholder="Any city" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={ANY} data-testid="filter-city-any">
+                                Any city
+                            </SelectItem>
+                            {(filters.cities || []).map((c) => (
+                                <SelectItem value={c} key={c} data-testid={`filter-city-${c}`}>
+                                    {c}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
                     <Select value={area} onValueChange={setArea}>
                         <SelectTrigger
                             data-testid="filter-area-trigger"
@@ -366,6 +463,48 @@ export default function Campaigns() {
                                     data-testid={`filter-area-${a}`}
                                 >
                                     {a}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={campaignType} onValueChange={setCampaignType}>
+                        <SelectTrigger
+                            data-testid="filter-type-trigger"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                        >
+                            <SelectValue placeholder="Any format" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={ANY} data-testid="filter-type-any">
+                                Any format
+                            </SelectItem>
+                            {(filters.campaign_types || []).map((t) => (
+                                <SelectItem value={t} key={t} data-testid={`filter-type-${t}`}>
+                                    {TYPE_LABEL[t] || t}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select value={compensation} onValueChange={setCompensation}>
+                        <SelectTrigger
+                            data-testid="filter-compensation-trigger"
+                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                        >
+                            <SelectValue placeholder="Any pay" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={ANY} data-testid="filter-compensation-any">
+                                Any pay
+                            </SelectItem>
+                            {(filters.compensation_types || []).map((t) => (
+                                <SelectItem
+                                    value={t}
+                                    key={t}
+                                    data-testid={`filter-compensation-${t}`}
+                                >
+                                    {COMPENSATION_LABEL[t] || t}
                                 </SelectItem>
                             ))}
                         </SelectContent>
@@ -455,6 +594,10 @@ export default function Campaigns() {
                     {Array.isArray(items) && (
                         <ResultCount
                             shown={items.length}
+                            // The server's count of what matched, which is not
+                            // the same as what came back — the list is capped,
+                            // and "40 of 137" is the honest way to say so.
+                            total={total ?? undefined}
                             noun="campaign"
                             testid="campaigns-count"
                             className="ml-auto"

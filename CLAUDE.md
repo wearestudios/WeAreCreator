@@ -431,6 +431,54 @@ generates a support email.
 The other order turns another brand's campaign from a 404 into a 403, which
 leaks which ids exist. A unit test pins the order for every gated endpoint.
 
+## Finding a brief, and sending one on
+
+`GET /campaigns` lists everything live — `open` and `upcoming` — with **no
+filter applied by default**, and narrows on `city`, `area`, `category`,
+`campaign_type` and `compensation_type`. It is paginated with the matched total
+in `X-Total-Count`; it used to be a bare array capped at 200 with no way to know
+anything had been cut off.
+
+- **`city` on a campaign is new.** Campaigns carried only `area`, the free-text
+  neighbourhood, so "briefs in my city" was unanswerable even though a creator's
+  city is a canonical dropdown. It goes through `_canonical_city`, the same
+  function the creator's does, or the two could never be compared.
+- Filtering for the default city or `fixed` matches documents with **no field at
+  all** — campaigns predate both, and a filter that only works after a migration
+  has run returns nothing on a box that has not restarted. Same trap as
+  `execution_owner` and `showcase`.
+- The keyword search appends to `$and` rather than assigning `$or`, because the
+  compensation filter may already own that key and a second assignment silently
+  drops the first.
+- `/campaigns/filters` returns distinct values, not the full enums: offering a
+  category with no live brief in it is a filter whose only outcome is an empty
+  list.
+
+### The shareable page
+
+`GET /c/{id}` — a public brief, outside the `/api` prefix, no account needed.
+
+**Server-rendered by the backend, deliberately.** The app is a static SPA and
+the crawlers that build a WhatsApp or Instagram preview do not run JavaScript,
+so Open Graph tags injected by React are tags no crawler ever sees. It is the
+page a *person* lands on too, not a crawler-only shim that redirects — one page,
+so what the preview promised is what opens.
+
+- Only live briefs from **verified** brands, the same rule as the shop window:
+  an unverified brand can post and be seen by verified creators in-app, but is
+  not promoted to the open internet under our name. Everything else 404s,
+  including a malformed id.
+- Every field is `html_escape`d — a campaign title is brand-supplied text on a
+  public page — and barter never renders as a rupee figure.
+- `PUBLIC_SHARE_BASE_URL` sets the origin links are built from, defaulting to
+  the frontend's. **Vercel must proxy `/c/*` to the backend** or a shared link
+  opens the SPA and previews as the generic site card; see PREVIEW.md.
+- `ShareButton` uses `navigator.share` where it exists — on a phone that is
+  WhatsApp and Instagram in one tap — and copies otherwise. Dismissing the sheet
+  rejects with `AbortError` and must not raise a toast: that is a decision, not
+  a failure. It `stopPropagation`s because the card it sits on is a link.
+
+
 ## What a brief pays
 
 `compensation_type` on a campaign, one of three (`CompensationType`):
