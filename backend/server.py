@@ -727,6 +727,215 @@ CampaignType = Literal["launch", "group_event", "personal_table"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
 
 
+# ---------------------------------------------------------------------------
+# When a shoot may happen
+#
+# A venue's Monday is not its Saturday and its 11am is not its 8pm, and a
+# manager finding that out by putting six creators in a kitchen at lunchtime
+# is how a campaign burns a relationship. Two fields say it up front:
+# `restricted_days` (weekdays the venue is out) and `shoot_windows` (the
+# hours that work).
+# ---------------------------------------------------------------------------
+
+# **Every weekday and hour-of-day comparison happens here, in IST.** Slots are
+# stored in UTC, and a 19:00 Bengaluru sitting is the *next day* in UTC — so
+# reading `.weekday()` off the stored value puts a Friday evening on Saturday
+# for everybody using this. Same trap `isToday` has on the manager's screen,
+# and the same fix. Fixed rather than per-campaign because the operation is
+# Bengaluru-first; when a second timezone arrives this becomes a field and
+# every reader already goes through one function.
+SHOOT_TZ = timezone(timedelta(hours=5, minutes=30))
+
+# Index matches datetime.weekday(): Monday is 0.
+WEEKDAY_NAMES = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+)
+
+# Named windows, because "12:00–15:00" is a thing to work out and "Lunch" is a
+# thing to recognise. The times are resolved from this table **at write time**
+# and stored explicitly on the campaign, so retuning a preset later never
+# silently moves a brief somebody already agreed to.
+SHOOT_WINDOW_PRESETS = {
+    "breakfast": ("07:00", "11:00"),
+    "lunch": ("12:00", "15:00"),
+    "afternoon": ("15:00", "18:00"),
+    "evening": ("18:00", "21:00"),
+    "late": ("21:00", "23:30"),
+}
+SHOOT_WINDOW_LABELS = {
+    "breakfast": "Breakfast",
+    "lunch": "Lunch",
+    "afternoon": "Afternoon",
+    "evening": "Evening",
+    "late": "Late night",
+    "custom": "Custom",
+}
+MAX_SHOOT_WINDOWS = 6
+
+
+def _parse_hhmm(value) -> Optional[int]:
+    """"18:30" → minutes past local midnight, or None if it isn't a time."""
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        hours, minutes = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return hours * 60 + minutes
+
+
+def _hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+class ShootWindow(BaseModel):
+    """One period of the day a shoot may happen in.
+
+    `key` names a preset or is "custom". A preset's times come from
+    `SHOOT_WINDOW_PRESETS` and whatever the client sends is ignored — a
+    "lunch" window that runs 2am–4am because somebody posted one is a window
+    the label lies about.
+    """
+
+    key: str = Field(min_length=1, max_length=20)
+    start: Optional[str] = Field(default=None, max_length=5)
+    end: Optional[str] = Field(default=None, max_length=5)
+
+
+def _clean_shoot_windows(rows) -> list:
+    """Normalise the windows a campaign was posted with.
+
+    Presets resolve from the table; a custom window keeps the times it was
+    given. Anything unparseable is dropped rather than stored half-formed —
+    a window with no end is not a window, and enforcing against one would
+    refuse every slot on the campaign.
+    """
+    if not rows:
+        return []
+    out, seen = [], set()
+    for row in rows:
+        if isinstance(row, BaseModel):
+            row = row.model_dump()
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip().lower()
+        if key in SHOOT_WINDOW_PRESETS:
+            start_s, end_s = SHOOT_WINDOW_PRESETS[key]
+        elif key == "custom":
+            start_s, end_s = row.get("start"), row.get("end")
+        else:
+            continue
+        start = _parse_hhmm(start_s)
+        end = _parse_hhmm(end_s)
+        if start is None or end is None or end <= start:
+            continue
+        signature = (start, end)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        out.append({"key": key, "start": _hhmm(start), "end": _hhmm(end)})
+        if len(out) >= MAX_SHOOT_WINDOWS:
+            break
+    return sorted(out, key=lambda w: w["start"])
+
+
+def _clean_restricted_days(rows) -> list:
+    """The weekdays this venue is out, as `datetime.weekday()` indexes.
+
+    Refuses all seven: a campaign with no day it can happen on is not a
+    restriction, it is a campaign nobody can ever book, and it would be
+    discovered by a creator finding the picker dead.
+    """
+    if not rows:
+        return []
+    days = set()
+    for value in rows:
+        try:
+            day = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= day <= 6:
+            days.add(day)
+    if len(days) == 7:
+        raise HTTPException(
+            status_code=422,
+            detail="That rules out every day of the week — leave at least one open.",
+        )
+    return sorted(days)
+
+
+def _restricted_days(campaign: Optional[dict]) -> set:
+    """Absent reads "nothing restricted" — campaigns predate the field."""
+    return {
+        int(d)
+        for d in ((campaign or {}).get("restricted_days") or [])
+        if isinstance(d, (int, float)) and 0 <= int(d) <= 6
+    }
+
+
+def _shoot_windows(campaign: Optional[dict]) -> list:
+    return list((campaign or {}).get("shoot_windows") or [])
+
+
+def _shoot_time_refusal(campaign: Optional[dict], starts, ends=None) -> Optional[str]:
+    """Why this time is not allowed on this campaign, or None if it is.
+
+    **The one place the rule lives**, so slot creation, slot editing and a
+    creator naming their own time on a personal table cannot disagree about
+    what the brand asked for. Returns the sentence rather than raising, so the
+    manager's slot list can label a slot that predates the restriction instead
+    of only ever refusing.
+
+    Both halves are evaluated in IST. Neither applies to a campaign that set
+    nothing, which is every campaign written before these fields existed.
+    """
+    if starts is None:
+        return None
+    local = _as_utc(starts).astimezone(SHOOT_TZ)
+
+    restricted = _restricted_days(campaign)
+    if local.weekday() in restricted:
+        open_days = [WEEKDAY_NAMES[d] for d in range(7) if d not in restricted]
+        return (
+            f"This venue isn't available on {WEEKDAY_NAMES[local.weekday()]}s. "
+            + (f"Open: {', '.join(open_days)}." if open_days else "")
+        ).strip()
+
+    windows = _shoot_windows(campaign)
+    if not windows:
+        return None
+
+    # A slot has to sit inside one window rather than straddle two: a sitting
+    # that runs from lunch into the afternoon is one the venue never agreed
+    # to, however each half looks on its own.
+    minutes = local.hour * 60 + local.minute
+    end_minutes = minutes
+    if ends is not None:
+        local_end = _as_utc(ends).astimezone(SHOOT_TZ)
+        end_minutes = local_end.hour * 60 + local_end.minute
+        if local_end.date() != local.date():
+            end_minutes = 24 * 60  # ran past midnight — no window covers that
+
+    for w in windows:
+        start = _parse_hhmm(w.get("start"))
+        end = _parse_hhmm(w.get("end"))
+        if start is None or end is None:
+            continue
+        if start <= minutes and end_minutes <= end:
+            return None
+
+    readable = ", ".join(
+        f"{SHOOT_WINDOW_LABELS.get(w['key'], w['key'])} {w['start']}–{w['end']}"
+        for w in windows
+    )
+    return f"This campaign shoots in set windows: {readable} (IST)."
+
+
 # What a creator is actually being offered.
 #
 #   fixed       the budget on the brief is the fee, take it or leave it
@@ -913,6 +1122,11 @@ class PostCampaignPayload(BaseModel):
     # audience is the problem this exists to fix. An explicit false turns it
     # off and the lifecycle behaves exactly as it did before.
     requires_draft_approval: Optional[bool] = None
+    # When a shoot may happen. Both optional and both default to "no
+    # restriction", because most briefs have none and a form that demands an
+    # answer gets a made-up one.
+    restricted_days: Optional[list[int]] = None
+    shoot_windows: Optional[list[ShootWindow]] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -984,6 +1198,8 @@ class UpdateCampaignPayload(BaseModel):
     # in _creator_may_see, not here.
     visibility: Optional[CampaignVisibility] = None
     requires_draft_approval: Optional[bool] = None
+    restricted_days: Optional[list[int]] = None
+    shoot_windows: Optional[list[ShootWindow]] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -5108,6 +5324,12 @@ async def list_creator_slots(
         "can_book": collab.get("state") == "commercial_agreed",
         "picks_own_time": campaign.get("campaign_type") == "personal_table",
         "how_it_works": _slot_window_note(campaign),
+        # The brand's days and hours, so a creator picking their own time on a
+        # personal table is told the rule rather than finding it by being
+        # refused. The server checks again on book — this is the courtesy on
+        # top, the same shape as the visibility pills.
+        "restricted_days": sorted(_restricted_days(campaign)),
+        "shoot_windows": _shoot_windows(campaign),
         "booked_slot_id": str(booked_id) if booked_id else None,
         "scheduled_at": _iso(collab.get("scheduled_at")),
         "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
@@ -5167,6 +5389,12 @@ async def creator_book_slot(
                 status_code=422,
                 detail="That time is outside the window you picked.",
             )
+        # A personal table is the one place a creator names their own time, so
+        # it is the one booking path where the brand's days and hours have to
+        # be checked again. Fixed slots were checked when they were created.
+        refusal = _shoot_time_refusal(campaign, preferred)
+        if refusal:
+            raise HTTPException(status_code=422, detail=refusal)
     elif payload.preferred_time is not None:
         # Everyone arrives together on a launch or a group event; letting one
         # creator write their own time would put them at the venue alone.
@@ -5383,6 +5611,11 @@ def _serialize_brand_campaign(
         # Never None: the owner's console prints one of two words on every row.
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
+        # When a shoot may happen. Shipped on every campaign shape rather than
+        # only the owner's, because the creator deciding whether to apply is
+        # the person most affected by "Saturdays only, evenings".
+        "restricted_days": sorted(_restricted_days(doc)),
+        "shoot_windows": _shoot_windows(doc),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
@@ -6179,6 +6412,10 @@ async def create_brand_campaign(
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
+        # When the venue can actually take people. Empty means no restriction,
+        # which is what a brand that skipped the question is saying.
+        "restricted_days": _clean_restricted_days(payload.restricted_days),
+        "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -6256,6 +6493,13 @@ async def update_brand_campaign(
     # this loop copies whatever the payload carried, compensation_type included.
     if "city" in update:
         update["city"] = _canonical_city(update["city"]) or DEFAULT_CAMPAIGN_CITY
+    # Both go through the same cleaners as creation. An empty list is a real
+    # value here — clearing the restriction — so these are checked for
+    # presence rather than truth.
+    if "restricted_days" in update:
+        update["restricted_days"] = _clean_restricted_days(update["restricted_days"])
+    if "shoot_windows" in update:
+        update["shoot_windows"] = _clean_shoot_windows(update["shoot_windows"])
     _refuse_brand_barter(doc, update)
     _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
@@ -14761,6 +15005,14 @@ def _validate_slot_times(campaign: dict, starts_at: datetime, ends_at: Optional[
                 status_code=422,
                 detail="The window has to sit inside the campaign's dates.",
             )
+
+    # What the brand said about days and hours. Checked here rather than at
+    # each call site so creating a slot and moving one obey the same rule —
+    # a slot dragged onto a Monday the venue is shut is exactly as wrong as
+    # one created there.
+    refusal = _shoot_time_refusal(campaign, starts, ends)
+    if refusal:
+        raise HTTPException(status_code=422, detail=refusal)
     return starts, ends
 
 
@@ -14795,7 +15047,7 @@ async def _managed_collab_or_404(collab_id: str, user: dict):
     return collab, campaign
 
 
-def _serialize_slot(doc: dict) -> dict:
+def _serialize_slot(doc: dict, campaign: Optional[dict] = None) -> dict:
     capacity = int(doc.get("capacity") or 0)
     booked = int(doc.get("booked_count") or 0)
     return {
@@ -14806,6 +15058,15 @@ def _serialize_slot(doc: dict) -> dict:
         "capacity": capacity,
         "booked_count": booked,
         "spots_left": max(0, capacity - booked),
+        # A slot that predates the brand's restriction, or was written by an
+        # admin going round it. **Labelled, not refused**: the slot exists and
+        # people may already hold seats on it, and killing bookings on a slot
+        # we advertised would strand a creator with a dead picker. The manager
+        # is the one who can ring the venue, so the manager is who gets told.
+        "outside_preferences": bool(
+            campaign
+            and _shoot_time_refusal(campaign, doc.get("starts_at"), doc.get("ends_at"))
+        ),
         "created_at": _iso(doc.get("created_at")),
     }
 
@@ -14891,7 +15152,11 @@ async def list_campaign_slots(
     return {
         "campaign_id": campaign_id,
         "campaign_type": campaign.get("campaign_type"),
-        "slots": [_serialize_slot(d) for d in docs],
+        # The brand's own words, so the manager building slots sees the rule
+        # rather than discovering it in a 422.
+        "restricted_days": sorted(_restricted_days(campaign)),
+        "shoot_windows": _shoot_windows(campaign),
+        "slots": [_serialize_slot(d, campaign) for d in docs],
     }
 
 
@@ -15589,6 +15854,11 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "visibility": _campaign_visibility(doc),
         # The creator needs to know before they shoot that a draft comes first.
         "requires_draft_approval": _requires_draft_approval(doc),
+        # When a shoot may happen. Shipped on every campaign shape rather than
+        # only the owner's, because the creator deciding whether to apply is
+        # the person most affected by "Saturdays only, evenings".
+        "restricted_days": sorted(_restricted_days(doc)),
+        "shoot_windows": _shoot_windows(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign

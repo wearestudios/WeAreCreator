@@ -21,6 +21,7 @@ import { EXECUTION_OPTIONS } from "@/lib/execution";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
+import ShootPreferences from "@/components/campaign/ShootPreferences";
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -90,6 +91,10 @@ export default function PostCampaign() {
     // brand-run brief: whoever is paying for the work should see it before
     // the creator's audience does. Off is a deliberate choice to make.
     const [requiresDraft, setRequiresDraft] = useState(true);
+    // When the venue can take people. Both default to "no restriction",
+    // which is what most briefs mean.
+    const [restrictedDays, setRestrictedDays] = useState([]);
+    const [shootWindows, setShootWindows] = useState([]);
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -151,6 +156,8 @@ export default function PostCampaign() {
                     // brief that doesn't review drafts would quietly turn the
                     // stage on for everybody already working it.
                     setRequiresDraft(Boolean(data.requires_draft_approval));
+                    setRestrictedDays(data.restricted_days || []);
+                    setShootWindows(data.shoot_windows || []);
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -241,6 +248,12 @@ export default function PostCampaign() {
               }),
         visibility,
         requires_draft_approval: requiresDraft,
+        restricted_days: restrictedDays,
+        // Presets travel as a bare key; only a custom window carries times,
+        // because the server owns what "lunch" means.
+        shoot_windows: shootWindows.map((w) =>
+            w.key === "custom" ? { key: "custom", start: w.start, end: w.end } : { key: w.key },
+        ),
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
@@ -504,6 +517,19 @@ export default function PostCampaign() {
                                 </p>
                             </div>
                         )}
+
+                        {/* Which days and hours the venue can actually take
+                            people. Sits with the dates because it is the same
+                            question at a finer grain — and because a manager
+                            setting slots reads both together. */}
+                        <ShootPreferences
+                            days={restrictedDays}
+                            windows={shootWindows}
+                            onChange={({ days, windows }) => {
+                                setRestrictedDays(days);
+                                setShootWindows(windows);
+                            }}
+                        />
                     </section>
 
                     <section className="space-y-5">

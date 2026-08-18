@@ -27,6 +27,7 @@ import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
+import ShootWindowNote from "@/components/campaign/ShootWindowNote";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
 import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
@@ -613,6 +614,12 @@ export default function CampaignDetail() {
                                 {campaign.deliverables}
                             </p>
                         </section>
+
+                        {/* When the venue can take people, said before the
+                            apply button rather than discovered by a creator
+                            whose Saturday was the whole reason they applied.
+                            Renders nothing when the brief set nothing. */}
+                        <ShootWindowNote campaign={campaign} className="mt-12" />
 
                         {/* The page decides by audience, like the navbar does:
                             the ask box belongs to the creator reading a brief,

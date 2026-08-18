@@ -586,6 +586,49 @@ what they say. The "Live pool" masthead figure is gone — it summed
   category with no live brief in it is a filter whose only outcome is an empty
   list.
 
+### When a shoot may happen
+
+A venue's Monday is not its Saturday and its 11am is not its 8pm. Two fields on
+a campaign say so: `restricted_days` (weekday indexes the venue is out) and
+`shoot_windows` (the hours that work). Before them the only place a brand could
+say "not during service" was the brief, which nothing reads.
+
+- **Every weekday and hour comparison happens in IST** (`SHOOT_TZ`). Slots are
+  stored in UTC and a 19:00 Bengaluru sitting is the *next day* in UTC, so
+  reading `.weekday()` off the stored value puts a Friday evening on Saturday
+  for everybody. Same trap as `isToday` on the manager's screen, same fix.
+  Fixed rather than per-campaign because the operation is Bengaluru-first.
+- **`_shoot_time_refusal(campaign, starts, ends)` is the only decider** —
+  slot creation, slot editing (both through `_validate_slot_times`) and a
+  creator naming their own time on a personal table all call it, so the three
+  cannot disagree about what the brand asked for. It **returns the sentence
+  rather than raising**, because one caller labels instead of refusing.
+- **A preset's times come from `SHOOT_WINDOW_PRESETS` at write time**, never
+  from the client: a "lunch" window running 2am–4am is a window whose label
+  lies, and resolving at write time means retuning a preset later cannot move
+  a brief somebody already agreed to. Only `custom` carries times.
+- A slot must sit **inside one window**, not straddle two — a sitting running
+  from lunch into the afternoon is one the venue never agreed to, however each
+  half looks alone. Absent reads as unrestricted, the usual pre-migration rule.
+- `_clean_restricted_days` **refuses all seven**: that is not a restriction,
+  it is a campaign nobody can ever book, discovered by a creator with a dead
+  picker. The frontend control holds the same line at six.
+- **A slot that predates a restriction is labelled, not killed.**
+  `outside_preferences` on the manager's slot rows says so — people may
+  already hold seats, and refusing bookings on a slot we advertised strands a
+  creator. The manager is who can ring the venue, so the manager is who is
+  told. The admin `advance` path writes `scheduled_at` directly and is
+  deliberately not checked: it is the escape hatch for when the rule is wrong.
+- `lib/shootWindows.js` mirrors the presets, the weekday names and the offset;
+  a unit test fails if they drift. **Weekday indexes follow Python's
+  `datetime.weekday()` (Monday 0), not JavaScript's `getDay()` (Sunday 0)** —
+  `dayIndex` is the only place that conversion happens. `SlotPicker` cuts the
+  disallowed days and times out rather than offering and then refusing them,
+  and `ShootWindowNote` renders the same rule on the campaign page, in the
+  picker and above the manager's slot list — it renders nothing when nothing
+  was set, because an empty box headed "When it shoots" reads as a fact about
+  the venue rather than a question nobody answered.
+
 ### Public and invite-only briefs
 
 `visibility` on a campaign, `public` or `private` (`CampaignVisibility`).
