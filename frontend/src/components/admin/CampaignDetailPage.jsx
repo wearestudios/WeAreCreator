@@ -72,10 +72,15 @@ import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The applicant board's columns, in pipeline order. The server groups them;
 // this names them.
+// These keys are the ones GET /admin/campaigns/{id}/applicants actually
+// returns — it spreads `_APPLICANT_BUCKETS` by name. They used to be
+// active/completed/ended, which match nothing on the server, so every group
+// resolved to undefined and the section rendered its empty state however many
+// applicants a campaign had.
 const GROUPS = [
-    { key: "active", label: "In flight" },
-    { key: "completed", label: "Completed" },
-    { key: "ended", label: "Declined & cancelled" },
+    { key: "applied", label: "Waiting on us" },
+    { key: "approved", label: "Approved" },
+    { key: "rejected", label: "Declined & cancelled" },
 ];
 
 export default function CampaignDetailPage() {
@@ -583,13 +588,18 @@ export default function CampaignDetailPage() {
                                             <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
                                                 {g.rows.map((a) => (
                                                     <li
-                                                        key={a.id}
-                                                        data-testid={IDS.applicant(a.id)}
+                                                        key={a.collaboration_id}
+                                                        data-testid={IDS.applicant(
+                                                            a.collaboration_id,
+                                                        )}
                                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                                     >
+                                                        {/* Flat on this endpoint — there is no
+                                                            nested `creator` block here, unlike the
+                                                            brand's board. */}
                                                         <CreatorLink
-                                                            id={a.creator?.id}
-                                                            name={a.creator?.name}
+                                                            id={a.creator_id}
+                                                            name={a.name}
                                                             className="min-w-0 flex-1 text-sm"
                                                         />
                                                         <span className="flex-none text-xs text-muted-foreground">
@@ -601,7 +611,7 @@ export default function CampaignDetailPage() {
                                                         </span>
                                                         <StatePill state={a.state} />
                                                         <Link
-                                                            to={`/admin/collaborations/${a.id}`}
+                                                            to={`/admin/collaborations/${a.collaboration_id}`}
                                                             className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                                                         >
                                                             Open

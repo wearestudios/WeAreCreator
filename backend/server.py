@@ -12473,14 +12473,38 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
 
 
 # The three buckets an applicant can be in, from the console's point of view.
-# "approved" is accepted and beyond — once the brand takes somebody on, every
-# later state is still a yes, including a finished one.
-_APPLICANT_APPROVED_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+#
+# `verified` is the admin's own approval of the application — it is the state
+# the console's Approve button *produces*, so it has to read as approved here
+# or the admin approves somebody and watches them stay in the pending column.
+# That was the bug: this bucketed on COLLAB_GROUP_APPLIED, which is
+# ("applied", "verified").
+#
+# COLLAB_GROUP_APPLIED is deliberately left alone. It answers a different
+# question — "did this application go anywhere yet", on a creator's history,
+# where an approved-but-not-yet-accepted application genuinely has not — and
+# reusing it here conflated the two.
+_APPLICANT_PENDING_STATES = ("applied",)
+_APPLICANT_APPROVED_STATES = (
+    ("verified",) + tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
+)
+
+# Work actually in flight: the brand has taken this creator on. Deliberately
+# *not* the approved set above, which now includes `verified` — an application
+# we have approved but no brand has accepted is not work, and counting it as
+# such would inflate "active creators" with people who are still waiting.
+_ENGAGED_COLLAB_STATES = tuple(COLLAB_GROUP_ONGOING) + tuple(COLLAB_GROUP_COMPLETED)
 _APPLICANT_BUCKETS = (
-    ("applied", COLLAB_GROUP_APPLIED),
+    ("applied", _APPLICANT_PENDING_STATES),
     ("approved", _APPLICANT_APPROVED_STATES),
     ("rejected", COLLAB_GROUP_ENDED),
 )
+
+# Every state belongs to exactly one bucket, or an applicant silently vanishes
+# from a board that is supposed to account for all of them.
+assert set(COLLAB_STATE_ORDER) | set(COLLAB_GROUP_ENDED) == set(
+    _APPLICANT_PENDING_STATES + _APPLICANT_APPROVED_STATES + COLLAB_GROUP_ENDED
+), "an applicant state belongs to no bucket"
 
 
 def _bucket_counts_expr() -> dict:
@@ -12583,7 +12607,7 @@ async def admin_dashboard(
                     # Distinct creators with work in flight or finished — the
                     # honest reading of "active", rather than "signed up once".
                     "active_creators": [
-                        {"$match": {"state": {"$in": list(_APPLICANT_APPROVED_STATES)}}},
+                        {"$match": {"state": {"$in": list(_ENGAGED_COLLAB_STATES)}}},
                         {"$group": {"_id": "$creator_id"}},
                         {"$count": "n"},
                     ],
