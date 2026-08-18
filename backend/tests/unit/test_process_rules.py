@@ -2924,12 +2924,33 @@ class TestProfileSavesPartially:
         src = inspect.getsource(server.update_creator_profile)
         assert 'update["pending_review"] = bool(existing.get("submitted_for_review_at"))' in src
 
-    def test_a_verified_creator_still_stays_live_while_edits_are_reviewed(self):
+    def test_a_verified_creator_stays_verified_while_edits_are_reviewed(self):
+        """They keep their approval and their place in the directory. What
+        they lose is the ability to pitch on something *new* until we have
+        looked — sending them back to `pending` instead would erase the record
+        that they were ever approved, and empty the admin queue that keys on
+        exactly this pair."""
         import inspect
 
         src = inspect.getsource(server.update_creator_profile)
-        assert "material_fields" in src
-        assert '"name", "instagram_handle", "city"' in src
+        assert "_material_changes(existing, update)" in src
+        # A *write*, not a read — the handler legitimately reads the status to
+        # decide which branch it is in.
+        assert 'update["verification_status"]' not in src, (
+            "a re-check must not rewrite verification_status"
+        )
+
+    def test_the_material_set_is_defined_in_one_place(self):
+        """It used to be three fields inline in the handler, which missed
+        YouTube, Facebook and every payout detail."""
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "material_fields" not in src, "the inline list is gone"
+        assert set(server.MATERIAL_PROFILE_FIELDS) >= {
+            "name", "instagram_handle", "youtube_url", "facebook_url",
+            "payout_upi", "pan",
+        }
 
 
 class TestYoutubeLink:

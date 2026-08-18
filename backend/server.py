@@ -3040,6 +3040,10 @@ def _serialize_creator_profile(doc: dict) -> dict:
         **_follower_provenance(doc),
         "verification_status": doc.get("verification_status", "pending"),
         "pending_review": bool(doc.get("pending_review", False)),
+        # What triggered the re-check, so the screen can say which change did
+        # it rather than "something".
+        "pending_review_fields": doc.get("pending_review_fields") or [],
+        "pending_review_since": _iso(doc.get("pending_review_since")),
         "payout_upi": doc.get("payout_upi"),
         "payout_account_name": doc.get("payout_account_name"),
         "pan": doc.get("pan"),
@@ -3088,6 +3092,73 @@ _CITY_ALIASES = {
 }
 
 _CITY_BY_KEY = {c.lower(): c for c in INDIAN_CITIES}
+
+
+# Changes that need a second look, and the words for them.
+#
+# One place, deliberately, because the set is a judgement about what we are
+# actually verifying: who this person is, where their audience is, and where
+# the money goes. Everything else on the form — the About paragraph, the
+# neighbourhood, their rate, what they cover — is theirs to change freely, and
+# putting a creator back in a queue for fixing a typo is how a profile stops
+# being kept up to date at all.
+#
+# `city` is here because a brand filters on it and a shoot is booked on it.
+# `instagram_profile_url` is here because the handle without the link is half
+# an identity claim.
+MATERIAL_PROFILE_FIELDS = {
+    "name": "your name",
+    "instagram_handle": "your Instagram handle",
+    "instagram_profile_url": "your Instagram link",
+    "youtube_url": "your YouTube link",
+    "facebook_url": "your Facebook link",
+    "city": "your city",
+    "payout_upi": "your UPI ID",
+    "payout_account_name": "your payout account name",
+    "pan": "your PAN",
+    "gstin": "your GSTIN",
+}
+
+
+def _material_changes(existing: dict, update: dict) -> list:
+    """Which material fields this save actually changes, by their labels.
+
+    Compares against what is stored, so re-sending an unchanged value — which
+    a form that round-trips every field does on every save — is not a change.
+    """
+    changed = []
+    for field, label in MATERIAL_PROFILE_FIELDS.items():
+        if field not in update:
+            continue
+        if (existing.get(field) or None) != (update.get(field) or None):
+            changed.append(label)
+    return changed
+
+
+def _awaiting_recheck(profile: Optional[dict]) -> bool:
+    """Whether this creator is verified but waiting on us to look again.
+
+    Deliberately not a `verification_status` of its own. Sending somebody back
+    to `pending` would erase the record that they were ever approved — the same
+    reason suspension is separate from rejection — and would empty the admin's
+    "edited since approval" queue, which keys on exactly this pair.
+    """
+    profile = profile or {}
+    return (
+        profile.get("verification_status") == "verified"
+        and bool(profile.get("pending_review"))
+    )
+
+
+def _recheck_message(profile: Optional[dict]) -> str:
+    """What changed, that we are looking, and roughly how long."""
+    fields = (profile or {}).get("pending_review_fields") or []
+    what = ", ".join(fields) if fields else "something on your profile"
+    return (
+        f"You changed {what}, so we're taking another look before you pitch on "
+        "anything new. Reviews usually finish within 48 hours. Work you've "
+        "already been accepted for carries on as normal."
+    )
 
 
 def _canonical_city(raw: Optional[str]) -> Optional[str]:
@@ -3961,17 +4032,24 @@ async def update_creator_profile(
     update.update(_clean_payout_fields(payload, only=sent))
 
     # A verified creator who fixes a typo should not fall out of the directory.
-    # Only a material change (who they are, or where their audience is) needs a
-    # second look, and even then they stay live while we look.
-    material_fields = ("name", "instagram_handle", "city")
-    changed_material = any(
-        f in update and (existing.get(f) or None) != (update.get(f) or None)
-        for f in material_fields
-    )
+    # Only a material change — who they are, where their audience is, where the
+    # money goes — needs a second look. The set is MATERIAL_PROFILE_FIELDS and
+    # lives in one place; it used to be three fields inline here, which missed
+    # YouTube, Facebook and every payout detail.
+    changed_labels = _material_changes(existing, update)
     if existing.get("verification_status") == "verified":
-        update["pending_review"] = changed_material or bool(
-            existing.get("pending_review")
-        )
+        was_pending = bool(existing.get("pending_review"))
+        update["pending_review"] = bool(changed_labels) or was_pending
+        if changed_labels:
+            # Kept so we can tell them exactly what triggered it rather than
+            # "something changed". Merged with anything already outstanding —
+            # two edits before we look is still one review.
+            update["pending_review_fields"] = sorted(
+                set(existing.get("pending_review_fields") or []) | set(changed_labels)
+            )
+            update["pending_review_since"] = now
+        elif not was_pending:
+            update["pending_review_fields"] = []
     else:
         # Editing is no longer the act that asks us to look — that is
         # `/profile/submit-for-review`, which only opens at 100%. Saving a
@@ -3986,6 +4064,27 @@ async def update_creator_profile(
     )
     if not result:
         raise HTTPException(status_code=404, detail="Creator profile not found")
+
+    # Told once, on the way in. Saving again while already pending must not
+    # send it a second time — the point is that they know, not that they are
+    # reminded every time they touch the form.
+    if changed_labels and not bool(existing.get("pending_review")) and (
+        existing.get("verification_status") == "verified"
+    ):
+        await notify(
+            ObjectId(user["_id"]),
+            "profile_submitted",
+            title="We'll take another look",
+            body=_recheck_message(result),
+            link="/profile",
+        )
+        await audit(
+            user,
+            "creator.profile_recheck",
+            "creator_profile",
+            result["_id"],
+            after={"pending_review_fields": update.get("pending_review_fields")},
+        )
 
     # Also mirror the display name onto the user document so it stays in sync.
     if update.get("name") and update["name"] != user.get("name"):
@@ -4311,6 +4410,7 @@ async def get_creator_dashboard(
         "profile_image_url": (profile or {}).get("profile_image_url"),
         "verification_status": (profile or {}).get("verification_status", "pending"),
         "pending_review": bool((profile or {}).get("pending_review", False)),
+        "pending_review_fields": (profile or {}).get("pending_review_fields") or [],
         # Whether they have actually asked us to look. Without this the UI
         # can't tell "still building" from "waiting on us".
         "submitted_for_review_at": _iso((profile or {}).get("submitted_for_review_at")),
@@ -7953,6 +8053,10 @@ async def get_creator_detail(
         {
             "status": account.get("status"),
             "pending_review": bool(profile.get("pending_review", False)),
+            # Which fields, so a re-check is a two-minute job rather than a
+            # diff against a profile nobody kept a copy of.
+            "pending_review_fields": profile.get("pending_review_fields") or [],
+            "pending_review_since": _iso(profile.get("pending_review_since")),
             "payout_ready": payout_ready(profile),
             "payout_upi": profile.get("payout_upi"),
             "payout_account_name": profile.get("payout_account_name"),
@@ -8049,6 +8153,9 @@ async def _set_creator_verification(
                 "verification_status": status,
                 # A decision clears the re-review flag either way.
                 "pending_review": False,
+                # And the labels with it, or the next re-check would tell the
+                # creator about a change we already looked at.
+                "pending_review_fields": [],
                 "verification_reason": reason,
                 "verified_at": now,
                 "updated_at": now,
@@ -11175,6 +11282,15 @@ async def _invite_creators(
                 "status": "failed",
                 "name": name,
                 "reason": "This creator isn't verified yet, so they can't apply.",
+            }
+            continue
+        if _awaiting_recheck(profile):
+            # Same reasoning: they are verified but cannot pitch until we have
+            # looked at what they changed, so the invite would go nowhere.
+            results[raw] = {
+                "status": "failed",
+                "name": name,
+                "reason": "This creator is being re-checked, so they can't apply just now.",
             }
             continue
 
@@ -15116,6 +15232,8 @@ async def get_campaign(
             payload["apply_blocked_reason"] = (
                 "Your profile wasn't approved. Update it and we'll take another look."
             )
+        elif _awaiting_recheck(profile):
+            payload["apply_blocked_reason"] = _recheck_message(profile)
         elif filled >= needed:
             payload["apply_blocked_reason"] = (
                 "This campaign has all the creators it needs."
@@ -15209,6 +15327,11 @@ async def apply_to_campaign(
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
     if (profile or {}).get("verification_status") != "verified":
         raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
+    # Verified, but they have changed something we verified. New pitches wait;
+    # anything already accepted is untouched, because this gate is only on the
+    # act of applying.
+    if _awaiting_recheck(profile):
+        raise HTTPException(status_code=403, detail=_recheck_message(profile))
 
     # Don't take a pitch for a slot that's already gone.
     needed = int(campaign.get("creators_needed") or 1)

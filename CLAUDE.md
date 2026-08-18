@@ -260,6 +260,38 @@ creator below 100% and silently un-submit them. `facebook_url` is optional for
 the same reason and is deliberately **not** in `CREATOR_PLATFORMS`, which would
 make it a completeness question for anyone who ticked it.
 
+### Seeing your own profile, and re-approval
+
+`/profile` is the creator's own profile, read-only, reached from an avatar menu
+in the navbar (`CreatorAvatarMenu`, creator-only — an admin's navigation is the
+console and a brand's is its dashboard, neither of which this would open onto).
+Editing is a separate state at `/onboarding/creator`, reached from there. It
+used to be the only way to see your own details at all, so checking what a
+brand sees meant opening a builder and reading it out of input boxes.
+
+**`MATERIAL_PROFILE_FIELDS` is the one definition of a change worth re-checking**
+— name, both Instagram fields, YouTube, Facebook, city, and every payout detail.
+It was three fields inline in the update handler, which missed YouTube, Facebook
+and all of the payout ones. Everything else is theirs to change freely: putting
+a creator back in a queue for fixing their bio is how a profile stops being kept
+up to date.
+
+- **A re-check is not a downgrade.** `verification_status` stays `verified` and
+  `pending_review` goes true. Sending them back to `pending` would erase the
+  record that they were ever approved — the same reason suspension is separate
+  from rejection — and would empty the admin's "edited since approval" queue,
+  which keys on exactly that pair. A unit test pins that the handler never
+  writes `verification_status`.
+- `_awaiting_recheck` is the reader, and it gates **new applications only** —
+  the apply route, the `can_apply` flag so the button agrees with the API, and
+  the invite path, where an invite they could not accept goes nowhere. Work
+  already accepted is untouched, which is a matter of where the check is *not*:
+  a profile edit never reaches into `collaborations`.
+- `pending_review_fields` records what triggered it, so the notice names the
+  change rather than saying "something". The creator is told **once**, on the
+  way in — saving again while already pending must not send it again. An admin
+  decision clears both the flag and the labels.
+
 ### The address, and the pin
 
 Two things that look like one. `full_address` is what gets printed on a

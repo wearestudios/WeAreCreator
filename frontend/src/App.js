@@ -36,6 +36,7 @@ import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
 import AdminBrandDetail from "@/components/admin/BrandDetailPage";
 import AdminCollaborationDetail from "@/components/admin/CollaborationDetailPage";
 import ApplicationDetail from "@/components/application/ApplicationDetail";
+import CreatorProfile from "@/pages/CreatorProfile";
 import ManagerHome from "@/pages/ManagerHome";
 import ManagerCampaign from "@/pages/ManagerCampaign";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
@@ -147,6 +148,17 @@ function App() {
                             element={
                                 <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
                                     <BrandCampaignApplicants />
+                                </ProtectedRoute>
+                            }
+                        />
+                        {/* Your own profile, read-only. Editing lives at
+                            /onboarding/creator and is reached from here — it
+                            used to be the only way to see your own details. */}
+                        <Route
+                            path="/profile"
+                            element={
+                                <ProtectedRoute roles={["creator"]}>
+                                    <CreatorProfile />
                                 </ProtectedRoute>
                             }
                         />
