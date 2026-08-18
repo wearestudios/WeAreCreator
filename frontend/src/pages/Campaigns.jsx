@@ -21,6 +21,7 @@ import {
 import { STICKY_BAR } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
+import ExecutionBadge from "@/components/ExecutionBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -127,6 +128,10 @@ const CampaignCard = ({ c, index }) => (
                         {CAT_LABEL[c.category] || c.category}
                     </span>
                 )}
+                {/* Who you'd be dealing with, on the card — it changes whose
+                    WhatsApp answers on the day, which is worth knowing before
+                    you open the brief, not after you apply. */}
+                <ExecutionBadge campaign={c} audience="creator" />
             </div>
 
             <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">

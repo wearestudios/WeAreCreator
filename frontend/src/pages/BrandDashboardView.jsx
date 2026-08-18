@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
+import ExecutionBadge from "@/components/ExecutionBadge";
+import { EXECUTION_FILTERS, executionOwner } from "@/lib/execution";
+import { EXECUTION } from "@/constants/testIds";
 import { Link } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
@@ -166,6 +169,17 @@ export default function BrandDashboardView({ user }) {
     // Pausing needs a reason the server insists on, so it gets its own dialog
     // rather than the yes/no AlertDialog the other two share.
     const [pausing, setPausing] = useState({ campaign: null, reason: "" });
+    // Filtered in the browser rather than by refetching: the dashboard already
+    // has every campaign this brand owns in hand, and a brand has tens of
+    // them, not thousands. The server takes the same parameter for anything
+    // that does need to ask.
+    const [execution, setExecution] = useState("all");
+
+    // Derived once: both the list and its empty state need to agree about
+    // what the filter left behind.
+    const visibleCampaigns = (data?.campaigns || []).filter(
+        (c) => execution === "all" || executionOwner(c) === execution,
+    );
 
     const load = useCallback(async () => {
         try {
@@ -396,8 +410,58 @@ export default function BrandDashboardView({ user }) {
                                 </Link>
                             </div>
 
-                            <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
-                                {data.campaigns.length === 0 ? (
+                            {/* One chip per owner, plus "anyone". Three states
+                                on a two-valued field, so a segmented control
+                                rather than a select — there is nothing to
+                                collapse into a dropdown. */}
+                            <div
+                                data-testid={EXECUTION.filter}
+                                role="radiogroup"
+                                aria-label="Filter campaigns by who runs them"
+                                className="mt-8 flex flex-wrap gap-2"
+                            >
+                                {EXECUTION_FILTERS.map((opt) => {
+                                    const on = execution === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={EXECUTION.filterOption(opt.value)}
+                                            onClick={() => setExecution(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-full border px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                    : "border-white/10 text-muted-foreground hover:border-white/25")
+                                            }
+                                        >
+                                            {opt.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
+                                {data.campaigns.length > 0 && visibleCampaigns.length === 0 ? (
+                                    <div
+                                        data-testid="brand-campaigns-filtered-empty"
+                                        className="px-6 py-12 text-center"
+                                    >
+                                        <p className="text-sm text-muted-foreground">
+                                            No campaign here is{" "}
+                                            {execution === "weare" ? "WeAre-run" : "brand-run"}.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setExecution("all")}
+                                            className="mt-3 min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-ember-500 transition-colors duration-200 hover:text-ember-400 md:min-h-0"
+                                        >
+                                            Show all campaigns
+                                        </button>
+                                    </div>
+                                ) : data.campaigns.length === 0 ? (
                                     <div
                                         data-testid="brand-campaigns-empty"
                                         className="flex flex-col items-center gap-3 px-6 py-16 text-center"
@@ -419,7 +483,7 @@ export default function BrandDashboardView({ user }) {
                                     </div>
                                 ) : (
                                     <ul className="divide-y divide-white/10">
-                                        {data.campaigns.map((c) => {
+                                        {visibleCampaigns.map((c) => {
                                             const canBrowsePublicly =
                                                 c.status === "open" || c.status === "upcoming";
                                             const busy = busyId === c.id;
@@ -489,6 +553,7 @@ export default function BrandDashboardView({ user }) {
                                                             </Link>
                                                             <div className="flex flex-col items-end gap-2">
                                                                 <StatusPill status={c.status} />
+                                                                <ExecutionBadge campaign={c} />
                                                                 {c.awaiting_decision > 0 && (
                                                                     <span
                                                                         data-testid={`brand-campaign-awaiting-${c.id}`}

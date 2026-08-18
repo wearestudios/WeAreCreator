@@ -26,6 +26,7 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
+import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import { Button } from "@/components/ui/button";
 import {
     Select,
@@ -457,6 +458,14 @@ export default function CampaignDetailPage() {
                                 }
                             >
                                 <Panel>
+                                    {/* Who runs it sits above who runs it *for*
+                                        us: assigning a WeAre manager is what
+                                        makes a campaign ours, so the two belong
+                                        in one place or they read as unrelated. */}
+                                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                                        <ExecutionBadge campaign={campaign} />
+                                        <ExecutionNote campaign={campaign} className="min-w-0 text-xs" />
+                                    </div>
                                     <p
                                         data-testid={IDS.managerName}
                                         className="font-serif text-xl"

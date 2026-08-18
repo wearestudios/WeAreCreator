@@ -434,6 +434,49 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+## Who runs a campaign
+
+`execution_owner` on a campaign, `brand` or `weare`. It is what applications
+are **routed on**, which is the job it exists to do: before it, every new
+application went to the brand's manager whether or not the brand had asked us
+to run the campaign, so a brand that handed one over still got paged for every
+applicant and no WeAre manager was told at all.
+
+- `_execution_owner(campaign)` is the only reader — pure, DB-free, and an
+  absent or unrecognised value reads as `brand`. Every surface showing this has
+  to print one of two words, so it never travels as `None`. A brand picks at
+  post time (`PostCampaignPayload`, defaulting to `brand`: posting a brief means
+  running it unless you say otherwise).
+- **It never disagrees with `manager_id`.** Assigning a WeAre manager sets
+  `execution_owner: "weare"` in the same write — there is no such thing as one
+  of our managers running a campaign the console calls brand-run. Going the
+  other way, a `weare` campaign is created with `_NO_CAMPAIGN_MANAGER` rather
+  than the brand's own person, which would route applications straight back to
+  the brand that asked us to take it on.
+- Routing, in `apply_to_campaign`: `weare` tells `notify_weare_team` (the
+  assigned manager, or **every admin** when nobody is assigned — otherwise a
+  campaign we have taken on but not staffed is the one arrangement where an
+  application reaches nobody) and still tells the brand through
+  `_tell_brand_manager_unless_managed`, which is being informed rather than
+  being asked to act. `brand` tells the brand's manager, as before. Admins see
+  and act on everything either way; none of the admin endpoints are scoped by it.
+- A brand may change it **only while the brief is a draft or in review**
+  (`_refuse_late_execution_handover`). After that, creators have applied knowing
+  who they would be dealing with, and switching would silently stop telling
+  whoever has been working it. An admin can still move it; `PATCH
+  /admin/campaigns/{id}` deliberately does not call the guard — the same shape
+  as `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
+  the payload generically, so an unguarded field rides along with everything else.
+- Filtering for `brand` is `{"$ne": "weare"}`, not an equality test — campaigns
+  predate the field. The startup backfill fills them in (deriving `weare` from a
+  WeAre `manager_id`), but a filter that only works after a migration has run
+  returns nothing on a box that has not restarted. Same reasoning as `showcase`.
+
+`lib/execution.js` is the frontend half — the two words, the three audiences'
+wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote`
+are one component rather than a pill per console, because the point of the field
+is that the admin, the brand and the creator agree about it.
+
 ## One application, on its own screen
 
 `components/application/ApplicationDetail.jsx`, rendered at **two routes off one

@@ -17,6 +17,8 @@ import { api, formatApiError } from "@/lib/api";
 // from this form rather than present and disabled, so there is nothing here to
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
+import { EXECUTION_OPTIONS } from "@/lib/execution";
+import { EXECUTION } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import {
     FormPageSkeleton,
@@ -72,6 +74,10 @@ export default function PostCampaign() {
     const [budget, setBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
+    // Defaults to the brand running it: posting a brief means running it
+    // unless you say otherwise, and a campaign quietly landing in the WeAre
+    // queue is work nobody agreed to. Mirrors DEFAULT_EXECUTION_OWNER.
+    const [executionOwner, setExecutionOwner] = useState("brand");
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -121,6 +127,7 @@ export default function PostCampaign() {
                     // A campaign WeAre set to barter keeps that value here so
                     // the form never round-trips it back to "fixed".
                     setCompensationType(data.compensation_type || "fixed");
+                    setExecutionOwner(data.execution_owner || "brand");
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -206,6 +213,7 @@ export default function PostCampaign() {
             : {
                   budget_per_creator: Number(budget),
                   compensation_type: compensationType,
+                  execution_owner: executionOwner,
               }),
         category,
         area,
@@ -566,6 +574,54 @@ export default function PostCampaign() {
                                 })}
                             </div>
                         )}
+
+                        {/* Who runs it. Asked here, next to how it pays,
+                            because the two together are what a brand is
+                            actually deciding when it posts: what this costs
+                            and how much of it they do themselves. */}
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                Who runs it
+                            </p>
+                            <div
+                                data-testid={EXECUTION.picker}
+                                role="radiogroup"
+                                aria-label="Who runs this campaign"
+                                className="mt-3 grid gap-3 sm:grid-cols-2"
+                            >
+                                {EXECUTION_OPTIONS.map((opt) => {
+                                    const on = executionOwner === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={EXECUTION.pickerOption(opt.value)}
+                                            onClick={() => setExecutionOwner(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                            }
+                                        >
+                                            <span
+                                                className={
+                                                    "block text-sm " +
+                                                    (on ? "text-ember-500" : "text-foreground")
+                                                }
+                                            >
+                                                {opt.label}
+                                            </span>
+                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                                {opt.hint}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
 
                         <div className="grid gap-5 md:grid-cols-2">
                             {/* A barter brief has no cash figure to set, so the

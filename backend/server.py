@@ -636,6 +636,57 @@ def _is_barter(campaign: dict) -> bool:
     return _compensation_type(campaign) == "barter"
 
 
+# Who actually runs the campaign — books the creators, stands at the door,
+# chases the content.
+#
+#   brand   the brand's own manager runs it; applications go to them
+#   weare   we run it; applications go to the WeAre team
+#
+# This decides where an application is *sent*, which is the thing that was
+# missing: every new application went to the brand's manager whether or not the
+# brand had handed execution over, so a brand that asked us to run a campaign
+# still got the pager.
+#
+# It is also what a creator most wants to know before applying — whose WhatsApp
+# they will be dealing with on the day.
+ExecutionOwner = Literal["brand", "weare"]
+EXECUTION_OWNERS = ("brand", "weare")
+# Campaigns written before this field existed were brand briefs run by the
+# brand's own manager unless an admin had handed one to a WeAre manager, which
+# is what the startup backfill looks for. Absent means brand.
+DEFAULT_EXECUTION_OWNER = "brand"
+
+
+def _execution_owner(campaign: dict) -> str:
+    """Who runs this campaign. The one reader.
+
+    Pure and DB-free, exactly like `_compensation_type`: an unrecognised or
+    missing value reads as the default rather than travelling as None, because
+    every surface that shows this has to say one of two words and "unknown" is
+    not one of them.
+    """
+    value = (campaign or {}).get("execution_owner")
+    return value if value in EXECUTION_OWNERS else DEFAULT_EXECUTION_OWNER
+
+
+def _weare_runs(campaign: dict) -> bool:
+    return _execution_owner(campaign) == "weare"
+
+
+def _execution_owner_query(value: str) -> dict:
+    """A Mongo filter for one execution owner, matching pre-field documents.
+
+    "brand" has to be `$ne: "weare"` rather than an equality test: campaigns
+    written before this field existed have no value at all, and they were
+    brand-run. The startup backfill fills them in, but a filter that only works
+    after a migration has run is a filter that silently returns nothing on a
+    box that has not restarted yet. Same reasoning as `showcase`'s `$ne: True`.
+    """
+    if value == "weare":
+        return {"execution_owner": "weare"}
+    return {"execution_owner": {"$ne": "weare"}}
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
@@ -652,6 +703,10 @@ class PostCampaignPayload(BaseModel):
     # "Input should be 'fixed' or 'negotiated'", which reads like a typo. The
     # handler refuses it with the actual reason instead.
     compensation_type: CompensationType = DEFAULT_COMPENSATION_TYPE
+    # Run it themselves, or hand it to us. Defaults to the brand, because that
+    # is what posting a brief means unless you say otherwise — and because a
+    # campaign silently landing in the WeAre queue is work nobody agreed to.
+    execution_owner: ExecutionOwner = DEFAULT_EXECUTION_OWNER
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -711,6 +766,11 @@ class UpdateCampaignPayload(BaseModel):
     # compensation_type is present but gated — this model serves both the brand
     # edit and the admin one, and only the admin route lets barter through.
     compensation_type: Optional[CompensationType] = None
+    # Who runs it. A brand may change its mind while the brief is still a
+    # draft; once it is live, handing execution over is a conversation, not a
+    # dropdown — `_refuse_late_execution_handover` is what enforces that, and
+    # the admin route skips it.
+    execution_owner: Optional[ExecutionOwner] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -2525,6 +2585,28 @@ async def _tell_brand_manager_unless_managed(
         body=body,
         link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
     )
+
+
+async def notify_weare_team(campaign: dict, event: str, *, title: str, body: str) -> None:
+    """Reach whoever at WeAre is responsible for a campaign we run.
+
+    The assigned manager if there is one; every admin if there is not. A brand
+    can hand us a campaign before we have staffed it, and without this that is
+    the one arrangement where an application reaches nobody at all — the brand
+    is told it is not theirs to action, and no WeAre manager exists to tell.
+    """
+    if (campaign or {}).get("manager_id"):
+        await notify_campaign_manager(campaign, event, title=title, body=body)
+        return
+    admin_ids = await db.users.distinct("_id", {"role": "admin"})
+    for admin_id in admin_ids:
+        await notify(
+            admin_id,
+            event,
+            title=title,
+            body=body,
+            link=f"/admin/campaigns/{str(campaign['_id'])}",
+        )
 
 
 async def notify_campaign_manager(campaign: dict, event: str, *, title: str, body: str) -> None:
@@ -4740,6 +4822,10 @@ def _serialize_brand_campaign(
         "area": doc.get("area"),
         "creators_needed": needed,
         "campaign_type": doc.get("campaign_type"),
+        # Who runs it, which decides where applications land. Always sent, and
+        # always through the reader — a missing value is "brand", never null,
+        # because every surface showing this has to say one of two words.
+        "execution_owner": _execution_owner(doc),
         "event_date": _iso(doc.get("event_date")),
         "start_date": _iso(doc.get("start_date")),
         "end_date": _iso(doc.get("end_date")),
@@ -4857,6 +4943,17 @@ async def _brand_manager_user(brand_oid) -> Optional[dict]:
     )
 
 
+# The same keys `_brand_manager_contact` writes, blanked. Spelling them out
+# rather than omitting them keeps the campaign document one shape, so a reader
+# never has to tell "no manager" from "field never written".
+_NO_CAMPAIGN_MANAGER = {
+    "manager_id": None,
+    "manager_name": None,
+    "manager_phone": None,
+    "manager_email": None,
+}
+
+
 async def _brand_manager_contact(brand_oid) -> dict:
     """Name, phone and email for the brand's manager, for stamping onto a
     campaign. The profile is the better source for the first and last — a
@@ -4944,6 +5041,52 @@ def _refuse_brand_barter(campaign: Optional[dict], update: dict) -> None:
                 "— the rest of the brief is still yours to edit."
             ),
         )
+
+
+# Statuses in which handing execution over is still just a decision on a form.
+# After this the brief has been in front of creators, some of whom applied on
+# the understanding of who they would be dealing with.
+_EXECUTION_SETTLED_STATUSES = ("draft", CAMPAIGN_REVIEW_STATUS)
+
+
+def _refuse_late_execution_handover(campaign: Optional[dict], update: dict) -> None:
+    """Keep a brand from changing who runs a campaign after it has gone out.
+
+    Changing it silently reroutes every future application away from whoever
+    has been working the campaign, and it contradicts what creators were told
+    when they applied. While the brief is a draft or in review it is nobody's
+    working assumption yet, so it is freely editable there.
+
+    An admin can still move it at any time — that is a conversation that has
+    happened, and `PATCH /admin/campaigns/{id}` deliberately does not call this.
+    """
+    if "execution_owner" not in update or campaign is None:
+        return
+    if update["execution_owner"] == _execution_owner(campaign):
+        return  # not a change; re-sending the same value is not an edit
+    if campaign.get("status") not in _EXECUTION_SETTLED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This campaign is already live, so who runs it can't be changed "
+                "here — creators applied knowing who they'd be dealing with. "
+                "Ask us and we'll move it."
+            ),
+        )
+
+
+async def _execution_manager_fields(campaign: dict, execution_owner: str) -> dict:
+    """Keep `manager_*` honest when execution changes hands.
+
+    The two must never disagree: a WeAre-run campaign carrying the brand's
+    person as its manager would route applications straight back to the brand
+    that asked us to take it on, and would put the campaign in no WeAre queue
+    at all.
+    """
+    if execution_owner == "weare":
+        # Ours now, and unstaffed until an admin assigns a real manager.
+        return dict(_NO_CAMPAIGN_MANAGER)
+    return await _brand_manager_contact(campaign["brand_id"])
 
 
 async def _own_campaign_or_404(campaign_id: str, user: dict) -> dict:
@@ -5359,11 +5502,22 @@ async def _applicant_counts_for(campaign_ids: list) -> dict:
 
 
 @brand_router.get("/campaigns")
-async def list_brand_campaigns(user: dict = Depends(require_roles(*BRAND_ROLES))):
+async def list_brand_campaigns(
+    execution_owner: Optional[str] = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
     await _expire_stale_campaigns()
     brand_oid = _brand_scope(user)
+    query: dict = {"brand_id": brand_oid}
+    if execution_owner:
+        if execution_owner not in EXECUTION_OWNERS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"execution_owner must be one of: {', '.join(EXECUTION_OWNERS)}.",
+            )
+        query.update(_execution_owner_query(execution_owner))
     docs = (
-        await db.campaigns.find({"brand_id": brand_oid})
+        await db.campaigns.find(query)
         .sort("created_at", -1)
         .to_list(length=500)
     )
@@ -5419,6 +5573,7 @@ async def create_brand_campaign(
         "creators_needed": int(payload.creators_needed),
         "campaign_type": payload.campaign_type,
         "compensation_type": payload.compensation_type,
+        "execution_owner": payload.execution_owner,
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -5429,7 +5584,18 @@ async def create_brand_campaign(
         # one (see assign_campaign_manager). Defaulting to nobody meant every
         # campaign spent its first days with no named contact on it, which is
         # the state a creator is most likely to have a question in.
-        **(await _brand_manager_contact(_brand_scope(user))),
+        #
+        # Unless the brand has handed execution to us: then stamping their
+        # person as the campaign manager would route every application back to
+        # the brand they just asked us to take it off, and put the campaign in
+        # no WeAre queue at all. It waits for an admin to assign a real manager,
+        # and says "WeAre" to a creator meanwhile — which is the true answer to
+        # "who am I dealing with" either way.
+        **(
+            _NO_CAMPAIGN_MANAGER
+            if payload.execution_owner == "weare"
+            else await _brand_manager_contact(_brand_scope(user))
+        ),
         "status": payload.status,
         "created_at": now,
         "updated_at": now,
@@ -5484,7 +5650,12 @@ async def update_brand_campaign(
     # The same rule as creation, on the path that would otherwise go round it:
     # this loop copies whatever the payload carried, compensation_type included.
     _refuse_brand_barter(doc, update)
+    _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
+    # Handing execution over moves the manager with it, or the two fields
+    # disagree and applications go to the wrong inbox.
+    if "execution_owner" in update and update["execution_owner"] != _execution_owner(doc):
+        update.update(await _execution_manager_fields(doc, update["execution_owner"]))
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
     if start and end and end < start:
@@ -5875,6 +6046,9 @@ async def list_campaign_applicants(
             "status": campaign.get("status"),
             "budget_per_creator": campaign.get("budget_per_creator"),
             "compensation_type": _compensation_type(campaign),
+            # Says whether this board is the brand's own work or a copy of
+            # what our team is handling for them.
+            "execution_owner": _execution_owner(campaign),
             "creators_needed": needed,
             "filled_slots": filled,
             "spots_left": max(0, needed - filled),
@@ -9791,6 +9965,7 @@ async def impersonate_user(
 async def list_all_campaigns(
     brand_id: Optional[str] = None,
     status: Optional[str] = None,
+    execution_owner: Optional[str] = None,
     showcase: Optional[bool] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -9823,6 +9998,13 @@ async def list_all_campaigns(
                 detail=f"status must be one of: {', '.join(CampaignStatus.__args__)}.",
             )
         match["status"] = status
+    if execution_owner:
+        if execution_owner not in EXECUTION_OWNERS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"execution_owner must be one of: {', '.join(EXECUTION_OWNERS)}.",
+            )
+        match.update(_execution_owner_query(execution_owner))
     if brand_id:
         try:
             match["brand_id"] = ObjectId(brand_id)
@@ -9955,6 +10137,7 @@ async def list_all_campaigns(
                 "area": d.get("area"),
                 "campaign_type": d.get("campaign_type"),
                 "event_date": _iso(d.get("event_date")),
+                "execution_owner": _execution_owner(d),
                 "manager_id": str(d["manager_id"]) if d.get("manager_id") else None,
                 "manager_name": d.get("manager_name"),
                 "status": d.get("status"),
@@ -11266,6 +11449,7 @@ async def get_admin_brand_detail(
                 "fill_rate": round(filled / needed, 3) if needed else 0.0,
                 "spend": round(float(s.get("spend", 0) or 0), 2),
                 "paid_collaborations": s.get("paid_collaborations", 0),
+                "execution_owner": _execution_owner(c),
                 "manager_name": c.get("manager_name"),
                 "event_date": _iso(c.get("event_date")),
                 "start_date": _iso(c.get("start_date")),
@@ -13060,6 +13244,7 @@ async def admin_campaign_applicants(
             "brand_id": str(campaign["brand_id"]),
             "brand_name": brand.get("business_name") or brand.get("name"),
             "campaign_type": campaign.get("campaign_type"),
+            "execution_owner": _execution_owner(campaign),
             "status": campaign.get("status"),
             "budget_per_creator": campaign.get("budget_per_creator"),
             "compensation_type": _compensation_type(campaign),
@@ -13283,6 +13468,12 @@ async def assign_campaign_manager(
                 "manager_phone": manager.get("phone"),
                 "manager_email": manager.get("email"),
                 "manager_assigned_at": now,
+                # Putting one of our managers on a campaign *is* taking over
+                # its execution — there is no such thing as a WeAre manager
+                # running a campaign the brand is still said to run, and the
+                # two fields disagreeing would send applications to the wrong
+                # inbox while the console said otherwise.
+                "execution_owner": "weare",
                 "updated_at": now,
             }
         },
@@ -14499,6 +14690,10 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "area": doc.get("area"),
         "creators_needed": doc.get("creators_needed"),
         "campaign_type": doc.get("campaign_type"),
+        # A creator deciding whether to give up a day wants to know whose
+        # WhatsApp they will be on. Carries no contact detail — just which of
+        # us they will be dealing with.
+        "execution_owner": _execution_owner(doc),
         "event_date": doc["event_date"].isoformat() if isinstance(doc.get("event_date"), datetime) else doc.get("event_date"),
         "start_date": doc["start_date"].isoformat() if isinstance(doc.get("start_date"), datetime) else doc.get("start_date"),
         "end_date": doc["end_date"].isoformat() if isinstance(doc.get("end_date"), datetime) else doc.get("end_date"),
@@ -14861,13 +15056,40 @@ async def apply_to_campaign(
             status_code=409, detail="You've already applied to this campaign"
         )
 
-    await notify_brand_manager(
-        campaign["brand_id"],
-        "brand_new_application",
-        title="New applicant",
-        body=f"{user.get('name') or 'A creator'} applied to “{campaign.get('title')}”.",
-        link=f"/brand/campaigns/{campaign_id}/applicants",
+    # Where the application goes is the whole point of execution_owner. This
+    # used to tell the brand's manager unconditionally, so a brand that had
+    # handed a campaign to us still got paged for every applicant and our own
+    # manager got nothing.
+    applicant_line = (
+        f"{user.get('name') or 'A creator'} applied to “{campaign.get('title')}”."
     )
+    if _weare_runs(campaign):
+        # Ours to action. `notify_campaign_manager` is silent when nobody is
+        # assigned yet — a campaign we own but have not staffed is a gap for
+        # the admin queue to show, not a booking to fail over.
+        await notify_weare_team(
+            campaign,
+            "new_applicant",
+            title="New applicant",
+            body=applicant_line,
+        )
+        # The brand still hears about their own campaign; they just are not the
+        # ones being asked to act. Skipped automatically when the assigned
+        # manager *is* their person, so nobody is told twice.
+        await _tell_brand_manager_unless_managed(
+            campaign,
+            "brand_new_application",
+            title="New applicant",
+            body=applicant_line,
+        )
+    else:
+        await notify_brand_manager(
+            campaign["brand_id"],
+            "brand_new_application",
+            title="New applicant",
+            body=applicant_line,
+            link=f"/brand/campaigns/{campaign_id}/applicants",
+        )
 
     return {
         "id": str(result.inserted_id),
@@ -15419,6 +15641,9 @@ async def get_application(
             "title": campaign.get("title"),
             "status": campaign.get("status"),
             "campaign_type": campaign.get("campaign_type"),
+            # Who runs this brief, which is who the creator will be dealing
+            # with and where this application was routed.
+            "execution_owner": _execution_owner(campaign),
             "category": campaign.get("category"),
             "area": campaign.get("area"),
             "brand_id": str(campaign["brand_id"]),
@@ -15835,6 +16060,37 @@ async def _startup():
             "Backfilled compensation_type=%s on %d campaign(s)",
             DEFAULT_COMPENSATION_TYPE,
             priced.modified_count,
+        )
+
+    # 9. Campaigns predate `execution_owner`. Who ran one was implicit in who
+    #    its manager was: a WeAre campaign_manager on it meant we were running
+    #    it, anything else meant the brand. That is derived once, here, rather
+    #    than by every reader joining users on every campaign row forever.
+    weare_manager_ids = await db.users.distinct("_id", {"role": "campaign_manager"})
+    if weare_manager_ids:
+        ours = await db.campaigns.update_many(
+            {
+                "execution_owner": {"$exists": False},
+                "manager_id": {"$in": weare_manager_ids},
+            },
+            {"$set": {"execution_owner": "weare"}},
+        )
+        if ours.modified_count:
+            logger.info(
+                "Backfilled execution_owner=weare on %d campaign(s) with a WeAre manager",
+                ours.modified_count,
+            )
+    # Everything still unmarked was the brand's own. Done second and
+    # unconditionally, so the pass is idempotent and order-independent.
+    theirs = await db.campaigns.update_many(
+        {"execution_owner": {"$exists": False}},
+        {"$set": {"execution_owner": DEFAULT_EXECUTION_OWNER}},
+    )
+    if theirs.modified_count:
+        logger.info(
+            "Backfilled execution_owner=%s on %d campaign(s)",
+            DEFAULT_EXECUTION_OWNER,
+            theirs.modified_count,
         )
 
     # The nudge loop. Off entirely when the interval is zero, so a deployment
