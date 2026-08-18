@@ -16,6 +16,7 @@ export * from './admin';
 export * from './application';
 export * from './auth';
 export * from './brand';
+export * from './calendar';
 export * from './dense';
 export * from './drafts';
 export * from './execution';

@@ -19,6 +19,7 @@ import {
 import { api } from "@/lib/api";
 import { enqueue } from "@/lib/offlineQueue";
 import QueueBanner from "@/components/manager/QueueBanner";
+import CheckInQr from "@/components/manager/CheckInQr";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -44,6 +45,22 @@ const FILTERS = [
 ];
 
 export default function DayOfMode({ roster, slots, loading, onChanged }) {
+    // Which slot's code to show. The busiest one today, because that is the
+    // queue actually forming at the door; a single-slot shoot has exactly one
+    // answer and this picks it without asking.
+    const qrSlotId = useMemo(() => {
+        const counts = new Map();
+        for (const r of roster || []) {
+            if (!r.slot_id) continue;
+            counts.set(r.slot_id, (counts.get(r.slot_id) || 0) + 1);
+        }
+        let best = null;
+        for (const [id, n] of counts) {
+            if (!best || n > best[1]) best = [id, n];
+        }
+        return best ? best[0] : null;
+    }, [roster]);
+
     const [filter, setFilter] = useState("expected");
     const [openId, setOpenId] = useState(null);
     const [busyId, setBusyId] = useState(null);
@@ -207,6 +224,13 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                     />
                 </div>
             </div>
+
+            {/* The code, once, above the list — not per row. It names the
+                slot, so one screen serves everybody booked on it, which is
+                the whole reason it beats twenty taps. Shown for the slot
+                most people are on today; a shoot with several slots keeps a
+                code per slot, so the manager picks. */}
+            {qrSlotId && <CheckInQr slotId={qrSlotId} />}
 
             <div className="flex gap-2">
                 {FILTERS.map((f) => {

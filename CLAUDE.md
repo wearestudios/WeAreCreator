@@ -1407,6 +1407,57 @@ gets recorded days later.
   short deliberately; a list of eleven warnings is a list nobody reads standing
   up.
 
+### The calendar, and checking yourself in
+
+`GET /calendar` is every booked shoot between two dates. The campaign lists
+already said who was booked on *this* brief; nothing said what next Tuesday
+looks like across all of them, which is the question somebody asks before
+agreeing to a date.
+
+- **One endpoint, three scopes, one payload.** `_calendar_campaign_scope`
+  builds the filter — a brand its own campaigns, a WeAre manager the ones
+  assigned to them, an admin everything — and raises on anything else, so a
+  role added later has to be given a scope rather than inheriting the admin's
+  by omission. Filtering by a campaign outside the scope returns an **empty
+  calendar, not a 403**, the same reasoning as the 404s elsewhere.
+- **No entry carries a contact detail**, for any role. The roster and the
+  daysheet are where a phone number lives and they are behind the staff role
+  for a reason; a planning view needs a name and a time. A leak test plants
+  values and searches the output.
+- An exit is not a shoot: `declined` and `cancelled` keep the time they were
+  booked for, and drawing them would put people on a calendar who are not
+  coming.
+- **The agenda is the view and the grid is the extra.** A month of
+  centimetre-square cells on a 390px screen holds a number and nothing else,
+  so the phone gets the grouped list and the grid appears at `md:`. Days are
+  bucketed on the **local** date — `toISOString` would move an evening shoot
+  to the next day for everybody in IST.
+
+`POST /creator/check-in` is the QR path. `GET /manager/slots/{id}/check-in-code`
+mints a short-lived signed code for the day-of screen; `CheckInQr` refreshes it
+every 60s against a 90s life, which is the whole security property — a
+photograph of the screen is stale before it can be passed around.
+
+- **The code names the slot, never the creator.** One screen serves the whole
+  queue; a per-creator code would be one QR per person, which is the problem
+  this solves. So the code proves nothing about identity, and the route checks
+  *this creator's own booking on that slot* — `creator_id` from the session,
+  never from the code.
+- Four checks, all server-side: signature and expiry, `typ == "checkin"` (every
+  other token this app signs verifies with the same key, so without it an
+  access token would work as a check-in code), the booking, and
+  `_checkin_window_refusal` — which is what stops a screen photographed today
+  being used next week.
+- The refusal for "not your slot" **does not name the campaign**: a creator who
+  scanned the wrong screen learns nothing about whose shoot it was.
+- **Both paths go through `_check_in_collaboration` and write the same audit
+  line**, differing only in `method` (`manual` / `self_qr`). Who is holding the
+  clipboard depends on whether the campaign was reassigned and on whether the
+  camera worked; "who was actually here" must be one question with one answer.
+  The manual button is untouched and is **not a lesser path** — it is what
+  works when the camera doesn't, and the failure page names it rather than
+  leaving somebody tapping Retry.
+
 ### Check-ins survive the venue's wifi
 
 `lib/offlineQueue.js`. A manager checking twenty people into a basement is the

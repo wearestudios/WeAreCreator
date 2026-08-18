@@ -38,18 +38,22 @@ const linksFor = (role) => {
             { to: "/admin/queue", label: "Queue", testId: "nav-admin-queue", secondary: true },
             { to: "/admin/campaigns", label: "Campaigns", testId: "nav-admin-campaigns", secondary: true },
             { to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true },
+            { to: "/calendar", label: "Calendar", testId: "nav-calendar", secondary: true },
             { to: "/admin", label: "Admin", testId: "nav-admin", accent: true },
         ];
     }
     if (role === "campaign_manager") {
-        // A manager's home is their campaign list; there is no other page.
+        // The campaign list is home; the calendar is the same work seen by
+        // date, which is how a manager plans and how a brand asks.
         return [
+            { to: "/calendar", label: "Calendar", testId: "nav-calendar" },
             { to: "/manager", label: "My campaigns", testId: "nav-manager", accent: true },
         ];
     }
     if (isBrandSide(role)) {
         return [
             { to: "/brand/creators", label: "Creators", testId: "nav-brand-creators" },
+            { to: "/calendar", label: "Calendar", testId: "nav-calendar" },
             { to: "/campaigns/new", label: "Post a campaign", testId: "nav-post-campaign" },
             { to: homePathFor(role), label: "Dashboard", testId: "nav-dashboard" },
         ];

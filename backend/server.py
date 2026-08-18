@@ -5576,6 +5576,71 @@ async def creator_book_slot(
     return await _claim_slot(user, collab, campaign, slot, preferred_time=preferred)
 
 
+class CheckInCodePayload(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+
+
+@creator_router.post("/check-in")
+async def creator_self_check_in(
+    payload: CheckInCodePayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Check yourself in by scanning the code on the manager's screen.
+
+    Four things are checked, and every one of them server-side — the code is
+    the only part a phone can produce, so it is the only part that could be
+    tampered with:
+
+    1. the code is one we signed, is a *check-in* code, and hasn't expired;
+    2. the slot it names still exists on the campaign it names;
+    3. **this creator has a booking on that slot** — the code says nothing
+       about who is holding it, so identity comes from the session and the
+       booking, never from the code;
+    4. now is close enough to the booking, so a screen photographed today
+       cannot be used next week.
+
+    The manual button on the manager's screen is untouched. That is the path
+    that works when the camera doesn't, and it is not a lesser one.
+    """
+    claims = _read_checkin_code(payload.code)
+
+    try:
+        soid = ObjectId(claims.get("slot") or "")
+    except Exception:
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="That slot no longer exists.")
+
+    collab = await db.collaborations.find_one(
+        {
+            "slot_id": soid,
+            "creator_id": ObjectId(user["_id"]),
+        }
+    )
+    if not collab:
+        # Deliberately not "you have no booking on slot X": a creator who
+        # scanned the wrong screen learns nothing about whose shoot it was.
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "You don't have a booking on this one. If you're in the right "
+                "place, ask the campaign manager to check you in."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign or str(campaign["_id"]) != str(claims.get("campaign")):
+        raise HTTPException(status_code=404, detail="That slot no longer exists.")
+
+    refusal = _checkin_window_refusal(collab, slot, campaign)
+    if refusal:
+        raise HTTPException(status_code=409, detail=refusal)
+
+    return await _check_in_collaboration(collab, campaign, user, method="self_qr")
+
+
 @creator_router.post("/collaborations/{collab_id}/cancel-slot")
 async def creator_cancel_slot(
     collab_id: str,
@@ -15773,16 +15838,125 @@ async def campaign_daysheet(
     )
 
 
-async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> dict:
+# ---------------------------------------------------------------------------
+# Self check-in
+#
+# A manager checking twenty people in one at a time is twenty taps on the worst
+# network in the product. The creator has a phone in their hand already, so the
+# QR on the manager's screen lets them do it — and the manual button stays,
+# because the fallback is the thing that works when the camera doesn't.
+#
+# **The code names the slot, never the creator.** The creator is whoever is
+# signed in on the phone that opened it, so one code serves the whole queue; a
+# per-creator code would be one QR per person, which is the problem this is
+# solving. That means the code alone proves nothing about identity — every
+# check-in is still checked against *this* creator's own booking on that slot.
+# ---------------------------------------------------------------------------
+
+# Short, because the property the code actually has is "you were looking at the
+# manager's screen a moment ago". A photograph of it taken across the room is
+# stale before it can be passed around.
+CHECKIN_CODE_TTL_SECONDS = 90
+
+# How far either side of the slot a check-in is accepted. Generous before, for
+# the creator who arrives early and waits; longer after, because the shoot
+# itself takes hours and somebody always checks in on their way out.
+CHECKIN_EARLY_MINUTES = 120
+CHECKIN_LATE_MINUTES = 240
+
+
+def _mint_checkin_code(slot: dict, campaign: dict) -> dict:
+    """A short-lived signed code for one slot, for the QR on the day-of screen."""
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=CHECKIN_CODE_TTL_SECONDS)
+    token = jwt.encode(
+        {
+            "typ": "checkin",
+            "slot": str(slot["_id"]),
+            "campaign": str(campaign["_id"]),
+            "exp": expires,
+        },
+        _jwt_secret(),
+        algorithm=JWT_ALGORITHM,
+    )
+    return {
+        "code": token,
+        # The page the QR points at. Built off the share base like every other
+        # link we put in front of somebody, so it works from a phone that has
+        # never had the app open.
+        "url": f"{_share_base()}/check-in?code={token}",
+        "expires_at": _iso(expires),
+        "expires_in": CHECKIN_CODE_TTL_SECONDS,
+    }
+
+
+def _read_checkin_code(code: str) -> dict:
+    """The claims in a check-in code, or a 422 saying which way it failed.
+
+    Expiry and forgery get different messages on purpose: "this code has
+    expired" tells somebody at a venue to look at the screen again, which is
+    the fix, while a signature failure is not a thing a creator can act on and
+    should not be dressed up as one.
+    """
+    try:
+        claims = jwt.decode(code or "", _jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=422,
+            detail="That code has expired — the screen shows a fresh one every minute.",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+    if claims.get("typ") != "checkin":
+        # Every other token this app signs — a session, an impersonation —
+        # verifies with the same key. Without this check any of them would
+        # work as a check-in code.
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+    return claims
+
+
+def _checkin_window_refusal(collab: dict, slot: Optional[dict], campaign: dict) -> Optional[str]:
+    """Whether now is close enough to the booking, or why it isn't.
+
+    The code proves the creator is looking at the manager's screen; this is
+    what stops that screen being used to check somebody in a week early. Read
+    off the collaboration's own `scheduled_at` first, because on a personal
+    table that is the time this creator picked inside the window, not the
+    window itself.
+    """
+    when = _as_utc(collab.get("scheduled_at")) or _as_utc((slot or {}).get("starts_at"))
+    if when is None:
+        # Nothing to compare against. A booking with no time is a data problem
+        # and refusing here would strand somebody who is standing at the door.
+        return None
+    now = datetime.now(timezone.utc)
+    ends = _as_utc((slot or {}).get("ends_at")) or when
+    if now < when - timedelta(minutes=CHECKIN_EARLY_MINUTES):
+        return "It's too early to check in for this one. Try closer to your slot."
+    if now > ends + timedelta(minutes=CHECKIN_LATE_MINUTES):
+        return (
+            "This slot finished a while ago. Ask the campaign manager to check "
+            "you in."
+        )
+    return None
+
+
+async def _check_in_collaboration(
+    collab: dict, campaign: dict, user: dict, *, method: str = "manual"
+) -> dict:
     """Mark a creator as turned up.
 
     The same transition the admin's advance makes, done by the person actually
     standing there. Only from slot_booked — checking in somebody who never got
     a slot would skip the booking the venue is counting on.
 
-    Shared by the WeAre manager's route and the brand manager's: who is holding
-    the clipboard depends on whether the campaign was reassigned, and the
-    attendance record must not depend on that.
+    Shared by the WeAre manager's route, the brand manager's, **and the
+    creator's own QR scan**: who is holding the clipboard depends on whether
+    the campaign was reassigned and on whether the camera worked, and the
+    attendance record must not depend on either. `method` rides on the audit
+    line so the two paths are distinguishable without being different — the
+    action, the states and the campaign context are identical, which is what
+    makes "who was actually here" one question with one answer.
     """
     collab_id = str(collab["_id"])
     current = collab.get("state")
@@ -15819,10 +15993,15 @@ async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> d
         "collaboration",
         collab["_id"],
         before={"state": "slot_booked"},
-        after={"state": "attended"},
+        after={"state": "attended", "method": method},
         **_campaign_audit_context(campaign),
     )
-    return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
+    return {
+        "id": collab_id,
+        "state": "attended",
+        "checked_in_at": _iso(now),
+        "method": method,
+    }
 
 
 @manager_router.post("/collaborations/{collab_id}/performance")
@@ -15849,6 +16028,21 @@ async def check_in_creator(
     """Mark a creator as turned up, as the assigned WeAre manager."""
     collab, campaign = await _managed_collab_or_404(collab_id, user)
     return await _check_in_collaboration(collab, campaign, user)
+
+
+@manager_router.get("/slots/{slot_id}/check-in-code")
+async def manager_checkin_code(
+    slot_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The code behind the QR on the day-of screen.
+
+    Scoped by `_slot_or_404`, which asserts the caller runs the campaign the
+    slot belongs to — a code for somebody else's shoot would check their
+    creators in.
+    """
+    slot, campaign = await _slot_or_404(slot_id, user)
+    return _mint_checkin_code(slot, campaign)
 
 
 @manager_router.post("/collaborations/{collab_id}/no-show")
@@ -18117,6 +18311,157 @@ async def get_application(
 
 
 api_router.include_router(application_router)
+
+
+# --- The shoot calendar ------------------------------------------------------
+#
+# Every booked slot, on a month at a time. The lists already say who is booked
+# on *this* campaign; nothing said what next Tuesday looks like across all of
+# them, which is the question somebody asks before agreeing to a date.
+#
+# **One endpoint, three scopes, one payload.** A brand manager sees its own
+# campaigns, a WeAre manager the ones assigned to them, an admin everything —
+# and all three get the same shape, carrying **no contact detail for anybody**.
+# The manager who needs a phone number has the roster and the daysheet, which
+# are behind the staff role for exactly that reason; a calendar is a planning
+# view and does not need one.
+
+calendar_router = APIRouter(prefix="/calendar", tags=["calendar"])
+
+# A month view asks for a month. The cap is generous enough for a quarter and
+# small enough that nobody can ask for the whole history in one request.
+MAX_CALENDAR_DAYS = 120
+
+
+async def _calendar_campaign_scope(user: dict, campaign_id: Optional[str]) -> Optional[dict]:
+    """Which campaigns this caller may see on a calendar.
+
+    None means "everything" (admin). The filter is built here rather than at
+    the query, so a role that is added later has to be given a scope rather
+    than inheriting the admin's by omission.
+    """
+    role = (user or {}).get("role")
+    scope: dict = {}
+    if role == "admin":
+        pass
+    elif role == "campaign_manager":
+        scope["manager_id"] = ObjectId(user["_id"])
+    elif is_brand_side(user):
+        scope["brand_id"] = _brand_scope(user)
+    else:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if campaign_id:
+        oid = _as_oid(campaign_id)
+        if oid is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        # Filtering by a campaign outside the scope answers with an empty
+        # calendar rather than a 403 — the same reasoning as the 404s
+        # elsewhere: whether a campaign exists is not this caller's business.
+        scope["_id"] = oid
+    return scope
+
+
+@calendar_router.get("")
+async def shoot_calendar(
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    campaign: Optional[str] = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Booked slots between two dates, for whoever is asking.
+
+    The dates are parsed by FastAPI rather than by hand — a second date parser
+    is a second set of edge cases, and the exports already rely on this one.
+    """
+    scope = await _calendar_campaign_scope(user, campaign)
+
+    now = datetime.now(timezone.utc)
+    from_at = _as_utc(start) or (now - timedelta(days=1))
+    to_at = _as_utc(end) or (from_at + timedelta(days=31))
+    if to_at < from_at:
+        raise HTTPException(status_code=422, detail="The end date is before the start.")
+    if (to_at - from_at) > timedelta(days=MAX_CALENDAR_DAYS):
+        to_at = from_at + timedelta(days=MAX_CALENDAR_DAYS)
+
+    campaigns = await db.campaigns.find(scope).to_list(length=1000)
+    if not campaigns:
+        return {
+            "start": _iso(from_at),
+            "end": _iso(to_at),
+            "campaigns": [],
+            "entries": [],
+        }
+    by_id = {c["_id"]: c for c in campaigns}
+
+    collabs = await db.collaborations.find(
+        {
+            "campaign_id": {"$in": list(by_id)},
+            "scheduled_at": {"$gte": from_at, "$lte": to_at},
+            # An exit is not a shoot. Declined and cancelled rows still carry
+            # the time they were booked for, and drawing them would put people
+            # on a calendar who are not coming.
+            "state": {"$nin": list(TERMINAL_COLLAB_STATES)},
+        }
+    ).to_list(length=2000)
+
+    names = await _creator_names_for([c["creator_id"] for c in collabs])
+    brand_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+    slot_ids = [c["slot_id"] for c in collabs if c.get("slot_id")]
+    slots = (
+        await db.campaign_slots.find({"_id": {"$in": slot_ids}}).to_list(length=len(slot_ids))
+        if slot_ids
+        else []
+    )
+    slot_by_id = {s["_id"]: s for s in slots}
+
+    entries = []
+    for c in collabs:
+        camp = by_id.get(c["campaign_id"]) or {}
+        brand = brand_map.get(camp.get("brand_id")) or {}
+        slot = slot_by_id.get(c.get("slot_id")) or {}
+        entries.append(
+            {
+                "id": str(c["_id"]),
+                # A name and nothing else. Every other identifying field is
+                # what `_brand_visible_creator` exists to keep off a
+                # brand-facing surface, and a calendar needs none of them.
+                "creator_name": names.get(c["creator_id"]) or "Creator",
+                "creator_id": str(c["creator_id"]),
+                "campaign_id": str(c["campaign_id"]),
+                "campaign_title": camp.get("title"),
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "campaign_type": camp.get("campaign_type"),
+                "area": camp.get("area"),
+                "venue_address": camp.get("venue_address"),
+                "starts_at": _iso(c.get("scheduled_at")),
+                "ends_at": _iso(slot.get("ends_at")),
+                "state": c.get("state"),
+                # Where the row goes when tapped. The application screen is
+                # the one both consoles already share.
+                "href": f"/applications/{str(c['_id'])}",
+            }
+        )
+    entries.sort(key=lambda e: (e["starts_at"] or "", e["creator_name"]))
+
+    return {
+        "start": _iso(from_at),
+        "end": _iso(to_at),
+        # The filter's options, from the campaigns actually in scope — a
+        # dropdown listing every campaign in the database would be a directory
+        # of other brands' work.
+        "campaigns": sorted(
+            (
+                {"id": str(c["_id"]), "title": c.get("title")}
+                for c in campaigns
+            ),
+            key=lambda c: (c["title"] or "").lower(),
+        ),
+        "entries": entries,
+    }
+
+
+api_router.include_router(calendar_router)
 
 
 # --- Admin sample route ----------------------------------------------------
