@@ -25,7 +25,7 @@ import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
-import BrandAvatar from "@/components/BrandAvatar";
+import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -530,10 +530,11 @@ export default function CampaignDetail() {
                         />
                         {isLive ? "Live" : "Upcoming"}
                     </span>
-                    <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        <BrandAvatar brand={campaign} size="h-6 w-6" />
-                        {campaign.brand_name || "Brand"}
-                    </span>
+                    <BrandName
+                        brand={campaign}
+                        avatarSize="h-6 w-6"
+                        className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+                    />
                 </div>
 
                 <h1

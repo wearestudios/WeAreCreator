@@ -7,6 +7,16 @@
       "destination": "/index.html"
     },
     {
+      "//": "The brand's own public page, server-rendered for the same reason and reached from every campaign card. Point this at the API host alongside /c/:id — they are one feature and shipping one without the other means a link into a page that does not exist.",
+      "source": "/brands/:id",
+      "destination": "/index.html"
+    },
+    {
+      "//": "Lists every public brand page and live brief, so a crawler has something to follow. robots.txt names it, so both have to point at the same host.",
+      "source": "/sitemap.xml",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

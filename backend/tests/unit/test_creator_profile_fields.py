@@ -293,7 +293,7 @@ def test_the_form_offers_facebook_and_about():
 def test_the_address_field_degrades_without_a_key():
     """The point of the whole fallback: nothing breaks before the key is
     configured, and nothing breaks if it is taken away."""
-    source = (FRONTEND / "components" / "creator" / "AddressPicker.jsx").read_text()
+    source = (FRONTEND / "components" / "AddressPicker.jsx").read_text()
 
     assert "mapsConfigured()" in source
     assert '"off"' in source, "there is a no-key state"
@@ -321,7 +321,7 @@ def test_no_google_key_is_hardcoded_anywhere_in_the_frontend():
 def test_dragging_the_pin_does_not_rewrite_the_typed_address():
     """They wrote "2nd floor, above the pharmacy". Reverse-geocoding the drag
     would replace that with a street name, which is worse for a courier."""
-    source = (FRONTEND / "components" / "creator" / "AddressPicker.jsx").read_text()
+    source = (FRONTEND / "components" / "AddressPicker.jsx").read_text()
     dragend = source[source.index('addListener("dragend"') :][:400]
 
     assert "address" not in dragend.split("setPin(")[1][:120]

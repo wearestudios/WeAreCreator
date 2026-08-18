@@ -46,7 +46,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Navbar } from "@/components/Navbar";
 import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
 import InstagramConnect from "@/components/creator/InstagramConnect";
-import AddressPicker from "@/components/creator/AddressPicker";
+import AddressPicker from "@/components/AddressPicker";
 import { CREATOR_TAXONOMY, INDIAN_CITIES } from "@/lib/taxonomy";
 import {
     Select,

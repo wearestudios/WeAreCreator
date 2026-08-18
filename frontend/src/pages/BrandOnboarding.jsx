@@ -20,6 +20,7 @@ import {
     Building2,
     CheckCircle2,
     Clock,
+    ExternalLink,
     Loader2,
     MapPin,
     Save,
@@ -49,16 +50,26 @@ import {
 import VerificationDocuments, {
     VerificationDocumentsSkeleton,
 } from "@/components/brand/VerificationDocuments";
-import { BRAND_LOGO, BRAND_VERIFICATION as IDS } from "@/constants/testIds";
+import { BRAND_LOGO, BRAND_PAGE, BRAND_VERIFICATION as IDS } from "@/constants/testIds";
+import AddressPicker from "@/components/AddressPicker";
+import { brandPageUrl } from "@/lib/brandPage";
+import { INDIAN_CITIES } from "@/lib/taxonomy";
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
 } from "@/components/ImageUploadField";
 
+// The full set the server accepts (CATEGORY_LITERAL). This used to be four of
+// the eight, so a fashion, travel, wellness or real-estate brand had to file
+// itself as "Lifestyle" — and that is the word its public page then prints.
 const CATEGORY_OPTIONS = [
     { value: "fnb", label: "F&B" },
     { value: "hospitality", label: "Hospitality" },
     { value: "retail", label: "Retail" },
+    { value: "real_estate", label: "Real estate" },
+    { value: "fashion", label: "Fashion" },
+    { value: "travel", label: "Travel" },
+    { value: "wellness", label: "Wellness" },
     { value: "lifestyle", label: "Lifestyle" },
 ];
 
@@ -267,9 +278,24 @@ export default function BrandOnboarding() {
     // save of half a picture.
     const [logoUrl, setLogoUrl] = useState(null);
     const [uploads, setUploads] = useState(null);
+    // The creator-facing half. None of it is evidence of anything, so none of
+    // it is locked once verified and none of it is required to submit — it is
+    // what a creator reads on the brand's public page.
+    const [about, setAbout] = useState("");
+    const [city, setCity] = useState("");
+    const [outlets, setOutlets] = useState([]);
 
     const [touched, setTouched] = useState({});
     const touch = (k) => setTouched((t) => ({ ...t, [k]: true }));
+
+    const addOutlet = () =>
+        setOutlets((rows) => [
+            ...rows,
+            { name: "", address: "", area: "", city: city || "", lat: null, lng: null },
+        ]);
+    const patchOutlet = (i, patch) =>
+        setOutlets((rows) => rows.map((r, n) => (n === i ? { ...r, ...patch } : r)));
+    const removeOutlet = (i) => setOutlets((rows) => rows.filter((_, n) => n !== i));
 
     // True only when this is a genuinely empty profile. It decides where Save
     // goes: a brand arriving from signup expects to land on the dashboard,
@@ -293,6 +319,9 @@ export default function BrandOnboarding() {
             setContactEmail(data.contact_email || "");
             setLogoUrl(data.logo_url || null);
             setUploads(data.uploads || null);
+            setAbout(data.about || "");
+            setCity(data.city || "");
+            setOutlets(data.outlets || []);
             setVerification(data.verification || null);
         },
         [user],
@@ -385,6 +414,11 @@ export default function BrandOnboarding() {
                 business_name: businessName,
                 category,
                 areas,
+                about: about.trim() || null,
+                city: city || null,
+                // Blank rows are dropped server-side; sending them is how a
+                // repeater with an empty last row normally behaves.
+                outlets,
                 legal_entity_name: legalName.trim() || null,
                 business_type: businessType || null,
                 registered_address: registeredAddress.trim() || null,
@@ -470,6 +504,22 @@ export default function BrandOnboarding() {
                     Verification is what lets one go live in front of creators —
                     do it now or come back to it.
                 </p>
+
+                {/* Somebody filling this in should be able to look at what
+                    creators will see. The page only exists once we have
+                    verified the business, so the link only appears then. */}
+                {isVerified && user?.id && (
+                    <a
+                        href={brandPageUrl(user.id)}
+                        target="_blank"
+                        rel="noopener"
+                        data-testid={BRAND_PAGE.preview}
+                        className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                    >
+                        <ExternalLink className="h-4 w-4" />
+                        View your public page
+                    </a>
+                )}
 
                 {loadError && (
                     <p className="mt-6 text-sm text-destructive">{loadError}</p>
@@ -560,6 +610,152 @@ export default function BrandOnboarding() {
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        <div>
+                            <Label
+                                htmlFor="brand-about"
+                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            >
+                                About your business
+                            </Label>
+                            <Textarea
+                                id="brand-about"
+                                data-testid={BRAND_PAGE.about}
+                                rows={4}
+                                maxLength={1500}
+                                value={about}
+                                onChange={(e) => setAbout(e.target.value)}
+                                className="mt-2 min-h-[120px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                placeholder="What you make or serve, how long you've been going, what you're known for. Creators read this before deciding whether to pitch."
+                            />
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                Shown on your public page. Not part of verification —
+                                write it in your own words.
+                            </p>
+                        </div>
+
+                        <div>
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Home city
+                            </Label>
+                            {/* A closed list, the same one creators and campaigns
+                                use. Free text cannot be reconciled: "Bangalore"
+                                and "Bengaluru " are two cities to a filter. */}
+                            <Select value={city} onValueChange={setCity}>
+                                <SelectTrigger
+                                    data-testid={BRAND_PAGE.city}
+                                    className="mt-2 h-11 border-white/10 bg-card/60"
+                                >
+                                    <SelectValue placeholder="Pick a city" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {INDIAN_CITIES.map((c) => (
+                                        <SelectItem key={c} value={c}>
+                                            {c}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </section>
+
+                    <section className="space-y-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Outlets
+                            </p>
+                            <span className="text-xs text-muted-foreground">
+                                Shown publicly — optional
+                            </span>
+                        </div>
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            The places a creator would actually turn up to. Your
+                            registered address stays private and is never shown here.
+                        </p>
+
+                        {outlets.map((o, i) => (
+                            <div
+                                key={i}
+                                data-testid={BRAND_PAGE.outlet(i)}
+                                className="rounded-md border border-white/10 bg-card/60 p-4 space-y-4"
+                            >
+                                <div className="flex items-start gap-3">
+                                    <Input
+                                        data-testid={BRAND_PAGE.outletName(i)}
+                                        value={o.name || ""}
+                                        maxLength={140}
+                                        onChange={(e) => patchOutlet(i, { name: e.target.value })}
+                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-ember-500"
+                                        placeholder="e.g. Indiranagar"
+                                    />
+                                    <button
+                                        type="button"
+                                        data-testid={BRAND_PAGE.outletRemove(i)}
+                                        onClick={() => removeOutlet(i)}
+                                        aria-label={`Remove outlet ${i + 1}`}
+                                        className="grid h-11 w-11 flex-none place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:text-red-300"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+                                {/* The same control the creator's address uses:
+                                    Places autocomplete plus a draggable pin, and a
+                                    plain textarea when there is no API key. */}
+                                <AddressPicker
+                                    address={o.address || ""}
+                                    lat={o.lat ?? null}
+                                    lng={o.lng ?? null}
+                                    placeId={o.place_id || null}
+                                    testid={BRAND_PAGE.outletAddress(i)}
+                                    note="Shown on your public page, so creators know where to turn up."
+                                    onChange={(patch) =>
+                                        patchOutlet(i, {
+                                            ...("address" in patch ? { address: patch.address } : {}),
+                                            ...("lat" in patch ? { lat: patch.lat } : {}),
+                                            ...("lng" in patch ? { lng: patch.lng } : {}),
+                                            ...("placeId" in patch
+                                                ? { place_id: patch.placeId }
+                                                : {}),
+                                        })
+                                    }
+                                />
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <Input
+                                        value={o.area || ""}
+                                        maxLength={120}
+                                        onChange={(e) => patchOutlet(i, { area: e.target.value })}
+                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-ember-500"
+                                        placeholder="Neighbourhood"
+                                    />
+                                    <Select
+                                        value={o.city || ""}
+                                        onValueChange={(v) => patchOutlet(i, { city: v })}
+                                    >
+                                        <SelectTrigger className="h-11 border-white/10 bg-transparent">
+                                            <SelectValue placeholder="City" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {INDIAN_CITIES.map((c) => (
+                                                <SelectItem key={c} value={c}>
+                                                    {c}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        ))}
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            data-testid={BRAND_PAGE.outletAdd}
+                            onClick={addOutlet}
+                            className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                        >
+                            <MapPin className="mr-2 h-4 w-4" />
+                            Add an outlet
+                        </Button>
                     </section>
 
                     <section className="space-y-4">

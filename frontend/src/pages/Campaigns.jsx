@@ -19,11 +19,12 @@ import {
     StickyBar,
 } from "@/components/data/DenseView";
 import { STICKY_BAR } from "@/constants/testIds";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, formatApiError } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
-import BrandAvatar from "@/components/BrandAvatar";
+import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,8 +110,12 @@ const CampaignCard = ({ c, index }) => (
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: Math.min(index, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
     >
-        <Link
-            to={`/campaigns/${c.id}`}
+        {/* An <article>, not a <Link>. The brand's name inside it is a link of
+            its own now, and an anchor inside an anchor is invalid markup that
+            browsers resolve however they like. The card stays clickable
+            edge-to-edge through the stretched overlay on the title below —
+            one hit area, two destinations, and valid HTML. */}
+        <article
             data-testid={`campaign-card-${c.id}`}
             className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
         >
@@ -127,17 +132,26 @@ const CampaignCard = ({ c, index }) => (
 
             <div className="flex flex-1 flex-col p-7">
                 <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                        <BrandAvatar brand={c} size="h-7 w-7" />
-                        <div className="truncate text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                            {c.brand_name || "Brand"}
-                        </div>
-                    </div>
+                    <BrandName
+                        brand={c}
+                        avatarSize="h-7 w-7"
+                        lift
+                        className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+                    />
                     <TagBadge status={c.status} />
                 </div>
 
                 <h3 className="mt-5 font-serif text-[26px] leading-[1.05] tracking-tight text-foreground">
-                    {c.title}
+                    {/* The stretched link: this is the card's click target, and
+                        `after:absolute after:inset-0` is what makes it cover
+                        the whole card without wrapping anything. */}
+                    <Link
+                        to={`/campaigns/${c.id}`}
+                        data-testid={`campaign-card-open-${c.id}`}
+                        className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    >
+                        {c.title}
+                    </Link>
                 </h3>
 
                 <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
@@ -192,12 +206,13 @@ const CampaignCard = ({ c, index }) => (
                             title={c.title}
                             summary={c.deliverables}
                             variant="icon"
+                            className="relative z-10"
                         />
                         <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
                     </div>
                 </div>
             </div>
-        </Link>
+        </article>
     </motion.div>
 );
 
@@ -397,18 +412,33 @@ export default function Campaigns() {
                             travel and hospitality. Tap any card to see the full brief.
                         </p>
                     </div>
-                    {Array.isArray(items) && items.length > 0 && (
+                    {/* Rendered while loading too, as a skeleton of the same
+                        shape. Mounting this only when the data lands grew the
+                        masthead by ~120px on a phone — measured at 0.0718 CLS,
+                        the whole filter bar and grid jumping down. Only the
+                        confirmed-empty case omits it, and that swaps to the
+                        empty state anyway. */}
+                    {(items === null || items.length > 0) && (
                         <div className="md:col-span-4 md:text-right">
                             <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                 Live pool
                             </div>
-                            <div className="mt-1 font-serif text-5xl leading-none text-foreground">
-                                {formatMoney(totalBudget)}
-                            </div>
-                            <div className="mt-2 text-xs text-muted-foreground">
-                                across {items.length}{" "}
-                                {items.length === 1 ? "campaign" : "campaigns"}
-                            </div>
+                            {items === null ? (
+                                <div aria-hidden="true" className="md:flex md:flex-col md:items-end">
+                                    <Skeleton className="mt-1 h-12 w-44" />
+                                    <Skeleton className="mt-2 h-3 w-28" />
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="mt-1 font-serif text-5xl leading-none text-foreground">
+                                        {formatMoney(totalBudget)}
+                                    </div>
+                                    <div className="mt-2 text-xs text-muted-foreground">
+                                        across {items.length}{" "}
+                                        {items.length === 1 ? "campaign" : "campaigns"}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>

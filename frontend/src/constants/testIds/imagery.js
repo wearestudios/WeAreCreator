@@ -18,6 +18,21 @@ export const COVER = {
 	error: "campaign-cover-error",
 };
 
+// The brand's public page, and the links into it.
+export const BRAND_PAGE = {
+	link: (id) => `brand-page-link-${id}`,
+	name: (id) => `brand-name-${id}`,
+	// The brand-facing half of the profile: what a creator reads.
+	about: "brand-about-input",
+	city: "brand-city-trigger",
+	outletAdd: "brand-outlet-add",
+	outlet: (i) => `brand-outlet-${i}`,
+	outletName: (i) => `brand-outlet-name-${i}`,
+	outletAddress: (i) => `brand-outlet-address-${i}`,
+	outletRemove: (i) => `brand-outlet-remove-${i}`,
+	preview: "brand-page-preview",
+};
+
 export const BRAND_LOGO = {
 	image: (id) => `brand-logo-${id}`,
 	monogram: (id) => `brand-logo-monogram-${id}`,

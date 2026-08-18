@@ -203,12 +203,20 @@ ever sees. The page a person opens and the page a crawler scrapes are the same
 one, so the preview cannot promise something the link does not show.
 
 Out of the box the Share button copies `https://<frontend>/c/<id>`, which only
-works if that path reaches the backend. Add the proxy to `frontend/vercel.json`,
-above the catch-all, replacing the host with your Railway URL:
+works if that path reaches the backend. Add the proxies to
+`frontend/vercel.json`, above the catch-all, replacing the host with your
+Railway URL:
 
 ```json
-{ "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" }
+{ "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" },
+{ "source": "/brands/:id", "destination": "https://your-api.up.railway.app/brands/:id" },
+{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
 ```
+
+All three or none: `/brands/{id}` is the brand's public page, linked from every
+campaign card and from every shared brief, and `/sitemap.xml` is what makes
+both findable by a search engine (robots.txt points at it). Shipping the brief
+proxy without the brand one means every brand link opens the SPA's 404.
 
 The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
 the backend's own origin and links will point straight at it. That works

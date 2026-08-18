@@ -14,7 +14,7 @@ import re
 import sys
 import logging
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from typing import Optional, Literal, Annotated
 
 import bcrypt
@@ -654,6 +654,27 @@ BrandVerificationState = Literal[
 ]
 
 
+class BrandOutlet(BaseModel):
+    """One place the business actually is.
+
+    Deliberately separate from `registered_address`, which is where the company
+    is registered — often a director's home for a small business, and one of the
+    things the verification documents carry. That one is never public. An outlet
+    is a shopfront: somewhere a creator is going to be asked to turn up, so it
+    is exactly what belongs on a page strangers can read.
+    """
+
+    name: Optional[str] = Field(default=None, max_length=140)
+    address: Optional[str] = Field(default=None, max_length=500)
+    area: Optional[str] = Field(default=None, max_length=120)
+    city: Optional[str] = Field(default=None, max_length=80)
+    # The pin, same three fields and the same reasoning as the creator's: a
+    # text address is what gets read, a coordinate is what gets navigated to.
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    place_id: Optional[str] = Field(default=None, max_length=200)
+
+
 class BrandProfileUpdate(BaseModel):
     """Payload for brand onboarding / profile edits.
 
@@ -666,6 +687,13 @@ class BrandProfileUpdate(BaseModel):
     business_name: Optional[str] = Field(default=None, max_length=140)
     category: Optional[CATEGORY_LITERAL] = None
     areas: list[str] = Field(default_factory=list, max_length=30)
+
+    # The creator-facing half: what this business is, in its own words, and
+    # where it actually is. None of it is evidence of anything — it exists so a
+    # creator deciding whether to pitch has something to read besides a name.
+    about: Optional[str] = Field(default=None, max_length=1500)
+    city: Optional[str] = Field(default=None, max_length=80)
+    outlets: list[BrandOutlet] = Field(default_factory=list, max_length=25)
 
     # The name on the paperwork, which is often not the name on the door —
     # "Third Wave Coffee" trades, "Third Wave Coffee Roasters Pvt Ltd" signs.
@@ -5048,6 +5076,38 @@ api_router.include_router(creator_router)
 brand_router = APIRouter(prefix="/brand", tags=["brand"])
 
 
+def _clean_outlets(rows: list) -> list:
+    """Normalise the outlet list, dropping the ones that say nothing.
+
+    A form with an empty row on the end is the normal shape of a repeater, so
+    blank rows are discarded rather than stored — otherwise the public page
+    grows a run of nameless, addressless entries nobody typed on purpose.
+    """
+    out = []
+    for row in rows or []:
+        name = (row.name or "").strip()
+        address = (row.address or "").strip()
+        area = (row.area or "").strip()
+        city = _canonical_city(row.city)
+        # Half a coordinate is not a location. Both or neither, so nothing
+        # downstream has to ask whether a pin is really a pin.
+        has_pin = row.lat is not None and row.lng is not None
+        if not (name or address or area or city or has_pin):
+            continue
+        out.append(
+            {
+                "name": name or None,
+                "address": address or None,
+                "area": area or None,
+                "city": city,
+                "lat": row.lat if has_pin else None,
+                "lng": row.lng if has_pin else None,
+                "place_id": ((row.place_id or "").strip() or None) if has_pin else None,
+            }
+        )
+    return out
+
+
 def _serialize_brand_profile(doc: dict) -> dict:
     if not doc:
         return None
@@ -5058,6 +5118,10 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "logo_url": doc.get("logo_url"),
         "category": doc.get("category"),
         "areas": doc.get("areas") or [],
+        # What a creator reads on the public page.
+        "about": doc.get("about"),
+        "city": doc.get("city"),
+        "outlets": doc.get("outlets") or [],
         # The business as claimed, which is what documents get checked against.
         "legal_entity_name": doc.get("legal_entity_name"),
         "gst_number": doc.get("gst_number"),
@@ -5573,6 +5637,7 @@ async def update_brand_profile(
         update[field] = (cleaned.lower() if lower else cleaned) or None
 
     text("business_name", payload.business_name)
+    text("about", payload.about)
     text("legal_entity_name", payload.legal_entity_name)
     text("registered_address", payload.registered_address)
     text("contact_person_name", payload.contact_person_name)
@@ -5585,6 +5650,13 @@ async def update_brand_profile(
         update["business_type"] = payload.business_type
     if "areas" in sent:
         update["areas"] = [a.strip() for a in payload.areas if a and a.strip()]
+    if "city" in sent:
+        # The same canonicaliser the creator's city and the campaign's go
+        # through. Three free-text spellings of Bengaluru is three cities to a
+        # filter and one to everybody else.
+        update["city"] = _canonical_city(payload.city)
+    if "outlets" in sent:
+        update["outlets"] = _clean_outlets(payload.outlets)
     if "gst_number" in sent:
         update["gst_number"] = _clean_gstin(payload.gst_number)
     if "website" in sent:
@@ -16308,6 +16380,15 @@ def _share_url(campaign_id: str) -> str:
     return f"{_share_base()}{SHARE_PATH}/{campaign_id}"
 
 
+# The brand's own public page lives at the same origin and is built the same
+# way, so both are here rather than in two places that would drift.
+BRAND_PATH = "/brands"
+
+
+def _brand_page_url(brand_id: str) -> str:
+    return f"{_share_base()}{BRAND_PATH}/{brand_id}"
+
+
 def _absolute_media_url(url: Optional[str], base: str) -> str:
     """An uploaded file's path, made absolute against the host serving it.
 
@@ -16377,6 +16458,14 @@ def _share_page_html(
     cid = str(campaign["_id"])
     title = e(campaign.get("title") or "A brief on WeAre Creators")
     brand_name = e(brand.get("business_name") or "A verified brand")
+    # The brand's own page, which is where a creator goes to find out who is
+    # actually asking. It is also the only link between two public pages, so it
+    # is what gives a crawler a path from a shared brief into the rest.
+    brand_link = (
+        f'<a href="{e(_brand_page_url(str(brand["user_id"])))}">{brand_name} &rarr;</a>'
+        if brand.get("user_id")
+        else brand_name
+    )
     summary = e(_share_summary(campaign, brand))
     url = e(_share_url(cid))
     app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
@@ -16484,7 +16573,7 @@ a{{color:inherit}}
 {cover_html}
 <p class="eyebrow">Paid brief · Open to verified creators</p>
 <h1>{title}</h1>
-<p class="brand">{brand_name}</p>
+<p class="brand">{brand_link}</p>
 <div class="card"><dl style="margin:0">{rows}</dl></div>
 <div class="brief">{e(campaign.get("brief") or "")}</div>
 <div class="cta">
@@ -16534,6 +16623,413 @@ async def public_campaign_page(campaign_id: str, request: Request):
         # it seconds apart, and the spots-left figure is the only thing that
         # moves. Short enough that a closed brief stops being shared quickly.
         headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+# --- The brand behind the brief ----------------------------------------------
+#
+# A creator could see a campaign and learn nothing whatever about who was
+# posting it — a name, and that was all. This is the page that answers "who are
+# these people", and it is built the same way and for the same reason as the
+# brief's: server-rendered, so it is shareable and something a search engine can
+# actually read.
+#
+# **It is a public page about a business, and nothing else.** The account behind
+# a brand belongs to a named person whose phone number is their WhatsApp and
+# whose email is their work address, and `registered_address` is frequently a
+# director's home. None of that is on here. `_public_brand` is an allow-list for
+# the same reason `_brand_visible_creator` is: a deny-list is a list somebody
+# forgets to add to.
+
+CATEGORY_LABELS = {
+    "fnb": "Food & drink",
+    "hospitality": "Hospitality",
+    "retail": "Retail",
+    "real_estate": "Real estate",
+    "fashion": "Fashion",
+    "travel": "Travel",
+    "wellness": "Wellness",
+    "lifestyle": "Lifestyle",
+}
+
+# What a stranger may read about a business. Everything not named here is
+# absent by construction rather than by having been remembered.
+_PUBLIC_BRAND_FIELDS = (
+    "business_name",
+    "logo_url",
+    "category",
+    "about",
+    "city",
+    "outlets",
+    "website",
+    "instagram_handle",
+    "verified",
+)
+
+# Named so the leak test can look for them by name as well as by value. The
+# first three are the manager as a person; the rest are the business's
+# paperwork, which is the reviewer's business and nobody else's.
+PUBLIC_BRAND_FORBIDDEN_FIELDS = (
+    "contact_phone",
+    "contact_email",
+    "contact_person_name",
+    "contact_person_designation",
+    "registered_address",
+    "gst_number",
+    "verification_reason",
+    "manager_phone",
+    "manager_email",
+    "phone",
+    "email",
+)
+
+
+def _public_brand(profile: dict) -> dict:
+    """The only projection of a brand on any unauthenticated surface."""
+    out = {k: profile.get(k) for k in _PUBLIC_BRAND_FIELDS}
+    out["id"] = str(profile["user_id"])
+    out["outlets"] = [
+        {k: o.get(k) for k in ("name", "address", "area", "city", "lat", "lng", "place_id")}
+        for o in (profile.get("outlets") or [])
+    ]
+    out["verified"] = bool(profile.get("verified"))
+    return out
+
+
+def _maps_link(outlet: dict) -> str:
+    """Where "Open in Maps" goes.
+
+    Built from the coordinate rather than the text, because that is the thing
+    the brand actually dropped a pin on — an autocomplete address routinely
+    resolves to the street. No API key: this is a plain Google Maps URL, which
+    matters on a page anyone can load, since embedding a static map would mean
+    publishing a key on an unauthenticated page for decoration.
+    """
+    if outlet.get("lat") is not None and outlet.get("lng") is not None:
+        query = f"{outlet['lat']},{outlet['lng']}"
+        place = outlet.get("place_id")
+        suffix = f"&query_place_id={quote(place)}" if place else ""
+        return f"https://www.google.com/maps/search/?api=1&query={quote(query)}{suffix}"
+    where = ", ".join(
+        x for x in (outlet.get("address"), outlet.get("area"), outlet.get("city")) if x
+    )
+    return f"https://www.google.com/maps/search/?api=1&query={quote(where)}" if where else ""
+
+
+def _brand_summary(brand: dict, live: int) -> str:
+    """The line under the name in a preview card."""
+    bits = []
+    label = CATEGORY_LABELS.get(brand.get("category"))
+    if label:
+        bits.append(label)
+    if brand.get("city"):
+        bits.append(brand["city"])
+    if live:
+        bits.append(f"{live} open {'brief' if live == 1 else 'briefs'}")
+    about = (brand.get("about") or "").strip()
+    if about:
+        first = about.split("\n")[0].strip()
+        return first[:180] + ("…" if len(first) > 180 else "")
+    return " · ".join(bits) or "A verified brand on WeAre Creators."
+
+
+def _brand_page_html(
+    brand: dict, campaigns: list, media_base: str = "", request_base: str = ""
+) -> str:
+    """One brand, no framework, everything escaped.
+
+    Takes the already-projected `_public_brand` dict, not the raw profile — so
+    a field that is not on the allow-list cannot be reached from in here even
+    by accident.
+    """
+    e = html_escape
+    bid = e(brand["id"])
+    name = e(brand.get("business_name") or "A verified brand")
+    url = e(_brand_page_url(brand["id"]))
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    summary = e(_brand_summary(brand, len(campaigns)))
+    category = e(CATEGORY_LABELS.get(brand.get("category"), ""))
+    logo = _absolute_media_url(brand.get("logo_url"), media_base)
+    og_image = e(logo or f"{app_base}/og-image.png")
+    og_image_size = (
+        ""
+        if logo
+        else '\n<meta property="og:image:width" content="1200">'
+        '\n<meta property="og:image:height" content="630">'
+    )
+
+    monogram = e((brand.get("business_name") or "?").strip()[:1].upper())
+    mark = (
+        f'<img class="logo" src="{e(logo)}" alt="">'
+        if logo
+        else f'<span class="logo mono" style="--h:{_cover_hue(brand["id"])}">{monogram}</span>'
+    )
+
+    chips = "".join(
+        f'<span class="chip">{c}</span>'
+        for c in (
+            category,
+            e(brand.get("city") or ""),
+            '<span class="tick">✓</span> Verified by WeAre' if brand.get("verified") else "",
+        )
+        if c
+    )
+
+    about_html = (
+        f'<div class="about">{e(brand.get("about"))}</div>' if brand.get("about") else ""
+    )
+
+    links = "".join(
+        f'<a class="out" href="{e(href)}" rel="nofollow noopener" target="_blank">{label}</a>'
+        for href, label in (
+            (brand.get("website") or "", "Website"),
+            (
+                f"https://instagram.com/{brand['instagram_handle']}"
+                if brand.get("instagram_handle")
+                else "",
+                f"@{e(brand.get('instagram_handle') or '')}",
+            ),
+        )
+        if href
+    )
+
+    outlets = ""
+    if brand.get("outlets"):
+        rows = []
+        for o in brand["outlets"]:
+            where = e(
+                ", ".join(x for x in (o.get("address"), o.get("area"), o.get("city")) if x)
+                or "—"
+            )
+            link = _maps_link(o)
+            # An outlet with a dropped pin links to the coordinate; one typed
+            # in without a pin falls back to a Maps *search* for its address,
+            # which is honest — we are not inventing a coordinate we do not
+            # have. An outlet with neither gets no link and still lists.
+            pin = (
+                f'<a class="pin" href="{e(link)}" rel="nofollow noopener" target="_blank">'
+                f'<span class="tick">◎</span> Open in Maps</a>'
+                if link
+                else ""
+            )
+            rows.append(
+                f'<li><p class="oname">{e(o.get("name") or name)}</p>'
+                f'<p class="oaddr">{where}</p>{pin}</li>'
+            )
+        outlets = (
+            '<section><h2>Where they are</h2><ul class="outlets">'
+            + "".join(rows)
+            + "</ul></section>"
+        )
+
+    briefs = ""
+    if campaigns:
+        cards = []
+        for c in campaigns:
+            cid = str(c["_id"])
+            cover = _absolute_media_url(c.get("cover_image_url"), media_base)
+            art = (
+                f'<span class="cover"><img src="{e(cover)}" alt=""></span>'
+                if cover
+                else f'<span class="cover fallback" style="--h:{_cover_hue(cid)}"></span>'
+            )
+            money = (
+                "Barter"
+                if _is_barter(c)
+                else (
+                    f"₹{float(c['budget_per_creator']):,.0f}"
+                    if c.get("budget_per_creator") is not None
+                    else "—"
+                )
+            )
+            place = e(", ".join(x for x in (c.get("area"), c.get("city")) if x) or "")
+            cards.append(
+                f'<a class="brief" href="{e(_share_url(cid))}">{art}'
+                f'<span class="btitle">{e(c.get("title") or "A brief")}</span>'
+                f'<span class="bmeta">{e(money)}{" · " + place if place else ""}</span></a>'
+            )
+        briefs = (
+            f'<section><h2>Open briefs</h2><div class="briefs">{"".join(cards)}</div></section>'
+        )
+    else:
+        briefs = (
+            '<section><h2>Open briefs</h2><p class="none">Nothing open right now. '
+            'New briefs from verified brands go up every week.</p></section>'
+        )
+
+    # Structured data, so a search result can show this as a business rather
+    # than as an untitled page. Built from the same allow-listed dict.
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": brand.get("business_name") or "",
+        "url": _brand_page_url(brand["id"]),
+        **({"logo": logo} if logo else {}),
+        **({"description": brand["about"]} if brand.get("about") else {}),
+        **({"sameAs": [brand["website"]]} if brand.get("website") else {}),
+        **(
+            {"address": {"@type": "PostalAddress", "addressLocality": brand["city"],
+                         "addressCountry": "IN"}}
+            if brand.get("city")
+            else {}
+        ),
+    }
+    ld_json = json.dumps(ld).replace("<", "\\u003c")
+
+    return f"""<!doctype html>
+<html lang="en-IN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{name} — briefs on WeAre Creators</title>
+<meta name="description" content="{summary}">
+<meta name="theme-color" content="#0B0A09">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{url}">
+<meta property="og:title" content="{name} on WeAre Creators">
+<meta property="og:description" content="{summary}">
+<meta property="og:image" content="{og_image}">{og_image_size}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{name} on WeAre Creators">
+<meta name="twitter:description" content="{summary}">
+<meta name="twitter:image" content="{og_image}">
+<script type="application/ld+json">{ld_json}</script>
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
+.wrap{{max-width:44rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}}
+.head{{display:flex;gap:1.25rem;align-items:center}}
+.logo{{width:5rem;height:5rem;flex:none;border-radius:.5rem;border:1px solid rgba(255,255,255,.1);object-fit:contain;background:rgba(255,255,255,.04)}}
+.mono{{display:grid;place-items:center;font-family:Fraunces,Georgia,serif;font-size:2.25rem;color:rgba(245,241,236,.6);
+  background:linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B}}
+h1{{font-family:Fraunces,Georgia,serif;font-size:clamp(1.9rem,5.5vw,2.75rem);line-height:1.05;margin:.4rem 0 0;letter-spacing:-.02em}}
+h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1rem}}
+section{{margin-top:2.5rem}}
+.chips{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}}
+.chip{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}}
+.tick{{color:#F05D14}}
+.about{{white-space:pre-line;color:rgba(245,241,236,.9)}}
+.links{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.75rem}}
+.out{{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}}
+.outlets{{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}}
+.outlets li{{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem 1.15rem}}
+.oname{{margin:0;font-family:Fraunces,Georgia,serif;font-size:1.05rem}}
+.oaddr{{margin:.35rem 0 0;color:#9C938B;font-size:.88rem}}
+.pin{{display:inline-block;margin-top:.6rem;font-size:.78rem;color:#F5F1EC;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.2)}}
+.briefs{{display:grid;gap:.75rem}}
+.brief{{display:block;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;text-decoration:none;color:inherit;background:rgba(255,255,255,.02)}}
+.cover{{display:block;aspect-ratio:16/9;background:rgba(255,255,255,.03)}}
+.cover img{{width:100%;height:100%;object-fit:cover;display:block}}
+.fallback{{background:
+  radial-gradient(120% 120% at 20% 0%,hsl(var(--h) 42% 32%) 0%,transparent 62%),
+  linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
+.btitle{{display:block;padding:1rem 1.15rem .2rem;font-family:Fraunces,Georgia,serif;font-size:1.2rem;line-height:1.2}}
+.bmeta{{display:block;padding:0 1.15rem 1.1rem;color:#9C938B;font-size:.82rem}}
+.none{{color:#9C938B;margin:0}}
+.cta{{margin-top:2.5rem;display:flex;flex-wrap:wrap;gap:.75rem}}
+.btn{{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}}
+.primary{{background:#F05D14;color:#0B0A09}}
+.ghost{{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}}
+footer{{margin-top:3rem;color:#7d766f;font-size:.78rem}}
+a{{color:inherit}}
+@media(min-width:40rem){{.briefs{{grid-template-columns:1fr 1fr}}}}
+</style></head><body><div class="wrap">
+<div class="head">{mark}<div>
+  <p class="eyebrow">Brand on WeAre Creators</p>
+  <h1>{name}</h1>
+</div></div>
+<div class="chips">{chips}</div>
+{f'<section>{about_html}</section>' if about_html else ''}
+{f'<div class="links">{links}</div>' if links else ''}
+{outlets}
+{briefs}
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=creator">Sign up to pitch</a>
+  <a class="btn ghost" href="{app_base}/campaigns">See every open brief</a>
+</div>
+<footer>
+  WeAre Creators connects verified creators with brands running paid campaigns
+  in Bengaluru. Brands are checked by our team before their briefs go public.
+</footer>
+</div></body></html>"""
+
+
+@app.get(BRAND_PATH + "/{brand_id}", include_in_schema=False)
+async def public_brand_page(brand_id: str, request: Request):
+    """One brand, readable by anyone. No account, no API prefix.
+
+    Only verified brands, the same rule the brief's page uses: a business we
+    have not checked is not published under our name.
+    """
+    try:
+        oid = ObjectId(brand_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="That brand isn't available.")
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    if not profile or not profile.get("verified"):
+        raise HTTPException(status_code=404, detail="That brand isn't available.")
+
+    campaigns = (
+        await db.campaigns.find(
+            {"brand_id": oid, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)}}
+        )
+        .sort("created_at", -1)
+        .to_list(length=24)
+    )
+    return Response(
+        content=_brand_page_html(
+            _public_brand(profile),
+            campaigns,
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def public_sitemap():
+    """Every public page, so "indexable" means something.
+
+    Nothing on the open internet links to a brand page except our own brief
+    pages, and nothing links to those except this. Without a sitemap the whole
+    public surface is reachable only by being sent the link.
+    """
+    brand_ids = [
+        p["user_id"]
+        for p in await db.brand_profiles.find({"verified": True}, {"user_id": 1}).to_list(
+            length=2000
+        )
+    ]
+    campaigns = (
+        await db.campaigns.find(
+            {"brand_id": {"$in": brand_ids}, "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)}},
+            {"_id": 1, "updated_at": 1},
+        ).to_list(length=5000)
+        if brand_ids
+        else []
+    )
+
+    urls = [(_brand_page_url(str(b)), None) for b in brand_ids]
+    urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
+
+    body = "".join(
+        f"<url><loc>{html_escape(loc)}</loc>"
+        + (f"<lastmod>{html_escape(mod[:10])}</lastmod>" if mod else "")
+        + "</url>"
+        for loc, mod in urls
+    )
+    return Response(
+        content=(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"{body}</urlset>"
+        ),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
     )
 
 

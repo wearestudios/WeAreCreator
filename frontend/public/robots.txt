@@ -1,0 +1,30 @@
+# WeAre Creators
+#
+# Two kinds of page are public and meant to be found: a brand's own page at
+# /brands/{id} and a live brief at /c/{id}. Both are server-rendered by the
+# backend precisely so a crawler can read them — see PREVIEW.md for the
+# rewrites that make those paths reach it.
+#
+# Everything else needs an account. Those routes are a static bundle that
+# renders nothing without a session, so a crawler would index an empty shell.
+
+User-agent: *
+Allow: /
+
+# The brand's own console. Note the trailing slash: prefixes are matched
+# literally, so this covers /brand/dashboard and leaves /brands/{id} — the
+# public page, and the whole point of this file — allowed.
+Disallow: /brand/
+
+Disallow: /admin
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /onboarding
+Disallow: /profile
+Disallow: /manager
+Disallow: /login
+Disallow: /signup
+
+# Replace the host when the site is on its own domain. Served by the backend
+# and proxied at /sitemap.xml, so this and vercel.json have to agree.
+Sitemap: https://wearecreators.in/sitemap.xml

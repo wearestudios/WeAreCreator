@@ -12,6 +12,10 @@ export const APPLICATION = {
 
 	creator: 'application-creator',
 	campaign: 'application-campaign',
+	// The way out to the two things this application is about. Both are
+	// present on every console; only the destination differs.
+	campaignLink: 'application-campaign-link',
+	brandLink: 'application-brand-link',
 
 	commercial: 'application-commercial',
 	commercialQuoted: 'application-commercial-quoted',

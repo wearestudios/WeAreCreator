@@ -40,7 +40,7 @@ import {
     LANDING_STUDIO as STUDIO_IDS,
 } from "@/constants/testIds";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
-import BrandAvatar from "@/components/BrandAvatar";
+import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 
 // ---------------------------------------------------------------------------
@@ -701,10 +701,15 @@ function LiveBriefs() {
                                       <h3 className="mt-5 font-serif text-fluid-2xl leading-tight tracking-tight">
                                           {b.title}
                                       </h3>
-                                      <p className="mt-2 flex items-center gap-2 text-xs uppercase tracking-[0.15em] text-ember-500">
-                                          <BrandAvatar brand={b} size="h-5 w-5" />
-                                          {b.brand_name || "Brand"}
-                                      </p>
+                                      {/* The one link from the public home page
+                                          into a brand's own page — which is
+                                          also the only crawl path a search
+                                          engine has into either. */}
+                                      <BrandName
+                                          brand={b}
+                                          avatarSize="h-5 w-5"
+                                          className="mt-2 text-xs uppercase tracking-[0.15em] text-ember-500"
+                                      />
                                       <p className="mt-4 flex-1 text-sm leading-relaxed text-muted-foreground">
                                           {b.teaser}
                                       </p>

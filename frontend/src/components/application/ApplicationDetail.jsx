@@ -16,7 +16,7 @@
 // Everything role-dependent is decided by the server and arrives in `actions`,
 // so this file never asks "am I an admin"; it asks "may this be done".
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
@@ -28,6 +28,7 @@ import { DetailShell, Field, Section, Stat } from "@/components/admin/DetailPage
 import { BrandLink, CampaignLink, CreatorLink } from "@/components/admin/links";
 import WorkNotes from "@/components/brand/WorkNotes";
 import BrandAvatar from "@/components/BrandAvatar";
+import BrandName from "@/components/BrandName";
 import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
@@ -318,31 +319,49 @@ export default function ApplicationDetail({
                             data-testid={APPLICATION.campaign}
                             className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
                         >
+                            {/* Both destinations work for whoever is looking.
+                                The admin gets the console's own pages, which
+                                carry more; everybody else gets the pages their
+                                role can actually open. Which one is decided by
+                                the route that mounted this, never by asking
+                                here what the user is. */}
                             <Field label="Brief">
                                 {entityLinks ? (
                                     <CampaignLink
                                         id={app.campaign?.id}
                                         title={app.campaign?.title}
+                                        testid={APPLICATION.campaignLink}
                                     />
                                 ) : (
-                                    app.campaign?.title || "—"
+                                    <Link
+                                        to={`/campaigns/${app.campaign?.id}`}
+                                        data-testid={APPLICATION.campaignLink}
+                                        className="transition-colors duration-200 hover:text-ember-500"
+                                    >
+                                        {app.campaign?.title || "Untitled campaign"}
+                                    </Link>
                                 )}
                             </Field>
                             <Field label="Brand">
-                                <span className="inline-flex items-center gap-2">
-                                    <BrandAvatar
-                                        brand={app.campaign}
-                                        size="h-5 w-5"
-                                    />
-                                    {entityLinks ? (
+                                {entityLinks ? (
+                                    <span className="inline-flex items-center gap-2">
+                                        <BrandAvatar
+                                            brand={app.campaign}
+                                            size="h-5 w-5"
+                                        />
                                         <BrandLink
                                             id={app.campaign?.brand_id}
                                             name={app.campaign?.brand_name}
+                                            testid={APPLICATION.brandLink}
                                         />
-                                    ) : (
-                                        app.campaign?.brand_name || "—"
-                                    )}
-                                </span>
+                                    </span>
+                                ) : (
+                                    <BrandName
+                                        brand={app.campaign}
+                                        avatarSize="h-5 w-5"
+                                        testid={APPLICATION.brandLink}
+                                    />
+                                )}
                             </Field>
                             <Field label="Status">{app.campaign?.status || "—"}</Field>
                             <Field label="Area">{app.campaign?.area || "—"}</Field>

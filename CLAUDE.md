@@ -346,6 +346,49 @@ any scraped source.**
   a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
   switching steps and a retry.
 
+## The brand behind the brief
+
+A creator could see a campaign and learn nothing about who was posting it.
+`GET /brands/{id}` is the public brand page — server-rendered by the backend
+like `/c/{id}`, for the same reason, and only for **verified** brands. Vercel
+proxies `/brands/:id` and `/sitemap.xml` alongside `/c/:id`; they are one
+feature, and shipping one without the others is a link into a page that does
+not exist.
+
+- **`_public_brand` is the only projection of a brand on any unauthenticated
+  surface**, an allow-list like `_brand_visible_creator`. The manager's phone,
+  email and name, the `registered_address` (frequently a director's home), the
+  GST number and the rejection reason are all named in
+  `PUBLIC_BRAND_FORBIDDEN_FIELDS`; a unit test renders the page with those
+  values planted and searches the output.
+- **An outlet is not a registered address.** `outlets` on the profile are
+  shopfronts a creator turns up to — name, address, area, canonical city, and
+  an optional pin (both coordinates or neither, `_clean_outlets`). The pin
+  links out as a plain Google Maps URL built from the coordinate, never the
+  text, and the page embeds **no API key** — it is unauthenticated, so a
+  static map would publish one for decoration. `about` and `city` round out
+  the creator-facing half; none of it is in `_BRAND_REQUIRED_FIELDS`, because
+  it is what a creator reads, not evidence of anything.
+- The page lists the brand's **live** briefs, each linking to its `/c/{id}`
+  page, and the brief page links back — the only edges between public pages,
+  which with `/sitemap.xml` (verified brands + their live briefs) is what
+  makes "indexable" true rather than aspirational. `robots.txt` disallows
+  `/brand/` (the console — trailing slash, so `/brands/{id}` stays allowed).
+- `BrandName` is the one component naming a brand in the app — avatar, name,
+  and a real `<a>` to the public page, plain text when there is no id. The
+  campaign card became an `<article>` with a stretched link on the title,
+  because an anchor inside an anchor is invalid markup; anything interactive
+  above the overlay carries `relative z-10`. On the application page both
+  links ride `APPLICATION.campaignLink` / `APPLICATION.brandLink`, and the
+  admin route swaps in console links via `entityLinks` — the component still
+  never asks what role is looking.
+- The brand edits its own half in onboarding: `about`, a canonical-city
+  dropdown, and an outlet repeater that reuses `AddressPicker` (now in
+  `components/`, not `components/creator/`). The picker's privacy note is a
+  prop — the creator's address is team-only, an outlet is public, and the
+  default text saying "only the WeAre team sees it" would have been a lie on
+  this form. A verified brand gets a "View your public page" link.
+
 ## Brand verification
 
 Anyone can sign up and claim to be any business, so a brand is a claim until we
@@ -546,11 +589,15 @@ it in half.
 - Every skeleton standing in for a card or a detail page reserves the same box:
   `CardSkeleton({cover})`, `DetailPageSkeleton({cover})` and Landing's
   `BriefCardSkeleton`. Measured with the API delayed 700ms and the images 500ms,
-  and with the skeletons confirmed to have actually rendered (`campaigns-skeleton`,
-  `campaign-detail-skeleton` — otherwise the measurement is vacuous): CLS is
-  0.0000 on CampaignDetail with and without a cover, and **unchanged** at 0.0028
-  (campaigns) and 0.0014 (landing), both measured identically on the build
-  before this change and so not the covers.
+  and with the skeletons confirmed to have actually rendered — otherwise the
+  measurement is vacuous. **When measuring with Playwright here, the context
+  option is `viewport`, not `viewportSize`** — this project's playwright-core
+  silently ignores the latter, so every "375px" number taken with it was really
+  1280 and mobile-only shifts passed unseen. At real widths: CampaignDetail
+  0.0000 with and without a cover; landing 0.0042/0.0011 (375/1280); campaigns
+  0.0016/0.0050 — down from 0.0718 at 375, which was the Live pool aside
+  mounting only after the fetch and pushing the filter bar down ~120px, and is
+  why that aside now renders a same-shape skeleton while loading.
 
 
 ## What a brief pays

@@ -25,6 +25,14 @@ import {
 } from "@/lib/googleMaps";
 import { ADDRESS } from "@/constants/testIds";
 
+// Who sees this address, said where the address is typed. The creator's is a
+// delivery address only our team reads; a brand's outlet is on a page anyone
+// can open. Getting that wrong here would be the component telling somebody
+// their shopfront is private.
+export const PRIVATE_ADDRESS_NOTE =
+    "We use this for sending physical invites and delivery campaigns — product " +
+    "samples, event passes, gifting. Only the WeAre team sees it.";
+
 export default function AddressPicker({
     address,
     lat,
@@ -33,6 +41,7 @@ export default function AddressPicker({
     onChange,
     testid,
     disabled,
+    note = PRIVATE_ADDRESS_NOTE,
 }) {
     const inputRef = useRef(null);
     const mapNodeRef = useRef(null);
@@ -159,10 +168,11 @@ export default function AddressPicker({
                 }
             />
 
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                We use this for sending physical invites and delivery campaigns —
-                product samples, event passes, gifting. Only the WeAre team sees it.
-            </p>
+            {note && (
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {note}
+                </p>
+            )}
 
             {status === "loading" && (
                 <p
