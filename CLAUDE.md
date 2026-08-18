@@ -649,10 +649,17 @@ say "not during service" was the brief, which nothing reads.
   for everybody. Same trap as `isToday` on the manager's screen, same fix.
   Fixed rather than per-campaign because the operation is Bengaluru-first.
 - **`_shoot_time_refusal(campaign, starts, ends)` is the only decider** —
-  slot creation, slot editing (both through `_validate_slot_times`) and a
-  creator naming their own time on a personal table all call it, so the three
-  cannot disagree about what the brand asked for. It **returns the sentence
-  rather than raising**, because one caller labels instead of refusing.
+  slot creation and editing (both through `_validate_slot_times`), and every
+  booking (through `_claim_slot`, the single function behind both booking
+  routes), so they cannot disagree about what the brand asked for. It
+  **returns the sentence rather than raising**, because one caller labels
+  instead of refusing.
+- **Creating and booking are separate checks.** A slot can predate a
+  restriction, or an admin can have written one past it on purpose, so the
+  booking is checked again — before the seat is incremented, or a refusal
+  quietly shrinks the slot. On a fixed slot the refusal points at the manager,
+  because the creator only chose which of the manager's slots to take; on a
+  personal table they named the time, so they get the plain sentence.
 - **A preset's times come from `SHOOT_WINDOW_PRESETS` at write time**, never
   from the client: a "lunch" window running 2am–4am is a window whose label
   lies, and resolving at write time means retuning a preset later cannot move
@@ -663,12 +670,14 @@ say "not during service" was the brief, which nothing reads.
 - `_clean_restricted_days` **refuses all seven**: that is not a restriction,
   it is a campaign nobody can ever book, discovered by a creator with a dead
   picker. The frontend control holds the same line at six.
-- **A slot that predates a restriction is labelled, not killed.**
-  `outside_preferences` on the manager's slot rows says so — people may
-  already hold seats, and refusing bookings on a slot we advertised strands a
-  creator. The manager is who can ring the venue, so the manager is who is
-  told. The admin `advance` path writes `scheduled_at` directly and is
-  deliberately not checked: it is the escape hatch for when the rule is wrong.
+- **Nobody who already holds a seat loses it.** The check is on the act of
+  booking, never on an existing collaboration — a brand restricting Mondays
+  does not evict the creator already booked on one, the same shape as a brief
+  going private. `outside_preferences` on the manager's slot rows flags such a
+  slot so they can ring the venue rather than finding out through a creator's
+  failed booking. The admin `advance` path writes `scheduled_at` directly and
+  is deliberately not checked: it is the escape hatch for when the rule is
+  wrong.
 - `lib/shootWindows.js` mirrors the presets, the weekday names and the offset;
   a unit test fails if they drift. **Weekday indexes follow Python's
   `datetime.weekday()` (Monday 0), not JavaScript's `getDay()` (Sunday 0)** —

@@ -14,13 +14,21 @@ puts a Friday evening on Saturday — for everybody, always. `SHOOT_TZ` is the
 one place that is answered.
 
 **`_shoot_time_refusal` is the only decider**, so creating a slot, moving one,
-and a creator naming their own time on a personal table cannot disagree about
-what the brand asked for. It returns the sentence rather than raising, because
-one caller needs to label rather than refuse.
+booking one, and a creator naming their own time cannot disagree about what the
+brand asked for. It returns the sentence rather than raising, because one caller
+needs to label rather than refuse.
 
-**A slot that predates a restriction is labelled, not killed.** People may
-already hold seats on it, and refusing bookings on a slot we advertised strands
-a creator with a dead picker.
+**Creating and booking are separate checks.** A slot can predate a restriction,
+or an admin can have written one past it on purpose, so booking is checked again
+in `_claim_slot` — the single function behind both booking routes, before the
+seat is incremented. A creator must not be sent to a venue that has since said
+it is shut, and the refusal on a fixed slot points at the manager, because the
+creator only chose which of the manager's slots to take.
+
+**Nobody who already holds a seat loses it.** The check is on the act of
+booking, not on an existing collaboration — and the manager sees
+`outside_preferences` on the slot row so they can ring the venue rather than
+discovering it through a creator's failed booking.
 """
 import asyncio
 import inspect
@@ -215,11 +223,22 @@ def test_slot_creation_and_editing_share_the_check():
         assert "_validate_slot_times(" in inspect.getsource(fn)
 
 
-def test_the_creator_s_own_time_is_checked_again_on_book():
-    """A personal table is the one place a creator names their own time, so it
-    is the one booking path where this has to be re-checked. A fixed slot was
-    checked when it was created."""
-    assert "_shoot_time_refusal(" in inspect.getsource(server.creator_book_slot)
+def test_booking_is_checked_in_the_one_function_both_routes_go_through():
+    """Creation and booking are not the same check. A slot can predate a
+    restriction, or an admin can have written one past it deliberately — and
+    a creator must not be booked into a venue that has since said it is shut.
+
+    It lives in `_claim_slot` because that is the single implementation behind
+    both booking routes; a copy at either call site would be a second place
+    for the rule to drift."""
+    src = inspect.getsource(server._claim_slot)
+    assert "_shoot_time_refusal(" in src
+    # Before the increment, or a refused booking leaves the seat counted.
+    assert src.index("_shoot_time_refusal(") < src.index("$inc")
+
+    for fn in (server.creator_book_slot, server.book_slot):
+        assert "_claim_slot(" in inspect.getsource(fn)
+        assert "_shoot_time_refusal(" not in inspect.getsource(fn), "second copy"
 
 
 def test_a_slot_outside_the_preferences_is_labelled_not_refused():
@@ -307,6 +326,96 @@ def test_the_refusal_names_what_is_allowed():
         pytest.fail("should have refused")
     except HTTPException as e:
         assert "Wednesday" in str(e.detail)
+
+
+def _booking_world(slot_start, slot_end, *, campaign_type="personal_table"):
+    """A creator with a fee agreed, and a slot that predates the restriction.
+
+    The slot is written straight into the database rather than created through
+    the route, which is exactly how one comes to exist outside the rules: the
+    brand added the restriction after the manager had opened it.
+    """
+    w = _world()
+    now = datetime.now(timezone.utc)
+
+    async def build():
+        w["creator_uid"] = ObjectId()
+        await server.db.users.insert_one(
+            {"_id": w["creator_uid"], "role": "creator", "name": "Asha"}
+        )
+        await server.db.campaigns.update_one(
+            {"_id": w["campaign"]}, {"$set": {"campaign_type": campaign_type}}
+        )
+        w["slot"] = (await server.db.campaign_slots.insert_one({
+            "campaign_id": w["campaign"], "starts_at": slot_start, "ends_at": slot_end,
+            "capacity": 4, "booked_count": 0, "created_at": now, "updated_at": now,
+        })).inserted_id
+        w["collab"] = (await server.db.collaborations.insert_one({
+            "campaign_id": w["campaign"], "creator_id": w["creator_uid"],
+            "state": "commercial_agreed", "active": True,
+            "created_at": now, "updated_at": now,
+        })).inserted_id
+
+    asyncio.run(build())
+    w["creator"] = {"_id": str(w["creator_uid"]), "role": "creator", "name": "Asha"}
+    return w
+
+
+def test_a_creator_cannot_book_a_slot_that_predates_a_restriction():
+    """Creation and booking are not the same check. This slot was legal when
+    the manager opened it; the brand has since said Mondays are out, and a
+    creator turning up to a shut venue is the thing the field exists to stop."""
+    # 24 Aug 2026 is a Monday, and the world restricts Mondays and Tuesdays.
+    w = _booking_world(ist(2026, 8, 24, 19, 0), ist(2026, 8, 24, 21, 0),
+                       campaign_type="launch")
+
+    assert _status(server.book_slot(str(w["slot"]), w["creator"])) == 409
+
+
+def test_the_refusal_points_at_the_manager_not_at_the_creator():
+    """They only chose which of the manager's slots to take. Telling them to
+    pick a different time is telling them to fix somebody else's mistake."""
+    w = _booking_world(ist(2026, 8, 24, 19, 0), ist(2026, 8, 24, 21, 0),
+                       campaign_type="launch")
+    try:
+        asyncio.run(server.book_slot(str(w["slot"]), w["creator"]))
+        pytest.fail("should have refused")
+    except HTTPException as e:
+        assert "campaign manager" in str(e.detail)
+
+
+def test_a_refused_booking_does_not_burn_the_seat():
+    """The check runs before the conditional increment. Otherwise every
+    refusal quietly shrinks the slot."""
+    w = _booking_world(ist(2026, 8, 24, 19, 0), ist(2026, 8, 24, 21, 0),
+                       campaign_type="launch")
+    _status(server.book_slot(str(w["slot"]), w["creator"]))
+    slot = asyncio.run(server.db.campaign_slots.find_one({"_id": w["slot"]}))
+
+    assert slot["booked_count"] == 0
+
+
+def test_a_creator_cannot_pick_a_time_outside_the_hours():
+    """The personal-table path, where the creator names the time themselves —
+    and gets the plain refusal, because this one is theirs to fix."""
+    w = _booking_world(ist(2026, 8, 26, 9, 0), ist(2026, 8, 26, 23, 0))
+    payload = server.CreatorBookSlotPayload(
+        slot_id=str(w["slot"]), preferred_time=ist(2026, 8, 26, 13, 0)
+    )
+    assert _status(
+        server.creator_book_slot(str(w["collab"]), payload, w["creator"])
+    ) == 409
+
+
+def test_a_creator_can_still_book_a_time_that_obeys_the_rules():
+    """The point is that the rule bites, not that booking is broken."""
+    w = _booking_world(ist(2026, 8, 26, 9, 0), ist(2026, 8, 26, 23, 0))
+    payload = server.CreatorBookSlotPayload(
+        slot_id=str(w["slot"]), preferred_time=ist(2026, 8, 26, 19, 30)
+    )
+    out = asyncio.run(server.creator_book_slot(str(w["collab"]), payload, w["creator"]))
+
+    assert out["state"] == "slot_booked"
 
 
 def test_the_manager_s_slot_list_carries_the_rules():

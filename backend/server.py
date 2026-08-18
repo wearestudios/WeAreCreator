@@ -5559,12 +5559,9 @@ async def creator_book_slot(
                 status_code=422,
                 detail="That time is outside the window you picked.",
             )
-        # A personal table is the one place a creator names their own time, so
-        # it is the one booking path where the brand's days and hours have to
-        # be checked again. Fixed slots were checked when they were created.
-        refusal = _shoot_time_refusal(campaign, preferred)
-        if refusal:
-            raise HTTPException(status_code=422, detail=refusal)
+        # The brand's days and hours are checked in `_claim_slot`, which both
+        # booking routes go through — a copy here would be a second place for
+        # the rule to drift.
     elif payload.preferred_time is not None:
         # Everyone arrives together on a launch or a group event; letting one
         # creator write their own time would put them at the venue alone.
@@ -17008,9 +17005,33 @@ async def _claim_slot(
     resolve inside the database and exactly one wins. If the collaboration then
     moves under us, the seat is handed straight back rather than held for
     somebody who no longer has it.
+
+    **The brand's days and hours are checked here**, before the increment, so
+    both booking routes obey them without a second copy of the rule. Creation
+    checks them too, but the two are not the same check: a slot can predate a
+    restriction, or an admin can have written one past it deliberately, and a
+    creator must not be booked into a venue that has since said it is shut.
     """
     soid = slot["_id"]
     now = datetime.now(timezone.utc)
+
+    # On a personal table the creator named the time, so the plain refusal is
+    # the right thing to say. On a fixed slot they only chose which of the
+    # manager's slots to take, so pointing them at their own picker would be
+    # telling them to fix somebody else's mistake.
+    when = preferred_time or slot.get("starts_at")
+    refusal = _shoot_time_refusal(
+        campaign, when, None if preferred_time else slot.get("ends_at")
+    )
+    if refusal:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                refusal
+                if preferred_time
+                else f"{refusal} Ask the campaign manager for a slot that works."
+            ),
+        )
 
     claimed = await db.campaign_slots.find_one_and_update(
         {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},

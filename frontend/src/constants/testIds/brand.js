@@ -41,8 +41,10 @@ export const SUGGESTED_CREATORS = {
     filters: "suggested-creators-filters",
     filterCity: "suggested-creators-filter-city",
     filterNiche: "suggested-creators-filter-niche",
-    filterMinFollowers: "suggested-creators-filter-min-followers",
-    filterMaxFollowers: "suggested-creators-filter-max-followers",
+    // Audience size is picked as a tier now, not typed as two numbers — one
+    // vocabulary for the axis, the same one the band above the filter uses.
+    filterTier: "suggested-creators-filter-tier",
+    filterTierOption: (v) => `suggested-creators-filter-tier-${v}`,
     filterApply: "suggested-creators-filter-apply",
     filterClear: "suggested-creators-filter-clear",
     list: "suggested-creators-list",

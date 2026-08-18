@@ -26,8 +26,15 @@ import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { SUGGESTED_CREATORS as T } from "@/constants/testIds";
-import { tierByValue } from "@/lib/followerTiers";
+import { ANY_TIER, FOLLOWER_TIERS, tierByValue } from "@/lib/followerTiers";
 
 const COMPONENT_LABEL = {
     niche: "Niche match",
@@ -109,6 +116,7 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
     const [filters, setFilters] = useState({
         city: "",
         niche: "",
+        tier: ANY_TIER.value,
         min_followers: "",
         max_followers: "",
     });
@@ -263,37 +271,44 @@ export function SuggestedCreators({ campaignId, canInvite = true }) {
                         data-testid={T.filterNiche}
                     />
                 </div>
+                {/* Was two raw number boxes — a fourth vocabulary for
+                    audience size, on the very panel whose band above it is
+                    labelled micro / mid / macro. A brand that told us "micro"
+                    in onboarding had to work out which numbers meant that. */}
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-min" className="text-[10px] uppercase tracking-[0.2em]">
-                        Followers from
+                    <Label htmlFor="sc-tier" className="text-[10px] uppercase tracking-[0.2em]">
+                        Audience size
                     </Label>
-                    <Input
-                        id="sc-min"
-                        type="number"
-                        min="0"
-                        value={filters.min_followers}
-                        onChange={(e) =>
-                            setFilters((f) => ({ ...f, min_followers: e.target.value }))
+                    <Select
+                        value={filters.tier || ANY_TIER.value}
+                        onValueChange={(v) =>
+                            setFilters((f) => ({
+                                ...f,
+                                tier: v,
+                                // The API still takes a range; the tier is how
+                                // a person says it. Translating here keeps the
+                                // endpoint honest about what it filters on.
+                                min_followers: tierByValue(v)?.min ?? "",
+                                max_followers: tierByValue(v)?.max ?? "",
+                            }))
                         }
-                        placeholder="0"
-                        data-testid={T.filterMinFollowers}
-                    />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-max" className="text-[10px] uppercase tracking-[0.2em]">
-                        Followers to
-                    </Label>
-                    <Input
-                        id="sc-max"
-                        type="number"
-                        min="0"
-                        value={filters.max_followers}
-                        onChange={(e) =>
-                            setFilters((f) => ({ ...f, max_followers: e.target.value }))
-                        }
-                        placeholder="Any"
-                        data-testid={T.filterMaxFollowers}
-                    />
+                    >
+                        <SelectTrigger id="sc-tier" data-testid={T.filterTier}>
+                            <SelectValue placeholder="Any" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={ANY_TIER.value}>Any size</SelectItem>
+                            {FOLLOWER_TIERS.map((t) => (
+                                <SelectItem
+                                    key={t.value}
+                                    value={t.value}
+                                    data-testid={T.filterTierOption(t.value)}
+                                >
+                                    {t.label} · {t.range}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="flex items-end gap-2">
                     <Button type="submit" data-testid={T.filterApply}>

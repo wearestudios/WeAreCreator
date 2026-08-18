@@ -317,6 +317,18 @@ def test_the_directory_filter_sends_a_ceiling_as_well_as_a_floor():
     assert "params.max_followers = bucket.max" in src
 
 
+def test_the_suggestions_filter_picks_a_tier_rather_than_typing_numbers():
+    """It was two raw number boxes — a fourth vocabulary for the same axis, on
+    the very panel whose band above it reads micro / mid / macro. A brand that
+    told us "micro" in onboarding had to work out which numbers meant that."""
+    src = read("components", "brand", "SuggestedCreators.jsx")
+
+    assert "FOLLOWER_TIERS.map" in src
+    assert "Followers from" not in src and "Followers to" not in src
+    # The API still filters on a range; the tier is how a person says it.
+    assert "tierByValue(v)?.min" in src and "tierByValue(v)?.max" in src
+
+
 def test_the_suggestions_panel_says_whether_the_brand_told_us():
     src = read("components", "brand", "SuggestedCreators.jsx")
     assert "tier.stated" in src
