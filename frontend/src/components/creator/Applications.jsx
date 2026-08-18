@@ -8,6 +8,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import BrandAvatar from "@/components/BrandAvatar";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
     CAT_LABEL,
@@ -28,10 +29,13 @@ const Row = ({ row, testid, muted }) => (
             to={`/campaigns/${row.campaign_id}`}
             className="group min-w-0 flex-1"
         >
-            <span className="block text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                {row.brand_name || "Brand"}
-                {row.area ? ` · ${row.area}` : ""}
-                {row.category ? ` · ${CAT_LABEL[row.category] || row.category}` : ""}
+            <span className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <BrandAvatar brand={row} size="h-5 w-5" />
+                <span className="truncate">
+                    {row.brand_name || "Brand"}
+                    {row.area ? ` · ${row.area}` : ""}
+                    {row.category ? ` · ${CAT_LABEL[row.category] || row.category}` : ""}
+                </span>
             </span>
             <span
                 className={

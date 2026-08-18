@@ -1,16 +1,20 @@
 // The creator's home.
 //
-// One scrolling page, in the order a creator actually reads it: who am I and
-// what have I made, what does this thing want from me, what am I working on,
-// what could I work on next, what have I pitched, where's my money. Tabs were
-// considered and dropped — a creator opens this two or three times a week and
-// shouldn't have to remember which drawer the venue address lives in.
+// Above the fold, without scrolling: who am I (a photo big enough to say so),
+// what I've earned, what I'm working on and what I do next. Everything else —
+// briefs that might suit them, past pitches, the money ledger — lives in tabs
+// below the live work. The first version stacked all of it vertically and the
+// page was mostly scrolling; the one thing that must never go behind a tab is
+// the active work, because a venue address in a drawer is a creator lost on a
+// footpath. Status banners and the completeness nudge also stay outside the
+// tabs: a blocked account is not a section, it is the situation.
 //
 // Motion is entrance-only and functional. Nothing on this page keeps moving
 // once it has arrived, and every piece of it checks prefers-reduced-motion.
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";
 import { useAuth, homePathFor, isBrandSide } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
@@ -217,64 +221,23 @@ const CreatorHome = ({ user, justOnboarded }) => {
         return <Navigate to="/onboarding/creator" replace />;
     }
 
-    // Section order is the reading order, and the index drives the stagger.
-    // Completeness is the only one that can drop out — at 100% there is nothing
-    // to say, and an empty wrapper would leave a gap where a panel used to be.
+    // Completeness can drop out — at 100% there is nothing to say, and an
+    // empty wrapper would leave a gap where a panel used to be.
     const completeness = data?.profile_completeness;
-    const sections = data
-        ? [
-              {
-                  key: "completeness",
-                  testid: COMPLETENESS_IDS.section,
-                  show: Boolean(
-                      completeness &&
-                          !completeness.complete &&
-                          (completeness.missing || []).length > 0,
-                  ),
-                  node: <Completeness completeness={completeness} />,
-              },
-              {
-                  key: "active",
-                  testid: ACTIVE_IDS.section,
-                  show: true,
-                  node: (
-                      <ActiveCampaigns collaborations={groups.active} onRefresh={load} />
-                  ),
-              },
-              {
-                  key: "suggested",
-                  testid: SUGGESTED_IDS.section,
-                  show: true,
-                  node: <Suggested campaigns={data.suggested_campaigns} />,
-              },
-              {
-                  key: "applications",
-                  testid: APPLICATIONS_IDS.section,
-                  show: true,
-                  node: (
-                      <Applications applied={groups.applied} declined={groups.declined} />
-                  ),
-              },
-              {
-                  key: "earnings",
-                  testid: EARNINGS_IDS.section,
-                  show: true,
-                  node: (
-                      <Earnings
-                          payments={data.payments}
-                          inPaymentCollabs={data.in_payment_collaborations}
-                          earnings={data.earnings}
-                      />
-                  ),
-              },
-          ].filter((s) => s.show)
-        : [];
+    const showCompleteness = Boolean(
+        completeness &&
+            !completeness.complete &&
+            (completeness.missing || []).length > 0,
+    );
+    const suggestedCount = (data?.suggested_campaigns || []).length;
+    const applicationsCount =
+        (groups.applied || []).length + (groups.declined || []).length;
 
     return (
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
 
-            <main className="mx-auto max-w-6xl px-5 py-10 md:px-6 md:py-16">
+            <main className="mx-auto max-w-6xl px-5 py-8 md:px-6 md:py-14">
                 {loading && <HomeSkeleton testid={IDS.skeleton} />}
 
                 {error && !data && (
@@ -312,13 +275,95 @@ const CreatorHome = ({ user, justOnboarded }) => {
                             />
                         </SafeSection>
 
-                        {sections.map(({ key, testid, node }, i) => (
-                            <SafeSection key={key} name={key} className="mt-14 md:mt-20">
-                                <Reveal index={i + 1} data-testid={testid}>
-                                    {node}
+                        {showCompleteness && (
+                            <SafeSection name="completeness" className="mt-10 md:mt-12">
+                                <Reveal index={1} data-testid={COMPLETENESS_IDS.section}>
+                                    <Completeness completeness={completeness} />
                                 </Reveal>
                             </SafeSection>
-                        ))}
+                        )}
+
+                        {/* The live work stays outside the tabs, always. This
+                            is the reason the page gets opened, and a venue
+                            address in a drawer is a creator lost on a
+                            footpath. */}
+                        <SafeSection name="active" className="mt-10 md:mt-12">
+                            <Reveal index={2} data-testid={ACTIVE_IDS.section}>
+                                <ActiveCampaigns
+                                    collaborations={groups.active}
+                                    onRefresh={load}
+                                />
+                            </Reveal>
+                        </SafeSection>
+
+                        {/* Everything a creator consults rather than acts on,
+                            one drawer each. Radix tabs, so arrow keys walk the
+                            strip and the panels stay in the accessibility
+                            tree's good books. */}
+                        <SafeSection name="drawers" className="mt-10 md:mt-14">
+                            <Reveal index={3}>
+                                <Tabs defaultValue="suggested" data-testid={IDS.tabs}>
+                                    <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-full border border-white/10 bg-card/60 p-1.5">
+                                        {[
+                                            {
+                                                value: "suggested",
+                                                label: "For you",
+                                                count: suggestedCount,
+                                            },
+                                            {
+                                                value: "applications",
+                                                label: "Applications",
+                                                count: applicationsCount,
+                                            },
+                                            { value: "earnings", label: "Earnings" },
+                                        ].map((t) => (
+                                            <TabsTrigger
+                                                key={t.value}
+                                                value={t.value}
+                                                data-testid={IDS.tab(t.value)}
+                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 data-[state=active]:bg-ember-500/15 data-[state=active]:text-ember-500"
+                                            >
+                                                {t.label}
+                                                {t.count > 0 && (
+                                                    <span className="ml-2 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] tabular-nums text-foreground/70">
+                                                        {t.count}
+                                                    </span>
+                                                )}
+                                            </TabsTrigger>
+                                        ))}
+                                    </TabsList>
+
+                                    <TabsContent value="suggested" className="mt-8">
+                                        <SafeSection name="suggested">
+                                            <div data-testid={SUGGESTED_IDS.section}>
+                                                <Suggested campaigns={data.suggested_campaigns} />
+                                            </div>
+                                        </SafeSection>
+                                    </TabsContent>
+                                    <TabsContent value="applications" className="mt-8">
+                                        <SafeSection name="applications">
+                                            <div data-testid={APPLICATIONS_IDS.section}>
+                                                <Applications
+                                                    applied={groups.applied}
+                                                    declined={groups.declined}
+                                                />
+                                            </div>
+                                        </SafeSection>
+                                    </TabsContent>
+                                    <TabsContent value="earnings" className="mt-8">
+                                        <SafeSection name="earnings">
+                                            <div data-testid={EARNINGS_IDS.section}>
+                                                <Earnings
+                                                    payments={data.payments}
+                                                    inPaymentCollabs={data.in_payment_collaborations}
+                                                    earnings={data.earnings}
+                                                />
+                                            </div>
+                                        </SafeSection>
+                                    </TabsContent>
+                                </Tabs>
+                            </Reveal>
+                        </SafeSection>
 
                         <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">
                             <p>

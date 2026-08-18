@@ -188,9 +188,52 @@ boot; set `APP_ENV=development` on a laptop to silence them.
 | `INSTAGRAM_STATS_TTL_HOURS` | How long a cached reading counts as current. Default 12; never fetched on page load. |
 | `PROFILE_NUDGE_AFTER_DAYS` | How long before an unfinished creator profile gets its one WhatsApp chase. Default 3. |
 | `PRIVATE_UPLOAD_DIR` | Where brand verification documents land. Must not be `UPLOAD_DIR`, which is served as static files; these are reachable only through the audited admin route. Default `backend/private_uploads`. |
+| `REACT_APP_GOOGLE_MAPS_API_KEY` (frontend) | Places autocomplete and the draggable map pin on the creator address field. Blank = the field is a plain textarea and everything still works; no pin is collected. Restrict the key by HTTP referrer in the Google Cloud console to your deployed origins, and to Maps JavaScript API + Places API + Static Maps API. |
 | `REACT_APP_STUDIO_URL` (frontend) | Parent-studio link behind the "A WeAre Studios offering" endorsement in the nav and home footer. Blank renders the line as plain text rather than a dead link. |
 
 Full list with comments: `backend/.env.example`.
+
+### Shareable brief links, and the one deploy step they need
+
+Every live brief from a verified brand has a public page at `/c/{id}`. It is
+**server-rendered by the backend**, not by the React app, and that is not a
+style choice: the crawlers that build a WhatsApp, Instagram or Slack preview do
+not run JavaScript, so Open Graph tags the SPA sets at runtime are tags nobody
+ever sees. The page a person opens and the page a crawler scrapes are the same
+one, so the preview cannot promise something the link does not show.
+
+Out of the box the Share button copies `https://<frontend>/c/<id>`, which only
+works if that path reaches the backend. Add the proxies to
+`frontend/vercel.json`, above the catch-all, replacing the host with your
+Railway URL:
+
+```json
+{ "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" },
+{ "source": "/brands/:id", "destination": "https://your-api.up.railway.app/brands/:id" },
+{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
+```
+
+All three or none: `/brands/{id}` is the brand's public page, linked from every
+campaign card and from every shared brief, and `/sitemap.xml` is what makes
+both findable by a search engine (robots.txt points at it). Shipping the brief
+proxy without the brand one means every brand link opens the SPA's 404.
+
+The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
+the backend's own origin and links will point straight at it. That works
+immediately but the URL is the API host, which is uglier to read out.
+
+Until one of the two is done, a shared link opens the React app and previews as
+the generic site card.
+
+The preview image is the campaign's own cover, built as an absolute URL against
+the backend's origin — the host that serves `/uploads`. Only `/c/*` needs
+proxying; the image URL points straight at the API host either way, so a
+crawler can fetch it without a second rewrite. Briefs with no cover fall back to
+the site card, and to a generated tint in the page itself.
+
+Uploaded images live on the API container's disk, so `UPLOAD_DIR` should point
+at a mounted volume in production — otherwise every deploy loses the covers and
+logos and the pages fall back to their generated versions.
 
 ### Deploying the frontend to Vercel
 

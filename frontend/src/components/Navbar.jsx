@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { useAuth, homePathFor, isBrandSide } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
+import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
+import { api } from "@/lib/api";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
 import { LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
 import {
@@ -78,6 +80,22 @@ const MARKETING_LINKS = [
 
 export const Navbar = () => {
     const { user, logout } = useAuth();
+    // The creator's own photo, for the avatar. Fetched here rather than
+    // threaded down because the navbar is on every page and nothing else on
+    // most of them knows it.
+    const [avatar, setAvatar] = useState(null);
+    useEffect(() => {
+        if (user?.role !== "creator") return;
+        let cancelled = false;
+        api.get("/creator/profile")
+            .then(({ data }) => !cancelled && setAvatar(data?.profile_image_url || null))
+            // A missing photo is the ordinary case, not a failure: the menu
+            // falls back to initials and the navbar says nothing about it.
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.role]);
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
 
@@ -180,14 +198,26 @@ export const Navbar = () => {
                                 </Link>
                             ))}
                             <NotificationBell />
-                            <Button
-                                data-testid="nav-logout-btn"
-                                onClick={handleLogout}
-                                variant="outline"
-                                className="hidden border-white/15 bg-transparent text-foreground hover:bg-white/5 sm:inline-flex"
-                            >
-                                Log out
-                            </Button>
+                            {/* Creators get a face and a menu; everyone else
+                                keeps the plain button. An admin's navigation
+                                is the console and a brand's is its dashboard —
+                                neither has a profile this would open onto. */}
+                            {user.role === "creator" ? (
+                                <CreatorAvatarMenu
+                                    user={user}
+                                    profileImageUrl={avatar}
+                                    onLogout={handleLogout}
+                                />
+                            ) : (
+                                <Button
+                                    data-testid="nav-logout-btn"
+                                    onClick={handleLogout}
+                                    variant="outline"
+                                    className="hidden border-white/15 bg-transparent text-foreground hover:bg-white/5 sm:inline-flex"
+                                >
+                                    Log out
+                                </Button>
+                            )}
                         </>
                     ) : (
                         <>

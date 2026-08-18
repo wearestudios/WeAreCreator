@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { compensationLabel, isBarter } from "@/lib/compensation";
+import { EXECUTION_FILTERS } from "@/lib/execution";
+import { EXECUTION } from "@/constants/testIds";
+import ExecutionBadge from "@/components/ExecutionBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -116,6 +119,7 @@ function CampaignRow({ campaign, expanded, onToggle, busy, actions }) {
                 </div>
 
                 <div className="flex flex-none flex-wrap items-center gap-2 md:justify-end">
+                    <ExecutionBadge campaign={campaign} />
                     {campaign.showcase && (
                         <span
                             data-testid={PERF_IDS.showcaseBadge(campaign.id)}
@@ -300,6 +304,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
     const [status, setStatus] = useState("");
     // "" = every campaign, "1" = only the ones we would show a prospect.
     const [showcase, setShowcase] = useState("");
+    const [execution, setExecution] = useState("");
     const [from, setFrom] = useState(null);
     const [to, setTo] = useState(null);
     const [page, setPage] = useState(1);
@@ -333,6 +338,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                     ...(search ? { q: search } : {}),
                     ...(status ? { status } : {}),
                     ...(showcase ? { showcase: true } : {}),
+                    ...(execution ? { execution_owner: execution } : {}),
                     ...(brandFilter ? { brand_id: brandFilter } : {}),
                     ...(from ? { date_from: from.toISOString() } : {}),
                     ...(to ? { date_to: endOfDay(to).toISOString() } : {}),
@@ -343,7 +349,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             notifyError(e);
             setData({ campaigns: [], total: 0, pages: 0 });
         }
-    }, [page, search, status, showcase, brandFilter, from, to]);
+    }, [page, search, status, showcase, execution, brandFilter, from, to]);
 
     useEffect(() => {
         load();
@@ -440,6 +446,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         setSearch("");
         setStatus("");
         setShowcase("");
+        setExecution("");
         setFrom(null);
         setTo(null);
         setPage(1);
@@ -450,6 +457,12 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         { key: "search", label: "Title", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
         { key: "brand", label: "Brand", value: brandFilter ? brandName || "Selected brand" : "", onRemove: () => onClearBrand?.() },
         { key: "showcase", label: "Showcase", value: showcase ? "Showcase only" : "", onRemove: () => setShowcase("") },
+        {
+            key: "execution",
+            label: "Run by",
+            value: EXECUTION_FILTERS.find((o) => o.value === execution)?.label || "",
+            onRemove: () => { setExecution(""); setPage(1); },
+        },
         { key: "status", label: "Status", value: status, onRemove: () => { setStatus(""); setPage(1); } },
         { key: "from", label: "From", value: from ? formatDate(from.toISOString()) : "", onRemove: () => { setFrom(null); setPage(1); } },
         { key: "to", label: "To", value: to ? formatDate(to.toISOString()) : "", onRemove: () => { setTo(null); setPage(1); } },
@@ -498,6 +511,16 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                     }}
                     options={STATUS_OPTIONS}
                     testid={IDS.filterStatus}
+                />
+                <FilterSelect
+                    label="Run by anyone"
+                    value={execution}
+                    onChange={(v) => {
+                        setExecution(v);
+                        setPage(1);
+                    }}
+                    options={EXECUTION_FILTERS.filter((o) => o.value !== "all")}
+                    testid={EXECUTION.filter}
                 />
                 {/* A toggle, not a select: "showcase" has two states, and the
                     third one a select would imply ("not showcase") is not

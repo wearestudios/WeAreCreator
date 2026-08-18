@@ -2217,13 +2217,43 @@ class TestApplicantBuckets:
         assert set(seen) == every, "a state in no bucket disappears from the console"
         assert len(seen) == len(set(seen)), "a state in two buckets is double-counted"
 
-    def test_approved_means_accepted_and_beyond(self):
+    def test_approved_means_we_approved_it_and_everything_after(self):
+        """This used to require `verified` to be *absent* from approved, which
+        is what made an admin-approved application go on reporting as pending:
+        `verified` is precisely the state the console's approve action writes.
+
+        "Approved" on this board is our decision, not the brand's. Whether the
+        brand has since accepted is a different question, answered by
+        `_ENGAGED_COLLAB_STATES` below.
+        """
         approved = set(server._APPLICANT_APPROVED_STATES)
+        assert "verified" in approved, "the state approving an application produces"
         assert "accepted" in approved
         # A finished collaboration is still a yes.
         assert "closed" in approved
-        for not_yet in ("applied", "verified"):
-            assert not_yet not in approved
+        assert "applied" not in approved, "nobody has looked at it yet"
+
+    def test_active_creators_still_means_work_in_flight(self):
+        """The other half of that split, and the reason it is a split.
+
+        `active_creators` counts distinct creators a brand has actually taken
+        on. An application we approved that no brand has accepted is not work,
+        so folding these two sets back together would quietly inflate the
+        headline number with people who are still waiting.
+        """
+        engaged = set(server._ENGAGED_COLLAB_STATES)
+        assert "verified" not in engaged
+        assert "applied" not in engaged
+        assert {"accepted", "closed"} <= engaged
+        assert engaged < set(server._APPLICANT_APPROVED_STATES), "a strict subset"
+
+    def test_the_active_creator_count_does_not_use_the_applicant_bucket(self):
+        import inspect
+
+        source = inspect.getsource(server.admin_dashboard)
+        active_block = source[source.index('"active_creators"') :][:300]
+        assert "_ENGAGED_COLLAB_STATES" in active_block
+        assert "_APPLICANT_APPROVED_STATES" not in active_block
 
     def test_rejected_covers_both_exits(self):
         rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
@@ -2318,7 +2348,10 @@ class TestDashboardEndpoint:
 
         src = inspect.getsource(server.admin_dashboard)
         assert '"active_creators"' in src
-        assert "_APPLICANT_APPROVED_STATES" in src
+        # Was _APPLICANT_APPROVED_STATES, which now also carries `verified` so
+        # the applicant board can report our own approvals. The intent here is
+        # unchanged — work in flight, not applications we said yes to.
+        assert "_ENGAGED_COLLAB_STATES" in src
 
     def test_active_brands_means_running_something(self):
         import inspect
@@ -2891,12 +2924,33 @@ class TestProfileSavesPartially:
         src = inspect.getsource(server.update_creator_profile)
         assert 'update["pending_review"] = bool(existing.get("submitted_for_review_at"))' in src
 
-    def test_a_verified_creator_still_stays_live_while_edits_are_reviewed(self):
+    def test_a_verified_creator_stays_verified_while_edits_are_reviewed(self):
+        """They keep their approval and their place in the directory. What
+        they lose is the ability to pitch on something *new* until we have
+        looked — sending them back to `pending` instead would erase the record
+        that they were ever approved, and empty the admin queue that keys on
+        exactly this pair."""
         import inspect
 
         src = inspect.getsource(server.update_creator_profile)
-        assert "material_fields" in src
-        assert '"name", "instagram_handle", "city"' in src
+        assert "_material_changes(existing, update)" in src
+        # A *write*, not a read — the handler legitimately reads the status to
+        # decide which branch it is in.
+        assert 'update["verification_status"]' not in src, (
+            "a re-check must not rewrite verification_status"
+        )
+
+    def test_the_material_set_is_defined_in_one_place(self):
+        """It used to be three fields inline in the handler, which missed
+        YouTube, Facebook and every payout detail."""
+        import inspect
+
+        src = inspect.getsource(server.update_creator_profile)
+        assert "material_fields" not in src, "the inline list is gone"
+        assert set(server.MATERIAL_PROFILE_FIELDS) >= {
+            "name", "instagram_handle", "youtube_url", "facebook_url",
+            "payout_upi", "pan",
+        }
 
 
 class TestYoutubeLink:

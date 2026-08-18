@@ -10,6 +10,9 @@ export const CREATOR_HOME = {
 	error: 'dashboard-error',
 	skeleton: 'creator-home-skeleton',
 	refresh: 'creator-home-refresh',
+	// The drawers below the live work.
+	tabs: 'creator-home-tabs',
+	tab: (v) => `creator-home-tab-${v}`,
 };
 
 export const CREATOR_HERO = {
@@ -132,6 +135,8 @@ export const CREATOR_SUBMIT_CONTENT = {
 // with the old single-shot onboarding form keep their exact values, so tests
 // written against them still find the same control.
 export const CREATOR_ONBOARDING = {
+	facebook: 'creator-onboarding-facebook',
+	about: 'creator-onboarding-about',
 	page: 'creator-onboarding-page',
 	skeleton: 'onboarding-skeleton',
 	error: 'onboarding-error',

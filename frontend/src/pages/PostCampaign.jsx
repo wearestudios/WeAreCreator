@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { notifySuccess } from "@/lib/feedback";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
     ArrowRight,
@@ -17,7 +17,14 @@ import { api, formatApiError } from "@/lib/api";
 // from this form rather than present and disabled, so there is nothing here to
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
+import { EXECUTION_OPTIONS } from "@/lib/execution";
+import { VISIBILITY_OPTIONS } from "@/lib/visibility";
+import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
+import ImageUploadField, {
+    FALLBACK_IMAGE_MIMES,
+    FALLBACK_MAX_IMAGE_BYTES,
+} from "@/components/ImageUploadField";
 import {
     FormPageSkeleton,
     LoadingAnnouncement,
@@ -72,6 +79,13 @@ export default function PostCampaign() {
     const [budget, setBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
+    // Defaults to the brand running it: posting a brief means running it
+    // unless you say otherwise, and a campaign quietly landing in the WeAre
+    // queue is work nobody agreed to. Mirrors DEFAULT_EXECUTION_OWNER.
+    const [executionOwner, setExecutionOwner] = useState("brand");
+    // Public unless the brand says otherwise — an invite-only brief that
+    // nobody meant to hide is merely unfindable, which is worse than wrong.
+    const [visibility, setVisibility] = useState("public");
     const [category, setCategory] = useState("");
     const [area, setArea] = useState("");
     const [creatorsNeeded, setCreatorsNeeded] = useState("1");
@@ -80,6 +94,12 @@ export default function PostCampaign() {
     const [eventDate, setEventDate] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    // The cover, which has two lives. On an existing campaign it uploads
+    // straight away against its own route. On a new one there is no id to
+    // upload against yet, so the File waits here and goes up the moment the
+    // campaign is created.
+    const [coverUrl, setCoverUrl] = useState(null);
+    const [pendingCover, setPendingCover] = useState(null);
     const [venueAddress, setVenueAddress] = useState("");
     const [venueInstructions, setVenueInstructions] = useState("");
     const [onSiteContact, setOnSiteContact] = useState("");
@@ -121,6 +141,8 @@ export default function PostCampaign() {
                     // A campaign WeAre set to barter keeps that value here so
                     // the form never round-trips it back to "fixed".
                     setCompensationType(data.compensation_type || "fixed");
+                    setExecutionOwner(data.execution_owner || "brand");
+                    setVisibility(data.visibility === "private" ? "private" : "public");
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
@@ -131,6 +153,7 @@ export default function PostCampaign() {
                     // edit and saving wiped the venue, the arrival
                     // instructions and the on-site contact, which are the
                     // three things a creator needs to turn up.
+                    setCoverUrl(data.cover_image_url || null);
                     setVenueAddress(data.venue_address || "");
                     setVenueInstructions(data.venue_instructions || "");
                     setOnSiteContact(data.on_site_contact || "");
@@ -206,7 +229,9 @@ export default function PostCampaign() {
             : {
                   budget_per_creator: Number(budget),
                   compensation_type: compensationType,
+                  execution_owner: executionOwner,
               }),
+        visibility,
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
@@ -256,6 +281,21 @@ export default function PostCampaign() {
             }
 
             const { data } = await api.post("/brand/campaigns", buildPayload(status));
+            if (pendingCover) {
+                const body = new FormData();
+                body.append("file", pendingCover);
+                try {
+                    await api.post(`/brand/campaigns/${data.id}/cover`, body, {
+                        headers: { "Content-Type": undefined },
+                    });
+                } catch {
+                    // The brief exists and is the thing that mattered. Losing
+                    // it over a picture, and making somebody retype the whole
+                    // form, would be the wrong trade — the cover can be added
+                    // from the edit screen.
+                    notifyError("Campaign saved, but the cover image didn't upload. Add it from Edit.");
+                }
+            }
             notifySuccess(
                 isDraft
                     ? "Draft saved to your dashboard"
@@ -505,6 +545,40 @@ export default function PostCampaign() {
                                 placeholder="e.g. 1 Instagram reel (30-45s) + 3 stories, tag @yourbrand"
                             />
                         </div>
+                        <div>
+                            {/* Optional, and said so: a brief with no picture
+                                still gets a generated cover, so this is never
+                                the thing standing between a brand and posting. */}
+                            <ImageUploadField
+                                label="Cover image (optional)"
+                                hint="Shown on the brief in the app and on the link when it's shared. Landscape, 16:9 — a photo of the place or the product works best."
+                                shape="cover"
+                                value={coverUrl}
+                                onChange={setCoverUrl}
+                                onFile={setPendingCover}
+                                endpoint={
+                                    isEditing
+                                        ? `/brand/campaigns/${editingId}/cover`
+                                        : undefined
+                                }
+                                responseKey="cover_image_url"
+                                maxBytes={
+                                    brandProfile?.uploads?.max_image_bytes ||
+                                    FALLBACK_MAX_IMAGE_BYTES
+                                }
+                                acceptedMimes={
+                                    brandProfile?.uploads?.accepted_image_mime_types ||
+                                    FALLBACK_IMAGE_MIMES
+                                }
+                                testids={{
+                                    input: COVER.input,
+                                    choose: COVER.choose,
+                                    remove: COVER.remove,
+                                    preview: COVER.preview,
+                                    error: COVER.error,
+                                }}
+                            />
+                        </div>
                     </section>
 
                     <section className="space-y-5">
@@ -566,6 +640,105 @@ export default function PostCampaign() {
                                 })}
                             </div>
                         )}
+
+                        {/* Who runs it. Asked here, next to how it pays,
+                            because the two together are what a brand is
+                            actually deciding when it posts: what this costs
+                            and how much of it they do themselves. */}
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                Who runs it
+                            </p>
+                            <div
+                                data-testid={EXECUTION.picker}
+                                role="radiogroup"
+                                aria-label="Who runs this campaign"
+                                className="mt-3 grid gap-3 sm:grid-cols-2"
+                            >
+                                {EXECUTION_OPTIONS.map((opt) => {
+                                    const on = executionOwner === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={EXECUTION.pickerOption(opt.value)}
+                                            onClick={() => setExecutionOwner(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                            }
+                                        >
+                                            <span
+                                                className={
+                                                    "block text-sm " +
+                                                    (on ? "text-ember-500" : "text-foreground")
+                                                }
+                                            >
+                                                {opt.label}
+                                            </span>
+                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                                {opt.hint}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div>
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Who can find this brief
+                            </Label>
+                            <div
+                                data-testid={VISIBILITY.picker}
+                                role="radiogroup"
+                                aria-label="Who can find this brief"
+                                className="mt-3 grid gap-3 sm:grid-cols-2"
+                            >
+                                {VISIBILITY_OPTIONS.map((opt) => {
+                                    const on = visibility === opt.value;
+                                    return (
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={on}
+                                            data-testid={VISIBILITY.option(opt.value)}
+                                            onClick={() => setVisibility(opt.value)}
+                                            className={
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                            }
+                                        >
+                                            <span
+                                                className={
+                                                    "block text-sm " +
+                                                    (on ? "text-ember-500" : "text-foreground")
+                                                }
+                                            >
+                                                {opt.label}
+                                            </span>
+                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                                {opt.hint}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {visibility === "private" && (
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Invite creators from the campaign page once it's
+                                    live — nobody else will ever see it, and it won't
+                                    have a public share page.
+                                </p>
+                            )}
+                        </div>
 
                         <div className="grid gap-5 md:grid-cols-2">
                             {/* A barter brief has no cash figure to set, so the

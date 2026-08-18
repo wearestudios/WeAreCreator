@@ -26,6 +26,11 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
+import { isPrivate, visibilityLabel } from "@/lib/visibility";
+import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
+import BrandAvatar from "@/components/BrandAvatar";
+import ImageUploadField from "@/components/ImageUploadField";
+import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { Button } from "@/components/ui/button";
 import {
     Select,
@@ -46,6 +51,7 @@ import {
 import {
     ADMIN_CAMPAIGN_PAGE as IDS,
     ADMIN_DETAIL as DIDS,
+    COVER,
 } from "@/constants/testIds";
 import {
     AuditTrail,
@@ -72,10 +78,15 @@ import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The applicant board's columns, in pipeline order. The server groups them;
 // this names them.
+// These keys are the ones GET /admin/campaigns/{id}/applicants actually
+// returns — it spreads `_APPLICANT_BUCKETS` by name. They used to be
+// active/completed/ended, which match nothing on the server, so every group
+// resolved to undefined and the section rendered its empty state however many
+// applicants a campaign had.
 const GROUPS = [
-    { key: "active", label: "In flight" },
-    { key: "completed", label: "Completed" },
-    { key: "ended", label: "Declined & cancelled" },
+    { key: "applied", label: "Waiting on us" },
+    { key: "approved", label: "Approved" },
+    { key: "rejected", label: "Declined & cancelled" },
 ];
 
 export default function CampaignDetailPage() {
@@ -380,6 +391,15 @@ export default function CampaignDetailPage() {
                                     <Field label="Compensation">
                                         {compensationLabel(campaign)}
                                     </Field>
+                                    <Field label="Visibility">
+                                        {visibilityLabel(campaign)}
+                                        {isPrivate(campaign) && (
+                                            <span className="mt-1 block text-xs text-muted-foreground">
+                                                Invite-only — reachable through invites,
+                                                never through browse or the share page.
+                                            </span>
+                                        )}
+                                    </Field>
                                     <Field label="Venue" className="sm:col-span-3">
                                         {campaign.venue_address}
                                     </Field>
@@ -404,13 +424,43 @@ export default function CampaignDetailPage() {
                         </Section>
 
                         <div className="space-y-8">
+                            <Section id="cover" title="Cover image">
+                                <Panel>
+                                    {/* The same control the brand's own form
+                                        uses, against the same route — an admin
+                                        fixing a brief should not be editing it
+                                        through a different door. */}
+                                    <ImageUploadField
+                                        hint="Shown on the brief and on shared links. Optional — a brief with none gets a generated cover."
+                                        shape="cover"
+                                        value={campaign.cover_image_url}
+                                        onChange={loadDetail}
+                                        endpoint={`/brand/campaigns/${id}/cover`}
+                                        responseKey="cover_image_url"
+                                        testids={{
+                                            input: COVER.input,
+                                            choose: COVER.choose,
+                                            remove: COVER.remove,
+                                            preview: COVER.preview,
+                                            error: COVER.error,
+                                        }}
+                                    />
+                                </Panel>
+                            </Section>
+
+                            {/* Renders nothing until somebody has actually
+                                asked — an empty questions panel on every
+                                campaign is furniture. */}
+                            <QuestionThreadsPanel campaignId={id} />
+
                             <Section id="brand" title="Brand">
                                 <Panel>
                                     <Link
                                         to={`/admin/brands/${detail.brand.user_id}`}
                                         data-testid={IDS.brandLink}
-                                        className="font-serif text-xl transition-colors duration-200 hover:text-ember-500"
+                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-200 hover:text-ember-500"
                                     >
+                                        <BrandAvatar brand={detail.brand} />
                                         {detail.brand.business_name || "Unknown brand"}
                                     </Link>
                                     <dl className="mt-5 space-y-4">
@@ -452,6 +502,14 @@ export default function CampaignDetailPage() {
                                 }
                             >
                                 <Panel>
+                                    {/* Who runs it sits above who runs it *for*
+                                        us: assigning a WeAre manager is what
+                                        makes a campaign ours, so the two belong
+                                        in one place or they read as unrelated. */}
+                                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                                        <ExecutionBadge campaign={campaign} />
+                                        <ExecutionNote campaign={campaign} className="min-w-0 text-xs" />
+                                    </div>
                                     <p
                                         data-testid={IDS.managerName}
                                         className="font-serif text-xl"
@@ -583,13 +641,18 @@ export default function CampaignDetailPage() {
                                             <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
                                                 {g.rows.map((a) => (
                                                     <li
-                                                        key={a.id}
-                                                        data-testid={IDS.applicant(a.id)}
+                                                        key={a.collaboration_id}
+                                                        data-testid={IDS.applicant(
+                                                            a.collaboration_id,
+                                                        )}
                                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                                     >
+                                                        {/* Flat on this endpoint — there is no
+                                                            nested `creator` block here, unlike the
+                                                            brand's board. */}
                                                         <CreatorLink
-                                                            id={a.creator?.id}
-                                                            name={a.creator?.name}
+                                                            id={a.creator_id}
+                                                            name={a.name}
                                                             className="min-w-0 flex-1 text-sm"
                                                         />
                                                         <span className="flex-none text-xs text-muted-foreground">
@@ -601,7 +664,7 @@ export default function CampaignDetailPage() {
                                                         </span>
                                                         <StatePill state={a.state} />
                                                         <Link
-                                                            to={`/admin/collaborations/${a.id}`}
+                                                            to={`/admin/applications/${a.collaboration_id}`}
                                                             className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
                                                         >
                                                             Open

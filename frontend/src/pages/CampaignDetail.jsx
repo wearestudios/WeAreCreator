@@ -10,6 +10,7 @@ import {
     IndianRupee,
     Info,
     Loader2,
+    Lock,
     MapPin,
     Send,
     ShieldCheck,
@@ -23,6 +24,13 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
 import { compensationType, isBarter } from "@/lib/compensation";
+import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
+import ShareButton from "@/components/ShareButton";
+import { isPrivate } from "@/lib/visibility";
+import CampaignQuestions from "@/components/questions/CampaignQuestions";
+import { VISIBILITY } from "@/constants/testIds";
+import BrandName from "@/components/BrandName";
+import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -464,7 +472,7 @@ export default function CampaignDetail() {
                 <Navbar />
                 <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
                     <LoadingAnnouncement>Loading campaign…</LoadingAnnouncement>
-                    <DetailPageSkeleton testid="campaign-detail-skeleton" />
+                    <DetailPageSkeleton testid="campaign-detail-skeleton" cover />
                 </main>
             </div>
         );
@@ -526,9 +534,22 @@ export default function CampaignDetail() {
                         />
                         {isLive ? "Live" : "Upcoming"}
                     </span>
-                    <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        {campaign.brand_name || "Brand"}
-                    </span>
+                    <BrandName
+                        brand={campaign}
+                        avatarSize="h-6 w-6"
+                        className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+                    />
+                    {/* Anyone reading a private brief was invited onto it —
+                        the pill is the page saying so. */}
+                    {isPrivate(campaign) && (
+                        <span
+                            data-testid={VISIBILITY.badge(campaign.id)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+                        >
+                            <Lock className="h-3 w-3" />
+                            Invite-only
+                        </span>
+                    )}
                 </div>
 
                 <h1
@@ -537,6 +558,33 @@ export default function CampaignDetail() {
                 >
                     {campaign.title}
                 </h1>
+
+                {/* Who runs it, said plainly and near the top — a creator
+                    deciding whether to give up a day is deciding partly on who
+                    they will be dealing with when something goes wrong. */}
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                    {/* No share on a private brief: its /c/ page 404s by
+                        design, so the button would copy a dead link. */}
+                    {!isPrivate(campaign) && (
+                        <ShareButton
+                            campaignId={campaign.id}
+                            title={campaign.title}
+                            summary={campaign.deliverables}
+                        />
+                    )}
+                    <ExecutionBadge campaign={campaign} audience="creator" />
+                    <ExecutionNote campaign={campaign} audience="creator" className="min-w-0" />
+                </div>
+
+                {/* Below the header rather than above it: the eyebrow, the
+                    title and the brand are what a creator is deciding on, and a
+                    16:9 band at this width pushes all three off a phone screen
+                    if it goes first. The picture is a pixel of scroll away. */}
+                <CampaignCover
+                    campaign={campaign}
+                    priority
+                    className="mt-8 max-w-3xl"
+                />
 
                 <div className="mt-10 grid gap-10 md:grid-cols-12">
                     <div className="md:col-span-8">
@@ -563,6 +611,14 @@ export default function CampaignDetail() {
                                 {campaign.deliverables}
                             </p>
                         </section>
+
+                        {/* The page decides by audience, like the navbar does:
+                            the ask box belongs to the creator reading a brief,
+                            not to the brand or admin passing through. The
+                            component itself never asks. */}
+                        {user?.role === "creator" && (
+                            <CampaignQuestions campaignId={campaign.id} />
+                        )}
                     </div>
 
                     <aside className="md:col-span-4">

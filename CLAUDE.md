@@ -186,6 +186,47 @@ is itself not answered). **Creators never see them**, and the route doesn't
 accept the role at all. Append-only: no edit, no delete — a record that can be
 quietly rewritten is not a record. Every note is audited.
 
+## Creator questions on a campaign
+
+`campaign_questions`: one thread per (campaign, creator), asked from the
+campaign page, answered by whoever runs the campaign. **It is not the work
+notes** — those stay the internal paper trail creators never see; this thread
+has the creator as a party, and both are append-only for the same reason.
+
+- **One creator's thread is invisible to every other creator.** The creator
+  routes (`GET`/`POST /questions/campaign/{id}`) take no creator id at all:
+  the thread is the session's. Asking respects campaign visibility (the same
+  404 as the page), and a creator already on a campaign can keep asking after
+  it leaves the live statuses — mid-shoot is when the questions come — while
+  bystanders get a 409.
+- **Who answers follows `execution_owner`** (`_question_staff_may_see`):
+  admins always, the assigned WeAre manager on their campaigns, the owning
+  brand **only when the campaign is brand-run**. On a weare-run campaign the
+  brand does not see the thread at all — a creator asking "our team" a
+  question has not agreed to the brand reading it — and the application
+  page's `questions_enabled` flag says so, decided server-side like every
+  other action there. The staff thread payloads run the creator through
+  `_brand_visible_creator`; a leak test plants contact values and searches
+  the output.
+- Notifications route exactly like a new application: weare-run →
+  `notify_weare_team` (assigned manager, or every admin when unstaffed),
+  brand-run → the brand's manager. Answers notify the creator with a link
+  back to the campaign. Events `campaign_question` / `question_answered`.
+- Replying where nobody asked is refused — that would start a thread the
+  creator never opened, which is outreach, and outreach is the invite flow.
+- "Unanswered" = the thread's last word is the creator's, computed with
+  **`_id` as the timestamp tiebreak** — a question and its answer can land in
+  the same clock tick, and the flake that taught this is why every thread
+  read sorts on `(created_at, _id)`. `GET /questions/unanswered` feeds the
+  admin action queue, whose question rows link to the campaign page's
+  threads panel rather than growing their own reply box.
+- Surfaces: `CampaignQuestions` (the creator's ask box on CampaignDetail,
+  mounted by the page for creators only — the component itself never asks the
+  role), `QuestionThread` (one thread, on the application page),
+  `QuestionThreadsPanel` (all threads, admin campaign page and the brand
+  applicant board; hides itself on the staff routes' 404 and renders nothing
+  until somebody has asked).
+
 ## Suggesting creators
 
 `GET /brand/campaigns/{id}/suggested-creators` ranks verified creators against a
@@ -234,6 +275,115 @@ it takes:
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
 
+## The creator's home
+
+`pages/Dashboard.jsx` + `components/creator/`. The rule the layout answers to:
+**status, active work and the next action are visible without scrolling.**
+
+- The header opens with the photo at portrait size (`h-28` → `md:h-40`, the
+  monogram holding the same box), the verification badge, the handle, and the
+  three headline stats — lifetime earned (a one-shot `CountUp`), campaigns
+  completed, pending. Status banners and the completeness nudge sit directly
+  under it, outside any tab: a blocked account is not a section, it is the
+  situation.
+- **The live work never goes behind a tab.** Each active card leads with a
+  16:5 slice of the campaign's cover (`md:max-h-44` — aspect-ratio yields to
+  max-height, which is what stops a full-width card growing a 350px wall of
+  tint), the animated lifecycle tracker, the next action in plain words with
+  whose move it is, and **one** primary button — every action variant fills
+  the same `IDS.primary` slot.
+- Everything a creator consults rather than acts on — suggestions, past
+  pitches, the ledger — lives in Radix tabs below, each drawer keeping its own
+  `SafeSection`, the strip `overflow-x-auto` so three labels don't wrap and
+  eat the fold at 390px.
+- Motion is entrance-only (`Reveal` staggers by index, the tracker fills as
+  one stroke, nothing loops) and everything checks `prefers-reduced-motion` —
+  verified by emulation: under `reduce` the money's first paint is its final
+  value. `HomeSkeleton` mirrors the new arrangement (photo box, cover strip,
+  tab strip); CLS measured 0.0000 at 390 and 1280 with the payload delayed.
+
+## What a creator says about themselves
+
+The suggestion lists were food and nothing but food — cafe, brunch, bakery,
+brewery, home chef — on a platform that accepts every category. That list told
+a fashion or gaming creator they were in the wrong place before they had typed
+anything. `CREATOR_TAXONOMY` is fifteen groups spanning every category, with
+the food terms kept *inside* the food group; `lib/taxonomy.js` mirrors it and a
+unit test fails if the two drift. `niches` and `genres` are still free text —
+this is a starting point, not an enum.
+
+**City is a closed list** (`INDIAN_CITIES`), because free text cannot be
+reconciled: "Bangalore", "bangalore", "Bengaluru " and "BLR" are four rows in a
+filter and one city in reality, so a brand filtering the directory found a
+fraction of the people in it. `_canonical_city` folds the aliases and 422s on
+anything else, naming what is allowed; an empty city is still allowed, because
+the profile is built over sittings and refusing it would block partial saves.
+The **neighbourhood stays free text and stays optional** — it is not in
+`_PROFILE_COMPLETENESS_FIELDS`, and neither is YouTube unless the creator says
+they post there.
+
+`about` is the one field on the form whose shape the creator chose. It is
+optional on purpose: putting it in completeness would drop every existing
+creator below 100% and silently un-submit them. `facebook_url` is optional for
+the same reason and is deliberately **not** in `CREATOR_PLATFORMS`, which would
+make it a completeness question for anyone who ticked it.
+
+### Seeing your own profile, and re-approval
+
+`/profile` is the creator's own profile, read-only, reached from an avatar menu
+in the navbar (`CreatorAvatarMenu`, creator-only — an admin's navigation is the
+console and a brand's is its dashboard, neither of which this would open onto).
+Editing is a separate state at `/onboarding/creator`, reached from there. It
+used to be the only way to see your own details at all, so checking what a
+brand sees meant opening a builder and reading it out of input boxes.
+
+**`MATERIAL_PROFILE_FIELDS` is the one definition of a change worth re-checking**
+— name, both Instagram fields, YouTube, Facebook, city, and every payout detail.
+It was three fields inline in the update handler, which missed YouTube, Facebook
+and all of the payout ones. Everything else is theirs to change freely: putting
+a creator back in a queue for fixing their bio is how a profile stops being kept
+up to date.
+
+- **A re-check is not a downgrade.** `verification_status` stays `verified` and
+  `pending_review` goes true. Sending them back to `pending` would erase the
+  record that they were ever approved — the same reason suspension is separate
+  from rejection — and would empty the admin's "edited since approval" queue,
+  which keys on exactly that pair. A unit test pins that the handler never
+  writes `verification_status`.
+- `_awaiting_recheck` is the reader, and it gates **new applications only** —
+  the apply route, the `can_apply` flag so the button agrees with the API, and
+  the invite path, where an invite they could not accept goes nowhere. Work
+  already accepted is untouched, which is a matter of where the check is *not*:
+  a profile edit never reaches into `collaborations`.
+- `pending_review_fields` records what triggered it, so the notice names the
+  change rather than saying "something". The creator is told **once**, on the
+  way in — saving again while already pending must not send it again. An admin
+  decision clears both the flag and the labels.
+
+### The address, and the pin
+
+Two things that look like one. `full_address` is what gets printed on a
+delivery label; `location_lat`/`location_lng`/`location_place_id` are what
+somebody navigates to. Places autocomplete lands on the street about as often
+as the building, so the pin is **draggable** — a precise-looking coordinate
+that is precisely wrong is worse than none.
+
+- Dragging moves **only the coordinates**. Reverse-geocoding the drag would
+  replace "2nd floor, above the pharmacy" with a street name, which is exactly
+  what a courier needed.
+- `REACT_APP_GOOGLE_MAPS_API_KEY` is read from the environment and never
+  hardcoded; a test greps the whole frontend for an `AIza…` literal. It is a
+  browser key, so referrer restrictions in the Google console are the actual
+  protection.
+- **Absent is a supported state**, the same shape as Instagram: `mapsConfigured()`
+  is false, no script is injected, the field is a plain textarea, and a saved
+  pin still shows as a static image and a Maps link. Verified by rendering with
+  no key — every field present, zero requests to Google.
+- **The pin is never brand-visible.** A coordinate on somebody's front door is
+  their home address to five decimal places. It is off the allow-list and named
+  in `BRAND_FORBIDDEN_CREATOR_FIELDS` so the leak test looks for it. `about` and
+  `facebook_url` *are* brand-visible — they were written to be read.
+
 ## Instagram stats
 
 Official numbers come from **"Instagram API with Instagram Login"**, never the
@@ -263,6 +413,49 @@ any scraped source.**
 - Only a Professional (Business/Creator) account can authorise. A personal one gets
   a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
   switching steps and a retry.
+
+## The brand behind the brief
+
+A creator could see a campaign and learn nothing about who was posting it.
+`GET /brands/{id}` is the public brand page — server-rendered by the backend
+like `/c/{id}`, for the same reason, and only for **verified** brands. Vercel
+proxies `/brands/:id` and `/sitemap.xml` alongside `/c/:id`; they are one
+feature, and shipping one without the others is a link into a page that does
+not exist.
+
+- **`_public_brand` is the only projection of a brand on any unauthenticated
+  surface**, an allow-list like `_brand_visible_creator`. The manager's phone,
+  email and name, the `registered_address` (frequently a director's home), the
+  GST number and the rejection reason are all named in
+  `PUBLIC_BRAND_FORBIDDEN_FIELDS`; a unit test renders the page with those
+  values planted and searches the output.
+- **An outlet is not a registered address.** `outlets` on the profile are
+  shopfronts a creator turns up to — name, address, area, canonical city, and
+  an optional pin (both coordinates or neither, `_clean_outlets`). The pin
+  links out as a plain Google Maps URL built from the coordinate, never the
+  text, and the page embeds **no API key** — it is unauthenticated, so a
+  static map would publish one for decoration. `about` and `city` round out
+  the creator-facing half; none of it is in `_BRAND_REQUIRED_FIELDS`, because
+  it is what a creator reads, not evidence of anything.
+- The page lists the brand's **live** briefs, each linking to its `/c/{id}`
+  page, and the brief page links back — the only edges between public pages,
+  which with `/sitemap.xml` (verified brands + their live briefs) is what
+  makes "indexable" true rather than aspirational. `robots.txt` disallows
+  `/brand/` (the console — trailing slash, so `/brands/{id}` stays allowed).
+- `BrandName` is the one component naming a brand in the app — avatar, name,
+  and a real `<a>` to the public page, plain text when there is no id. The
+  campaign card became an `<article>` with a stretched link on the title,
+  because an anchor inside an anchor is invalid markup; anything interactive
+  above the overlay carries `relative z-10`. On the application page both
+  links ride `APPLICATION.campaignLink` / `APPLICATION.brandLink`, and the
+  admin route swaps in console links via `entityLinks` — the component still
+  never asks what role is looking.
+- The brand edits its own half in onboarding: `about`, a canonical-city
+  dropdown, and an outlet repeater that reuses `AddressPicker` (now in
+  `components/`, not `components/creator/`). The picker's privacy note is a
+  prop — the creator's address is team-only, an outlet is public, and the
+  default text saying "only the WeAre team sees it" would have been a lie on
+  this form. A verified brand gets a "View your public page" link.
 
 ## Brand verification
 
@@ -349,6 +542,186 @@ generates a support email.
 The other order turns another brand's campaign from a 404 into a 403, which
 leaks which ids exist. A unit test pins the order for every gated endpoint.
 
+## Finding a brief, and sending one on
+
+`GET /campaigns` lists everything live — `open` and `upcoming` — with **no
+filter applied by default**, and narrows on `city`, `area`, `category`,
+`campaign_type` and `compensation_type`. It is paginated with the matched total
+in `X-Total-Count`; it used to be a bare array capped at 200 with no way to know
+anything had been cut off.
+
+**The default order is "most relevant first."** `score_campaign_for_creator` is
+the mirror of `score_creator_for_campaign` — same vocabulary (`_campaign_terms`,
+the category synonyms), pointed the other way: niche/genre overlap saturating at
+three matched terms, city, neighbourhood. Pure and DB-free, so the ranking runs
+in Python over the newest `_RELEVANCE_SCAN_CAP` matches and then slices, keeping
+pagination and the count header honest. An empty profile scores everything 0 and
+the sort falls through to recency — the old order, and the right one for
+somebody we know nothing about. **It deliberately knows nothing about money**:
+a barter brief ranks on fit exactly like a paid one, or "most relevant" quietly
+becomes "paid first". Explicit `sort=newest|budget_desc|budget_asc` still mean
+what they say. The "Live pool" masthead figure is gone — it summed
+`budget_per_creator` across the feed, a number barter made a lie.
+
+- **A money filter says nothing about barter.** A barter brief keeps its
+  vestigial budget, so `budget_min/max` used to surface a barter stay whose
+  leftover number happened to land in the range. The filter now ANDs in
+  `{"compensation_type": {"$ne": "barter"}}`; combined with an explicit
+  `compensation_type=barter` it returns the empty set, which is the honest
+  answer to "barter briefs priced ₹5k–15k".
+- **`city` on a campaign is new.** Campaigns carried only `area`, the free-text
+  neighbourhood, so "briefs in my city" was unanswerable even though a creator's
+  city is a canonical dropdown. It goes through `_canonical_city`, the same
+  function the creator's does, or the two could never be compared.
+- Filtering for the default city or `fixed` matches documents with **no field at
+  all** — campaigns predate both, and a filter that only works after a migration
+  has run returns nothing on a box that has not restarted. Same trap as
+  `execution_owner` and `showcase`.
+- Every clause that wants `$and` — the default-city filter, the keyword
+  search, the barter exclusion, the visibility cut — **appends via
+  `setdefault`, never assigns**: an assignment among the appends silently
+  drops whatever came before it, and a unit test greps the handler for the
+  bare form.
+- `/campaigns/filters` returns distinct values, not the full enums: offering a
+  category with no live brief in it is a filter whose only outcome is an empty
+  list.
+
+### Public and invite-only briefs
+
+`visibility` on a campaign, `public` or `private` (`CampaignVisibility`).
+Public is the shop window; private is invite-only and **enforced server-side on
+every campaign read and on apply** — the pickers and pills are a courtesy on
+top. `_campaign_visibility(doc)` is the one reader (absent reads `public`,
+campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
+`$ne: "private"` for the usual pre-migration reason.
+
+- **Two doors into a private brief, in `_creator_may_see` /
+  `_visible_campaign_ids_for_creator`**: an invitation row in
+  `campaign_invitations`, or an active collaboration — a brand flipping a live
+  brief private must not vanish it from the people already on it. Everyone
+  else gets a **404, not a 403**: whether the campaign exists is itself what
+  the privacy protects.
+- The cut applies to browse (folded into the same query as the filters, so
+  pagination and the count stay right), the detail read, apply, the `/c/{id}`
+  share page, the sitemap, the landing preview, the brand page's shelf, the
+  suggestions panel, and `/campaigns/filters` — a private brief's
+  neighbourhood showing up as a dropdown option would announce its existence.
+  Admins see everything; the owning brand reaches its own through the
+  ownership checks it already had.
+- The brand picks at post time (`PostCampaignPayload`, defaulting to public)
+  and may change it on edit; the edit round-trip in `PostCampaign` re-seeds
+  the picker so fixing a typo doesn't silently flip a private brief public.
+  Every owner-facing row prints one of the two words — a brand reading
+  nothing would have to guess the default — and a creator who can see a
+  private brief gets an "Invite-only" pill, which for them is true and
+  flattering. **No Share button on a private brief**: its public page 404s by
+  design, so the button would copy a dead link. Absent, not disabled.
+- `lib/visibility.js` mirrors the reader (absent means public) and holds the
+  two options' wording.
+
+### The shareable page
+
+`GET /c/{id}` — a public brief, outside the `/api` prefix, no account needed.
+
+**Server-rendered by the backend, deliberately.** The app is a static SPA and
+the crawlers that build a WhatsApp or Instagram preview do not run JavaScript,
+so Open Graph tags injected by React are tags no crawler ever sees. It is the
+page a *person* lands on too, not a crawler-only shim that redirects — one page,
+so what the preview promised is what opens.
+
+- Only live briefs from **verified** brands, the same rule as the shop window:
+  an unverified brand can post and be seen by verified creators in-app, but is
+  not promoted to the open internet under our name. Everything else 404s,
+  including a malformed id.
+- Every field is `html_escape`d — a campaign title is brand-supplied text on a
+  public page — and barter never renders as a rupee figure.
+- `PUBLIC_SHARE_BASE_URL` sets the origin links are built from, defaulting to
+  the frontend's. **Vercel must proxy `/c/*` to the backend** or a shared link
+  opens the SPA and previews as the generic site card; see PREVIEW.md.
+- `ShareButton` uses `navigator.share` where it exists — on a phone that is
+  WhatsApp and Instagram in one tap — and copies otherwise. Dismissing the sheet
+  rejects with `AbortError` and must not raise a toast: that is a decision, not
+  a failure. It `stopPropagation`s because the card it sits on is a link.
+- `og:image` is the brief's **own cover**, absolute, with the site card as the
+  fallback — a link that previews the same as every other link is a link nobody
+  taps. `_absolute_media_url` builds it against `request.base_url`, the backend,
+  which is the host that mounts `/uploads`; `_share_base()` would be wrong, as
+  only `/c/*` is proxied to the frontend. The declared `og:image:width/height`
+  are emitted **only for the site card**, whose size we know — a wrong one is
+  worse than none, because some crawlers lay the card out from it.
+
+## A picture on the brief, a mark on the brand
+
+`cover_image_url` on a campaign and `logo_url` on a brand profile. Before them
+every listing was the same grey rectangle, which is the strongest argument
+against reading any of them.
+
+- **The value is a path we issued.** Both are set by uploading a file to their
+  own route — `POST`/`DELETE /brand/campaigns/{id}/cover` and
+  `/brand/profile/logo` — never by a field on an edit payload, so there is no
+  way to point a campaign at somebody else's server. Both go through
+  `_replace_image` → `_store_upload`, the same function the creator's profile
+  photo uses: the type comes from the leading bytes, the stored name is ours and
+  random, the ceiling is enforced while streaming.
+- They land in `UPLOAD_DIR`, which is `app.mount`ed — the exact opposite of the
+  brand's verification documents. A cover is meant to be seen by strangers.
+- `_replace_image` writes the new file, points the record at it, and **only then**
+  deletes the old one. The other order leaves a record pointing at nothing when
+  the write fails, and a broken image is worse than an out-of-date one.
+- The cover is the brand's **or an admin's**, via `_own_campaign_or_404`, and
+  audited both ways. It is deliberately **not** behind `_verified_brand_or_403`:
+  a cover on a draft reaches nobody, and publish already has the gate.
+- Neither is behind verification, and the logo is **not locked when a brand is
+  verified** — it is how a business is recognised, not evidence of who it is.
+- `ACCEPTED_IMAGE_MIMES` is derived from `_IMAGE_SIGNATURES` for the same reason
+  `ACCEPTED_DOCUMENT_MIMES` is, and rides on `GET /brand/profile` as
+  `uploads.accepted_image_mime_types` / `max_image_bytes`, so the browser
+  pre-check uses the server's numbers rather than a copy that drifts.
+
+`components/ImageUploadField.jsx` is the one control for both, in two modes: it
+uploads on pick when given an `endpoint`, and holds the `File` behind an object
+URL when not — because a cover has to be pickable on a brief that does not exist
+yet. `PostCampaign` sends the held file the moment the campaign is created, and
+if *that* fails it says so and keeps the brief; losing a filled-in form over a
+picture would be the wrong trade.
+
+### No picture is a state, not a hole
+
+`CampaignCover` draws either the image or a generated fallback — the brand's
+initial on a tint derived from the campaign's id — inside an `aspect-[16/9]`
+container. `BrandAvatar` is the same idea at avatar size, and mirrors
+`CreatorAvatar` exactly: the two appear on the same screens, so two fallback
+treatments there would read as two kinds of account. A logo is `object-contain`
+where a photo is `object-cover`, because cropping a mark to fill a square cuts
+it in half.
+
+- `_cover_hue` and `coverHue` in `frontend/src/lib/cover.js` **must agree** —
+  the card in the app and the server-rendered share page of the same brief are
+  the same colour. Both are FNV-1a; the first version summed character codes and
+  was measured to be useless, putting ids that differ in their last byte (which
+  is what consecutive ObjectIds are) two degrees apart.
+- **The ratio is on the container, never on the `<img>`**, so an image that
+  never arrives still occupies the space it claimed.
+- **The generated branch carries no `.media-frame`.** Both it and the gradient
+  set `background-image` and one would silently win — the same rule the design
+  foundations state for grain.
+- On CampaignDetail the cover sits **below** the title and the share row, not
+  above them: a 16:9 band at the column's width pushes the eyebrow, the title
+  and the brand off a phone screen, and those are what a creator is deciding on.
+- Every skeleton standing in for a card or a detail page reserves the same box:
+  `CardSkeleton({cover})`, `DetailPageSkeleton({cover})` and Landing's
+  `BriefCardSkeleton`. Measured with the API delayed 700ms and the images 500ms,
+  and with the skeletons confirmed to have actually rendered — otherwise the
+  measurement is vacuous. **When measuring with Playwright here, the context
+  option is `viewport`, not `viewportSize`** — this project's playwright-core
+  silently ignores the latter, so every "375px" number taken with it was really
+  1280 and mobile-only shifts passed unseen. At real widths: CampaignDetail
+  0.0000 with and without a cover; landing 0.0042/0.0011 (375/1280); campaigns
+  0.0000/0.0047 — the 0.0718 at 375 was the Live pool aside mounting only
+  after the fetch and pushing the filter bar down ~120px; the aside has since
+  been removed outright, which is also why the number improved again.
+
+
 ## What a brief pays
 
 `compensation_type` on a campaign, one of three (`CompensationType`):
@@ -433,6 +806,96 @@ Rules to preserve when touching this:
   both, and a unit test fails if a stray reference reappears.
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
+
+## Who runs a campaign
+
+`execution_owner` on a campaign, `brand` or `weare`. It is what applications
+are **routed on**, which is the job it exists to do: before it, every new
+application went to the brand's manager whether or not the brand had asked us
+to run the campaign, so a brand that handed one over still got paged for every
+applicant and no WeAre manager was told at all.
+
+- `_execution_owner(campaign)` is the only reader — pure, DB-free, and an
+  absent or unrecognised value reads as `brand`. Every surface showing this has
+  to print one of two words, so it never travels as `None`. A brand picks at
+  post time (`PostCampaignPayload`, defaulting to `brand`: posting a brief means
+  running it unless you say otherwise).
+- **It never disagrees with `manager_id`.** Assigning a WeAre manager sets
+  `execution_owner: "weare"` in the same write — there is no such thing as one
+  of our managers running a campaign the console calls brand-run. Going the
+  other way, a `weare` campaign is created with `_NO_CAMPAIGN_MANAGER` rather
+  than the brand's own person, which would route applications straight back to
+  the brand that asked us to take it on.
+- Routing, in `apply_to_campaign`: `weare` tells `notify_weare_team` (the
+  assigned manager, or **every admin** when nobody is assigned — otherwise a
+  campaign we have taken on but not staffed is the one arrangement where an
+  application reaches nobody) and still tells the brand through
+  `_tell_brand_manager_unless_managed`, which is being informed rather than
+  being asked to act. `brand` tells the brand's manager, as before. Admins see
+  and act on everything either way; none of the admin endpoints are scoped by it.
+- A brand may change it **only while the brief is a draft or in review**
+  (`_refuse_late_execution_handover`). After that, creators have applied knowing
+  who they would be dealing with, and switching would silently stop telling
+  whoever has been working it. An admin can still move it; `PATCH
+  /admin/campaigns/{id}` deliberately does not call the guard — the same shape
+  as `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
+  the payload generically, so an unguarded field rides along with everything else.
+- Filtering for `brand` is `{"$ne": "weare"}`, not an equality test — campaigns
+  predate the field. The startup backfill fills them in (deriving `weare` from a
+  WeAre `manager_id`), but a filter that only works after a migration has run
+  returns nothing on a box that has not restarted. Same reasoning as `showcase`.
+
+`lib/execution.js` is the frontend half — the two words, the three audiences'
+wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote`
+are one component rather than a pill per console, because the point of the field
+is that the admin, the brand and the creator agree about it.
+
+## One application, on its own screen
+
+`components/application/ApplicationDetail.jsx`, rendered at **two routes off one
+component**: `/admin/applications/:id` and `/brand/applications/:id`. Sharing it
+is the point — the admin and the brand used to read the same collaboration
+through different endpoints and describe it differently, which is how an
+approved application went on showing as pending in one console and approved in
+the other.
+
+- `GET /applications/{id}` serves both. Access is `_note_readable_collab_or_404`
+  — the same three doors as the work notes the screen embeds, a 404 behind all
+  of them — and the creator block goes through `_brand_visible_creator`, so the
+  shared payload carries no contact detail for either role.
+- **The client never asks "am I an admin".** Every action arrives in `actions`,
+  decided server-side, so neither console offers a button the API will refuse.
+  A unit test greps the component for role checks.
+- `_NEXT_ACTION` is one table saying who is waited on at each state, and
+  `_lifecycle_for` ships the whole ladder with the response. The status bar
+  draws what it is given; rebuilding `COLLAB_STATE_ORDER` in the client would be
+  a second copy of the state machine to keep in step.
+- An exit (`declined`, `cancelled`) is **the bar stopping, not an eleventh
+  step** — it is said in words rather than drawn as a box.
+
+### What a brief pays, at the fee step
+
+`_resolve_agreed_amount(campaign, supplied)` is the only place that decides, and
+**both writers go through it** — the admin's `advance_collaboration` and the
+brand's `brand_record_agreed_amount`. Two paths to one state is how two states
+drift apart.
+
+- `negotiated` — an amount is **required**; there is no fee until somebody
+  agrees one. The UI disables the button rather than producing a 422.
+- `fixed` — prefilled from `budget_per_creator` and **locked**. A supplied
+  figure is accepted only if it matches, so a stale form cannot rewrite a
+  commercial per creator.
+- `barter` — **no amount, and `None` rather than `0`**. Zero reads as "agreed,
+  nothing" on every surface that shows money.
+
+This step used to demand a figure whatever the campaign was, so a **barter
+collaboration could never leave `accepted`** — and `AgreedAmountPayload.agreed_amount`
+is now optional for that reason: the model cannot see the campaign, so it must
+not decide.
+
+After the fee, **the next action is the creator's** — they book, or on a
+`personal_table` they pick a time inside the window. Both notifications say so;
+neither quotes a rupee figure on a barter brief.
 
 ## Content performance
 

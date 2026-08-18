@@ -34,6 +34,7 @@ import { ConfirmDialog } from "@/components/admin/dialogs";
 import { CampaignLink } from "@/components/admin/links";
 import { PerformanceRollup } from "@/components/admin/Performance";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
+import BrandAvatar from "@/components/BrandAvatar";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -115,6 +116,7 @@ export default function BrandDetailPage() {
             ]}
             kicker="Brand"
             title={brand?.business_name || "Brand"}
+            avatar={brand && <BrandAvatar brand={brand} size="h-11 w-11" />}
             loading={!data && !error && !notFound}
             error={error}
             notFound={notFound}

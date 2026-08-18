@@ -64,26 +64,32 @@ export default function Hero({ user, profile, earnings }) {
     return (
         <header
             data-testid={IDS.section}
-            className="grid gap-8 md:grid-cols-12 md:items-start"
+            className="grid gap-6 md:grid-cols-12 md:items-start md:gap-8"
         >
             <div className="md:col-span-7">
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                     Creator · Bengaluru
                 </p>
 
-                <div className="mt-5 flex items-center gap-4">
+                {/* The photo is the anchor of the page — creators are the
+                    heart of the product and the header should say so at a
+                    glance, not in a thumbnail. The media-frame reserves and
+                    tints the box so a slow image is a surface, not a hole. */}
+                <div className="mt-5 flex items-center gap-5 md:gap-7">
                     {profile?.profile_image_url ? (
-                        <img
-                            src={mediaUrl(profile.profile_image_url)}
-                            alt=""
-                            data-testid={IDS.photo}
-                            className="aspect-square h-16 w-16 flex-none rounded-md border border-white/10 object-cover md:h-20 md:w-20"
-                        />
+                        <span className="media-frame block aspect-square h-28 w-28 flex-none overflow-hidden rounded-lg border border-white/10 sm:h-32 sm:w-32 md:h-40 md:w-40">
+                            <img
+                                src={mediaUrl(profile.profile_image_url)}
+                                alt=""
+                                data-testid={IDS.photo}
+                                className="h-full w-full object-cover"
+                            />
+                        </span>
                     ) : (
                         <span
                             data-testid={IDS.monogram}
                             aria-hidden="true"
-                            className="grid h-16 w-16 flex-none place-items-center rounded-md border border-white/10 bg-white/5 font-serif text-2xl text-muted-foreground md:h-20 md:w-20"
+                            className="grid h-28 w-28 flex-none place-items-center rounded-lg border border-white/10 bg-white/5 font-serif text-4xl text-muted-foreground sm:h-32 sm:w-32 md:h-40 md:w-40 md:text-5xl"
                         >
                             {initialsOf(profile?.name || user?.name)}
                         </span>
@@ -157,7 +163,7 @@ export default function Hero({ user, profile, earnings }) {
                     )}
                 </div>
 
-                <div className="mt-7 flex flex-wrap gap-3">
+                <div className="mt-5 flex flex-wrap gap-3 md:mt-7">
                     <Link to="/onboarding/creator" data-testid={IDS.editProfile}>
                         <Button
                             variant="outline"

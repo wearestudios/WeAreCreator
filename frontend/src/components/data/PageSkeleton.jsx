@@ -118,7 +118,7 @@ export function FormPageSkeleton({
  * there is nothing to scroll past yet, and a sticky skeleton that detaches on
  * the swap is a shift in its own right.
  */
-export function DetailPageSkeleton({ testid }) {
+export function DetailPageSkeleton({ testid, cover = false }) {
     return (
         <div data-testid={testid} aria-hidden="true">
             <Skeleton className="h-3 w-28" />
@@ -130,6 +130,20 @@ export function DetailPageSkeleton({ testid }) {
 
             {/* text-fluid-6xl-wide: two lines on a phone, one on a laptop. */}
             <Skeleton className="mt-4 h-20 w-full max-w-3xl md:h-16" />
+
+            {/* Share + who-runs-it, then the cover — the same order the page
+                puts them in. The cover is the tallest thing on the screen, so a
+                skeleton without it shifts everything below by 16:9 of the
+                column width when the campaign lands. */}
+            {cover && (
+                <>
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <Skeleton className="h-11 w-28 rounded-full" />
+                        <Skeleton className="h-6 w-36 rounded-full" />
+                    </div>
+                    <Skeleton className="mt-8 aspect-[16/9] w-full max-w-3xl rounded-lg" />
+                </>
+            )}
 
             <div className="mt-10 grid gap-10 md:grid-cols-12">
                 <div className="md:col-span-8">

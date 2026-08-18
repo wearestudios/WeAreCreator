@@ -15,6 +15,7 @@ import {
     X,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { CITY_OPTIONS, CREATOR_TAXONOMY_TERMS } from "@/lib/taxonomy";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -52,15 +53,14 @@ const STATUS_OPTIONS = [
 ];
 
 // Kept in step with the onboarding list — these are what creators actually pick.
-const NICHE_OPTIONS = [
-    "cafe", "brunch", "bakery", "fine dining", "lifestyle", "coffee", "dessert",
-    "brewery", "cocktails", "home chef", "healthy", "street food", "fashion", "wellness",
-].map((n) => ({ value: n, label: n }));
+// Both drawn from the shared taxonomy rather than a hand-kept copy. The niche
+// filter used to be food and nothing but food, so an admin could not filter
+// for a fashion or gaming creator at all — the option did not exist.
+const NICHE_OPTIONS = CREATOR_TAXONOMY_TERMS.map((n) => ({ value: n, label: n }));
 
-const AREA_OPTIONS = [
-    "Bengaluru", "Mumbai", "Delhi NCR", "Hyderabad", "Pune", "Chennai",
-    "Kolkata", "Goa", "Ahmedabad", "Jaipur", "Chandigarh", "Kochi",
-].map((c) => ({ value: c, label: c }));
+// Misnamed AREA_OPTIONS for a list of cities, and a second copy of the city
+// list at that. One list now, from lib/taxonomy.
+const AREA_OPTIONS = CITY_OPTIONS;
 
 const GROUPS = [
     { key: "ongoing", label: "Ongoing", empty: "Nothing in flight." },

@@ -234,7 +234,7 @@ export function CreatorReviews({ onChanged }) {
                 kind: "creators",
                 endpoint: "/admin/creators/pending",
                 kicker: "Creator reviews",
-                title: "Creators waiting to be vetted",
+                title: "Pending creator approvals",
                 clearTitle: "No creators waiting.",
                 blurb:
                     "Nobody can pitch on a brief until we've approved them, so this queue is the thing standing between a creator and their first job.",
@@ -460,7 +460,7 @@ export function BrandReviews({ onChanged }) {
                 // Somebody we already refused is not waiting on us.
                 filter: (r) => r.verification_state !== "rejected",
                 kicker: "Brand reviews",
-                title: "Brands waiting to be verified",
+                title: "Pending brand approvals",
                 clearTitle: "No brands waiting.",
                 blurb:
                     "An unverified brand can draft campaigns but cannot submit one, so nothing they write reaches a creator until this is done.",

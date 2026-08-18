@@ -11,6 +11,8 @@ import { Compass, MapPin, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CREATOR_SUGGESTED as IDS } from "@/constants/testIds";
 import { isBarter } from "@/lib/compensation";
+import BrandAvatar from "@/components/BrandAvatar";
+import CampaignCover from "@/components/CampaignCover";
 import { CAT_LABEL, EmptyState, Money, SectionHead, formatRupees } from "./shared";
 
 export default function Suggested({ campaigns }) {
@@ -62,10 +64,17 @@ export default function Suggested({ campaigns }) {
                                 data-testid={IDS.tile(c.id)}
                                 whileHover={still ? undefined : { y: -3 }}
                                 transition={{ duration: 0.2, ease: "easeOut" }}
-                                className="flex flex-col rounded-md border border-white/10 bg-card p-6 transition-colors duration-200 hover:border-white/20 grain-surface"
+                                className="flex flex-col overflow-hidden rounded-md border border-white/10 bg-card transition-colors duration-200 hover:border-white/20 grain-surface"
                             >
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                    {c.brand_name || "Brand"}
+                                <CampaignCover
+                                    campaign={c}
+                                    rounded="rounded-none"
+                                    className="border-0 border-b"
+                                />
+                                <div className="flex flex-1 flex-col p-6">
+                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    <BrandAvatar brand={c} size="h-5 w-5" />
+                                    <span className="truncate">{c.brand_name || "Brand"}</span>
                                 </p>
                                 <Link
                                     to={`/campaigns/${c.id}`}
@@ -131,6 +140,7 @@ export default function Suggested({ campaigns }) {
                                             Apply
                                         </Button>
                                     </Link>
+                                </div>
                                 </div>
                             </motion.li>
                         ))}

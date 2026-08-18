@@ -29,6 +29,7 @@ import {
 } from "@/components/data/DenseView";
 import { STICKY_BAR } from "@/constants/testIds";
 import { WorkNotes } from "@/components/brand/WorkNotes";
+import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
@@ -454,9 +455,16 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                                 className="aspect-square h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
                             />
                         )}
-                        <span className="font-serif text-2xl leading-tight">
+                        {/* The name is the way in to the application's own
+                            page — the board answers "who applied", that screen
+                            answers "what do I do about this one". */}
+                        <Link
+                            to={`/brand/applications/${a.id}`}
+                            data-testid={`applicant-open-${a.id}`}
+                            className="font-serif text-2xl leading-tight transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        >
                             {c.name || "Creator"}
-                        </span>
+                        </Link>
                         <StatePill state={a.state} />
                     </div>
 
@@ -957,6 +965,15 @@ export default function BrandCampaignApplicants() {
                     screen and the least essential to it. */}
                 <SafeSection name="suggested-creators" label="Suggestions couldn't load">
                     <SuggestedCreators campaignId={id} />
+                </SafeSection>
+
+                {/* Creator questions on this campaign. The server 404s this
+                    for a weare-run campaign — those threads are between the
+                    creator and the WeAre team — and the panel vanishes, so
+                    nothing here asks who runs it. Renders nothing until
+                    somebody has asked. */}
+                <SafeSection name="creator questions">
+                    <QuestionThreadsPanel campaignId={id} className="mt-12" />
                 </SafeSection>
             </main>
 

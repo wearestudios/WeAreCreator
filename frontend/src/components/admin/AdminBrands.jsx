@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ADMIN_BRANDS as IDS, STICKY_BAR } from "@/constants/testIds";
 import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
+import BrandAvatar from "@/components/BrandAvatar";
 import {
     EmptyState,
     FilterSelect,
@@ -204,6 +205,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                                     data-testid={IDS.row(b.user_id)}
                                     className="flex flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                 >
+                                    <BrandAvatar brand={b} size="h-10 w-10" />
                                     <div className="min-w-0 flex-1">
                                         <div className="flex flex-wrap items-center gap-3">
                                             <Link
