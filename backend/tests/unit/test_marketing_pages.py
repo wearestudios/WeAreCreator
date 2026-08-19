@@ -20,6 +20,7 @@ creators" is a claim that was true on the day somebody typed it, on the pages
 whose whole job is to be believed by a stranger.
 """
 import asyncio
+import json
 import inspect
 import re
 from datetime import datetime, timezone
@@ -386,11 +387,59 @@ def test_everything_interpolated_is_escaped(name):
 # --- Getting there ------------------------------------------------------------
 
 
-def test_vercel_proxies_both_audience_pages():
+SERVER_RENDERED_PATHS = (
+    "/c/:id",
+    "/brands/:id",
+    "/for-brands",
+    "/for-creators",
+    "/sitemap.xml",
+)
+
+
+def _rewrites():
+    return json.loads(read("vercel.json"))["rewrites"]
+
+
+def test_vercel_has_a_rewrite_for_every_server_rendered_path():
     """Shipping a page without its rewrite is a nav link into the SPA's
-    catch-all — the trap /c/:id and /brands/:id already document."""
-    config = read("vercel.json")
-    assert '"/for-brands"' in config and '"/for-creators"' in config
+    catch-all — the trap /c/:id and /brands/:id already document.
+
+    The destinations still point at `/index.html`, which is what the catch-all
+    does anyway: these are placeholders waiting to be repointed at the API
+    host. PREVIEW.md is where that decision is written down, and the test
+    below keeps it there."""
+    sources = [r["source"] for r in _rewrites()]
+    for path in SERVER_RENDERED_PATHS:
+        assert path in sources, path
+
+
+def test_every_server_rendered_rewrite_sits_above_the_catch_all():
+    """Vercel takes the first match. Below the catch-all a rewrite is dead
+    config that looks live."""
+    sources = [r["source"] for r in _rewrites()]
+    catch_all = sources.index("/((?!api/).*)")
+    for path in SERVER_RENDERED_PATHS:
+        assert sources.index(path) < catch_all, path
+
+
+def test_no_rewrite_carries_a_comment_key():
+    """`vercel.json` is JSON, which has no comments, and Vercel rejects
+    unknown properties on a rewrite object — a `"//"` key explaining the entry
+    fails validation and the whole deploy with it. The explanation belongs in
+    PREVIEW.md, which is checked for below."""
+    for rule in _rewrites():
+        assert set(rule) <= {"source", "destination", "has", "missing", "statusCode"}, rule
+
+
+def test_the_pending_proxy_decision_is_written_down():
+    """These five entries are inert until somebody repoints them, and an inert
+    rewrite is indistinguishable from a working one by reading the file. If
+    the note goes, the next person sees five configured proxies and wonders
+    why link previews are broken."""
+    preview = (FRONTEND.parent / "PREVIEW.md").read_text()
+    assert "pending decision" in preview.lower()
+    for path in SERVER_RENDERED_PATHS:
+        assert path in preview, path
 
 
 def test_the_spa_links_to_them_with_real_anchors():
