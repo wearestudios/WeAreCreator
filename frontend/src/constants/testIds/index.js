@@ -20,6 +20,7 @@ export * from './calendar';
 export * from './dense';
 export * from './drafts';
 export * from './execution';
+export * from './footer';
 export * from './creator';
 export * from './imagery';
 export * from './landing';

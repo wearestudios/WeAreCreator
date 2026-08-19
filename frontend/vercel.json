@@ -17,6 +17,11 @@
       "destination": "/index.html"
     },
     {
+      "//": "The creator-facing pitch page, server-rendered alongside /for-brands. Both are linked from the nav and the footer as real anchors, so without the rewrite they open the SPA's 404.",
+      "source": "/for-creators",
+      "destination": "/index.html"
+    },
+    {
       "//": "Lists every public brand page and live brief, so a crawler has something to follow. robots.txt names it, so both have to point at the same host.",
       "source": "/sitemap.xml",
       "destination": "/index.html"

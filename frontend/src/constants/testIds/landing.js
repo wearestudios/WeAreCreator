@@ -34,8 +34,11 @@ export const LANDING_HERO = {
 export const LANDING_REACH = {
 	section: 'reach-section',
 	note: 'reach-note',
-	cities: 'reach-cities',
-	city: (name) => `reach-city-${name.toLowerCase().replace(/\s+/g, '-')}`,
+	// Was `cities`/`city`. The column lists the categories briefs are posted
+	// in; a list of eight city names read as a footprint we do not have.
+	categories: 'reach-categories',
+	category: (name) =>
+		`reach-category-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
 };
 
 export const LANDING_SECTIONS = {

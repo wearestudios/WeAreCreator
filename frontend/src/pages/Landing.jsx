@@ -26,6 +26,7 @@ import {
     Lock,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
@@ -33,7 +34,6 @@ import { formatCompensation, isBarter } from "@/lib/compensation";
 import {
     LANDING as PAGE_IDS,
     LANDING_CLOSING as CLOSING_IDS,
-    LANDING_FOOTER as FOOTER_IDS,
     LANDING_HERO as HERO_IDS,
     LANDING_REACH as REACH_IDS,
     LANDING_SECTIONS as SECTION_IDS,
@@ -47,15 +47,23 @@ import CampaignCover from "@/components/CampaignCover";
 // Hero deck
 // ---------------------------------------------------------------------------
 //
-// Five slides, spanning the categories creators actually sign up from. The
-// deck used to be four food shots, which quietly told a beauty or tech creator
-// this wasn't for them — the range is the argument, so the deck has to carry
-// it. Only the photograph and the headline change between slides; the eyebrow,
-// the subheading, both CTAs and the stats are fixed, so the page never appears
-// to be selling five different products.
+// The deck used to be four food shots, which quietly told a fashion or travel
+// creator this wasn't for them — the range is the argument, so the deck has to
+// carry it. Only the photograph and the headline change between slides; the
+// eyebrow, the subheading, both CTAs and the stats are fixed, so the page never
+// appears to be selling four different products.
 //
 // Each headline names the outcome the brand is buying in that category, not
 // the shoot. That keeps them specific without any of them being generic.
+//
+// **Every kicker is a real campaign category.** There was a "Tech & gadgets"
+// slide and a "Fitness & wellness" one; `CampaignCategory` has neither of the
+// first two words in it, so a tech creator arriving off that slide could
+// filter the brief list and find that the category does not exist. Widening
+// the deck is only an argument for range if the range is there.
+//
+// The photographs are stock, loaded from a third-party CDN, and are the only
+// remote fetch on the whole marketing site — see the note on SlideImage.
 const SLIDES = [
     {
         key: "launch",
@@ -82,16 +90,8 @@ const SLIDES = [
         alt: "A hotel room opening onto a balcony",
     },
     {
-        key: "tech",
-        kicker: "Tech & gadgets",
-        headline: ["The review people", "actually watch to the end."],
-        image:
-            "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=2000&q=80",
-        alt: "A desk of gadgets set up for a review",
-    },
-    {
-        key: "fitness",
-        kicker: "Fitness & wellness",
+        key: "wellness",
+        kicker: "Wellness",
         headline: ["One class filmed.", "Six weeks booked out."],
         image:
             "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=2000&q=80",
@@ -101,18 +101,24 @@ const SLIDES = [
 
 const SLIDE_INTERVAL_MS = 7000;
 
-// Cities we serve. Bengaluru leads because that is where the network is; the
-// rest are listed flat, with no "live" or "coming soon" badge, because a badge
-// is a promise about a date and we aren't making one.
-const CITIES = [
-    "Bengaluru",
-    "Mumbai",
-    "Delhi NCR",
-    "Hyderabad",
-    "Pune",
-    "Chennai",
-    "Kolkata",
-    "Goa",
+// What the briefs are for. This replaced a list of eight cities.
+//
+// The prose beside it said the true thing — the network runs deepest in
+// Bengaluru — and then seven other city names sat next to it in serif italic,
+// which is a footprint whatever the paragraph says. Greying them out is not a
+// disclaimer; it reads as "coming soon", which is the promise about a date the
+// list was written to avoid making.
+//
+// So the column answers the question the reader actually has at that point —
+// "is there anything here for me" — with something we can back: the categories
+// briefs are posted in, which is the campaign category enum and nothing else.
+const BRIEF_CATEGORIES = [
+    "Restaurants & cafés",
+    "Hotels & travel",
+    "Fashion",
+    "Retail",
+    "Wellness",
+    "Lifestyle",
 ];
 
 const STEPS = [
@@ -126,7 +132,10 @@ const STEPS = [
         n: "02",
         Icon: Compass,
         title: "Discover briefs",
-        body: "Paid campaigns from brands across fashion, beauty, food, travel, tech, fitness and retail. You see the deliverable and the fee before you pitch.",
+        // The categories named are the campaign category enum, not a wider
+        // list that reads well — "tech" and "beauty" were in this sentence and
+        // in no brief anyone could post.
+        body: "Paid campaigns from restaurants, hotels, fashion, retail, wellness and lifestyle brands. You see the deliverable and what it pays before you pitch.",
     },
     {
         n: "03",
@@ -138,25 +147,33 @@ const STEPS = [
         n: "04",
         Icon: Wallet,
         title: "Deliver & get paid",
-        body: "Shoot, publish, submit. Once the brand approves, your payout is released — you'll see every step, and we chase the brand, not you.",
+        // Named the draft step, which changed when content becomes public and
+        // so changed what this sentence describes. "Shoot, publish, submit"
+        // described the flow before the review gate existed.
+        body: "Shoot, send the draft for approval, then publish. Once the brand approves the delivery your payout is released — you keep 100% of your agreed rate, and we chase the brand, not you.",
     },
 ];
 
 const TRUST_POINTS = [
     {
         Icon: IndianRupee,
-        title: "Fixed, upfront budgets",
-        body: "See the fee before you pitch. No opaque negotiations, and no free product or \"exposure\" standing in for money.",
+        title: "You keep 100% of your rate",
+        // This said "no free product or 'exposure' standing in for money",
+        // which is contradicted by the first barter brief somebody opens —
+        // and barter briefs are a real, admin-arranged thing here. The point
+        // worth making is the one that is true of every brief: our fee sits
+        // on the brand, on top, and nothing comes out of the creator's side.
+        body: "Our fee is charged to the brand on top of your rate. Nothing is deducted from what you agreed, and joining is free.",
     },
     {
         Icon: ShieldCheck,
         title: "Verified on both sides",
-        body: "Every creator is reviewed before they can pitch, and every brand we promote is verified by our team.",
+        body: "Every creator is reviewed before they can pitch, and every brand we promote is checked against its own paperwork.",
     },
     {
         Icon: Lock,
         title: "The fee is agreed in writing",
-        body: "Your rate is locked and recorded before the shoot, and we handle collecting from the brand.",
+        body: "Your rate is recorded against the brief before anyone shoots, and every brief says on its face what it pays — a fee, a negotiation, or barter.",
     },
 ];
 
@@ -220,6 +237,17 @@ function AnimatedNumber({ value, suffix = "", duration = 1400 }) {
  * leaves a composed dark panel rather than a broken page — the headline is
  * readable on the background alone. Worth having: these are remote images on
  * the one page most people see first.
+ *
+ * NEEDS A DECISION — these are stock photographs hotlinked from Unsplash, and
+ * they are the only third-party fetch anywhere on the marketing site.
+ * `/for-brands`, `/for-creators` and `/c/{id}` were built to fetch nothing at
+ * all, which is why they paint in tens of milliseconds. Two things are wrong
+ * here and neither is fixable in code: the images are somebody else's, of
+ * nowhere in particular, on a page whose argument is that the work is real and
+ * local; and they arrive from a CDN we do not control on the critical path of
+ * the front door. The fix is owned photography from actual Bengaluru shoots,
+ * self-hosted. Until there is any, the failure path above is what keeps this
+ * from being a broken page rather than a slow one.
  */
 function SlideImage({ slide, index, active }) {
     const [failed, setFailed] = useState(false);
@@ -356,7 +384,7 @@ function Hero() {
                 </motion.p>
 
                 {/* Only this line and the photograph change per slide. */}
-                <div className="min-h-[10.5rem] md:min-h-[13rem]">
+                <div className="min-h-[6.5rem] md:min-h-[7.5rem]">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={current.key}
@@ -371,18 +399,25 @@ function Hero() {
                             >
                                 {current.kicker}
                             </p>
-                            <h1
-                                data-testid={HERO_IDS.heading}
-                                className="max-w-5xl font-serif text-fluid-hero tracking-tightest"
-                            >
-                                {current.headline[0]}
-                                <span className="block italic text-muted-foreground">
-                                    {current.headline[1]}
-                                </span>
-                            </h1>
+                            <p className="max-w-3xl font-serif text-fluid-3xl leading-tight text-muted-foreground">
+                                {current.headline[0]}{" "}
+                                <span className="italic">{current.headline[1]}</span>
+                            </p>
                         </motion.div>
                     </AnimatePresence>
                 </div>
+
+                <motion.h1
+                    data-testid={HERO_IDS.heading}
+                    initial="hidden"
+                    animate="show"
+                    custom={1}
+                    variants={fadeUp}
+                    className="mt-8 max-w-4xl font-serif text-fluid-hero tracking-tightest"
+                >
+                    Your creator campaigns,{" "}
+                    <span className="italic text-muted-foreground">handled properly.</span>
+                </motion.h1>
 
                 <motion.p
                     data-testid={HERO_IDS.subheading}
@@ -392,9 +427,8 @@ function Hero() {
                     variants={fadeUp}
                     className="mt-8 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg"
                 >
-                    Post your brief yourself — or hand it to our team. Either way,
-                    you're working with the same verified creator network, and the
-                    fee is agreed before anybody shoots.
+                    Verified creators, rates agreed before anyone shoots, and results
+                    you can show. Run it yourself, or hand it to our team.
                 </motion.p>
 
                 <motion.div
@@ -404,31 +438,29 @@ function Hero() {
                     variants={fadeUp}
                     className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center"
                 >
-                    <Link to="/signup?role=brand" data-testid={HERO_IDS.ctaBrand}>
+                    {/* Two paths, not three asks. The page used to offer
+                        "Post a campaign", "Join as a creator" and a mailto in
+                        one row, which is three doors and a decision nobody
+                        came here to make. Home routes; the audience pages
+                        sell — so these go to the pages, not to signup. */}
+                    <a href="/for-creators" data-testid={HERO_IDS.ctaCreator}>
                         <Button
                             size="lg"
                             className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400 sm:w-auto"
                         >
-                            Post a campaign
+                            I'm a creator
                             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                         </Button>
-                    </Link>
-                    <Link to="/signup?role=creator" data-testid={HERO_IDS.ctaCreator}>
+                    </a>
+                    <a href="/for-brands" data-testid={HERO_IDS.ctaBrand}>
                         <Button
                             size="lg"
                             variant="outline"
-                            className="h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground hover:bg-white/5 sm:w-auto"
+                            className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground hover:bg-white/5 sm:w-auto"
                         >
-                            Join as a creator
+                            I'm a brand
+                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                         </Button>
-                    </Link>
-                    <a
-                        href={MANAGED_MAILTO}
-                        data-testid={HERO_IDS.managedLink}
-                        className="group -mb-2 mt-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:mt-0 sm:pl-3"
-                    >
-                        Prefer we run it? Talk to our team
-                        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-1" />
                     </a>
                 </motion.div>
 
@@ -502,12 +534,16 @@ function Hero() {
 // ---------------------------------------------------------------------------
 
 /**
- * Replaces the scrolling marquee.
+ * Where we are, and what the work is.
  *
- * A marquee of city names implied a presence in each of them. This says the
- * true thing instead: the network is deepest in Bengaluru, that is where the
- * campaigns are, and anyone in India can sign up today. No "live" or "coming
- * soon" pills — a badge is a promise about a date.
+ * Two rounds of the same correction. A scrolling marquee of city names implied
+ * a presence in each of them; it became a paragraph saying the true thing —
+ * the network is deepest in Bengaluru, that is where the campaigns are, anyone
+ * in India can sign up today — beside a list of eight cities in serif italic,
+ * which implied the same presence rather more quietly. The paragraph stayed;
+ * the list is now the categories briefs are actually posted in.
+ *
+ * Still no "live" or "coming soon" pills — a badge is a promise about a date.
  */
 function Reach() {
     return (
@@ -523,23 +559,18 @@ function Reach() {
                     >
                         Our creator network runs deepest in{" "}
                         <span className="text-foreground">Bengaluru</span>, and that's
-                        where most campaigns are today. Signing up is open to creators
+                        where the campaigns are today. Signing up is open to creators
                         anywhere in India.
                     </p>
                     <ul
-                        data-testid={REACH_IDS.cities}
+                        data-testid={REACH_IDS.categories}
                         className="flex flex-wrap gap-x-8 gap-y-3 md:col-span-7 md:justify-end"
                     >
-                        {CITIES.map((c) => (
+                        {BRIEF_CATEGORIES.map((c) => (
                             <li
                                 key={c}
-                                data-testid={REACH_IDS.city(c)}
-                                className={
-                                    "font-serif text-xl italic md:text-2xl " +
-                                    (c === "Bengaluru"
-                                        ? "text-foreground"
-                                        : "text-muted-foreground/60")
-                                }
+                                data-testid={REACH_IDS.category(c)}
+                                className="font-serif text-xl italic text-muted-foreground/70 md:text-2xl"
                             >
                                 {c}
                             </li>
@@ -766,24 +797,19 @@ const CLOSING = {
         eyebrow: "For creators",
         heading: ["Get paid properly", "for work you'd post anyway."],
         support:
-            "Apply once, pitch on live briefs, and know the fee before you shoot. Signups are open to creators anywhere in India.",
-        cta: "Join as a creator",
-        to: "/signup?role=creator",
+            "Real briefs from businesses we have checked, your rate agreed in writing before you shoot, and payment on approved delivery. Free to join.",
+        cta: "See how it works for creators",
+        to: "/for-creators",
         testid: CLOSING_IDS.buttonCreator,
     },
     brand: {
         eyebrow: "For brands",
         heading: ["Post a brief.", "Meet the shortlist."],
         support:
-            "Verified creators, fixed budgets, and one place to run the whole thing from brief to payment.",
-        cta: "Post a campaign",
-        to: "/signup?role=brand",
+            "Verified creators with real audience stats, every rate in front of you, content approved before it goes live — and the choice to run it yourself or hand it to our team.",
+        cta: "See how it works for brands",
+        to: "/for-brands",
         testid: CLOSING_IDS.buttonBrand,
-        // The longer read, for somebody not ready to sign up yet. Brand mode
-        // only — a creator has no use for it, and the page's whole rule is
-        // that it asks once. A real <a>: /for-brands is server-rendered by
-        // the backend, so the router must not intercept it.
-        learnMore: { href: "/for-brands", label: "Or read how it works for brands" },
     },
 };
 
@@ -871,8 +897,12 @@ function ClosingCta() {
 
                         <div className="md:col-span-4">
                             <div className="flex flex-col gap-4 md:items-end">
-                                <Link
-                                    to={copy.to}
+                                {/* A real <a>: both destinations are
+                                    server-rendered by the backend, so a
+                                    <Link> would be swallowed by the router
+                                    and land on the SPA's catch-all. */}
+                                <a
+                                    href={copy.to}
                                     data-testid={CLOSING_IDS.button}
                                     className="w-full md:w-auto"
                                 >
@@ -884,7 +914,7 @@ function ClosingCta() {
                                         {copy.cta}
                                         <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                                     </Button>
-                                </Link>
+                                </a>
                                 {copy.learnMore && (
                                     <a
                                         href={copy.learnMore.href}
@@ -914,6 +944,91 @@ function ClosingCta() {
 // Page
 // ---------------------------------------------------------------------------
 
+
+/**
+ * The problem, stated before any of the answer.
+ *
+ * **The enemy named here is disorganisation, never agencies.** WeAre Studios
+ * is an agency and our managed service is a genuine offering — a page that
+ * said "without an agency" would be selling against half of what we do. What
+ * is actually broken is campaigns run on DMs and a spreadsheet: nobody
+ * checked, nothing in writing, and no way to say afterwards whether it worked.
+ */
+const PROBLEMS = [
+    {
+        title: "Nobody has been checked",
+        body: "A follower count in a screenshot, a business you have only ever seen a logo for. Both sides are taking the other on trust, and one of them is usually wrong.",
+    },
+    {
+        title: "Nothing is in writing",
+        body: "The rate lives in a chat thread, if it was ever said out loud. Then it is the day of the shoot and the number has quietly moved.",
+    },
+    {
+        title: "Nobody can prove what it did",
+        body: "The posts went up. What they reached, what they cost per thousand, whether to do it again — nobody wrote it down, so nobody knows.",
+    },
+];
+
+function Problem() {
+    return (
+        <section
+            id="problem"
+            data-testid="landing-problem"
+            className="border-t border-white/10"
+        >
+            <div className="mx-auto max-w-7xl px-6 py-24 md:py-28">
+                <div className="grid gap-10 md:grid-cols-12 md:items-end">
+                    <div className="md:col-span-7">
+                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <span className="h-px w-8 bg-ember-500" />
+                            The problem
+                        </p>
+                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
+                            Most creator campaigns run on{" "}
+                            <span className="italic">DMs and a spreadsheet.</span>
+                        </h2>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
+                        It works right up until it doesn't — and when it doesn't, it is
+                        somebody's day, somebody's money, or somebody's opening night.
+                    </p>
+                </div>
+
+                <ul className="mt-14 grid gap-4 md:grid-cols-3">
+                    {PROBLEMS.map((p, i) => (
+                        <motion.li
+                            key={p.title}
+                            initial={{ opacity: 0, y: 12 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true, margin: "-60px" }}
+                            transition={{ duration: 0.5, delay: i * 0.07 }}
+                            data-testid={`landing-problem-${i}`}
+                            className="rounded-md border border-white/10 bg-card p-7 grain-surface"
+                        >
+                            <h3 className="font-serif text-xl leading-tight">{p.title}</h3>
+                            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                                {p.body}
+                            </p>
+                        </motion.li>
+                    ))}
+                </ul>
+
+                {/* The promise, as the answer to what was just described —
+                    the same words as the hero, because a promise that is
+                    reworded on every screen is three promises. */}
+                <p
+                    data-testid="landing-promise"
+                    className="mt-14 max-w-3xl font-serif text-fluid-3xl leading-snug"
+                >
+                    We built the boring parts: creators checked by a person, the rate
+                    agreed and written down before anyone shoots, the content approved
+                    before it is public, and a report at the end that says what it did.
+                </p>
+            </div>
+        </section>
+    );
+}
+
 export default function Landing() {
     const verticals = useMemo(
         // One label per campaign category the server accepts (fnb, hospitality,
@@ -941,6 +1056,7 @@ export default function Landing() {
             <Navbar />
 
             <Hero />
+            <Problem />
             <Reach />
 
             {/* ------------------------ HOW IT WORKS ------------------------ */}
@@ -1112,20 +1228,7 @@ export default function Landing() {
 
             <ClosingCta />
 
-            <footer data-testid={FOOTER_IDS.section} className="border-t border-white/10">
-                <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center">
-                    <div className="flex flex-col gap-1">
-                        <span
-                            data-testid={FOOTER_IDS.wordmark}
-                            className="font-serif text-lg text-foreground"
-                        >
-                            WeAre <span className="text-ember-500">Creators</span>
-                        </span>
-                        <StudioEndorsement testid={STUDIO_IDS.footer} />
-                    </div>
-                    <span>© {new Date().getFullYear()} WeAre Monk · Bengaluru, India</span>
-                </div>
-            </footer>
+            <Footer />
         </div>
     );
 }

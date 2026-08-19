@@ -17,6 +17,7 @@ import {
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import {
     DetailPageSkeleton,
     LoadingAnnouncement,
@@ -497,6 +498,9 @@ export default function CampaignDetail() {
                         Back to campaigns
                     </Button>
                 </div>
+                {/* A dead link is exactly where somebody needs a way onwards,
+                    so the 404 keeps the footer. */}
+                <Footer />
             </div>
         );
     }
@@ -710,6 +714,8 @@ export default function CampaignDetail() {
                     </aside>
                 </div>
             </main>
+
+            <Footer />
 
             <ApplyDialog
                 open={dialogOpen}

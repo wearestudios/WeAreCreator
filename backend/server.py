@@ -19158,31 +19158,91 @@ async def public_brand_page(brand_id: str, request: Request):
     )
 
 
-# --- The page we send a venue owner ------------------------------------------
+# --- The two pages we send people --------------------------------------------
 #
-# This is the link that goes on WhatsApp to somebody who has never heard of us,
-# so it is **server-rendered like /c/{id} and /brands/{id}, and for the same
-# reason**: the crawler that builds the preview does not run JavaScript, and a
-# page whose Open Graph tags are injected by React previews as the generic site
-# card. It is also the page a person lands on, not a crawler-only shim.
+# One audience each. The home page has to speak to creators and brands at once
+# because it is the front door; these two ask once, to one person, and every
+# line is written for them.
 #
-# The landing page speaks to both sides at once because it has to. This one has
-# a single audience and asks once.
-
+# **Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same
+# reason**: the crawler that builds a WhatsApp preview does not run
+# JavaScript, so Open Graph tags injected by React are tags nobody ever sees.
+# These are the links that get pasted into a chat, so the preview is the
+# product.
+#
+# **The positioning, which governs every line here.** The thing we are against
+# is *disorganisation* — campaigns run over DMs and spreadsheets, with nobody
+# checked, no rate in writing and no proof of what it achieved. It is
+# deliberately **not** agencies: WeAre Studios is one, our managed service is a
+# real offering, and "without an agency" would be a page arguing against our
+# own product. `_FORBIDDEN_MARKETING_PHRASES` holds that line and a unit test
+# fails the pages for any of them.
 
 FOR_BRANDS_PATH = "/for-brands"
+FOR_CREATORS_PATH = "/for-creators"
+
+# Phrases that would position us against agencies, or promise more than the
+# operation can do. Checked against the rendered HTML of every marketing page.
+_FORBIDDEN_MARKETING_PHRASES = (
+    "without an agency",
+    "without agencies",
+    "cut out the middleman",
+    "cut out the middlemen",
+    "no agency",
+    "skip the agency",
+    "agency fees",
+    "middleman",
+    "every city",
+    "across india",
+    "pan-india",
+    "nationwide",
+    "guarantee",
+    "guaranteed",
+)
+
+# The footer, mirrored from `frontend/src/lib/siteNav.js`. A unit test fails if
+# the two drift — the React footer and this one are the same footer, and a
+# link list maintained twice is one that ends up advertising a page that moved.
+FOOTER_COLUMNS = (
+    (
+        "Creators",
+        (
+            ("Why WeAre", FOR_CREATORS_PATH),
+            ("Browse briefs", "/campaigns"),
+            ("Join as a creator", "/signup?role=creator"),
+        ),
+    ),
+    (
+        "Brands",
+        (
+            ("How it works", FOR_BRANDS_PATH),
+            ("Post a campaign", "/signup?role=brand"),
+            ("Log in", "/login"),
+        ),
+    ),
+    (
+        "Company",
+        (
+            ("Terms", "/terms"),
+            ("Privacy", "/privacy"),
+            ("Contact", "mailto:creators@wearemonk.in"),
+        ),
+    ),
+)
+
+MARKETING_CONTACT = "creators@wearemonk.in"
 
 
-async def _for_brands_stats() -> dict:
+async def _platform_proof() -> dict:
     """Real numbers for the proof strip, or nothing.
 
     **Every figure is counted, never written down.** A hardcoded "500+
-    creators" is a claim that was true on the day somebody typed it, on a page
-    whose whole job is to be believed by a stranger.
+    creators" is a claim that was true on the day somebody typed it, on the
+    pages whose whole job is to be believed by a stranger.
 
-    Each is returned only when it is worth saying out loud. A proof strip
-    reading "3 creators" is not proof, it is a reason to close the tab — and
-    the honest move at that size is to say nothing rather than to round up.
+    Each is returned only when it is worth saying out loud. A strip reading
+    "3 creators" is not proof, it is a reason to close the tab — and the
+    honest move at that size is silence rather than rounding up.
     """
     creators = await db.creator_profiles.count_documents(
         {"verification_status": "verified"}
@@ -19192,165 +19252,57 @@ async def _for_brands_stats() -> dict:
     campaigns = await db.campaigns.count_documents(
         {"status": {"$in": ["in_progress", "completed", "closed"]}}
     )
-    cities = len(
-        [
-            c
-            for c in await db.creator_profiles.distinct(
-                "city", {"verification_status": "verified"}
-            )
-            if c
-        ]
-    )
+    brands = await db.brand_profiles.count_documents({"verified": True})
     out = {}
     if creators >= 10:
         out["creators"] = creators
     if campaigns >= 5:
         out["campaigns"] = campaigns
-    if cities >= 2:
-        out["cities"] = cities
+    if brands >= 5:
+        out["brands"] = brands
     return out
 
 
-_FOR_BRANDS_VALUE_PROPS = (
-    (
-        "Creators we have actually checked",
-        "Every creator on the platform is reviewed by a person before a brand "
-        "can see them \u2014 the account, the work, whether the audience looks "
-        "real. Where a creator has connected Instagram, the follower count and "
-        "engagement rate on their profile are read from Instagram itself, and "
-        "the ones we could not verify say so rather than quietly passing as "
-        "measured.",
-    ),
-    (
-        "The money settled before the shoot",
-        "The rate is agreed and recorded against the booking before anybody "
-        "turns up, so there is no negotiation on the day and no invoice "
-        "surprise afterwards. We collect from you and pay the creator, which "
-        "means one payment for you and one chase for us.",
-    ),
-    (
-        "An agency behind the platform",
-        "WeAre Studios runs campaigns for a living. Post the brief and run it "
-        "yourself, or hand it over and we will staff it, book the slots, stand "
-        "at the door on the day and send you the numbers afterwards. Same "
-        "platform either way \u2014 you choose per campaign, not per contract.",
-    ),
-)
+def _marketing_css() -> str:
+    """One stylesheet for both pages, inline.
 
-_FOR_BRANDS_STEPS = (
-    (
-        "Post your brief",
-        "What you want made, the budget per creator, the dates, and which days "
-        "and hours your venue can actually take people. Ten minutes.",
-    ),
-    (
-        "Review the shortlist",
-        "Creators apply, and we rank them against the brief \u2014 with the "
-        "reason on every card, so you can argue with it. Accept the ones you "
-        "want, or invite creators directly.",
-    ),
-    (
-        "They shoot at your venue",
-        "On slots they booked themselves, inside the windows you set. Your "
-        "campaign manager has the roster and the phone numbers; you get told "
-        "what changed.",
-    ),
-    (
-        "Approve, then see what it did",
-        "Turn on draft review and nothing is published until you have said yes "
-        "\u2014 or asked for a change. Afterwards, reach, engagement and cost "
-        "per thousand on one report.",
-    ),
-)
-
-
-def _for_brands_html(stats: dict, request_base: str = "") -> str:
-    """No framework, everything escaped, one CTA."""
-    e = html_escape
-    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
-    url = e(f"{_share_base()}{FOR_BRANDS_PATH}")
-    summary = (
-        "Post a brief and meet a shortlist of verified Bengaluru creators, or "
-        "hand the whole campaign to the WeAre team. Rates agreed before the "
-        "shoot, content approved before it goes live."
+    Inline because these pages load none of ours and a second request on a
+    venue's wifi is the thing they cannot afford. The font is the exception —
+    Fraunces is the most recognisable part of the design system and a page in
+    Georgia is visibly not the brand — so it loads on `media="print"` with an
+    onload swap, which fetches it at low priority and applies nothing until it
+    arrives. Text paints immediately in the fallback and swaps.
+    """
+    grain = (
+        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' "
+        "width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' "
+        "baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix "
+        "values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect "
+        "width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>\")"
     )
-    og_image = e(f"{app_base}/og-image.png")
-
-    props = "".join(
-        f'<li><h3>{e(title)}</h3><p>{e(body)}</p></li>'
-        for title, body in _FOR_BRANDS_VALUE_PROPS
-    )
-    steps = "".join(
-        f'<li><span class="n">{i + 1}</span><div><h3>{e(title)}</h3>'
-        f"<p>{e(body)}</p></div></li>"
-        for i, (title, body) in enumerate(_FOR_BRANDS_STEPS)
-    )
-
-    # Counted, never written down — and absent entirely when there is not
-    # enough to say. See `_for_brands_stats`.
-    proof = "".join(
-        f'<li><span class="fig">{stats[key]}</span>'
-        f'<span class="cap">{e(label)}</span></li>'
-        for key, label in (
-            ("creators", "verified creators"),
-            ("campaigns", "campaigns run"),
-            ("cities", "cities"),
-        )
-        if key in stats
-    )
-    proof_block = (
-        f'<section class="proof"><h2>Where we are today</h2>'
-        f'<ul class="figs">{proof}</ul>'
-        "<p class=\"note\">Counted from the platform, not rounded up. "
-        "Bengaluru first \u2014 that is where our team can stand at the door.</p>"
-        "</section>"
-        if proof
-        else ""
-    )
-
-    return f"""<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>For brands \u2014 WeAre Creators</title>
-<meta name="description" content="{e(summary)}">
-<link rel="canonical" href="{url}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="WeAre Creators">
-<meta property="og:locale" content="en_IN">
-<meta property="og:url" content="{url}">
-<meta property="og:title" content="Creators who turn up, for the launch you are planning">
-<meta property="og:description" content="{e(summary)}">
-<meta property="og:image" content="{og_image}">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Creators who turn up, for the launch you are planning">
-<meta name="twitter:description" content="{e(summary)}">
-<meta name="twitter:image" content="{og_image}">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter+Tight:wght@300..700&display=swap">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=Inter+Tight:wght@300..700&display=swap"></noscript>
-<style>
+    serif = "Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif"
+    return f"""
 *{{box-sizing:border-box}}
 body{{margin:0;background:#0B0A09;color:#F5F1EC;position:relative;
   font:16px/1.65 'Inter Tight',ui-sans-serif,system-ui,-apple-system,sans-serif}}
 /* The same texture `.grain-page` uses in the app, inline because this page
    loads none of our stylesheets. Fixed, so it reads as paper rather than a
-   pattern scrolling behind the text, and blended `overlay` so it lifts the
-   ground instead of recolouring it. */
+   pattern scrolling behind the text. */
 body::before{{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");mix-blend-mode:overlay;opacity:.06}}
-.wrap{{position:relative;z-index:1}}
+  background-image:{grain};mix-blend-mode:overlay;opacity:.06}}
+a{{color:inherit}}
+.wrap{{position:relative;z-index:1;max-width:52rem;margin:0 auto;padding:3rem 1.5rem 4rem}}
+
+/* Nav — glassmorphism per the component rules, never transparent. */
 .nav{{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.6);
   -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
   border-bottom:1px solid rgba(255,255,255,.1)}}
 .navin{{max-width:52rem;margin:0 auto;padding:0 1.5rem;height:4rem;
   display:flex;align-items:center;justify-content:space-between;gap:1rem}}
 .mark{{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;
-  font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-size:1.1rem}}
-.tile{{width:1.75rem;height:1.75rem;display:grid;place-items:center;border-radius:.375rem;
-  background:#F05D14;color:#0B0A09;font-size:.85rem}}
+  font-family:{serif};font-size:1.1rem}}
+.tile{{width:1.75rem;height:1.75rem;display:grid;place-items:center;
+  border-radius:.375rem;background:#F05D14;color:#0B0A09;font-size:.85rem}}
 .navlinks{{display:none;gap:1.5rem}}
 @media(min-width:52rem){{.navlinks{{display:flex}}}}
 .navlink{{font-size:.85rem;color:#9C938B;text-decoration:none}}
@@ -19358,13 +19310,13 @@ body::before{{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
 .navcta{{display:inline-flex;align-items:center;min-height:2.25rem;padding:0 1rem;
   border-radius:999px;background:#F05D14;color:#0B0A09;font-size:.85rem;
   font-weight:500;text-decoration:none;white-space:nowrap}}
-a{{color:inherit}}
-.wrap{{max-width:52rem;margin:0 auto;padding:3rem 1.5rem 4rem}}
+
 .eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#F05D14}}
-h1{{font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);line-height:1.02;
-  letter-spacing:-.02em;margin:1rem 0 0}}
-h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1.5rem}}
-h3{{font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
+h1{{font-family:{serif};font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);
+  line-height:1.02;letter-spacing:-.02em;margin:1rem 0 0}}
+h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;
+  font-weight:500;margin:0 0 1.5rem}}
+h3{{font-family:{serif};font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
 p{{margin:.6rem 0 0;color:rgba(245,241,236,.82)}}
 .sub{{margin-top:1.5rem;font-size:1.05rem;max-width:38rem}}
 section{{margin-top:4rem}}
@@ -19376,44 +19328,254 @@ ul{{list-style:none;margin:0;padding:0}}
 .n{{flex:none;width:2rem;height:2rem;display:grid;place-items:center;border-radius:999px;
   border:1px solid rgba(240,93,20,.4);background:rgba(240,93,20,.12);color:#F05D14;
   font-size:.8rem;font-variant-numeric:tabular-nums}}
-.expect{{border:1px solid rgba(240,93,20,.3);background:rgba(240,93,20,.08);border-radius:.5rem;
-  padding:1.5rem 1.6rem}}
+.expect{{border:1px solid rgba(240,93,20,.3);background:rgba(240,93,20,.08);
+  border-radius:.5rem;padding:1.5rem 1.6rem}}
 .expect p{{color:rgba(245,241,236,.92)}}
 .figs{{display:flex;flex-wrap:wrap;gap:2.5rem}}
-.fig{{display:block;font-family:Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif;font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
-.cap{{display:block;margin-top:.4rem;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:#9C938B}}
+.fig{{display:block;font-family:{serif};font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
+.cap{{display:block;margin-top:.4rem;font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#9C938B}}
 .note{{margin-top:1.75rem;font-size:.85rem;color:#9C938B}}
 .cta{{margin-top:4rem;border-top:1px solid rgba(255,255,255,.1);padding-top:2.5rem}}
-.btn{{display:inline-flex;align-items:center;justify-content:center;min-height:3rem;padding:0 1.75rem;
-  border-radius:999px;background:#F05D14;color:#0B0A09;font-weight:500;text-decoration:none}}
-footer{{margin-top:3.5rem;color:#9C938B;font-size:.82rem;line-height:1.7}}
-footer a{{color:#C9C1B8}}
-</style>
-</head><body>
+.btn{{display:inline-flex;align-items:center;justify-content:center;min-height:3rem;
+  padding:0 1.75rem;border-radius:999px;background:#F05D14;color:#0B0A09;
+  font-weight:500;text-decoration:none}}
 
-<nav class="nav"><div class="navin">
-  <a class="mark" href="{app_base}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
+/* Footer — the HTML twin of `components/Footer.jsx`. */
+.foot{{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.02)}}
+.footin{{max-width:52rem;margin:0 auto;padding:3.5rem 1.5rem}}
+.footgrid{{display:grid;gap:2.5rem}}
+@media(min-width:44rem){{.footgrid{{grid-template-columns:1.2fr 2fr}}}}
+.footcols{{display:grid;grid-template-columns:repeat(2,1fr);gap:2rem}}
+@media(min-width:34rem){{.footcols{{grid-template-columns:repeat(3,1fr)}}}}
+.foothead{{font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;
+  color:rgba(156,147,139,.7);margin:0 0 1rem}}
+.footlink{{display:block;margin-bottom:.75rem;font-size:.85rem;color:#9C938B;
+  text-decoration:none}}
+.footlink:hover{{color:#F05D14}}
+.studio{{margin-top:.75rem;font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:rgba(156,147,139,.8)}}
+.footbar{{margin-top:3rem;padding-top:1.75rem;border-top:1px solid rgba(255,255,255,.1);
+  display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;
+  font-size:.72rem;color:#9C938B}}
+"""
+
+
+def _marketing_nav(app_base: str, cta_href: str, cta_label: str) -> str:
+    """The navigation bar the design guidelines require on desktop.
+
+    Also the practical fix: somebody arriving from WhatsApp otherwise has no
+    way into the rest of the site except the footer.
+    """
+    e = html_escape
+    return f"""<nav class="nav"><div class="navin">
+  <a class="mark" href="{e(app_base)}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
   <div class="navlinks">
-    <a class="navlink" href="{app_base}/campaigns">Live briefs</a>
-    <a class="navlink" href="#how">How it works</a>
-    <a class="navlink" href="{app_base}/login">Log in</a>
+    <a class="navlink" href="{e(app_base)}{FOR_CREATORS_PATH}">For creators</a>
+    <a class="navlink" href="{e(app_base)}{FOR_BRANDS_PATH}">For brands</a>
+    <a class="navlink" href="{e(app_base)}/login">Log in</a>
   </div>
-  <a class="navcta" href="{app_base}/signup?role=brand">Post a campaign</a>
-</div></nav>
+  <a class="navcta" href="{e(app_base)}{e(cta_href)}">{e(cta_label)}</a>
+</div></nav>"""
 
+
+def _marketing_footer(app_base: str) -> str:
+    """The HTML twin of `components/Footer.jsx`, from the mirrored columns."""
+    e = html_escape
+    # The backend's own pair, not the frontend's REACT_APP_* ones: those are
+    # build-time variables for the SPA and this process may never see them.
+    # They mirror `frontend/src/lib/studio.js` and should be set to the same
+    # values — PREVIEW.md says so.
+    studio_name = os.environ.get("STUDIO_NAME", "WeAre Studios")
+    studio_url = (os.environ.get("STUDIO_URL") or "").strip()
+    offering = f"A {studio_name} offering"
+    # A link only when the studio URL is configured — the same rule
+    # `StudioEndorsement` follows. Inventing a domain to fill the gap would be
+    # worse than plain text.
+    studio = (
+        f'<a class="studio" href="{e(studio_url)}" rel="noopener" target="_blank">{e(offering)}</a>'
+        if studio_url
+        else f'<span class="studio">{e(offering)}</span>'
+    )
+
+    cols = "".join(
+        f'<div><p class="foothead">{e(heading)}</p>'
+        + "".join(
+            f'<a class="footlink" href="{e(to if to.startswith("mailto:") else app_base + to)}">{e(label)}</a>'
+            for label, to in links
+        )
+        + "</div>"
+        for heading, links in FOOTER_COLUMNS
+    )
+
+    return f"""<footer class="foot"><div class="footin">
+  <div class="footgrid">
+    <div>
+      <a class="mark" href="{e(app_base)}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
+      <div>{studio}</div>
+      <p style="max-width:20rem;font-size:.85rem">Creator campaigns with the rate agreed
+        in writing, the content approved before it goes live, and a report at the end.</p>
+    </div>
+    <div class="footcols">{cols}</div>
+  </div>
+  <div class="footbar">
+    <span>&copy; {datetime.now(timezone.utc).year} WeAre Monk &middot; Bengaluru, India</span>
+    <a href="mailto:{e(MARKETING_CONTACT)}" style="color:#9C938B;text-decoration:none">{e(MARKETING_CONTACT)}</a>
+  </div>
+</div></footer>"""
+
+
+def _marketing_head(*, title: str, og_title: str, summary: str, path: str, app_base: str) -> str:
+    """Page-specific Open Graph, which is the whole reason these are rendered
+    here rather than routed in the SPA."""
+    e = html_escape
+    url = e(f"{_share_base()}{path}")
+    font = (
+        "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700"
+        "&family=Inter+Tight:wght@300..700&display=swap"
+    )
+    return f"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(summary)}">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{url}">
+<meta property="og:title" content="{e(og_title)}">
+<meta property="og:description" content="{e(summary)}">
+<meta property="og:image" content="{e(app_base)}/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(og_title)}">
+<meta name="twitter:description" content="{e(summary)}">
+<meta name="twitter:image" content="{e(app_base)}/og-image.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="{font}">
+<noscript><link rel="stylesheet" href="{font}"></noscript>
+<style>{_marketing_css()}</style>"""
+
+
+def _proof_strip(stats: dict, labels: tuple) -> str:
+    """The figures, or nothing at all. See `_platform_proof`."""
+    e = html_escape
+    figs = "".join(
+        f'<li><span class="fig">{stats[key]}</span><span class="cap">{e(label)}</span></li>'
+        for key, label in labels
+        if key in stats
+    )
+    if not figs:
+        return ""
+    return (
+        '<section class="proof"><h2>Where we are today</h2>'
+        f'<ul class="figs">{figs}</ul>'
+        '<p class="note">Counted from the platform, not rounded up. Bengaluru first '
+        "— that is where our team can stand at the door.</p></section>"
+    )
+
+
+# --- For brands ---------------------------------------------------------------
+
+_BRAND_VALUE_PROPS = (
+    (
+        "Creators we have actually checked",
+        "Every creator is reviewed by a person before a brand can see them — "
+        "the account, the work, whether the audience looks real. Where a "
+        "creator has connected Instagram, the follower count and engagement "
+        "rate on their profile are read from Instagram itself, and the ones we "
+        "could not measure say so rather than quietly passing as verified.",
+    ),
+    (
+        "Every creator, every rate, in front of you",
+        "You see who applied and what each of them quoted, and the rate is "
+        "recorded against the booking before anybody turns up. No retainer, and "
+        "no markup on what the creator charges — our fee sits on top and is "
+        "shown to you before you confirm, so the number the creator quoted is "
+        "the number the creator gets.",
+    ),
+    (
+        "Run it yourself, or hand it to the team",
+        "WeAre Studios runs campaigns for a living. Post the brief and manage "
+        "it from your own dashboard, or hand it over and we will staff it, book "
+        "the slots, stand at the door on the day and send you the numbers "
+        "afterwards. You choose per campaign, and you can choose differently "
+        "next time.",
+    ),
+)
+
+_BRAND_STEPS = (
+    (
+        "Post your brief",
+        "What you want made, the budget per creator, the dates, and which days "
+        "and hours your venue can actually take people. Ten minutes.",
+    ),
+    (
+        "Review applicants, or our suggestions",
+        "Creators apply with a pitch and a rate. Alongside them we rank the "
+        "verified creators who fit the brief, with the reason on every card so "
+        "you can argue with it. Accept who you want, or invite them directly.",
+    ),
+    (
+        "They shoot on slots they booked",
+        "Inside the days and hours you set. Your campaign manager holds the "
+        "roster and the phone numbers, and you are told what changes.",
+    ),
+    (
+        "Approve it, then see what it did",
+        "Turn on draft review and nothing is published until you have said yes "
+        "— or asked for a change. Afterwards: reach, engagement and cost per "
+        "thousand, on one report you can send on.",
+    ),
+)
+
+
+def _for_brands_html(stats: dict, request_base: str = "") -> str:
+    e = html_escape
+    app_base = (os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/")
+    summary = (
+        "Verified creators, rates agreed before anyone shoots, and a report at "
+        "the end. Post a brief and run it yourself, or hand the campaign to the "
+        "WeAre Studios team."
+    )
+    cta = f'<a class="btn" href="{e(app_base)}/signup?role=brand">Post a campaign</a>'
+
+    props = "".join(
+        f"<li><h3>{e(t)}</h3><p>{e(b)}</p></li>" for t, b in _BRAND_VALUE_PROPS
+    )
+    steps = "".join(
+        f'<li><span class="n">{i + 1}</span><div><h3>{e(t)}</h3><p>{e(b)}</p></div></li>'
+        for i, (t, b) in enumerate(_BRAND_STEPS)
+    )
+    proof = _proof_strip(
+        stats,
+        (("creators", "verified creators"), ("campaigns", "campaigns run"),
+         ("brands", "brands on board")),
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+{_marketing_head(
+    title="For brands — WeAre Creators",
+    og_title="Your creator campaigns, handled properly",
+    summary=summary,
+    path=FOR_BRANDS_PATH,
+    app_base=app_base,
+)}
+</head><body>
+{_marketing_nav(app_base, "/signup?role=brand", "Post a campaign")}
 <div class="wrap">
 
-<p class="eyebrow">For brands \u00b7 Bengaluru</p>
-<h1>Fill the room. Launch the thing. With creators who turn up.</h1>
+<p class="eyebrow">For brands · Bengaluru</p>
+<h1>Your creator campaigns, handled properly.</h1>
 <p class="sub">
-  Two ways to work with us: post a brief yourself and pick from the creators who
-  apply, or hand the campaign to the WeAre team and we will run it end to end.
-  Either way the rate is agreed before the shoot and the content is yours to
-  approve before it goes live.
+  Verified creators, rates agreed before anyone shoots, and results you can
+  show. Post a brief and run it yourself from your own dashboard, or hand the
+  campaign to the WeAre Studios team and we will run it end to end.
 </p>
-<p style="margin-top:2rem">
-  <a class="btn" href="{app_base}/signup?role=brand">Post a campaign</a>
-</p>
+<p style="margin-top:2rem">{cta}</p>
 
 <section>
   <h2>Why brands use us</h2>
@@ -19429,8 +19591,8 @@ footer a{{color:#C9C1B8}}
   <div class="expect">
     <h3>What happens after you sign up</h3>
     <p>
-      We check your business details first \u2014 usually within a working day,
-      and you hear from us either way. You can write your first brief while you
+      We check your business details first — usually within a working day, and
+      you hear from us either way. You can write your first brief while you
       wait; it goes in front of creators the moment you are verified. Expect the
       first applications within a day or two of going live, and most of them
       inside the first week. A brief with a cover image and a clear fee fills
@@ -19439,27 +19601,172 @@ footer a{{color:#C9C1B8}}
   </div>
 </section>
 
-{proof_block}
+{proof}
 
-<div class="cta">
-  <a class="btn" href="{app_base}/signup?role=brand">Post a campaign</a>
+<div class="cta">{cta}</div>
+
 </div>
+{_marketing_footer(app_base)}
+</body></html>"""
 
-<footer>
-  WeAre Creators is the platform WeAre Studios runs its campaigns on. Creators
-  are reviewed by our team before a brand can see them, and brands are checked
-  before a brief reaches a creator.
-  <br><a href="{app_base}/">Back to the main site</a>
-</footer>
 
-</div></body></html>"""
+# --- For creators -------------------------------------------------------------
+
+_CREATOR_VALUE_PROPS = (
+    (
+        "Real paid briefs, in one place",
+        "Every brief on the platform comes from a business we have checked — "
+        "the legal entity, the paperwork, the person asking on its behalf. You "
+        "can see who is posting before you spend an evening on a pitch, and a "
+        "brand that has not been through that cannot reach you at all.",
+    ),
+    (
+        "Your rate, in writing, before you shoot",
+        "You quote your own rate when you apply. It is agreed and recorded "
+        "against the booking before the shoot happens, so nobody is negotiating "
+        "on the day and there is no argument afterwards about what was said in a "
+        "DM three weeks ago.",
+    ),
+    (
+        "You keep all of it, and you are paid on delivery",
+        "The rate you agreed is the amount you are paid. Our fee is charged to "
+        "the brand on top, never taken out of yours. Payment goes out once the "
+        "brand approves what you delivered — you are not chasing an invoice, and "
+        "you are not waiting on somebody to remember.",
+    ),
+)
+
+_CREATOR_STEPS = (
+    (
+        "Build your profile",
+        "Name and a WhatsApp number to start. The rest — your city, what you "
+        "make, your rate, links to your work — you fill in over as many sittings "
+        "as it takes. Connect Instagram if you want your follower count and "
+        "engagement read from Instagram itself rather than typed in.",
+    ),
+    (
+        "Get verified",
+        "Send it for review when it is complete. Somebody on our team reads it "
+        "and comes back to you. Once you are verified you can pitch on anything "
+        "open.",
+    ),
+    (
+        "Pitch, and agree the rate",
+        "Apply with a note and the rate you want. If the brand takes you on, the "
+        "figure is agreed and written down before anything is booked. Then you "
+        "pick a slot that suits you, inside the hours the venue can take people.",
+    ),
+    (
+        "Shoot, deliver, get paid",
+        "Turn up and make the thing. On campaigns that review drafts you send "
+        "yours first and publish once it is approved — which means no request to "
+        "take down a post that is already live. Payment follows approval, to the "
+        "UPI ID on your profile.",
+    ),
+)
+
+
+def _for_creators_html(stats: dict, request_base: str = "") -> str:
+    e = html_escape
+    app_base = (os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/")
+    summary = (
+        "Paid briefs from businesses we have checked, your rate agreed in "
+        "writing before you shoot, and payment on approved delivery. Free to "
+        "join."
+    )
+    cta = f'<a class="btn" href="{e(app_base)}/signup?role=creator">Join as a creator</a>'
+
+    props = "".join(
+        f"<li><h3>{e(t)}</h3><p>{e(b)}</p></li>" for t, b in _CREATOR_VALUE_PROPS
+    )
+    steps = "".join(
+        f'<li><span class="n">{i + 1}</span><div><h3>{e(t)}</h3><p>{e(b)}</p></div></li>'
+        for i, (t, b) in enumerate(_CREATOR_STEPS)
+    )
+    proof = _proof_strip(
+        stats,
+        (("brands", "verified brands"), ("campaigns", "campaigns run"),
+         ("creators", "creators on the platform")),
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+{_marketing_head(
+    title="For creators — WeAre Creators",
+    og_title="Paid briefs, with the rate agreed before you shoot",
+    summary=summary,
+    path=FOR_CREATORS_PATH,
+    app_base=app_base,
+)}
+</head><body>
+{_marketing_nav(app_base, "/signup?role=creator", "Join as a creator")}
+<div class="wrap">
+
+<p class="eyebrow">For creators · Bengaluru</p>
+<h1>Know the rate. Know the brand. Get paid.</h1>
+<p class="sub">
+  Paid briefs from businesses we have checked, in one place — with your rate
+  agreed in writing before you shoot, and payment that follows approved
+  delivery instead of a reminder you have to send.
+</p>
+<p style="margin-top:2rem">{cta}</p>
+
+<section>
+  <h2>Why creators are here</h2>
+  <ul class="props">{props}</ul>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+  <ul class="steps">{steps}</ul>
+</section>
+
+<section>
+  <div class="expect">
+    <h3>What we ask of you, and what it costs</h3>
+    <p>
+      <strong>Joining is free, and it stays free.</strong> There is no
+      subscription, no listing fee and nothing deducted from your rate — we
+      charge the brand, not you.
+    </p>
+    <p>
+      What we ask is a complete profile and a review before you pitch: your
+      city, what you make, your rate, and links to your work, so a brand
+      deciding between people has something real to read. Payout details — UPI
+      and PAN — are only needed when there is money to send you, and they are
+      never part of what a brand can see.
+    </p>
+    <p>
+      Turning up matters. Attendance is recorded at the venue, and a brief you
+      accepted is a day somebody has planned around.
+    </p>
+  </div>
+</section>
+
+{proof}
+
+<div class="cta">{cta}</div>
+
+</div>
+{_marketing_footer(app_base)}
+</body></html>"""
 
 
 @app.get(FOR_BRANDS_PATH, include_in_schema=False)
 async def for_brands_page(request: Request):
     """The page we send a venue owner. No account, no API prefix."""
     return Response(
-        content=_for_brands_html(await _for_brands_stats(), str(request.base_url)),
+        content=_for_brands_html(await _platform_proof(), str(request.base_url)),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=600"},
+    )
+
+
+@app.get(FOR_CREATORS_PATH, include_in_schema=False)
+async def for_creators_page(request: Request):
+    """The same, pointed the other way."""
+    return Response(
+        content=_for_creators_html(await _platform_proof(), str(request.base_url)),
         media_type="text/html; charset=utf-8",
         headers={"Cache-Control": "public, max-age=600"},
     )
@@ -19492,7 +19799,10 @@ async def public_sitemap():
 
     # The one page here that is not about a specific brand or brief, and the
     # only one a stranger might search for rather than be sent.
-    urls = [(f"{_share_base()}{FOR_BRANDS_PATH}", None)]
+    urls = [
+        (f"{_share_base()}{FOR_BRANDS_PATH}", None),
+        (f"{_share_base()}{FOR_CREATORS_PATH}", None),
+    ]
     urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
 

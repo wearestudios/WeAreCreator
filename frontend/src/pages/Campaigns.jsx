@@ -12,6 +12,7 @@ import {
     ArrowDownUp,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import {
     CardGridSkeleton,
     FilterChips,
@@ -685,6 +686,8 @@ export default function Campaigns() {
                     </p>
                 )}
             </main>
+
+            <Footer />
         </div>
     );
 }

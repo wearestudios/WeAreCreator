@@ -721,17 +721,59 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
 - `lib/visibility.js` mirrors the reader (absent means public) and holds the
   two options' wording.
 
-### The page we send a venue owner
+## The marketing site
 
-`GET /for-brands`. The landing page speaks to both sides at once because it has
-to; this one has a single audience and asks once.
+Three pages for three jobs. **Home routes, the audience pages sell.** `/`
+speaks to both sides because it is the front door and cannot know who arrived;
+it leads with the problem, states the promise, and offers exactly two ways on —
+"I'm a creator" and "I'm a brand". `/for-creators` and `/for-brands` each have
+one reader and ask once.
+
+**The positioning governs every word, and it is not "against agencies".** WeAre
+Studios is one, and the managed service is a real offering somebody chooses —
+"without an agency" or "cut out the middleman" would be a page arguing against
+our own product. **The enemy named is disorganisation**: campaigns run over DMs
+and spreadsheets, nobody checked, no rate in writing, no proof of what it
+achieved. That is the kind of thing a well-meaning copy edit undoes by
+accident, so `test_marketing_pages.py` pins it.
+
+What each audience must come away knowing is also pinned there — for creators,
+that briefs are real and paid, the rate is agreed in writing before they shoot,
+they keep 100% of it because the fee sits on the brand, payment follows
+approved delivery, brands are checked, and joining is free; for brands, real
+audience stats, every creator and every rate visible, no retainer and no markup
+on creator fees, approval before publication, a report at the end, and the
+self-serve/managed choice **as an option, never as a fee they are locked into**.
+
+- **Each page asks once, in the same words, twice** — hero and close, plus the
+  nav button. Two differently-worded CTAs is a choice of doors; one repeated is
+  an ask.
+- The two audience pages carry **their own Open Graph tags and their own
+  canonical**, because each is a link somebody pastes into a chat and the
+  preview is the product.
+- Home is the only one the SPA renders, which is how it came to carry claims
+  the other two are forbidden to make — an eight-city strip, a "Tech & gadgets"
+  category with no enum behind it, "no free product standing in for money" on a
+  product with barter briefs, and a four-step flow written before the draft
+  gate. It is now **held to the same tests**.
+- **Home hotlinks stock photography and the other two fetch nothing.** That is
+  the one remaining inconsistency and it is not fixable in code: the answer is
+  owned photography from real shoots, self-hosted. `SlideImage` carries a
+  `NEEDS A DECISION` note and a test keeps it there rather than letting it
+  settle in.
+
+### The audience pages
+
+`GET /for-creators` and `GET /for-brands`, off one shell — `_marketing_head`,
+`_marketing_nav`, `_marketing_footer`, `_marketing_css`, `_proof_strip`. Two
+bespoke pages would be two design systems inside a week.
 
 **Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason** —
 the crawler that builds a WhatsApp preview does not run JavaScript, so Open
-Graph tags injected by React are tags nobody ever sees. Vercel must proxy
-`/for-brands` alongside the other two; the nav entry and the landing's brand
-toggle are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
-lands on the SPA's catch-all. It is in the sitemap: the one public page here
+Graph tags injected by React are tags nobody ever sees. Vercel must proxy both
+alongside the other two; the nav entries, the footer's and the landing's two
+paths are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
+lands on the SPA's catch-all. Both are in the sitemap: the public pages here
 somebody might search for rather than be sent.
 
 - **The font loads without blocking.** "Previews well and loads fast" and
@@ -751,7 +793,7 @@ somebody might search for rather than be sent.
   the logo and CTA stay.
 - The grain comes from the same `feTurbulence` texture `.grain-page` uses,
   inlined because this page loads none of our stylesheets.
-- **Every proof figure is counted, never written down.** `_for_brands_stats`
+- **Every proof figure is counted, never written down.** `_platform_proof`
   queries them, and each appears only above a floor: a strip reading "3
   creators" is not proof, it is a reason to close the tab, and the honest move
   at that size is silence rather than rounding up. With nothing to say, the
@@ -759,15 +801,68 @@ somebody might search for rather than be sent.
   `in_progress` or beyond — a count of posted briefs would be a count of
   abandoned drafts. A test strips the markup and fails on any bare numeral in
   the copy, which is where a "500+" would otherwise hide.
-- Claims stay inside what the operation can back: a test fails the page for
+- Claims stay inside what the operation can back: a test fails either page for
   "every city", "pan-India", "guaranteed" and the rest, and requires the word
   Bengaluru. Same rule as everywhere else here.
-- Two CTAs — hero and close — and they say **the same words**, so the page asks
-  once in two places rather than offering a choice of doors. The nav's own
-  button is the same words again.
-- The headline covers **both** shapes of work — "Fill the room. Launch the
-  thing." A venue-only headline reads past the label launching a collection,
-  which the main landing already names as one of the four audiences.
+- Neither page asks for the other's audience. A "join as a creator" link on the
+  brand page is the competing second door the single-CTA rule exists to stop.
+- The brand headline covers **both** shapes of work — "Fill the room. Launch
+  the thing." A venue-only headline reads past the label launching a
+  collection, which the main landing already names as one of its audiences.
+
+### The footer
+
+There wasn't one. Every marketing page ended at its closing CTA, so the only
+way to reach terms, privacy or a human was to already know the URL — and a
+consent checkbox pointing at pages nothing links to is a consent record that is
+hard to defend.
+
+`components/Footer.jsx` for the SPA, `_marketing_footer()` for the two
+server-rendered pages, and **`lib/siteNav.js` is the one link list**, mirrored
+by `FOOTER_COLUMNS` in `server.py` with a drift test — the same arrangement
+`followerTiers.js` and `shootWindows.js` use, for the same reason: two
+renderers with two copies is how a footer advertises a page that moved.
+`FooterLink` picks `<a>` over `<Link>` on `link.external`, which is what marks
+the backend-rendered destinations.
+
+It is on **every page a signed-out person can land on** — Landing, Legal,
+Campaigns, CampaignDetail, and both audience pages. Deliberately not the admin
+console, the manager screens or the dashboards: those are dense working
+surfaces under a sticky header, and a marketing footer under a data table is
+noise rather than navigation. The OTP screens are the other exception — one
+focused task, and `Signup` already links both documents inline, at the moment
+consent is actually recorded.
+
+The copyright names **WeAre Monk**, the entity that was already in that line.
+Who owns the thing is a fact, not a copy decision, so it is carried over rather
+than re-branded to match the product name. The year is read at render.
+
+### Terms and privacy
+
+`pages/Legal.jsx`, and the rule is that they describe **what the product
+actually does**, checked against the code rather than against a list somebody
+typed. A privacy page that describes a data flow we removed is worse than a
+placeholder, because somebody reads it and believes it — and that is not
+hypothetical: this page said, months after it stopped being true, that a brand
+received a creator's contact details on acceptance, which is the strongest
+promise the product now makes, described backwards.
+
+`test_legal_pages.py` walks the classes of data the product really handles and
+fails if the page does not name them: the WhatsApp number, the delivery address
+*and* the map pin as two different things, the business documents and what is
+inside them, Instagram as official-API-and-read-only with an encrypted token,
+UPI and PAN, and the records a collaboration leaves — including the draft,
+which is content that is not public yet. The terms carry the draft gate, the
+24-hour slot window, `execution_owner`, invite-only briefs, barter, and
+re-review after a material profile edit. "Vets"/"vetted" are banned in the copy
+too, not just in the code.
+
+**What needs a lawyer is flagged, never invented.** A `NEEDS A LAWYER` block in
+the file header lists the DPDP Act 2023 duties, retention periods, how long
+business documents may be held after a decision, unpublished drafts, whether a
+coordinate is sensitive personal data, content licensing and Meta's platform
+terms. A test keeps that block present — deleting it is how "this needs review"
+quietly becomes "this looks finished".
 
 ### The shareable page
 
