@@ -22,14 +22,17 @@
 // is reached with the R key. Approvals are still optimistic.
 import React, { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
-import { Keyboard } from "lucide-react";
+import { Keyboard, Menu } from "lucide-react";
 
 import { Navbar } from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SHORTCUTS } from "@/constants/testIds";
 import { CommandPalette } from "@/components/admin/CommandPalette";
-import AdminSidebar, { ADMIN_SECTIONS } from "@/components/admin/console/Sidebar";
+import AdminSidebar, {
+    ADMIN_SECTIONS,
+    AdminNavSheet,
+} from "@/components/admin/console/Sidebar";
 import ShortcutsOverlay from "@/components/admin/console/ShortcutsOverlay";
 import { isTyping } from "@/components/admin/console/useTableKeys";
 import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
@@ -59,6 +62,8 @@ export default function AdminConsole() {
     const [counts, setCounts] = useState(null);
     const [feePercent, setFeePercent] = useState(null);
     const [showKeys, setShowKeys] = useState(false);
+    // The sections, on a screen too narrow for a rail.
+    const [showNav, setShowNav] = useState(false);
     const { pathname } = useLocation();
 
     // One dashboard call feeds every badge, refreshed after any action so a
@@ -114,9 +119,24 @@ export default function AdminConsole() {
                     rather than pushing the sidebar off the screen. */}
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2">
-                        <p className={`${TEXT.meta} uppercase tracking-[0.16em] text-muted-foreground`}>
-                            WeAre · Admin
-                        </p>
+                        <div className="flex min-w-0 items-center gap-2">
+                            {/* Below `md` this is the only way to the other
+                                sections — the rail is hidden there, because
+                                nine unlabelled icons in 56px is navigation you
+                                have to already know. */}
+                            <button
+                                type="button"
+                                onClick={() => setShowNav(true)}
+                                data-testid={SHELL_IDS.mobileNavOpen}
+                                aria-label="Sections"
+                                className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground md:hidden ${FOCUS}`}
+                            >
+                                <Menu className="h-4 w-4" />
+                            </button>
+                            <p className={`${TEXT.meta} truncate uppercase tracking-[0.16em] text-muted-foreground`}>
+                                WeAre · Admin
+                            </p>
+                        </div>
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
@@ -124,7 +144,7 @@ export default function AdminConsole() {
                                 data-testid={ADMIN_SHORTCUTS.open}
                                 aria-label="Keyboard shortcuts"
                                 title="Keyboard shortcuts (?)"
-                                className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                                className={`hidden h-8 w-8 place-items-center rounded md:grid ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
                             >
                                 <Keyboard className="h-4 w-4" />
                             </button>
@@ -162,6 +182,7 @@ export default function AdminConsole() {
                 </div>
             </div>
 
+            <AdminNavSheet open={showNav} onOpenChange={setShowNav} counts={counts} />
             <ShortcutsOverlay open={showKeys} onOpenChange={setShowKeys} />
         </div>
     );

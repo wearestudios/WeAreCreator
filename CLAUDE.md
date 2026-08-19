@@ -1647,6 +1647,40 @@ holds every rule below.
   and a column header can carry the id its sort chip used to. Changing the
   layout is not a reason to break "the element for creator X".
 
+#### On a phone it is not a table at all
+
+A table earns its keep by letting you read *across*, and at 390px there is no
+across: six columns become two and the rest — **including every action** — sit
+behind a sideways scroll nobody finds. Measured on the action queue, whose
+entire purpose is the approve/reject pair: both were off-screen. The first
+attempt at a fix made it worse in a different way, squashing the name column to
+nothing and overlapping two headers.
+
+- **Below `md`, `DataTable` renders a stacked list of the same rows**, and the
+  call site says which column goes where: `mobile: "primary" | "meta" |
+  "trailing" | "action"`. No hint means desktop-only, which is the honest
+  default — most columns exist to be compared, and comparison is the thing a
+  phone cannot do. A test fails a list that declares no `primary`, and one
+  with decisions that declares no `action`.
+- `useWide()` reads `matchMedia` **synchronously on first render**, so neither
+  form appears for a frame before being replaced. Only one of the two is in
+  the DOM.
+- **The phone list is not its own scroll container** — the page scrolls, which
+  is what a phone expects, and a fixed-height box inside a short viewport is
+  worse than the problem it solves. That means no windowing there: measured,
+  400 rows all render. The lists that get long are paginated at 50 or capped
+  at 200, so the ceiling is the audit log at 200 rows.
+- `mobileCell` is the escape hatch for a value whose desktop form is a
+  compromise with a column width — used once, for the queue's overdue marker,
+  which is "!" in a 7rem column and "· overdue" where there is room.
+- **The icon rail is not the phone's navigation.** 56px of a 390px screen is
+  14% of the width spent on nine unlabelled glyphs, on a device with no hover
+  to explain them — the `title` that carries the rail on a laptop is invisible
+  under a finger. The rail is `hidden md:flex`; below that the sections are
+  `AdminNavSheet`, opened from the console's own header. Both render the same
+  `SectionLink`, so a phone cannot find a different set of sections from a
+  laptop, and the badge is a number wherever there is room to read one.
+
 Backed by three detail endpoints — `GET /admin/campaigns/{id}`,
 `/admin/brands/{user_id}`, `/admin/collaborations/{id}` — each **declared after
 its fixed-path siblings**, or `pending` gets read as an id and the fixed route

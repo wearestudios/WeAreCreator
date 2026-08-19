@@ -118,6 +118,7 @@ function ReviewQueue({ config, onChanged }) {
         () => [
             {
                 key: "primary",
+                mobile: "primary",
                 header: config.rowHeader || "Waiting",
                 sortable: true,
                 value: (r) => String(config.primary(r) || ""),
@@ -130,6 +131,7 @@ function ReviewQueue({ config, onChanged }) {
             },
             {
                 key: "secondary",
+                mobile: "meta",
                 header: "Detail",
                 hideBelow: true,
                 cell: (r) => (
@@ -138,6 +140,7 @@ function ReviewQueue({ config, onChanged }) {
             },
             {
                 key: "since",
+                mobile: "meta",
                 header: "Waiting",
                 sortable: true,
                 numeric: true,
@@ -149,6 +152,7 @@ function ReviewQueue({ config, onChanged }) {
             },
             {
                 key: "decision",
+                mobile: "action",
                 header: "",
                 width: "w-40",
                 cell: (r) => {

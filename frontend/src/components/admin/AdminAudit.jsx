@@ -136,6 +136,7 @@ export default function AdminAudit() {
         () => [
             {
                 key: "created_at",
+                mobile: "trailing",
                 header: "When",
                 sortable: true,
                 width: "w-32",
@@ -144,6 +145,7 @@ export default function AdminAudit() {
             },
             {
                 key: "actor_name",
+                mobile: "meta",
                 header: "Who",
                 sortable: true,
                 width: "w-44",
@@ -159,6 +161,7 @@ export default function AdminAudit() {
             },
             {
                 key: "action",
+                mobile: "primary",
                 header: "Did what",
                 sortable: true,
                 value: (r) => ACTION_LABEL[r.action] || r.action || "",
@@ -170,6 +173,7 @@ export default function AdminAudit() {
             },
             {
                 key: "change",
+                mobile: "meta",
                 header: "Change",
                 hideBelow: true,
                 width: "w-44",

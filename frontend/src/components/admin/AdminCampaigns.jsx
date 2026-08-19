@@ -245,6 +245,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
         () => [
             {
                 key: "title",
+                mobile: "primary",
                 header: "Brief",
                 sortable: true,
                 value: (c) => c.title || "",
@@ -253,10 +254,14 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                         {/* Kept as its own control: the chevron says "look
                             inside", the title says "go there". One row, two
                             different intentions. */}
+                        {/* The table's "look inside" affordance. Hidden on a
+                            phone, where the whole row is the tap target and a
+                            disclosure caret next to every title is chrome
+                            pretending to be a control. */}
                         <ChevronDown
                             data-testid={IDS.expand(c.id)}
                             aria-hidden
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60"
+                            className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/60 md:block"
                         />
                         <Link
                             to={`/admin/campaigns/${c.id}`}
@@ -278,6 +283,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             },
             {
                 key: "brand_name",
+                mobile: "meta",
                 header: "Brand",
                 sortable: true,
                 hideBelow: true,
@@ -290,6 +296,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             },
             {
                 key: "status",
+                mobile: "meta",
                 header: "Status",
                 sortable: true,
                 width: "w-36",
@@ -322,6 +329,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             },
             {
                 key: "filled",
+                mobile: "meta",
                 header: "Filled",
                 sortable: true,
                 numeric: true,
@@ -335,6 +343,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             },
             {
                 key: "budget_per_creator",
+                mobile: "trailing",
                 header: "Per creator",
                 sortable: true,
                 numeric: true,
@@ -370,6 +379,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             },
             {
                 key: "decision",
+                mobile: "action",
                 header: "",
                 // Wide enough for the widest pair, measured: "Send back" and
                 // "Approve" side by side clipped to "end back" at w-36.

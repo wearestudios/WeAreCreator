@@ -23,6 +23,19 @@
 // more than it saves and breaks ⌘F; past a few hundred it is the difference
 // between a list that scrolls and one that stutters. The switch is automatic
 // so no call site has to decide.
+//
+// **Below `md` it is not a table at all.** A table earns its keep by letting
+// you read *across* — and on a 390px screen there is no across: six columns
+// become two, and the rest, including every action, sit behind a sideways
+// scroll nobody finds. Measured on the action queue, whose entire purpose is
+// the approve/reject pair: both were off-screen.
+//
+// So the phone gets a stacked list of the same rows — identity, then the two
+// or three facts worth carrying, then the actions — and the table appears at
+// `md`. Which fact goes where is the call site's decision, declared per column
+// as `mobile: "primary" | "meta" | "trailing" | "action"`. A column with no
+// hint is desktop-only, which is the honest default: most of them are there to
+// be compared, and comparison is the thing a phone cannot do.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 
@@ -39,6 +52,29 @@ import { ADMIN_TABLE as IDS } from "@/constants/testIds";
 
 /** Rows past which the body is windowed. Below it, everything is in the DOM. */
 const VIRTUALISE_ABOVE = 150;
+
+/** Where the table starts. Tailwind's `md`, read once and shared. */
+const WIDE = "(min-width: 768px)";
+
+/**
+ * True where there is room for a table.
+ *
+ * Read synchronously rather than defaulted, so neither form renders for a
+ * frame before being replaced — a list that swaps shape on mount is a layout
+ * shift, which is the thing this console measures itself on.
+ */
+function useWide() {
+    const [wide, setWide] = useState(() =>
+        typeof window === "undefined" ? true : window.matchMedia(WIDE).matches,
+    );
+    useEffect(() => {
+        const mq = window.matchMedia(WIDE);
+        const on = () => setWide(mq.matches);
+        mq.addEventListener("change", on);
+        return () => mq.removeEventListener("change", on);
+    }, []);
+    return wide;
+}
 /** Rows rendered beyond the viewport, so a fast scroll does not show gaps. */
 const OVERSCAN = 8;
 
@@ -54,6 +90,10 @@ const OVERSCAN = 8;
  * @property {Function} [value] (row) => comparable, for sorting
  * @property {string}  [width]  a Tailwind width, for columns that must not flex
  * @property {boolean} [hideBelow] hide under `lg` — secondary columns
+ * @property {string}  [mobile] where the phone puts it: "primary" | "meta" |
+ *   "trailing" | "action". Unset means desktop-only.
+ * @property {Function} [mobileCell] (row) => node, when the phone has room to
+ *   say something the column's width could not — an escape hatch, used once.
  */
 
 function SortIcon({ dir }) {
@@ -119,8 +159,14 @@ export function DataTable({
     const localRef = useRef(null);
     const bodyRef = scrollRef || localRef;
     const [range, setRange] = useState({ start: 0, end: 60 });
+    const wide = useWide();
 
-    const virtual = rows.length > VIRTUALISE_ABOVE;
+    // **Windowing is a desktop-only concern here**, because the phone list is
+    // not its own scroll container — the page scrolls, which is what a phone
+    // expects, and a fixed-height box inside a short viewport is worse than
+    // the problem it solves. The lists that can get long are paginated at 50
+    // or capped at 200 anyway.
+    const virtual = wide && rows.length > VIRTUALISE_ABOVE;
 
     const recompute = useCallback(() => {
         const el = bodyRef.current;
@@ -162,8 +208,23 @@ export function DataTable({
         );
     };
 
-    if (loading) return <TableSkeleton columns={columns} testid={testid} />;
+    if (loading) return <TableSkeleton columns={columns} testid={testid} wide={wide} />;
     if (!rows.length && empty) return empty;
+
+    if (!wide) {
+        return (
+            <MobileList
+                columns={columns}
+                rows={rows}
+                rowKey={rowKey}
+                rowTestId={rowTestId}
+                focused={focused}
+                onFocus={onFocus}
+                onOpen={onOpen}
+                testid={testid}
+            />
+        );
+    }
 
     return (
         <div className={`${PANEL} overflow-hidden`} data-testid={testid}>
@@ -296,13 +357,113 @@ export function DataTable({
     );
 }
 
+
+/** The columns a phone shows, in the three places it has for them. */
+const pick = (columns, where) => columns.filter((c) => c.mobile === where);
+
+/**
+ * The same rows, stacked.
+ *
+ * One row is two lines and its actions: what it is, what you need to know
+ * about it, and what you can do — in that order, because on a phone you are
+ * checking one thing rather than comparing forty. Tapping it opens the same
+ * peek panel the table's row does.
+ */
+function MobileList({ columns, rows, rowKey, rowTestId, focused, onFocus, onOpen, testid }) {
+    const primary = pick(columns, "primary");
+    const meta = pick(columns, "meta");
+    const trailing = pick(columns, "trailing");
+    const actions = pick(columns, "action");
+
+    return (
+        <ul className={`${PANEL} divide-y divide-white/5`} data-testid={testid}>
+            {rows.map((row, index) => (
+                <li
+                    key={rowKey(row, index)}
+                    data-row-index={index}
+                    data-testid={rowTestId ? rowTestId(row, index) : IDS.row(rowKey(row, index))}
+                    tabIndex={0}
+                    onFocus={() => onFocus?.(index)}
+                    onClick={() => onOpen?.(index)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onOpen?.(index);
+                        }
+                    }}
+                    className={`flex items-start gap-3 ${DENSITY.row} ${CALM} ${FOCUS} ${
+                        index === focused ? "bg-white/[0.06]" : ""
+                    }`}
+                >
+                    <div className="min-w-0 flex-1">
+                        <div className={`flex min-w-0 items-center gap-2 ${TEXT.body}`}>
+                            {primary.map((col) => (
+                                <React.Fragment key={col.key}>{col.cell(row, index)}</React.Fragment>
+                            ))}
+                        </div>
+                        {meta.length > 0 && (
+                            <div className={`mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 ${TEXT.meta} text-muted-foreground`}>
+                                {meta.map((col) => {
+                                    // A column that renders nothing for this
+                                    // row leaves no gap: the queue's state is
+                                    // absent on a payout, and an empty span
+                                    // between two dots reads as missing data.
+                                    const render = col.mobileCell || col.cell;
+                                    const node = render(row, index);
+                                    if (node == null || node === false) return null;
+                                    return (
+                                        <span key={col.key} className="min-w-0 max-w-full truncate">
+                                            {node}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        {trailing.map((col) => (
+                            <span key={col.key} className={`${TEXT.body} tabular-nums`}>
+                                {col.cell(row, index)}
+                            </span>
+                        ))}
+                        {actions.map((col) => (
+                            <React.Fragment key={col.key}>{col.cell(row, index)}</React.Fragment>
+                        ))}
+                    </div>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
 /**
  * The loading state: the table's own shape.
  *
  * Same columns, same row height, same header — so the swap when data arrives
  * costs no layout shift and the eye is already where the first row will be.
  */
-export function TableSkeleton({ columns, rows = 10, testid, minWidth = "min-w-[52rem]" }) {
+export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidth = "min-w-[52rem]" }) {
+    if (!wide) {
+        // Two lines and a value on the right, which is the mobile row.
+        return (
+            <ul
+                className={`${PANEL} divide-y divide-white/5`}
+                aria-hidden
+                data-testid={testid ? `${testid}-skeleton` : undefined}
+            >
+                {Array.from({ length: rows }).map((_, r) => (
+                    <li key={r} className={`flex items-start gap-3 ${DENSITY.row}`}>
+                        <div className="min-w-0 flex-1">
+                            <div className="h-3.5 w-2/5 rounded bg-white/5" />
+                            <div className="mt-2 h-3 w-3/5 rounded bg-white/5" />
+                        </div>
+                        <div className="h-3.5 w-12 shrink-0 rounded bg-white/5" />
+                    </li>
+                ))}
+            </ul>
+        );
+    }
     return (
         <div className={`${PANEL} overflow-hidden`} data-testid={testid ? `${testid}-skeleton` : undefined}>
             {/* The same overflow container, the same `table-fixed`, the same

@@ -119,6 +119,7 @@ export default function AdminCreators() {
         () => [
             {
                 key: "name",
+                mobile: "primary",
                 header: "Creator",
                 sortable: true,
                 value: (c) => c.name || "",
@@ -135,6 +136,7 @@ export default function AdminCreators() {
             },
             {
                 key: "verification_status",
+                mobile: "meta",
                 header: "Status",
                 sortable: true,
                 width: "w-36",
@@ -144,6 +146,7 @@ export default function AdminCreators() {
             },
             {
                 key: "city",
+                mobile: "meta",
                 header: "City",
                 sortable: true,
                 hideBelow: true,
@@ -161,6 +164,7 @@ export default function AdminCreators() {
             },
             {
                 key: "follower_count",
+                mobile: "trailing",
                 header: "Followers",
                 sortable: true,
                 numeric: true,

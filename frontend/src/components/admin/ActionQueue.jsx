@@ -421,6 +421,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
         () => [
             {
                 key: "kind",
+                mobile: "meta",
                 header: "Kind",
                 sortable: true,
                 width: "w-40",
@@ -440,6 +441,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             },
             {
                 key: "primary",
+                mobile: "primary",
                 header: "Waiting on you",
                 sortable: true,
                 value: (i) => String(i.primary || ""),
@@ -473,6 +475,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             },
             {
                 key: "state",
+                mobile: "meta",
                 header: "State",
                 width: "w-36",
                 hideBelow: true,
@@ -480,6 +483,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             },
             {
                 key: "since",
+                mobile: "meta",
                 header: "Age",
                 sortable: true,
                 numeric: true,
@@ -489,7 +493,9 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     <span
                         data-testid={IDS.rowAge(i.id)}
                         // Overdue is the one place a row changes colour: it is
-                        // a fact about this row, not a category of row.
+                        // a fact about this row, not a category of row. The
+                        // "!" is what fits in a 7rem column; the word is what
+                        // it means, and the phone has room for it.
                         className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
                         title={isStale(i.since) ? "Overdue" : undefined}
                     >
@@ -497,9 +503,19 @@ export default function ActionQueue({ onChanged, feePercent }) {
                         {isStale(i.since) ? " !" : ""}
                     </span>
                 ),
+                mobileCell: (i) => (
+                    <span
+                        data-testid={IDS.rowAge(i.id)}
+                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
+                    >
+                        <TimeAgo iso={i.since} />
+                        {isStale(i.since) ? " · overdue" : ""}
+                    </span>
+                ),
             },
             {
                 key: "decision",
+                mobile: "action",
                 header: "",
                 width: "w-44",
                 cell: (i) => (

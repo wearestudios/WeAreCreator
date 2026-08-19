@@ -342,6 +342,81 @@ def test_every_sidebar_section_has_a_route():
 
 
 # ---------------------------------------------------------------------------
+# The phone
+# ---------------------------------------------------------------------------
+#
+# A table earns its keep by letting you read *across*, and on a 390px screen
+# there is no across: six columns become two and the rest — including every
+# action — sit behind a sideways scroll nobody finds. So the phone gets the
+# same rows stacked, and the table appears at `md`.
+
+
+def test_below_md_the_rows_are_a_list_rather_than_a_table():
+    code = code_of(CONSOLE / "DataTable.jsx")
+    assert "function MobileList(" in code
+    assert '"(min-width: 768px)"' in code
+    # The branch itself, not just the string: `if (!wide)` also appears in the
+    # skeleton, so looking for it alone passed with the table forced on.
+    # Checked, by forcing it and watching this test pass.
+    assert re.search(r"if \(!wide\) \{\s*return \(\s*<MobileList", code), (
+        "the table must not render where it cannot fit"
+    )
+
+
+@pytest.mark.parametrize("name", LIST_VIEWS)
+def test_every_list_says_what_its_phone_row_carries(name):
+    """A column with no `mobile` hint is desktop-only, so a screen that
+    declares none renders empty rows."""
+    code = code_of(ADMIN / name)
+    assert 'mobile: "primary"' in code, f"{name} names no identity column"
+
+
+@pytest.mark.parametrize(
+    "name", ["AdminBrands.jsx", "AdminCampaigns.jsx", "Reviews.jsx", "ActionQueue.jsx"]
+)
+def test_a_screen_with_decisions_keeps_them_on_the_phone(name):
+    """The action queue's whole purpose is the approve/reject pair. Before
+    this it was off the right-hand edge on a phone."""
+    code = code_of(ADMIN / name)
+    assert 'mobile: "action"' in code, f"{name} hides its decisions on a phone"
+
+
+def test_the_icon_rail_is_not_the_phone_navigation():
+    """56px of a 390px screen spent on nine unlabelled glyphs, on a device
+    with no hover to explain them."""
+    code = code_of(CONSOLE / "Sidebar.jsx")
+    assert "hidden" in code and "md:flex" in code, "the rail must be desktop-only"
+    assert "export function AdminNavSheet" in code
+    shell = code_of(FRONTEND / "src" / "pages" / "AdminConsole.jsx")
+    assert "AdminNavSheet" in shell, "the sheet is not mounted"
+    assert "md:hidden" in shell, "the sheet has no trigger below md"
+
+
+def test_the_rail_and_the_sheet_are_one_list():
+    """A phone finding different sections from a laptop is the bug this
+    shape exists to prevent."""
+    code = code_of(CONSOLE / "Sidebar.jsx")
+    assert code.count("ADMIN_SECTIONS.map") == 2
+    # The parenthesis matters: "function SectionLink" is a prefix of
+    # "function SectionLinkAnythingElse", so the bare string passed a rename.
+    assert "function SectionLink(" in code, "the row is written once"
+    assert code.count("<SectionLink") == 2, "both forms render the same row"
+
+
+def test_a_badge_is_a_number_wherever_there_is_room_to_read_it():
+    code = code_of(CONSOLE / "Sidebar.jsx")
+    assert 'form === "rail"' in code
+    assert 'form={collapsed ? "rail" : "full"}' in code
+
+
+def test_the_skeleton_matches_whichever_form_is_coming():
+    code = code_of(CONSOLE / "DataTable.jsx")
+    assert "TableSkeleton" in code
+    assert "wide={wide}" in code
+    assert "export function TableSkeleton({ columns, rows = 10, testid, wide" in code
+
+
+# ---------------------------------------------------------------------------
 # The peek panel
 # ---------------------------------------------------------------------------
 

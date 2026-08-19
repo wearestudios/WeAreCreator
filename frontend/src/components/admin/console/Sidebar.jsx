@@ -16,6 +16,7 @@
 // deliberate act, so it should still be there next week.
 import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
     Activity,
     BadgeCheck,
@@ -33,7 +34,7 @@ import {
 
 import { CALM, DENSITY, FOCUS, TEXT } from "@/components/admin/console/tokens";
 import { readSavedFilters } from "@/components/admin/console/useListState";
-import { ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
+import { ADMIN_SHELL as SHELL_IDS, ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
 
 const COLLAPSE_KEY = "weare.admin.sidebar";
 
@@ -82,33 +83,152 @@ export const ADMIN_SECTIONS = [
 /**
  * How many are waiting.
  *
- * Two forms, and the narrow one is not a smaller number — it is a dot. A
- * two-digit count in a 56px rail is unreadable, but "something is waiting
- * here" still has to survive, and it is the only thing on the rail that could
- * make somebody open it.
+ * **A dot is what a number becomes when there is no room to read it** — a
+ * two-digit count in a 56px rail is a smudge, but "something is waiting here"
+ * is the only thing on that rail that would make anybody open it. Anywhere
+ * with room says the number.
+ *
+ * @param {"rail"|"full"} form  `rail` is the collapsed sidebar: a dot.
  */
-function Badge({ count, active, dotOnly = false }) {
+function Badge({ count, active, form = "full" }) {
     if (!count) return null;
-    const dot = (
-        <span
-            aria-label={`${count} waiting`}
-            className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-ember-500 ${
-                dotOnly ? "" : "md:hidden"
-            }`}
-        />
-    );
-    if (dotOnly) return dot;
-    return (
-        <>
-            {dot}
+    if (form === "rail") {
+        return (
             <span
-                className={`ml-auto hidden h-5 min-w-[1.25rem] shrink-0 place-items-center rounded px-1 md:grid ${TEXT.meta} tabular-nums ${
-                    active ? "bg-ember-500 text-black" : "bg-white/10 text-foreground"
-                }`}
+                aria-label={`${count} waiting`}
+                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-ember-500"
+            />
+        );
+    }
+    return (
+        <span
+            className={`ml-auto grid h-5 min-w-[1.25rem] shrink-0 place-items-center rounded px-1 ${TEXT.meta} tabular-nums ${
+                active ? "bg-ember-500 text-black" : "bg-white/10 text-foreground"
+            }`}
+        >
+            {count > 99 ? "99+" : count}
+        </span>
+    );
+}
+
+/**
+ * One section, as it appears in both forms.
+ *
+ * The rail and the sheet are the same list with the same badges and the same
+ * saved sets — written once, because a phone finding a different set of
+ * sections from a laptop is the bug this shape exists to prevent.
+ */
+function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass }) {
+    const navigate = useNavigate();
+    const { key, to, label, Icon, badge, end } = section;
+    const count = badge ? counts?.[badge] ?? 0 : 0;
+    const sets = saved[key] || [];
+    return (
+        <div>
+            <NavLink
+                to={to}
+                end={end}
+                onClick={onNavigate}
+                data-testid={IDS.item(key)}
+                title={label}
+                className={({ isActive }) =>
+                    `mx-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.body} ${CALM} ${FOCUS} ` +
+                    (isActive
+                        ? "bg-ember-500/10 text-ember-500"
+                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground")
+                }
             >
-                {count > 99 ? "99+" : count}
-            </span>
-        </>
+                {({ isActive }) => (
+                    <>
+                        <Icon className="h-4 w-4 shrink-0" />
+                        {!collapsed && <span className={labelClass}>{label}</span>}
+                        {count > 0 && (
+                            <span data-testid={IDS.badge(key)} className="ml-auto flex items-center">
+                                <Badge
+                                    count={count}
+                                    active={isActive}
+                                    form={collapsed ? "rail" : "full"}
+                                />
+                            </span>
+                        )}
+                    </>
+                )}
+            </NavLink>
+
+            {/* Saved filter sets, under the section they filter. */}
+            {!collapsed &&
+                sets.map((set) => (
+                    <button
+                        key={set.name}
+                        type="button"
+                        data-testid={IDS.savedFilter(key, set.name)}
+                        onClick={() => {
+                            navigate(`/admin/${to}`, { state: { savedFilter: set.state } });
+                            onNavigate?.();
+                        }}
+                        className={`mx-1 h-8 w-[calc(100%-0.5rem)] items-center gap-2 rounded pl-9 pr-2 text-left ${labelClass ? "flex" : "hidden"} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                    >
+                        <span className="truncate">{set.name}</span>
+                    </button>
+                ))}
+        </div>
+    );
+}
+
+/**
+ * The sections on a phone: a sheet, opened from the console's own header.
+ *
+ * **Not the icon rail.** 56px of a 390px screen is 14% of the width spent on
+ * nine unlabelled glyphs, and a touch screen has no hover to explain them —
+ * the `title` that carries the rail on a laptop is invisible on a phone. A
+ * sheet costs nothing until it is opened, says the words, and gives the list
+ * underneath the whole width.
+ */
+export function AdminNavSheet({ open, onOpenChange, counts }) {
+    const [saved, setSaved] = useState(() => readSavedFilters());
+
+    useEffect(() => {
+        const sync = () => setSaved(readSavedFilters());
+        window.addEventListener("weare:saved-filters", sync);
+        return () => window.removeEventListener("weare:saved-filters", sync);
+    }, []);
+
+    return (
+        <Dialog.Root open={open} onOpenChange={onOpenChange}>
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 md:hidden" />
+                <Dialog.Content
+                    data-testid={SHELL_IDS.mobileNav}
+                    aria-describedby={undefined}
+                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/10 bg-card md:hidden"
+                >
+                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2.5">
+                        <Dialog.Title className={`${TEXT.meta} uppercase tracking-[0.16em] text-muted-foreground`}>
+                            Sections
+                        </Dialog.Title>
+                        <Dialog.Close
+                            aria-label="Close"
+                            className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                        >
+                            <X className="h-4 w-4" />
+                        </Dialog.Close>
+                    </div>
+                    <div className="flex-1 overflow-y-auto py-2">
+                        {ADMIN_SECTIONS.map((section) => (
+                            <SectionLink
+                                key={section.key}
+                                section={section}
+                                counts={counts}
+                                saved={saved}
+                                collapsed={false}
+                                labelClass="truncate"
+                                onNavigate={() => onOpenChange(false)}
+                            />
+                        ))}
+                    </div>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 }
 
@@ -152,75 +272,24 @@ export function AdminSidebar({ counts }) {
             data-testid={IDS.root}
             data-collapsed={collapsed ? "true" : "false"}
             aria-label="Admin sections"
-            // **Below `md` the rail is the only form.** 224px of a 390px screen
-            // spent on navigation leaves 166px for the table it is navigating
-            // to, which is not a working surface — it is a list that scrolls
-            // sideways. Expanded is a choice you can only make where there is
-            // room for it.
-            className={`sticky top-16 flex h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-white/10 bg-card/40 ${CALM} ${
-                collapsed ? "w-14" : "w-14 md:w-56"
+            // **`hidden md:flex`.** Below that the sections are a sheet, not a
+            // rail: see `AdminNavSheet`. A 56px column of unlabelled icons is
+            // navigation you have to already know.
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-white/10 bg-card/40 md:flex ${CALM} ${
+                collapsed ? "w-14" : "w-56"
             }`}
         >
             <div className="flex-1 overflow-y-auto py-2">
-                {ADMIN_SECTIONS.map(({ key, to, label, Icon, badge, end }) => {
-                    const count = badge ? counts?.[badge] ?? 0 : 0;
-                    const sets = saved[key] || [];
-                    return (
-                        <div key={key}>
-                            <NavLink
-                                to={to}
-                                end={end}
-                                data-testid={IDS.item(key)}
-                                title={label}
-                                className={({ isActive }) =>
-                                    `mx-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.body} ${CALM} ${FOCUS} ` +
-                                    (isActive
-                                        ? "bg-ember-500/10 text-ember-500"
-                                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground")
-                                }
-                            >
-                                {({ isActive }) => (
-                                    <>
-                                        <Icon className="h-4 w-4 shrink-0" />
-                                        {!collapsed && (
-                                            <span className="hidden truncate md:inline">{label}</span>
-                                        )}
-                                        {count > 0 && (
-                                            <span
-                                                data-testid={IDS.badge(key)}
-                                                className="ml-auto flex items-center"
-                                            >
-                                                <Badge
-                                                    count={count}
-                                                    active={isActive}
-                                                    dotOnly={collapsed}
-                                                />
-                                            </span>
-                                        )}
-                                    </>
-                                )}
-                            </NavLink>
-
-                            {/* Saved filter sets, under the section they filter. */}
-                            {!collapsed &&
-                                sets.map((set) => (
-                                    <button
-                                        key={set.name}
-                                        type="button"
-                                        data-testid={IDS.savedFilter(key, set.name)}
-                                        onClick={() =>
-                                            navigate(`/admin/${to}`, {
-                                                state: { savedFilter: set.state },
-                                            })
-                                        }
-                                        className={`mx-1 hidden h-8 w-[calc(100%-0.5rem)] items-center gap-2 rounded pl-9 pr-2 text-left md:flex ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
-                                    >
-                                        <span className="truncate">{set.name}</span>
-                                    </button>
-                                ))}
-                        </div>
-                    );
-                })}
+                {ADMIN_SECTIONS.map((section) => (
+                    <SectionLink
+                        key={section.key}
+                        section={section}
+                        counts={counts}
+                        saved={saved}
+                        collapsed={collapsed}
+                        labelClass="truncate"
+                    />
+                ))}
             </div>
 
             <button

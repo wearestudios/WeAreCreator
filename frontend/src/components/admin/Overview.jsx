@@ -160,6 +160,7 @@ export default function Overview({ onChanged }) {
         () => [
             {
                 key: "title",
+                mobile: "primary",
                 header: "Campaign",
                 sortable: true,
                 testid: IDS.sort("title"),
@@ -176,6 +177,7 @@ export default function Overview({ onChanged }) {
             },
             {
                 key: "brand_name",
+                mobile: "meta",
                 header: "Brand",
                 sortable: true,
                 hideBelow: true,
@@ -188,6 +190,7 @@ export default function Overview({ onChanged }) {
             },
             {
                 key: "status",
+                mobile: "meta",
                 header: "Status",
                 sortable: true,
                 width: "w-36",
@@ -197,6 +200,7 @@ export default function Overview({ onChanged }) {
             },
             {
                 key: "when",
+                mobile: "meta",
                 header: "When",
                 hideBelow: true,
                 width: "w-44",
@@ -208,6 +212,7 @@ export default function Overview({ onChanged }) {
             },
             {
                 key: "applied",
+                mobile: "trailing",
                 header: "Applied",
                 sortable: true,
                 numeric: true,

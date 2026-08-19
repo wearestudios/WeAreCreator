@@ -155,6 +155,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
         () => [
             {
                 key: "business_name",
+                mobile: "primary",
                 header: "Brand",
                 sortable: true,
                 value: (b) => b.business_name || "",
@@ -174,6 +175,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
             },
             {
                 key: "verification",
+                mobile: "meta",
                 header: "Status",
                 sortable: true,
                 width: "w-32",
@@ -184,6 +186,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
             },
             {
                 key: "category",
+                mobile: "meta",
                 header: "Category",
                 sortable: true,
                 hideBelow: true,
@@ -217,6 +220,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
             },
             {
                 key: "total_spend",
+                mobile: "trailing",
                 header: "Spend",
                 sortable: true,
                 numeric: true,
@@ -238,6 +242,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
             },
             {
                 key: "decision",
+                mobile: "action",
                 header: "",
                 width: "w-40",
                 cell: (b) => (
