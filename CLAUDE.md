@@ -797,6 +797,68 @@ how to buy it back — point the rewrites at a prerender service, or add a Verce
 page. No two pages share a title — one title for two pages makes two links
 preview identically, which is the whole reason for separate pages.
 
+### The copy budget
+
+**One idea per screen-height, and a word count per page**: home under 120,
+`/for-brands` and `/for-creators` under 250 each, `/how-it-works` and
+`/why-weare` under 300. Headlines to eight words, supporting lines to twenty.
+`test_marketing_pages.py` enforces all of it.
+
+Every page keeps its words in one `COPY` object so the budget can be read
+rather than reconstructed by walking JSX — and so a section that wants to say
+more has to argue with a number.
+
+**The shape is what holds the rule.** No primitive in `Sections.jsx` takes a
+`body`; they take a label and one `line`. A four-word label plus a sentence
+carries the same point as the fifty-word paragraph it replaced and is read
+rather than skipped, and a section that wants to make two points has to become
+two sections. The detail that came out lives in onboarding and in the product,
+which is where somebody who has clicked actually needs it.
+
+This was a compression, not a repositioning: every claim survived, and the
+tests that pin what each audience must come away knowing were rewritten to
+look for the idea rather than the sentence it used to sit in.
+
+### The motion layer
+
+`components/marketing/motion.js` — one easing curve (`EASE`), durations
+between 200 and 400ms, transforms and opacity only. Entrances are `Reveal`
+(rise and fade, staggered by index); the proof figures use `CountUp`; cards
+lift 2px and warm their border toward ember on hover; images ease to 1.02x
+inside frames that clip.
+
+- **`prefers-reduced-motion` is handled in `Reveal` and `CountUp`, once.**
+  Under `reduce` the element renders at its final state and the number's first
+  paint is its final value — not a shorter animation. Verified by emulation:
+  at 50ms the hero heading is opacity 0 / y+14 normally, and opacity 1 /
+  `transform: none` under `reduce`.
+- **A hover transform must not sit on the element Framer animates.** Framer
+  writes `transform` as an inline style, so `hover:-translate-y-*` on the same
+  node is dead once the entrance settles at `transform: none`. Measured: the
+  border warmed and the card did not move. `Point` puts the hover on a child,
+  and a test pins it.
+- The image zoom scales a layer inside the frame, never the frame — scaling
+  the container would grow the hole it reserves.
+- `duration-[400ms]` is written `[transition-duration:400ms]`: the arbitrary
+  `duration-*` form matches both transition- and animation-duration, and
+  Tailwind warns on every build. It warns for the string anywhere, including
+  inside a comment.
+
+### The marketing chrome
+
+`MarketingNavbar` and `MarketingFooter` are **variants, not edits**. The shared
+`Navbar` is on nineteen surfaces — every dashboard, the console, the manager
+screens, onboarding — where it carries role links, the bell and the avatar
+menu; the shared `Footer` stays on Legal, Campaigns and CampaignDetail. Neither
+was touched.
+
+The marketing bar takes no session: it has one audience, and a second mode is
+how a variant drifts back into being the component it was created to avoid
+editing. Logged out it carries the four pages, Sign in, Join, and the studio
+endorsement. `lib/siteNav.js` holds `MARKETING_LINKS` and `FOOTER_COLUMNS`; the
+shared navbar keeps its own copy of the four links because editing it was out
+of scope, and a drift test compares the two.
+
 ### The shared furniture
 
 `components/marketing/Sections.jsx` — `MarketingPage` (meta, navbar, footer),

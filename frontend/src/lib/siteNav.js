@@ -54,6 +54,24 @@ export const FOOTER_COLUMNS = [
     },
 ];
 
+/**
+ * The logged-out menu, in the order somebody reads it: which audience am I,
+ * then how does it work, then why you.
+ *
+ * `components/marketing/MarketingNavbar.jsx` renders these. The shared
+ * `components/Navbar.jsx` keeps its own copy of the same four, deliberately —
+ * it is on nineteen authenticated surfaces and is out of scope for marketing
+ * changes, so it is left alone rather than edited to import this. A unit test
+ * compares the two lists, because two copies is exactly how one of them ends
+ * up pointing at a page that moved.
+ */
+export const MARKETING_LINKS = [
+    { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
+    { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
+    { to: "/how-it-works", label: "How it works", testId: "nav-how" },
+    { to: "/why-weare", label: "Why WeAre", testId: "nav-why" },
+];
+
 /** The marketing pages, for the sitemap and for tests that walk them all. */
 export const MARKETING_PATHS = [
     "/",

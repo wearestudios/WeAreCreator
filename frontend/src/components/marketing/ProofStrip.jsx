@@ -15,6 +15,8 @@
 import React, { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import CountUp from "@/components/marketing/CountUp";
+import Reveal from "@/components/marketing/Reveal";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const LABEL = {
@@ -52,15 +54,24 @@ export function ProofStrip({ only, className = "" }) {
             className={`border-y border-white/10 bg-card/30 ${className}`}
         >
             <div className="mx-auto flex max-w-7xl flex-wrap items-baseline justify-center gap-x-14 gap-y-6 px-6 py-10">
-                {keys.map((k) => (
-                    <div key={k} data-testid={IDS.proofFigure(k)} className="text-center">
+                {keys.map((k, i) => (
+                    <Reveal
+                        key={k}
+                        i={i}
+                        data-testid={IDS.proofFigure(k)}
+                        className="text-center"
+                    >
+                        {/* The one place a number counts. These figures are
+                            what a stranger is being asked to believe, so the
+                            count draws the eye for about a third of a second
+                            and then stops. */}
                         <p className="font-serif text-fluid-3xl leading-none tracking-tight">
-                            {stats[k].toLocaleString("en-IN")}
+                            <CountUp value={stats[k]} />
                         </p>
                         <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                             {LABEL[k]}
                         </p>
-                    </div>
+                    </Reveal>
                 ))}
             </div>
         </section>

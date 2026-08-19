@@ -105,16 +105,31 @@ def test_the_managed_service_reads_as_a_choice_not_a_fee():
     assert "not a fee you are locked into" in copy_of(*PAGES["why"]).lower()
 
 
+def test_the_pages_use_the_marketing_chrome_not_the_shared_chrome():
+    """The shared `Navbar` and `Footer` are on nineteen authenticated
+    surfaces. Marketing needed a different bar, so it got a variant rather
+    than an edit — the strict version of "do not touch a logged-in view"."""
+    shell = read("src", "components", "marketing", "Sections.jsx")
+    assert "MarketingNavbar" in shell and "MarketingFooter" in shell
+    assert 'from "@/components/Navbar"' not in shell
+    assert 'from "@/components/Footer"' not in shell
+
+    home = read("src", "pages", "Landing.jsx")
+    assert "MarketingNavbar" in home and "MarketingFooter" in home
+    assert 'from "@/components/Navbar"' not in home
+    assert 'from "@/components/Footer"' not in home
+
+
 def test_the_enemy_named_is_disorganisation_not_a_competitor():
     """The problem is campaigns with nobody checked, no rate in writing and no
     proof of what happened. Every arguing page should be answering that."""
     for name in ARGUING:
         low = copy_of(*PAGES[name]).lower()
-        assert "in writing" in low, name
+        assert "in writing" in low or "before anyone shoots" in low or "before you shoot" in low, name
         assert "verified" in low or "checked" in low, name
     # And home names it outright, since it is the only argument home keeps.
     home = copy_of(*PAGES["home"]).lower()
-    assert "dms and a spreadsheet" in home
+    assert "dms and spreadsheets" in home
     assert "nobody checked" in home
 
 
@@ -129,15 +144,18 @@ def test_the_headline_direction_is_carried():
 
 
 def test_the_creator_page_says_the_six_things_a_creator_needs():
+    """The six survived the compression; the paragraphs around them did not.
+    Each is now a four-word label and one line, so these look for the idea
+    rather than the sentence it used to sit in."""
     text = copy_of(*PAGES["creators"]).lower()
 
     assert "real paid briefs" in text                  # real work, one place
-    assert "in writing, before you shoot" in text      # the rate, before shooting
+    assert "before you shoot" in text                  # the rate, before shooting
     assert "charged to the brand on top" in text       # they keep all of it
     assert "never taken out of yours" in text
-    assert "approves what you delivered" in text       # paid on delivery
+    assert "payment follows approval" in text          # paid on delivery
     assert "checked" in text or "verified" in text     # brands are checked
-    assert "free" in text                              # and it is free
+    assert "free to join" in text                      # and it is free
 
 
 def test_the_creator_page_does_not_imply_a_cut_of_their_rate():
@@ -152,10 +170,10 @@ def test_the_creator_page_does_not_imply_a_cut_of_their_rate():
 def test_the_brand_page_says_the_six_things_a_brand_needs():
     text = copy_of(*PAGES["brands"]).lower()
 
-    assert "read from instagram itself" in text        # real audience stats
-    assert "what each of them quoted" in text          # every creator, every rate
+    assert "read from instagram" in text               # real audience stats
+    assert "what each creator quoted" in text          # every creator, every rate
     assert "no retainer" in text and "no markup" in text
-    assert "nothing is published until you have said yes" in text
+    assert "nothing goes live until you say yes" in text
     assert "report" in text                            # proof at the end
     assert "weare studios" in text                     # the managed option
 
@@ -350,13 +368,13 @@ def test_every_page_carries_the_footer(name):
     parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
     src = read(*parts)
     # Home mounts it directly; the rest inherit it from MarketingPage.
-    assert "<Footer />" in src or "MarketingPage" in src
+    assert "<MarketingFooter />" in src or "MarketingPage" in src
 
 
-def test_the_marketing_shell_mounts_the_footer_and_the_navbar():
+def test_the_marketing_shell_mounts_both_marketing_bars():
     sections = read("src", "components", "marketing", "Sections.jsx")
-    assert "<Navbar />" in sections
-    assert "<Footer />" in sections
+    assert "<MarketingNavbar />" in sections
+    assert "<MarketingFooter />" in sections
 
 
 # --- Image slots --------------------------------------------------------------
@@ -611,7 +629,6 @@ def test_how_it_works_shows_both_sides_against_each_other():
     """A creator's step and the brand's step opposite it happen at the same
     moment, and that is the argument. Two separate lists would lose it."""
     src = read(*PAGES["how"])
-    assert "TRACKS" in src
     tracks = re.findall(r"moment:", src)
     assert len(tracks) >= 5, tracks
     # Every row carries both sides; a blank one reads as a step somebody
@@ -620,20 +637,33 @@ def test_how_it_works_shows_both_sides_against_each_other():
 
 
 def test_how_it_works_carries_the_four_trust_mechanics():
+    """Four labels and four lines where there were four paragraphs. The
+    mechanics are the point, not the wording — but all four have to be here,
+    because they are what makes this a process rather than a group chat."""
     text = copy_of(*PAGES["how"]).lower()
-    assert "verification, both ways" in text
-    assert "in writing, before the shoot" in text
-    assert "approval before anything is public" in text
-    assert "payment on approved delivery" in text
+    assert "verified both ways" in text
+    assert "rate in writing" in text
+    assert "approval before public" in text
+    assert "paid on approved delivery" in text
+
+
+def test_how_it_works_states_the_payment_flow_the_way_the_product_works():
+    """Rate agreed and recorded before the shoot, the brand pays us, we
+    release on approved delivery. The middle step is the one most easily lost
+    in compression, and losing it makes us sound like a directory."""
+    text = copy_of(*PAGES["how"]).lower()
+    assert "you pay us" in text
+    assert "the brand pays us" in text
+    assert "recorded against the booking" in text
 
 
 def test_why_weare_makes_the_standalone_case():
     text = copy_of(*PAGES["why"]).lower()
     assert "weare studios" in text                      # the pedigree
     assert "run it yourself, or hand it over" in text   # the choice
-    assert "reviewed by a person" in text               # verified people
-    assert "charged to you on top" in text              # money handled properly
-    assert "report" in text                             # results reported
+    assert "a person reviews every creator" in text     # verified people
+    assert "plus our fee" in text                       # money handled properly
+    assert "reach and cost per thousand" in text        # results reported
 
 
 # --- The footer, and the sitemap ----------------------------------------------
@@ -740,3 +770,242 @@ def test_the_pending_proxy_decision_is_written_down():
     assert "pending decision" in preview.lower()
     for path in SERVER_RENDERED_PATHS:
         assert path in preview, path
+
+
+# --- The copy budget ----------------------------------------------------------
+#
+# "One idea per screen-height. Headlines up to eight words, supporting lines up
+# to twenty, no paragraph over three rendered lines." Those are rules about a
+# rendered page, and most of them can only be checked in a browser — but the
+# word counts can be checked here, and the word counts are the ones that drift.
+#
+# Every page keeps its copy in one `COPY` object for exactly this reason: the
+# budget can be read rather than reconstructed by walking JSX. A section that
+# wants to say more has to argue with a number.
+
+BUDGET = {"home": 120, "brands": 250, "creators": 250, "how": 300, "why": 300}
+
+
+def _copy_strings(name):
+    """Every string literal inside the page's COPY object."""
+    src = read(*PAGES[name])
+    start = src.index("const COPY = {")
+    depth, i = 0, start
+    while i < len(src):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    block = src[start : i + 1]
+    return re.findall(r'"((?:[^"\\]|\\.)*)"', block)
+
+
+def _words(text):
+    return [w for w in re.split(r"\s+", text.strip()) if re.search(r"[A-Za-z0-9]", w)]
+
+
+@pytest.mark.parametrize("name", list(BUDGET))
+def test_every_page_stays_inside_its_word_budget(name):
+    total = sum(len(_words(t)) for t in _copy_strings(name))
+    assert total <= BUDGET[name], f"{name}: {total} words, budget {BUDGET[name]}"
+
+
+@pytest.mark.parametrize("name", list(BUDGET))
+def test_no_headline_runs_past_eight_words(name):
+    """Keys ending in `title` or named `label` are the headings and the
+    four-word labels that replaced the paragraphs."""
+    src = read(*PAGES[name])
+    start = src.index("const COPY = {")
+    block = src[start:]
+    for m in re.finditer(r'(\w*[Tt]itle|label|moment):\s*"((?:[^"\\]|\\.)*)"', block):
+        n = len(_words(m.group(2)))
+        assert n <= 8, f"{name}: {n} words — {m.group(2)!r}"
+
+
+@pytest.mark.parametrize("name", list(BUDGET))
+def test_no_supporting_line_runs_past_twenty_words(name):
+    src = read(*PAGES[name])
+    start = src.index("const COPY = {")
+    block = src[start:]
+    for m in re.finditer(r'\b(line|\w+Line|footnote):\s*"((?:[^"\\]|\\.)*)"', block):
+        n = len(_words(m.group(2)))
+        assert n <= 20, f"{name}: {n} words — {m.group(2)!r}"
+
+
+def _code(*parts):
+    """Source with comments removed.
+
+    Several rules below ban a token that the comment explaining the rule has
+    to use. Stripping first is the difference between a test that checks the
+    code and one that fails on its own justification.
+    """
+    src = read(*parts)
+    src = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return "\n".join(
+        l for l in src.splitlines() if not l.lstrip().startswith("//")
+    )
+
+
+def test_the_primitives_have_no_prop_that_accepts_a_paragraph():
+    """The shape is what enforces the copy rules. `Point`, `Steps` and
+    `TextImageSection` take a label and one `line`; none takes a `body`, which
+    is what the prose versions called it. A section that wants to make two
+    points has to become two sections."""
+    shell = _code("src", "components", "marketing", "Sections.jsx")
+    assert not re.search(r"\bbody\b\s*[,}:=]", shell)
+    assert not re.search(r"\bbody\b\s*\}", shell)
+
+
+# --- The motion layer ---------------------------------------------------------
+
+
+def test_there_is_one_easing_curve_and_it_is_used_everywhere():
+    """Six sections animated by six people is six easings, which reads as six
+    different sites. `EASE` is the only curve on the marketing pages."""
+    motion = read("src", "components", "marketing", "motion.js")
+    assert "export const EASE" in motion
+
+    curves = set()
+    for path in FRONTEND.joinpath("src", "components", "marketing").glob("*.js*"):
+        curves |= set(re.findall(r"\[0\.\d+,\s*[\d.]+,\s*[\d.]+,\s*[\d.]+\]", path.read_text()))
+    assert len(curves) == 1, curves
+
+
+def test_every_duration_sits_between_200_and_400ms():
+    motion = read("src", "components", "marketing", "motion.js")
+    for value in re.findall(r"(?:fast|base|slow):\s*([\d.]+)", motion):
+        assert 0.2 <= float(value) <= 0.4, value
+    # And the CSS-side transitions the hover treatments use.
+    for ms in re.findall(r"duration-(\d+)", motion):
+        assert 200 <= int(ms) <= 400, ms
+    for ms in re.findall(r"transition-duration:(\d+)ms", motion):
+        assert 200 <= int(ms) <= 400, ms
+
+
+def test_motion_is_transforms_and_opacity_only():
+    """Animating height, width or a position forces layout on every frame;
+    transform and opacity are composited, which is what keeps this smooth on
+    the mid-range Android most creators arrive on.
+
+    Checked against the variants themselves rather than the whole file —
+    `VIEWPORT`'s `margin` is the intersection-observer's root margin, not a
+    property anything animates, and a blanket string ban would fail on it."""
+    code = _code("src", "components", "marketing", "motion.js")
+
+    animated = set()
+    for name in ("rise", "fade", "still"):
+        block = code[code.index(f"export const {name} =") :]
+        block = block[: block.index("};") + 2]
+        animated |= set(re.findall(r"^\s*(\w+):", block, re.M))
+    assert animated <= {"opacity", "y", "transition", "hidden", "show"}, animated
+
+    # The one colour change is a CSS transition on named properties, never an
+    # animated value — and never `transition-all`, which would also animate
+    # the background, the shadow and anything a future edit adds.
+    assert "transition-[transform,border-color]" in code
+    assert "transition-all" not in code
+
+
+def test_reduced_motion_is_handled_once_rather_than_at_each_call_site():
+    """`Reveal` decides; nothing below it repeats the check. The failure mode
+    of per-site handling is one component that forgets and animates anyway."""
+    reveal = read("src", "components", "marketing", "Reveal.jsx")
+    assert "useReducedMotion" in reveal
+    assert "still" in reveal
+
+
+def test_reduced_motion_shows_the_content_rather_than_withholding_it():
+    """Under `reduce` the element renders at its final state. Gating an
+    entrance on a media query and forgetting the fallback is how a page ends
+    up blank for the people who asked for less movement."""
+    motion = read("src", "components", "marketing", "motion.js")
+    assert "export const still" in motion
+    block = motion[motion.index("export const still") :]
+    assert "opacity: 1" in block
+    assert "duration: 0" in block
+
+
+def test_the_count_up_does_not_count_under_reduced_motion():
+    """Not a faster count: no count. A number ticking is motion whatever its
+    duration, and somebody who asked for less of it did not ask for a shorter
+    version."""
+    src = read("src", "components", "marketing", "CountUp.jsx")
+    assert "useReducedMotion" in src
+    assert "useState(reduced ? value : 0)" in src
+
+
+def test_the_hover_lift_is_not_on_the_element_framer_animates():
+    """Framer Motion writes `transform` as an inline style, and an inline
+    style beats a class — so `hover:-translate-y-*` on the node the entrance
+    animates is silently dead once the entrance settles at `transform: none`.
+    Measured: the border warmed and the card did not move."""
+    shell = read("src", "components", "marketing", "Sections.jsx")
+    point = shell[shell.index("export function Point("):shell.index("export function Points(")]
+    reveal_line = [l for l in point.splitlines() if "<Reveal" in l][0]
+    assert "CARD_HOVER" not in reveal_line
+
+
+def test_the_image_zoom_scales_a_layer_rather_than_the_frame():
+    """The frame clips and reserves the space; scaling it would grow the hole
+    in the layout. The tint and the <img> are what move."""
+    slot = read("src", "components", "marketing", "PlaceholderImage.jsx")
+    assert "IMAGE_ZOOM" in slot
+    container = slot[slot.index("data-testid={testid}") : slot.index("aria-hidden")]
+    assert "IMAGE_ZOOM" not in container
+
+
+# --- The marketing chrome -----------------------------------------------------
+
+
+def test_the_marketing_navbar_carries_the_four_pages_and_both_actions():
+    nav = read("src", "components", "marketing", "MarketingNavbar.jsx")
+    assert "MARKETING_LINKS" in nav
+    assert "Sign in" in nav and "Join" in nav
+    assert "StudioEndorsement" in nav
+    # One list feeds the bar and the sheet, because the sheet is the only
+    # navigation below md and anything missing there is unreachable on a phone.
+    assert nav.count("MARKETING_LINKS.map") == 2
+
+
+def test_the_marketing_navbar_does_not_reach_for_the_session():
+    """It has one audience. A second mode is how a variant drifts back into
+    being the shared component it was created to avoid editing."""
+    nav = _code("src", "components", "marketing", "MarketingNavbar.jsx")
+    assert "useAuth" not in nav
+
+
+def test_the_shared_navbar_and_footer_are_untouched_by_marketing():
+    """The strict version of "do not modify an authenticated surface": the
+    shared bar is on nineteen of them, so marketing got variants instead."""
+    shared_nav = read("src", "components", "Navbar.jsx")
+    assert "useAuth" in shared_nav          # still the session-aware one
+    assert "NotificationBell" in shared_nav
+    assert "CreatorAvatarMenu" in shared_nav
+    shared_footer = read("src", "components", "Footer.jsx")
+    assert "FOOTER_COLUMNS" in shared_footer
+
+
+def test_the_two_link_lists_agree():
+    """`lib/siteNav.js` holds the marketing menu and the shared navbar keeps
+    its own copy, because editing the shared one was out of scope. Two copies
+    is exactly how one of them ends up pointing at a page that moved."""
+    site = read("src", "lib", "siteNav.js")
+    nav = read("src", "components", "Navbar.jsx")
+    block = site[site.index("export const MARKETING_LINKS") :]
+    block = block[: block.index("];")]
+    for to, label in re.findall(r'to: "([^"]+)", label: "([^"]+)"', block):
+        assert f'to: "{to}"' in nav, to
+        assert f'label: "{label}"' in nav, label
+
+
+def test_the_marketing_footer_names_terms_privacy_and_a_human():
+    footer = read("src", "components", "marketing", "MarketingFooter.jsx")
+    assert "StudioEndorsement" in footer
+    assert "CONTACT_EMAIL" in footer
+    assert "copyrightYear" in footer
+    site = read("src", "lib", "siteNav.js")
+    assert '"/terms"' in site and '"/privacy"' in site

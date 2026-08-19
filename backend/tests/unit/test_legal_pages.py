@@ -317,9 +317,12 @@ def test_the_footer_links_to_both_pages():
     assert '"/privacy"' in nav
 
 
+# Landing moved to `MarketingFooter` — the marketing variant — when the
+# marketing site got its own chrome. It still carries a footer; it is not this
+# one. `test_marketing_pages.py` covers it there.
 @pytest.mark.parametrize(
     "page",
-    ["Landing.jsx", "Legal.jsx", "Campaigns.jsx", "CampaignDetail.jsx"],
+    ["Legal.jsx", "Campaigns.jsx", "CampaignDetail.jsx"],
 )
 def test_the_public_pages_carry_the_footer(page):
     """Every page a signed-out person can land on. Deliberately not the admin
@@ -331,6 +334,15 @@ def test_the_public_pages_carry_the_footer(page):
     src = read("src", "pages", page)
     assert "components/Footer" in src
     assert "<Footer />" in src
+
+
+def test_the_marketing_pages_carry_the_marketing_footer():
+    """Same links, same terms and privacy — a different renderer, so the
+    shared one could stay untouched for the authenticated surfaces."""
+    src = read("src", "pages", "Landing.jsx")
+    assert "MarketingFooter" in src
+    nav = read("src", "lib", "siteNav.js")
+    assert '"/terms"' in nav and '"/privacy"' in nav
 
 
 def test_signup_still_links_the_documents_where_consent_is_taken():

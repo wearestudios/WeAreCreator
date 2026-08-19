@@ -1,22 +1,18 @@
 // Home — a router, not a story.
 //
-// This page was 1,200 lines and eight sections: hero, problem, reach, a
-// how-it-works ladder, a live brief feed, a trust panel, a verticals strip and
-// a closing toggle. It was the whole pitch on one scroll because it was the
-// only marketing page there was, so everything anybody might want to say had
-// nowhere else to go.
+// Four screens: what this is, the counted proof, what is wrong with the
+// alternative, and two doors. **Under 120 words of body copy**, which is the
+// constraint that made the rest of the decisions — every sentence here has to
+// earn the click, and the detail it wants to add lives on the audience pages,
+// in onboarding, and in the product.
 //
-// There are five pages now. Home's job is to say what this is and send you to
-// the right one, in about two screens: the hero and its slider, the counted
-// proof strip, one problem-and-promise section, and the close. **Everything
-// that used to live below has its own page** — the how-it-works ladder is
-// /how-it-works, the trust panel is /why-weare, the audience arguments are the
-// audience pages, and the live brief feed is /campaigns, which is a better
-// version of it and was always one tap away.
+// The slider is four category labels and nothing else now. Each slide used to
+// carry its own headline as well ("A full room on opening night"), which is a
+// second idea on a screen that already has one, and four of them meant the
+// page appeared to be selling four products.
 //
-// **Nothing here is fetched from a third party.** The slider used to hotlink
-// four stock photographs from a CDN; every image slot on the marketing site is
-// now a `PlaceholderImage` waiting on owned photography. See that component.
+// **Nothing here is fetched from a third party.** The slider hotlinked four
+// stock photographs until the image slots replaced them.
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -28,13 +24,14 @@ import {
 } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 
-import { Navbar } from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import MarketingNavbar from "@/components/marketing/MarketingNavbar";
+import MarketingFooter from "@/components/marketing/MarketingFooter";
 import { Button } from "@/components/ui/button";
 import PageMeta from "@/components/marketing/PageMeta";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
-import { TwoPaths } from "@/components/marketing/Sections";
+import Reveal from "@/components/marketing/Reveal";
+import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
 import {
     LANDING_HERO as HERO_IDS,
@@ -45,27 +42,45 @@ import {
 } from "@/constants/testIds";
 
 // ---------------------------------------------------------------------------
-// Hero deck
+// Copy
 // ---------------------------------------------------------------------------
 //
-// Four slides spanning the kinds of work briefs are actually posted for. The
-// deck used to be four food shots, which quietly told a fashion or travel
-// creator this wasn't for them — the range is the argument, so the deck has to
-// carry it.
-//
+// Kept together so the word budget can be read in one place rather than
+// counted across a file. A unit test enforces it — headlines to eight words,
+// lines to twenty, and the page total under 120.
+
+const COPY = {
+    title: "Your creator campaigns, handled properly.",
+    line: "Verified creators, the rate agreed before anyone shoots, and results you can show.",
+
+    problemTitle: "Most campaigns run on DMs and spreadsheets.",
+    problems: [
+        {
+            label: "Nobody checked",
+            line: "A follower count in a DM is a number somebody typed.",
+        },
+        {
+            label: "No rate in writing",
+            line: "Settled on the day, or argued about three weeks later.",
+        },
+        {
+            label: "No proof",
+            line: "It ends, and nobody can say what it actually did.",
+        },
+    ],
+    promise: "We built the boring parts.",
+
+    closeTitle: "Which side are you on?",
+    closeLine: "Creators join free. We check a brand before it reaches anyone.",
+};
+
 // **Every kicker is a real campaign category.** There was a "Tech & gadgets"
-// slide once; `CampaignCategory` has no such value, so a tech creator arriving
-// off it could filter the brief list and find the category does not exist.
-// Widening the deck is only an argument for range if the range is there.
-//
-// Only the image and the kicker line change between slides. The headline, the
-// standfirst and both paths are fixed, so the page never appears to be selling
-// four different products.
+// slide once; `CampaignCategory` has no such value, so a creator arriving off
+// it could filter the brief list and find the category does not exist.
 const SLIDES = [
     {
         key: "launch",
         kicker: "Restaurant launch",
-        headline: ["A full room", "on opening night."],
         // PLACEHOLDER IMAGE: a packed Bengaluru restaurant on opening night,
         // shot wide and warm, a creator filming at a table mid-ground. 16:9.
         note: "Packed restaurant on opening night, creator filming at a table, 16:9",
@@ -73,7 +88,6 @@ const SLIDES = [
     {
         key: "fashion",
         kicker: "Fashion",
-        headline: ["The lookbook that moves", "the whole collection."],
         // PLACEHOLDER IMAGE: a rail of clothes and a creator shooting a
         // try-on in a Bengaluru boutique, daylight. 16:9.
         note: "Creator shooting a try-on beside a clothes rail in a boutique, 16:9",
@@ -81,7 +95,6 @@ const SLIDES = [
     {
         key: "travel",
         kicker: "Hotels & travel",
-        headline: ["Two nights away.", "A season of bookings."],
         // PLACEHOLDER IMAGE: a hotel room opening onto a balcony at first
         // light, a phone on a tripod framing it. 16:9.
         note: "Hotel room opening onto a balcony at first light, phone on a tripod, 16:9",
@@ -89,7 +102,6 @@ const SLIDES = [
     {
         key: "wellness",
         kicker: "Wellness",
-        headline: ["One class filmed.", "Six weeks booked out."],
         // PLACEHOLDER IMAGE: a fitness or yoga class mid-session, shot from
         // the back of the room, one participant filming. 16:9.
         note: "Fitness class mid-session shot from the back of the room, 16:9",
@@ -99,7 +111,7 @@ const SLIDES = [
 const SLIDE_INTERVAL_MS = 7000;
 
 function Hero() {
-    const still = useReducedMotion();
+    const reduced = useReducedMotion();
     const [index, setIndex] = useState(0);
     const [paused, setPaused] = useState(false);
 
@@ -110,7 +122,7 @@ function Hero() {
 
     // Reduced motion gets the first slide and nothing else: no timer, no
     // crossfade, no dots to imply something is moving.
-    const animated = !still;
+    const animated = !reduced;
 
     useEffect(() => {
         if (!animated || paused) return undefined;
@@ -141,7 +153,7 @@ function Hero() {
             className="relative overflow-hidden"
         >
             <motion.div
-                style={{ y: imgY, opacity: imgOpacity }}
+                style={animated ? { y: imgY, opacity: imgOpacity } : { opacity: 0.6 }}
                 data-testid={HERO_IDS.slides}
                 className="absolute inset-0"
             >
@@ -167,95 +179,85 @@ function Hero() {
 
             {/* Two overlays doing two jobs: the vertical one lands the image
                 into the page, the horizontal one is a scrim behind the text so
-                the headline stays readable whatever is behind it on the left. */}
+                the headline stays readable whatever is behind it. */}
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/40 via-background/55 to-background" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background/85 via-background/45 to-transparent" />
 
-            <motion.div
-                aria-hidden
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 0.55 }}
-                transition={{ duration: still ? 0 : 2 }}
-                className="pointer-events-none absolute -right-40 top-24 h-[520px] w-[520px] rounded-full bg-ember-500/15 blur-[120px]"
-            />
-
             <div className="relative mx-auto max-w-7xl px-6 pb-12 pt-10 md:pb-14 md:pt-14">
-                <p
-                    data-testid={HERO_IDS.eyebrow}
-                    className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
-                >
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500 animate-pulse" />
-                    <span className="text-ember-500/90">Vol. 01</span>
-                    <span className="h-3 w-px bg-white/15" />
-                    Bengaluru · Influencer studio
-                </p>
+                <Reveal onView={false}>
+                    <p
+                        data-testid={HERO_IDS.eyebrow}
+                        className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
+                    >
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500" />
+                        Bengaluru · Influencer studio
+                    </p>
+                </Reveal>
 
-                <h1
-                    data-testid={HERO_IDS.heading}
-                    className="max-w-4xl font-serif text-fluid-hero tracking-tightest"
-                >
-                    Your creator campaigns,{" "}
-                    <span className="italic text-muted-foreground">handled properly.</span>
-                </h1>
+                <Reveal i={1} onView={false}>
+                    <h1
+                        data-testid={HERO_IDS.heading}
+                        className="max-w-4xl font-serif text-fluid-hero tracking-tightest"
+                    >
+                        Your creator campaigns,{" "}
+                        <span className="italic text-muted-foreground">
+                            handled properly.
+                        </span>
+                    </h1>
+                </Reveal>
 
-                <p
-                    data-testid={HERO_IDS.subheading}
-                    className="mt-7 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg"
-                >
-                    Verified creators, rates agreed before anyone shoots, and results
-                    you can show. Run it yourself, or hand it to our team.
-                </p>
+                <Reveal i={2} onView={false}>
+                    <p
+                        data-testid={HERO_IDS.subheading}
+                        className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
+                    >
+                        {COPY.line}
+                    </p>
+                </Reveal>
 
-                {/* The line that changes per slide, demoted beneath the fixed
-                    headline: it is a example of the work, not the promise. */}
-                <div className="mt-6 min-h-[3.25rem]">
+                {/* The category, and nothing else. The slide used to carry a
+                    headline of its own beneath this. */}
+                <div className="mt-6 min-h-[1.75rem]">
                     <AnimatePresence mode="wait">
-                        <motion.div
+                        <motion.p
                             key={current.key}
-                            initial={animated ? { opacity: 0, y: 8 } : false}
+                            data-testid={HERO_IDS.kicker}
+                            initial={animated ? { opacity: 0, y: 6 } : false}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            transition={{ duration: animated ? 0.7 : 0, ease: [0.22, 1, 0.36, 1] }}
-                            className="flex flex-wrap items-baseline gap-x-4 gap-y-1"
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: animated ? 0.32 : 0, ease: [0.22, 1, 0.36, 1] }}
+                            className="text-xs uppercase tracking-[0.2em] text-ember-500"
                         >
-                            <span
-                                data-testid={HERO_IDS.kicker}
-                                className="text-xs uppercase tracking-[0.2em] text-ember-500"
-                            >
-                                {current.kicker}
-                            </span>
-                            <span className="font-serif text-fluid-2xl leading-tight text-muted-foreground">
-                                {current.headline[0]}{" "}
-                                <span className="italic">{current.headline[1]}</span>
-                            </span>
-                        </motion.div>
+                            {current.kicker}
+                        </motion.p>
                     </AnimatePresence>
                 </div>
 
                 {/* Two paths, not three asks. Home routes; the audience pages
-                    sell — so these go to the pages, not to signup. Ordinary
-                    <Link>s: the audience pages are routes now. */}
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
-                        <Button
-                            size="lg"
-                            className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400 sm:w-auto"
-                        >
-                            I&apos;m a creator
-                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                        </Button>
-                    </Link>
-                    <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
-                        <Button
-                            size="lg"
-                            variant="outline"
-                            className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground hover:bg-white/5 sm:w-auto"
-                        >
-                            I&apos;m a brand
-                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                        </Button>
-                    </Link>
-                </div>
+                    sell — so these go to the pages, not to signup. */}
+                <Reveal i={3} onView={false}>
+                    <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
+                            <Button
+                                size="lg"
+                                className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400 sm:w-auto"
+                            >
+                                I&apos;m a creator
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                            </Button>
+                        </Link>
+                        <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
+                            <Button
+                                size="lg"
+                                variant="outline"
+                                className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-white/5 sm:w-auto"
+                            >
+                                I&apos;m a brand
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                            </Button>
+                        </Link>
+                    </div>
+                </Reveal>
 
                 {animated && (
                     <div
@@ -279,7 +281,7 @@ function Hero() {
                                 >
                                     <span
                                         className={
-                                            "block h-1 rounded-full transition-all duration-500 " +
+                                            "block h-1 rounded-full transition-[width,background-color] duration-300 ease-out " +
                                             (on
                                                 ? "w-10 bg-ember-500"
                                                 : "w-4 bg-white/20 group-hover:bg-white/40")
@@ -295,105 +297,49 @@ function Hero() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// The problem, and the promise
-// ---------------------------------------------------------------------------
-//
-// The one section of argument home keeps. **What is named is disorganisation,
-// never agencies** — WeAre Studios is one and the managed service is a real
-// offering, so "without an agency" would be this page arguing against a thing
-// /why-weare sells two clicks away.
-
-const PROBLEMS = [
-    {
-        title: "Nobody checked",
-        body:
-            "A follower count in a DM is a number somebody typed, and a brand in a DM " +
-            "is a name somebody chose.",
-    },
-    {
-        title: "No rate in writing",
-        body:
-            "The fee gets settled on the day, or afterwards, or in an argument about " +
-            "what was said three weeks ago.",
-    },
-    {
-        title: "No proof it worked",
-        body:
-            "The campaign ends and the only record is a folder of screenshots and " +
-            "somebody's impression of how it went.",
-    },
-];
-
+/**
+ * The problem, and the promise — one screen, one idea.
+ *
+ * **What is named is disorganisation, never agencies.** WeAre Studios is one
+ * and the managed service is a real offering, so "without an agency" would be
+ * home arguing against a thing /why-weare sells two clicks away.
+ */
 function Problem() {
     return (
-        <section
-            data-testid={PAGE_IDS.problem}
-            className="border-t border-white/10"
-        >
-            <div className="mx-auto max-w-7xl px-6 py-12 md:py-14">
-                <div className="grid gap-8 md:grid-cols-12 md:items-end">
-                    <div className="md:col-span-7">
-                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                            <span className="h-px w-8 bg-ember-500" />
-                            The problem
-                        </p>
-                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
-                            Most creator campaigns run on{" "}
-                            <span className="italic">DMs and a spreadsheet.</span>
-                        </h2>
-                    </div>
-                    <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
-                        It works right up until it doesn&apos;t — and when it
-                        doesn&apos;t, it is somebody&apos;s day, somebody&apos;s money,
-                        or somebody&apos;s opening night.
-                    </p>
+        <section data-testid={PAGE_IDS.problem} className="border-t border-white/10">
+            <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
+                <Reveal>
+                    <Eyebrow>The problem</Eyebrow>
+                </Reveal>
+                <Reveal i={1}>
+                    <h2 className="mt-4 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
+                        {COPY.problemTitle}
+                    </h2>
+                </Reveal>
+
+                <div className="mt-8">
+                    <Points items={COPY.problems} />
                 </div>
 
-                <ul className="mt-8 grid gap-4 md:grid-cols-3">
-                    {PROBLEMS.map((p, i) => (
-                        <li
-                            key={p.title}
-                            data-testid={`landing-problem-${i}`}
-                            className="rounded-lg border border-white/10 bg-card grain-surface p-5"
-                        >
-                            <h3 className="font-serif text-fluid-xl leading-tight">
-                                {p.title}
-                            </h3>
-                            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                                {p.body}
-                            </p>
-                        </li>
-                    ))}
-                </ul>
-
-                {/* The promise, as the answer to what was just described —
-                    the same words as the hero, because a promise reworded on
-                    every screen is three promises. */}
-                <p
-                    data-testid={PAGE_IDS.promise}
-                    className="mt-9 max-w-3xl font-serif text-fluid-3xl leading-snug"
-                >
-                    We built the boring parts: creators checked by a person, the rate
-                    agreed and written down before anyone shoots, the content approved
-                    before it is public, and a report at the end that says what it did.
-                </p>
-
-                <p className="mt-6 text-sm text-muted-foreground">
-                    <Link
-                        to="/how-it-works"
-                        data-testid={PAGE_IDS.howItWorksLink}
-                        className="text-ember-500 underline-offset-4 transition-colors duration-200 hover:underline"
+                <Reveal i={1}>
+                    <p
+                        data-testid={PAGE_IDS.promise}
+                        className="mt-10 font-serif text-fluid-3xl leading-snug"
                     >
-                        See the whole journey, from both sides
-                    </Link>
-                </p>
+                        {COPY.promise}{" "}
+                        <Link
+                            to="/how-it-works"
+                            data-testid={PAGE_IDS.howItWorksLink}
+                            className="text-ember-500 underline-offset-4 transition-colors duration-200 hover:underline"
+                        >
+                            See how
+                        </Link>
+                    </p>
+                </Reveal>
             </div>
         </section>
     );
 }
-
-// ---------------------------------------------------------------------------
 
 export default function Landing() {
     return (
@@ -403,26 +349,22 @@ export default function Landing() {
         >
             <PageMeta
                 title="Creator campaigns, handled properly"
-                description="WeAre Creators connects verified creators with brands running paid campaigns in Bengaluru. Rates agreed in writing before anyone shoots, content approved before it goes live, and a report at the end."
+                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns in Bengaluru."
                 path="/"
             />
-            <Navbar />
+            <MarketingNavbar />
 
             <Hero />
 
-            {/* Counted, never written down. The hero used to carry "500+
-                verified creators" as a hardcoded figure beside "48h" and "₹0",
-                on the page whose whole job is to be believed by a stranger. */}
+            {/* Counted, never written down. The hero carried a hardcoded
+                "500+ verified creators" until this replaced it. */}
             <ProofStrip only={["creators", "campaigns", "cities"]} />
 
             <Problem />
 
-            {/* The close carries home's second deliberate image slot, dimmed
-                behind the copy — the same shape the audience pages use, which
-                keeps the placement without paying for it in height. */}
             <section
                 data-testid={CLOSING_IDS.section}
-                className="relative overflow-hidden border-t border-white/10"
+                className="group relative overflow-hidden border-t border-white/10"
             >
                 <div aria-hidden className="absolute inset-0 opacity-40">
                     <PlaceholderImage
@@ -437,14 +379,17 @@ export default function Landing() {
                     aria-hidden
                     className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background"
                 />
-                <div className="relative mx-auto max-w-7xl px-6 py-12 md:py-14">
-                    <h2 className="max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
-                        Which side are you on?
-                    </h2>
-                    <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
-                        Creators join free. Brands post a brief, and we check the
-                        business before anything reaches a creator.
-                    </p>
+                <div className="relative mx-auto max-w-7xl px-6 py-14 md:py-16">
+                    <Reveal>
+                        <h2 className="max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
+                            {COPY.closeTitle}
+                        </h2>
+                    </Reveal>
+                    <Reveal i={1}>
+                        <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
+                            {COPY.closeLine}
+                        </p>
+                    </Reveal>
                     <div className="mt-8">
                         <TwoPaths testid={IDS.twoPaths} />
                     </div>
@@ -454,7 +399,7 @@ export default function Landing() {
                 </div>
             </section>
 
-            <Footer />
+            <MarketingFooter />
         </div>
     );
 }

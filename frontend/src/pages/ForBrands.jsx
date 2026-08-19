@@ -1,25 +1,26 @@
-// /for-brands — the full brand narrative, one reader, one ask.
+// /for-brands — one reader, one ask, under 250 words.
 //
-// The copy is carried over from the server-rendered version this replaces
-// rather than rewritten: it was written to the positioning and pinned by
-// tests, and a restructure is not a licence to re-argue settled wording.
+// This is a compression, not a repositioning. Every claim here was on the page
+// before at four times the length; what changed is that a fifty-word paragraph
+// became a four-word label and one line, because the second half of the
+// paragraph was being skipped anyway. The detail it used to carry lives in
+// onboarding and in the product, which is where somebody who has clicked
+// actually needs it.
 //
-// **The positioning, since it governs every line here:** what we are against
-// is disorganisation — campaigns run over DMs and spreadsheets, nobody
-// checked, no rate in writing, no proof of what it achieved. It is
-// deliberately *not* agencies. WeAre Studios is one, the managed service is a
-// real offering somebody chooses, and "without an agency" would be a page
-// arguing against our own product.
+// **The positioning, since it governs every line:** what we are against is
+// disorganisation — DMs, spreadsheets, handshake deals. It is deliberately
+// *not* agencies. WeAre Studios is one, the managed service is a real offering
+// somebody chooses, and "without an agency" would be a page arguing against
+// our own product.
 //
-// Bengaluru appears as evidence of network depth, never as identity: the
-// network is deepest there, which is a fact about how much we can do rather
-// than a statement about who we are.
+// Bengaluru appears as evidence of network depth, never as identity: it is a
+// fact about how fast a brief fills rather than a statement about who we are.
 import React from "react";
 
 import {
     MarketingPage,
     MarketingHero,
-    ValueProps,
+    Points,
     Steps,
     TextImageSection,
     ClosingSection,
@@ -29,62 +30,71 @@ import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
 
-const VALUE_PROPS = [
-    {
-        title: "Creators we have actually checked",
-        body:
-            "Every creator is reviewed by a person before a brand can see them — the " +
-            "account, the work, whether the audience looks real. Where a creator has " +
-            "connected Instagram, the follower count and engagement rate on their " +
-            "profile are read from Instagram itself, and the ones we could not measure " +
-            "say so rather than quietly passing as verified.",
-    },
-    {
-        title: "Every creator, every rate, in front of you",
-        body:
-            "You see who applied and what each of them quoted, and the rate is recorded " +
-            "against the booking before anybody turns up. No retainer, and no markup on " +
-            "what the creator charges — our fee sits on top and is shown to you before " +
-            "you confirm, so the number the creator quoted is the number the creator gets.",
-    },
-    {
-        title: "Run it yourself, or hand it to the team",
-        body:
-            "WeAre Studios runs campaigns for a living. Post the brief and manage it " +
-            "from your own dashboard, or hand it over and we will staff it, book the " +
-            "slots, stand at the door on the day and send you the numbers afterwards. " +
-            "You choose per campaign, and you can choose differently next time.",
-    },
-];
+// All of the page's words, in one place, so the budget can be read rather
+// than counted across a file. A unit test enforces it.
+const COPY = {
+    title: "Fill the room. Launch the thing.",
+    line: "Creators we have checked, the rate agreed before anyone shoots, and nothing published until you approve it.",
+    footnote: "No retainer. No markup on creator fees.",
 
-const STEPS = [
-    {
-        title: "Post your brief",
-        body:
-            "What you want made, the budget per creator, the dates, and which days and " +
-            "hours your venue can actually take people. Ten minutes.",
-    },
-    {
-        title: "Review applicants, or our suggestions",
-        body:
-            "Creators apply with a pitch and a rate. Alongside them we rank the verified " +
-            "creators who fit the brief, with the reason on every card so you can argue " +
-            "with it. Accept who you want, or invite them directly.",
-    },
-    {
-        title: "They shoot on slots they booked",
-        body:
-            "Inside the days and hours you set. Your campaign manager holds the roster " +
-            "and the phone numbers, and you are told what changes.",
-    },
-    {
-        title: "Approve it, then see what it did",
-        body:
-            "Turn on draft review and nothing is published until you have said yes — or " +
-            "asked for a change. Afterwards: reach, engagement and cost per thousand, on " +
-            "one report you can send on.",
-    },
-];
+    props: [
+        {
+            label: "Creators we checked",
+            line: "A person reviews every one, and connected Instagram stats are read from Instagram.",
+        },
+        {
+            label: "Every rate, in front of you",
+            line: "You see what each creator quoted. Our fee sits on top, shown before you confirm.",
+        },
+        {
+            label: "Yours to run, or ours",
+            line: "Manage it from your dashboard, or hand it to the WeAre Studios team. You choose per campaign.",
+        },
+    ],
+
+    stepsTitle: "Brief to report, in four moves.",
+    steps: [
+        {
+            label: "Post the brief",
+            line: "What you want made, the budget, and the hours your venue can take people.",
+        },
+        {
+            label: "Pick your creators",
+            line: "Applicants arrive with their rate, ranked alongside verified creators who fit.",
+        },
+        {
+            label: "They shoot",
+            line: "On slots they booked, inside the days and hours you set.",
+        },
+        {
+            label: "Approve, then read the numbers",
+            line: "Nothing goes live until you say yes. Reach and cost per thousand afterwards.",
+        },
+    ],
+
+    choiceTitle: "Self-serve, or we run it.",
+    choiceLine: "An option you choose per campaign, never a fee you are locked into.",
+    choice: [
+        {
+            label: "No retainer",
+            line: "And no markup on what the creator charges, either way.",
+        },
+        {
+            label: "A named manager",
+            line: "On a managed campaign, holding the roster and at the door on the day.",
+        },
+        {
+            label: "Same approval, same report",
+            line: "Whichever way you run it.",
+        },
+    ],
+
+    reachTitle: "Deepest in Bengaluru.",
+    reachLine: "That is where the network is thickest and briefs fill fastest. Creators sign up from anywhere in India.",
+
+    closeTitle: "Post your first brief.",
+    closeLine: "About ten minutes. We check your business before anything reaches a creator.",
+};
 
 export default function ForBrands() {
     return (
@@ -96,9 +106,10 @@ export default function ForBrands() {
         >
             <MarketingHero
                 eyebrow="For brands"
-                title="Fill the room. Launch the thing."
-                standfirst="Creators we have checked, rates agreed in writing before anyone shoots, nothing published until you have approved it, and a report at the end showing what it achieved. Run it yourself, or hand it to our team."
+                title={COPY.title}
+                line={COPY.line}
                 cta={{ ...ASK, testid: IDS.ctaTop }}
+                footnote={COPY.footnote}
                 image={{
                     // PLACEHOLDER IMAGE: a full restaurant on opening night in
                     // Bengaluru, shot wide from the back of the room, warm
@@ -107,31 +118,30 @@ export default function ForBrands() {
                     note: "Full restaurant on opening night, creator filming at a table, landscape 16:9",
                     ratio: "16/9",
                 }}
-                footnote="No retainer. No markup on creator fees."
             />
 
             {/* Counted, never written down — and absent entirely below the
                 floors, because a small number is not proof. */}
             <ProofStrip />
 
-            <ValueProps items={VALUE_PROPS} testid={IDS.valueProps} />
+            <section className="border-b border-white/10 py-16 md:py-20">
+                <div className="mx-auto max-w-7xl px-6">
+                    <Points items={COPY.props} testid={IDS.valueProps} />
+                </div>
+            </section>
 
             <Steps
                 eyebrow="How it works"
-                title="From brief to report, in four moves."
-                items={STEPS}
+                title={COPY.stepsTitle}
+                items={COPY.steps}
                 testid={IDS.steps}
             />
 
             <TextImageSection
                 eyebrow="The choice"
-                title="Self-serve, or we run it."
-                body="Both are real offerings and you pick per campaign. Self-serve is the dashboard: you post, you shortlist, you approve. Managed is the WeAre Studios team doing the same work with our people — an option you choose, never a fee you are locked into."
-                points={[
-                    "Hand over one campaign and keep the next one yourself.",
-                    "A managed campaign gets a named manager, a booked roster and somebody at the door on the day.",
-                    "Either way you approve the content and you get the report.",
-                ]}
+                title={COPY.choiceTitle}
+                line={COPY.choiceLine}
+                points={COPY.choice}
                 image={{
                     // PLACEHOLDER IMAGE: a WeAre campaign manager at a venue
                     // with a tablet, checking creators in at the door, evening.
@@ -145,8 +155,8 @@ export default function ForBrands() {
 
             <TextImageSection
                 eyebrow="Where we are"
-                title="Deepest in Bengaluru."
-                body="That is where the network is thickest and where most campaigns run today — which is a fact about how quickly we can fill a brief, not a statement about who we are. Creators sign up from anywhere in India."
+                title={COPY.reachTitle}
+                line={COPY.reachLine}
                 image={{
                     // PLACEHOLDER IMAGE: a recognisable Bengaluru neighbourhood
                     // at dusk — Indiranagar or Koramangala shopfronts lit up.
@@ -157,8 +167,8 @@ export default function ForBrands() {
             />
 
             <ClosingSection
-                title="Post your first brief."
-                body="It takes about ten minutes, and nothing reaches a creator until we have checked your business."
+                title={COPY.closeTitle}
+                line={COPY.closeLine}
                 cta={{ ...ASK, testid: IDS.ctaBottom }}
                 image={{
                     // PLACEHOLDER IMAGE: a creator's phone on a gimbal framing

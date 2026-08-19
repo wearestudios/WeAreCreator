@@ -10,6 +10,16 @@ export const MARKETING = {
 	whyWeAre: 'why-weare-page',
 	notFound: 'not-found-page',
 
+	// The marketing-only navbar. A variant of the shared one, so its ids are
+	// its own — a test that asserts on `site-navbar` is asking about the
+	// authenticated bar and must keep finding it.
+	navbar: 'marketing-navbar',
+	navLogo: 'marketing-nav-logo',
+	navSignIn: 'marketing-nav-signin',
+	navJoin: 'marketing-nav-join',
+	navMenuButton: 'marketing-nav-menu-btn',
+	navMenu: 'marketing-nav-menu',
+
 	// Shared furniture.
 	hero: 'marketing-hero',
 	heroImage: 'marketing-hero-image',
@@ -28,6 +38,7 @@ export const MARKETING = {
 
 	// Sections that a test names directly.
 	valueProps: 'marketing-value-props',
+	point: 'marketing-point',
 	steps: 'marketing-steps',
 	creatorTrack: 'how-it-works-creator-track',
 	brandTrack: 'how-it-works-brand-track',
