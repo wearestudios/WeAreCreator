@@ -1,19 +1,17 @@
 // The dev server's half of the deploy rewrites.
 //
-// Five paths are rendered by the *backend*, not by this app: a brief at
-// /c/{id}, a brand at /brands/{id}, the two audience pages, and the sitemap.
+// Three paths are rendered by the *backend*, not by this app: a brief at
+// /c/{id}, a brand at /brands/{id}, and the sitemap.
 // In production they reach the API host through the rewrites in `vercel.json`
 // (see PREVIEW.md). There was no equivalent locally, so webpack-dev-server's
-// history fallback answered all five with `index.html`, the SPA loaded, and
-// the router's catch-all sent the visitor to `/`.
-//
-// That is not a cosmetic gap. The navbar and the footer link to /for-creators
-// and /for-brands as **real anchors**, deliberately, so the browser asks the
-// server rather than letting the router swallow the navigation — which means
-// those two links silently bounced off home for anyone running the stack the
-// way PREVIEW.md says to run it. The Share button had the same problem: it
+// history fallback answered them with `index.html`, the SPA loaded, and the
+// router's catch-all took over. The Share button was the visible symptom: it
 // copies `http://localhost:3000/c/<id>`, which opened the app instead of the
 // page it names.
+//
+// It was five paths until the marketing site moved into the SPA. /for-brands
+// and /for-creators are ordinary React routes now, so proxying them here would
+// send the dev server to a backend that no longer renders them.
 //
 // CRA loads this file automatically in development. It does not exist in a
 // production build, so it cannot mask a missing rewrite on the deployed site.
@@ -34,8 +32,6 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
 const SERVER_RENDERED = [
     /^\/c\/[^/]+\/?$/,
     /^\/brands\/[^/]+\/?$/,
-    /^\/for-brands\/?$/,
-    /^\/for-creators\/?$/,
     /^\/sitemap\.xml$/,
 ];
 

@@ -76,13 +76,19 @@ const ROLE_LABEL = {
     campaign_manager: "WeAre manager",
 };
 
+// The marketing site's four pages, in the order somebody reads them: which
+// audience am I, then how does it work, then why you.
+//
+// **All four are ordinary routes now.** They used to be two in-page anchors
+// (`#how-it-works`, `#why`) that only resolved on the landing page, plus one
+// real <a> to a page the backend rendered — so "How it works" from anywhere
+// other than home scrolled to nothing, and "For brands" left the app. The
+// pages are in the SPA and these are <Link>s.
 const MARKETING_LINKS = [
-    { href: "#how-it-works", label: "How it works", testId: "nav-how" },
-    { href: "#why", label: "Why WeAre", testId: "nav-why" },
-    // A real <a>, not a <Link>: /for-brands is server-rendered by the backend
-    // like /c/:id and /brands/:id, so the router must not intercept it — a
-    // client-side navigation would land on the SPA's catch-all instead.
-    { href: "/for-brands", label: "For brands →", testId: "nav-for-brands" },
+    { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
+    { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
+    { to: "/how-it-works", label: "How it works", testId: "nav-how" },
+    { to: "/why-weare", label: "Why WeAre", testId: "nav-why" },
 ];
 
 export const Navbar = () => {
@@ -152,28 +158,17 @@ export const Navbar = () => {
                     has a job in here; "Why WeAre" is not part of it. Hidden
                     while `checking` too, so it doesn't flash in and out once
                     /auth/me answers. */}
-                <nav className="hidden items-center gap-8 md:flex">
-                    {(checking || signedIn ? [] : MARKETING_LINKS).map((l) =>
-                        l.href ? (
-                            <a
-                                key={l.testId}
-                                href={l.href}
-                                data-testid={l.testId}
-                                className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                            >
-                                {l.label}
-                            </a>
-                        ) : (
-                            <Link
-                                key={l.testId}
-                                to={l.to}
-                                data-testid={l.testId}
-                                className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
-                            >
-                                {l.label}
-                            </Link>
-                        ),
-                    )}
+                <nav className="hidden items-center gap-7 md:flex">
+                    {(checking || signedIn ? [] : MARKETING_LINKS).map((l) => (
+                        <Link
+                            key={l.testId}
+                            to={l.to}
+                            data-testid={l.testId}
+                            className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                        >
+                            {l.label}
+                        </Link>
+                    ))}
                 </nav>
 
                 <div className="flex items-center gap-3">
@@ -235,17 +230,17 @@ export const Navbar = () => {
                             >
                                 Log in
                             </Link>
-                            {/* The primary conversion action stays in the bar at
-                                every width; only its label shortens. */}
-                            <Link
-                                to="/signup?role=creator"
-                                data-testid="nav-signup-creator-link"
-                            >
+                            {/* The primary action stays in the bar at every
+                                width. It says "Join" rather than "Sign up as a
+                                creator": the site now addresses two audiences
+                                by name in the menu beside it, and a
+                                creator-specific button there tells a brand the
+                                bar is not for them. /signup carries a role
+                                picker and defaults to creator, so nobody who
+                                wanted the old button loses a step. */}
+                            <Link to="/signup" data-testid="nav-signup-link">
                                 <Button className="rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400">
-                                    <span className="sm:hidden">Sign up</span>
-                                    <span className="hidden sm:inline">
-                                        Sign up as a creator
-                                    </span>
+                                    Join
                                 </Button>
                             </Link>
                         </>
@@ -311,37 +306,31 @@ export const Navbar = () => {
                                         </>
                                     )}
 
+                                    {/* The same four pages as the desktop bar,
+                                        in the same order. The sheet is the
+                                        only navigation below md, so anything
+                                        missing here is unreachable on a
+                                        phone — which is where most of these
+                                        links are opened from. */}
                                     {!signedIn && (
-                                      <>
-                                    <p
-                                        className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
-                                    >
-                                        Explore
-                                    </p>
-                                    <div className="mt-4 flex flex-col">
-                                        {MARKETING_LINKS.map((l) => (
-                                            <SheetClose asChild key={l.testId}>
-                                                {l.href ? (
-                                                    <a
-                                                        href={l.href}
-                                                        data-testid={`${l.testId}-mobile`}
-                                                        className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
-                                                    >
-                                                        {l.label}
-                                                    </a>
-                                                ) : (
-                                                    <Link
-                                                        to={l.to}
-                                                        data-testid={`${l.testId}-mobile`}
-                                                        className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
-                                                    >
-                                                        {l.label}
-                                                    </Link>
-                                                )}
-                                            </SheetClose>
-                                        ))}
-                                    </div>
-                                      </>
+                                        <>
+                                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                                Explore
+                                            </p>
+                                            <div className="mt-4 flex flex-col">
+                                                {MARKETING_LINKS.map((l) => (
+                                                    <SheetClose asChild key={l.testId}>
+                                                        <Link
+                                                            to={l.to}
+                                                            data-testid={`${l.testId}-mobile`}
+                                                            className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
+                                                        >
+                                                            {l.label}
+                                                        </Link>
+                                                    </SheetClose>
+                                                ))}
+                                            </div>
+                                        </>
                                     )}
                                 </nav>
 
@@ -364,11 +353,11 @@ export const Navbar = () => {
                                         <div className="flex flex-col gap-3">
                                             <SheetClose asChild>
                                                 <Link
-                                                    to="/signup?role=creator"
-                                                    data-testid="nav-signup-creator-link-mobile"
+                                                    to="/signup"
+                                                    data-testid="nav-signup-link-mobile"
                                                 >
                                                     <Button className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
-                                                        Sign up as a creator
+                                                        Join
                                                     </Button>
                                                 </Link>
                                             </SheetClose>

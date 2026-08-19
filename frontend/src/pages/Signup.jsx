@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import OtpForm from "@/components/OtpForm";
+import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import {
     Select,
     SelectContent,
@@ -97,11 +98,12 @@ export default function Signup() {
 
     return (
         <div data-testid="signup-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
-            <div className="media-frame relative hidden md:block">
-                <img
-                    src="https://images.unsplash.com/photo-1596797038530-2c107229654b?auto=format&fit=crop&w=1200&q=80"
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover opacity-55"
+            <div className="relative hidden md:block">
+                <PlaceholderImage
+                    // PLACEHOLDER IMAGE: Creator setting up a shot at a Bengaluru cafe, portrait crop for the auth aside.
+                    note="Creator setting up a shot at a Bengaluru cafe, portrait crop for the auth aside"
+                    fill
+                    className="opacity-60"
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-background/40 via-background/60 to-background" />
                 <div className="relative flex h-full flex-col justify-between p-12">

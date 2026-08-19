@@ -1,277 +1,102 @@
-// The public home page.
+// Home — a router, not a story.
 //
-// Three things shape it. It is an endorsed sub-brand — WeAre Creators is an
-// offering of WeAre Studios, so the studio is credited in the nav and the
-// footer and nowhere else; the ember identity stays Creators'. The hero is a
-// slider because creators sign up from every category and one still
-// photograph can only argue for one of them. And the geography is
-// stated plainly: the network is deepest in Bengaluru, that is where the work
-// is today, and signing up is open to anyone in India.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+// This page was 1,200 lines and eight sections: hero, problem, reach, a
+// how-it-works ladder, a live brief feed, a trust panel, a verticals strip and
+// a closing toggle. It was the whole pitch on one scroll because it was the
+// only marketing page there was, so everything anybody might want to say had
+// nowhere else to go.
+//
+// There are five pages now. Home's job is to say what this is and send you to
+// the right one, in about two screens: the hero and its slider, the counted
+// proof strip, one problem-and-promise section, and the close. **Everything
+// that used to live below has its own page** — the how-it-works ladder is
+// /how-it-works, the trust panel is /why-weare, the audience arguments are the
+// audience pages, and the live brief feed is /campaigns, which is a better
+// version of it and was always one tap away.
+//
+// **Nothing here is fetched from a third party.** The slider used to hotlink
+// four stock photographs from a CDN; every image slot on the marketing site is
+// now a `PlaceholderImage` waiting on owned photography. See that component.
+import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-    motion,
     AnimatePresence,
+    motion,
     useReducedMotion,
     useScroll,
     useTransform,
 } from "framer-motion";
-import {
-    ArrowRight,
-    ShieldCheck,
-    Compass,
-    Send,
-    Wallet,
-    IndianRupee,
-    Lock,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
+
 import { Navbar } from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api";
-import { formatCompensation, isBarter } from "@/lib/compensation";
-import {
-    LANDING as PAGE_IDS,
-    LANDING_CLOSING as CLOSING_IDS,
-    LANDING_HERO as HERO_IDS,
-    LANDING_REACH as REACH_IDS,
-    LANDING_SECTIONS as SECTION_IDS,
-    LANDING_STUDIO as STUDIO_IDS,
-} from "@/constants/testIds";
+import PageMeta from "@/components/marketing/PageMeta";
+import PlaceholderImage from "@/components/marketing/PlaceholderImage";
+import ProofStrip from "@/components/marketing/ProofStrip";
+import { TwoPaths } from "@/components/marketing/Sections";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
-import BrandName from "@/components/BrandName";
-import CampaignCover from "@/components/CampaignCover";
+import {
+    LANDING_HERO as HERO_IDS,
+    LANDING_PAGE as PAGE_IDS,
+    LANDING_CLOSING as CLOSING_IDS,
+    LANDING_STUDIO as STUDIO_IDS,
+    MARKETING as IDS,
+} from "@/constants/testIds";
 
 // ---------------------------------------------------------------------------
 // Hero deck
 // ---------------------------------------------------------------------------
 //
-// The deck used to be four food shots, which quietly told a fashion or travel
+// Four slides spanning the kinds of work briefs are actually posted for. The
+// deck used to be four food shots, which quietly told a fashion or travel
 // creator this wasn't for them — the range is the argument, so the deck has to
-// carry it. Only the photograph and the headline change between slides; the
-// eyebrow, the subheading, both CTAs and the stats are fixed, so the page never
-// appears to be selling four different products.
-//
-// Each headline names the outcome the brand is buying in that category, not
-// the shoot. That keeps them specific without any of them being generic.
+// carry it.
 //
 // **Every kicker is a real campaign category.** There was a "Tech & gadgets"
-// slide and a "Fitness & wellness" one; `CampaignCategory` has neither of the
-// first two words in it, so a tech creator arriving off that slide could
-// filter the brief list and find that the category does not exist. Widening
-// the deck is only an argument for range if the range is there.
+// slide once; `CampaignCategory` has no such value, so a tech creator arriving
+// off it could filter the brief list and find the category does not exist.
+// Widening the deck is only an argument for range if the range is there.
 //
-// The photographs are stock, loaded from a third-party CDN, and are the only
-// remote fetch on the whole marketing site — see the note on SlideImage.
+// Only the image and the kicker line change between slides. The headline, the
+// standfirst and both paths are fixed, so the page never appears to be selling
+// four different products.
 const SLIDES = [
     {
         key: "launch",
         kicker: "Restaurant launch",
         headline: ["A full room", "on opening night."],
-        image:
-            "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=2000&q=80",
-        alt: "A busy restaurant on its launch night",
+        // PLACEHOLDER IMAGE: a packed Bengaluru restaurant on opening night,
+        // shot wide and warm, a creator filming at a table mid-ground. 16:9.
+        note: "Packed restaurant on opening night, creator filming at a table, 16:9",
     },
     {
         key: "fashion",
-        kicker: "Fashion & beauty",
+        kicker: "Fashion",
         headline: ["The lookbook that moves", "the whole collection."],
-        image:
-            "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=2000&q=80",
-        alt: "A fashion shoot on a studio rail",
+        // PLACEHOLDER IMAGE: a rail of clothes and a creator shooting a
+        // try-on in a Bengaluru boutique, daylight. 16:9.
+        note: "Creator shooting a try-on beside a clothes rail in a boutique, 16:9",
     },
     {
         key: "travel",
         kicker: "Hotels & travel",
         headline: ["Two nights away.", "A season of bookings."],
-        image:
-            "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=2000&q=80",
-        alt: "A hotel room opening onto a balcony",
+        // PLACEHOLDER IMAGE: a hotel room opening onto a balcony at first
+        // light, a phone on a tripod framing it. 16:9.
+        note: "Hotel room opening onto a balcony at first light, phone on a tripod, 16:9",
     },
     {
         key: "wellness",
         kicker: "Wellness",
         headline: ["One class filmed.", "Six weeks booked out."],
-        image:
-            "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=2000&q=80",
-        alt: "A fitness class mid-session",
+        // PLACEHOLDER IMAGE: a fitness or yoga class mid-session, shot from
+        // the back of the room, one participant filming. 16:9.
+        note: "Fitness class mid-session shot from the back of the room, 16:9",
     },
 ];
 
 const SLIDE_INTERVAL_MS = 7000;
-
-// What the briefs are for. This replaced a list of eight cities.
-//
-// The prose beside it said the true thing — the network runs deepest in
-// Bengaluru — and then seven other city names sat next to it in serif italic,
-// which is a footprint whatever the paragraph says. Greying them out is not a
-// disclaimer; it reads as "coming soon", which is the promise about a date the
-// list was written to avoid making.
-//
-// So the column answers the question the reader actually has at that point —
-// "is there anything here for me" — with something we can back: the categories
-// briefs are posted in, which is the campaign category enum and nothing else.
-const BRIEF_CATEGORIES = [
-    "Restaurants & cafés",
-    "Hotels & travel",
-    "Fashion",
-    "Retail",
-    "Wellness",
-    "Lifestyle",
-];
-
-const STEPS = [
-    {
-        n: "01",
-        Icon: ShieldCheck,
-        title: "Get verified",
-        body: "Apply once. Our team reviews your profile, niche and audience — every creator on here has been through it.",
-    },
-    {
-        n: "02",
-        Icon: Compass,
-        title: "Discover briefs",
-        // The categories named are the campaign category enum, not a wider
-        // list that reads well — "tech" and "beauty" were in this sentence and
-        // in no brief anyone could post.
-        body: "Paid campaigns from restaurants, hotels, fashion, retail, wellness and lifestyle brands. You see the deliverable and what it pays before you pitch.",
-    },
-    {
-        n: "03",
-        Icon: Send,
-        title: "Pitch in a tap",
-        body: "Send a short note and your rate. Brands review your work and shortlist you from the app.",
-    },
-    {
-        n: "04",
-        Icon: Wallet,
-        title: "Deliver & get paid",
-        // Named the draft step, which changed when content becomes public and
-        // so changed what this sentence describes. "Shoot, publish, submit"
-        // described the flow before the review gate existed.
-        body: "Shoot, send the draft for approval, then publish. Once the brand approves the delivery your payout is released — you keep 100% of your agreed rate, and we chase the brand, not you.",
-    },
-];
-
-const TRUST_POINTS = [
-    {
-        Icon: IndianRupee,
-        title: "You keep 100% of your rate",
-        // This said "no free product or 'exposure' standing in for money",
-        // which is contradicted by the first barter brief somebody opens —
-        // and barter briefs are a real, admin-arranged thing here. The point
-        // worth making is the one that is true of every brief: our fee sits
-        // on the brand, on top, and nothing comes out of the creator's side.
-        body: "Our fee is charged to the brand on top of your rate. Nothing is deducted from what you agreed, and joining is free.",
-    },
-    {
-        Icon: ShieldCheck,
-        title: "Verified on both sides",
-        body: "Every creator is reviewed before they can pitch, and every brand we promote is checked against its own paperwork.",
-    },
-    {
-        Icon: Lock,
-        title: "The fee is agreed in writing",
-        body: "Your rate is recorded against the brief before anyone shoots, and every brief says on its face what it pays — a fee, a negotiation, or barter.",
-    },
-];
-
-const CAT_LABEL = {
-    fnb: "F&B",
-    hospitality: "Hospitality",
-    retail: "Retail",
-    real_estate: "Real Estate",
-    fashion: "Fashion",
-    travel: "Travel",
-    wellness: "Wellness",
-    lifestyle: "Lifestyle",
-};
-
-const MANAGED_MAILTO =
-    "mailto:creators@wearemonk.in?subject=Managed%20campaign%20request";
-
-const fadeUp = {
-    hidden: { opacity: 0, y: 16 },
-    show: (i = 0) => ({
-        opacity: 1,
-        y: 0,
-        transition: { delay: 0.08 * i, duration: 0.7, ease: [0.22, 1, 0.36, 1] },
-    }),
-};
-
-// ---------------------------------------------------------------------------
-// Small pieces
-// ---------------------------------------------------------------------------
-
-function AnimatedNumber({ value, suffix = "", duration = 1400 }) {
-    const still = useReducedMotion();
-    const [n, setN] = useState(still ? value : 0);
-    useEffect(() => {
-        if (still) {
-            setN(value);
-            return undefined;
-        }
-        const start = performance.now();
-        let frame;
-        const tick = (now) => {
-            const t = Math.min(1, (now - start) / duration);
-            setN(Math.round(value * (1 - Math.pow(1 - t, 3)))); // ease-out cubic
-            if (t < 1) frame = requestAnimationFrame(tick);
-        };
-        frame = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(frame);
-    }, [value, duration, still]);
-    return (
-        <span>
-            {n.toLocaleString("en-IN")}
-            {suffix}
-        </span>
-    );
-}
-
-/**
- * One slide's photograph.
- *
- * The gradient and grain sit over it either way, so a photo that fails to load
- * leaves a composed dark panel rather than a broken page — the headline is
- * readable on the background alone. Worth having: these are remote images on
- * the one page most people see first.
- *
- * NEEDS A DECISION — these are stock photographs hotlinked from Unsplash, and
- * with the two on the login and signup screens they are the only third-party
- * fetches anywhere in the app.
- * `/for-brands`, `/for-creators` and `/c/{id}` were built to fetch nothing at
- * all, which is why they paint in tens of milliseconds. Two things are wrong
- * here and neither is fixable in code: the images are somebody else's, of
- * nowhere in particular, on a page whose argument is that the work is real and
- * local; and they arrive from a CDN we do not control on the critical path of
- * the front door. The fix is owned photography from actual Bengaluru shoots,
- * self-hosted. Until there is any, the failure path above is what keeps this
- * from being a broken page rather than a slow one.
- */
-function SlideImage({ slide, index, active }) {
-    const [failed, setFailed] = useState(false);
-    if (failed) return null;
-    return (
-        <img
-            src={slide.image}
-            alt={slide.alt}
-            data-testid={HERO_IDS.slideImage(index)}
-            onError={() => setFailed(true)}
-            // The first slide is the one everybody sees; the rest can wait.
-            loading={index === 0 ? "eager" : "lazy"}
-            fetchpriority={index === 0 ? "high" : "low"}
-            decoding="async"
-            aria-hidden={active ? undefined : "true"}
-            className="h-full w-full object-cover"
-        />
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Hero
-// ---------------------------------------------------------------------------
 
 function Hero() {
     const still = useReducedMotion();
@@ -281,9 +106,6 @@ function Hero() {
     // Parallax on the deck, not on any one slide, so crossfades don't fight it.
     const { scrollY } = useScroll();
     const imgY = useTransform(scrollY, [0, 400], [0, 60]);
-    // The photograph has to be legible or the slider means nothing —
-    // design_guidelines is explicit that an invisible image means the overlay
-    // is too heavy. It dims as you scroll into the page, not before.
     const imgOpacity = useTransform(scrollY, [0, 400], [0.85, 0.3]);
 
     // Reduced motion gets the first slide and nothing else: no timer, no
@@ -321,7 +143,7 @@ function Hero() {
             <motion.div
                 style={{ y: imgY, opacity: imgOpacity }}
                 data-testid={HERO_IDS.slides}
-                className="media-frame absolute inset-0"
+                className="absolute inset-0"
             >
                 <AnimatePresence initial={false}>
                     <motion.div
@@ -334,33 +156,20 @@ function Hero() {
                         transition={{ duration: animated ? 1.6 : 0, ease: "linear" }}
                         className="absolute inset-0"
                     >
-                        <SlideImage
-                            slide={current}
-                            index={SLIDES.indexOf(current)}
-                            active
+                        <PlaceholderImage
+                            note={current.note}
+                            fill
+                            testid={HERO_IDS.slideImage(SLIDES.indexOf(current))}
                         />
                     </motion.div>
                 </AnimatePresence>
             </motion.div>
 
-            {/* Preload the rest quietly once the first slide is up, so the
-                first crossfade isn't a fade to nothing. */}
-            {animated && (
-                <div aria-hidden className="pointer-events-none absolute h-0 w-0 overflow-hidden">
-                    {SLIDES.slice(1).map((s) => (
-                        <img key={s.key} src={s.image} alt="" loading="lazy" decoding="async" />
-                    ))}
-                </div>
-            )}
-
             {/* Two overlays doing two jobs: the vertical one lands the image
                 into the page, the horizontal one is a scrim behind the text so
-                the headline stays readable whatever the photograph is doing on
-                the left. A single flat wash would have to be heavy enough to
-                kill the image to do both. */}
+                the headline stays readable whatever is behind it on the left. */}
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/40 via-background/55 to-background" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background/85 via-background/45 to-transparent" />
-            <div className="pointer-events-none grain absolute inset-0" />
 
             <motion.div
                 aria-hidden
@@ -370,107 +179,90 @@ function Hero() {
                 className="pointer-events-none absolute -right-40 top-24 h-[520px] w-[520px] rounded-full bg-ember-500/15 blur-[120px]"
             />
 
-            <div className="relative mx-auto max-w-7xl px-6 pb-28 pt-20 md:pt-32">
-                <motion.p
+            <div className="relative mx-auto max-w-7xl px-6 pb-12 pt-10 md:pb-14 md:pt-14">
+                <p
                     data-testid={HERO_IDS.eyebrow}
-                    initial="hidden"
-                    animate="show"
-                    variants={fadeUp}
                     className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                 >
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500 animate-pulse" />
                     <span className="text-ember-500/90">Vol. 01</span>
                     <span className="h-3 w-px bg-white/15" />
                     Bengaluru · Influencer studio
-                </motion.p>
+                </p>
 
-                {/* Only this line and the photograph change per slide. */}
-                <div className="min-h-[6.5rem] md:min-h-[7.5rem]">
+                <h1
+                    data-testid={HERO_IDS.heading}
+                    className="max-w-4xl font-serif text-fluid-hero tracking-tightest"
+                >
+                    Your creator campaigns,{" "}
+                    <span className="italic text-muted-foreground">handled properly.</span>
+                </h1>
+
+                <p
+                    data-testid={HERO_IDS.subheading}
+                    className="mt-7 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg"
+                >
+                    Verified creators, rates agreed before anyone shoots, and results
+                    you can show. Run it yourself, or hand it to our team.
+                </p>
+
+                {/* The line that changes per slide, demoted beneath the fixed
+                    headline: it is a example of the work, not the promise. */}
+                <div className="mt-6 min-h-[3.25rem]">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={current.key}
-                            initial={animated ? { opacity: 0, y: 10 } : false}
+                            initial={animated ? { opacity: 0, y: 8 } : false}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
+                            exit={{ opacity: 0, y: -8 }}
                             transition={{ duration: animated ? 0.7 : 0, ease: [0.22, 1, 0.36, 1] }}
+                            className="flex flex-wrap items-baseline gap-x-4 gap-y-1"
                         >
-                            <p
+                            <span
                                 data-testid={HERO_IDS.kicker}
-                                className="mb-4 text-xs uppercase tracking-[0.2em] text-ember-500"
+                                className="text-xs uppercase tracking-[0.2em] text-ember-500"
                             >
                                 {current.kicker}
-                            </p>
-                            <p className="max-w-3xl font-serif text-fluid-3xl leading-tight text-muted-foreground">
+                            </span>
+                            <span className="font-serif text-fluid-2xl leading-tight text-muted-foreground">
                                 {current.headline[0]}{" "}
                                 <span className="italic">{current.headline[1]}</span>
-                            </p>
+                            </span>
                         </motion.div>
                     </AnimatePresence>
                 </div>
 
-                <motion.h1
-                    data-testid={HERO_IDS.heading}
-                    initial="hidden"
-                    animate="show"
-                    custom={1}
-                    variants={fadeUp}
-                    className="mt-8 max-w-4xl font-serif text-fluid-hero tracking-tightest"
-                >
-                    Your creator campaigns,{" "}
-                    <span className="italic text-muted-foreground">handled properly.</span>
-                </motion.h1>
-
-                <motion.p
-                    data-testid={HERO_IDS.subheading}
-                    initial="hidden"
-                    animate="show"
-                    custom={2}
-                    variants={fadeUp}
-                    className="mt-8 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg"
-                >
-                    Verified creators, rates agreed before anyone shoots, and results
-                    you can show. Run it yourself, or hand it to our team.
-                </motion.p>
-
-                <motion.div
-                    initial="hidden"
-                    animate="show"
-                    custom={3}
-                    variants={fadeUp}
-                    className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center"
-                >
-                    {/* Two paths, not three asks. The page used to offer
-                        "Post a campaign", "Join as a creator" and a mailto in
-                        one row, which is three doors and a decision nobody
-                        came here to make. Home routes; the audience pages
-                        sell — so these go to the pages, not to signup. */}
-                    <a href="/for-creators" data-testid={HERO_IDS.ctaCreator}>
+                {/* Two paths, not three asks. Home routes; the audience pages
+                    sell — so these go to the pages, not to signup. Ordinary
+                    <Link>s: the audience pages are routes now. */}
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
                         <Button
                             size="lg"
                             className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400 sm:w-auto"
                         >
-                            I'm a creator
+                            I&apos;m a creator
                             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                         </Button>
-                    </a>
-                    <a href="/for-brands" data-testid={HERO_IDS.ctaBrand}>
+                    </Link>
+                    <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
                         <Button
                             size="lg"
                             variant="outline"
                             className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground hover:bg-white/5 sm:w-auto"
                         >
-                            I'm a brand
+                            I&apos;m a brand
                             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                         </Button>
-                    </a>
-                </motion.div>
+                    </Link>
+                </div>
 
                 {animated && (
                     <div
                         data-testid={HERO_IDS.dots}
                         role="tablist"
                         aria-label="Choose a campaign type"
-                        className="mt-12 flex items-center gap-3"
+                        className="mt-8 flex items-center gap-3"
                     >
                         {SLIDES.map((s, i) => {
                             const on = i === index;
@@ -498,736 +290,169 @@ function Hero() {
                         })}
                     </div>
                 )}
-
-                <motion.div
-                    data-testid={HERO_IDS.stats}
-                    initial="hidden"
-                    animate="show"
-                    custom={4}
-                    variants={fadeUp}
-                    className="mt-16 grid max-w-3xl grid-cols-3 gap-8 border-t border-white/10 pt-8"
-                >
-                    {[
-                        { id: "creators", k: 500, s: "+", v: "verified creators" },
-                        // 48 hours is the review turnaround the product commits
-                        // to everywhere else, so it is a claim we already keep.
-                        { id: "review", k: 48, s: "h", v: "profile review" },
-                        { id: "fees", k: 0, s: "", v: "hidden fees", prefix: "₹" },
-                    ].map((s) => (
-                        <div key={s.id} data-testid={HERO_IDS.stat(s.id)}>
-                            <div className="font-serif text-fluid-4xl text-foreground">
-                                {s.prefix}
-                                <AnimatedNumber value={s.k} suffix={s.s} />
-                            </div>
-                            <div className="mt-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                {s.v}
-                            </div>
-                        </div>
-                    ))}
-                </motion.div>
             </div>
         </section>
     );
 }
 
 // ---------------------------------------------------------------------------
-// Where we are
+// The problem, and the promise
 // ---------------------------------------------------------------------------
+//
+// The one section of argument home keeps. **What is named is disorganisation,
+// never agencies** — WeAre Studios is one and the managed service is a real
+// offering, so "without an agency" would be this page arguing against a thing
+// /why-weare sells two clicks away.
 
-/**
- * Where we are, and what the work is.
- *
- * Two rounds of the same correction. A scrolling marquee of city names implied
- * a presence in each of them; it became a paragraph saying the true thing —
- * the network is deepest in Bengaluru, that is where the campaigns are, anyone
- * in India can sign up today — beside a list of eight cities in serif italic,
- * which implied the same presence rather more quietly. The paragraph stayed;
- * the list is now the categories briefs are actually posted in.
- *
- * Still no "live" or "coming soon" pills — a badge is a promise about a date.
- */
-function Reach() {
-    return (
-        <section
-            data-testid={REACH_IDS.section}
-            className="border-y border-white/10 bg-card/30"
-        >
-            <div className="mx-auto max-w-7xl px-6 py-14">
-                <div className="grid gap-8 md:grid-cols-12 md:items-center">
-                    <p
-                        data-testid={REACH_IDS.note}
-                        className="text-sm leading-relaxed text-muted-foreground md:col-span-5"
-                    >
-                        Our creator network runs deepest in{" "}
-                        <span className="text-foreground">Bengaluru</span>, and that's
-                        where the campaigns are today. Signing up is open to creators
-                        anywhere in India.
-                    </p>
-                    <ul
-                        data-testid={REACH_IDS.categories}
-                        className="flex flex-wrap gap-x-8 gap-y-3 md:col-span-7 md:justify-end"
-                    >
-                        {BRIEF_CATEGORIES.map((c) => (
-                            <li
-                                key={c}
-                                data-testid={REACH_IDS.category(c)}
-                                className="font-serif text-xl italic text-muted-foreground/70 md:text-2xl"
-                            >
-                                {c}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            </div>
-        </section>
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Live briefs
-// ---------------------------------------------------------------------------
-
-/**
- * A brief card before its brief arrives.
- *
- * Structurally the same element as the real card rather than a box of its
- * average height: same `p-7`, same order of blocks, same `flex-1` on the body
- * and the same bordered footer. That matters because the cards sit in a grid
- * row and stretch to the tallest of the three — a flat `h-56` was right at one
- * viewport and short by most of the footer everywhere else, so the section
- * below it jumped when the fetch landed.
- *
- * The teaser reserves two lines on a phone and four from `md` up. That is not
- * symmetry for its own sake: one column gives each card its own height, while
- * three columns stretch every card to the tallest teaser in the row, so the
- * desktop card is reliably taller than the narrow one it was tuned against.
- * Measured, not assumed — a two-line skeleton was 73px short at 1280 and
- * within 7px at 375.
- */
-function BriefCardSkeleton() {
-    return (
-        <div
-            aria-hidden="true"
-            className="flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card grain-surface"
-        >
-            {/* Matches CampaignCover's 16/9 box exactly — the cover is the
-              * tallest single element on the card, so getting this wrong costs
-              * more than everything below it put together. */}
-            <Skeleton className="aspect-[16/9] w-full rounded-none" />
-            <div className="flex flex-1 flex-col p-7">
-                <div className="flex items-center justify-between">
-                    <Skeleton className="h-3 w-16" />
-                    <Skeleton className="h-3 w-20" />
-                </div>
-                {/* text-fluid-2xl leading-tight — 20px on a phone, 24 on a
-                  * laptop — and titles routinely wrap to two lines. The bar
-                  * heights follow the line box, not the font size: line-height is
-                  * what occupies the space. */}
-                <Skeleton className="mt-5 h-[1.5625rem] w-full md:h-[1.875rem]" />
-                <Skeleton className="mt-1.5 h-[1.5625rem] w-2/3 md:h-[1.875rem]" />
-                <Skeleton className="mt-2 h-3 w-24" />
-                <div className="mt-4 flex-1 space-y-1.5">
-                    <Skeleton className="h-3 w-full" />
-                    <Skeleton className="h-3 w-5/6" />
-                    <Skeleton className="hidden h-3 w-full md:block" />
-                    <Skeleton className="hidden h-3 w-4/6 md:block" />
-                </div>
-                <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
-                    <div>
-                        <Skeleton className="h-2.5 w-20" />
-                        <Skeleton className="mt-1 h-7 w-24" />
-                    </div>
-                    <Skeleton className="h-2.5 w-16" />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-/**
- * Real open briefs, before anyone signs up.
- *
- * The page promises "discover briefs", but the campaign feed needs an account
- * and a WhatsApp round trip. This shows enough to judge whether it's worth
- * joining — title, brand, area, fee — and nothing you could work the brief from.
- */
-function LiveBriefs() {
-    const [briefs, setBriefs] = useState(null);
-    const [totalOpen, setTotalOpen] = useState(0);
-
-    useEffect(() => {
-        let cancelled = false;
-        api.get("/public/campaigns", { params: { limit: 6 } })
-            .then(({ data }) => {
-                if (cancelled) return;
-                setBriefs(data.campaigns || []);
-                setTotalOpen(data.total_open || 0);
-            })
-            .catch(() => {
-                if (!cancelled) setBriefs([]);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-
-    // Nothing live: don't show an empty shelf on the front page.
-    if (briefs !== null && briefs.length === 0) return null;
-
-    return (
-        <section
-            id="live-briefs"
-            data-testid={SECTION_IDS.liveBriefs}
-            className="border-b border-white/10 bg-card/30"
-        >
-            <div className="mx-auto max-w-7xl px-6 py-24 md:py-32">
-                <div className="grid gap-10 md:grid-cols-12 md:items-end">
-                    <div className="md:col-span-7">
-                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                            <span className="h-px w-8 bg-ember-500" />
-                            Open right now
-                        </p>
-                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
-                            Briefs live on the platform{" "}
-                            <span className="italic">today</span>.
-                        </h2>
-                    </div>
-                    <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
-                        {totalOpen > 0
-                            ? `${totalOpen} paid ${
-                                  totalOpen === 1 ? "brief is" : "briefs are"
-                              } open as you read this. Sign up as a creator to see the full brief and pitch.`
-                            : "Paid briefs from Bengaluru brands. Sign up as a creator to see the full brief and pitch."}
-                    </p>
-                </div>
-
-                <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                    {briefs === null
-                        ? Array.from({ length: 3 }).map((_, i) => (
-                              <BriefCardSkeleton key={i} />
-                          ))
-                        : briefs.map((b, idx) => (
-                              <motion.article
-                                  key={b.id}
-                                  data-testid={SECTION_IDS.liveBrief(b.id)}
-                                  initial={{ opacity: 0, y: 18 }}
-                                  whileInView={{ opacity: 1, y: 0 }}
-                                  viewport={{ once: true, margin: "-60px" }}
-                                  transition={{
-                                      duration: 0.55,
-                                      delay: idx * 0.06,
-                                      ease: [0.22, 1, 0.36, 1],
-                                  }}
-                                  className="group flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card transition-colors duration-300 hover:border-ember-500/50 grain-surface"
-                              >
-                                  <CampaignCover
-                                      campaign={b}
-                                      rounded="rounded-none"
-                                      className="border-0 border-b"
-                                  />
-                                  <div className="flex flex-1 flex-col p-7">
-                                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                                          <span>{CAT_LABEL[b.category] || b.category}</span>
-                                          {b.area && <span>{b.area}</span>}
-                                      </div>
-                                      <h3 className="mt-5 font-serif text-fluid-2xl leading-tight tracking-tight">
-                                          {b.title}
-                                      </h3>
-                                      {/* The one link from the public home page
-                                          into a brand's own page — which is
-                                          also the only crawl path a search
-                                          engine has into either. */}
-                                      <BrandName
-                                          brand={b}
-                                          avatarSize="h-5 w-5"
-                                          className="mt-2 text-xs uppercase tracking-[0.15em] text-ember-500"
-                                      />
-                                      <p className="mt-4 flex-1 text-sm leading-relaxed text-muted-foreground">
-                                          {b.teaser}
-                                      </p>
-                                      <div className="mt-6 flex items-end justify-between border-t border-white/10 pt-5">
-                                          <div>
-                                              <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                                  {isBarter(b) ? "What you get" : "Per creator"}
-                                              </div>
-                                              <div className="mt-1 flex items-baseline font-serif text-3xl">
-                                                  {isBarter(b) ? (
-                                                      "Barter"
-                                                  ) : (
-                                                      <>
-                                                          <IndianRupee className="h-5 w-5 text-ember-500" />
-                                                          {formatCompensation(b).amount ?? "—"}
-                                                      </>
-                                                  )}
-                                              </div>
-                                          </div>
-                                          {b.spots_left > 0 && (
-                                              <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                                  {b.spots_left}{" "}
-                                                  {b.spots_left === 1 ? "spot" : "spots"} left
-                                              </span>
-                                          )}
-                                      </div>
-                                  </div>
-                              </motion.article>
-                          ))}
-                </div>
-
-                <div className="mt-12">
-                    <Link to="/signup?role=creator" data-testid={SECTION_IDS.liveBriefsCta}>
-                        <Button
-                            size="lg"
-                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
-                        >
-                            Sign up to pitch on these
-                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                        </Button>
-                    </Link>
-                </div>
-            </div>
-        </section>
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Closing CTA
-// ---------------------------------------------------------------------------
-
-const CLOSING = {
-    creator: {
-        eyebrow: "For creators",
-        heading: ["Get paid properly", "for work you'd post anyway."],
-        support:
-            "Real briefs from businesses we have checked, your rate agreed in writing before you shoot, and payment on approved delivery. Free to join.",
-        cta: "See how it works for creators",
-        to: "/for-creators",
-        testid: CLOSING_IDS.buttonCreator,
-    },
-    brand: {
-        eyebrow: "For brands",
-        heading: ["Post a brief.", "Meet the shortlist."],
-        support:
-            "Verified creators with real audience stats, every rate in front of you, content approved before it goes live — and the choice to run it yourself or hand it to our team.",
-        cta: "See how it works for brands",
-        to: "/for-brands",
-        testid: CLOSING_IDS.buttonBrand,
-    },
-};
-
-/**
- * One closing CTA instead of three stacked ones.
- *
- * The page used to end with a brand block, a managed-service block and a
- * generic "get started" block in a row, which read as three people asking for
- * the same thing. A toggle asks once and lets the reader say which of the two
- * they are; the managed-service option stays as a line of text beneath,
- * because it's a real option for a small number of brands and a distraction
- * for everybody else.
- */
-function ClosingCta() {
-    const still = useReducedMotion();
-    const [role, setRole] = useState("creator");
-    const copy = CLOSING[role];
-
-    return (
-        <section
-            data-testid={CLOSING_IDS.section}
-            className="border-t border-white/10"
-        >
-            <div className="mx-auto max-w-7xl px-6 py-24 md:py-32">
-                <div
-                    data-testid={CLOSING_IDS.toggle}
-                    role="tablist"
-                    aria-label="Who you are"
-                    className="inline-flex rounded-full border border-white/10 bg-white/[0.03] p-1"
-                >
-                    {["creator", "brand"].map((r) => {
-                        const on = role === r;
-                        return (
-                            <button
-                                key={r}
-                                type="button"
-                                role="tab"
-                                aria-selected={on}
-                                data-testid={CLOSING_IDS.toggleOption(r)}
-                                onClick={() => setRole(r)}
-                                className={
-                                    "inline-flex min-h-[2.75rem] items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] transition-colors duration-200 " +
-                                    (on
-                                        ? "bg-ember-500 text-black"
-                                        : "text-muted-foreground hover:text-foreground")
-                                }
-                            >
-                                I'm a {r}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={role}
-                        initial={still ? false : { opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={still ? undefined : { opacity: 0, y: -10 }}
-                        transition={{ duration: still ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
-                        className="mt-10 grid gap-10 md:grid-cols-12 md:items-end"
-                    >
-                        <div className="md:col-span-8">
-                            <p
-                                data-testid={CLOSING_IDS.eyebrow}
-                                className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500"
-                            >
-                                <span className="h-px w-8 bg-ember-500" />
-                                {copy.eyebrow}
-                            </p>
-                            <h2
-                                data-testid={CLOSING_IDS.heading}
-                                className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight"
-                            >
-                                {copy.heading[0]}{" "}
-                                <span className="italic">{copy.heading[1]}</span>
-                            </h2>
-                            <p
-                                data-testid={CLOSING_IDS.support}
-                                className="mt-6 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base"
-                            >
-                                {copy.support}
-                            </p>
-                        </div>
-
-                        <div className="md:col-span-4">
-                            <div className="flex flex-col gap-4 md:items-end">
-                                {/* A real <a>: both destinations are
-                                    server-rendered by the backend, so a
-                                    <Link> would be swallowed by the router
-                                    and land on the SPA's catch-all. */}
-                                <a
-                                    href={copy.to}
-                                    data-testid={CLOSING_IDS.button}
-                                    className="w-full md:w-auto"
-                                >
-                                    <Button
-                                        size="lg"
-                                        data-testid={copy.testid}
-                                        className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 md:w-auto"
-                                    >
-                                        {copy.cta}
-                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                    </Button>
-                                </a>
-                                {copy.learnMore && (
-                                    <a
-                                        href={copy.learnMore.href}
-                                        data-testid="closing-for-brands-link"
-                                        className="-my-2 min-h-[2.75rem] py-2 md:my-0 md:min-h-0 md:py-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background inline-flex items-center text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline"
-                                    >
-                                        {copy.learnMore.label}
-                                    </a>
-                                )}
-                                <a
-                                    href={MANAGED_MAILTO}
-                                    data-testid={CLOSING_IDS.managedLink}
-                                    className="-my-2 min-h-[2.75rem] py-2 md:my-0 md:min-h-0 md:py-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background inline-flex items-center text-sm text-muted-foreground underline-offset-4 transition-colors duration-200 hover:text-ember-500 hover:underline"
-                                >
-                                    Or have our team run the campaign for you
-                                </a>
-                            </div>
-                        </div>
-                    </motion.div>
-                </AnimatePresence>
-            </div>
-        </section>
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
-
-/**
- * The problem, stated before any of the answer.
- *
- * **The enemy named here is disorganisation, never agencies.** WeAre Studios
- * is an agency and our managed service is a genuine offering — a page that
- * said "without an agency" would be selling against half of what we do. What
- * is actually broken is campaigns run on DMs and a spreadsheet: nobody
- * checked, nothing in writing, and no way to say afterwards whether it worked.
- */
 const PROBLEMS = [
     {
-        title: "Nobody has been checked",
-        body: "A follower count in a screenshot, a business you have only ever seen a logo for. Both sides are taking the other on trust, and one of them is usually wrong.",
+        title: "Nobody checked",
+        body:
+            "A follower count in a DM is a number somebody typed, and a brand in a DM " +
+            "is a name somebody chose.",
     },
     {
-        title: "Nothing is in writing",
-        body: "The rate lives in a chat thread, if it was ever said out loud. Then it is the day of the shoot and the number has quietly moved.",
+        title: "No rate in writing",
+        body:
+            "The fee gets settled on the day, or afterwards, or in an argument about " +
+            "what was said three weeks ago.",
     },
     {
-        title: "Nobody can prove what it did",
-        body: "The posts went up. What they reached, what they cost per thousand, whether to do it again — nobody wrote it down, so nobody knows.",
+        title: "No proof it worked",
+        body:
+            "The campaign ends and the only record is a folder of screenshots and " +
+            "somebody's impression of how it went.",
     },
 ];
 
 function Problem() {
     return (
         <section
-            id="problem"
-            data-testid="landing-problem"
+            data-testid={PAGE_IDS.problem}
             className="border-t border-white/10"
         >
-            <div className="mx-auto max-w-7xl px-6 py-24 md:py-28">
-                <div className="grid gap-10 md:grid-cols-12 md:items-end">
+            <div className="mx-auto max-w-7xl px-6 py-12 md:py-14">
+                <div className="grid gap-8 md:grid-cols-12 md:items-end">
                     <div className="md:col-span-7">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
                             The problem
                         </p>
-                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
+                        <h2 className="mt-5 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
                             Most creator campaigns run on{" "}
                             <span className="italic">DMs and a spreadsheet.</span>
                         </h2>
                     </div>
                     <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
-                        It works right up until it doesn't — and when it doesn't, it is
-                        somebody's day, somebody's money, or somebody's opening night.
+                        It works right up until it doesn&apos;t — and when it
+                        doesn&apos;t, it is somebody&apos;s day, somebody&apos;s money,
+                        or somebody&apos;s opening night.
                     </p>
                 </div>
 
-                <ul className="mt-14 grid gap-4 md:grid-cols-3">
+                <ul className="mt-8 grid gap-4 md:grid-cols-3">
                     {PROBLEMS.map((p, i) => (
-                        <motion.li
+                        <li
                             key={p.title}
-                            initial={{ opacity: 0, y: 12 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-60px" }}
-                            transition={{ duration: 0.5, delay: i * 0.07 }}
                             data-testid={`landing-problem-${i}`}
-                            className="rounded-md border border-white/10 bg-card p-7 grain-surface"
+                            className="rounded-lg border border-white/10 bg-card grain-surface p-5"
                         >
-                            <h3 className="font-serif text-xl leading-tight">{p.title}</h3>
+                            <h3 className="font-serif text-fluid-xl leading-tight">
+                                {p.title}
+                            </h3>
                             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                                 {p.body}
                             </p>
-                        </motion.li>
+                        </li>
                     ))}
                 </ul>
 
                 {/* The promise, as the answer to what was just described —
-                    the same words as the hero, because a promise that is
-                    reworded on every screen is three promises. */}
+                    the same words as the hero, because a promise reworded on
+                    every screen is three promises. */}
                 <p
-                    data-testid="landing-promise"
-                    className="mt-14 max-w-3xl font-serif text-fluid-3xl leading-snug"
+                    data-testid={PAGE_IDS.promise}
+                    className="mt-9 max-w-3xl font-serif text-fluid-3xl leading-snug"
                 >
                     We built the boring parts: creators checked by a person, the rate
                     agreed and written down before anyone shoots, the content approved
                     before it is public, and a report at the end that says what it did.
+                </p>
+
+                <p className="mt-6 text-sm text-muted-foreground">
+                    <Link
+                        to="/how-it-works"
+                        data-testid={PAGE_IDS.howItWorksLink}
+                        className="text-ember-500 underline-offset-4 transition-colors duration-200 hover:underline"
+                    >
+                        See the whole journey, from both sides
+                    </Link>
                 </p>
             </div>
         </section>
     );
 }
 
-export default function Landing() {
-    const verticals = useMemo(
-        // One label per campaign category the server accepts (fnb, hospitality,
-        // retail, real_estate, fashion, travel, wellness, lifestyle), worded the
-        // way a brand would say it. A brief can only be filed under one of
-        // these, so nothing here promises a vertical the product can't express.
-        () => [
-            "Fashion",
-            "Beauty & Wellness",
-            "Food & Drink",
-            "Hotels",
-            "Travel",
-            "Retail",
-            "Real Estate",
-            "Lifestyle",
-        ],
-        [],
-    );
+// ---------------------------------------------------------------------------
 
+export default function Landing() {
     return (
         <div
             data-testid={PAGE_IDS.page}
             className="min-h-screen bg-background text-foreground grain-page"
         >
+            <PageMeta
+                title="Creator campaigns, handled properly"
+                description="WeAre Creators connects verified creators with brands running paid campaigns in Bengaluru. Rates agreed in writing before anyone shoots, content approved before it goes live, and a report at the end."
+                path="/"
+            />
             <Navbar />
 
             <Hero />
+
+            {/* Counted, never written down. The hero used to carry "500+
+                verified creators" as a hardcoded figure beside "48h" and "₹0",
+                on the page whose whole job is to be believed by a stranger. */}
+            <ProofStrip only={["creators", "campaigns", "cities"]} />
+
             <Problem />
-            <Reach />
 
-            {/* ------------------------ HOW IT WORKS ------------------------ */}
+            {/* The close carries home's second deliberate image slot, dimmed
+                behind the copy — the same shape the audience pages use, which
+                keeps the placement without paying for it in height. */}
             <section
-                id="how-it-works"
-                data-testid={SECTION_IDS.howItWorks}
-                className="bg-card/30"
+                data-testid={CLOSING_IDS.section}
+                className="relative overflow-hidden border-t border-white/10"
             >
-                <div className="mx-auto max-w-7xl px-6 py-24 md:py-32">
-                    <div className="grid gap-12 md:grid-cols-12 md:items-end">
-                        <div className="md:col-span-7">
-                            <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                                <span className="h-px w-8 bg-ember-500" />
-                                For creators
-                            </p>
-                            <h2 className="mt-5 max-w-2xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
-                                Four steps from{" "}
-                                <span className="italic">application</span> to
-                                bank account.
-                            </h2>
-                        </div>
-                        <p className="text-sm leading-relaxed text-muted-foreground md:col-span-5">
-                            We built WeAre so the boring parts — pitching in DMs,
-                            chasing invoices, negotiating rates — disappear. You focus
-                            on the shoot; we handle the rest.
-                        </p>
+                <div aria-hidden className="absolute inset-0 opacity-40">
+                    <PlaceholderImage
+                        // PLACEHOLDER IMAGE: a WeAre manager and a creator at a
+                        // check-in desk on a shoot day — the boring part,
+                        // working. Busy centre, dark edges.
+                        note="WeAre manager and creator at a check-in desk on a shoot day, dark edges, banner"
+                        fill
+                    />
+                </div>
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background"
+                />
+                <div className="relative mx-auto max-w-7xl px-6 py-12 md:py-14">
+                    <h2 className="max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
+                        Which side are you on?
+                    </h2>
+                    <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
+                        Creators join free. Brands post a brief, and we check the
+                        business before anything reaches a creator.
+                    </p>
+                    <div className="mt-8">
+                        <TwoPaths testid={IDS.twoPaths} />
                     </div>
-
-                    <ol className="mt-16 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-                        {STEPS.map(({ n, Icon, title, body }, idx) => (
-                            <motion.li
-                                key={n}
-                                data-testid={SECTION_IDS.step(idx + 1)}
-                                initial={{ opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, margin: "-80px" }}
-                                transition={{
-                                    duration: 0.6,
-                                    delay: idx * 0.08,
-                                    ease: [0.22, 1, 0.36, 1],
-                                }}
-                                whileHover={{ y: -4 }}
-                                className="group relative flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card p-7 transition-colors duration-300 hover:border-ember-500/50 hover:bg-card-elevated grain-surface"
-                            >
-                                <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
-                                <div className="flex items-center justify-between">
-                                    <span className="font-serif text-[54px] leading-none text-ember-500/90">
-                                        {n}
-                                    </span>
-                                    <Icon className="h-5 w-5 text-muted-foreground transition-colors duration-200 group-hover:text-ember-500" />
-                                </div>
-                                <div className="mt-8 font-serif text-[26px] leading-tight tracking-tight">
-                                    {title}
-                                </div>
-                                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                                    {body}
-                                </p>
-                            </motion.li>
-                        ))}
-                    </ol>
-
-                    <div className="mt-14">
-                        <Link to="/signup?role=creator" data-testid={SECTION_IDS.howCtaCreator}>
-                            <Button
-                                size="lg"
-                                className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
-                            >
-                                Start your creator application
-                                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                            </Button>
-                        </Link>
+                    <div className="mt-8">
+                        <StudioEndorsement testid={STUDIO_IDS.landing} />
                     </div>
                 </div>
             </section>
-
-            <LiveBriefs />
-
-            {/* ------------------------ TRUST / WHY ------------------------ */}
-            <section
-                id="why"
-                data-testid={SECTION_IDS.why}
-                className="mx-auto max-w-7xl px-6 py-24 md:py-32"
-            >
-                <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                    <span className="h-px w-8 bg-ember-500" />
-                    Why WeAre
-                </p>
-                <h2 className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
-                    Built for people who take content{" "}
-                    <span className="italic">and</span> payment seriously.
-                </h2>
-
-                <div className="mt-14 grid gap-6 md:grid-cols-3">
-                    {TRUST_POINTS.map(({ Icon, title, body }, idx) => (
-                        <motion.div
-                            key={title}
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-80px" }}
-                            transition={{
-                                duration: 0.6,
-                                delay: idx * 0.09,
-                                ease: [0.22, 1, 0.36, 1],
-                            }}
-                            whileHover={{ y: -4 }}
-                            className="group relative overflow-hidden rounded-lg border border-white/10 bg-card p-8 transition-colors duration-300 hover:border-ember-500/50 hover:bg-card-elevated grain-surface"
-                        >
-                            <span className="absolute inset-x-0 top-0 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
-                            <Icon className="h-6 w-6 text-ember-500" />
-                            <div className="mt-6 font-serif text-[26px] leading-tight tracking-tight">
-                                {title}
-                            </div>
-                            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                                {body}
-                            </p>
-                        </motion.div>
-                    ))}
-                </div>
-            </section>
-
-            {/* ------------------------ FOR BRANDS ------------------------ */}
-            {/* Content only. Its two CTAs moved into the single closing
-                section, so the page asks once rather than three times. */}
-            <section
-                data-testid={SECTION_IDS.forBrands}
-                className="border-t border-white/10 bg-card/40"
-            >
-                <div className="mx-auto max-w-7xl px-6 py-24 md:py-32">
-                    <div className="grid gap-10 md:grid-cols-12 md:items-end">
-                        <div className="md:col-span-8">
-                            <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                                <span className="h-px w-8 bg-ember-500" />
-                                For brands
-                            </p>
-                            <h2 className="mt-5 max-w-3xl font-serif text-fluid-5xl leading-[0.98] tracking-tight">
-                                Self-serve platform.{" "}
-                                <span className="italic">Or a team</span> that runs
-                                the whole thing.
-                            </h2>
-                        </div>
-                        <p className="text-sm leading-relaxed text-muted-foreground md:col-span-4">
-                            A label launching a collection, a studio filling classes,
-                            a hotel with rooms to sell, a restaurant opening its doors
-                            — post a brief and shortlist creators yourself, or hand it
-                            to us and we'll take it from brief to reporting.
-                        </p>
-                    </div>
-
-                    <div className="mt-14 grid grid-cols-2 gap-3 md:grid-cols-4">
-                        {verticals.map((v, i) => (
-                            <motion.div
-                                key={v}
-                                initial={{ opacity: 0, y: 12 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, margin: "-60px" }}
-                                transition={{
-                                    duration: 0.45,
-                                    delay: i * 0.04,
-                                    ease: [0.22, 1, 0.36, 1],
-                                }}
-                                className="rounded-full border border-white/10 bg-white/[0.02] px-4 py-3 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
-                            >
-                                {v}
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            <ClosingCta />
 
             <Footer />
         </div>

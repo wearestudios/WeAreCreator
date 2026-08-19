@@ -1,30 +1,30 @@
 // The marketing site's own map, in one place.
 //
-// The footer exists twice — as a React component for the SPA's pages, and as
-// plain HTML inside the server-rendered `/for-creators` and `/for-brands`.
-// That is two renderers, and two renderers with two copies of the link list is
-// how a footer ends up advertising a page that moved.
+// The footer is on every page a signed-out person can land on, and the site is
+// now six pages rather than one — so the list below is the only definition of
+// where anything is. `FOOTER_COLUMNS` is mirrored by `FOOTER_COLUMNS` in
+// `backend/server.py`, which builds the sitemap from it, and a unit test fails
+// if the two drift: the same arrangement `followerTiers.js` and
+// `shootWindows.js` use, for the same reason.
 //
-// So the links live here, once. `FOOTER_COLUMNS` is mirrored by
-// `FOOTER_COLUMNS` in `backend/server.py` and a unit test fails if they drift,
-// the same arrangement `followerTiers.js` and `shootWindows.js` already use.
+// Paths only — no origin.
 //
-// Paths only — no origin. The React footer hands them to `<Link>` or `<a>`
-// depending on whether the destination is server-rendered; the HTML footer
-// prefixes the app's origin, because it is being read on a page the backend
-// served.
+// The columns changed shape when the marketing site did. "Why WeAre" and "How
+// it works" used to be the audience pages under borrowed names, because those
+// were the only two pages that existed; each is now its own page, and the
+// audience columns point at the audience pages.
 
 export const CONTACT_EMAIL = "creators@wearemonk.in";
 
-// `external` marks a destination the backend renders rather than the SPA. The
-// React footer has to use a real <a> for those or the router swallows the
-// navigation and lands on the catch-all — the same trap the navbar's
-// "For brands" entry documents.
+// `external` marks a destination the router must not handle — today only the
+// mailto. The audience pages used to be marked too, back when the backend
+// rendered them and a <Link> would have been swallowed by the SPA's
+// catch-all. They are ordinary routes now.
 export const FOOTER_COLUMNS = [
     {
         heading: "Creators",
         links: [
-            { label: "Why WeAre", to: "/for-creators", external: true },
+            { label: "For creators", to: "/for-creators" },
             { label: "Browse briefs", to: "/campaigns" },
             { label: "Join as a creator", to: "/signup?role=creator" },
         ],
@@ -32,9 +32,17 @@ export const FOOTER_COLUMNS = [
     {
         heading: "Brands",
         links: [
-            { label: "How it works", to: "/for-brands", external: true },
+            { label: "For brands", to: "/for-brands" },
             { label: "Post a campaign", to: "/signup?role=brand" },
             { label: "Log in", to: "/login" },
+        ],
+    },
+    {
+        heading: "The site",
+        links: [
+            { label: "How it works", to: "/how-it-works" },
+            { label: "Why WeAre", to: "/why-weare" },
+            { label: "Contact", to: `mailto:${CONTACT_EMAIL}`, external: true },
         ],
     },
     {
@@ -42,9 +50,17 @@ export const FOOTER_COLUMNS = [
         links: [
             { label: "Terms", to: "/terms" },
             { label: "Privacy", to: "/privacy" },
-            { label: "Contact", to: `mailto:${CONTACT_EMAIL}`, external: true },
         ],
     },
+];
+
+/** The marketing pages, for the sitemap and for tests that walk them all. */
+export const MARKETING_PATHS = [
+    "/",
+    "/for-brands",
+    "/for-creators",
+    "/how-it-works",
+    "/why-weare",
 ];
 
 /** The year the copyright line prints. Read at render, not hardcoded — a

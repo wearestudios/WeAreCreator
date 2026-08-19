@@ -723,21 +723,27 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
 
 ## The marketing site
 
-Three pages for three jobs. **Home routes, the audience pages sell.** `/`
-speaks to both sides because it is the front door and cannot know who arrived;
-it leads with the problem, states the promise, and offers exactly two ways on —
-"I'm a creator" and "I'm a brand". `/for-creators` and `/for-brands` each have
-one reader and ask once.
+Five pages and a designed 404, **all React routes**. `/` routes, `/for-brands`
+and `/for-creators` sell to one reader each, `/how-it-works` is the journey
+from both sides, `/why-weare` is the standalone case. Registered in `App.js`
+and linked with `<Link>` — see "Why they are not server-rendered" below, which
+is a reversal worth reading before reinstating anything.
 
 **The positioning governs every word, and it is not "against agencies".** WeAre
 Studios is one, and the managed service is a real offering somebody chooses —
 "without an agency" or "cut out the middleman" would be a page arguing against
 our own product. **The enemy named is disorganisation**: campaigns run over DMs
 and spreadsheets, nobody checked, no rate in writing, no proof of what it
-achieved. That is the kind of thing a well-meaning copy edit undoes by
-accident, so `test_marketing_pages.py` pins it.
+achieved. `_FORBIDDEN_MARKETING_PHRASES` in `server.py` holds the line and
+`test_marketing_pages.py` fails any page for any of them.
 
-What each audience must come away knowing is also pinned there — for creators,
+**Bengaluru is evidence of network depth, never identity.** "The network runs
+deepest in Bengaluru, and creators sign up from anywhere in India" is the
+sentence; "every city", "pan-India" and "nationwide" are banned on every page,
+including the login and signup screens, which sat outside these tests long
+enough to keep "Every city that matters" months after it was removed elsewhere.
+
+What each audience must come away knowing is pinned there too — for creators,
 that briefs are real and paid, the rate is agreed in writing before they shoot,
 they keep 100% of it because the fee sits on the brand, payment follows
 approved delivery, brands are checked, and joining is free; for brands, real
@@ -745,70 +751,102 @@ audience stats, every creator and every rate visible, no retainer and no markup
 on creator fees, approval before publication, a report at the end, and the
 self-serve/managed choice **as an option, never as a fee they are locked into**.
 
-- **Each page asks once, in the same words, twice** — hero and close, plus the
-  nav button. Two differently-worded CTAs is a choice of doors; one repeated is
-  an ask.
-- The two audience pages carry **their own Open Graph tags and their own
-  canonical**, because each is a link somebody pastes into a chat and the
-  preview is the product.
-- Home is the only one the SPA renders, which is how it came to carry claims
-  the other two are forbidden to make — an eight-city strip, a "Tech & gadgets"
-  category with no enum behind it, "no free product standing in for money" on a
-  product with barter briefs, and a four-step flow written before the draft
-  gate. It is now **held to the same tests**.
-- **Home hotlinks stock photography and the other two fetch nothing.** That is
-  the one remaining inconsistency and it is not fixable in code: the answer is
-  owned photography from real shoots, self-hosted. `SlideImage` carries a
-  `NEEDS A DECISION` note and a test keeps it there rather than letting it
-  settle in.
-
-### The audience pages
-
-`GET /for-creators` and `GET /for-brands`, off one shell — `_marketing_head`,
-`_marketing_nav`, `_marketing_footer`, `_marketing_css`, `_proof_strip`. Two
-bespoke pages would be two design systems inside a week.
-
-**Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason** —
-the crawler that builds a WhatsApp preview does not run JavaScript, so Open
-Graph tags injected by React are tags nobody ever sees. Vercel must proxy both
-alongside the other two; the nav entries, the footer's and the landing's two
-paths are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
-lands on the SPA's catch-all. Both are in the sitemap: the public pages here
-somebody might search for rather than be sent.
-
-- **The font loads without blocking.** "Previews well and loads fast" and
-  "same dark premium system as the main landing" pull against each other —
-  Fraunces is the most recognisable part of that system, and a page in Georgia
-  is visibly not the brand. So the stylesheet goes on `media="print"` with an
-  `onload` swap: the browser fetches it at low priority and applies nothing
-  until it arrives, text paints immediately in the fallback, and a `<noscript>`
-  copy covers the rest. Measured at **74ms to a painted headline with the font
-  request blocked outright**. Nothing else is fetched: no script, no CDN, no
-  image host. (`/c/{id}` and `/brands/{id}` still ship no webfont at all — they
-  are previews of somebody else's content, not our pitch.)
-- **It has a navigation bar**, which the design guidelines require on desktop
-  and which is also the practical fix: somebody arriving from WhatsApp had no
-  way into the rest of the site except a line in the footer. Glassmorphism per
-  the component rules, never transparent; the links collapse below 832px and
-  the logo and CTA stay.
-- The grain comes from the same `feTurbulence` texture `.grain-page` uses,
-  inlined because this page loads none of our stylesheets.
+- **An audience page asks once, in the same words, twice.** Hero and close, both
+  spread from one `ASK` constant so "the same words" is structural. Two
+  differently-worded CTAs is a choice of doors.
+- **A both-sides page routes instead of asking.** Home and `/how-it-works` are
+  read by both, so they end with `TwoPaths` — the one place competing buttons
+  are right, because picking for the visitor is the mistake. `TwoPaths` must
+  not appear on an audience page; a test enforces both halves.
+- **Home is at most two screens.** Hero and slider, the counted proof strip,
+  one problem-and-promise section, the close. Measured at 1,780px of content —
+  under two viewport-heights at 1440×900 and above. Everything that used to be
+  below it has its own page, and the live brief feed went to `/campaigns`,
+  which is a better version of it.
 - **Every proof figure is counted, never written down.** `_platform_proof`
-  queries them, and each appears only above a floor: a strip reading "3
-  creators" is not proof, it is a reason to close the tab, and the honest move
-  at that size is silence rather than rounding up. With nothing to say, the
-  whole section is absent. "Campaigns run" counts campaigns that reached
-  `in_progress` or beyond — a count of posted briefs would be a count of
-  abandoned drafts. A test strips the markup and fails on any bare numeral in
-  the copy, which is where a "500+" would otherwise hide.
-- Claims stay inside what the operation can back: a test fails either page for
-  "every city", "pan-India", "guaranteed" and the rest, and requires the word
-  Bengaluru. Same rule as everywhere else here.
-- Neither page asks for the other's audience. A "join as a creator" link on the
-  brand page is the competing second door the single-CTA rule exists to stop.
-- The brand headline covers **both** shapes of work — "Fill the room. Launch
-  the thing." A venue-only headline reads past the label launching a
-  collection, which the main landing already names as one of its audiences.
+  queries verified creators, campaigns that reached `in_progress` or beyond,
+  verified brands and distinct cities; `GET /public/proof` serves them and
+  `ProofStrip` draws them. Each appears only above a floor — 10, 5, 5 and 3 —
+  and the strip renders nothing when there is nothing worth saying, because "3
+  creators" is not proof, it is a reason to close the tab. Home carried a
+  hardcoded "500+" until this replaced it.
+
+### Why they are not server-rendered
+
+`/for-brands` and `/for-creators` **were** FastAPI handlers rendering
+hand-written HTML, for the same reason `/c/{id}` and `/brands/{id}` still are:
+a WhatsApp crawler does not run JavaScript, so Open Graph tags React injects
+are tags nobody sees. Three things made that the wrong trade here:
+
+- a page the backend renders cannot be reached with a `<Link>`, so
+  `/how-it-works` and `/why-weare` could not exist beside them at all;
+- the Vercel rewrites that would have pointed at them were never repointed, so
+  in production both answered with the SPA's catch-all — every nav and footer
+  link to them went nowhere;
+- the copy lived only there, so no page in the app could reuse a word of it.
+
+**What it cost:** non-JS crawlers read `public/index.html`'s static tags, so a
+marketing link pasted into a chat previews with the site-wide card.
+`components/marketing/PageMeta.jsx` states that at the top of the file and says
+how to buy it back — point the rewrites at a prerender service, or add a Vercel
+`has` condition on crawler user-agents. A test keeps that note present.
+**`/c/{id}` and `/brands/{id}` stay server-rendered**: there the shared link
+*is* the preview, and the trade would not be worth making.
+
+`PageMeta` writes title, description, canonical and the OG/Twitter tags per
+page. No two pages share a title — one title for two pages makes two links
+preview identically, which is the whole reason for separate pages.
+
+### The shared furniture
+
+`components/marketing/Sections.jsx` — `MarketingPage` (meta, navbar, footer),
+`MarketingHero`, `TextImageSection`, `ValueProps`, `Steps`, `ClosingSection`,
+`TwoPaths`, `Cta`, `Eyebrow`. Five bespoke pages would be five design systems
+inside a fortnight, which is what the hand-written HTML was already becoming.
+
+`TextImageSection` alternates sides on a `flip` prop rather than by hand:
+doing it by hand means somebody eventually ships two in a row on the same side
+and the page reads as a column with pictures next to it.
+
+### Image slots
+
+Every page has deliberate placements — hero, alternating text-and-image
+sections, proof areas — and **nothing on the marketing site fetches a third
+party**. The hero hotlinked four stock photographs and the auth screens one
+each; a test now walks every source file for `images.unsplash.com`.
+
+`components/marketing/PlaceholderImage.jsx` is the slot: a tint from the warm
+palette with the site's grain over it, in a container that already occupies the
+space the photograph will.
+
+- **The ratio is on the container, never on the `<img>`** — the whole point is
+  that filling the slot moves nothing. `fill` drops the ratio for a slot whose
+  height something else decided, such as a section background.
+- **The grain is the overlay variant, never `.grain-surface`.** This element
+  sets `background-image` for the gradient and the surface variant would set it
+  too; one of the two silently wins. Same rule the design foundations state.
+- **Every slot carries a `note`** — a sentence somebody could hand to a
+  photographer — rendered as a `PLACEHOLDER IMAGE:` comment in the source and
+  as `data-placeholder` on the element. A slot nobody can brief is a slot that
+  stays empty. Tests require both, and that the note is longer than a label.
+- The tint's hue is derived from the note, in a 14°–40° band around ember, so
+  neighbouring slots differ without any of them leaving the palette.
+
+### The navbar, and the 404
+
+Logged out, the bar carries the four pages — For brands, For creators, How it
+works, Why WeAre — plus Log in and **Join**. It said "Sign up as a creator"
+until the site started addressing two audiences by name beside it; `/signup`
+carries a role picker and defaults to creator, so nobody loses a step. One
+`MARKETING_LINKS` list feeds the desktop bar and the mobile sheet, because the
+sheet is the only navigation below `md` and anything missing there is
+unreachable on a phone. Signed-in users keep their role navigation; the
+marketing strip renders only when nobody is signed in.
+
+`pages/NotFound.jsx` replaced `<Navigate to="/" replace />`. A mistyped URL, a
+link from an old post and a brief that has since closed all landed silently on
+the front page, which is indistinguishable from the link having worked. It says
+what happened, offers three ways on, and keeps the footer.
 
 ### The footer
 
@@ -817,16 +855,23 @@ way to reach terms, privacy or a human was to already know the URL — and a
 consent checkbox pointing at pages nothing links to is a consent record that is
 hard to defend.
 
-`components/Footer.jsx` for the SPA, `_marketing_footer()` for the two
-server-rendered pages, and **`lib/siteNav.js` is the one link list**, mirrored
-by `FOOTER_COLUMNS` in `server.py` with a drift test — the same arrangement
-`followerTiers.js` and `shootWindows.js` use, for the same reason: two
-renderers with two copies is how a footer advertises a page that moved.
-`FooterLink` picks `<a>` over `<Link>` on `link.external`, which is what marks
-the backend-rendered destinations.
+`components/Footer.jsx`, and **`lib/siteNav.js` is the one link list**,
+mirrored by `FOOTER_COLUMNS` in `server.py` with a drift test — the same
+arrangement `followerTiers.js` and `shootWindows.js` use, for the same reason:
+two copies is how a footer advertises a page that moved. The backend's copy is
+no longer a second renderer; it is what **builds the sitemap**, alongside
+`MARKETING_PATHS`, so a page added to the site cannot quietly be left out of
+either. `FooterLink` picks `<a>` over `<Link>` on `link.external`, which today
+marks only the mailto — the audience pages were marked too while the backend
+rendered them.
+
+Four columns now rather than three: "Why WeAre" and "How it works" used to be
+the audience pages under borrowed names, because those were the only two pages
+that existed. Each is its own page, and the audience columns point at the
+audience pages.
 
 It is on **every page a signed-out person can land on** — Landing, Legal,
-Campaigns, CampaignDetail, and both audience pages. Deliberately not the admin
+Campaigns, CampaignDetail, the four marketing pages and the 404. Deliberately not the admin
 console, the manager screens or the dashboards: those are dense working
 surfaces under a sticky header, and a marketing footer under a data table is
 noise rather than navigation. The OTP screens are the other exception — one
