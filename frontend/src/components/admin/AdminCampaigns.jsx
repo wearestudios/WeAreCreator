@@ -27,6 +27,7 @@ import { api } from "@/lib/api";
 import { compensationLabel, isBarter } from "@/lib/compensation";
 import { EXECUTION_FILTERS } from "@/lib/execution";
 import ExecutionBadge from "@/components/ExecutionBadge";
+import { EXECUTION_META, executionOwner } from "@/lib/execution";
 import { Input } from "@/components/ui/input";
 import {
     ADMIN_CAMPAIGNS as IDS,
@@ -282,7 +283,7 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                 hideBelow: true,
                 width: "w-44",
                 cell: (c) => (
-                    <span className="truncate text-muted-foreground">
+                    <span className="block truncate text-muted-foreground">
                         {c.brand_name || "Unknown brand"}
                     </span>
                 ),
@@ -305,7 +306,19 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                 sortable: true,
                 hideBelow: true,
                 width: "w-28",
-                cell: (c) => <ExecutionBadge campaign={c} />,
+                value: (c) => executionOwner(c),
+                // **The same word as `ExecutionBadge`, without the pill.** The
+                // shared chip is a rounded, padded, uppercase-tracked badge
+                // built for a card — in a 44px row it wrapped to two lines and
+                // took the row to 93px, and its ember fill made a fact look
+                // like the primary action. The label comes from the same
+                // `EXECUTION_META` the badge reads, so the vocabulary is still
+                // one vocabulary; only the chrome is a table's.
+                cell: (c) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {EXECUTION_META[executionOwner(c)].label}
+                    </span>
+                ),
             },
             {
                 key: "filled",
@@ -358,7 +371,9 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
             {
                 key: "decision",
                 header: "",
-                width: "w-36",
+                // Wide enough for the widest pair, measured: "Send back" and
+                // "Approve" side by side clipped to "end back" at w-36.
+                width: "w-52",
                 cell: (c) => (
                     <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                         {c.status === "pending_review" ? (

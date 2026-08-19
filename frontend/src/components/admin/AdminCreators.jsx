@@ -154,7 +154,7 @@ export default function AdminCreators() {
                 header: "Niches",
                 hideBelow: true,
                 cell: (c) => (
-                    <span className="truncate text-muted-foreground">
+                    <span className="block truncate text-muted-foreground">
                         {(c.niches || []).slice(0, 2).join(", ") || "—"}
                     </span>
                 ),

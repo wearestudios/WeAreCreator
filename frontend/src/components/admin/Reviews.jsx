@@ -133,7 +133,7 @@ function ReviewQueue({ config, onChanged }) {
                 header: "Detail",
                 hideBelow: true,
                 cell: (r) => (
-                    <span className="truncate text-muted-foreground">{config.secondary(r)}</span>
+                    <span className="block truncate text-muted-foreground">{config.secondary(r)}</span>
                 ),
             },
             {

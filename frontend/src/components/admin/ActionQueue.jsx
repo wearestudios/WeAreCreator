@@ -465,7 +465,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 cell: (i) => (
                     <span
                         data-testid={IDS.rowSecondary(i.id)}
-                        className="truncate text-muted-foreground"
+                        className="block truncate text-muted-foreground"
                     >
                         {i.secondary}
                     </span>
@@ -490,7 +490,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                         data-testid={IDS.rowAge(i.id)}
                         // Overdue is the one place a row changes colour: it is
                         // a fact about this row, not a category of row.
-                        className={isStale(i.since) ? "text-ember-500" : undefined}
+                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
                         title={isStale(i.since) ? "Overdue" : undefined}
                     >
                         <TimeAgo iso={i.since} />

@@ -106,6 +106,14 @@ export function DataTable({
     empty = null,
     testid = IDS.root,
     maxHeight = "max-h-[calc(100vh-16rem)]",
+    // **A floor, under which the table scrolls sideways rather than squashing.**
+    // `table-fixed` honours the sized columns first, so on a 390px screen the
+    // numerics took everything and the name column collapsed to nothing —
+    // measured: the creator list showed two overlapping headers and no names.
+    // With a minimum the container scrolls instead, which is the same thing
+    // `ScrollTable` does elsewhere in the app, and the identity column is
+    // leftmost so it is what you see before scrolling.
+    minWidth = "min-w-[52rem]",
     scrollRef,
 }) {
     const localRef = useRef(null);
@@ -160,7 +168,15 @@ export function DataTable({
     return (
         <div className={`${PANEL} overflow-hidden`} data-testid={testid}>
             <div ref={bodyRef} className={`overflow-auto ${maxHeight}`}>
-                <table className="w-full border-collapse text-left">
+                {/* **`table-fixed`, not auto.** With auto layout a cell's
+                    `truncate` does nothing — the table just grows to fit the
+                    longest string, and the columns on the right go off the
+                    edge. Measured on the action queue: the decision column,
+                    which is the only reason that screen exists, was scrolled
+                    out of sight. Fixed layout gives the sized columns their
+                    width and splits the rest evenly, so a long title
+                    ellipsises instead of pushing the buttons away. */}
+                <table className={`w-full table-fixed border-collapse text-left ${minWidth}`}>
                     <thead className="sticky top-0 z-10 bg-card">
                         <tr className="border-b border-white/10">
                             {columns.map((col) => (
@@ -250,7 +266,13 @@ export function DataTable({
                                     {columns.map((col) => (
                                         <td
                                             key={col.key}
-                                            className={`${DENSITY.row} ${TEXT.body} align-middle ${
+                                            // `overflow-hidden` so a cell that
+                                            // overruns is clipped at its own
+                                            // edge rather than printed over the
+                                            // next column — measured on the
+                                            // queue, where a brand name ran
+                                            // into the state beside it.
+                                            className={`${DENSITY.row} ${TEXT.body} overflow-hidden align-middle ${
                                                 col.numeric
                                                     ? "text-right tabular-nums"
                                                     : "text-left"
@@ -280,10 +302,14 @@ export function DataTable({
  * Same columns, same row height, same header — so the swap when data arrives
  * costs no layout shift and the eye is already where the first row will be.
  */
-export function TableSkeleton({ columns, rows = 10, testid }) {
+export function TableSkeleton({ columns, rows = 10, testid, minWidth = "min-w-[52rem]" }) {
     return (
         <div className={`${PANEL} overflow-hidden`} data-testid={testid ? `${testid}-skeleton` : undefined}>
-            <table className="w-full border-collapse">
+            {/* The same overflow container, the same `table-fixed`, the same
+                minimum width. A skeleton whose shape differs from the table it
+                stands in for is a layout shift with extra steps. */}
+            <div className="overflow-hidden">
+            <table className={`w-full table-fixed border-collapse ${minWidth}`}>
                 <thead className="bg-card">
                     <tr className="border-b border-white/10">
                         {columns.map((col) => (
@@ -314,6 +340,7 @@ export function TableSkeleton({ columns, rows = 10, testid }) {
                     ))}
                 </tbody>
             </table>
+            </div>
         </div>
     );
 }

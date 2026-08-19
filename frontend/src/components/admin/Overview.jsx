@@ -181,7 +181,7 @@ export default function Overview({ onChanged }) {
                 hideBelow: true,
                 width: "w-44",
                 cell: (c) => (
-                    <span className="truncate text-muted-foreground">
+                    <span className="block truncate text-muted-foreground">
                         {c.brand_name || "Unknown brand"}
                     </span>
                 ),
