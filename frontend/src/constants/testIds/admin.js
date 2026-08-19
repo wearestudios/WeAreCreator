@@ -226,6 +226,10 @@ export const ADMIN_QUEUE = {
 	rowAge: (id) => `admin-queue-age-${id}`,
 	rowPrimary: (id) => `admin-queue-primary-${id}`,
 	rowSecondary: (id) => `admin-queue-secondary-${id}`,
+	// The two decisions on a row. The pair above are the two lines of text —
+	// they were named before the row had buttons of its own.
+	rowPrimaryAction: (id) => `admin-queue-action-${id}`,
+	rowSecondaryAction: (id) => `admin-queue-reject-${id}`,
 };
 
 export const ADMIN_CREATORS = {
@@ -238,6 +242,12 @@ export const ADMIN_CREATORS = {
 	filterNiche: 'admin-creators-filter-niche',
 	filterArea: 'admin-creators-filter-area',
 	filterClear: 'admin-creators-filter-clear',
+	// The grid became a table. `tile(id)` is deliberately kept as the row's id
+	// rather than replaced with a fresh one: anything already written against
+	// "the element for creator X on the creator list" keeps finding it, which
+	// is the promise a test id makes.
+	table: 'admin-creators-table',
+	rowStatus: (id) => `admin-creator-status-${id}`,
 	grid: 'admin-creators-grid',
 	empty: 'admin-creators-empty',
 	skeleton: 'admin-creators-skeleton',
@@ -392,4 +402,41 @@ export const ADMIN_INVITE = {
 	report: 'admin-invite-report',
 	reportRow: (id) => `admin-invite-report-${id}`,
 	reportDone: 'admin-invite-report-done',
+};
+
+// --- The console's working surface ------------------------------------------
+//
+// The rebuild's own controls. Existing ids elsewhere in this file are
+// untouched: anything already written against `admin-tab-*`, a row id or a
+// dialog keeps finding the same control.
+
+export const ADMIN_SIDEBAR = {
+	root: 'admin-sidebar',
+	item: (key) => `admin-nav-${key}`,
+	badge: (key) => `admin-nav-badge-${key}`,
+	collapse: 'admin-sidebar-collapse',
+	savedFilter: (section, name) =>
+		`admin-saved-filter-${section}-${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
+};
+
+export const ADMIN_TABLE = {
+	root: 'admin-table',
+	header: (key) => `admin-th-${key}`,
+	row: (id) => `admin-row-${id}`,
+	toolbar: 'admin-table-toolbar',
+	saveFilter: 'admin-save-filter',
+	saveFilterName: 'admin-save-filter-name',
+	saveFilterConfirm: 'admin-save-filter-confirm',
+};
+
+export const ADMIN_PEEK = {
+	root: 'admin-peek',
+	close: 'admin-peek-close',
+	openFull: 'admin-peek-open-full',
+	action: (key) => `admin-peek-action-${key}`,
+};
+
+export const ADMIN_SHORTCUTS = {
+	root: 'admin-shortcuts',
+	open: 'admin-shortcuts-open',
 };

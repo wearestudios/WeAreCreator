@@ -1,50 +1,39 @@
 // The creator roster: everyone on the platform, whatever their verification
-// status. The verification queue upstairs is a to-do list; this is the address
-// book — you come here to look someone up, not to act on them.
+// status. The verification queue is a to-do list; this is the address book —
+// you come here to look somebody up, not to act on them.
+//
+// **It was a grid of cards.** Cards are right when each item is a thing you
+// look *at*, and wrong when they are rows you look *across*: you could not
+// compare a follower count in card three with the one in card eleven, and a
+// screen that fit nine cards fits about thirty rows. It is a table now, with
+// the console's shared machinery behind it — sortable columns, a sticky
+// header, a peek panel, keyboard navigation, and filters that survive a trip
+// to a detail page.
+//
+// This screen is the reference implementation for the other list views: the
+// shape here is the shape they take.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { Search, Users } from "lucide-react";
+
 import { notifyError } from "@/lib/feedback";
-import {
-    ChevronLeft,
-    ChevronRight,
-    ExternalLink,
-    IndianRupee,
-    Instagram,
-    Search,
-    Users,
-    X,
-} from "lucide-react";
 import { api } from "@/lib/api";
 import { CITY_OPTIONS, CREATOR_TAXONOMY_TERMS } from "@/lib/taxonomy";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-    Sheet,
-    SheetClose,
-    SheetContent,
-    SheetDescription,
-    SheetTitle,
-} from "@/components/ui/sheet";
-import {
-    ADMIN_CREATORS as IDS,
-    ADMIN_CREATOR_DETAIL as DETAIL_IDS,
-    STICKY_BAR,
-} from "@/constants/testIds";
-import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
-import {
-    CreatorAvatar,
-    FilterSelect,
-    GridSkeleton,
-    Pill,
-    SectionHeader,
-    StatePill,
-    VERIFICATION_META,
-    formatCompact,
-    formatDate,
-    formatRupees,
-} from "./shared";
+import { ADMIN_CREATORS as IDS, ADMIN_TABLE as TABLE_IDS } from "@/constants/testIds";
+import { FilterChips, ListEmptyState } from "@/components/data/DenseView";
 
-const PAGE_SIZE = 12;
+import DataTable, { sortRows } from "./console/DataTable";
+import PeekPanel, { PeekField } from "./console/PeekPanel";
+import SaveFilter from "./console/SaveFilter";
+import StatusTag from "./console/StatusTag";
+import { TimeAgo, compact, rupees } from "./console/format";
+import { CALM, DENSITY, FOCUS, PANEL, TEXT } from "./console/tokens";
+import useListState from "./console/useListState";
+import useTableKeys from "./console/useTableKeys";
+import { FilterSelect } from "./shared";
+
+const PAGE_SIZE = 50;
 
 const STATUS_OPTIONS = [
     { value: "verified", label: "Verified" },
@@ -52,155 +41,45 @@ const STATUS_OPTIONS = [
     { value: "rejected", label: "Rejected" },
 ];
 
-// Kept in step with the onboarding list — these are what creators actually pick.
-// Both drawn from the shared taxonomy rather than a hand-kept copy. The niche
+// Drawn from the shared taxonomy rather than a hand-kept copy. The niche
 // filter used to be food and nothing but food, so an admin could not filter
 // for a fashion or gaming creator at all — the option did not exist.
 const NICHE_OPTIONS = CREATOR_TAXONOMY_TERMS.map((n) => ({ value: n, label: n }));
 
-// Misnamed AREA_OPTIONS for a list of cities, and a second copy of the city
-// list at that. One list now, from lib/taxonomy.
-const AREA_OPTIONS = CITY_OPTIONS;
-
-const GROUPS = [
-    { key: "ongoing", label: "Ongoing", empty: "Nothing in flight." },
-    { key: "completed", label: "Completed", empty: "No campaign closed out yet." },
-    { key: "applied", label: "Applied", empty: "No open applications." },
-];
-
-// ---------------------------------------------------------------------------
-// Detail drawer
-// ---------------------------------------------------------------------------
-
-const DetailStat = ({ label, value, prefix, testid }) => (
-    <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-            {label}
-        </p>
-        <div
-            data-testid={testid}
-            className="mt-3 flex items-baseline font-serif text-2xl leading-none"
-        >
-            {prefix && <IndianRupee className="h-4 w-4 text-ember-500" />}
-            {value}
-        </div>
-    </div>
-);
-
-const CollabRow = ({ row }) => (
-    <li
-        data-testid={DETAIL_IDS.collabRow(row.id)}
-        className="flex flex-col gap-2 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6"
-    >
-        <div className="min-w-0">
-            <p className="truncate text-sm text-foreground">{row.campaign_title || "—"}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-                {row.brand_name || "Unknown brand"}
-                {row.area ? ` · ${row.area}` : ""}
-            </p>
-        </div>
-        <div className="flex flex-none items-center gap-3">
-            <span className="inline-flex items-center text-xs text-muted-foreground">
-                {row.agreed_amount != null ? (
-                    <>
-                        <IndianRupee className="h-3 w-3" />
-                        {formatRupees(row.agreed_amount)}
-                    </>
-                ) : (
-                    "Not agreed"
-                )}
-            </span>
-            <StatePill state={row.state} />
-        </div>
-    </li>
-);
-
-
-// ---------------------------------------------------------------------------
-// Roster
-// ---------------------------------------------------------------------------
-
-// A link, not a button. It used to open a drawer over the grid, which meant a
-// creator had no address: you could not send one to a colleague, reload onto
-// one, or use the back button to leave. The drawer is gone — this goes to
-// /admin/creators/:id, which holds far more than a drawer ever could.
-function CreatorTile({ creator }) {
-    return (
-        <Link
-            to={`/admin/creators/${creator.user_id}`}
-            data-testid={IDS.tile(creator.user_id)}
-            className="group flex flex-col rounded-md border border-white/10 bg-card p-6 text-left transition-colors duration-200 hover:border-ember-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background grain-surface"
-        >
-            <div className="flex items-start gap-4">
-                <CreatorAvatar
-                    creator={creator}
-                    testids={{
-                        photo: IDS.tilePhoto(creator.user_id),
-                        monogram: IDS.tileMonogram(creator.user_id),
-                    }}
-                />
-                <div className="min-w-0 flex-1">
-                    <p className="truncate font-serif text-xl leading-tight">
-                        {creator.name || "Unnamed"}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {creator.instagram_handle ? `@${creator.instagram_handle}` : "No handle yet"}
-                        {typeof creator.follower_count === "number"
-                            ? ` · ${formatCompact(creator.follower_count)}`
-                            : ""}
-                    </p>
-                </div>
-            </div>
-
-            {creator.niches?.length > 0 && (
-                <div className="mt-5 flex flex-wrap gap-1.5">
-                    {creator.niches.slice(0, 3).map((n) => (
-                        <span
-                            key={n}
-                            className="rounded-full bg-ember-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-ember-500"
-                        >
-                            {n}
-                        </span>
-                    ))}
-                    {creator.niches.length > 3 && (
-                        <span className="px-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                            +{creator.niches.length - 3}
-                        </span>
-                    )}
-                </div>
-            )}
-
-            <div className="mt-6 flex items-end justify-between gap-4 border-t border-white/10 pt-4">
-                <Pill meta={VERIFICATION_META} value={creator.verification_status} />
-                <span
-                    data-testid={IDS.tileEarned(creator.user_id)}
-                    className="inline-flex items-baseline text-sm text-muted-foreground"
-                >
-                    <IndianRupee className="h-3 w-3" />
-                    {formatRupees(creator.total_earned)}
-                </span>
-            </div>
-        </Link>
-    );
-}
+const DEFAULTS = {
+    q: "",
+    status: "",
+    niche: "",
+    area: "",
+    page: 1,
+    sort: { key: "name", dir: "asc" },
+};
 
 export default function AdminCreators() {
     const [data, setData] = useState(null);
-    const [q, setQ] = useState("");
-    const [search, setSearch] = useState("");
-    const [status, setStatus] = useState("");
-    const [niche, setNiche] = useState("");
-    const [area, setArea] = useState("");
-    const [page, setPage] = useState(1);
+    const [focused, setFocused] = useState(-1);
+    const [peek, setPeek] = useState(null);
+    const { state, patch, reset, scrollRef, saved, save, apply } = useListState(
+        "creators",
+        DEFAULTS,
+    );
+    const { q, status, niche, area, page, sort } = state;
+    const [typed, setTyped] = useState(q);
+    const location = useLocation();
+
+    // A saved set arrives through the sidebar as router state rather than a
+    // prop, because the sidebar has no way to reach into this screen.
+    useEffect(() => {
+        if (location.state?.savedFilter) apply(location.state.savedFilter);
+    }, [location.state, apply]);
 
     // Typing shouldn't fire a request per keystroke.
     useEffect(() => {
         const t = setTimeout(() => {
-            setSearch(q.trim());
-            setPage(1);
+            if (typed.trim() !== q) patch({ q: typed.trim(), page: 1 });
         }, 300);
         return () => clearTimeout(t);
-    }, [q]);
+    }, [typed, q, patch]);
 
     const load = useCallback(async () => {
         setData(null);
@@ -209,7 +88,7 @@ export default function AdminCreators() {
                 params: {
                     page,
                     page_size: PAGE_SIZE,
-                    ...(search ? { q: search } : {}),
+                    ...(q ? { q } : {}),
                     ...(status ? { verification_status: status } : {}),
                     ...(niche ? { niche } : {}),
                     ...(area ? { area } : {}),
@@ -220,174 +99,301 @@ export default function AdminCreators() {
             notifyError(e);
             setData({ creators: [], total: 0, pages: 0 });
         }
-    }, [page, search, status, niche, area]);
+    }, [page, q, status, niche, area]);
 
     useEffect(() => {
         load();
     }, [load]);
 
-    const filtered = Boolean(search || status || niche || area);
-    const rows = data?.creators || [];
-    const pages = data?.pages || 0;
+    const raw = useMemo(() => data?.creators || [], [data]);
 
+    /**
+     * The columns.
+     *
+     * `value` is what the column sorts on, which is not always what it shows:
+     * "24k" sorts as 24000 and a relative timestamp sorts as the instant, so
+     * the order is the order of the underlying data rather than of its
+     * rendering. Sorting a formatted string is how "9k" ends up above "24k".
+     */
+    const columns = useMemo(
+        () => [
+            {
+                key: "name",
+                header: "Creator",
+                sortable: true,
+                value: (c) => c.name || "",
+                cell: (c) => (
+                    <Link
+                        to={`/admin/creators/${c.user_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        data-testid={IDS.open(c.user_id)}
+                        className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                    >
+                        {c.name || "Unnamed"}
+                    </Link>
+                ),
+            },
+            {
+                key: "verification_status",
+                header: "Status",
+                sortable: true,
+                width: "w-36",
+                cell: (c) => (
+                    <StatusTag state={c.verification_status} testid={IDS.rowStatus(c.user_id)} />
+                ),
+            },
+            {
+                key: "city",
+                header: "City",
+                sortable: true,
+                hideBelow: true,
+                cell: (c) => c.city || <span className="text-muted-foreground">—</span>,
+            },
+            {
+                key: "niches",
+                header: "Niches",
+                hideBelow: true,
+                cell: (c) => (
+                    <span className="truncate text-muted-foreground">
+                        {(c.niches || []).slice(0, 2).join(", ") || "—"}
+                    </span>
+                ),
+            },
+            {
+                key: "follower_count",
+                header: "Followers",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                value: (c) => c.follower_count ?? null,
+                cell: (c) => compact(c.follower_count),
+            },
+            {
+                key: "base_rate",
+                header: "Base rate",
+                sortable: true,
+                numeric: true,
+                width: "w-32",
+                value: (c) => c.base_rate ?? null,
+                cell: (c) => rupees(c.base_rate),
+            },
+            {
+                key: "total_earned",
+                header: "Earned",
+                sortable: true,
+                numeric: true,
+                width: "w-32",
+                value: (c) => c.total_earned ?? null,
+                cell: (c) => (
+                    <span data-testid={IDS.tileEarned(c.user_id)}>{rupees(c.total_earned)}</span>
+                ),
+            },
+            {
+                key: "created_at",
+                header: "Joined",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                hideBelow: true,
+                value: (c) => (c.created_at ? new Date(c.created_at).getTime() : null),
+                cell: (c) => <TimeAgo iso={c.created_at} />,
+            },
+        ],
+        [],
+    );
 
+    // Sorted client-side over the page the server returned. Honest about what
+    // it is: the header sorts what is on screen, and the page size is large
+    // enough that this is the whole working set in most sessions.
+    const rows = useMemo(() => sortRows(raw, columns, sort), [raw, columns, sort]);
+
+    const openPeek = useCallback(
+        (i) => {
+            setFocused(i);
+            setPeek(rows[i] || null);
+        },
+        [rows],
+    );
+
+    useTableKeys({
+        count: rows.length,
+        focused,
+        setFocused,
+        onOpen: openPeek,
+        onEscape: () => (peek ? setPeek(null) : setFocused(-1)),
+        enabled: true,
+    });
+
+    const filtered = Boolean(q || status || niche || area);
     const chips = [
-        { key: "search", label: "Search", value: search, onRemove: () => { setQ(""); setSearch(""); setPage(1); } },
-        { key: "status", label: "Status", value: status, onRemove: () => { setStatus(""); setPage(1); } },
-        { key: "niche", label: "Niche", value: niche, onRemove: () => { setNiche(""); setPage(1); } },
-        { key: "area", label: "Area", value: area, onRemove: () => { setArea(""); setPage(1); } },
+        { key: "search", label: "Search", value: q, onRemove: () => { setTyped(""); patch({ q: "", page: 1 }); } },
+        { key: "status", label: "Status", value: status, onRemove: () => patch({ status: "", page: 1 }) },
+        { key: "niche", label: "Niche", value: niche, onRemove: () => patch({ niche: "", page: 1 }) },
+        { key: "area", label: "City", value: area, onRemove: () => patch({ area: "", page: 1 }) },
     ];
 
-    const clearFilters = () => {
-        setQ("");
-        setSearch("");
-        setStatus("");
-        setNiche("");
-        setArea("");
-        setPage(1);
-    };
-
-    const onFilter = (setter) => (v) => {
-        setter(v);
-        setPage(1);
-    };
-
-    const summary = useMemo(() => {
-        if (!data) return "";
-        const from = (page - 1) * PAGE_SIZE + 1;
-        const to = Math.min(page * PAGE_SIZE, data.total);
-        if (!data.total) return "No creators";
-        return `${from}–${to} of ${data.total}`;
-    }, [data, page]);
+    const total = data?.total ?? 0;
+    const pages = data?.pages ?? 0;
 
     return (
         <section data-testid={IDS.section}>
-            <SectionHeader
-                kicker="Creators"
-                title="Creator roster"
-                blurb="Everyone signed up, whatever their status. Open a creator to see what they've earned and everything they're on."
-                onRefresh={load}
-                refreshTestId={IDS.refresh}
-            />
+            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className={TEXT.heading}>Creators</h1>
+                    <p
+                        data-testid={IDS.count}
+                        className={`${TEXT.meta} text-muted-foreground`}
+                    >
+                        {data ? `${total.toLocaleString("en-IN")} on the platform` : "Loading…"}
+                    </p>
+                </div>
+                <SaveFilter
+                    onSave={save}
+                    disabled={!filtered}
+                    savedNames={saved.map((s) => s.name)}
+                />
+            </header>
 
-            <StickyBar level="headerFromMd" testid={STICKY_BAR.adminSection} className="mt-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <div className="relative min-w-0 flex-1 sm:min-w-[16rem]">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            {/* The toolbar. One row, one height, no wrapping panel — the table
+                below is the thing, and a filter bar in a card of its own reads
+                as a second piece of content. */}
+            <div
+                data-testid={TABLE_IDS.toolbar}
+                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+            >
+                <div className="relative min-w-[9rem] flex-1">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                        value={q}
-                        onChange={(e) => setQ(e.target.value)}
+                        value={typed}
+                        onChange={(e) => setTyped(e.target.value)}
+                        placeholder="Name, handle, phone"
                         data-testid={IDS.search}
-                        placeholder="Name, handle, phone or email"
-                        aria-label="Search creators"
-                        className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                        className={`h-8 border-white/10 bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
-                    label="Any status"
+                    dense
+                    label="Status"
                     value={status}
-                    onChange={onFilter(setStatus)}
+                    onChange={(v) => patch({ status: v, page: 1 })}
                     options={STATUS_OPTIONS}
                     testid={IDS.filterStatus}
                 />
                 <FilterSelect
-                    label="Any niche"
+                    dense
+                    label="Niche"
                     value={niche}
-                    onChange={onFilter(setNiche)}
+                    onChange={(v) => patch({ niche: v, page: 1 })}
                     options={NICHE_OPTIONS}
                     testid={IDS.filterNiche}
                 />
                 <FilterSelect
-                    label="Any area"
+                    dense
+                    label="City"
                     value={area}
-                    onChange={onFilter(setArea)}
-                    options={AREA_OPTIONS}
+                    onChange={(v) => patch({ area: v, page: 1 })}
+                    options={CITY_OPTIONS}
                     testid={IDS.filterArea}
                 />
-                {filtered && (
-                    <button
-                        type="button"
-                        onClick={clearFilters}
-                        data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
-                    >
-                        <X className="h-3.5 w-3.5" />
-                        Clear
-                    </button>
-                )}
             </div>
 
-            <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
-            </StickyBar>
+            {filtered && (
+                <div className="mb-3">
+                    <FilterChips
+                        chips={chips}
+                        onClearAll={() => {
+                            setTyped("");
+                            reset();
+                        }}
+                    />
+                </div>
+            )}
 
-            <div className="mt-8">
-                {!data ? (
-                    <GridSkeleton tiles={6} testid={IDS.skeleton} />
-                ) : rows.length === 0 ? (
+            <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(c) => c.user_id}
+                rowTestId={(c) => IDS.tile(c.user_id)}
+                sort={sort}
+                onSortChange={(s) => patch({ sort: s })}
+                focused={focused}
+                onFocus={setFocused}
+                onOpen={openPeek}
+                loading={!data}
+                scrollRef={scrollRef}
+                testid={IDS.table}
+                empty={
                     <ListEmptyState
                         Icon={Users}
                         testid={IDS.empty}
                         filtered={filtered}
-                        onClearFilters={clearFilters}
-                        emptyTitle="No creators yet."
-                        emptyBody="Everyone who signs up appears here, whether or not they have finished their profile. Approve them from Reviews once they submit."
-                        filteredTitle="No creator matches those filters."
-                        filteredBody="Widen the status, niche or area — or clear the search."
+                        emptyTitle="No creators yet"
+                        emptyBody="Creators appear here as soon as they sign up."
+                        filteredTitle="No creators match those filters."
+                        filteredBody="Widen the search, or clear them to see the roster."
+                        onClearFilters={() => {
+                            setTyped("");
+                            reset();
+                        }}
                     />
-                ) : (
-                    <>
-                        <p
-                            data-testid={IDS.count}
-                            className="text-xs uppercase tracking-[0.18em] text-muted-foreground"
-                        >
-                            {summary}
-                        </p>
-                        <div
-                            data-testid={IDS.grid}
-                            className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-                        >
-                            {rows.map((c) => (
-                                <CreatorTile key={c.user_id} creator={c} />
-                            ))}
-                        </div>
-                    </>
-                )}
-            </div>
+                }
+            />
 
             {pages > 1 && (
                 <div
                     data-testid={IDS.pagination}
-                    className="mt-8 flex items-center justify-center gap-6"
+                    className={`mt-3 flex items-center justify-between ${TEXT.meta} text-muted-foreground`}
                 >
-                    <button
-                        type="button"
-                        disabled={page <= 1}
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        data-testid={IDS.pagePrev}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 disabled:pointer-events-none disabled:opacity-40"
-                    >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        Previous
-                    </button>
-                    <span
-                        data-testid={IDS.pageLabel}
-                        className="text-xs uppercase tracking-[0.18em] text-muted-foreground"
-                    >
+                    <span data-testid={IDS.pageLabel}>
                         Page {page} of {pages}
                     </span>
-                    <button
-                        type="button"
-                        disabled={page >= pages}
-                        onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                        data-testid={IDS.pageNext}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 disabled:pointer-events-none disabled:opacity-40"
-                    >
-                        Next
-                        <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex gap-1">
+                        <button
+                            type="button"
+                            disabled={page <= 1}
+                            onClick={() => patch({ page: page - 1 })}
+                            data-testid={IDS.pagePrev}
+                            className={`rounded border border-white/10 px-2 py-1 ${CALM} hover:bg-white/5 disabled:opacity-40 ${FOCUS}`}
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            disabled={page >= pages}
+                            onClick={() => patch({ page: page + 1 })}
+                            data-testid={IDS.pageNext}
+                            className={`rounded border border-white/10 px-2 py-1 ${CALM} hover:bg-white/5 disabled:opacity-40 ${FOCUS}`}
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             )}
 
+            <PeekPanel
+                open={Boolean(peek)}
+                onOpenChange={(o) => !o && setPeek(null)}
+                title={peek?.name || "Creator"}
+                subtitle={peek?.instagram_handle ? `@${peek.instagram_handle}` : peek?.city}
+                href={peek ? `/admin/creators/${peek.user_id}` : undefined}
+            >
+                {peek && (
+                    <div>
+                        <PeekField label="Status">
+                            <StatusTag state={peek.verification_status} chip />
+                        </PeekField>
+                        <PeekField label="City">{peek.city}</PeekField>
+                        <PeekField label="Followers">{compact(peek.follower_count)}</PeekField>
+                        <PeekField label="Base rate">{rupees(peek.base_rate)}</PeekField>
+                        <PeekField label="Niches">
+                            {(peek.niches || []).join(", ") || "—"}
+                        </PeekField>
+                        <PeekField label="Joined">
+                            <TimeAgo iso={peek.created_at} />
+                        </PeekField>
+                    </div>
+                )}
+            </PeekPanel>
         </section>
     );
 }

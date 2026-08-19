@@ -57,7 +57,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
             {nothing ? (
                 <p
                     data-testid={IDS.empty}
-                    className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm leading-relaxed text-muted-foreground grain-surface"
+                    className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm leading-relaxed text-muted-foreground"
                 >
                     Nothing measured yet. Once a creator submits content, record what the
                     post did — from Instagram where they've connected it, or by hand from
@@ -84,7 +84,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                         client should see them at the same moment. */}
                     <div data-testid={IDS.note} className="mt-4 space-y-1.5">
                         {p.barter_reach > 0 && (
-                            <p className="text-xs leading-relaxed text-muted-foreground">
+                            <p className="text-sm leading-relaxed text-muted-foreground">
                                 {p.barter_deliveries} barter{" "}
                                 {p.barter_deliveries === 1 ? "delivery" : "deliveries"}{" "}
                                 contributed {num(p.barter_reach)} reach at no cost. Cost per
@@ -92,7 +92,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                             </p>
                         )}
                         {p.awaiting_payment_deliveries > 0 && (
-                            <p className="text-xs leading-relaxed text-muted-foreground">
+                            <p className="text-sm leading-relaxed text-muted-foreground">
                                 {p.awaiting_payment_deliveries}{" "}
                                 {p.awaiting_payment_deliveries === 1 ? "delivery is" : "deliveries are"}{" "}
                                 waiting on payment, so {p.awaiting_payment_deliveries === 1 ? "its" : "their"}{" "}
@@ -100,7 +100,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                             </p>
                         )}
                         {p.creators_delivered > p.with_reach && (
-                            <p className="text-xs leading-relaxed text-muted-foreground">
+                            <p className="text-sm leading-relaxed text-muted-foreground">
                                 {p.with_reach} of {p.creators_delivered} deliveries have reach
                                 figures — {scope === "brand" ? "these totals are" : "the totals above are"} a
                                 floor, not a final number.
@@ -174,7 +174,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                                 </div>
                             ))}
                         </dl>
-                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 pt-5 text-xs text-muted-foreground">
+                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 pt-5 text-sm text-muted-foreground">
                             <span className="text-sm text-foreground">
                                 {pct(performance.engagement_rate)} engagement
                             </span>
@@ -292,7 +292,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-w-lg rounded-md border border-white/10 bg-card grain-surface"
+                className="max-w-lg rounded-md border border-white/10 bg-card"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -335,7 +335,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                         ))}
                     </div>
 
-                    <p className="text-xs leading-relaxed text-muted-foreground">
+                    <p className="text-sm leading-relaxed text-muted-foreground">
                         Engagement rate is worked out from likes, comments and saves
                         against reach — you don't enter it, so it can never disagree with
                         the numbers above it.

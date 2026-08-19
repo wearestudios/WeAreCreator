@@ -141,7 +141,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-white/10 bg-card grain-surface"
+                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-white/10 bg-card"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -177,12 +177,12 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm">
                                                 {r.name || r.creator_id}{" "}
-                                                <span className={`text-xs ${meta.tone}`}>
+                                                <span className={`text-sm ${meta.tone}`}>
                                                     · {meta.label}
                                                 </span>
                                             </p>
                                             {r.reason && (
-                                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                                                     {r.reason}
                                                 </p>
                                             )}
@@ -240,14 +240,14 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                     aria-pressed={isOn}
                                                     data-testid={IDS.option(c.user_id)}
                                                     className={
-                                                        "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 " +
+                                                        "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 " +
                                                         (isOn ? "bg-ember-500/10" : "hover:bg-white/5")
                                                     }
                                                 >
                                                     <CreatorAvatar creator={c} size="h-9 w-9" />
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-sm">{c.name}</p>
-                                                        <p className="truncate text-xs text-muted-foreground">
+                                                        <p className="truncate text-sm text-muted-foreground">
                                                             {c.instagram_handle
                                                                 ? `@${c.instagram_handle}`
                                                                 : "No handle"}
@@ -259,7 +259,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                     </div>
                                                     <span
                                                         className={
-                                                            "grid h-5 w-5 flex-none place-items-center rounded border transition-colors duration-200 " +
+                                                            "grid h-5 w-5 flex-none place-items-center rounded border transition-colors duration-150 " +
                                                             (isOn
                                                                 ? "border-ember-500 bg-ember-500 text-black"
                                                                 : "border-white/20")
@@ -276,7 +276,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         </div>
 
                         {rows?.length === PAGE_SIZE && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-sm text-muted-foreground">
                                 Showing the first {PAGE_SIZE}. Search to narrow it down.
                             </p>
                         )}

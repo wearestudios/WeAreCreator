@@ -307,6 +307,11 @@ def test_the_admin_filter_refetches_when_it_changes():
     """A filter left out of the dependency array is a filter that does
     nothing — caught by the linter once, worth keeping caught."""
     source = (FRONTEND / "components" / "admin" / "AdminCampaigns.jsx").read_text()
-    deps = re.search(r"\}, \[page, search, status, showcase, ([^\]]*)\]\);", source)
+    # The list's fetch, whatever the surrounding state is called this month —
+    # naming the whole array pinned the console's variable names rather than
+    # the rule, and broke on a rename that changed nothing about the rule.
+    load = source[source.index("const load = useCallback("):]
+    deps = re.search(r"\}, \[([^\]]*)\]\);", load)
 
-    assert deps and "execution" in deps.group(1)
+    assert deps, "AdminCampaigns has no load callback with a dependency array"
+    assert "execution" in deps.group(1), deps.group(1)

@@ -215,7 +215,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
                     type="button"
                     onClick={onRefresh}
                     data-testid={refreshTestId}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
                 >
                     <RotateCw className="h-3.5 w-3.5" />
                     Refresh
@@ -233,19 +233,27 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
 // "All" is a sentinel rather than an empty value because Radix reserves "".
 export const ALL = "__all__";
 
-export const FilterSelect = ({ label, value, onChange, options, testid, className = "" }) => (
+// `dense` is the console's list toolbars: one 32px row of controls beside the
+// search box, matching the table's own rhythm. The taller default stays for
+// the detail pages and the manager screens, where a filter is a form field
+// somebody taps on a phone rather than one of six controls in a bar.
+export const FilterSelect = ({ label, value, onChange, options, testid, dense = false, className = "" }) => (
     <Select value={value || ALL} onValueChange={(v) => onChange(v === ALL ? "" : v)}>
         <SelectTrigger
             data-testid={testid}
             aria-label={label}
             className={
-                "h-11 md:h-10 w-full rounded-md border-white/10 bg-background/60 text-sm capitalize focus:ring-ember-500 sm:w-44 " +
+                (dense
+                    ? "h-8 w-full rounded border-white/10 bg-transparent text-sm capitalize focus:ring-ember-500 sm:w-40 "
+                    : "h-11 md:h-10 w-full rounded-md border-white/10 bg-background/60 text-sm capitalize focus:ring-ember-500 sm:w-44 ") +
                 className
             }
         >
             <SelectValue placeholder={label} />
         </SelectTrigger>
-        <SelectContent className="max-h-72 rounded-md border-white/10 bg-card grain-surface">
+        {/* No grain: this menu opens over the console, which is a working
+            surface rather than a printed one. */}
+        <SelectContent className="max-h-72 rounded-md border-white/10 bg-card">
             <SelectItem value={ALL} className="text-sm">
                 {label}
             </SelectItem>
@@ -260,7 +268,7 @@ export const FilterSelect = ({ label, value, onChange, options, testid, classNam
 
 /** Skeletons. One shape per section, so a loading console reads like the loaded one. */
 export const TileSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
+    <div className="rounded-md border border-white/10 bg-card p-6">
         <div className="flex items-start gap-4">
             <Skeleton className="h-12 w-12 flex-none rounded-md" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -295,7 +303,7 @@ export const ListSkeleton = ({ rows = 4, testid }) => (
 
 // Dates go through the shadcn calendar — the design brief rules out raw date
 // inputs. Value is a Date or null.
-export const DateFilter = ({ value, onChange, label, testid }) => {
+export const DateFilter = ({ value, onChange, label, testid, dense = false }) => {
     const [open, setOpen] = React.useState(false);
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -304,15 +312,17 @@ export const DateFilter = ({ value, onChange, label, testid }) => {
                     type="button"
                     data-testid={testid}
                     className={
-                        "inline-flex h-11 md:h-10 items-center gap-2 rounded-md border border-white/10 bg-background/60 px-3 text-sm transition-colors duration-200 hover:border-white/25 " +
+                        (dense
+                            ? "inline-flex h-8 items-center gap-2 rounded border border-white/10 bg-transparent px-2 text-sm transition-colors duration-150 hover:border-white/25 "
+                            : "inline-flex h-11 md:h-10 items-center gap-2 rounded-md border border-white/10 bg-background/60 px-3 text-sm transition-colors duration-150 hover:border-white/25 ") +
                         (value ? "text-foreground" : "text-muted-foreground")
                     }
                 >
-                    <CalendarDays className="h-4 w-4" />
+                    <CalendarDays className={dense ? "h-3.5 w-3.5" : "h-4 w-4"} />
                     {value ? formatDate(value.toISOString()) : label}
                 </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto rounded-md border-white/10 bg-card p-0 grain-surface">
+            <PopoverContent align="start" className="w-auto rounded-md border-white/10 bg-card p-0">
                 <Calendar
                     mode="single"
                     selected={value || undefined}
@@ -328,7 +338,7 @@ export const DateFilter = ({ value, onChange, label, testid }) => {
                             onChange(null);
                             setOpen(false);
                         }}
-                        className="w-full border-t border-white/10 px-3 py-2 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                        className="w-full border-t border-white/10 px-3 py-2 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
                     >
                         Clear
                     </button>
@@ -345,7 +355,7 @@ export const endOfDay = (d) =>
 export const EmptyState = ({ Icon, children, testid }) => (
     <div
         data-testid={testid}
-        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground grain-surface"
+        className="flex items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-10 text-sm text-muted-foreground"
     >
         {Icon && <Icon className="h-5 w-5 flex-none text-ember-500" />}
         <p>{children}</p>

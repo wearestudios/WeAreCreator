@@ -255,7 +255,7 @@ export default function BrandDetailPage() {
                                     </Field>
                                 </dl>
                                 {brand.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
                                         Last decision: {brand.verification_reason}
                                     </p>
                                 )}
@@ -278,13 +278,13 @@ export default function BrandDetailPage() {
                                     <Field label="Account status">{brand.status}</Field>
                                 </dl>
                                 {brand.contact_email_is_free_domain && (
-                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
+                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-relaxed text-amber-200">
                                         That's a free mail address. Not a problem on its own —
                                         plenty of real small businesses use one — but a domain
                                         address is the cheapest evidence somebody works there.
                                     </p>
                                 )}
-                                <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
                                     One login per brand. There is no way to add a second.
                                 </p>
                             </Panel>
@@ -297,14 +297,14 @@ export default function BrandDetailPage() {
                         {data.documents.length === 0 ? (
                             <p
                                 data-testid={IDS.documentsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 Nothing uploaded. A brand needs at least one — GST certificate,
                                 business registration, FSSAI licence or shop &amp; establishment
                                 licence — before we'll look.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                 {data.documents.map((d) => (
                                     <li
                                         key={d.id}
@@ -315,7 +315,7 @@ export default function BrandDetailPage() {
                                             <FileText className="h-4 w-4 flex-none text-ember-500" />
                                             <span className="min-w-0">
                                                 {d.doc_label}
-                                                <span className="block truncate text-xs text-muted-foreground">
+                                                <span className="block truncate text-sm text-muted-foreground">
                                                     {d.original_name}
                                                 </span>
                                             </span>
@@ -323,7 +323,7 @@ export default function BrandDetailPage() {
                                         <span className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground">
                                             {d.status}
                                         </span>
-                                        <span className="w-32 flex-none text-xs text-muted-foreground">
+                                        <span className="w-32 flex-none text-sm text-muted-foreground">
                                             {formatDate(d.uploaded_at)}
                                         </span>
                                         {/* The only route these are reachable
@@ -333,7 +333,7 @@ export default function BrandDetailPage() {
                                             href={`${API_BASE}/admin/brands/${id}/documents/${d.id}`}
                                             target="_blank"
                                             rel="noreferrer noopener"
-                                            className="inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                                            className="inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
                                         >
                                             <ExternalLink className="h-3.5 w-3.5" />
                                             Open
@@ -348,12 +348,12 @@ export default function BrandDetailPage() {
                         {data.campaigns.length === 0 ? (
                             <p
                                 data-testid={IDS.campaignsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 They haven't posted anything yet.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                 {data.campaigns.map((c) => (
                                     <li
                                         key={c.id}
@@ -362,12 +362,12 @@ export default function BrandDetailPage() {
                                     >
                                         <span className="min-w-0 flex-1 text-sm">
                                             <CampaignLink id={c.id} title={c.title} />
-                                            <span className="block text-xs text-muted-foreground">
+                                            <span className="block text-sm text-muted-foreground">
                                                 {c.area}
                                                 {c.manager_name ? ` · ${c.manager_name}` : ""}
                                             </span>
                                         </span>
-                                        <span className="flex-none text-xs text-muted-foreground">
+                                        <span className="flex-none text-sm text-muted-foreground">
                                             {c.filled_slots}/{c.creators_needed} filled
                                         </span>
                                         <span className="w-24 flex-none text-sm">

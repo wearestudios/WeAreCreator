@@ -85,7 +85,12 @@ export function ConfirmDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_CONFIRM.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                // The shared dialog primitive grains itself, and it is on
+                // nineteen other surfaces — so the grain is turned off here
+                // rather than there. `!` because the two utilities sit in the
+                // same layer and the class order does not decide it: measured,
+                // the plain form lost.
+                className="max-w-md rounded-md border border-white/10 bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
                     {kicker && (
@@ -296,7 +301,12 @@ export function AdvanceDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_ADVANCE.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                // The shared dialog primitive grains itself, and it is on
+                // nineteen other surfaces — so the grain is turned off here
+                // rather than there. `!` because the two utilities sit in the
+                // same layer and the class order does not decide it: measured,
+                // the plain form lost.
+                className="max-w-md rounded-md border border-white/10 bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -330,7 +340,7 @@ export function AdvanceDialog({
                                 className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                                 placeholder="e.g. 8000"
                             />
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 text-sm text-muted-foreground">
                                 Creator quoted ₹{formatRupees(collab?.quoted_rate)} · brand budget ₹
                                 {formatRupees(collab?.campaign?.budget_per_creator)}
                             </p>
@@ -381,7 +391,7 @@ export function AdvanceDialog({
                                 Creator is paid ₹{formatRupees(collab?.agreed_amount)} in full. Our
                                 margin of {feePercent ?? 15}% is added on top of the brand's invoice.
                             </p>
-                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <input
                                     type="checkbox"
                                     data-testid={ADMIN_ADVANCE.feeOverride}
@@ -515,7 +525,12 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={ADMIN_CAMPAIGN_EDIT.dialog}
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                // The shared dialog primitive grains itself, and it is on
+                // nineteen other surfaces — so the grain is turned off here
+                // rather than there. `!` because the two utilities sit in the
+                // same layer and the class order does not decide it: measured,
+                // the plain form lost.
+                className="max-w-md rounded-md border border-white/10 bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -580,7 +595,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                         data-testid={ADMIN_CAMPAIGN_EDIT.compensationOption(opt.value)}
                                         onClick={() => setCompensation(opt.value)}
                                         className={
-                                            "min-h-[2.75rem] rounded-md border px-3 py-2 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
+                                            "min-h-[2.75rem] rounded-md border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
                                             (on
                                                 ? "border-ember-500 bg-ember-500/10 text-ember-500"
                                                 : "border-white/10 bg-background/60 hover:border-white/25")
@@ -592,7 +607,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             })}
                         </div>
                         {compensation === "barter" && (
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                                 Creators will see this as barter, with no fee shown. The brand
                                 can't set or undo this — only we can.
                             </p>
@@ -636,7 +651,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                             />
                             {filled > 0 && (
-                                <p className="mt-2 text-xs text-muted-foreground">
+                                <p className="mt-2 text-sm text-muted-foreground">
                                     {filled} already confirmed — it can't go below that.
                                 </p>
                             )}
