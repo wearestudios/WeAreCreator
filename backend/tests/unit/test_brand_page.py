@@ -448,14 +448,28 @@ def test_it_renders_text_when_there_is_no_id():
     assert "if (!href)" in src
 
 
+# Landing was on this list until home became a router: it carried a feed of
+# live briefs, each naming its brand. That feed is /campaigns now — which is a
+# better version of it, is on this list, and was always one tap away.
 @pytest.mark.parametrize(
     "page",
     [("pages", "Campaigns.jsx"), ("pages", "CampaignDetail.jsx"),
-     ("pages", "Landing.jsx"),
      ("components", "application", "ApplicationDetail.jsx")],
 )
 def test_every_surface_that_names_a_brand_links_it(page):
     assert "BrandName" in frontend(*page)
+
+
+def test_home_no_longer_renders_a_named_brand():
+    """The counterpart of the list above. Home stopped rendering brand records
+    when the live brief feed moved to /campaigns; the word "brand" is still all
+    over it as ordinary copy, which is not the same thing. If a *record* comes
+    back here it comes back through `BrandName`, because a bare
+    `{campaign.brand_name}` would be the one unlinked mention on the site."""
+    src = frontend("pages", "Landing.jsx")
+    assert "CampaignCover" not in src
+    assert "brand_name" not in src
+    assert "/public/campaigns" not in src
 
 
 def test_the_campaign_card_is_no_longer_an_anchor_around_an_anchor():

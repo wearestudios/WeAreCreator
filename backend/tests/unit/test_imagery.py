@@ -582,11 +582,21 @@ def test_the_detail_skeleton_reserves_a_cover():
     assert 'cover />' in component("pages", "CampaignDetail.jsx")
 
 
-def test_the_landing_brief_skeleton_matches_its_card():
-    """This grid was measured to 0.0048 CLS. The cover is the tallest single
-    element on the card, so getting it wrong here costs more than everything
-    below it put together."""
-    src = component("pages", "Landing.jsx")
+def test_home_reserves_the_space_its_images_will_fill():
+    """Home used to carry a grid of live brief cards, measured to 0.0048 CLS,
+    and this test checked that grid's skeleton reserved a 16:9 cover. The feed
+    moved to /campaigns when home became a router, so what is left to reserve
+    is the marketing site's image slots — which do it in the one component
+    rather than at each call site.
 
-    assert src.count('aspect-[16/9]') >= 1
-    assert "CampaignCover" in src
+    `PlaceholderImage` is the reservation: a ratio on the container, never on
+    the <img>, so dropping real photography in moves nothing."""
+    src = component("pages", "Landing.jsx")
+    assert "PlaceholderImage" in src
+    assert "CampaignCover" not in src
+
+    slot = component("components", "marketing", "PlaceholderImage.jsx")
+    assert "aspect-[16/9]" in slot
+    # The ratio is on the container. An <img> that carried it would collapse
+    # the box for as long as the file took to arrive.
+    assert 'className={`relative overflow-hidden ${' in slot

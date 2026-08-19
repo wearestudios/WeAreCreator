@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { notifySuccess } from "@/lib/feedback";
 import { useAuth } from "@/context/AuthContext";
 import OtpForm from "@/components/OtpForm";
+import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 
 export default function Login() {
     const { requestOtp, verifyOtp } = useAuth();
@@ -15,11 +16,12 @@ export default function Login() {
     return (
         <div data-testid="login-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
             {/* Left visual */}
-            <div className="media-frame relative hidden md:block">
-                <img
-                    src="https://images.unsplash.com/photo-1726835498689-b4f6dbcdbdfb?auto=format&fit=crop&w=1200&q=80"
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover opacity-60"
+            <div className="relative hidden md:block">
+                <PlaceholderImage
+                    // PLACEHOLDER IMAGE: Creator and brand manager reviewing a shoot plan on a phone at a venue table, portrait crop for the auth aside.
+                    note="Creator and brand manager reviewing a shoot plan on a phone at a venue table, portrait crop for the auth aside"
+                    fill
+                    className="opacity-60"
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-background/40 via-background/60 to-background" />
                 <div className="relative flex h-full flex-col justify-between p-12">
@@ -31,9 +33,15 @@ export default function Login() {
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Every city that matters</p>
+                        {/* Was "Every city that matters", which is the exact
+                            geography overclaim banned everywhere else on the
+                            site — the marketing pages are tested for it and
+                            this screen sat outside those tests. The network is
+                            deepest in Bengaluru and that is what we say. */}
+                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Bengaluru</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Bengaluru's most curated creator × brand network.
+                            Paid briefs, rates agreed in writing, and a report at the
+                            end.
                         </p>
                     </div>
                 </div>

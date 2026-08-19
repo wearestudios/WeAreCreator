@@ -44,6 +44,16 @@ import ManagerCampaign from "@/pages/ManagerCampaign";
 import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
 import BrandCampaignApplicants from "@/pages/BrandCampaignApplicants";
 import { Terms, Privacy } from "@/pages/Legal";
+// The marketing site. Four pages plus home, all ordinary routes: they were
+// server-rendered by the backend and reached with real anchors, which is why
+// /how-it-works and /why-weare could not exist at all and why the two audience
+// pages bounced off the catch-all whenever the deploy rewrites were not
+// repointed. See components/marketing/PageMeta.jsx for what that trade costs.
+import ForBrands from "@/pages/ForBrands";
+import ForCreators from "@/pages/ForCreators";
+import HowItWorks from "@/pages/HowItWorks";
+import WhyWeAre from "@/pages/WhyWeAre";
+import NotFound from "@/pages/NotFound";
 
 // Attached at module load rather than in an effect, so a rejection thrown
 // while the first render is still in flight is already covered.
@@ -95,6 +105,10 @@ function App() {
                         <Route path="/admin/login" element={<AdminLogin />} />
                         <Route path="/terms" element={<Terms />} />
                         <Route path="/privacy" element={<Privacy />} />
+                        <Route path="/for-brands" element={<ForBrands />} />
+                        <Route path="/for-creators" element={<ForCreators />} />
+                        <Route path="/how-it-works" element={<HowItWorks />} />
+                        <Route path="/why-weare" element={<WhyWeAre />} />
                         <Route
                             path="/dashboard"
                             element={
@@ -298,7 +312,12 @@ function App() {
                                 rather than the marketing site. */}
                             <Route path="*" element={<Navigate to="/admin" replace />} />
                         </Route>
-                        <Route path="*" element={<Navigate to="/" replace />} />
+                        {/* A designed 404 rather than a redirect home. A
+                            mistyped URL, a link from an old post and a brief
+                            that has since closed all used to land silently on
+                            the front page, which is indistinguishable from
+                            the link having worked. */}
+                        <Route path="*" element={<NotFound />} />
                     </Routes>
                     </RouteBoundary>
                 </BrowserRouter>

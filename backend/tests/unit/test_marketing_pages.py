@@ -1,12 +1,19 @@
-"""The marketing site: home, /for-creators, /for-brands, and the footer.
+"""The marketing site: home, the two audience pages, /how-it-works, /why-weare.
 
-Three audiences, three pages. Home is the front door and routes people; the
-two audience pages ask once, to one person, and do the selling.
+Five pages and a 404, all React routes. **They used to be two FastAPI handlers
+rendering hand-written HTML**, which is why these tests once ran the renderer
+and searched its output. They read the page sources now, because that is where
+the copy lives — and because the thing most worth protecting here is the copy,
+not the markup.
 
-**Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason:**
-the crawler that builds a WhatsApp preview does not run JavaScript, so Open
-Graph tags injected by React are tags nobody ever sees. These are the links
-that get pasted into a chat, so the preview is the product.
+What moving them cost, and why it was still right: a page the backend renders
+cannot be reached with a `<Link>`, so /how-it-works and /why-weare could not
+exist at all, and the two audience pages depended on a Vercel rewrite that was
+never repointed — in production both answered with the SPA's catch-all. The
+loss is that WhatsApp and other non-JS crawlers now see the site-wide card
+rather than each page's own. `frontend/src/components/marketing/PageMeta.jsx`
+states that plainly and says how to buy it back; a test below keeps that note
+in place rather than letting it be forgotten.
 
 **The positioning is the thing these tests mostly protect.** What we are
 against is *disorganisation* — campaigns run over DMs and spreadsheets, nobody
@@ -21,7 +28,6 @@ whose whole job is to be believed by a stranger.
 """
 import asyncio
 import json
-import inspect
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,16 +45,39 @@ def read(*parts):
     return FRONTEND.joinpath(*parts).read_text()
 
 
-FULL = {"creators": 42, "campaigns": 18, "brands": 9}
+def copy_of(*parts):
+    """A page's source with its comments stripped.
+
+    Every rule below is about what a reader sees. The comments explaining why a
+    claim was removed necessarily quote the claim, so leaving them in makes each
+    of these tests fail on its own justification. JSX comments are `{/* … */}`
+    blocks spanning lines, so a line-prefix filter is not enough.
+    """
+    src = read(*parts)
+    src = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("//")
+    )
+    # The copy is written as adjacent string literals joined with `+` across
+    # lines, so a sentence is routinely split mid-phrase.
+    src = re.sub(r'"\s*\+\s*\n\s*"', "", src)
+    return re.sub(r"\s+", " ", src)
+
 
 PAGES = {
-    "brands": lambda stats: server._for_brands_html(stats),
-    "creators": lambda stats: server._for_creators_html(stats),
+    "brands": ("src", "pages", "ForBrands.jsx"),
+    "creators": ("src", "pages", "ForCreators.jsx"),
+    "how": ("src", "pages", "HowItWorks.jsx"),
+    "why": ("src", "pages", "WhyWeAre.jsx"),
+    "home": ("src", "pages", "Landing.jsx"),
 }
 
+# The four that argue. Home routes rather than sells, and the 404 is neither.
+ARGUING = ["brands", "creators", "how", "why"]
 
-def both(stats=FULL):
-    return {name: build(stats) for name, build in PAGES.items()}
+# The audience pages, which are the ones held to the single-ask rule.
+AUDIENCE = ["brands", "creators"]
 
 
 # --- The positioning ----------------------------------------------------------
@@ -60,308 +89,452 @@ def test_no_page_positions_us_against_agencies(name):
     offering. "Without an agency" would be a page arguing against our own
     product — and it is exactly the phrase a well-meaning copy edit reaches
     for."""
-    html = PAGES[name](FULL).lower()
+    text = copy_of(*PAGES[name]).lower()
     for phrase in server._FORBIDDEN_MARKETING_PHRASES:
-        assert phrase not in html, f"{name}: {phrase!r}"
+        assert phrase not in text, f"{name}: {phrase!r}"
 
 
 def test_the_managed_service_reads_as_a_choice_not_a_fee():
     """"An option you choose, not a fee you're locked into." A brand that
     reads this as a retainer has read the opposite of the offering."""
-    html = PAGES["brands"](FULL).lower()
-
-    assert "run it yourself" in html or "run it yourself, or" in html
-    assert "you choose per campaign" in html
-    assert "no retainer" in html
+    for name in ("brands", "why"):
+        text = copy_of(*PAGES[name]).lower()
+        assert "run it yourself" in text, name
+        assert "no retainer" in text, name
+    assert "you choose per campaign" in copy_of(*PAGES["brands"]).lower()
+    assert "not a fee you are locked into" in copy_of(*PAGES["why"]).lower()
 
 
 def test_the_enemy_named_is_disorganisation_not_a_competitor():
     """The problem is campaigns with nobody checked, no rate in writing and no
-    proof of what happened. Every page should be answering that."""
-    for name, html in both().items():
-        low = html.lower()
+    proof of what happened. Every arguing page should be answering that."""
+    for name in ARGUING:
+        low = copy_of(*PAGES[name]).lower()
         assert "in writing" in low, name
         assert "verified" in low or "checked" in low, name
+    # And home names it outright, since it is the only argument home keeps.
+    home = copy_of(*PAGES["home"]).lower()
+    assert "dms and a spreadsheet" in home
+    assert "nobody checked" in home
+
+
+def test_the_headline_direction_is_carried():
+    """"Your creator campaigns, handled properly" governs the copy. Home is
+    where it leads, and /why-weare is the page that argues it."""
+    assert "handled properly" in copy_of(*PAGES["home"])
+    assert "handled properly" in copy_of(*PAGES["why"])
 
 
 # --- What each audience has to come away knowing ------------------------------
 
 
 def test_the_creator_page_says_the_six_things_a_creator_needs():
-    html = PAGES["creators"](FULL).lower()
+    text = copy_of(*PAGES["creators"]).lower()
 
-    assert "paid briefs" in html                       # real work, one place
-    assert "in writing" in html                        # the rate, before shooting
-    assert "our fee is charged to the brand" in html   # they keep all of it
-    assert "never taken out of yours" in html
-    assert "approve" in html                           # paid on delivery
-    assert "checked" in html or "verified" in html     # brands are checked
-    assert "free, and it stays free" in html           # and it is free
+    assert "real paid briefs" in text                  # real work, one place
+    assert "in writing, before you shoot" in text      # the rate, before shooting
+    assert "charged to the brand on top" in text       # they keep all of it
+    assert "never taken out of yours" in text
+    assert "approves what you delivered" in text       # paid on delivery
+    assert "checked" in text or "verified" in text     # brands are checked
+    assert "free" in text                              # and it is free
 
 
 def test_the_creator_page_does_not_imply_a_cut_of_their_rate():
-    """"You keep 100%" is the promise. Anything that reads as a deduction —
-    even a stray "commission" — undoes it."""
-    html = PAGES["creators"](FULL).lower()
+    """"You keep all of it" is the promise. Anything that reads as a deduction
+    — even a stray "commission" — undoes it."""
+    text = copy_of(*PAGES["creators"]).lower()
     for wrong in ("commission", "our cut", "we take a", "minus our"):
-        assert wrong not in html
-    # And the promise itself is stated, not merely un-contradicted.
-    assert "nothing deducted from your rate" in html
+        assert wrong not in text, wrong
+    assert "you keep all of it" in text
 
 
 def test_the_brand_page_says_the_six_things_a_brand_needs():
-    html = PAGES["brands"](FULL).lower()
+    text = copy_of(*PAGES["brands"]).lower()
 
-    assert "read from instagram itself" in html        # real audience stats
-    assert "what each of them quoted" in html          # every creator, every rate
-    assert "no retainer" in html and "no markup" in html
-    assert "nothing is published until you have said yes" in html
-    assert "report" in html                            # proof at the end
-    assert "weare studios" in html                     # the managed option
-
-
-def test_the_headline_direction_is_carried():
-    """"Your creator campaigns, handled properly" governs the copy. It does
-    not have to be the H1 of every page, but the brand page is where it was
-    asked for."""
-    assert "handled properly" in PAGES["brands"](FULL)
+    assert "read from instagram itself" in text        # real audience stats
+    assert "what each of them quoted" in text          # every creator, every rate
+    assert "no retainer" in text and "no markup" in text
+    assert "nothing is published until you have said yes" in text
+    assert "report" in text                            # proof at the end
+    assert "weare studios" in text                     # the managed option
 
 
 # --- One ask per page ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("name,expected", [("brands", "Post a campaign"),
-                                           ("creators", "Join as a creator")])
-def test_each_page_asks_once_in_the_same_words_twice(name, expected):
+@pytest.mark.parametrize(
+    "name,expected",
+    [("brands", "Post a campaign"), ("creators", "Join as a creator")],
+)
+def test_each_audience_page_asks_once_in_the_same_words_twice(name, expected):
     """Top and bottom, same words — the page asks once in two places rather
-    than offering a choice of doors. The nav's own button is the same words
-    again, which is why three rather than two."""
-    html = PAGES[name](FULL)
-    body = html[html.index("<body>") :]
-    ctas = re.findall(r'<a class="btn"[^>]*>([^<]+)</a>', body)
+    than offering a choice of doors. Both CTAs are spread from one `ASK`
+    constant, which is what makes "the same words" structural rather than a
+    thing somebody has to remember."""
+    src = read(*PAGES[name])
+    assert f'label: "{expected}"' in src
+    assert src.count("const ASK =") == 1
+    assert "{ ...ASK, testid: IDS.ctaTop }" in src
+    assert "{ ...ASK, testid: IDS.ctaBottom }" in src
 
-    assert len(ctas) == 2, f"{name}: {ctas}"
-    assert set(c.strip() for c in ctas) == {expected}
-    assert f'class="navcta"' in body
 
-
-def test_the_two_pages_do_not_ask_for_the_other_audience():
+def test_the_audience_pages_do_not_ask_for_the_other_audience():
     """A creator reading the brand page is in the wrong place, and a second
-    CTA offering to send them elsewhere is how a page stops asking once."""
-    brands = PAGES["brands"](FULL)
-    creators = PAGES["creators"](FULL)
-    body_b = brands[brands.index('<div class="wrap">') :]
-    body_c = creators[creators.index('<div class="wrap">') :]
-
-    assert "signup?role=creator" not in body_b.split('class="foot"')[0]
-    assert "signup?role=brand" not in body_c.split('class="foot"')[0]
+    CTA offering to send them elsewhere is how a page stops asking once. The
+    footer is where somebody in the wrong place finds the right page."""
+    assert "signup?role=creator" not in copy_of(*PAGES["brands"])
+    assert "signup?role=brand" not in copy_of(*PAGES["creators"])
 
 
-# --- Previews -----------------------------------------------------------------
+def test_the_two_audience_pages_do_not_route_to_each_other_mid_page():
+    """`TwoPaths` is the component that offers both doors. It belongs on the
+    pages that cannot know who arrived — home and /how-it-works — and nowhere
+    a page has already been given one reader."""
+    for name in AUDIENCE + ["why"]:
+        assert "TwoPaths" not in read(*PAGES[name]), name
+    for name in ("home", "how"):
+        assert "TwoPaths" in read(*PAGES[name]), name
 
 
-@pytest.mark.parametrize("name", list(PAGES))
-def test_each_page_carries_its_own_open_graph_tags(name):
-    html = PAGES[name](FULL)
-    for tag in ("og:title", "og:description", "og:url", "og:image", "twitter:card"):
-        assert f'property="{tag}"' in html or f'name="{tag}"' in html
+def test_the_both_sides_pages_offer_two_paths_rather_than_inventing_one_ask():
+    """Home and /how-it-works are read by both audiences. Picking one CTA for
+    the visitor puts half of them through the wrong door.
+
+    The two destinations live in `TwoPaths`, not on the pages — which is the
+    point: one component means the pair cannot end up saying different things
+    in two places."""
+    paths = read("src", "components", "marketing", "Sections.jsx")
+    assert 'to="/for-creators"' in paths
+    assert 'to="/for-brands"' in paths
+    for name in ("home", "how"):
+        assert "TwoPaths" in read(*PAGES[name]), name
 
 
-def test_the_two_previews_are_different_and_each_speaks_to_its_reader():
-    """One OG title for both would make the two links preview identically in
-    a chat, which is the whole reason for two pages."""
-    b = re.search(r'og:title" content="([^"]+)"', PAGES["brands"](FULL)).group(1)
-    c = re.search(r'og:title" content="([^"]+)"', PAGES["creators"](FULL)).group(1)
-
-    assert b != c
-    assert "campaign" in b.lower()
-    assert "paid" in c.lower() or "rate" in c.lower()
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_the_canonical_url_points_at_the_page_itself(name):
-    html = PAGES[name](FULL)
-    path = server.FOR_BRANDS_PATH if name == "brands" else server.FOR_CREATORS_PATH
-    assert f'<link rel="canonical" href="{server._share_base()}{path}">' in html
-
-
-def test_both_are_in_the_sitemap():
-    src = inspect.getsource(server.public_sitemap)
-    assert "FOR_BRANDS_PATH" in src and "FOR_CREATORS_PATH" in src
+# --- Previews and routing -----------------------------------------------------
 
 
 @pytest.mark.parametrize("name", list(PAGES))
-def test_nothing_blocks_the_first_paint(name):
-    """"Loads fast" and "same dark premium system" pull against each other:
-    Fraunces is the most recognisable part of that system and a page in
-    Georgia is visibly not the brand. So the font loads on `media="print"`
-    with an onload swap — fetched at low priority, applied only once it
-    arrives, with text painting immediately in the fallback."""
-    html = PAGES[name](FULL)
+def test_each_page_sets_its_own_title_description_and_path(name):
+    """`PageMeta` writes the title, the description, the canonical and the
+    Open Graph tags. One page missing it inherits whichever page was open
+    before it, which is worse than a generic tag."""
+    src = read(*PAGES[name])
+    # Home mounts PageMeta itself; the rest pass the same three props to
+    # MarketingPage, which mounts it for them.
+    assert "PageMeta" in src or "MarketingPage" in src
+    assert re.search(r'title="[^"]{8,}"', src), name
+    assert re.search(r'description="[^"]{20,}"', src), name
+    assert re.search(r'path="/[^"]*"', src), name
 
-    assert 'media="print"' in html and "this.media='all'" in html
-    assert "display=swap" in html
-    assert '<noscript><link rel="stylesheet"' in html
-    assert '<link rel="stylesheet" href=' not in html.split("<noscript>")[0]
-    for offsite in ("cdn.", "<script src", "unpkg", "jsdelivr"):
-        assert offsite not in html
+
+def test_no_two_pages_share_a_preview_title():
+    """One title for two pages makes two links preview identically in a chat,
+    which is the whole reason for separate pages."""
+    titles = []
+    for parts in PAGES.values():
+        m = re.search(r'\btitle="([^"]+)"', read(*parts))
+        assert m, parts
+        titles.append(m.group(1))
+    assert len(set(titles)) == len(titles), titles
+
+
+def test_page_meta_writes_the_open_graph_tags_a_preview_needs():
+    meta = read("src", "components", "marketing", "PageMeta.jsx")
+    for tag in ("og:title", "og:description", "og:url", "og:type", "twitter:card"):
+        assert tag in meta, tag
+    assert 'link("canonical"' in meta
+
+
+def test_the_limit_of_runtime_meta_is_written_down_rather_than_glossed():
+    """Google renders JavaScript; WhatsApp does not. Moving these pages into
+    the SPA traded the chat preview for pages that are reachable, linkable and
+    able to exist at all — a real trade, and one somebody will need explained
+    the first time a pasted link previews as the site card."""
+    meta = read("src", "components", "marketing", "PageMeta.jsx")
+    flat = re.sub(r"\s+", " ", meta.replace("//", " ").replace("*", " "))
+    assert "WhatsApp does not" in flat
+    assert "prerender" in meta
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/for-brands", "/for-creators", "/how-it-works", "/why-weare"],
+)
+def test_every_marketing_page_is_a_registered_route(path):
+    """The complaint that started this restructure: two of these were not
+    routes at all, and two did not exist."""
+    app = read("src", "App.js")
+    assert f'path="{path}"' in app, path
+
+
+def test_the_catch_all_renders_a_404_rather_than_redirecting_home():
+    """A mistyped URL, a link from an old post and a brief that has since
+    closed all used to land silently on the front page, which is
+    indistinguishable from the link having worked."""
+    app = read("src", "App.js")
+    assert '<Route path="*" element={<NotFound />} />' in app
+    assert '<Route path="*" element={<Navigate to="/" replace />} />' not in app
+
+
+def test_the_marketing_links_are_router_links_not_anchors():
+    """They were real <a>s while the backend rendered them. An anchor now is a
+    full page load for a route the SPA owns."""
+    nav = read("src", "components", "Navbar.jsx")
+    for path in ("/for-brands", "/for-creators", "/how-it-works", "/why-weare"):
+        assert f'to: "{path}"' in nav, path
+        assert f'href: "{path}"' not in nav, path
+    home = read("src", "pages", "Landing.jsx")
+    assert 'href="/for-creators"' not in home
+    assert 'to="/for-creators"' in home
+
+
+def test_the_navbar_offers_the_four_pages_and_both_auth_actions():
+    """The logged-out menu, and the mobile sheet that has to match it — the
+    sheet is the only navigation below md, so anything missing there is
+    unreachable on a phone."""
+    nav = read("src", "components", "Navbar.jsx")
+    for label in ("For brands", "For creators", "How it works", "Why WeAre"):
+        assert f'label: "{label}"' in nav, label
+    assert 'data-testid="nav-login-link"' in nav
+    assert 'data-testid="nav-signup-link"' in nav
+    assert 'data-testid="nav-login-link-mobile"' in nav
+    assert 'data-testid="nav-signup-link-mobile"' in nav
+    # One list feeds both, which is what stops them drifting.
+    assert nav.count("MARKETING_LINKS") >= 3  # the definition, plus both maps
+    assert "MARKETING_LINKS).map" in nav      # desktop bar
+    assert "MARKETING_LINKS.map" in nav       # mobile sheet
+
+
+def test_signed_in_users_keep_their_role_navigation():
+    """The marketing strip renders only when nobody is signed in. A brand
+    clearing its applicant board does not need "Why WeAre"."""
+    nav = read("src", "components", "Navbar.jsx")
+    assert "checking || signedIn ? [] : MARKETING_LINKS" in nav
+    assert "linksFor(user.role)" in nav
 
 
 # --- The design system --------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", list(PAGES))
+@pytest.mark.parametrize("name", ARGUING)
 def test_each_page_wears_the_design_system(name):
-    html = PAGES[name](FULL)
-
-    assert "Fraunces" in html and "Inter Tight" in html
-    assert "Roboto" not in html and "'Inter'" not in html, "banned heading faces"
-    assert "#F05D14" in html
-    assert "#000000" not in html
-    assert "feTurbulence" in html, "no grain"
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_each_page_has_the_navigation_bar_the_guidelines_require(name):
-    """"MUST have a visible navigation bar on desktop with Logo, 3-5 links,
-    and CTA. DO NOT use completely transparent background." """
-    html = PAGES[name](FULL)
-    nav = html[html.index('<nav class="nav"') : html.index("</nav>")]
-
-    assert 'class="mark"' in nav, "no logo"
-    assert 3 <= nav.count('class="navlink"') + nav.count('class="navcta"') <= 5
-    assert "backdrop-filter" in html, "glassmorphism, never transparent"
+    """Fraunces headings, the ember accent, fluid type, and the uppercase
+    wide-tracked overline. All four are guideline rules, and all four are what
+    a bespoke page quietly stops doing."""
+    src = read(*PAGES[name])
+    shell = read("src", "components", "marketing", "Sections.jsx")
+    # The shell carries the type and colour rules for the pages that use it;
+    # a page states its own overlines through the `eyebrow` prop.
+    assert "font-serif" in src or "font-serif" in shell
+    assert "text-fluid-" in src or "text-fluid-" in shell
+    assert "ember-500" in src or "ember-500" in shell
+    assert "Eyebrow" in src or "eyebrow=" in src or "tracking-[0.2em]" in src
+    for rule in ("font-serif", "text-fluid-", "ember-500", "tracking-[0.2em]"):
+        assert rule in shell, rule
 
 
-@pytest.mark.parametrize("name", list(PAGES))
-def test_each_page_links_to_the_other(name):
-    """A creator who landed on the brand page should be one tap from the page
-    that is actually for them."""
-    html = PAGES[name](FULL)
-    assert server.FOR_BRANDS_PATH in html and server.FOR_CREATORS_PATH in html
+@pytest.mark.parametrize("name", ARGUING)
+def test_no_heading_uses_a_flat_text_size(name):
+    """"No heading uses a flat `text-*` size" is a foundation rule — headings
+    are on the fluid scale so they stop jumping between breakpoints."""
+    src = read(*PAGES[name])
+    for m in re.finditer(r"<h[123][^>]*className=\"([^\"]+)\"", src):
+        classes = m.group(1)
+        flat = re.findall(r"\btext-(xs|sm|base|lg|xl|\dxl)\b", classes)
+        assert not flat, f"{name}: {flat} in {classes}"
 
 
-# --- The footer ---------------------------------------------------------------
-
-
-@pytest.mark.parametrize("name", list(PAGES))
+@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
 def test_every_page_carries_the_footer(name):
-    html = PAGES[name](FULL)
-    foot = html[html.index('<footer class="foot"') :]
-
-    assert "/terms" in foot and "/privacy" in foot
-    assert server.MARKETING_CONTACT in foot
-    assert "offering" in foot, "the studio endorsement"
-    assert str(datetime.now(timezone.utc).year) in foot, "copyright"
+    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
+    src = read(*parts)
+    # Home mounts it directly; the rest inherit it from MarketingPage.
+    assert "<Footer />" in src or "MarketingPage" in src
 
 
-def test_the_footer_columns_match_the_react_one():
-    """The footer exists twice — a React component for the SPA and this HTML
-    twin. Two copies of a link list is how a footer ends up advertising a page
-    that moved."""
-    js = read("src", "lib", "siteNav.js")
-
-    for heading, links in server.FOOTER_COLUMNS:
-        assert f'heading: "{heading}"' in js, heading
-        for label, to in links:
-            assert f'label: "{label}"' in js, label
-            # The JS builds the contact link as `mailto:${CONTACT_EMAIL}`, so
-            # compare the address rather than the assembled href.
-            needle = to.removeprefix("mailto:") if to.startswith("mailto:") else to
-            assert needle in js, needle
+def test_the_marketing_shell_mounts_the_footer_and_the_navbar():
+    sections = read("src", "components", "marketing", "Sections.jsx")
+    assert "<Navbar />" in sections
+    assert "<Footer />" in sections
 
 
-def test_the_studio_endorsement_degrades_without_a_url():
-    """The same rule `StudioEndorsement` follows: plain text rather than a
-    link that goes nowhere, and never an invented domain."""
-    src = inspect.getsource(server._marketing_footer)
-    assert "if studio_url" in src
-    assert "<span class=\"studio\">" in src
+# --- Image slots --------------------------------------------------------------
 
 
-def test_the_copyright_names_the_entity_that_was_already_there():
-    """Who owns the thing is a fact, not a copy decision."""
-    assert "WeAre Monk" in PAGES["brands"](FULL)
+@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+def test_every_page_has_deliberate_image_slots(name):
+    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
+    src = read(*parts)
+    assert "PlaceholderImage" in src or "image={{" in src, name
+
+
+@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+def test_every_image_slot_says_what_belongs_in_it(name):
+    """A slot nobody can brief is a slot that stays empty. Every `note` is a
+    sentence somebody could hand to a photographer, and it rides on the
+    element as `data-placeholder` as well as sitting in the source."""
+    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
+    src = read(*parts)
+    notes = re.findall(r'note[:=]\s*"([^"]+)"', src)
+    assert notes, name
+    for n in notes:
+        assert len(n) > 25, f"{name}: {n!r} is not a brief"
+
+
+@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+def test_every_image_slot_is_marked_for_the_photographer(name):
+    """The `PLACEHOLDER IMAGE:` comment is what makes these findable — real
+    photography is meant to be dropped in one slot at a time."""
+    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
+    src = read(*parts)
+    assert "PLACEHOLDER IMAGE:" in src, name
+
+
+def test_nothing_on_the_site_fetches_a_third_party_image():
+    """The hero hotlinked four stock photographs and the two auth screens one
+    each — somebody else's pictures of nowhere in particular, from a CDN we do
+    not control, on the pages arguing that the work is real and local."""
+    for path in FRONTEND.joinpath("src").rglob("*.js*"):
+        text = path.read_text()
+        assert "images.unsplash.com" not in text, path
+        assert "pexels.com" not in text, path
+
+
+def test_a_slot_reserves_its_space_so_real_photography_drops_in_cleanly():
+    """The ratio is on the container, never on the <img> — the whole point of
+    the slot is that filling it moves nothing."""
+    src = read("src", "components", "marketing", "PlaceholderImage.jsx")
+    assert "aspect-[16/9]" in src
+    assert "absolute inset-0 h-full w-full object-cover" in src
+    assert 'src ? (' in src
+
+
+def test_the_placeholder_does_not_put_grain_on_its_own_gradient():
+    """A foundation rule: `.grain-surface` sets `background-image` and so does
+    a gradient, and one of the two silently wins. The overlay variant exists
+    for exactly this."""
+    src = read("src", "components", "marketing", "PlaceholderImage.jsx")
+    # The comment explaining why `.grain-surface` is wrong here necessarily
+    # names it, so strip block comments as well as line ones.
+    code = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
+    code = re.sub(r"/\*.*?\*/", "", code, flags=re.S)
+    code = "\n".join(
+        l for l in code.splitlines() if not l.lstrip().startswith("//")
+    )
+    assert "grain-surface" not in code
+    assert 'className="grain pointer-events-none absolute inset-0"' in code
 
 
 # --- The numbers --------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", list(PAGES))
-def test_no_page_carries_a_figure_of_its_own(name):
-    """Every number arrives in `stats`, which comes out of the database. This
-    catches a "500+" typed into a value prop, where no stats check would look."""
-    html = PAGES[name]({})
-    body = html[html.index("<body>") :]
-    body = re.sub(r'<span class="n">\d+</span>', " ", body)   # step numbering
-    body = re.sub(r"&copy; \d{4}", " ", body)                  # the copyright year
-    text = re.sub(r"<[^>]+>", " ", body)
-    numerals = re.findall(r"\b\d[\d,]*\+?\b", text)
-
-    assert numerals == [], f"{name}: hardcoded {numerals}"
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_the_strip_is_absent_when_there_is_nothing_worth_saying(name):
-    """A strip reading "3 creators" is a reason to close the tab."""
-    html = PAGES[name]({})
-    assert 'class="proof"' not in html
-    assert "Where we are today" not in html
+def test_no_page_writes_a_proof_figure_into_its_copy(name):
+    """A hardcoded "500+ creators" is a claim that was true on the day
+    somebody typed it. Home carried exactly that, beside "48h" and "₹0", until
+    the counted strip replaced it."""
+    text = copy_of(*PAGES[name])
+    # Strip the parts that are legitimately numeric: class names, ratios and
+    # the one figure that is a rule rather than a boast.
+    text = re.sub(r'className="[^"]*"', "", text)
+    text = re.sub(r'(ratio|note)[:=]\s*"[^"]*"', "", text)
+    text = re.sub(r"\b(24 hours|100%|one|two|three|four|six)\b", "", text)
+    for claim in re.findall(r"\b\d[\d,]*\+", text):
+        pytest.fail(f"{name}: hardcoded figure {claim!r}")
 
 
-def test_a_figure_below_its_floor_is_not_shown():
-    server.db = AsyncMongoMockClient()["t"]
-
-    async def build():
-        now = datetime.now(timezone.utc)
-        await server.db.creator_profiles.insert_many([
-            {"user_id": ObjectId(), "verification_status": "verified", "created_at": now}
-            for _ in range(3)
-        ])
-        await server.db.campaigns.insert_one(
-            {"brand_id": ObjectId(), "status": "completed", "created_at": now}
-        )
-
-    asyncio.run(build())
-    assert asyncio.run(server._platform_proof()) == {}
+def test_the_proof_strip_reads_counted_figures_from_the_server():
+    strip = read("src", "components", "marketing", "ProofStrip.jsx")
+    assert '"/public/proof"' in strip
+    assert "creators" in strip and "campaigns" in strip and "cities" in strip
 
 
-def test_the_figures_appear_once_there_is_enough_behind_them():
-    server.db = AsyncMongoMockClient()["t"]
-
-    async def build():
-        now = datetime.now(timezone.utc)
-        await server.db.creator_profiles.insert_many([
-            {"user_id": ObjectId(), "verification_status": "verified", "created_at": now}
-            for _ in range(12)
-        ])
-        await server.db.campaigns.insert_many([
-            {"brand_id": ObjectId(), "status": "completed", "created_at": now}
-            for _ in range(6)
-        ])
-        await server.db.brand_profiles.insert_many([
-            {"user_id": ObjectId(), "verified": True, "created_at": now} for _ in range(7)
-        ])
-
-    asyncio.run(build())
-    stats = asyncio.run(server._platform_proof())
-
-    assert stats == {"creators": 12, "campaigns": 6, "brands": 7}
+def test_the_proof_strip_shows_nothing_rather_than_an_unconvincing_number():
+    """A strip reading "3 creators" is not proof, it is a reason to close the
+    tab, and the honest move at that size is silence rather than rounding up.
+    The floors are on the server so every surface agrees."""
+    strip = read("src", "components", "marketing", "ProofStrip.jsx")
+    assert "if (!keys.length) return null;" in strip
+    # And a failed request says nothing at all rather than drawing dashes.
+    assert ".catch(() => {})" in strip
 
 
-def test_a_draft_nobody_ever_ran_is_not_a_campaign_run():
-    """"Campaigns run" has to mean somebody shot something, or the number is a
-    count of abandoned drafts."""
-    server.db = AsyncMongoMockClient()["t"]
+def test_the_floors_are_enforced_where_the_figures_are_counted():
+    src = server.inspect.getsource(server._platform_proof) if hasattr(server, "inspect") else None
+    import inspect as _inspect
+
+    src = _inspect.getsource(server._platform_proof)
+    assert "creators >= 10" in src
+    assert "campaigns >= 5" in src
+    assert "cities >= 3" in src
+
+
+def _proof_db(*, creators=0, campaigns=0, brands=0, cities=()):
+    db = AsyncMongoMockClient()["proof"]
 
     async def build():
-        now = datetime.now(timezone.utc)
-        await server.db.campaigns.insert_many(
-            [{"brand_id": ObjectId(), "status": "draft", "created_at": now} for _ in range(20)]
-        )
+        for i in range(creators):
+            await db.creator_profiles.insert_one(
+                {
+                    "user_id": ObjectId(),
+                    "verification_status": "verified",
+                    "city": list(cities)[i % len(cities)] if cities else "Bengaluru",
+                }
+            )
+        for _ in range(campaigns):
+            await db.campaigns.insert_one({"status": "completed"})
+        for _ in range(brands):
+            await db.brand_profiles.insert_one({"user_id": ObjectId(), "verified": True})
 
-    asyncio.run(build())
-    assert "campaigns" not in asyncio.run(server._platform_proof())
+    asyncio.get_event_loop().run_until_complete(build())
+    return db
+
+
+def test_a_figure_below_its_floor_is_not_returned(monkeypatch):
+    db = _proof_db(creators=4, campaigns=2, brands=1)
+    monkeypatch.setattr(server, "db", db)
+    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
+    assert out == {}
+
+
+def test_the_figures_appear_once_there_is_enough_behind_them(monkeypatch):
+    db = _proof_db(
+        creators=12,
+        campaigns=7,
+        brands=6,
+        cities=("Bengaluru", "Mumbai", "Pune"),
+    )
+    monkeypatch.setattr(server, "db", db)
+    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
+    assert out["creators"] == 12
+    assert out["campaigns"] == 7
+    assert out["brands"] == 6
+    assert out["cities"] == 3
+
+
+def test_one_city_is_not_a_footprint(monkeypatch):
+    """"1 city" is a sentence that argues against itself, and this product is
+    Bengaluru-first by design rather than by accident."""
+    db = _proof_db(creators=12, campaigns=7, cities=("Bengaluru",))
+    monkeypatch.setattr(server, "db", db)
+    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
+    assert "cities" not in out
+
+
+def test_a_draft_nobody_ever_ran_is_not_a_campaign_run(monkeypatch):
+    """"Campaigns run" counts campaigns that reached `in_progress` or beyond.
+    A count of posted briefs would be a count of abandoned drafts."""
+    db = AsyncMongoMockClient()["proof"]
+
+    async def build():
+        for _ in range(20):
+            await db.campaigns.insert_one({"status": "draft"})
+
+    asyncio.get_event_loop().run_until_complete(build())
+    monkeypatch.setattr(server, "db", db)
+    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
+    assert "campaigns" not in out
 
 
 # --- Claims we can stand behind -----------------------------------------------
@@ -369,31 +542,149 @@ def test_a_draft_nobody_ever_ran_is_not_a_campaign_run():
 
 @pytest.mark.parametrize("name", list(PAGES))
 def test_no_page_claims_a_reach_the_operation_does_not_have(name):
-    html = PAGES[name](FULL).lower()
-    assert "bengaluru" in html
+    """Bengaluru is evidence of network depth, never identity — so the pages
+    that mention geography say where the network is deepest, and none of them
+    claims more."""
+    text = copy_of(*PAGES[name]).lower()
+    for phrase in ("every city", "pan-india", "across india", "nationwide"):
+        assert phrase not in text, f"{name}: {phrase}"
 
 
-@pytest.mark.parametrize("name", list(PAGES))
-def test_everything_interpolated_is_escaped(name):
-    """No brand-supplied text reaches these pages, but the habit is the point:
-    the next person to add a field here inherits it."""
-    src = inspect.getsource(
-        server._for_brands_html if name == "brands" else server._for_creators_html
+def test_geography_is_stated_as_depth_rather_than_identity():
+    for name in ("brands", "why"):
+        text = copy_of(*PAGES[name]).lower()
+        assert "bengaluru" in text, name
+        assert "anywhere in india" in text, name
+
+
+@pytest.mark.parametrize("word", ["vets", "vetted", "vetting"])
+def test_no_page_reintroduces_the_old_vocabulary(word):
+    """"Vetted" is what this concept was called before it settled on
+    `verification_status`. The mismatch once hid every approved creator from
+    every brand."""
+    for name, parts in PAGES.items():
+        assert word not in copy_of(*parts).lower(), f"{name}: {word}"
+
+
+def test_home_names_only_real_campaign_categories():
+    """A slide headed "Tech & gadgets" is an invitation to filter the brief
+    list by a category that does not exist. `CampaignCategory` is the list."""
+    text = copy_of(*PAGES["home"]).lower()
+    for absent in ("tech & gadgets", "gadgets", "automotive", "gaming"):
+        assert absent not in text, absent
+
+
+def test_home_does_not_promise_that_every_brief_pays_money():
+    """Barter briefs are real and admin-arranged."""
+    assert "no free product" not in copy_of(*PAGES["home"]).lower()
+
+
+# --- Home is a router, not a story --------------------------------------------
+
+
+def test_home_keeps_only_what_routes():
+    """Hero, proof, one problem-and-promise section, the close. Everything
+    else moved to its own page — and the live brief feed went to /campaigns,
+    which is a better version of it and was always one tap away."""
+    src = read(*PAGES["home"])
+    code = "\n".join(
+        l for l in src.splitlines() if not l.lstrip().startswith("//")
     )
-    assert "e = html_escape" in src
-    assert src.count("e(") >= 6
+    assert "<Hero />" in code
+    assert "<ProofStrip" in code
+    assert "<Problem />" in code
+    assert "TwoPaths" in code
+    for gone in ("LiveBriefs", "function Reach", "TRUST_POINTS", "verticals"):
+        assert gone not in code, gone
+
+
+def test_home_sends_readers_on_rather_than_telling_them_everything():
+    src = read(*PAGES["home"])
+    for dest in ("/for-creators", "/for-brands", "/how-it-works"):
+        assert dest in src, dest
+
+
+# --- The parallel tracks ------------------------------------------------------
+
+
+def test_how_it_works_shows_both_sides_against_each_other():
+    """A creator's step and the brand's step opposite it happen at the same
+    moment, and that is the argument. Two separate lists would lose it."""
+    src = read(*PAGES["how"])
+    assert "TRACKS" in src
+    tracks = re.findall(r"moment:", src)
+    assert len(tracks) >= 5, tracks
+    # Every row carries both sides; a blank one reads as a step somebody
+    # forgot to write.
+    assert src.count("creator: {") == src.count("brand: {") == len(tracks)
+
+
+def test_how_it_works_carries_the_four_trust_mechanics():
+    text = copy_of(*PAGES["how"]).lower()
+    assert "verification, both ways" in text
+    assert "in writing, before the shoot" in text
+    assert "approval before anything is public" in text
+    assert "payment on approved delivery" in text
+
+
+def test_why_weare_makes_the_standalone_case():
+    text = copy_of(*PAGES["why"]).lower()
+    assert "weare studios" in text                      # the pedigree
+    assert "run it yourself, or hand it over" in text   # the choice
+    assert "reviewed by a person" in text               # verified people
+    assert "charged to you on top" in text              # money handled properly
+    assert "report" in text                             # results reported
+
+
+# --- The footer, and the sitemap ----------------------------------------------
+
+
+def test_the_footer_columns_match_the_react_one():
+    """Two renderers with two copies of the link list is how a footer ends up
+    advertising a page that moved. The backend's copy builds the sitemap."""
+    site = read("src", "lib", "siteNav.js")
+    for heading, links in server.FOOTER_COLUMNS:
+        assert f'heading: "{heading}"' in site, heading
+        for label, to in links:
+            assert f'label: "{label}"' in site, label
+            if to.startswith("mailto:"):
+                assert to.split(":", 1)[1] in site
+            else:
+                assert f'to: "{to}"' in site or f"to: `{to}" in site, to
+
+
+def test_the_footer_links_every_marketing_page():
+    """Six pages and one footer. A page nothing links to is a page nobody
+    finds."""
+    site = read("src", "lib", "siteNav.js")
+    for path in ("/for-brands", "/for-creators", "/how-it-works", "/why-weare"):
+        assert f'"{path}"' in site, path
+
+
+def test_the_sitemap_lists_every_marketing_page():
+    """Built from `MARKETING_PATHS` rather than a hand-written list, so adding
+    a page cannot quietly leave it out."""
+    import inspect as _inspect
+
+    src = _inspect.getsource(server.public_sitemap)
+    assert "MARKETING_PATHS" in src
+    assert set(server.MARKETING_PATHS) == {
+        "/",
+        "/for-brands",
+        "/for-creators",
+        "/how-it-works",
+        "/why-weare",
+    }
+
+
+def test_the_copyright_names_the_entity_that_was_already_there():
+    """Who owns the thing is a fact, not a copy decision."""
+    assert "WeAre Monk" in read("src", "components", "Footer.jsx")
 
 
 # --- Getting there ------------------------------------------------------------
 
-
-SERVER_RENDERED_PATHS = (
-    "/c/:id",
-    "/brands/:id",
-    "/for-brands",
-    "/for-creators",
-    "/sitemap.xml",
-)
+SERVER_RENDERED_PATHS = ("/c/:id", "/brands/:id", "/sitemap.xml")
 
 
 def _rewrites():
@@ -401,16 +692,13 @@ def _rewrites():
 
 
 def test_vercel_has_a_rewrite_for_every_server_rendered_path():
-    """Shipping a page without its rewrite is a nav link into the SPA's
-    catch-all — the trap /c/:id and /brands/:id already document.
-
-    The destinations still point at `/index.html`, which is what the catch-all
-    does anyway: these are placeholders waiting to be repointed at the API
-    host. PREVIEW.md is where that decision is written down, and the test
-    below keeps it there."""
+    """Three now, not five: /for-brands and /for-creators are React routes, so
+    a rewrite pointing them at the backend would shadow the pages."""
     sources = [r["source"] for r in _rewrites()]
     for path in SERVER_RENDERED_PATHS:
         assert path in sources, path
+    assert "/for-brands" not in sources
+    assert "/for-creators" not in sources
 
 
 def test_every_server_rendered_rewrite_sits_above_the_catch_all():
@@ -425,143 +713,30 @@ def test_every_server_rendered_rewrite_sits_above_the_catch_all():
 def test_no_rewrite_carries_a_comment_key():
     """`vercel.json` is JSON, which has no comments, and Vercel rejects
     unknown properties on a rewrite object — a `"//"` key explaining the entry
-    fails validation and the whole deploy with it. The explanation belongs in
-    PREVIEW.md, which is checked for below."""
+    fails validation and the whole deploy with it."""
     for rule in _rewrites():
         assert set(rule) <= {"source", "destination", "has", "missing", "statusCode"}, rule
 
 
+def test_the_dev_server_proxies_the_same_paths_vercel_does():
+    """`src/setupProxy.js` is the dev server's half of the rewrites. Without
+    it webpack-dev-server answers them with `index.html` and the SPA takes
+    over, so a shared brief link opens the app rather than the page it
+    names."""
+    proxy = read("src", "setupProxy.js")
+    for path in SERVER_RENDERED_PATHS:
+        stem = path.split("/:")[0].replace(".", r"\.")
+        assert stem in proxy, path
+    # And not the pages the SPA now owns.
+    assert "/^\\/for-brands" not in proxy
+
+
 def test_the_pending_proxy_decision_is_written_down():
-    """These five entries are inert until somebody repoints them, and an inert
-    rewrite is indistinguishable from a working one by reading the file. If
-    the note goes, the next person sees five configured proxies and wonders
-    why link previews are broken."""
+    """The rewrites point at /index.html, which is what the catch-all does
+    anyway — they are placeholders waiting to be repointed at the API host,
+    and an inert rewrite is indistinguishable from a working one by reading
+    the file."""
     preview = (FRONTEND.parent / "PREVIEW.md").read_text()
     assert "pending decision" in preview.lower()
     for path in SERVER_RENDERED_PATHS:
         assert path in preview, path
-
-
-def test_the_spa_links_to_them_with_real_anchors():
-    """A <Link> would be intercepted by the router and land on the SPA, which
-    does not have these pages."""
-    nav = read("src", "components", "Navbar.jsx")
-    site = read("src", "lib", "siteNav.js")
-
-    assert '{ href: "/for-brands"' in nav
-    assert '{ to: "/for-brands"' not in nav
-    # The footer marks them so its own renderer picks <a> over <Link>.
-    assert 'to: "/for-creators", external: true' in site
-    assert 'to: "/for-brands", external: true' in site
-
-
-# --- Home, held to the same rules ---------------------------------------------
-#
-# Home is the third page of the set and the only one the SPA renders, so it
-# sits outside every test above — which is exactly how it came to carry claims
-# the two new pages are forbidden to make. The audience pages were written
-# clean; home was inherited, and a front door that overclaims is not fixed by
-# two honest pages behind it.
-
-LANDING = read("src", "pages", "Landing.jsx")
-
-
-def _landing_copy():
-    """Landing's source with `//` comment lines removed.
-
-    Every rule below is about what a reader sees. The comments explaining why
-    a claim was removed necessarily contain the claim, so leaving them in makes
-    each of these tests fail on its own justification.
-    """
-    return "\n".join(
-        line for line in LANDING.splitlines() if not line.lstrip().startswith("//")
-    )
-
-
-def test_home_does_not_list_cities_we_do_not_operate_in():
-    """There was a strip of eight city names beside a paragraph explaining
-    that the network is really only deep in one of them. The paragraph was
-    right and the strip was the claim people read."""
-    copy = _landing_copy()
-    for city in ("Mumbai", "Delhi NCR", "Hyderabad", "Chennai", "Kolkata"):
-        assert city not in copy, city
-
-
-def test_home_still_names_bengaluru_and_still_opens_signup_to_india():
-    """The correction is not "say less" — it is "say the true thing". Dropping
-    the geography altogether would lose the part a creator in Pune needs,
-    which is that they can sign up today."""
-    copy = _landing_copy()
-    assert "Bengaluru" in copy
-    assert "anywhere in India" in copy
-
-
-@pytest.mark.parametrize("phrase", ["every city", "pan-india", "across india", "nationwide"])
-def test_home_makes_no_claim_the_audience_pages_are_banned_from_making(phrase):
-    assert phrase not in _landing_copy().lower()
-
-
-def test_home_names_only_real_campaign_categories():
-    """A slide headed "Tech & gadgets" is an invitation to filter the brief
-    list by a category that does not exist. `CampaignCategory` is the list.
-
-    The ban is on categories with no enum behind them, not on wording: "Beauty
-    & Wellness" and "Food & Drink" are `wellness` and `fnb` said the way a
-    brand would say them, and a brief really can be filed under both."""
-    copy = _landing_copy().lower()
-    for absent in ("tech & gadgets", "gadgets", "fitness &", "automotive", "gaming"):
-        assert absent not in copy, absent
-
-
-def test_home_states_the_payment_rule_the_audience_pages_lead_with():
-    """"You keep 100% of your rate because the fee sits on the brand" is the
-    single most load-bearing thing we tell a creator, and home said it
-    nowhere — it described the payout mechanism and skipped the economics."""
-    copy = _landing_copy()
-    assert "100%" in copy
-    assert "charged to the brand on top" in copy
-
-
-def test_home_does_not_imply_a_cut_of_the_creators_rate():
-    copy = _landing_copy().lower()
-    for phrase in ("commission", "deducted from what you", "our cut"):
-        # "Nothing is deducted from what you agreed" is the sentence that says
-        # this correctly, so the ban is on the claim, not the word.
-        assert f"we take {phrase}" not in copy
-    assert "commission" not in copy
-
-
-def test_home_does_not_promise_that_every_brief_pays_money():
-    """Barter briefs are real and admin-arranged. "No free product or
-    'exposure' standing in for money" is contradicted by the first one
-    somebody opens."""
-    copy = _landing_copy().lower()
-    assert "no free product" not in copy
-    assert "barter" in copy
-
-
-def test_home_describes_the_draft_step():
-    """"Shoot, publish, submit" is the flow from before the review gate. A
-    creator reading it would meet the draft step for the first time as a
-    button they were not expecting."""
-    copy = _landing_copy()
-    assert "send the draft for approval" in copy
-
-
-def test_the_only_remote_fetch_on_the_marketing_site_is_flagged_as_such():
-    """The two server-rendered pages fetch nothing, which is why they paint in
-    tens of milliseconds; home hotlinks stock photography from a CDN. That is
-    a decision needing owned photography rather than a code change, so what is
-    pinned here is that it stays written down instead of settling in."""
-    assert "NEEDS A DECISION" in LANDING
-    assert "self-hosted" in LANDING
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_the_audience_pages_still_fetch_nothing(name):
-    """The counterpart of the test above: whatever home does, these two do not
-    reach a third party. `test_nothing_blocks_the_first_paint` covers the font;
-    this covers images."""
-    html = PAGES[name](FULL)
-    assert "images.unsplash.com" not in html
-    assert "<img" not in html

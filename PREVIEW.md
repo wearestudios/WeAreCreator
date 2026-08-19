@@ -113,10 +113,15 @@ unusable. **These numbers are fake and must never reach production.**
 A fresh database seeds four demo brands, seven open briefs and eight verified
 creators, so most screens have something in them immediately.
 
-**1. Signed out — the shop window**
-Go to `/`. Scroll to **"Briefs live on the platform today"**. Those are real
-open campaigns from verified brands, pulled from `/api/public/campaigns`. This
-is new: previously a visitor couldn't see a single brief without an account.
+**1. Signed out — the marketing site**
+Go to `/`. Home is a router: the hero, a counted proof strip, one
+problem-and-promise section, and two doors. Follow either into `/for-creators`
+or `/for-brands`, then `/how-it-works` and `/why-weare` from the navbar. Try a
+URL that does not exist — it lands on a designed 404 rather than silently
+redirecting home, which is what it used to do.
+
+Then **`/campaigns`** for the shop window: real open briefs from verified
+brands. A visitor can read them without an account.
 
 **2. Admin — `/admin/login`**
 Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. You'll see:
@@ -193,18 +198,17 @@ boot; set `APP_ENV=development` on a laptop to silence them.
 
 Full list with comments: `backend/.env.example`.
 
-### The five server-rendered pages, and the deploy step they need
+### The three server-rendered pages, and the deploy step they need
 
-> **This is a pending decision, not a finished setup.** Five paths in
+> **This is a pending decision, not a finished setup.** Three paths in
 > `frontend/vercel.json` currently point at `/index.html`, which is exactly
 > what the catch-all below them already does — so today they are inert
-> placeholders and every one of these pages opens the React app instead. The
-> entries are there to be *repointed*, and this section is the record of why
-> they exist. (They used to carry `"//"` keys explaining themselves inline;
-> Vercel rejects unknown properties on a rewrite object, so the notes live
-> here instead.)
+> placeholders and those pages open the React app instead. The entries are
+> there to be *repointed*, and this section is the record of why they exist.
+> (They used to carry `"//"` keys explaining themselves inline; Vercel rejects
+> unknown properties on a rewrite object, so the notes live here instead.)
 
-Five pages are **server-rendered by the backend**, not by the React app, and
+Three pages are **server-rendered by the backend**, not by the React app, and
 that is not a style choice: the crawlers that build a WhatsApp, Instagram or
 Slack preview do not run JavaScript, so Open Graph tags the SPA sets at runtime
 are tags nobody ever sees. The page a person opens and the page a crawler
@@ -215,48 +219,68 @@ not show.
 | --- | --- |
 | `/c/:id` | A live brief from a verified brand. What the Share button copies. |
 | `/brands/:id` | The brand's own public page, linked from every campaign card and every shared brief. |
-| `/for-brands` | The pitch page you send a venue owner on WhatsApp. |
-| `/for-creators` | The same, pointed at creators. |
-| `/sitemap.xml` | Every public brand page and live brief, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
+| `/sitemap.xml` | Every marketing page, public brand page and live brief, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
 
-Out of the box the Share button copies `https://<frontend>/c/<id>`, which only
-works if that path reaches the backend. Repoint all five destinations at your
-Railway URL — they must stay **above** the catch-all:
+It was five until the marketing site moved into the SPA. `/for-brands` and
+`/for-creators` are ordinary React routes now — see below.
+
+Repoint all three at your Railway URL; they must stay **above** the catch-all:
 
 ```json
-{ "source": "/c/:id",        "destination": "https://your-api.up.railway.app/c/:id" },
-{ "source": "/brands/:id",   "destination": "https://your-api.up.railway.app/brands/:id" },
-{ "source": "/for-brands",   "destination": "https://your-api.up.railway.app/for-brands" },
-{ "source": "/for-creators", "destination": "https://your-api.up.railway.app/for-creators" },
-{ "source": "/sitemap.xml",  "destination": "https://your-api.up.railway.app/sitemap.xml" }
+{ "source": "/c/:id",       "destination": "https://your-api.up.railway.app/c/:id" },
+{ "source": "/brands/:id",  "destination": "https://your-api.up.railway.app/brands/:id" },
+{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
 ```
 
-**All five or none.** They are one feature, and shipping part of it means a
+**All three or none.** They are one feature, and shipping part of it means a
 link into a page that does not exist: the brief page links to the brand page,
-the brand page lists the briefs, the sitemap points at both, and the two
-audience pages are linked from the navbar and the footer as **real anchors** —
-deliberately, so the browser asks the server rather than letting the router
-swallow the navigation. Without their rewrites those anchors land on the SPA's
-catch-all, which is a 404 wearing the site's chrome.
+the brand page lists the briefs, and the sitemap points at both.
 
 The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
 the backend's own origin and links will point straight at it. That works
-immediately but the URL is the API host, which is uglier to read out — and it
-does nothing for `/for-brands` and `/for-creators`, which are linked by path
-from inside the app.
+immediately but the URL is the API host, which is uglier to read out.
 
 Until one of the two is done, a shared link opens the React app and previews as
 the generic site card.
 
-The preview image is the campaign's own cover, built as an absolute URL against
-the backend's origin — the host that serves `/uploads`. Only `/c/*` needs
-proxying; the image URL points straight at the API host either way, so a
-crawler can fetch it without a second rewrite. Briefs with no cover fall back to
-the site card, and to a generated tint in the page itself.
+`frontend/src/setupProxy.js` is the same three paths for the dev server, so
+`docker compose up` behaves like the deployed site. It does not exist in a
+production build, so it cannot mask a missing rewrite.
 
-Uploaded images live on the API container's disk, so `UPLOAD_DIR` should point
-at a mounted volume in production — otherwise every deploy loses the covers and
-logos and the pages fall back to their generated versions.
+### The marketing site, and the preview it gave up
+
+Five pages — `/`, `/for-brands`, `/for-creators`, `/how-it-works`,
+`/why-weare` — plus a designed 404. **All of them are React routes.**
+
+Two of them used to be server-rendered HTML written by hand in `server.py`, for
+the preview reason above. That had three costs, and they were the reason for
+moving:
+
+- a page the backend renders cannot be reached with a `<Link>`, so
+  `/how-it-works` and `/why-weare` could not exist alongside them at all;
+- the rewrites that would have pointed at them were never repointed, so in
+  production both answered with the SPA's catch-all — the nav and footer links
+  went nowhere;
+- the copy existed only there, so the site's own pages could not reuse a word
+  of it.
+
+**What that traded away:** WhatsApp and other non-JS crawlers now read the
+static tags in `public/index.html` rather than each page's own, so a marketing
+link pasted into a chat previews with the site-wide card.
+`frontend/src/components/marketing/PageMeta.jsx` says so at the top of the
+file. To buy it back without moving the pages again, point the rewrites at a
+prerender service, or add a Vercel `has` condition matching crawler
+user-agents. `/c/:id` and `/brands/:id` stay server-rendered because there the
+shared link *is* the preview, and the trade would not be worth making.
+
+**Image slots.** Every marketing page has deliberate placements — hero,
+alternating text-and-image sections, proof areas — and none of them fetches
+anything. Each is a `PlaceholderImage`: a tint from the warm palette with the
+site's grain over it, in a container that already occupies the space the
+photograph will. Each carries a `PLACEHOLDER IMAGE:` comment saying what
+belongs there, and `data-placeholder` on the element. Dropping a real image in
+is one prop (`src`) and the layout does not move, so the photography can arrive
+one slot at a time.
 
 ### Deploying the frontend to Vercel
 

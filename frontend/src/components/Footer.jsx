@@ -83,7 +83,7 @@ export function Footer() {
 
                     <nav
                         aria-label="Footer"
-                        className="grid grid-cols-2 gap-8 sm:grid-cols-3 md:col-span-7"
+                        className="grid grid-cols-2 gap-8 sm:grid-cols-4 md:col-span-7"
                     >
                         {FOOTER_COLUMNS.map((col) => (
                             <div key={col.heading}>
