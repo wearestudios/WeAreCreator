@@ -10809,12 +10809,13 @@ async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
     docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=10000)
     brands = await _load_brand_map([d["brand_id"] for d in docs])
     filled = await _filled_counts_for([d["_id"] for d in docs])
-    perf = {
-        r["campaign_id"]: r
-        for r in await db.content_performance.find(
-            {"campaign_id": {"$in": [d["_id"] for d in docs]}}
-        ).to_list(length=10000)
-    }
+    # No performance columns here on purpose. A `content_performance` scan was
+    # being built and thrown away — half a feature, costing a 10,000-document
+    # read on every campaigns export and delivering nothing. It also could not
+    # have worked as written: the records are one per *collaboration*, so
+    # keying them by `campaign_id` keeps whichever one the cursor yielded last
+    # rather than rolling them up. `_rollup_performance` is what does that
+    # correctly, and the campaign report is where it is already surfaced.
     headers = [
         "Campaign ID", "Title", "Brand", "Status", "Compensation", "Budget per creator",
         "Category", "Area", "Type", "Needed", "Filled", "Fill rate %",
@@ -18902,7 +18903,6 @@ def _brand_page_html(
     by accident.
     """
     e = html_escape
-    bid = e(brand["id"])
     name = e(brand.get("business_name") or "A verified brand")
     url = e(_brand_page_url(brand["id"]))
     app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))

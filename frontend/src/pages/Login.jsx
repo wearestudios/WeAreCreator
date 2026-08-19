@@ -31,9 +31,15 @@ export default function Login() {
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Every city that matters</p>
+                        {/* Was "Every city that matters", which is the exact
+                            geography overclaim banned everywhere else on the
+                            site — the marketing pages are tested for it and
+                            this screen sat outside those tests. The network is
+                            deepest in Bengaluru and that is what we say. */}
+                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Bengaluru</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Bengaluru's most curated creator × brand network.
+                            Paid briefs, rates agreed in writing, and a report at the
+                            end.
                         </p>
                     </div>
                 </div>

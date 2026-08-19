@@ -239,7 +239,8 @@ function AnimatedNumber({ value, suffix = "", duration = 1400 }) {
  * the one page most people see first.
  *
  * NEEDS A DECISION — these are stock photographs hotlinked from Unsplash, and
- * they are the only third-party fetch anywhere on the marketing site.
+ * with the two on the login and signup screens they are the only third-party
+ * fetches anywhere in the app.
  * `/for-brands`, `/for-creators` and `/c/{id}` were built to fetch nothing at
  * all, which is why they paint in tens of milliseconds. Two things are wrong
  * here and neither is fixable in code: the images are somebody else's, of

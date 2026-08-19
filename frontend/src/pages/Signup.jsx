@@ -109,9 +109,18 @@ export default function Signup() {
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Invite-only</p>
+                        {/* Was "Invite-only" over "Get on the list", which
+                            describes a product we do not have: signup is open,
+                            there is no waitlist and no invite gate. What is
+                            true is the review — a creator is checked before
+                            they can apply to a brief — so that is what it
+                            says. Telling somebody they are queueing for
+                            admission at the moment they are filling in the
+                            form is also the worst possible place to say it. */}
+                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Free to join</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
-                            Get on the list. Every application is reviewed by our team, one at a time.
+                            Sign up in a minute. Every profile is reviewed by our team
+                            before you can apply to a brief.
                         </p>
                     </div>
                 </div>

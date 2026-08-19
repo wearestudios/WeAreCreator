@@ -565,3 +565,68 @@ def test_the_audience_pages_still_fetch_nothing(name):
     html = PAGES[name](FULL)
     assert "images.unsplash.com" not in html
     assert "<img" not in html
+
+
+def test_the_dev_server_proxies_the_same_paths_vercel_does():
+    """`src/setupProxy.js` is the dev server's half of the rewrites above.
+
+    Without it webpack-dev-server answers all five with `index.html`, the SPA
+    loads, and the router's catch-all redirects to `/` — so the navbar and
+    footer links to the two audience pages silently bounced off home for
+    anybody running the stack the way PREVIEW.md says to. Two lists of the
+    same five paths is the usual drift, so they are compared rather than
+    trusted."""
+    proxy = read("src", "setupProxy.js")
+
+    # The patterns are regexes there and ":id" paths here, so compare on the
+    # literal segment each pair has in common.
+    for path in SERVER_RENDERED_PATHS:
+        stem = path.split("/:")[0].replace(".", r"\.")
+        assert stem in proxy, path
+
+
+# --- The screens nobody was checking ------------------------------------------
+#
+# Every copy rule above applied to the three marketing pages. The login and
+# signup screens carry a headline and a standfirst each and were covered by
+# none of them, which is how "Every city that matters" survived on the login
+# page long after the claim was removed everywhere it was being tested.
+
+AUTH_SCREENS = ["Login.jsx", "Signup.jsx"]
+
+
+def _screen(page):
+    """One auth screen's source with its comments removed.
+
+    JSX comments are `{/* … */}` blocks spanning several lines, not `//`
+    prefixes — and the comment explaining why a claim was removed necessarily
+    quotes the claim, so a line-prefix filter leaves every one of these tests
+    failing on its own justification."""
+    src = read("src", "pages", page)
+    src = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("//")
+    )
+
+
+@pytest.mark.parametrize("page", AUTH_SCREENS)
+@pytest.mark.parametrize("phrase", ["every city", "pan-india", "across india", "nationwide"])
+def test_the_auth_screens_make_no_geography_claim_either(page, phrase):
+    assert phrase not in _screen(page).lower(), f"{page}: {phrase}"
+
+
+def test_signup_does_not_describe_a_waitlist_we_do_not_have():
+    """Signup is open — a name and a WhatsApp number, no invite, no queue.
+    "Invite-only" and "get on the list" describe a different product, and the
+    form itself is the worst place to tell somebody they are queueing."""
+    copy = _screen("Signup.jsx").lower()
+    for wrong in ("invite-only", "get on the list", "waitlist", "join the waitlist"):
+        assert wrong not in copy, wrong
+
+
+def test_signup_still_says_what_is_actually_true_about_review():
+    """The correction is not to remove the claim — a creator really is
+    reviewed before they can apply, and finding that out afterwards is worse
+    than being told."""
+    assert "reviewed by our team" in _screen("Signup.jsx")
