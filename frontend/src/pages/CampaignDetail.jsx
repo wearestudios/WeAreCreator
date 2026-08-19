@@ -17,6 +17,7 @@ import {
     Users,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import {
     DetailPageSkeleton,
     LoadingAnnouncement,
@@ -27,6 +28,7 @@ import { compensationType, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
+import ShootWindowNote from "@/components/campaign/ShootWindowNote";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
 import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
@@ -59,6 +61,8 @@ const STATE_LABEL = {
     commercial_agreed: "Fee agreed",
     slot_booked: "Slot booked",
     attended: "Attended",
+    draft_submitted: "Draft in review",
+    draft_approved: "Draft approved",
     content_submitted: "In review",
     content_approved: "Approved",
     in_payment: "Payment in progress",
@@ -494,6 +498,9 @@ export default function CampaignDetail() {
                         Back to campaigns
                     </Button>
                 </div>
+                {/* A dead link is exactly where somebody needs a way onwards,
+                    so the 404 keeps the footer. */}
+                <Footer />
             </div>
         );
     }
@@ -612,6 +619,12 @@ export default function CampaignDetail() {
                             </p>
                         </section>
 
+                        {/* When the venue can take people, said before the
+                            apply button rather than discovered by a creator
+                            whose Saturday was the whole reason they applied.
+                            Renders nothing when the brief set nothing. */}
+                        <ShootWindowNote campaign={campaign} className="mt-12" />
+
                         {/* The page decides by audience, like the navbar does:
                             the ask box belongs to the creator reading a brief,
                             not to the brand or admin passing through. The
@@ -701,6 +714,8 @@ export default function CampaignDetail() {
                     </aside>
                 </div>
             </main>
+
+            <Footer />
 
             <ApplyDialog
                 open={dialogOpen}

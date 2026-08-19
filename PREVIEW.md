@@ -193,34 +193,57 @@ boot; set `APP_ENV=development` on a laptop to silence them.
 
 Full list with comments: `backend/.env.example`.
 
-### Shareable brief links, and the one deploy step they need
+### The five server-rendered pages, and the deploy step they need
 
-Every live brief from a verified brand has a public page at `/c/{id}`. It is
-**server-rendered by the backend**, not by the React app, and that is not a
-style choice: the crawlers that build a WhatsApp, Instagram or Slack preview do
-not run JavaScript, so Open Graph tags the SPA sets at runtime are tags nobody
-ever sees. The page a person opens and the page a crawler scrapes are the same
-one, so the preview cannot promise something the link does not show.
+> **This is a pending decision, not a finished setup.** Five paths in
+> `frontend/vercel.json` currently point at `/index.html`, which is exactly
+> what the catch-all below them already does — so today they are inert
+> placeholders and every one of these pages opens the React app instead. The
+> entries are there to be *repointed*, and this section is the record of why
+> they exist. (They used to carry `"//"` keys explaining themselves inline;
+> Vercel rejects unknown properties on a rewrite object, so the notes live
+> here instead.)
+
+Five pages are **server-rendered by the backend**, not by the React app, and
+that is not a style choice: the crawlers that build a WhatsApp, Instagram or
+Slack preview do not run JavaScript, so Open Graph tags the SPA sets at runtime
+are tags nobody ever sees. The page a person opens and the page a crawler
+scrapes are the same one, so the preview cannot promise something the link does
+not show.
+
+| Path | What it is |
+| --- | --- |
+| `/c/:id` | A live brief from a verified brand. What the Share button copies. |
+| `/brands/:id` | The brand's own public page, linked from every campaign card and every shared brief. |
+| `/for-brands` | The pitch page you send a venue owner on WhatsApp. |
+| `/for-creators` | The same, pointed at creators. |
+| `/sitemap.xml` | Every public brand page and live brief, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
 
 Out of the box the Share button copies `https://<frontend>/c/<id>`, which only
-works if that path reaches the backend. Add the proxies to
-`frontend/vercel.json`, above the catch-all, replacing the host with your
-Railway URL:
+works if that path reaches the backend. Repoint all five destinations at your
+Railway URL — they must stay **above** the catch-all:
 
 ```json
-{ "source": "/c/:id", "destination": "https://your-api.up.railway.app/c/:id" },
-{ "source": "/brands/:id", "destination": "https://your-api.up.railway.app/brands/:id" },
-{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
+{ "source": "/c/:id",        "destination": "https://your-api.up.railway.app/c/:id" },
+{ "source": "/brands/:id",   "destination": "https://your-api.up.railway.app/brands/:id" },
+{ "source": "/for-brands",   "destination": "https://your-api.up.railway.app/for-brands" },
+{ "source": "/for-creators", "destination": "https://your-api.up.railway.app/for-creators" },
+{ "source": "/sitemap.xml",  "destination": "https://your-api.up.railway.app/sitemap.xml" }
 ```
 
-All three or none: `/brands/{id}` is the brand's public page, linked from every
-campaign card and from every shared brief, and `/sitemap.xml` is what makes
-both findable by a search engine (robots.txt points at it). Shipping the brief
-proxy without the brand one means every brand link opens the SPA's 404.
+**All five or none.** They are one feature, and shipping part of it means a
+link into a page that does not exist: the brief page links to the brand page,
+the brand page lists the briefs, the sitemap points at both, and the two
+audience pages are linked from the navbar and the footer as **real anchors** —
+deliberately, so the browser asks the server rather than letting the router
+swallow the navigation. Without their rewrites those anchors land on the SPA's
+catch-all, which is a 404 wearing the site's chrome.
 
 The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
 the backend's own origin and links will point straight at it. That works
-immediately but the URL is the API host, which is uglier to read out.
+immediately but the URL is the API host, which is uglier to read out — and it
+does nothing for `/for-brands` and `/for-creators`, which are linked by path
+from inside the app.
 
 Until one of the two is done, a shared link opens the React app and previews as
 the generic site card.

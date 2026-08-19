@@ -12,6 +12,7 @@ import {
     ArrowDownUp,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import {
     CardGridSkeleton,
     FilterChips,
@@ -156,6 +157,20 @@ const CampaignCard = ({ c, index }) => (
                         <TagBadge status={c.status} />
                     </span>
                 </div>
+
+                {/* One line about the brand, under its name. A card carrying
+                    only a name makes every unfamiliar business look the same,
+                    which is most of them to most creators. Absent when the
+                    brand hasn't written one — a blank line would be worse
+                    than none. */}
+                {c.brand_tagline && (
+                    <p
+                        data-testid={`campaign-card-tagline-${c.id}`}
+                        className="mt-2 line-clamp-1 text-xs leading-relaxed text-muted-foreground/80"
+                    >
+                        {c.brand_tagline}
+                    </p>
+                )}
 
                 <h3 className="mt-5 font-serif text-[26px] leading-[1.05] tracking-tight text-foreground">
                     {/* The stretched link: this is the card's click target, and
@@ -671,6 +686,8 @@ export default function Campaigns() {
                     </p>
                 )}
             </main>
+
+            <Footer />
         </div>
     );
 }

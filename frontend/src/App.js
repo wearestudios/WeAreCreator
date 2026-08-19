@@ -13,6 +13,8 @@ import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
 import AdminLogin from "@/pages/AdminLogin";
 import Dashboard from "@/pages/Dashboard";
+import ShootCalendar from "@/pages/ShootCalendar";
+import SelfCheckIn from "@/pages/SelfCheckIn";
 import InstagramCallback from "@/pages/InstagramCallback";
 import CreatorOnboarding from "@/pages/CreatorOnboarding";
 import BrandOnboarding from "@/pages/BrandOnboarding";
@@ -98,6 +100,30 @@ function App() {
                             element={
                                 <ProtectedRoute>
                                     <Dashboard />
+                                </ProtectedRoute>
+                            }
+                        />
+                        {/* The shoot calendar. One page, three scopes — the
+                            endpoint decides what each role sees, so the route
+                            takes the union of the three rather than three
+                            near-identical routes. */}
+                        <Route
+                            path="/calendar"
+                            element={
+                                <ProtectedRoute
+                                    roles={[...BRAND_ROLES, "campaign_manager", "admin"]}
+                                >
+                                    <ShootCalendar />
+                                </ProtectedRoute>
+                            }
+                        />
+                        {/* Opened by a camera at a venue. Creator-only: the
+                            code checks a booking, and nobody else has one. */}
+                        <Route
+                            path="/check-in"
+                            element={
+                                <ProtectedRoute roles={["creator"]}>
+                                    <SelfCheckIn />
                                 </ProtectedRoute>
                             }
                         />

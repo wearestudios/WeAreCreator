@@ -398,6 +398,22 @@ def _brand_contact_from(source) -> dict:
     return out
 
 
+# What the person registering a brand does there. A **suggestion list, not an
+# enum**: `manager_designation` stays free text, so every brand that signed up
+# before this typed whatever they liked and their value still reads as a
+# sentence in the console and in an export. The list exists to stop the next
+# thousand being "mktg", "Mktg." and "marketing head" — narrowing what people
+# type without invalidating what they already typed.
+CONTACT_ROLE_SUGGESTIONS = (
+    "Owner",
+    "Marketing Manager",
+    "PR",
+    "General Manager",
+    "Operations",
+    "Other",
+)
+
+
 class BrandContactSignup(BaseModel):
     """The one named person a brand registers behind.
 
@@ -675,6 +691,146 @@ class BrandOutlet(BaseModel):
     place_id: Optional[str] = Field(default=None, max_length=200)
 
 
+# ---------------------------------------------------------------------------
+# Audience size, in one vocabulary
+#
+# There used to be two. The suggestion scorer had four bands named nano /
+# micro / mid / macro with its own boundaries, while every human-facing
+# surface described followers in raw numbers — so a brand reading "micro"
+# somewhere and picking "1K–10K" somewhere else were talking about different
+# people. **`FOLLOWER_TIERS` is the only vocabulary now**, three tiers, and the
+# budget map below returns one of its keys rather than a fourth name.
+# ---------------------------------------------------------------------------
+
+# key, floor, ceiling (None = open), label, the range as a person reads it.
+FOLLOWER_TIERS = (
+    ("micro", 1_000, 10_000, "Micro", "1K–10K"),
+    ("mid", 10_000, 100_000, "Mid", "10K–100K"),
+    ("macro", 100_000, None, "Macro", "100K+"),
+)
+FOLLOWER_TIER_KEYS = tuple(t[0] for t in FOLLOWER_TIERS)
+# What a brand picks: one of the three, or "any" — which is a real answer and
+# not a missing one. Most brands genuinely don't mind.
+FollowerTier = Literal["micro", "mid", "macro", "any"]
+
+
+def _tier_bounds(key: Optional[str]) -> Optional[tuple]:
+    for tier_key, low, high, _, _ in FOLLOWER_TIERS:
+        if tier_key == key:
+            return low, high
+    return None
+
+
+def _tier_for_followers(followers) -> Optional[str]:
+    """Which tier an audience actually sits in. None when we don't know."""
+    if not isinstance(followers, int) or followers <= 0:
+        return None
+    for key, low, high, _, _ in FOLLOWER_TIERS:
+        if followers >= low and (high is None or followers < high):
+            return key
+    # Below the smallest floor: still the smallest tier, not "no tier". A
+    # 400-follower account is a very small micro, not an unclassifiable one.
+    return FOLLOWER_TIERS[0][0]
+
+
+# Budget per creator → the tier that budget is realistically buying. Rupees,
+# ascending; the last has no upper bound. Returns a `FOLLOWER_TIERS` key, so
+# the guess and the brand's stated preference speak the same language.
+#
+# **The boundaries moved when the vocabulary did.** They used to be
+# 3k/10k/30k against four bands whose edges were 1k/10k/50k/200k. Keeping
+# those numbers against the three tiers would have quietly made ₹8,000 buy a
+# 1k–10k creator where it used to buy 10k–50k — a re-tuning nobody asked for,
+# smuggled in under a renaming. These are picked so the same fee buys roughly
+# the same audience it did before.
+CREATOR_REACH_TIERS = (
+    (5_000, "micro"),
+    (25_000, "mid"),
+    (float("inf"), "macro"),
+)
+
+
+# ---------------------------------------------------------------------------
+# What a brand is looking for
+#
+# Standing preferences on the brand profile, not on one brief: a café that
+# works with micro food creators wants that on every campaign it ever posts,
+# and re-deriving it from each brief's budget was a guess where an answer was
+# available. All three feed `score_creator_for_campaign`.
+# ---------------------------------------------------------------------------
+
+# key, label, the platform that carries it. Three of the four are Instagram,
+# which is the honest picture rather than a modelling failure — the one that
+# is not is exactly the one a brand gets wrong by assuming.
+CONTENT_TYPES = (
+    ("reels", "Reels", "instagram"),
+    ("stories", "Stories", "instagram"),
+    ("static_posts", "Static posts", "instagram"),
+    ("shorts", "YouTube Shorts", "youtube"),
+)
+CONTENT_TYPE_KEYS = tuple(c[0] for c in CONTENT_TYPES)
+CONTENT_TYPE_PLATFORM = {key: platform for key, _, platform in CONTENT_TYPES}
+
+# What a brand typically pays one creator. Bands rather than a number, because
+# a number here would read as a commitment and get argued about; the point is
+# to rank suggestions on a brief with no fee of its own.
+# key, floor, ceiling (None = open), label.
+BUDGET_BANDS = (
+    ("under_5k", 0, 5_000, "Under ₹5,000"),
+    ("5k_15k", 5_000, 15_000, "₹5,000–15,000"),
+    ("15k_40k", 15_000, 40_000, "₹15,000–40,000"),
+    ("over_40k", 40_000, None, "₹40,000+"),
+)
+BUDGET_BAND_KEYS = tuple(b[0] for b in BUDGET_BANDS)
+
+
+def _budget_band_midpoint(key: Optional[str]) -> Optional[float]:
+    """A band as one number, for the places that need a fee and have none.
+
+    The midpoint, or the floor on the open-ended band — a band is a range and
+    the reach map takes a figure, so something has to stand in for it. Deliberately
+    not stored: this is an inference and it should read like one at every call site.
+    """
+    for band_key, low, high, _ in BUDGET_BANDS:
+        if band_key == key:
+            return (low + high) / 2 if high is not None else float(low)
+    return None
+
+
+def _clean_content_types(rows) -> list:
+    """The formats a brand asked for, in the order the enum declares them."""
+    wanted = {str(r).strip().lower() for r in (rows or []) if r}
+    return [key for key in CONTENT_TYPE_KEYS if key in wanted]
+
+
+def _content_fit(profile: dict, wanted: list) -> Optional[float]:
+    """The share of the requested formats this creator can actually post.
+
+    None when the brand asked for nothing — an unstated preference is an
+    unknown like any other, and scoring it at zero would push every creator
+    down for a question the brand skipped.
+
+    Read off the platforms the creator says they post on, which is a fact they
+    stated, rather than off their niches, which are prose.
+    """
+    if not wanted:
+        return None
+    platforms = {
+        str(p).strip().lower() for p in (profile or {}).get("platforms") or [] if p
+    }
+    if not platforms:
+        return None
+    hit = sum(1 for key in wanted if CONTENT_TYPE_PLATFORM.get(key) in platforms)
+    return hit / len(wanted)
+
+# Signals with nothing behind them score here rather than at zero. A creator
+# whose engagement we have never measured is an unknown, not a bad bet, and
+# scoring unknowns at zero would rank every creator without a connected
+# Instagram account below every creator with a poor one.
+_UNKNOWN_SIGNAL = 0.5
+
+
+
 class BrandProfileUpdate(BaseModel):
     """Payload for brand onboarding / profile edits.
 
@@ -692,6 +848,10 @@ class BrandProfileUpdate(BaseModel):
     # where it actually is. None of it is evidence of anything — it exists so a
     # creator deciding whether to pitch has something to read besides a name.
     about: Optional[str] = Field(default=None, max_length=1500)
+    # One line, shown on every campaign card this brand posts. Separate from
+    # `about` and short on purpose: a card has room for a clause, and taking
+    # the first sentence of a paragraph gives you half of one.
+    tagline: Optional[str] = Field(default=None, max_length=90)
     city: Optional[str] = Field(default=None, max_length=80)
     outlets: list[BrandOutlet] = Field(default_factory=list, max_length=25)
 
@@ -711,6 +871,16 @@ class BrandProfileUpdate(BaseModel):
     facebook_url: Optional[str] = Field(default=None, max_length=300)
     linkedin_url: Optional[str] = Field(default=None, max_length=300)
 
+    # What this brand is looking for, as a standing preference rather than a
+    # line on one brief. All three feed `score_creator_for_campaign` — a café
+    # that works with micro food creators wants that on every campaign it
+    # posts, and re-deriving it from each budget was a guess where an answer
+    # was available. None of it is required for verification: it is what we
+    # rank on, not evidence of anything.
+    content_types: Optional[list[str]] = Field(default=None, max_length=10)
+    preferred_follower_tier: Optional[FollowerTier] = None
+    typical_budget_band: Optional[str] = Field(default=None, max_length=20)
+
     # Who is actually asking, and on what authority. The whole point of this
     # feature: an account is a person claiming to represent a business.
     contact_person_name: Optional[str] = Field(default=None, max_length=140)
@@ -725,6 +895,215 @@ class BrandProfileUpdate(BaseModel):
 # right ones is how a brief ends up with an event date *and* a window.
 CampaignType = Literal["launch", "group_event", "personal_table"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
+
+
+# ---------------------------------------------------------------------------
+# When a shoot may happen
+#
+# A venue's Monday is not its Saturday and its 11am is not its 8pm, and a
+# manager finding that out by putting six creators in a kitchen at lunchtime
+# is how a campaign burns a relationship. Two fields say it up front:
+# `restricted_days` (weekdays the venue is out) and `shoot_windows` (the
+# hours that work).
+# ---------------------------------------------------------------------------
+
+# **Every weekday and hour-of-day comparison happens here, in IST.** Slots are
+# stored in UTC, and a 19:00 Bengaluru sitting is the *next day* in UTC — so
+# reading `.weekday()` off the stored value puts a Friday evening on Saturday
+# for everybody using this. Same trap `isToday` has on the manager's screen,
+# and the same fix. Fixed rather than per-campaign because the operation is
+# Bengaluru-first; when a second timezone arrives this becomes a field and
+# every reader already goes through one function.
+SHOOT_TZ = timezone(timedelta(hours=5, minutes=30))
+
+# Index matches datetime.weekday(): Monday is 0.
+WEEKDAY_NAMES = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+)
+
+# Named windows, because "12:00–15:00" is a thing to work out and "Lunch" is a
+# thing to recognise. The times are resolved from this table **at write time**
+# and stored explicitly on the campaign, so retuning a preset later never
+# silently moves a brief somebody already agreed to.
+SHOOT_WINDOW_PRESETS = {
+    "breakfast": ("07:00", "11:00"),
+    "lunch": ("12:00", "15:00"),
+    "afternoon": ("15:00", "18:00"),
+    "evening": ("18:00", "21:00"),
+    "late": ("21:00", "23:30"),
+}
+SHOOT_WINDOW_LABELS = {
+    "breakfast": "Breakfast",
+    "lunch": "Lunch",
+    "afternoon": "Afternoon",
+    "evening": "Evening",
+    "late": "Late night",
+    "custom": "Custom",
+}
+MAX_SHOOT_WINDOWS = 6
+
+
+def _parse_hhmm(value) -> Optional[int]:
+    """"18:30" → minutes past local midnight, or None if it isn't a time."""
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        hours, minutes = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return hours * 60 + minutes
+
+
+def _hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+class ShootWindow(BaseModel):
+    """One period of the day a shoot may happen in.
+
+    `key` names a preset or is "custom". A preset's times come from
+    `SHOOT_WINDOW_PRESETS` and whatever the client sends is ignored — a
+    "lunch" window that runs 2am–4am because somebody posted one is a window
+    the label lies about.
+    """
+
+    key: str = Field(min_length=1, max_length=20)
+    start: Optional[str] = Field(default=None, max_length=5)
+    end: Optional[str] = Field(default=None, max_length=5)
+
+
+def _clean_shoot_windows(rows) -> list:
+    """Normalise the windows a campaign was posted with.
+
+    Presets resolve from the table; a custom window keeps the times it was
+    given. Anything unparseable is dropped rather than stored half-formed —
+    a window with no end is not a window, and enforcing against one would
+    refuse every slot on the campaign.
+    """
+    if not rows:
+        return []
+    out, seen = [], set()
+    for row in rows:
+        if isinstance(row, BaseModel):
+            row = row.model_dump()
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "").strip().lower()
+        if key in SHOOT_WINDOW_PRESETS:
+            start_s, end_s = SHOOT_WINDOW_PRESETS[key]
+        elif key == "custom":
+            start_s, end_s = row.get("start"), row.get("end")
+        else:
+            continue
+        start = _parse_hhmm(start_s)
+        end = _parse_hhmm(end_s)
+        if start is None or end is None or end <= start:
+            continue
+        signature = (start, end)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        out.append({"key": key, "start": _hhmm(start), "end": _hhmm(end)})
+        if len(out) >= MAX_SHOOT_WINDOWS:
+            break
+    return sorted(out, key=lambda w: w["start"])
+
+
+def _clean_restricted_days(rows) -> list:
+    """The weekdays this venue is out, as `datetime.weekday()` indexes.
+
+    Refuses all seven: a campaign with no day it can happen on is not a
+    restriction, it is a campaign nobody can ever book, and it would be
+    discovered by a creator finding the picker dead.
+    """
+    if not rows:
+        return []
+    days = set()
+    for value in rows:
+        try:
+            day = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= day <= 6:
+            days.add(day)
+    if len(days) == 7:
+        raise HTTPException(
+            status_code=422,
+            detail="That rules out every day of the week — leave at least one open.",
+        )
+    return sorted(days)
+
+
+def _restricted_days(campaign: Optional[dict]) -> set:
+    """Absent reads "nothing restricted" — campaigns predate the field."""
+    return {
+        int(d)
+        for d in ((campaign or {}).get("restricted_days") or [])
+        if isinstance(d, (int, float)) and 0 <= int(d) <= 6
+    }
+
+
+def _shoot_windows(campaign: Optional[dict]) -> list:
+    return list((campaign or {}).get("shoot_windows") or [])
+
+
+def _shoot_time_refusal(campaign: Optional[dict], starts, ends=None) -> Optional[str]:
+    """Why this time is not allowed on this campaign, or None if it is.
+
+    **The one place the rule lives**, so slot creation, slot editing and a
+    creator naming their own time on a personal table cannot disagree about
+    what the brand asked for. Returns the sentence rather than raising, so the
+    manager's slot list can label a slot that predates the restriction instead
+    of only ever refusing.
+
+    Both halves are evaluated in IST. Neither applies to a campaign that set
+    nothing, which is every campaign written before these fields existed.
+    """
+    if starts is None:
+        return None
+    local = _as_utc(starts).astimezone(SHOOT_TZ)
+
+    restricted = _restricted_days(campaign)
+    if local.weekday() in restricted:
+        open_days = [WEEKDAY_NAMES[d] for d in range(7) if d not in restricted]
+        return (
+            f"This venue isn't available on {WEEKDAY_NAMES[local.weekday()]}s. "
+            + (f"Open: {', '.join(open_days)}." if open_days else "")
+        ).strip()
+
+    windows = _shoot_windows(campaign)
+    if not windows:
+        return None
+
+    # A slot has to sit inside one window rather than straddle two: a sitting
+    # that runs from lunch into the afternoon is one the venue never agreed
+    # to, however each half looks on its own.
+    minutes = local.hour * 60 + local.minute
+    end_minutes = minutes
+    if ends is not None:
+        local_end = _as_utc(ends).astimezone(SHOOT_TZ)
+        end_minutes = local_end.hour * 60 + local_end.minute
+        if local_end.date() != local.date():
+            end_minutes = 24 * 60  # ran past midnight — no window covers that
+
+    for w in windows:
+        start = _parse_hhmm(w.get("start"))
+        end = _parse_hhmm(w.get("end"))
+        if start is None or end is None:
+            continue
+        if start <= minutes and end_minutes <= end:
+            return None
+
+    readable = ", ".join(
+        f"{SHOOT_WINDOW_LABELS.get(w['key'], w['key'])} {w['start']}–{w['end']}"
+        for w in windows
+    )
+    return f"This campaign shoots in set windows: {readable} (IST)."
 
 
 # What a creator is actually being offered.
@@ -907,6 +1286,17 @@ class PostCampaignPayload(BaseModel):
     # Findable by every verified creator, or invite-only. Defaults to public
     # because that is what posting a brief means unless you say otherwise.
     visibility: CampaignVisibility = DEFAULT_CAMPAIGN_VISIBILITY
+    # Review the work before it goes live. `None` here means "decide from
+    # execution_owner" — a brand running its own campaign gets the gate on by
+    # default, because the brand seeing the content after the creator's
+    # audience is the problem this exists to fix. An explicit false turns it
+    # off and the lifecycle behaves exactly as it did before.
+    requires_draft_approval: Optional[bool] = None
+    # When a shoot may happen. Both optional and both default to "no
+    # restriction", because most briefs have none and a form that demands an
+    # answer gets a made-up one.
+    restricted_days: Optional[list[int]] = None
+    shoot_windows: Optional[list[ShootWindow]] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -977,6 +1367,9 @@ class UpdateCampaignPayload(BaseModel):
     # applied, and everyone invited, keep read and apply access — the doors are
     # in _creator_may_see, not here.
     visibility: Optional[CampaignVisibility] = None
+    requires_draft_approval: Optional[bool] = None
+    restricted_days: Optional[list[int]] = None
+    shoot_windows: Optional[list[ShootWindow]] = None
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -1209,11 +1602,41 @@ COLLAB_STATE_ORDER = [
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The draft gate: the reviewer sees the content BEFORE the creator's
+    # audience does. Optional per campaign — `requires_draft_approval` — and
+    # skipped entirely from the ladder when off, so a campaign without it
+    # behaves exactly as before these two states existed.
+    "draft_submitted",
+    "draft_approved",
     "content_submitted",
     "content_approved",
     "in_payment",
     "closed",
 ]
+
+# The optional pair, named once so every "skip them when off" reads the same.
+DRAFT_REVIEW_STATES = ("draft_submitted", "draft_approved")
+
+
+def _requires_draft_approval(campaign: dict) -> bool:
+    """Does this campaign gate publication behind a draft review?
+
+    Absent reads **False** — this is the whole migration story. Campaigns
+    written before the field existed never see the draft states, so every
+    in-flight collaboration keeps the exact path it was on; there is no
+    backfill, deliberately. New brand-run campaigns default it on at creation
+    (see create_brand_campaign) — the *creation* default and the *reader*
+    default differ on purpose, because one is a policy for new work and the
+    other is a promise to old work.
+    """
+    return bool((campaign or {}).get("requires_draft_approval"))
+
+
+def _collab_ladder(campaign: Optional[dict]) -> list:
+    """The state order this campaign actually walks."""
+    if _requires_draft_approval(campaign):
+        return COLLAB_STATE_ORDER
+    return [s for s in COLLAB_STATE_ORDER if s not in DRAFT_REVIEW_STATES]
 
 # Once a collaboration is in one of these, nothing may move it again.
 TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled")
@@ -1226,6 +1649,8 @@ COLLAB_GROUP_ONGOING = (
     "commercial_agreed",
     "slot_booked",
     "attended",
+    "draft_submitted",
+    "draft_approved",
     "content_submitted",
     "content_approved",
     "in_payment",
@@ -1680,6 +2105,12 @@ NOTIFY_EVENTS = {
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
     "question_answered": "Your question was answered",
+    # Draft review. `draft_submitted` routes on execution_owner like an
+    # application does; the other two are the creator being told the outcome,
+    # and the second of them carries the note that says what to change.
+    "draft_submitted": "A draft is waiting for your review",
+    "draft_approved": "Your draft was approved",
+    "draft_changes_requested": "Changes were asked for on your draft",
 }
 
 
@@ -1936,13 +2367,57 @@ def sniff_document_type(head: bytes) -> Optional[tuple]:
     return sniff_image_type(head)
 
 
-async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
-    """Validate and write a document outside the public upload directory.
+# A draft is what came off a phone: a cut of a reel, or a still. Video needs its
+# own table because the magic is not at offset 0 — an MP4/MOV starts with a
+# four-byte box length and then "ftyp", so the check is at 4, and WebM is
+# Matroska's EBML header.
+_VIDEO_FTYP_BRANDS = {
+    b"isom": ("video/mp4", ".mp4"),
+    b"iso2": ("video/mp4", ".mp4"),
+    b"mp41": ("video/mp4", ".mp4"),
+    b"mp42": ("video/mp4", ".mp4"),
+    b"avc1": ("video/mp4", ".mp4"),
+    b"qt  ": ("video/quicktime", ".mov"),
+}
+
+ACCEPTED_DRAFT_MIMES = frozenset(
+    {mime for mime, _ in _VIDEO_FTYP_BRANDS.values()}
+    | {"video/webm"}
+    | set(ACCEPTED_IMAGE_MIMES)
+)
+
+
+def sniff_draft_type(head: bytes) -> Optional[tuple]:
+    """Identify a draft from its leading bytes: a video, or any image.
+
+    Same rule as everywhere else — the type comes from the bytes and never from
+    the filename — so "reel.mp4" that is really something else is refused
+    rather than stored and served back with a video content-type.
+    """
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in _VIDEO_FTYP_BRANDS:
+            return _VIDEO_FTYP_BRANDS[brand]
+        # An ftyp box we do not know is still an ISO-BMFF container; treat it
+        # as MP4 rather than refusing a legitimate phone export.
+        return "video/mp4", ".mp4"
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return "video/webm", ".webm"
+    return sniff_image_type(head)
+
+
+async def _store_private_upload(
+    file: UploadFile, *, prefix: str, sniffer=None, kind: str = "Documents"
+) -> dict:
+    """Validate and write a file outside the public upload directory.
 
     Returns the stored metadata. Deliberately never returns a URL: there isn't
     one, and a caller that can't accidentally be handed a link can't
-    accidentally render it.
+    accidentally render it. That property is exactly why an unpublished draft
+    lives here too — the whole point of the review stage is that the work is
+    not public yet.
     """
+    sniffer = sniffer or sniff_document_type
     limit = max_upload_bytes()
     chunk_size = 64 * 1024
 
@@ -1950,11 +2425,15 @@ async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
     if not first:
         raise HTTPException(status_code=422, detail="That file is empty.")
 
-    sniffed = sniff_document_type(first)
+    sniffed = sniffer(first)
     if not sniffed:
         raise HTTPException(
             status_code=422,
-            detail="Please upload a PDF, JPEG, PNG, WebP or GIF.",
+            detail=(
+                "Please upload a video (MP4, MOV, WebM) or an image."
+                if sniffer is not sniff_document_type
+                else "Please upload a PDF, JPEG, PNG, WebP or GIF."
+            ),
         )
     mime, ext = sniffed
 
@@ -1971,7 +2450,7 @@ async def _store_private_upload(file: UploadFile, *, prefix: str) -> dict:
                 if written > limit:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"Documents must be under {limit // (1024 * 1024)}MB.",
+                        detail=f"{kind} must be under {limit // (1024 * 1024)}MB.",
                     )
                 out.write(chunk)
                 chunk = await file.read(chunk_size)
@@ -4275,8 +4754,12 @@ def _serialize_collab_row(
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
         "state": state,
-        # The creator can submit or re-submit right up until it's approved.
-        "can_submit_content": state in ("attended", "content_submitted"),
+        # The creator can submit or re-submit right up until it's approved —
+        # from `attended` normally, and from `draft_approved` where the
+        # campaign reviews the cut first. The flag has to agree with what
+        # `submit_collab_content` will actually accept.
+        "can_submit_content": state == "content_submitted"
+        or state == ("draft_approved" if _requires_draft_approval(campaign) else "attended"),
         "created_at": _iso(collab.get("created_at")),
     }
 
@@ -4446,7 +4929,30 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     if state == "slot_booked":
         return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
     if state == "attended":
+        if _requires_draft_approval(campaign):
+            # The whole point of the stage: nothing is published until it has
+            # been looked at, so the ask here is a draft, not a live link.
+            note = (collab.get("draft_revision_note") or "").strip()
+            return {
+                "action": "submit_draft",
+                "label": (
+                    f"Changes requested: {note}" if note else "Submit your draft for review."
+                ),
+                "waiting_on": "you",
+            }
         return {"action": "submit_content", "label": "Submit your content.", "waiting_on": "you"}
+    if state == "draft_submitted":
+        return {
+            "action": "resubmit_draft",
+            "label": "Your draft is being reviewed. You can still replace it.",
+            "waiting_on": "brand",
+        }
+    if state == "draft_approved":
+        return {
+            "action": "submit_content",
+            "label": "Draft approved — publish it, then drop the live link.",
+            "waiting_on": "you",
+        }
     if state == "content_submitted":
         return {
             "action": "resubmit_content",
@@ -4722,6 +5228,9 @@ async def get_creator_dashboard(
                 "slot_starts_at": _iso(c.get("scheduled_at")),
                 "can_cancel_slot": bool(c.get("slot_id")),
                 "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+                # Absent on a campaign that doesn't review drafts, so the card
+                # has nothing to render rather than an empty panel.
+                "draft": _serialize_draft(c) if _requires_draft_approval(camp) else None,
                 "next_action": _creator_next_action(c, camp, can_be_paid),
             }
         )
@@ -4810,17 +5319,30 @@ async def submit_collab_content(
     if not collab:
         raise HTTPException(status_code=404, detail="Collaboration not found")
 
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
     # Submitting is allowed from `attended`, and re-submitting from
     # `content_submitted` — a creator must be able to fix a wrong link, or
     # respond to a change request, without an admin unpicking the state by hand.
-    if collab.get("state") not in ("attended", "content_submitted"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Content can be submitted once the collaboration is marked attended, "
-                "and changed any time before it's approved."
-            ),
+    #
+    # On a campaign that reviews drafts, `attended` is not one of the doors:
+    # the whole stage exists so the brand sees the work before the creator's
+    # audience does, and accepting a live link from `attended` would be the
+    # route around it.
+    if _requires_draft_approval(campaign):
+        allowed = ("draft_approved", "content_submitted")
+        refusal = (
+            "This campaign reviews drafts before publication. Submit your draft "
+            "first — the live link goes in once it's approved."
         )
+    else:
+        allowed = ("attended", "content_submitted")
+        refusal = (
+            "Content can be submitted once the collaboration is marked attended, "
+            "and changed any time before it's approved."
+        )
+    if collab.get("state") not in allowed:
+        raise HTTPException(status_code=400, detail=refusal)
 
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
@@ -4851,7 +5373,6 @@ async def submit_collab_content(
     # brand manager's own decision, so it goes to them by name rather than to
     # the brand account — the same person today, but the routing shouldn't be
     # what depends on that.
-    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if campaign:
         await notify_brand_manager(
             campaign["brand_id"],
@@ -4973,6 +5494,12 @@ async def list_creator_slots(
         "can_book": collab.get("state") == "commercial_agreed",
         "picks_own_time": campaign.get("campaign_type") == "personal_table",
         "how_it_works": _slot_window_note(campaign),
+        # The brand's days and hours, so a creator picking their own time on a
+        # personal table is told the rule rather than finding it by being
+        # refused. The server checks again on book — this is the courtesy on
+        # top, the same shape as the visibility pills.
+        "restricted_days": sorted(_restricted_days(campaign)),
+        "shoot_windows": _shoot_windows(campaign),
         "booked_slot_id": str(booked_id) if booked_id else None,
         "scheduled_at": _iso(collab.get("scheduled_at")),
         "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
@@ -5032,6 +5559,9 @@ async def creator_book_slot(
                 status_code=422,
                 detail="That time is outside the window you picked.",
             )
+        # The brand's days and hours are checked in `_claim_slot`, which both
+        # booking routes go through — a copy here would be a second place for
+        # the rule to drift.
     elif payload.preferred_time is not None:
         # Everyone arrives together on a launch or a group event; letting one
         # creator write their own time would put them at the venue alone.
@@ -5041,6 +5571,71 @@ async def creator_book_slot(
         )
 
     return await _claim_slot(user, collab, campaign, slot, preferred_time=preferred)
+
+
+class CheckInCodePayload(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+
+
+@creator_router.post("/check-in")
+async def creator_self_check_in(
+    payload: CheckInCodePayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Check yourself in by scanning the code on the manager's screen.
+
+    Four things are checked, and every one of them server-side — the code is
+    the only part a phone can produce, so it is the only part that could be
+    tampered with:
+
+    1. the code is one we signed, is a *check-in* code, and hasn't expired;
+    2. the slot it names still exists on the campaign it names;
+    3. **this creator has a booking on that slot** — the code says nothing
+       about who is holding it, so identity comes from the session and the
+       booking, never from the code;
+    4. now is close enough to the booking, so a screen photographed today
+       cannot be used next week.
+
+    The manual button on the manager's screen is untouched. That is the path
+    that works when the camera doesn't, and it is not a lesser one.
+    """
+    claims = _read_checkin_code(payload.code)
+
+    try:
+        soid = ObjectId(claims.get("slot") or "")
+    except Exception:
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+
+    slot = await db.campaign_slots.find_one({"_id": soid})
+    if not slot:
+        raise HTTPException(status_code=404, detail="That slot no longer exists.")
+
+    collab = await db.collaborations.find_one(
+        {
+            "slot_id": soid,
+            "creator_id": ObjectId(user["_id"]),
+        }
+    )
+    if not collab:
+        # Deliberately not "you have no booking on slot X": a creator who
+        # scanned the wrong screen learns nothing about whose shoot it was.
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "You don't have a booking on this one. If you're in the right "
+                "place, ask the campaign manager to check you in."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign or str(campaign["_id"]) != str(claims.get("campaign")):
+        raise HTTPException(status_code=404, detail="That slot no longer exists.")
+
+    refusal = _checkin_window_refusal(collab, slot, campaign)
+    if refusal:
+        raise HTTPException(status_code=409, detail=refusal)
+
+    return await _check_in_collaboration(collab, campaign, user, method="self_qr")
 
 
 @creator_router.post("/collaborations/{collab_id}/cancel-slot")
@@ -5207,8 +5802,15 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "areas": doc.get("areas") or [],
         # What a creator reads on the public page.
         "about": doc.get("about"),
+        "tagline": doc.get("tagline"),
         "city": doc.get("city"),
         "outlets": doc.get("outlets") or [],
+        # What they're looking for. Read back so the form can re-seed rather
+        # than default — a brand editing its address must not silently reset
+        # the preferences the ranking has been using.
+        "content_types": _clean_content_types(doc.get("content_types")),
+        "preferred_follower_tier": doc.get("preferred_follower_tier"),
+        "typical_budget_band": doc.get("typical_budget_band"),
         # The business as claimed, which is what documents get checked against.
         "legal_entity_name": doc.get("legal_entity_name"),
         "gst_number": doc.get("gst_number"),
@@ -5247,6 +5849,12 @@ def _serialize_brand_campaign(
         "title": doc.get("title"),
         # Never None: the owner's console prints one of two words on every row.
         "visibility": _campaign_visibility(doc),
+        "requires_draft_approval": _requires_draft_approval(doc),
+        # When a shoot may happen. Shipped on every campaign shape rather than
+        # only the owner's, because the creator deciding whether to apply is
+        # the person most affected by "Saturdays only, evenings".
+        "restricted_days": sorted(_restricted_days(doc)),
+        "shoot_windows": _shoot_windows(doc),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
         "budget_per_creator": doc.get("budget_per_creator"),
@@ -5689,6 +6297,23 @@ async def _brand_profile_response(profile: dict) -> dict:
         "max_image_bytes": max_upload_bytes(),
         "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
     }
+    # The three option lists, from the server rather than copied into the
+    # form. A dropdown offering a value the API refuses is a dead control, and
+    # a tier label that disagrees with the one the ranking reports is exactly
+    # the vocabulary split these tiers exist to end.
+    out["preferences"] = {
+        "content_types": [
+            {"value": key, "label": label} for key, label, _ in CONTENT_TYPES
+        ],
+        "follower_tiers": [
+            {"value": key, "label": label, "range": human}
+            for key, _, _, label, human in FOLLOWER_TIERS
+        ]
+        + [{"value": "any", "label": "Any", "range": "No preference"}],
+        "budget_bands": [
+            {"value": key, "label": label} for key, _, _, label in BUDGET_BANDS
+        ],
+    }
     return out
 
 
@@ -5727,6 +6352,7 @@ async def update_brand_profile(
 
     text("business_name", payload.business_name)
     text("about", payload.about)
+    text("tagline", payload.tagline)
     text("legal_entity_name", payload.legal_entity_name)
     text("registered_address", payload.registered_address)
     text("contact_person_name", payload.contact_person_name)
@@ -5746,6 +6372,16 @@ async def update_brand_profile(
         update["city"] = _canonical_city(payload.city)
     if "outlets" in sent:
         update["outlets"] = _clean_outlets(payload.outlets)
+    if "content_types" in sent:
+        update["content_types"] = _clean_content_types(payload.content_types)
+    if "preferred_follower_tier" in sent:
+        # "any" is a real answer and is stored as one; it means "we don't
+        # mind", which is different from a brand that never reached the
+        # question. Only the three tier keys steer the ranking.
+        update["preferred_follower_tier"] = payload.preferred_follower_tier
+    if "typical_budget_band" in sent:
+        band = (payload.typical_budget_band or "").strip()
+        update["typical_budget_band"] = band if band in BUDGET_BAND_KEYS else None
     if "gst_number" in sent:
         update["gst_number"] = _clean_gstin(payload.gst_number)
     if "website" in sent:
@@ -6034,6 +6670,19 @@ async def create_brand_campaign(
         "compensation_type": payload.compensation_type,
         "execution_owner": payload.execution_owner,
         "visibility": payload.visibility,
+        # Defaults on for a brand running its own campaign and off when they
+        # have handed execution to us — our own managers are the reviewers
+        # either way, and a gate we impose on ourselves by default is process
+        # for its own sake. Either can be set explicitly.
+        "requires_draft_approval": (
+            payload.execution_owner != "weare"
+            if payload.requires_draft_approval is None
+            else bool(payload.requires_draft_approval)
+        ),
+        # When the venue can actually take people. Empty means no restriction,
+        # which is what a brand that skipped the question is saying.
+        "restricted_days": _clean_restricted_days(payload.restricted_days),
+        "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
@@ -6111,6 +6760,13 @@ async def update_brand_campaign(
     # this loop copies whatever the payload carried, compensation_type included.
     if "city" in update:
         update["city"] = _canonical_city(update["city"]) or DEFAULT_CAMPAIGN_CITY
+    # Both go through the same cleaners as creation. An empty list is a real
+    # value here — clearing the restriction — so these are checked for
+    # presence rather than truth.
+    if "restricted_days" in update:
+        update["restricted_days"] = _clean_restricted_days(update["restricted_days"])
+    if "shoot_windows" in update:
+        update["shoot_windows"] = _clean_shoot_windows(update["shoot_windows"])
     _refuse_brand_barter(doc, update)
     _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
@@ -6540,10 +7196,14 @@ async def list_campaign_applicants(
             "in_progress": sum(
                 1
                 for r in rows
-                if r["state"] in ("accepted", "commercial_agreed", "slot_booked", "attended")
+                if r["state"]
+                in ("accepted", "commercial_agreed", "slot_booked", "attended", "draft_approved")
             ),
+            # Both review steps under one count: from the board's side "there
+            # is something of mine to look at" is one job, whichever end of
+            # the shoot it came from.
             "needs_content_review": sum(
-                1 for r in rows if r["state"] == "content_submitted"
+                1 for r in rows if r["state"] in ("draft_submitted", "content_submitted")
             ),
             "closed": sum(
                 1 for r in rows if r["state"] in ("closed", "declined", "cancelled")
@@ -7054,8 +7714,18 @@ async def brand_directory_filters(
 CREATOR_MATCH_WEIGHTS = {
     # What they cover and what they make, against the brief. The strongest
     # signal by far — a food creator on a food brief is most of the decision.
-    "niche": 30,
-    "genre": 15,
+    #
+    # These two used to be 30 and 15. `content_fit` came out of *their* budget
+    # rather than out of city or reliability, on purpose: it measures the same
+    # thing they do — "does this creator's work look like what is being asked
+    # for" — at a finer and more factual grain, because which formats somebody
+    # actually posts is a fact and a niche is a description.
+    "niche": 25,
+    "genre": 10,
+    # Whether they can make the formats the brand asked for at all. A brand
+    # that needs YouTube Shorts and a creator with no YouTube is not a weak
+    # match, it is not a match.
+    "content_fit": 10,
     # Being in the city. Not decisive on its own (a creator travels) but a
     # campaign with a venue is much easier to fill locally.
     "city": 20,
@@ -7068,29 +7738,37 @@ CREATOR_MATCH_WEIGHTS = {
     "delivery": 10,
 }
 
-# Budget per creator → the follower band that budget is realistically buying.
-# Rupees, ascending; the last band has no upper bound.
-CREATOR_REACH_TIERS = (
-    (3_000, 1_000, 10_000, "nano"),
-    (10_000, 10_000, 50_000, "micro"),
-    (30_000, 50_000, 200_000, "mid"),
-    (float("inf"), 200_000, None, "macro"),
-)
-
-# Signals with nothing behind them score here rather than at zero. A creator
-# whose engagement we have never measured is an unknown, not a bad bet, and
-# scoring unknowns at zero would rank every creator without a connected
-# Instagram account below every creator with a poor one.
-_UNKNOWN_SIGNAL = 0.5
-
 
 def _reach_tier(budget: Optional[float]) -> tuple:
-    """The follower band a budget is buying: (low, high_or_None, label)."""
+    """The follower band a budget is buying: (low, high_or_None, key)."""
     amount = float(budget or 0)
-    for ceiling, low, high, label in CREATOR_REACH_TIERS:
+    key = CREATOR_REACH_TIERS[-1][1]
+    for ceiling, tier_key in CREATOR_REACH_TIERS:
         if amount < ceiling:
-            return low, high, label
-    return CREATOR_REACH_TIERS[-1][1], CREATOR_REACH_TIERS[-1][2], CREATOR_REACH_TIERS[-1][3]
+            key = tier_key
+            break
+    low, high = _tier_bounds(key)
+    return low, high, key
+
+
+def _wanted_reach_tier(campaign: Optional[dict], brand: Optional[dict]) -> tuple:
+    """The audience this brief is looking for: (low, high_or_None, key, stated).
+
+    **A stated preference beats an inferred one.** The budget map is a guess
+    about what a fee buys; a brand that answered "we work with micro creators"
+    has told us, and inferring over the top of that is ignoring the answer.
+    A brand's typical budget band stands in when the campaign has no fee of
+    its own — a barter brief, or a draft where the number isn't in yet.
+    """
+    stated = (brand or {}).get("preferred_follower_tier")
+    if stated in FOLLOWER_TIER_KEYS:
+        low, high = _tier_bounds(stated)
+        return low, high, stated, True
+    budget = (campaign or {}).get("budget_per_creator")
+    if not budget:
+        budget = _budget_band_midpoint((brand or {}).get("typical_budget_band"))
+    low, high, key = _reach_tier(budget)
+    return low, high, key, False
 
 
 def _reach_fit(followers: Optional[int], budget: Optional[float]) -> Optional[float]:
@@ -7104,6 +7782,10 @@ def _reach_fit(followers: Optional[int], budget: Optional[float]) -> Optional[fl
     if not isinstance(followers, int) or followers <= 0:
         return None
     low, high, _ = _reach_tier(budget)
+    return _fit_within(followers, low, high)
+
+
+def _fit_within(followers: int, low: int, high: Optional[int]) -> float:
     if followers < low:
         return max(0.0, followers / low)
     if high is not None and followers > high:
@@ -7197,6 +7879,7 @@ def score_creator_for_campaign(
     profile: dict,
     campaign: dict,
     *,
+    brand: Optional[dict] = None,
     delivery: Optional[dict] = None,
     weights: Optional[dict] = None,
 ) -> dict:
@@ -7226,8 +7909,19 @@ def score_creator_for_campaign(
     city_match = bool(campaign_city) and campaign_city in creator_places
 
     followers = profile.get("follower_count")
-    fit = _reach_fit(followers if isinstance(followers, int) else None,
-                     campaign.get("budget_per_creator"))
+    # What audience this brief wants: the brand's stated tier if they set one,
+    # the budget's guess otherwise. Passing the brand rather than folding its
+    # preferences onto the campaign keeps this function honest about where
+    # each input came from.
+    low, high, wanted_tier, tier_stated = _wanted_reach_tier(campaign, brand)
+    fit = (
+        _fit_within(followers, low, high)
+        if isinstance(followers, int) and followers > 0
+        else None
+    )
+
+    wanted_content = _clean_content_types((brand or {}).get("content_types"))
+    content = _content_fit(profile, wanted_content)
 
     rate = profile.get("engagement_rate")
     # 3% is a good engagement rate on Instagram; anything at or above it takes
@@ -7241,6 +7935,9 @@ def score_creator_for_campaign(
     components = {
         "niche": round(w["niche"] * (1.0 if niches else 0.0), 1),
         "genre": round(w["genre"] * (1.0 if genres else 0.0), 1),
+        "content_fit": round(
+            w["content_fit"] * (_UNKNOWN_SIGNAL if content is None else content), 1
+        ),
         "city": round(w["city"] * (1.0 if city_match else 0.0), 1),
         "reach_fit": round(w["reach_fit"] * (_UNKNOWN_SIGNAL if fit is None else fit), 1),
         "engagement": round(
@@ -7262,7 +7959,23 @@ def score_creator_for_campaign(
         bits.append(f"based in {campaign.get('area')}")
     reach = _human_followers(followers if isinstance(followers, int) else None)
     if reach:
-        bits.append(f"{reach} followers")
+        tier = _tier_for_followers(followers)
+        label = next((t[3] for t in FOLLOWER_TIERS if t[0] == tier), None)
+        bits.append(f"{reach} followers" + (f" ({label.lower()})" if label else ""))
+    # Only when it's a miss. "Posts reels" on a brief asking for reels is
+    # noise; "no YouTube" on one asking for Shorts is the reason to look
+    # elsewhere, and it is the only version of this a brand can act on.
+    if content is not None and content < 1.0:
+        gaps = sorted(
+            {
+                CONTENT_TYPE_PLATFORM[key]
+                for key in wanted_content
+                if CONTENT_TYPE_PLATFORM.get(key)
+                not in {str(p).strip().lower() for p in profile.get("platforms") or []}
+            }
+        )
+        if gaps:
+            bits.append("no " + _and_list([g.title() for g in gaps]))
     if isinstance(rate, (int, float)) and rate >= 3.0:
         bits.append(f"{rate:g}% engagement")
     if completed:
@@ -7285,11 +7998,19 @@ def score_creator_for_campaign(
             name
             for name, value in (
                 ("reach_fit", fit),
+                ("content_fit", content),
                 ("engagement", engagement),
                 ("delivery", reliability),
             )
             if value is None
         ],
+        # Which audience this was ranked against, and whether the brand said
+        # so or we guessed from the fee. A brand seeing "ranked for micro"
+        # beside a list of micro creators can argue with it; one seeing only
+        # the list cannot.
+        "wanted_tier": wanted_tier,
+        "wanted_tier_stated": tier_stated,
+        "wanted_content_types": wanted_content,
     }
 
 
@@ -7389,11 +8110,14 @@ async def _suggest_creators_for_campaign(
 
     profiles = await db.creator_profiles.find(query).to_list(length=500)
     history = await _delivery_history([p["user_id"] for p in profiles])
+    # What this brand told us it is looking for, once for the whole page. A
+    # standing preference beats re-deriving it from each brief's budget.
+    brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
 
     scored = []
     for profile in profiles:
         result = score_creator_for_campaign(
-            profile, campaign, delivery=history.get(profile["user_id"])
+            profile, campaign, brand=brand, delivery=history.get(profile["user_id"])
         )
         scored.append(
             {
@@ -7415,7 +8139,7 @@ async def _suggest_creators_for_campaign(
     limit = max(1, min(int(limit or 20), 100))
     offset = max(0, int(offset or 0))
     page = scored[offset:offset + limit]
-    low, high, tier = _reach_tier(campaign.get("budget_per_creator"))
+    low, high, tier, stated = _wanted_reach_tier(campaign, brand)
     return {
         "campaign": {
             "id": str(campaign["_id"]),
@@ -7426,8 +8150,19 @@ async def _suggest_creators_for_campaign(
             "compensation_type": _compensation_type(campaign),
         },
         # Shown in the panel so the ranking explains itself before a brand has
-        # to ask why a 500k creator isn't at the top of a ₹4,000 brief.
-        "budget_tier": {"label": tier, "min_followers": low, "max_followers": high},
+        # to ask why a 500k creator isn't at the top of a ₹4,000 brief. `stated`
+        # is the difference between "you told us micro" and "we read micro off
+        # the fee" — one of those is worth arguing with and the other is worth
+        # correcting on the profile.
+        "budget_tier": {
+            "label": tier,
+            "min_followers": low,
+            "max_followers": high,
+            "stated": stated,
+        },
+        # What the brand said it wants made, so the panel can say the ranking
+        # is using it rather than leaving it as an invisible thumb on a scale.
+        "wanted_content_types": _clean_content_types(brand.get("content_types")),
         "weights": CREATOR_MATCH_WEIGHTS,
         "total": len(scored),
         "limit": limit,
@@ -7684,36 +8419,56 @@ api_router.include_router(brand_router)
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
-def _next_collab_state(current: str) -> Optional[str]:
-    """The next step on the happy path, or None at the end / on an exit state."""
+def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
+    """The next step on this campaign's happy path, or None at the end.
+
+    Takes the campaign because the ladder is now per-campaign: with draft
+    review off, `attended` steps straight to `content_submitted` exactly as it
+    always did. A caller without the campaign in hand gets the draft-free
+    ladder — the safe reading for everything written before the field existed.
+    """
+    ladder = _collab_ladder(campaign)
+    if current in DRAFT_REVIEW_STATES and current not in ladder:
+        # A collaboration standing on a draft state is on the draft ladder,
+        # whatever the caller failed to pass.
+        ladder = COLLAB_STATE_ORDER
     try:
-        idx = COLLAB_STATE_ORDER.index(current)
+        idx = ladder.index(current)
     except ValueError:
         return None  # declined / cancelled have no "next"
-    if idx + 1 >= len(COLLAB_STATE_ORDER):
+    if idx + 1 >= len(ladder):
         return None
-    return COLLAB_STATE_ORDER[idx + 1]
+    return ladder[idx + 1]
 
 
-def _previous_collab_state(current: str) -> Optional[str]:
+def _previous_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
     """The step before this one, or None at the start / on an exit state.
 
-    The mirror of `_next_collab_state`. Terminal exits are not on the ladder, so
-    they have no previous step either — coming back from one is a different
-    decision, not a step backwards.
+    The exact mirror of `_next_collab_state`, campaign and all: reverting a
+    campaign that doesn't review drafts must not land on `draft_approved`, a
+    state nothing on that campaign can ever leave.
     """
+    ladder = _collab_ladder(campaign)
+    if current in DRAFT_REVIEW_STATES and current not in ladder:
+        ladder = COLLAB_STATE_ORDER
     try:
-        idx = COLLAB_STATE_ORDER.index(current)
+        idx = ladder.index(current)
     except ValueError:
         return None
     if idx == 0:
         return None
-    return COLLAB_STATE_ORDER[idx - 1]
+    return ladder[idx - 1]
 
 
 # Steps only the brand may take. The admin console shows them as waiting on the
 # brand rather than offering an Advance button that bypasses the buyer.
 _BRAND_OWNED_TRANSITIONS = {"accepted", "content_approved"}
+
+# Steps the admin advance endpoint refuses for a different reason: they are
+# not decisions to fabricate. A draft has to actually arrive (the creator's
+# upload) and actually be reviewed (the reviewer's own endpoints, which
+# admins may also call).
+_DRAFT_OWNED_TRANSITIONS = set(DRAFT_REVIEW_STATES)
 
 
 # Who has to do something next, and what. One table, read by every surface —
@@ -7732,6 +8487,10 @@ _NEXT_ACTION = {
     "commercial_agreed": ("creator", "Book a slot", "The creator picks their place."),
     "slot_booked": ("creator", "Turn up", "Attendance is marked on the day."),
     "attended": ("creator", "Submit the content", "Links to what they published."),
+    # The reviewer here follows execution_owner, like content review does —
+    # "brand" is the owner vocabulary for "not us and not the creator".
+    "draft_submitted": ("brand", "Review the draft", "Approve it, or send it back with a note, before anything goes live."),
+    "draft_approved": ("creator", "Publish and submit the live link", "The draft is approved — post it, then drop the link."),
     "content_submitted": ("brand", "Approve or request changes", "The brand reviews the content."),
     "content_approved": ("admin", "Move into payment", "Raise the payout."),
     "in_payment": ("admin", "Record the payout", "Mark it paid to close this out."),
@@ -7753,6 +8512,13 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
         label = "Pick a time"
         detail = "The creator chooses a time inside the campaign's window."
 
+    # On a campaign that reviews drafts, what follows attendance is a draft,
+    # not a live link. The state is the same; the instruction is not, and the
+    # creator is the one who has to act on the difference.
+    if state == "attended" and _requires_draft_approval(campaign):
+        label = "Submit the draft"
+        detail = "The draft is reviewed before anything is published."
+
     return {
         "state": state,
         "owner": owner,
@@ -7771,13 +8537,21 @@ def _lifecycle_for(collab: dict, campaign: Optional[dict] = None) -> dict:
     somebody the wrong thing.
     """
     state = collab.get("state", "applied")
+    # The ladder is per-campaign: five steps after attendance on a campaign
+    # that reviews drafts, three on one that doesn't. A collaboration already
+    # standing on a draft state draws the draft ladder whatever the campaign
+    # now says — a toggle flipped mid-flight must not erase the step somebody
+    # is on.
+    ladder = _collab_ladder(campaign)
+    if state in DRAFT_REVIEW_STATES and state not in ladder:
+        ladder = COLLAB_STATE_ORDER
     try:
-        current_index = COLLAB_STATE_ORDER.index(state)
+        current_index = ladder.index(state)
     except ValueError:
         current_index = -1  # declined / cancelled are not on the ladder
 
     steps = []
-    for i, step in enumerate(COLLAB_STATE_ORDER):
+    for i, step in enumerate(ladder):
         owner, label, _ = _NEXT_ACTION.get(step, (None, step, ""))
         steps.append(
             {
@@ -9511,6 +10285,10 @@ FILL_WARNING_RATIO = 0.7       # below this share of the brief, it is short
 SLOT_WARNING_DAYS = 2
 # Attended, and no content since. A creator needs a few days to edit and post.
 CONTENT_OVERDUE_DAYS = 7
+# A draft sent up and nobody has looked at it. Shorter than the others because
+# the creator is blocked while it waits, and because this is the one stage in
+# the ladder where *we* are the ones holding somebody up.
+DRAFT_REVIEW_OVERDUE_DAYS = 2
 # Approved work with money still sitting here.
 PAYMENT_OVERDUE_DAYS = 7
 # A brand that submitted documents and heard nothing.
@@ -9629,9 +10407,13 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         }
     )
 
-    # 3. Turned up, never posted.
+    # 3. Turned up, never posted. `draft_approved` counts: the reviewer has
+    # said yes and the work is still not out, which is the same problem.
     overdue = await db.collaborations.find(
-        {"state": "attended", "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)}}
+        {
+            "state": {"$in": ["attended", "draft_approved"]},
+            "updated_at": {"$lte": _days_ago(CONTENT_OVERDUE_DAYS)},
+        }
     ).to_list(length=500)
     names = await _creator_names_for([c["creator_id"] for c in overdue])
     camp_titles = await _campaign_titles_for([c["campaign_id"] for c in overdue])
@@ -9639,7 +10421,7 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         {
             "key": "content_overdue",
             "label": "Content overdue",
-            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing submitted.",
+            "blurb": f"Attended more than {CONTENT_OVERDUE_DAYS} days ago with nothing published.",
             "items": [
                 {
                     "id": str(c["_id"]),
@@ -9650,6 +10432,39 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
                     "at": _iso(c.get("updated_at")),
                 }
                 for c in overdue
+            ],
+        }
+    )
+
+    # 3b. A draft nobody has looked at. The stage this guards is the one place
+    # in the ladder where the delay is ours: the creator has done the work, is
+    # blocked from publishing, and no notification fires twice.
+    stale_drafts = await db.collaborations.find(
+        {
+            "state": "draft_submitted",
+            "updated_at": {"$lte": _days_ago(DRAFT_REVIEW_OVERDUE_DAYS)},
+        }
+    ).to_list(length=500)
+    names = await _creator_names_for([c["creator_id"] for c in stale_drafts])
+    camp_titles = await _campaign_titles_for([c["campaign_id"] for c in stale_drafts])
+    checks.append(
+        {
+            "key": "draft_review_overdue",
+            "label": "Drafts waiting on a review",
+            "blurb": (
+                f"Sent more than {DRAFT_REVIEW_OVERDUE_DAYS} days ago. The creator "
+                "can't publish until somebody looks."
+            ),
+            "items": [
+                {
+                    "id": str(c["_id"]),
+                    "label": names.get(c["creator_id"]) or "Creator",
+                    "detail": f"{camp_titles.get(c['campaign_id']) or 'Campaign'} · sent {timeago_days(c.get('updated_at'), now)}",
+                    "href": f"/admin/collaborations/{c['_id']}",
+                    "severity": "warning",
+                    "at": _iso(c.get("updated_at")),
+                }
+                for c in stale_drafts
             ],
         }
     )
@@ -9765,6 +10580,7 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
             "fill_warning_ratio": FILL_WARNING_RATIO,
             "slot_warning_days": SLOT_WARNING_DAYS,
             "content_overdue_days": CONTENT_OVERDUE_DAYS,
+            "draft_review_overdue_days": DRAFT_REVIEW_OVERDUE_DAYS,
             "payment_overdue_days": PAYMENT_OVERDUE_DAYS,
             "verification_overdue_days": VERIFICATION_OVERDUE_DAYS,
             "profile_stale_days": PROFILE_STALE_DAYS,
@@ -12478,14 +13294,21 @@ async def list_all_collaborations(
         row = _serialize_admin_collab(
             c, camp, brand_name, creator_user, creator_profile, payment
         )
-        next_state = _next_collab_state(row["state"])
+        next_state = _next_collab_state(row["state"], camp)
         row["next_state"] = next_state
         # Tell the console which button, if any, belongs to it — the brand owns
-        # accepting and approving, and the API will refuse if we bypass them.
+        # accepting and approving, the creator and the reviewer own the draft,
+        # and the API will refuse if we bypass any of them.
         row["next_owner"] = (
-            "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
+            "brand"
+            if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
+            else "creator"
+            if next_state == "draft_submitted"
+            else "admin"
         )
-        row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+        row["can_advance"] = bool(next_state) and next_state not in (
+            _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS
+        )
         row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
         by_state.setdefault(row["state"], []).append(row)
     return {"by_state": by_state, "total": len(collabs)}
@@ -12535,10 +13358,18 @@ async def get_admin_collaboration_detail(
         creator_profile,
         payment,
     )
-    next_state = _next_collab_state(row["state"])
+    next_state = _next_collab_state(row["state"], campaign)
     row["next_state"] = next_state
-    row["next_owner"] = "brand" if next_state in _BRAND_OWNED_TRANSITIONS else "admin"
-    row["can_advance"] = bool(next_state) and next_state not in _BRAND_OWNED_TRANSITIONS
+    row["next_owner"] = (
+        "brand"
+        if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
+        else "creator"
+        if next_state == "draft_submitted"
+        else "admin"
+    )
+    row["can_advance"] = bool(next_state) and next_state not in (
+        _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS
+    )
     row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
 
     slot = None
@@ -12588,8 +13419,10 @@ async def get_admin_collaboration_detail(
             for e in events
         ],
         # The order the states actually run in, so the page can draw the ones
-        # still ahead rather than only the ones already behind.
-        "state_order": list(COLLAB_STATE_ORDER),
+        # still ahead rather than only the ones already behind. Per-campaign:
+        # the two draft steps are only on the ladder where the campaign asked
+        # for them.
+        "state_order": list(_collab_ladder(campaign)),
         "terminal_states": list(TERMINAL_COLLAB_STATES),
         # Whether there is anything to measure yet, decided here rather than by
         # the UI keeping its own copy of the delivered set.
@@ -12636,7 +13469,12 @@ async def advance_collaboration(
             detail="This collaboration is awaiting payment — use Mark as paid to close it.",
         )
 
-    to_state = _next_collab_state(current)
+    # The ladder depends on the campaign, so read it before deciding what
+    # "next" even means: on a campaign that reviews drafts, what follows
+    # attendance is a draft, not the live link.
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
+    to_state = _next_collab_state(current, campaign)
     if not to_state:
         raise HTTPException(
             status_code=400, detail="Collaboration is already at the final state"
@@ -12649,6 +13487,18 @@ async def advance_collaboration(
                 "approve content from their dashboard."
             ),
         )
+    if to_state in _DRAFT_OWNED_TRANSITIONS:
+        # Not a step to fabricate from the console: a draft has to actually
+        # arrive, and it has to actually be looked at. Both happen on the
+        # draft routes, which admins may call.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This campaign reviews drafts before publication. The creator "
+                "submits the draft and a reviewer approves it — neither is a "
+                "step to mark from here."
+            ),
+        )
 
     now = datetime.now(timezone.utc)
     update: dict = {"state": to_state, "updated_at": now}
@@ -12657,10 +13507,9 @@ async def advance_collaboration(
         # What the amount must be depends on how the brief pays. This used to
         # demand a figure whatever the campaign was, which left every barter
         # collaboration stuck at `accepted` for good.
-        agreed_campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
-        if not agreed_campaign:
+        if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
-        resolved = _resolve_agreed_amount(agreed_campaign, payload.agreed_amount)
+        resolved = _resolve_agreed_amount(campaign, payload.agreed_amount)
         if resolved is not None:
             update["agreed_amount"] = resolved
         update["agreed_at"] = now
@@ -12743,7 +13592,6 @@ async def advance_collaboration(
         after={k: v for k, v in update.items() if k != "updated_at"},
     )
 
-    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     campaign_title = (campaign or {}).get("title") or "your collaboration"
     if to_state == "commercial_agreed":
         # The next move is the creator's, so say so — this is the message that
@@ -12779,7 +13627,7 @@ async def advance_collaboration(
         "state": updated["state"],
         "agreed_amount": updated.get("agreed_amount"),
         "scheduled_at": _iso(updated.get("scheduled_at")),
-        "next_state": _next_collab_state(updated["state"]),
+        "next_state": _next_collab_state(updated["state"], campaign),
     }
 
 
@@ -12824,7 +13672,12 @@ async def revert_collaboration(
             ),
         )
 
-    to_state = _previous_collab_state(current)
+    # Same reason `advance` reads it: the step behind depends on which ladder
+    # this campaign walks, and landing on `draft_approved` where drafts are
+    # not reviewed would be a state nothing can leave.
+    revert_campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+
+    to_state = _previous_collab_state(current, revert_campaign)
     if not to_state:
         raise HTTPException(
             status_code=409,
@@ -14494,6 +15347,14 @@ def _validate_slot_times(campaign: dict, starts_at: datetime, ends_at: Optional[
                 status_code=422,
                 detail="The window has to sit inside the campaign's dates.",
             )
+
+    # What the brand said about days and hours. Checked here rather than at
+    # each call site so creating a slot and moving one obey the same rule —
+    # a slot dragged onto a Monday the venue is shut is exactly as wrong as
+    # one created there.
+    refusal = _shoot_time_refusal(campaign, starts, ends)
+    if refusal:
+        raise HTTPException(status_code=422, detail=refusal)
     return starts, ends
 
 
@@ -14528,7 +15389,7 @@ async def _managed_collab_or_404(collab_id: str, user: dict):
     return collab, campaign
 
 
-def _serialize_slot(doc: dict) -> dict:
+def _serialize_slot(doc: dict, campaign: Optional[dict] = None) -> dict:
     capacity = int(doc.get("capacity") or 0)
     booked = int(doc.get("booked_count") or 0)
     return {
@@ -14539,6 +15400,15 @@ def _serialize_slot(doc: dict) -> dict:
         "capacity": capacity,
         "booked_count": booked,
         "spots_left": max(0, capacity - booked),
+        # A slot that predates the brand's restriction, or was written by an
+        # admin going round it. **Labelled, not refused**: the slot exists and
+        # people may already hold seats on it, and killing bookings on a slot
+        # we advertised would strand a creator with a dead picker. The manager
+        # is the one who can ring the venue, so the manager is who gets told.
+        "outside_preferences": bool(
+            campaign
+            and _shoot_time_refusal(campaign, doc.get("starts_at"), doc.get("ends_at"))
+        ),
         "created_at": _iso(doc.get("created_at")),
     }
 
@@ -14624,7 +15494,11 @@ async def list_campaign_slots(
     return {
         "campaign_id": campaign_id,
         "campaign_type": campaign.get("campaign_type"),
-        "slots": [_serialize_slot(d) for d in docs],
+        # The brand's own words, so the manager building slots sees the rule
+        # rather than discovering it in a 422.
+        "restricted_days": sorted(_restricted_days(campaign)),
+        "shoot_windows": _shoot_windows(campaign),
+        "slots": [_serialize_slot(d, campaign) for d in docs],
     }
 
 
@@ -14886,7 +15760,11 @@ async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
                     "no_show"
                     if state in ("declined", "cancelled")
                     else "attended"
-                    if state in ("attended", "content_submitted", "content_approved",
+                    # Everything past the shoot, draft states included: a
+                    # creator who turned up and sent a cut must not read back
+                    # as still expected on the door roster.
+                    if state in ("attended", "draft_submitted", "draft_approved",
+                                 "content_submitted", "content_approved",
                                  "in_payment", "closed")
                     else "expected"
                 ),
@@ -14957,16 +15835,125 @@ async def campaign_daysheet(
     )
 
 
-async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> dict:
+# ---------------------------------------------------------------------------
+# Self check-in
+#
+# A manager checking twenty people in one at a time is twenty taps on the worst
+# network in the product. The creator has a phone in their hand already, so the
+# QR on the manager's screen lets them do it — and the manual button stays,
+# because the fallback is the thing that works when the camera doesn't.
+#
+# **The code names the slot, never the creator.** The creator is whoever is
+# signed in on the phone that opened it, so one code serves the whole queue; a
+# per-creator code would be one QR per person, which is the problem this is
+# solving. That means the code alone proves nothing about identity — every
+# check-in is still checked against *this* creator's own booking on that slot.
+# ---------------------------------------------------------------------------
+
+# Short, because the property the code actually has is "you were looking at the
+# manager's screen a moment ago". A photograph of it taken across the room is
+# stale before it can be passed around.
+CHECKIN_CODE_TTL_SECONDS = 90
+
+# How far either side of the slot a check-in is accepted. Generous before, for
+# the creator who arrives early and waits; longer after, because the shoot
+# itself takes hours and somebody always checks in on their way out.
+CHECKIN_EARLY_MINUTES = 120
+CHECKIN_LATE_MINUTES = 240
+
+
+def _mint_checkin_code(slot: dict, campaign: dict) -> dict:
+    """A short-lived signed code for one slot, for the QR on the day-of screen."""
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=CHECKIN_CODE_TTL_SECONDS)
+    token = jwt.encode(
+        {
+            "typ": "checkin",
+            "slot": str(slot["_id"]),
+            "campaign": str(campaign["_id"]),
+            "exp": expires,
+        },
+        _jwt_secret(),
+        algorithm=JWT_ALGORITHM,
+    )
+    return {
+        "code": token,
+        # The page the QR points at. Built off the share base like every other
+        # link we put in front of somebody, so it works from a phone that has
+        # never had the app open.
+        "url": f"{_share_base()}/check-in?code={token}",
+        "expires_at": _iso(expires),
+        "expires_in": CHECKIN_CODE_TTL_SECONDS,
+    }
+
+
+def _read_checkin_code(code: str) -> dict:
+    """The claims in a check-in code, or a 422 saying which way it failed.
+
+    Expiry and forgery get different messages on purpose: "this code has
+    expired" tells somebody at a venue to look at the screen again, which is
+    the fix, while a signature failure is not a thing a creator can act on and
+    should not be dressed up as one.
+    """
+    try:
+        claims = jwt.decode(code or "", _jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=422,
+            detail="That code has expired — the screen shows a fresh one every minute.",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+    if claims.get("typ") != "checkin":
+        # Every other token this app signs — a session, an impersonation —
+        # verifies with the same key. Without this check any of them would
+        # work as a check-in code.
+        raise HTTPException(status_code=422, detail="That isn't a valid check-in code.")
+    return claims
+
+
+def _checkin_window_refusal(collab: dict, slot: Optional[dict], campaign: dict) -> Optional[str]:
+    """Whether now is close enough to the booking, or why it isn't.
+
+    The code proves the creator is looking at the manager's screen; this is
+    what stops that screen being used to check somebody in a week early. Read
+    off the collaboration's own `scheduled_at` first, because on a personal
+    table that is the time this creator picked inside the window, not the
+    window itself.
+    """
+    when = _as_utc(collab.get("scheduled_at")) or _as_utc((slot or {}).get("starts_at"))
+    if when is None:
+        # Nothing to compare against. A booking with no time is a data problem
+        # and refusing here would strand somebody who is standing at the door.
+        return None
+    now = datetime.now(timezone.utc)
+    ends = _as_utc((slot or {}).get("ends_at")) or when
+    if now < when - timedelta(minutes=CHECKIN_EARLY_MINUTES):
+        return "It's too early to check in for this one. Try closer to your slot."
+    if now > ends + timedelta(minutes=CHECKIN_LATE_MINUTES):
+        return (
+            "This slot finished a while ago. Ask the campaign manager to check "
+            "you in."
+        )
+    return None
+
+
+async def _check_in_collaboration(
+    collab: dict, campaign: dict, user: dict, *, method: str = "manual"
+) -> dict:
     """Mark a creator as turned up.
 
     The same transition the admin's advance makes, done by the person actually
     standing there. Only from slot_booked — checking in somebody who never got
     a slot would skip the booking the venue is counting on.
 
-    Shared by the WeAre manager's route and the brand manager's: who is holding
-    the clipboard depends on whether the campaign was reassigned, and the
-    attendance record must not depend on that.
+    Shared by the WeAre manager's route, the brand manager's, **and the
+    creator's own QR scan**: who is holding the clipboard depends on whether
+    the campaign was reassigned and on whether the camera worked, and the
+    attendance record must not depend on either. `method` rides on the audit
+    line so the two paths are distinguishable without being different — the
+    action, the states and the campaign context are identical, which is what
+    makes "who was actually here" one question with one answer.
     """
     collab_id = str(collab["_id"])
     current = collab.get("state")
@@ -15003,10 +15990,15 @@ async def _check_in_collaboration(collab: dict, campaign: dict, user: dict) -> d
         "collaboration",
         collab["_id"],
         before={"state": "slot_booked"},
-        after={"state": "attended"},
+        after={"state": "attended", "method": method},
         **_campaign_audit_context(campaign),
     )
-    return {"id": collab_id, "state": "attended", "checked_in_at": _iso(now)}
+    return {
+        "id": collab_id,
+        "state": "attended",
+        "checked_in_at": _iso(now),
+        "method": method,
+    }
 
 
 @manager_router.post("/collaborations/{collab_id}/performance")
@@ -15033,6 +16025,21 @@ async def check_in_creator(
     """Mark a creator as turned up, as the assigned WeAre manager."""
     collab, campaign = await _managed_collab_or_404(collab_id, user)
     return await _check_in_collaboration(collab, campaign, user)
+
+
+@manager_router.get("/slots/{slot_id}/check-in-code")
+async def manager_checkin_code(
+    slot_id: str,
+    user: dict = Depends(require_roles("campaign_manager", "admin")),
+):
+    """The code behind the QR on the day-of screen.
+
+    Scoped by `_slot_or_404`, which asserts the caller runs the campaign the
+    slot belongs to — a code for somebody else's shoot would check their
+    creators in.
+    """
+    slot, campaign = await _slot_or_404(slot_id, user)
+    return _mint_checkin_code(slot, campaign)
 
 
 @manager_router.post("/collaborations/{collab_id}/no-show")
@@ -15316,6 +16323,13 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         # serialisation has already passed the invited-or-applied gate, and
         # telling them it is invite-only is telling them something flattering.
         "visibility": _campaign_visibility(doc),
+        # The creator needs to know before they shoot that a draft comes first.
+        "requires_draft_approval": _requires_draft_approval(doc),
+        # When a shoot may happen. Shipped on every campaign shape rather than
+        # only the owner's, because the creator deciding whether to apply is
+        # the person most affected by "Saturdays only, evenings".
+        "restricted_days": sorted(_restricted_days(doc)),
+        "shoot_windows": _shoot_windows(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign
@@ -15325,8 +16339,11 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "campaign_type": doc.get("campaign_type"),
         "cover_image_url": doc.get("cover_image_url"),
         # The brand's mark travels with the brand's name, so a card can show
-        # both without a second request.
+        # both without a second request — and so does the one line that says
+        # what they are. A card carrying only a name makes every unfamiliar
+        # brand look the same, which is most of them to most creators.
         "brand_logo_url": (brand or {}).get("logo_url"),
+        "brand_tagline": (brand or {}).get("tagline"),
         # A creator deciding whether to give up a day wants to know whose
         # WhatsApp they will be on. Carries no contact detail — just which of
         # us they will be dealing with.
@@ -15988,9 +17005,33 @@ async def _claim_slot(
     resolve inside the database and exactly one wins. If the collaboration then
     moves under us, the seat is handed straight back rather than held for
     somebody who no longer has it.
+
+    **The brand's days and hours are checked here**, before the increment, so
+    both booking routes obey them without a second copy of the rule. Creation
+    checks them too, but the two are not the same check: a slot can predate a
+    restriction, or an admin can have written one past it deliberately, and a
+    creator must not be booked into a venue that has since said it is shut.
     """
     soid = slot["_id"]
     now = datetime.now(timezone.utc)
+
+    # On a personal table the creator named the time, so the plain refusal is
+    # the right thing to say. On a fixed slot they only chose which of the
+    # manager's slots to take, so pointing them at their own picker would be
+    # telling them to fix somebody else's mistake.
+    when = preferred_time or slot.get("starts_at")
+    refusal = _shoot_time_refusal(
+        campaign, when, None if preferred_time else slot.get("ends_at")
+    )
+    if refusal:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                refusal
+                if preferred_time
+                else f"{refusal} Ask the campaign manager for a slot that works."
+            ),
+        )
 
     claimed = await db.campaign_slots.find_one_and_update(
         {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
@@ -16827,6 +17868,353 @@ async def unanswered_questions(user: dict = Depends(require_roles("admin"))):
 api_router.include_router(questions_router)
 
 
+# --- The draft gate ----------------------------------------------------------
+#
+# Before this, a creator submitted a link to something already published: the
+# brand's first sight of the work was after the creator's audience had it. The
+# draft states put a review in front of publication — the creator uploads the
+# cut (or an unlisted link), the reviewer approves it or sends it back with a
+# note, and only then does the creator publish and submit the live link exactly
+# as before.
+#
+# Optional per campaign, and **absent reads off**: every collaboration already
+# in flight keeps the path it started on, because there is no backfill and
+# `_requires_draft_approval` reads a missing field as False. New brand-run
+# campaigns get it on at creation.
+#
+# The file lives in PRIVATE_UPLOAD_DIR for the reason a verification document
+# does — an unpublished draft is the one thing on this platform that must not
+# be one guessed URL away from the internet.
+
+drafts_router = APIRouter(prefix="/drafts", tags=["drafts"])
+
+
+class DraftLinkPayload(BaseModel):
+    """An unlisted link, for creators who would rather not upload 400MB."""
+
+    draft_url: str = Field(min_length=1, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class DraftDecisionPayload(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+async def _draft_reviewable_or_404(collab_id: str, user: dict) -> tuple:
+    """Load a collaboration whose draft this caller may review.
+
+    The reviewer follows `execution_owner`, exactly the rule the question
+    threads use — admins always, the assigned WeAre manager on a weare-run
+    campaign, the owning brand on a brand-run one — so it goes through the
+    same reader rather than a second copy that could drift. 404 rather than
+    403 behind all three, so a collaboration id tells a stranger nothing.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    collab = await db.collaborations.find_one({"_id": oid})
+    if not collab:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return collab, campaign
+
+
+def _serialize_draft(collab: dict) -> dict:
+    """What the review screens read. Never the stored path — the bytes come
+    out of the audited download route or not at all."""
+    draft = collab.get("draft") or {}
+    return {
+        "state": collab.get("state"),
+        "submitted_at": _iso(draft.get("submitted_at")),
+        "kind": draft.get("kind"),
+        "draft_url": draft.get("draft_url"),
+        "original_name": draft.get("original_name"),
+        "mime": draft.get("mime"),
+        "size": draft.get("size"),
+        "note": draft.get("note"),
+        # Every send-back increments this. Two revisions is a conversation;
+        # five is a brief that was never clear, and only a counter shows that.
+        "revision_count": int(collab.get("draft_revision_count") or 0),
+        "revision_note": collab.get("draft_revision_note"),
+        "approved_at": _iso(collab.get("draft_approved_at")),
+        "has_file": bool(draft.get("stored_name")),
+    }
+
+
+async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -> dict:
+    """Attach a draft and move to draft_submitted. Shared by both submit
+    routes so a file draft and a link draft cannot diverge in what they do to
+    the state, the audit line or the notification."""
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": {"$in": ["attended", "draft_submitted"]}},
+        {
+            "$set": {
+                "state": "draft_submitted",
+                "draft": {**draft, "submitted_at": now},
+                # A fresh draft answers the outstanding request.
+                "draft_revision_note": None,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409,
+            detail="This just moved — reload and try again.",
+        )
+
+    await audit(
+        user, "collaboration.submit_draft", "collaboration", collab["_id"],
+        before={"state": collab.get("state")},
+        after={"state": "draft_submitted", "kind": draft.get("kind")},
+        **_campaign_audit_context(campaign),
+    )
+
+    line = (
+        f"{user.get('name') or 'A creator'} sent a draft for review on "
+        f"“{campaign.get('title')}”."
+    )
+    # Routed like everything else that needs a decision on a campaign.
+    if _weare_runs(campaign):
+        await notify_weare_team(
+            campaign, "draft_submitted", title="A draft is waiting for review", body=line
+        )
+    else:
+        await notify_brand_manager(
+            campaign.get("brand_id"),
+            "draft_submitted",
+            title="A draft is waiting for review",
+            body=line,
+            link=f"/brand/applications/{str(collab['_id'])}",
+        )
+    return _serialize_draft(updated)
+
+
+async def _own_collab_for_draft(collab_id: str, user: dict) -> tuple:
+    """The creator's own collaboration, ready for a draft."""
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    if not _requires_draft_approval(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign doesn't use draft review — submit your live link instead.",
+        )
+    if collab.get("state") not in ("attended", "draft_submitted"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A draft can be sent once you're marked attended, and replaced "
+                "any time before it's approved."
+            ),
+        )
+    return collab, campaign
+
+
+@drafts_router.post("/{collab_id}/file")
+async def submit_draft_file(
+    collab_id: str,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(default=None),
+    user: dict = Depends(require_roles("creator")),
+):
+    """Upload the cut itself. Private storage — this is unpublished work."""
+    collab, campaign = await _own_collab_for_draft(collab_id, user)
+    stored = await _store_private_upload(
+        file, prefix=f"draft-{collab_id}", sniffer=sniff_draft_type, kind="Drafts"
+    )
+    return await _record_draft(
+        collab, campaign, user,
+        {
+            "kind": "file",
+            "stored_name": stored.get("stored_name"),
+            "original_name": stored.get("original_name"),
+            "mime": stored.get("mime"),
+            "size": stored.get("size"),
+            "note": (note or "").strip() or None,
+            "draft_url": None,
+        },
+    )
+
+
+@drafts_router.post("/{collab_id}/link")
+async def submit_draft_link(
+    collab_id: str,
+    payload: DraftLinkPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """An unlisted link instead — a private YouTube upload, a Drive file.
+
+    The alternative to a 400MB upload on mobile data, which is most of why a
+    creator would otherwise skip the gate and just publish.
+    """
+    collab, campaign = await _own_collab_for_draft(collab_id, user)
+    url = payload.draft_url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=422, detail="The draft link must start with http:// or https://"
+        )
+    return await _record_draft(
+        collab, campaign, user,
+        {
+            "kind": "link",
+            "draft_url": url,
+            "note": (payload.note or "").strip() or None,
+            "stored_name": None,
+            "original_name": None,
+            "mime": None,
+            "size": None,
+        },
+    )
+
+
+@drafts_router.get("/{collab_id}")
+async def read_draft(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    collab, _campaign = await _draft_reviewable_or_404(collab_id, user)
+    return _serialize_draft(collab)
+
+
+@drafts_router.get("/{collab_id}/file")
+async def download_draft_file(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Stream the draft to its reviewer. The only way these bytes leave.
+
+    Audited like the brand-document download, and for the same reason: this is
+    somebody's unpublished work, and who looked at it is worth knowing.
+    """
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    draft = collab.get("draft") or {}
+    path = _private_upload_path(draft.get("stored_name"))
+    if not path:
+        raise HTTPException(status_code=404, detail="There's no draft file here.")
+
+    await audit(
+        user, "collaboration.draft_view", "collaboration", collab["_id"],
+        after={"kind": draft.get("kind")},
+        **_campaign_audit_context(campaign),
+    )
+    return FileResponse(
+        path,
+        media_type=draft.get("mime") or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'inline; filename="{draft.get("original_name") or "draft"}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@drafts_router.post("/{collab_id}/approve")
+async def approve_draft(
+    collab_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted"},
+        {"$set": {
+            "state": "draft_approved",
+            "draft_approved_at": now,
+            "draft_approved_by": ObjectId(user["_id"]),
+            "draft_revision_note": None,
+            "updated_at": now,
+        }},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="There's no draft waiting for review here."
+        )
+
+    await audit(
+        user, "collaboration.approve_draft", "collaboration", collab["_id"],
+        before={"state": "draft_submitted"}, after={"state": "draft_approved"},
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "draft_approved",
+        title="Your draft was approved",
+        body=f"{campaign.get('title')} — publish it, then drop the live link.",
+        link="/dashboard",
+    )
+    return _serialize_draft(updated)
+
+
+@drafts_router.post("/{collab_id}/request-changes")
+async def request_draft_changes(
+    collab_id: str,
+    payload: DraftDecisionPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Send it back with a note, and count the round trip."""
+    collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    note = (payload.note or "").strip()
+    if not note:
+        raise HTTPException(
+            status_code=422, detail="Tell the creator what needs to change."
+        )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted"},
+        {
+            # Back to "shoot done, draft owed" — the same shape as the live
+            # content request-changes, which returns to `attended` too.
+            "$set": {
+                "state": "attended",
+                "draft_revision_note": note,
+                "updated_at": now,
+            },
+            "$inc": {"draft_revision_count": 1},
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="There's no draft waiting for review here."
+        )
+
+    await audit(
+        user, "collaboration.request_draft_changes", "collaboration", collab["_id"],
+        before={"state": "draft_submitted"}, after={"state": "attended"},
+        note=note,
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "draft_changes_requested",
+        title="Changes asked for on your draft",
+        body=f"{campaign.get('title')} — {note[:160]}",
+        link="/dashboard",
+    )
+    return _serialize_draft(updated)
+
+
+api_router.include_router(drafts_router)
+
+
 # --- One application, on its own ------------------------------------------
 #
 # Everything a single application needs, in one call, for one screen that the
@@ -16884,6 +18272,9 @@ async def get_application(
         # between the creator and our team. Decided here so the shared screen
         # never asks what role is looking.
         "questions_enabled": _question_staff_may_see(campaign, user),
+        # The draft, when the campaign reviews one. Absent — not empty — on a
+        # campaign that doesn't, so the panel is missing rather than blank.
+        "draft": _serialize_draft(collab) if _requires_draft_approval(campaign) else None,
         "campaign": {
             "id": str(campaign["_id"]),
             "title": campaign.get("title"),
@@ -16926,15 +18317,172 @@ async def get_application(
             and state in ("accepted", "commercial_agreed"),
             "can_review_content": state == "content_submitted"
             and (is_admin or is_brand_side(user)),
+            # Who reviews a draft follows execution_owner, so the same reader
+            # the questions panel uses answers it: a brand on a weare-run
+            # campaign is not the reviewer, and never sees the button.
+            "can_review_draft": state == "draft_submitted"
+            and _question_staff_may_see(campaign, user),
             "can_advance": is_admin
             and state not in TERMINAL_COLLAB_STATES
-            and _next_collab_state(state) not in _BRAND_OWNED_TRANSITIONS
-            and _next_collab_state(state) is not None,
+            and _next_collab_state(state, campaign)
+            not in (_BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS)
+            and _next_collab_state(state, campaign) is not None,
         },
     }
 
 
 api_router.include_router(application_router)
+
+
+# --- The shoot calendar ------------------------------------------------------
+#
+# Every booked slot, on a month at a time. The lists already say who is booked
+# on *this* campaign; nothing said what next Tuesday looks like across all of
+# them, which is the question somebody asks before agreeing to a date.
+#
+# **One endpoint, three scopes, one payload.** A brand manager sees its own
+# campaigns, a WeAre manager the ones assigned to them, an admin everything —
+# and all three get the same shape, carrying **no contact detail for anybody**.
+# The manager who needs a phone number has the roster and the daysheet, which
+# are behind the staff role for exactly that reason; a calendar is a planning
+# view and does not need one.
+
+calendar_router = APIRouter(prefix="/calendar", tags=["calendar"])
+
+# A month view asks for a month. The cap is generous enough for a quarter and
+# small enough that nobody can ask for the whole history in one request.
+MAX_CALENDAR_DAYS = 120
+
+
+async def _calendar_campaign_scope(user: dict, campaign_id: Optional[str]) -> Optional[dict]:
+    """Which campaigns this caller may see on a calendar.
+
+    None means "everything" (admin). The filter is built here rather than at
+    the query, so a role that is added later has to be given a scope rather
+    than inheriting the admin's by omission.
+    """
+    role = (user or {}).get("role")
+    scope: dict = {}
+    if role == "admin":
+        pass
+    elif role == "campaign_manager":
+        scope["manager_id"] = ObjectId(user["_id"])
+    elif is_brand_side(user):
+        scope["brand_id"] = _brand_scope(user)
+    else:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    if campaign_id:
+        oid = _as_oid(campaign_id)
+        if oid is None:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        # Filtering by a campaign outside the scope answers with an empty
+        # calendar rather than a 403 — the same reasoning as the 404s
+        # elsewhere: whether a campaign exists is not this caller's business.
+        scope["_id"] = oid
+    return scope
+
+
+@calendar_router.get("")
+async def shoot_calendar(
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    campaign: Optional[str] = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Booked slots between two dates, for whoever is asking.
+
+    The dates are parsed by FastAPI rather than by hand — a second date parser
+    is a second set of edge cases, and the exports already rely on this one.
+    """
+    scope = await _calendar_campaign_scope(user, campaign)
+
+    now = datetime.now(timezone.utc)
+    from_at = _as_utc(start) or (now - timedelta(days=1))
+    to_at = _as_utc(end) or (from_at + timedelta(days=31))
+    if to_at < from_at:
+        raise HTTPException(status_code=422, detail="The end date is before the start.")
+    if (to_at - from_at) > timedelta(days=MAX_CALENDAR_DAYS):
+        to_at = from_at + timedelta(days=MAX_CALENDAR_DAYS)
+
+    campaigns = await db.campaigns.find(scope).to_list(length=1000)
+    if not campaigns:
+        return {
+            "start": _iso(from_at),
+            "end": _iso(to_at),
+            "campaigns": [],
+            "entries": [],
+        }
+    by_id = {c["_id"]: c for c in campaigns}
+
+    collabs = await db.collaborations.find(
+        {
+            "campaign_id": {"$in": list(by_id)},
+            "scheduled_at": {"$gte": from_at, "$lte": to_at},
+            # An exit is not a shoot. Declined and cancelled rows still carry
+            # the time they were booked for, and drawing them would put people
+            # on a calendar who are not coming.
+            "state": {"$nin": list(TERMINAL_COLLAB_STATES)},
+        }
+    ).to_list(length=2000)
+
+    names = await _creator_names_for([c["creator_id"] for c in collabs])
+    brand_map = await _load_brand_map([c["brand_id"] for c in campaigns])
+    slot_ids = [c["slot_id"] for c in collabs if c.get("slot_id")]
+    slots = (
+        await db.campaign_slots.find({"_id": {"$in": slot_ids}}).to_list(length=len(slot_ids))
+        if slot_ids
+        else []
+    )
+    slot_by_id = {s["_id"]: s for s in slots}
+
+    entries = []
+    for c in collabs:
+        camp = by_id.get(c["campaign_id"]) or {}
+        brand = brand_map.get(camp.get("brand_id")) or {}
+        slot = slot_by_id.get(c.get("slot_id")) or {}
+        entries.append(
+            {
+                "id": str(c["_id"]),
+                # A name and nothing else. Every other identifying field is
+                # what `_brand_visible_creator` exists to keep off a
+                # brand-facing surface, and a calendar needs none of them.
+                "creator_name": names.get(c["creator_id"]) or "Creator",
+                "creator_id": str(c["creator_id"]),
+                "campaign_id": str(c["campaign_id"]),
+                "campaign_title": camp.get("title"),
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "campaign_type": camp.get("campaign_type"),
+                "area": camp.get("area"),
+                "venue_address": camp.get("venue_address"),
+                "starts_at": _iso(c.get("scheduled_at")),
+                "ends_at": _iso(slot.get("ends_at")),
+                "state": c.get("state"),
+                # Where the row goes when tapped. The application screen is
+                # the one both consoles already share.
+                "href": f"/applications/{str(c['_id'])}",
+            }
+        )
+    entries.sort(key=lambda e: (e["starts_at"] or "", e["creator_name"]))
+
+    return {
+        "start": _iso(from_at),
+        "end": _iso(to_at),
+        # The filter's options, from the campaigns actually in scope — a
+        # dropdown listing every campaign in the database would be a directory
+        # of other brands' work.
+        "campaigns": sorted(
+            (
+                {"id": str(c["_id"]), "title": c.get("title")}
+                for c in campaigns
+            ),
+            key=lambda c: (c["title"] or "").lower(),
+        ),
+        "entries": entries,
+    }
+
+
+api_router.include_router(calendar_router)
 
 
 # --- Admin sample route ----------------------------------------------------
@@ -17262,6 +18810,7 @@ _PUBLIC_BRAND_FIELDS = (
     "business_name",
     "logo_url",
     "category",
+    "tagline",
     "about",
     "city",
     "outlets",
@@ -17330,6 +18879,12 @@ def _brand_summary(brand: dict, live: int) -> str:
         bits.append(brand["city"])
     if live:
         bits.append(f"{live} open {'brief' if live == 1 else 'briefs'}")
+    # The tagline first: it was written to be one line, which is what a
+    # preview and a meta description are. Falling straight to `about` meant
+    # slicing a paragraph and hoping the cut landed somewhere sensible.
+    tagline = (brand.get("tagline") or "").strip()
+    if tagline:
+        return tagline[:180]
     about = (brand.get("about") or "").strip()
     if about:
         first = about.split("\n")[0].strip()
@@ -17380,7 +18935,12 @@ def _brand_page_html(
     )
 
     about_html = (
-        f'<div class="about">{e(brand.get("about"))}</div>' if brand.get("about") else ""
+        (
+            f'<div class="tagline">{e(brand.get("tagline"))}</div>'
+            if brand.get("tagline")
+            else ""
+        )
+        + (f'<div class="about">{e(brand.get("about"))}</div>' if brand.get("about") else "")
     )
 
     links = "".join(
@@ -17515,6 +19075,7 @@ section{{margin-top:2.5rem}}
 .chips{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}}
 .chip{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}}
 .tick{{color:#F05D14}}
+.tagline{{font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.4;color:rgba(245,241,236,.95);margin-bottom:.75rem}}
 .about{{white-space:pre-line;color:rgba(245,241,236,.9)}}
 .links{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.75rem}}
 .out{{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}}
@@ -17597,6 +19158,620 @@ async def public_brand_page(brand_id: str, request: Request):
     )
 
 
+# --- The two pages we send people --------------------------------------------
+#
+# One audience each. The home page has to speak to creators and brands at once
+# because it is the front door; these two ask once, to one person, and every
+# line is written for them.
+#
+# **Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same
+# reason**: the crawler that builds a WhatsApp preview does not run
+# JavaScript, so Open Graph tags injected by React are tags nobody ever sees.
+# These are the links that get pasted into a chat, so the preview is the
+# product.
+#
+# **The positioning, which governs every line here.** The thing we are against
+# is *disorganisation* — campaigns run over DMs and spreadsheets, with nobody
+# checked, no rate in writing and no proof of what it achieved. It is
+# deliberately **not** agencies: WeAre Studios is one, our managed service is a
+# real offering, and "without an agency" would be a page arguing against our
+# own product. `_FORBIDDEN_MARKETING_PHRASES` holds that line and a unit test
+# fails the pages for any of them.
+
+FOR_BRANDS_PATH = "/for-brands"
+FOR_CREATORS_PATH = "/for-creators"
+
+# Phrases that would position us against agencies, or promise more than the
+# operation can do. Checked against the rendered HTML of every marketing page.
+_FORBIDDEN_MARKETING_PHRASES = (
+    "without an agency",
+    "without agencies",
+    "cut out the middleman",
+    "cut out the middlemen",
+    "no agency",
+    "skip the agency",
+    "agency fees",
+    "middleman",
+    "every city",
+    "across india",
+    "pan-india",
+    "nationwide",
+    "guarantee",
+    "guaranteed",
+)
+
+# The footer, mirrored from `frontend/src/lib/siteNav.js`. A unit test fails if
+# the two drift — the React footer and this one are the same footer, and a
+# link list maintained twice is one that ends up advertising a page that moved.
+FOOTER_COLUMNS = (
+    (
+        "Creators",
+        (
+            ("Why WeAre", FOR_CREATORS_PATH),
+            ("Browse briefs", "/campaigns"),
+            ("Join as a creator", "/signup?role=creator"),
+        ),
+    ),
+    (
+        "Brands",
+        (
+            ("How it works", FOR_BRANDS_PATH),
+            ("Post a campaign", "/signup?role=brand"),
+            ("Log in", "/login"),
+        ),
+    ),
+    (
+        "Company",
+        (
+            ("Terms", "/terms"),
+            ("Privacy", "/privacy"),
+            ("Contact", "mailto:creators@wearemonk.in"),
+        ),
+    ),
+)
+
+MARKETING_CONTACT = "creators@wearemonk.in"
+
+
+async def _platform_proof() -> dict:
+    """Real numbers for the proof strip, or nothing.
+
+    **Every figure is counted, never written down.** A hardcoded "500+
+    creators" is a claim that was true on the day somebody typed it, on the
+    pages whose whole job is to be believed by a stranger.
+
+    Each is returned only when it is worth saying out loud. A strip reading
+    "3 creators" is not proof, it is a reason to close the tab — and the
+    honest move at that size is silence rather than rounding up.
+    """
+    creators = await db.creator_profiles.count_documents(
+        {"verification_status": "verified"}
+    )
+    # Campaigns that actually happened — somebody shot something. A count of
+    # posted briefs would include every draft anybody abandoned.
+    campaigns = await db.campaigns.count_documents(
+        {"status": {"$in": ["in_progress", "completed", "closed"]}}
+    )
+    brands = await db.brand_profiles.count_documents({"verified": True})
+    out = {}
+    if creators >= 10:
+        out["creators"] = creators
+    if campaigns >= 5:
+        out["campaigns"] = campaigns
+    if brands >= 5:
+        out["brands"] = brands
+    return out
+
+
+def _marketing_css() -> str:
+    """One stylesheet for both pages, inline.
+
+    Inline because these pages load none of ours and a second request on a
+    venue's wifi is the thing they cannot afford. The font is the exception —
+    Fraunces is the most recognisable part of the design system and a page in
+    Georgia is visibly not the brand — so it loads on `media="print"` with an
+    onload swap, which fetches it at low priority and applies nothing until it
+    arrives. Text paints immediately in the fallback and swaps.
+    """
+    grain = (
+        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' "
+        "width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' "
+        "baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix "
+        "values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect "
+        "width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>\")"
+    )
+    serif = "Fraunces,'Cormorant Garamond',ui-serif,Georgia,serif"
+    return f"""
+*{{box-sizing:border-box}}
+body{{margin:0;background:#0B0A09;color:#F5F1EC;position:relative;
+  font:16px/1.65 'Inter Tight',ui-sans-serif,system-ui,-apple-system,sans-serif}}
+/* The same texture `.grain-page` uses in the app, inline because this page
+   loads none of our stylesheets. Fixed, so it reads as paper rather than a
+   pattern scrolling behind the text. */
+body::before{{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:{grain};mix-blend-mode:overlay;opacity:.06}}
+a{{color:inherit}}
+.wrap{{position:relative;z-index:1;max-width:52rem;margin:0 auto;padding:3rem 1.5rem 4rem}}
+
+/* Nav — glassmorphism per the component rules, never transparent. */
+.nav{{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.6);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  border-bottom:1px solid rgba(255,255,255,.1)}}
+.navin{{max-width:52rem;margin:0 auto;padding:0 1.5rem;height:4rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem}}
+.mark{{display:inline-flex;align-items:center;gap:.6rem;text-decoration:none;
+  font-family:{serif};font-size:1.1rem}}
+.tile{{width:1.75rem;height:1.75rem;display:grid;place-items:center;
+  border-radius:.375rem;background:#F05D14;color:#0B0A09;font-size:.85rem}}
+.navlinks{{display:none;gap:1.5rem}}
+@media(min-width:52rem){{.navlinks{{display:flex}}}}
+.navlink{{font-size:.85rem;color:#9C938B;text-decoration:none}}
+.navlink:hover{{color:#F5F1EC}}
+.navcta{{display:inline-flex;align-items:center;min-height:2.25rem;padding:0 1rem;
+  border-radius:999px;background:#F05D14;color:#0B0A09;font-size:.85rem;
+  font-weight:500;text-decoration:none;white-space:nowrap}}
+
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#F05D14}}
+h1{{font-family:{serif};font-weight:400;font-size:clamp(2.1rem,6.5vw,3.6rem);
+  line-height:1.02;letter-spacing:-.02em;margin:1rem 0 0}}
+h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;
+  font-weight:500;margin:0 0 1.5rem}}
+h3{{font-family:{serif};font-weight:400;font-size:1.3rem;line-height:1.25;margin:0}}
+p{{margin:.6rem 0 0;color:rgba(245,241,236,.82)}}
+.sub{{margin-top:1.5rem;font-size:1.05rem;max-width:38rem}}
+section{{margin-top:4rem}}
+ul{{list-style:none;margin:0;padding:0}}
+.props li{{border-top:1px solid rgba(255,255,255,.1);padding:1.75rem 0}}
+.props li:last-child{{border-bottom:1px solid rgba(255,255,255,.1)}}
+.steps li{{display:flex;gap:1.25rem;padding:1.5rem 0;border-top:1px solid rgba(255,255,255,.1)}}
+.steps li:last-child{{border-bottom:1px solid rgba(255,255,255,.1)}}
+.n{{flex:none;width:2rem;height:2rem;display:grid;place-items:center;border-radius:999px;
+  border:1px solid rgba(240,93,20,.4);background:rgba(240,93,20,.12);color:#F05D14;
+  font-size:.8rem;font-variant-numeric:tabular-nums}}
+.expect{{border:1px solid rgba(240,93,20,.3);background:rgba(240,93,20,.08);
+  border-radius:.5rem;padding:1.5rem 1.6rem}}
+.expect p{{color:rgba(245,241,236,.92)}}
+.figs{{display:flex;flex-wrap:wrap;gap:2.5rem}}
+.fig{{display:block;font-family:{serif};font-size:clamp(2rem,7vw,2.75rem);line-height:1}}
+.cap{{display:block;margin-top:.4rem;font-size:.72rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#9C938B}}
+.note{{margin-top:1.75rem;font-size:.85rem;color:#9C938B}}
+.cta{{margin-top:4rem;border-top:1px solid rgba(255,255,255,.1);padding-top:2.5rem}}
+.btn{{display:inline-flex;align-items:center;justify-content:center;min-height:3rem;
+  padding:0 1.75rem;border-radius:999px;background:#F05D14;color:#0B0A09;
+  font-weight:500;text-decoration:none}}
+
+/* Footer — the HTML twin of `components/Footer.jsx`. */
+.foot{{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.02)}}
+.footin{{max-width:52rem;margin:0 auto;padding:3.5rem 1.5rem}}
+.footgrid{{display:grid;gap:2.5rem}}
+@media(min-width:44rem){{.footgrid{{grid-template-columns:1.2fr 2fr}}}}
+.footcols{{display:grid;grid-template-columns:repeat(2,1fr);gap:2rem}}
+@media(min-width:34rem){{.footcols{{grid-template-columns:repeat(3,1fr)}}}}
+.foothead{{font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;
+  color:rgba(156,147,139,.7);margin:0 0 1rem}}
+.footlink{{display:block;margin-bottom:.75rem;font-size:.85rem;color:#9C938B;
+  text-decoration:none}}
+.footlink:hover{{color:#F05D14}}
+.studio{{margin-top:.75rem;font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:rgba(156,147,139,.8)}}
+.footbar{{margin-top:3rem;padding-top:1.75rem;border-top:1px solid rgba(255,255,255,.1);
+  display:flex;flex-wrap:wrap;gap:.75rem;justify-content:space-between;
+  font-size:.72rem;color:#9C938B}}
+"""
+
+
+def _marketing_nav(app_base: str, cta_href: str, cta_label: str) -> str:
+    """The navigation bar the design guidelines require on desktop.
+
+    Also the practical fix: somebody arriving from WhatsApp otherwise has no
+    way into the rest of the site except the footer.
+    """
+    e = html_escape
+    return f"""<nav class="nav"><div class="navin">
+  <a class="mark" href="{e(app_base)}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
+  <div class="navlinks">
+    <a class="navlink" href="{e(app_base)}{FOR_CREATORS_PATH}">For creators</a>
+    <a class="navlink" href="{e(app_base)}{FOR_BRANDS_PATH}">For brands</a>
+    <a class="navlink" href="{e(app_base)}/login">Log in</a>
+  </div>
+  <a class="navcta" href="{e(app_base)}{e(cta_href)}">{e(cta_label)}</a>
+</div></nav>"""
+
+
+def _marketing_footer(app_base: str) -> str:
+    """The HTML twin of `components/Footer.jsx`, from the mirrored columns."""
+    e = html_escape
+    # The backend's own pair, not the frontend's REACT_APP_* ones: those are
+    # build-time variables for the SPA and this process may never see them.
+    # They mirror `frontend/src/lib/studio.js` and should be set to the same
+    # values — PREVIEW.md says so.
+    studio_name = os.environ.get("STUDIO_NAME", "WeAre Studios")
+    studio_url = (os.environ.get("STUDIO_URL") or "").strip()
+    offering = f"A {studio_name} offering"
+    # A link only when the studio URL is configured — the same rule
+    # `StudioEndorsement` follows. Inventing a domain to fill the gap would be
+    # worse than plain text.
+    studio = (
+        f'<a class="studio" href="{e(studio_url)}" rel="noopener" target="_blank">{e(offering)}</a>'
+        if studio_url
+        else f'<span class="studio">{e(offering)}</span>'
+    )
+
+    cols = "".join(
+        f'<div><p class="foothead">{e(heading)}</p>'
+        + "".join(
+            f'<a class="footlink" href="{e(to if to.startswith("mailto:") else app_base + to)}">{e(label)}</a>'
+            for label, to in links
+        )
+        + "</div>"
+        for heading, links in FOOTER_COLUMNS
+    )
+
+    return f"""<footer class="foot"><div class="footin">
+  <div class="footgrid">
+    <div>
+      <a class="mark" href="{e(app_base)}/"><span class="tile">W</span>WeAre <span style="color:#F05D14">Creators</span></a>
+      <div>{studio}</div>
+      <p style="max-width:20rem;font-size:.85rem">Creator campaigns with the rate agreed
+        in writing, the content approved before it goes live, and a report at the end.</p>
+    </div>
+    <div class="footcols">{cols}</div>
+  </div>
+  <div class="footbar">
+    <span>&copy; {datetime.now(timezone.utc).year} WeAre Monk &middot; Bengaluru, India</span>
+    <a href="mailto:{e(MARKETING_CONTACT)}" style="color:#9C938B;text-decoration:none">{e(MARKETING_CONTACT)}</a>
+  </div>
+</div></footer>"""
+
+
+def _marketing_head(*, title: str, og_title: str, summary: str, path: str, app_base: str) -> str:
+    """Page-specific Open Graph, which is the whole reason these are rendered
+    here rather than routed in the SPA."""
+    e = html_escape
+    url = e(f"{_share_base()}{path}")
+    font = (
+        "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700"
+        "&family=Inter+Tight:wght@300..700&display=swap"
+    )
+    return f"""<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(summary)}">
+<link rel="canonical" href="{url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{url}">
+<meta property="og:title" content="{e(og_title)}">
+<meta property="og:description" content="{e(summary)}">
+<meta property="og:image" content="{e(app_base)}/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(og_title)}">
+<meta name="twitter:description" content="{e(summary)}">
+<meta name="twitter:image" content="{e(app_base)}/og-image.png">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="{font}">
+<noscript><link rel="stylesheet" href="{font}"></noscript>
+<style>{_marketing_css()}</style>"""
+
+
+def _proof_strip(stats: dict, labels: tuple) -> str:
+    """The figures, or nothing at all. See `_platform_proof`."""
+    e = html_escape
+    figs = "".join(
+        f'<li><span class="fig">{stats[key]}</span><span class="cap">{e(label)}</span></li>'
+        for key, label in labels
+        if key in stats
+    )
+    if not figs:
+        return ""
+    return (
+        '<section class="proof"><h2>Where we are today</h2>'
+        f'<ul class="figs">{figs}</ul>'
+        '<p class="note">Counted from the platform, not rounded up. Bengaluru first '
+        "— that is where our team can stand at the door.</p></section>"
+    )
+
+
+# --- For brands ---------------------------------------------------------------
+
+_BRAND_VALUE_PROPS = (
+    (
+        "Creators we have actually checked",
+        "Every creator is reviewed by a person before a brand can see them — "
+        "the account, the work, whether the audience looks real. Where a "
+        "creator has connected Instagram, the follower count and engagement "
+        "rate on their profile are read from Instagram itself, and the ones we "
+        "could not measure say so rather than quietly passing as verified.",
+    ),
+    (
+        "Every creator, every rate, in front of you",
+        "You see who applied and what each of them quoted, and the rate is "
+        "recorded against the booking before anybody turns up. No retainer, and "
+        "no markup on what the creator charges — our fee sits on top and is "
+        "shown to you before you confirm, so the number the creator quoted is "
+        "the number the creator gets.",
+    ),
+    (
+        "Run it yourself, or hand it to the team",
+        "WeAre Studios runs campaigns for a living. Post the brief and manage "
+        "it from your own dashboard, or hand it over and we will staff it, book "
+        "the slots, stand at the door on the day and send you the numbers "
+        "afterwards. You choose per campaign, and you can choose differently "
+        "next time.",
+    ),
+)
+
+_BRAND_STEPS = (
+    (
+        "Post your brief",
+        "What you want made, the budget per creator, the dates, and which days "
+        "and hours your venue can actually take people. Ten minutes.",
+    ),
+    (
+        "Review applicants, or our suggestions",
+        "Creators apply with a pitch and a rate. Alongside them we rank the "
+        "verified creators who fit the brief, with the reason on every card so "
+        "you can argue with it. Accept who you want, or invite them directly.",
+    ),
+    (
+        "They shoot on slots they booked",
+        "Inside the days and hours you set. Your campaign manager holds the "
+        "roster and the phone numbers, and you are told what changes.",
+    ),
+    (
+        "Approve it, then see what it did",
+        "Turn on draft review and nothing is published until you have said yes "
+        "— or asked for a change. Afterwards: reach, engagement and cost per "
+        "thousand, on one report you can send on.",
+    ),
+)
+
+
+def _for_brands_html(stats: dict, request_base: str = "") -> str:
+    e = html_escape
+    app_base = (os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/")
+    summary = (
+        "Verified creators, rates agreed before anyone shoots, and a report at "
+        "the end. Post a brief and run it yourself, or hand the campaign to the "
+        "WeAre Studios team."
+    )
+    cta = f'<a class="btn" href="{e(app_base)}/signup?role=brand">Post a campaign</a>'
+
+    props = "".join(
+        f"<li><h3>{e(t)}</h3><p>{e(b)}</p></li>" for t, b in _BRAND_VALUE_PROPS
+    )
+    steps = "".join(
+        f'<li><span class="n">{i + 1}</span><div><h3>{e(t)}</h3><p>{e(b)}</p></div></li>'
+        for i, (t, b) in enumerate(_BRAND_STEPS)
+    )
+    proof = _proof_strip(
+        stats,
+        (("creators", "verified creators"), ("campaigns", "campaigns run"),
+         ("brands", "brands on board")),
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+{_marketing_head(
+    title="For brands — WeAre Creators",
+    og_title="Your creator campaigns, handled properly",
+    summary=summary,
+    path=FOR_BRANDS_PATH,
+    app_base=app_base,
+)}
+</head><body>
+{_marketing_nav(app_base, "/signup?role=brand", "Post a campaign")}
+<div class="wrap">
+
+<p class="eyebrow">For brands · Bengaluru</p>
+<h1>Your creator campaigns, handled properly.</h1>
+<p class="sub">
+  Verified creators, rates agreed before anyone shoots, and results you can
+  show. Post a brief and run it yourself from your own dashboard, or hand the
+  campaign to the WeAre Studios team and we will run it end to end.
+</p>
+<p style="margin-top:2rem">{cta}</p>
+
+<section>
+  <h2>Why brands use us</h2>
+  <ul class="props">{props}</ul>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+  <ul class="steps">{steps}</ul>
+</section>
+
+<section>
+  <div class="expect">
+    <h3>What happens after you sign up</h3>
+    <p>
+      We check your business details first — usually within a working day, and
+      you hear from us either way. You can write your first brief while you
+      wait; it goes in front of creators the moment you are verified. Expect the
+      first applications within a day or two of going live, and most of them
+      inside the first week. A brief with a cover image and a clear fee fills
+      faster than one without.
+    </p>
+  </div>
+</section>
+
+{proof}
+
+<div class="cta">{cta}</div>
+
+</div>
+{_marketing_footer(app_base)}
+</body></html>"""
+
+
+# --- For creators -------------------------------------------------------------
+
+_CREATOR_VALUE_PROPS = (
+    (
+        "Real paid briefs, in one place",
+        "Every brief on the platform comes from a business we have checked — "
+        "the legal entity, the paperwork, the person asking on its behalf. You "
+        "can see who is posting before you spend an evening on a pitch, and a "
+        "brand that has not been through that cannot reach you at all.",
+    ),
+    (
+        "Your rate, in writing, before you shoot",
+        "You quote your own rate when you apply. It is agreed and recorded "
+        "against the booking before the shoot happens, so nobody is negotiating "
+        "on the day and there is no argument afterwards about what was said in a "
+        "DM three weeks ago.",
+    ),
+    (
+        "You keep all of it, and you are paid on delivery",
+        "The rate you agreed is the amount you are paid. Our fee is charged to "
+        "the brand on top, never taken out of yours. Payment goes out once the "
+        "brand approves what you delivered — you are not chasing an invoice, and "
+        "you are not waiting on somebody to remember.",
+    ),
+)
+
+_CREATOR_STEPS = (
+    (
+        "Build your profile",
+        "Name and a WhatsApp number to start. The rest — your city, what you "
+        "make, your rate, links to your work — you fill in over as many sittings "
+        "as it takes. Connect Instagram if you want your follower count and "
+        "engagement read from Instagram itself rather than typed in.",
+    ),
+    (
+        "Get verified",
+        "Send it for review when it is complete. Somebody on our team reads it "
+        "and comes back to you. Once you are verified you can pitch on anything "
+        "open.",
+    ),
+    (
+        "Pitch, and agree the rate",
+        "Apply with a note and the rate you want. If the brand takes you on, the "
+        "figure is agreed and written down before anything is booked. Then you "
+        "pick a slot that suits you, inside the hours the venue can take people.",
+    ),
+    (
+        "Shoot, deliver, get paid",
+        "Turn up and make the thing. On campaigns that review drafts you send "
+        "yours first and publish once it is approved — which means no request to "
+        "take down a post that is already live. Payment follows approval, to the "
+        "UPI ID on your profile.",
+    ),
+)
+
+
+def _for_creators_html(stats: dict, request_base: str = "") -> str:
+    e = html_escape
+    app_base = (os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/")
+    summary = (
+        "Paid briefs from businesses we have checked, your rate agreed in "
+        "writing before you shoot, and payment on approved delivery. Free to "
+        "join."
+    )
+    cta = f'<a class="btn" href="{e(app_base)}/signup?role=creator">Join as a creator</a>'
+
+    props = "".join(
+        f"<li><h3>{e(t)}</h3><p>{e(b)}</p></li>" for t, b in _CREATOR_VALUE_PROPS
+    )
+    steps = "".join(
+        f'<li><span class="n">{i + 1}</span><div><h3>{e(t)}</h3><p>{e(b)}</p></div></li>'
+        for i, (t, b) in enumerate(_CREATOR_STEPS)
+    )
+    proof = _proof_strip(
+        stats,
+        (("brands", "verified brands"), ("campaigns", "campaigns run"),
+         ("creators", "creators on the platform")),
+    )
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+{_marketing_head(
+    title="For creators — WeAre Creators",
+    og_title="Paid briefs, with the rate agreed before you shoot",
+    summary=summary,
+    path=FOR_CREATORS_PATH,
+    app_base=app_base,
+)}
+</head><body>
+{_marketing_nav(app_base, "/signup?role=creator", "Join as a creator")}
+<div class="wrap">
+
+<p class="eyebrow">For creators · Bengaluru</p>
+<h1>Know the rate. Know the brand. Get paid.</h1>
+<p class="sub">
+  Paid briefs from businesses we have checked, in one place — with your rate
+  agreed in writing before you shoot, and payment that follows approved
+  delivery instead of a reminder you have to send.
+</p>
+<p style="margin-top:2rem">{cta}</p>
+
+<section>
+  <h2>Why creators are here</h2>
+  <ul class="props">{props}</ul>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+  <ul class="steps">{steps}</ul>
+</section>
+
+<section>
+  <div class="expect">
+    <h3>What we ask of you, and what it costs</h3>
+    <p>
+      <strong>Joining is free, and it stays free.</strong> There is no
+      subscription, no listing fee and nothing deducted from your rate — we
+      charge the brand, not you.
+    </p>
+    <p>
+      What we ask is a complete profile and a review before you pitch: your
+      city, what you make, your rate, and links to your work, so a brand
+      deciding between people has something real to read. Payout details — UPI
+      and PAN — are only needed when there is money to send you, and they are
+      never part of what a brand can see.
+    </p>
+    <p>
+      Turning up matters. Attendance is recorded at the venue, and a brief you
+      accepted is a day somebody has planned around.
+    </p>
+  </div>
+</section>
+
+{proof}
+
+<div class="cta">{cta}</div>
+
+</div>
+{_marketing_footer(app_base)}
+</body></html>"""
+
+
+@app.get(FOR_BRANDS_PATH, include_in_schema=False)
+async def for_brands_page(request: Request):
+    """The page we send a venue owner. No account, no API prefix."""
+    return Response(
+        content=_for_brands_html(await _platform_proof(), str(request.base_url)),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=600"},
+    )
+
+
+@app.get(FOR_CREATORS_PATH, include_in_schema=False)
+async def for_creators_page(request: Request):
+    """The same, pointed the other way."""
+    return Response(
+        content=_for_creators_html(await _platform_proof(), str(request.base_url)),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=600"},
+    )
+
+
 @app.get("/sitemap.xml", include_in_schema=False)
 async def public_sitemap():
     """Every public page, so "indexable" means something.
@@ -17622,7 +19797,13 @@ async def public_sitemap():
         else []
     )
 
-    urls = [(_brand_page_url(str(b)), None) for b in brand_ids]
+    # The one page here that is not about a specific brand or brief, and the
+    # only one a stranger might search for rather than be sent.
+    urls = [
+        (f"{_share_base()}{FOR_BRANDS_PATH}", None),
+        (f"{_share_base()}{FOR_CREATORS_PATH}", None),
+    ]
+    urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
 
     body = "".join(

@@ -105,9 +105,34 @@ export const LIFECYCLE = [
     { key: "paid", label: "Paid", states: ["in_payment", "closed"] },
 ];
 
-/** Which of the six stages a collaboration is standing on. -1 if it left the line. */
-export const stageIndexFor = (state) =>
-    LIFECYCLE.findIndex((stage) => stage.states.includes(state));
+// The extra stage on a campaign that reviews drafts, inserted after Attended.
+// It is a stage rather than a footnote because it is a wait the creator will
+// otherwise read as nothing happening.
+const DRAFT_STAGE = {
+    key: "draft",
+    label: "Draft in review",
+    states: ["draft_submitted", "draft_approved"],
+};
+
+/**
+ * The stages this collaboration actually walks.
+ *
+ * Per-collaboration rather than a constant, because the campaign decides:
+ * with draft review off the bar is the six it has always been. Read off the
+ * server's own answer (`draft` present on the row, or a state that only
+ * exists on the draft ladder) rather than re-deriving the rule here.
+ */
+export const lifecycleFor = (collab) => {
+    const reviews =
+        Boolean(collab?.draft) || DRAFT_STAGE.states.includes(collab?.state);
+    if (!reviews) return LIFECYCLE;
+    const i = LIFECYCLE.findIndex((s) => s.key === "attended");
+    return [...LIFECYCLE.slice(0, i + 1), DRAFT_STAGE, ...LIFECYCLE.slice(i + 1)];
+};
+
+/** Which stage a collaboration is standing on. -1 if it left the line. */
+export const stageIndexFor = (state, stages = LIFECYCLE) =>
+    stages.findIndex((stage) => stage.states.includes(state));
 
 export const STATE_META = {
     applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
@@ -122,6 +147,14 @@ export const STATE_META = {
         tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
     },
     attended: { label: "Attended", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
+    draft_submitted: {
+        label: "Draft in review",
+        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+    },
+    draft_approved: {
+        label: "Draft approved",
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    },
     content_submitted: {
         label: "In review",
         tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",

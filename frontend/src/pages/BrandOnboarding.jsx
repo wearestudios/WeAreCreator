@@ -54,6 +54,17 @@ import { BRAND_LOGO, BRAND_PAGE, BRAND_VERIFICATION as IDS } from "@/constants/t
 import AddressPicker from "@/components/AddressPicker";
 import { brandPageUrl } from "@/lib/brandPage";
 import { INDIAN_CITIES } from "@/lib/taxonomy";
+// Fallbacks only: the server ships these lists on the profile response, so a
+// dropdown can never offer a value the API refuses. These stand in for the
+// first paint, before that response lands.
+import {
+    ANY_TIER,
+    BUDGET_BANDS,
+    CONTENT_TYPES,
+    FOLLOWER_TIERS,
+} from "@/lib/followerTiers";
+
+const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -281,9 +292,20 @@ export default function BrandOnboarding() {
     // The creator-facing half. None of it is evidence of anything, so none of
     // it is locked once verified and none of it is required to submit — it is
     // what a creator reads on the brand's public page.
+    const [tagline, setTagline] = useState("");
     const [about, setAbout] = useState("");
     const [city, setCity] = useState("");
     const [outlets, setOutlets] = useState([]);
+    // What they're looking for. A standing preference rather than a line on
+    // one brief — it feeds the ranking on every campaign this brand posts.
+    // None of it is required to submit for verification: it is what we rank
+    // on, not evidence of anything.
+    const [contentTypes, setContentTypes] = useState([]);
+    const [followerTier, setFollowerTier] = useState("");
+    const [budgetBand, setBudgetBand] = useState("");
+    // The option lists come from the server on the same response, so a
+    // dropdown can never offer a value the API refuses.
+    const [prefOptions, setPrefOptions] = useState(null);
 
     const [touched, setTouched] = useState({});
     const touch = (k) => setTouched((t) => ({ ...t, [k]: true }));
@@ -319,9 +341,14 @@ export default function BrandOnboarding() {
             setContactEmail(data.contact_email || "");
             setLogoUrl(data.logo_url || null);
             setUploads(data.uploads || null);
+            setTagline(data.tagline || "");
             setAbout(data.about || "");
             setCity(data.city || "");
             setOutlets(data.outlets || []);
+            setContentTypes(data.content_types || []);
+            setFollowerTier(data.preferred_follower_tier || "");
+            setBudgetBand(data.typical_budget_band || "");
+            setPrefOptions(data.preferences || null);
             setVerification(data.verification || null);
         },
         [user],
@@ -414,11 +441,17 @@ export default function BrandOnboarding() {
                 business_name: businessName,
                 category,
                 areas,
+                tagline: tagline.trim() || null,
                 about: about.trim() || null,
                 city: city || null,
                 // Blank rows are dropped server-side; sending them is how a
                 // repeater with an empty last row normally behaves.
                 outlets,
+                content_types: contentTypes,
+                // "" means the question is unanswered, which is not the same
+                // as "any" — a brand that said "any" told us it doesn't mind.
+                preferred_follower_tier: followerTier || null,
+                typical_budget_band: budgetBand || null,
                 legal_entity_name: legalName.trim() || null,
                 business_type: businessType || null,
                 registered_address: registeredAddress.trim() || null,
@@ -613,6 +646,34 @@ export default function BrandOnboarding() {
 
                         <div>
                             <Label
+                                htmlFor="brand-tagline"
+                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            >
+                                In one line
+                            </Label>
+                            <Input
+                                id="brand-tagline"
+                                data-testid="brand-onb-tagline-input"
+                                maxLength={90}
+                                value={tagline}
+                                onChange={(e) => setTagline(e.target.value)}
+                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                placeholder="Third-wave coffee roastery, six cafés across Bengaluru"
+                            />
+                            {/* This is the line that goes on every campaign
+                                card you post. A card carrying only a name
+                                makes every unfamiliar brand look the same,
+                                which is most of them to most creators. */}
+                            <p className="mt-2 flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                                <span>Shown on every campaign card you post.</span>
+                                <span className="flex-none tabular-nums">
+                                    {tagline.length}/90
+                                </span>
+                            </p>
+                        </div>
+
+                        <div>
+                            <Label
                                 htmlFor="brand-about"
                                 className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                             >
@@ -756,6 +817,121 @@ export default function BrandOnboarding() {
                             <MapPin className="mr-2 h-4 w-4" />
                             Add an outlet
                         </Button>
+                    </section>
+
+                    {/* What you're looking for. Not evidence of anything and
+                        not required to submit — it is what the ranking uses,
+                        so a brand that answers it gets a shortlist matched to
+                        the work it actually commissions rather than one
+                        inferred from a budget. */}
+                    <section className="space-y-5">
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                What you're looking for
+                            </p>
+                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                All optional. Answer what you know and we'll rank
+                                creator suggestions on it — you can change any of it
+                                later.
+                            </p>
+                        </div>
+
+                        <div>
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Content you need
+                            </Label>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {(prefOptions?.content_types || CONTENT_TYPES).map((c) => {
+                                    const on = contentTypes.includes(c.value);
+                                    return (
+                                        <button
+                                            key={c.value}
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={on}
+                                            data-testid={`brand-onb-content-${c.value}`}
+                                            onClick={() =>
+                                                setContentTypes((prev) =>
+                                                    on
+                                                        ? prev.filter((v) => v !== c.value)
+                                                        : [...prev, c.value],
+                                                )
+                                            }
+                                            className={
+                                                "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                (on
+                                                    ? "border-ember-500 bg-ember-500/15 text-ember-500"
+                                                    : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
+                                            }
+                                        >
+                                            {c.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Creator size you work with
+                                </Label>
+                                <Select value={followerTier} onValueChange={setFollowerTier}>
+                                    <SelectTrigger
+                                        data-testid="brand-onb-tier-trigger"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                    >
+                                        <SelectValue placeholder="No preference yet" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(prefOptions?.follower_tiers || FOLLOWER_TIER_OPTIONS).map(
+                                            (t) => (
+                                                <SelectItem
+                                                    key={t.value}
+                                                    value={t.value}
+                                                    data-testid={`brand-onb-tier-${t.value}`}
+                                                >
+                                                    {t.label}
+                                                    {t.range ? ` · ${t.range}` : ""}
+                                                </SelectItem>
+                                            ),
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <div>
+                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    Typical budget per creator
+                                </Label>
+                                <Select value={budgetBand} onValueChange={setBudgetBand}>
+                                    <SelectTrigger
+                                        data-testid="brand-onb-budget-trigger"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                    >
+                                        <SelectValue placeholder="Not sure yet" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(prefOptions?.budget_bands || BUDGET_BANDS).map((b) => (
+                                            <SelectItem
+                                                key={b.value}
+                                                value={b.value}
+                                                data-testid={`brand-onb-budget-${b.value}`}
+                                            >
+                                                {b.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {/* A band, not a number: a figure here would
+                                    read as a commitment and get argued about.
+                                    It stands in for the fee when a brief has
+                                    none of its own. */}
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    A guide for ranking, never quoted to a creator.
+                                </p>
+                            </div>
+                        </div>
                     </section>
 
                     <section className="space-y-4">

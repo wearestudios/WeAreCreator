@@ -239,9 +239,11 @@ class TestHealthThresholds:
 
     def test_every_health_row_links_to_the_thing_it_is_about(self):
         """A count tells you there is a problem and then makes you go and find
-        it. Every row carries an href."""
+        it. Every row carries an href — counted against the number of checks
+        rather than a magic number, so adding a check keeps the rule rather
+        than merely moving the number."""
         src = inspect.getsource(server.admin_health)
-        assert src.count('"href":') == 6, "one href per check"
+        assert src.count('"href":') == src.count('checks.append('), "one href per check"
 
     def test_health_is_admin_only(self):
         assert 'require_roles("admin")' in inspect.getsource(server.admin_health)
@@ -249,7 +251,11 @@ class TestHealthThresholds:
     def test_unpaid_money_is_treated_as_the_urgent_one(self):
         # Creators chase us for this, and it is the fastest way to lose one.
         src = inspect.getsource(server.admin_health)
-        block = src[src.index('"key": "payments_pending"') - 2000 : src.index('"key": "payments_pending"')]
+        # The check's own block, from its key to the end of its rows — not a
+        # byte window, which silently slides off the block when a neighbour
+        # grows.
+        start = src.index('"key": "payments_pending"')
+        block = src[start : src.index("checks.append(", start)]
         assert '"severity": "critical"' in block
 
 

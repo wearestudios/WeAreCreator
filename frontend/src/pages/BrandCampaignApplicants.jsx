@@ -86,6 +86,16 @@ const STATE_META = {
         tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
         note: "Waiting on the creator to publish and submit links.",
     },
+    draft_submitted: {
+        label: "Review draft",
+        tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
+        note: "A draft is in. Approve it, or send it back with a note — nothing is public yet.",
+    },
+    draft_approved: {
+        label: "Draft approved",
+        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        note: "Approved. The creator is publishing it now.",
+    },
     content_submitted: {
         label: "Review content",
         tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
@@ -675,11 +685,22 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
 
 const FILTERS = [
     { key: "awaiting_you", label: "Waiting on you", states: ["verified"] },
-    { key: "content", label: "Content to review", states: ["content_submitted"] },
+    // Both review steps under one filter: from the board's side "there is
+    // something of mine to look at" is one job, whichever end of the shoot it
+    // came from.
+    { key: "content", label: "To review", states: ["draft_submitted", "content_submitted"] },
     {
         key: "in_progress",
         label: "In progress",
-        states: ["accepted", "commercial_agreed", "slot_booked", "attended", "content_approved", "in_payment"],
+        states: [
+            "accepted",
+            "commercial_agreed",
+            "slot_booked",
+            "attended",
+            "draft_approved",
+            "content_approved",
+            "in_payment",
+        ],
     },
     { key: "with_weare", label: "With WeAre", states: ["applied"] },
     { key: "closed", label: "Closed", states: ["closed", "declined", "cancelled"] },

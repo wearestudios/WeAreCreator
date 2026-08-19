@@ -28,6 +28,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, formatApiError } from "@/lib/api";
 import { CREATOR_SLOT_PICKER as IDS } from "@/constants/testIds";
+import ShootWindowNote from "@/components/campaign/ShootWindowNote";
+import { dayIndex, shootTimeRefusal } from "@/lib/shootWindows";
 import { formatDay, formatTime } from "./shared";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -139,13 +141,31 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
         [slots, slotId],
     );
 
+    // The brand's days and hours, cut out of the picker rather than left in
+    // to be refused. The server checks again on book — this is so a creator
+    // never taps a time the API is going to reject, which is the difference
+    // between a rule and a trap.
+    const shutDays = useMemo(
+        () => new Set((data?.restricted_days || []).map(Number)),
+        [data],
+    );
     const days = useMemo(
-        () => (chosen && picksOwnTime ? daysWithin(chosen.starts_at, chosen.ends_at) : []),
-        [chosen, picksOwnTime],
+        () =>
+            chosen && picksOwnTime
+                ? daysWithin(chosen.starts_at, chosen.ends_at).filter(
+                      (d) => !shutDays.has(dayIndex(d)),
+                  )
+                : [],
+        [chosen, picksOwnTime, shutDays],
     );
     const times = useMemo(
-        () => (chosen && picksOwnTime && day ? timesOn(day, chosen.starts_at, chosen.ends_at) : []),
-        [chosen, picksOwnTime, day],
+        () =>
+            chosen && picksOwnTime && day
+                ? timesOn(day, chosen.starts_at, chosen.ends_at).filter(
+                      (t) => !shootTimeRefusal(data, t),
+                  )
+                : [],
+        [chosen, picksOwnTime, day, data],
     );
 
     // A single-day window has nothing to choose on a calendar, so skip it.
@@ -225,6 +245,10 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                 {data && !reviewing && (
                     <div className="mt-5 space-y-6">
+                        {/* Say the rule before the grid rather than after a
+                            creator wonders why Tuesday isn't there. */}
+                        <ShootWindowNote campaign={data} />
+
                         {picksOwnTime && (
                             <p
                                 data-testid={IDS.window}
@@ -315,7 +339,9 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                 </p>
                                 {times.length === 0 ? (
                                     <p className="mt-3 text-sm text-muted-foreground">
-                                        No times left on that day. Try another one.
+                                        No times left on that day — either it's
+                                        booked out, or it falls outside the hours
+                                        this venue shoots in. Try another one.
                                     </p>
                                 ) : (
                                     <div

@@ -30,14 +30,22 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
+import { FOLLOWER_TIERS, tierForFollowers } from "@/lib/followerTiers";
+
 const ANY = "__any__";
 
+// The same three tiers the ranking uses and the brand picked in onboarding.
+// This filter used to be "10k+ / 50k+ / 100k+ / 500k+", which is a fourth
+// vocabulary for the same axis — a brand that had told us "micro" then had to
+// work out which of four open-ended buckets meant that.
 const FOLLOWER_BUCKETS = [
-    { value: ANY, label: "Any following", min: null },
-    { value: "10k", label: "10k+ followers", min: 10000 },
-    { value: "50k", label: "50k+ followers", min: 50000 },
-    { value: "100k", label: "100k+ followers", min: 100000 },
-    { value: "500k", label: "500k+ followers", min: 500000 },
+    { value: ANY, label: "Any following", min: null, max: null },
+    ...FOLLOWER_TIERS.map((t) => ({
+        value: t.value,
+        label: `${t.label} · ${t.range}`,
+        min: t.min,
+        max: t.max,
+    })),
 ];
 
 const SORT_OPTIONS = [
@@ -148,6 +156,15 @@ const CreatorCard = ({ c, index }) => {
                     <div className="mt-1 font-serif text-2xl text-foreground">
                         {compactCount(c.follower_count)}
                     </div>
+                    {/* The tier beside the number, always. The number is what
+                        a brand negotiates against and the word is what they
+                        filter on; showing one without the other is how the
+                        two vocabularies drifted apart. */}
+                    {tierForFollowers(c.follower_count) && (
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                            {tierForFollowers(c.follower_count).label}
+                        </div>
+                    )}
                 </div>
                 <div>
                     <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -199,6 +216,10 @@ export default function BrandCreatorDirectory() {
         if (niche !== ANY) params.niche = niche;
         const bucket = FOLLOWER_BUCKETS.find((b) => b.value === followers);
         if (bucket && bucket.min !== null) params.min_followers = bucket.min;
+        // A tier has a ceiling as well as a floor. Sending only the floor
+        // made "Micro" return every macro creator too, which is the opposite
+        // of what somebody filtering for micro is asking for.
+        if (bucket && bucket.max) params.max_followers = bucket.max;
         if (sort && sort !== "newest") params.sort = sort;
         if (debouncedQ) params.q = debouncedQ;
         api.get("/brand/creators", { params })

@@ -27,10 +27,12 @@ import {
     MANAGER_ROSTER as ROSTER_IDS,
     MANAGER_SLOTS as SLOT_IDS,
     MANAGER_VENUE as VENUE_IDS,
+    SCHEDULING,
 } from "@/constants/testIds";
 import BroadcastSheet from "@/components/manager/BroadcastSheet";
 import DayOfMode from "@/components/manager/DayOfMode";
 import SlotEditor from "@/components/manager/SlotEditor";
+import ShootWindowNote from "@/components/campaign/ShootWindowNote";
 import {
     ATTENDANCE_META,
     CAMPAIGN_TYPE_META,
@@ -60,6 +62,9 @@ export default function ManagerCampaign() {
     const [params] = useSearchParams();
     const [roster, setRoster] = useState(null);
     const [slots, setSlots] = useState(null);
+    // The brand's days and hours, shipped alongside the slots so the manager
+    // reads the rule rather than discovering it in a 422.
+    const [shootRules, setShootRules] = useState(null);
     const [tab, setTab] = useState("roster");
     const [dayOf, setDayOf] = useState(() => params.get("mode") === "day-of");
     const [slotEditor, setSlotEditor] = useState(null);
@@ -75,6 +80,10 @@ export default function ManagerCampaign() {
             ]);
             setRoster(r.data);
             setSlots(s.data.slots);
+            setShootRules({
+                restricted_days: s.data.restricted_days || [],
+                shoot_windows: s.data.shoot_windows || [],
+            });
         } catch (e) {
             notifyError(e);
             setRoster({ roster: [] });
@@ -287,6 +296,7 @@ export default function ManagerCampaign() {
                                     {tab === "slots" && (
                                         <SlotList
                                             slots={slots}
+                                            rules={shootRules}
                                             busy={busy}
                                             onAdd={() => setSlotEditor({ slot: null })}
                                             onEdit={(slot) => setSlotEditor({ slot })}
@@ -414,10 +424,13 @@ function RosterList({ rows }) {
     );
 }
 
-function SlotList({ slots, busy, onAdd, onEdit, onDelete }) {
+function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
     if (!slots) return <RowListSkeleton rows={4} testid={SLOT_IDS.skeleton} />;
     return (
         <section data-testid={SLOT_IDS.section} className="space-y-3">
+            {/* What the brand said. Above the list, because it constrains
+                every slot below it and the Add button at the bottom. */}
+            <ShootWindowNote campaign={rules} />
             {slots.length === 0 ? (
                 <EmptyState testid={SLOT_IDS.empty} Icon={CalendarClock}>
                     No slots yet. Creators can't book until there's something to book
@@ -451,6 +464,20 @@ function SlotList({ slots, busy, onAdd, onEdit, onDelete }) {
                                         {s.booked_count}/{s.capacity} taken
                                         {full ? " · full" : ` · ${s.spots_left} left`}
                                     </p>
+                                    {/* Labelled, never refused: this slot was
+                                        legal when it was made, and people may
+                                        already hold seats on it. The manager
+                                        is the one who can ring the venue. */}
+                                    {s.outside_preferences && (
+                                        <p
+                                            data-testid={SCHEDULING.slotOutside(s.id)}
+                                            className="mt-2 text-xs leading-relaxed text-amber-300"
+                                        >
+                                            Outside the brand's shoot days or hours —
+                                            it predates the restriction. Worth a call
+                                            before anyone else books it.
+                                        </p>
+                                    )}
                                 </div>
                                 <button
                                     type="button"

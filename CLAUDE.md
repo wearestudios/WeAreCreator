@@ -235,16 +235,66 @@ database, no hidden term; `CREATOR_MATCH_WEIGHTS` sums to 100 and is the only
 tuning knob. The components ship with every result, so a brand can see why
 somebody was suggested.
 
-- Signals: niche and genre overlap with the brief, city match, follower count
-  against the budget tier (`CREATOR_REACH_TIERS`), engagement rate, past on-time
-  delivery here. `CAMPAIGN_CATEGORY_SYNONYMS` bridges the category enum to the
-  words creators actually use — nobody writes "fnb" about themselves.
+- Signals: niche and genre overlap with the brief, whether the creator can post
+  the formats the brand asked for, city match, follower count against the wanted
+  tier, engagement rate, past on-time delivery here. `CAMPAIGN_CATEGORY_SYNONYMS`
+  bridges the category enum to the words creators actually use — nobody writes
+  "fnb" about themselves.
 - **An unmeasured signal scores at the midpoint, never zero.** A creator with no
   connected Instagram has an unknown engagement rate, not a bad one, and scoring
   unknowns at zero would bury everyone who has never worked here — which is
-  everyone, at the start. `unknown_signals` names them so the UI can say so.
+  everyone, at the start. `unknown_signals` names them so the UI can say so. The
+  same applies to a *brand* that skipped a question: an unstated content
+  preference is an unknown, not a zero for everybody.
 - Anyone who already applied or was invited is excluded. Filters for niche, city
   and follower range; paginated. Admins can call it on any campaign.
+
+### Audience size, in one vocabulary
+
+There used to be two. The scorer had four bands named nano / micro / mid /
+macro with its own boundaries, while every screen a person reads described
+followers in raw numbers and the directory filter offered "10k+ / 50k+ / 100k+
+/ 500k+". A brand seeing "micro" in one place and picking "10k+" in another
+were talking about different people.
+
+**`FOLLOWER_TIERS` is the only vocabulary** — micro 1K–10K, mid 10K–100K, macro
+100K+ — and `CREATOR_REACH_TIERS` (budget → expected audience) returns one of
+its keys rather than a fourth name. `lib/followerTiers.js` mirrors it and a
+test fails if they drift. **The budget boundaries moved when the vocabulary
+did**, picked so the same fee buys roughly the same audience it did before:
+keeping the old numbers against the new bands would have made ₹8,000 buy a
+1k–10k creator where it used to buy 10k–50k, which is a re-tuning smuggled in
+under a renaming.
+
+### What a brand is looking for
+
+`content_types`, `preferred_follower_tier` and `typical_budget_band` on the
+brand profile, captured in onboarding and editable after. Standing preferences,
+not lines on one brief: a café that works with micro food creators wants that
+on every campaign it posts, and re-deriving it from each fee was a guess where
+an answer was available. None of them are in `_BRAND_REQUIRED_FIELDS` — this is
+what we rank on, not evidence of anything.
+
+- **A stated preference beats an inferred one.** `_wanted_reach_tier` takes the
+  brand's tier when it set one and falls back to the budget map otherwise; the
+  typical band stands in when a brief has no fee of its own (barter, or a
+  draft). `budget_tier.stated` travels with the response so the panel can say
+  "you're looking for" rather than "this budget suits" — one of those is worth
+  arguing with and the other is worth correcting on the profile.
+- `"any"` is a real answer, stored as one, and does **not** steer the ranking.
+  It means "we don't mind", which is different from never reaching the question.
+- `content_fit` is a new weight worth 10, and it came out of `niche` (30→25) and
+  `genre` (15→10) rather than out of city or reliability: it measures the same
+  thing they do at a finer, factual grain — which formats somebody actually
+  posts is a fact, a niche is a description. Read off `platforms`, so an empty
+  profile is an unknown rather than a zero. The reason line names **only the
+  gap** ("no YouTube"), because a match is not something to act on.
+- The brand's own half of its identity: a `tagline` (90 characters, on every
+  campaign card it posts and first in the share preview — it was written to be
+  one line) beside `about` (a paragraph, on the public page). And
+  `CONTACT_ROLE_SUGGESTIONS` at signup, which is **a suggestion list, not an
+  enum** — the designation stays free text so every value typed before it still
+  reads as a sentence, and "Other" opens a box rather than storing the word.
 
 ## Creator onboarding
 
@@ -586,6 +636,58 @@ what they say. The "Live pool" masthead figure is gone — it summed
   category with no live brief in it is a filter whose only outcome is an empty
   list.
 
+### When a shoot may happen
+
+A venue's Monday is not its Saturday and its 11am is not its 8pm. Two fields on
+a campaign say so: `restricted_days` (weekday indexes the venue is out) and
+`shoot_windows` (the hours that work). Before them the only place a brand could
+say "not during service" was the brief, which nothing reads.
+
+- **Every weekday and hour comparison happens in IST** (`SHOOT_TZ`). Slots are
+  stored in UTC and a 19:00 Bengaluru sitting is the *next day* in UTC, so
+  reading `.weekday()` off the stored value puts a Friday evening on Saturday
+  for everybody. Same trap as `isToday` on the manager's screen, same fix.
+  Fixed rather than per-campaign because the operation is Bengaluru-first.
+- **`_shoot_time_refusal(campaign, starts, ends)` is the only decider** —
+  slot creation and editing (both through `_validate_slot_times`), and every
+  booking (through `_claim_slot`, the single function behind both booking
+  routes), so they cannot disagree about what the brand asked for. It
+  **returns the sentence rather than raising**, because one caller labels
+  instead of refusing.
+- **Creating and booking are separate checks.** A slot can predate a
+  restriction, or an admin can have written one past it on purpose, so the
+  booking is checked again — before the seat is incremented, or a refusal
+  quietly shrinks the slot. On a fixed slot the refusal points at the manager,
+  because the creator only chose which of the manager's slots to take; on a
+  personal table they named the time, so they get the plain sentence.
+- **A preset's times come from `SHOOT_WINDOW_PRESETS` at write time**, never
+  from the client: a "lunch" window running 2am–4am is a window whose label
+  lies, and resolving at write time means retuning a preset later cannot move
+  a brief somebody already agreed to. Only `custom` carries times.
+- A slot must sit **inside one window**, not straddle two — a sitting running
+  from lunch into the afternoon is one the venue never agreed to, however each
+  half looks alone. Absent reads as unrestricted, the usual pre-migration rule.
+- `_clean_restricted_days` **refuses all seven**: that is not a restriction,
+  it is a campaign nobody can ever book, discovered by a creator with a dead
+  picker. The frontend control holds the same line at six.
+- **Nobody who already holds a seat loses it.** The check is on the act of
+  booking, never on an existing collaboration — a brand restricting Mondays
+  does not evict the creator already booked on one, the same shape as a brief
+  going private. `outside_preferences` on the manager's slot rows flags such a
+  slot so they can ring the venue rather than finding out through a creator's
+  failed booking. The admin `advance` path writes `scheduled_at` directly and
+  is deliberately not checked: it is the escape hatch for when the rule is
+  wrong.
+- `lib/shootWindows.js` mirrors the presets, the weekday names and the offset;
+  a unit test fails if they drift. **Weekday indexes follow Python's
+  `datetime.weekday()` (Monday 0), not JavaScript's `getDay()` (Sunday 0)** —
+  `dayIndex` is the only place that conversion happens. `SlotPicker` cuts the
+  disallowed days and times out rather than offering and then refusing them,
+  and `ShootWindowNote` renders the same rule on the campaign page, in the
+  picker and above the manager's slot list — it renders nothing when nothing
+  was set, because an empty box headed "When it shoots" reads as a fact about
+  the venue rather than a question nobody answered.
+
 ### Public and invite-only briefs
 
 `visibility` on a campaign, `public` or `private` (`CampaignVisibility`).
@@ -618,6 +720,149 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
   design, so the button would copy a dead link. Absent, not disabled.
 - `lib/visibility.js` mirrors the reader (absent means public) and holds the
   two options' wording.
+
+## The marketing site
+
+Three pages for three jobs. **Home routes, the audience pages sell.** `/`
+speaks to both sides because it is the front door and cannot know who arrived;
+it leads with the problem, states the promise, and offers exactly two ways on —
+"I'm a creator" and "I'm a brand". `/for-creators` and `/for-brands` each have
+one reader and ask once.
+
+**The positioning governs every word, and it is not "against agencies".** WeAre
+Studios is one, and the managed service is a real offering somebody chooses —
+"without an agency" or "cut out the middleman" would be a page arguing against
+our own product. **The enemy named is disorganisation**: campaigns run over DMs
+and spreadsheets, nobody checked, no rate in writing, no proof of what it
+achieved. That is the kind of thing a well-meaning copy edit undoes by
+accident, so `test_marketing_pages.py` pins it.
+
+What each audience must come away knowing is also pinned there — for creators,
+that briefs are real and paid, the rate is agreed in writing before they shoot,
+they keep 100% of it because the fee sits on the brand, payment follows
+approved delivery, brands are checked, and joining is free; for brands, real
+audience stats, every creator and every rate visible, no retainer and no markup
+on creator fees, approval before publication, a report at the end, and the
+self-serve/managed choice **as an option, never as a fee they are locked into**.
+
+- **Each page asks once, in the same words, twice** — hero and close, plus the
+  nav button. Two differently-worded CTAs is a choice of doors; one repeated is
+  an ask.
+- The two audience pages carry **their own Open Graph tags and their own
+  canonical**, because each is a link somebody pastes into a chat and the
+  preview is the product.
+- Home is the only one the SPA renders, which is how it came to carry claims
+  the other two are forbidden to make — an eight-city strip, a "Tech & gadgets"
+  category with no enum behind it, "no free product standing in for money" on a
+  product with barter briefs, and a four-step flow written before the draft
+  gate. It is now **held to the same tests**.
+- **Home hotlinks stock photography and the other two fetch nothing.** That is
+  the one remaining inconsistency and it is not fixable in code: the answer is
+  owned photography from real shoots, self-hosted. `SlideImage` carries a
+  `NEEDS A DECISION` note and a test keeps it there rather than letting it
+  settle in.
+
+### The audience pages
+
+`GET /for-creators` and `GET /for-brands`, off one shell — `_marketing_head`,
+`_marketing_nav`, `_marketing_footer`, `_marketing_css`, `_proof_strip`. Two
+bespoke pages would be two design systems inside a week.
+
+**Server-rendered, like `/c/{id}` and `/brands/{id}` and for the same reason** —
+the crawler that builds a WhatsApp preview does not run JavaScript, so Open
+Graph tags injected by React are tags nobody ever sees. Vercel must proxy both
+alongside the other two; the nav entries, the footer's and the landing's two
+paths are **real `<a>`s, not `<Link>`s**, or the router intercepts them and
+lands on the SPA's catch-all. Both are in the sitemap: the public pages here
+somebody might search for rather than be sent.
+
+- **The font loads without blocking.** "Previews well and loads fast" and
+  "same dark premium system as the main landing" pull against each other —
+  Fraunces is the most recognisable part of that system, and a page in Georgia
+  is visibly not the brand. So the stylesheet goes on `media="print"` with an
+  `onload` swap: the browser fetches it at low priority and applies nothing
+  until it arrives, text paints immediately in the fallback, and a `<noscript>`
+  copy covers the rest. Measured at **74ms to a painted headline with the font
+  request blocked outright**. Nothing else is fetched: no script, no CDN, no
+  image host. (`/c/{id}` and `/brands/{id}` still ship no webfont at all — they
+  are previews of somebody else's content, not our pitch.)
+- **It has a navigation bar**, which the design guidelines require on desktop
+  and which is also the practical fix: somebody arriving from WhatsApp had no
+  way into the rest of the site except a line in the footer. Glassmorphism per
+  the component rules, never transparent; the links collapse below 832px and
+  the logo and CTA stay.
+- The grain comes from the same `feTurbulence` texture `.grain-page` uses,
+  inlined because this page loads none of our stylesheets.
+- **Every proof figure is counted, never written down.** `_platform_proof`
+  queries them, and each appears only above a floor: a strip reading "3
+  creators" is not proof, it is a reason to close the tab, and the honest move
+  at that size is silence rather than rounding up. With nothing to say, the
+  whole section is absent. "Campaigns run" counts campaigns that reached
+  `in_progress` or beyond — a count of posted briefs would be a count of
+  abandoned drafts. A test strips the markup and fails on any bare numeral in
+  the copy, which is where a "500+" would otherwise hide.
+- Claims stay inside what the operation can back: a test fails either page for
+  "every city", "pan-India", "guaranteed" and the rest, and requires the word
+  Bengaluru. Same rule as everywhere else here.
+- Neither page asks for the other's audience. A "join as a creator" link on the
+  brand page is the competing second door the single-CTA rule exists to stop.
+- The brand headline covers **both** shapes of work — "Fill the room. Launch
+  the thing." A venue-only headline reads past the label launching a
+  collection, which the main landing already names as one of its audiences.
+
+### The footer
+
+There wasn't one. Every marketing page ended at its closing CTA, so the only
+way to reach terms, privacy or a human was to already know the URL — and a
+consent checkbox pointing at pages nothing links to is a consent record that is
+hard to defend.
+
+`components/Footer.jsx` for the SPA, `_marketing_footer()` for the two
+server-rendered pages, and **`lib/siteNav.js` is the one link list**, mirrored
+by `FOOTER_COLUMNS` in `server.py` with a drift test — the same arrangement
+`followerTiers.js` and `shootWindows.js` use, for the same reason: two
+renderers with two copies is how a footer advertises a page that moved.
+`FooterLink` picks `<a>` over `<Link>` on `link.external`, which is what marks
+the backend-rendered destinations.
+
+It is on **every page a signed-out person can land on** — Landing, Legal,
+Campaigns, CampaignDetail, and both audience pages. Deliberately not the admin
+console, the manager screens or the dashboards: those are dense working
+surfaces under a sticky header, and a marketing footer under a data table is
+noise rather than navigation. The OTP screens are the other exception — one
+focused task, and `Signup` already links both documents inline, at the moment
+consent is actually recorded.
+
+The copyright names **WeAre Monk**, the entity that was already in that line.
+Who owns the thing is a fact, not a copy decision, so it is carried over rather
+than re-branded to match the product name. The year is read at render.
+
+### Terms and privacy
+
+`pages/Legal.jsx`, and the rule is that they describe **what the product
+actually does**, checked against the code rather than against a list somebody
+typed. A privacy page that describes a data flow we removed is worse than a
+placeholder, because somebody reads it and believes it — and that is not
+hypothetical: this page said, months after it stopped being true, that a brand
+received a creator's contact details on acceptance, which is the strongest
+promise the product now makes, described backwards.
+
+`test_legal_pages.py` walks the classes of data the product really handles and
+fails if the page does not name them: the WhatsApp number, the delivery address
+*and* the map pin as two different things, the business documents and what is
+inside them, Instagram as official-API-and-read-only with an encrypted token,
+UPI and PAN, and the records a collaboration leaves — including the draft,
+which is content that is not public yet. The terms carry the draft gate, the
+24-hour slot window, `execution_owner`, invite-only briefs, barter, and
+re-review after a material profile edit. "Vets"/"vetted" are banned in the copy
+too, not just in the code.
+
+**What needs a lawyer is flagged, never invented.** A `NEEDS A LAWYER` block in
+the file header lists the DPDP Act 2023 duties, retention periods, how long
+business documents may be held after a decision, unpublished drafts, whether a
+coordinate is sensitive personal data, content licensing and Meta's platform
+terms. A test keeps that block present — deleting it is how "this needs review"
+quietly becomes "this looks finished".
 
 ### The shareable page
 
@@ -771,19 +1016,25 @@ refuses it with the actual reason instead.
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:
 
 ```
-applied → verified → accepted → commercial_agreed → slot_booked
-        → attended → content_submitted → content_approved → in_payment → closed
+applied → verified → accepted → commercial_agreed → slot_booked → attended
+        → [draft_submitted → draft_approved] → content_submitted
+        → content_approved → in_payment → closed
 ```
 
 Plus two terminal exits that are **not** steps: `declined`, `cancelled`
-(`TERMINAL_COLLAB_STATES`). Who moves each step matters:
+(`TERMINAL_COLLAB_STATES`). The bracketed pair is optional per campaign — see
+"The draft gate" below. Who moves each step matters:
 
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
   The admin `advance` endpoint refuses these with 409 by design.
+- **Reviewer** (brand or WeAre, per `execution_owner`) — `draft_approved`, and
+  sending it back to `attended`. `advance` refuses both
+  (`_DRAFT_OWNED_TRANSITIONS`) for a different reason: they are not decisions to
+  fabricate.
 - **Creator** — `slot_booked` (booking their own place, and cancelling it back to
-  `commercial_agreed` up to 24h before) and `content_submitted`, and may resubmit
-  until the brand approves.
+  `commercial_agreed` up to 24h before), `draft_submitted` and
+  `content_submitted`, and may resubmit either until it is approved.
 
 Booking is atomic and lives in exactly one function, `_claim_slot`: a conditional
 `$inc` on `booked_count` under `{"$expr": {"$lt": ["$booked_count", "$capacity"]}}`,
@@ -806,6 +1057,54 @@ Rules to preserve when touching this:
   both, and a unit test fails if a stray reference reappears.
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
+
+### The draft gate
+
+`content_submitted` carried a link to something already live, so the brand's
+first sight of the content was after the creator's followers had had theirs and
+"can we change the caption" was a request to delete a post.
+`draft_submitted → draft_approved` sit between `attended` and
+`content_submitted`, and the routes are `/drafts/{collab_id}/…`.
+
+- **Optional per campaign, and absent reads off.** `_requires_draft_approval`
+  returns False for a campaign with no such field, which is every campaign
+  written before it existed. **There is no backfill, deliberately** — that is
+  the whole migration guarantee: anything already past `attended` keeps the path
+  it started on, because the two states are simply not on its ladder. New
+  brand-run campaigns default it *on* at creation; the creation default and the
+  reader default differ on purpose, because one is a policy for new work and the
+  other is a promise to old work.
+- **`_collab_ladder(campaign)` is the one reader of "which states does this
+  campaign walk"**, and `_next_collab_state` / `_previous_collab_state` /
+  `_lifecycle_for` all take the campaign. A collaboration *standing* on a draft
+  state falls back to the full ladder whatever the campaign now says — a toggle
+  flipped mid-flight must not strand somebody on a state with no way forward.
+- **A live link is refused before the draft is approved.** `submit_collab_content`
+  accepts from `draft_approved` on a reviewing campaign and from `attended`
+  otherwise; accepting `attended` on both would be the route around the gate.
+  `can_submit_content` on the creator's row mirrors it exactly.
+- **Two ways in, because one of them fails on the phone this runs on.** A
+  finished reel is often several hundred megabytes and a creator on mobile data
+  would publish it rather than watch a bar crawl, so an unlisted link is a
+  first-class option. Both routes go through `_record_draft`, so the file and the
+  link cannot diverge in state, audit or notification.
+- **The file lands in `PRIVATE_UPLOAD_DIR`** — the same reasoning as the brand's
+  verification documents, and the opposite of a cover image. An unpublished draft
+  is the one thing here that must not be one guessed URL away from the internet.
+  `_serialize_draft` returns no path; the only way out is
+  `GET /drafts/{id}/file`, audited. `sniff_draft_type` reads the leading bytes
+  (ISO-BMFF `ftyp` at offset 4, EBML for WebM, the image signatures) and refuses
+  a PDF, which is a valid *document* and not a draft.
+- **The reviewer follows `execution_owner`**, through `_question_staff_may_see` —
+  the same reader the question threads use, not a second copy. 404 behind all
+  three doors.
+- **A send-back requires a note** and `$inc`s `draft_revision_count`. Two
+  revisions is a conversation; five is a brief that was never clear, and only a
+  counter shows the difference. The note rides back to the creator's card as
+  their next action, and a new draft clears it while the count survives.
+- A draft is **not** in `DELIVERED_COLLAB_STATES` — performance is measured on
+  published content, and a draft has no reach — but both states are in
+  `COLLAB_GROUP_ONGOING`, and `_roster_rows` counts them as having turned up.
 
 ## Who runs a campaign
 
@@ -974,9 +1273,12 @@ doing, then its own numbers, then the exports. A campaign quietly underfilling
 four days before the shoot generates no notification and sits in no queue — it
 is discovered when the brand rings up, unless something looks for it.
 
-`GET /admin/health` runs six checks: underfilling campaigns near their day,
-accepted creators with no slot, content overdue after attendance, payments
-sitting unpaid, brands waiting on our verification, and profiles that stalled.
+`GET /admin/health` runs seven checks: underfilling campaigns near their day,
+accepted creators with no slot, content overdue after attendance, drafts nobody
+has reviewed, payments sitting unpaid, brands waiting on our verification, and
+profiles that stalled. The draft one has the shortest fuse
+(`DRAFT_REVIEW_OVERDUE_DAYS`, 2) because it is the only row where the delay is
+*ours*: the creator has done the work and cannot publish until somebody looks.
 Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
 …) because each is a judgement about how much slack the operation has, and they
 travel back in the response so the panel quotes the server's numbers rather than
@@ -1256,6 +1558,57 @@ gets recorded days later.
   fewer creators than the brief asked for, no venue address on the day. It stays
   short deliberately; a list of eleven warnings is a list nobody reads standing
   up.
+
+### The calendar, and checking yourself in
+
+`GET /calendar` is every booked shoot between two dates. The campaign lists
+already said who was booked on *this* brief; nothing said what next Tuesday
+looks like across all of them, which is the question somebody asks before
+agreeing to a date.
+
+- **One endpoint, three scopes, one payload.** `_calendar_campaign_scope`
+  builds the filter — a brand its own campaigns, a WeAre manager the ones
+  assigned to them, an admin everything — and raises on anything else, so a
+  role added later has to be given a scope rather than inheriting the admin's
+  by omission. Filtering by a campaign outside the scope returns an **empty
+  calendar, not a 403**, the same reasoning as the 404s elsewhere.
+- **No entry carries a contact detail**, for any role. The roster and the
+  daysheet are where a phone number lives and they are behind the staff role
+  for a reason; a planning view needs a name and a time. A leak test plants
+  values and searches the output.
+- An exit is not a shoot: `declined` and `cancelled` keep the time they were
+  booked for, and drawing them would put people on a calendar who are not
+  coming.
+- **The agenda is the view and the grid is the extra.** A month of
+  centimetre-square cells on a 390px screen holds a number and nothing else,
+  so the phone gets the grouped list and the grid appears at `md:`. Days are
+  bucketed on the **local** date — `toISOString` would move an evening shoot
+  to the next day for everybody in IST.
+
+`POST /creator/check-in` is the QR path. `GET /manager/slots/{id}/check-in-code`
+mints a short-lived signed code for the day-of screen; `CheckInQr` refreshes it
+every 60s against a 90s life, which is the whole security property — a
+photograph of the screen is stale before it can be passed around.
+
+- **The code names the slot, never the creator.** One screen serves the whole
+  queue; a per-creator code would be one QR per person, which is the problem
+  this solves. So the code proves nothing about identity, and the route checks
+  *this creator's own booking on that slot* — `creator_id` from the session,
+  never from the code.
+- Four checks, all server-side: signature and expiry, `typ == "checkin"` (every
+  other token this app signs verifies with the same key, so without it an
+  access token would work as a check-in code), the booking, and
+  `_checkin_window_refusal` — which is what stops a screen photographed today
+  being used next week.
+- The refusal for "not your slot" **does not name the campaign**: a creator who
+  scanned the wrong screen learns nothing about whose shoot it was.
+- **Both paths go through `_check_in_collaboration` and write the same audit
+  line**, differing only in `method` (`manual` / `self_qr`). Who is holding the
+  clipboard depends on whether the campaign was reassigned and on whether the
+  camera worked; "who was actually here" must be one question with one answer.
+  The manual button is untouched and is **not a lesser path** — it is what
+  works when the camera doesn't, and the failure page names it rather than
+  leaving somebody tapping Retry.
 
 ### Check-ins survive the venue's wifi
 

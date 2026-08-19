@@ -11,6 +11,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     CalendarClock,
+    FileVideo,
     Loader2,
     MapPin,
     Phone,
@@ -29,21 +30,23 @@ import {
     SectionHead,
     formatDateTime,
     formatRupees,
+    lifecycleFor,
     stageIndexFor,
 } from "./shared";
 import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
+import SubmitDraftDialog from "./SubmitDraftDialog";
 
 // ---------------------------------------------------------------------------
 // The tracker
 // ---------------------------------------------------------------------------
 
-const Tracker = ({ collabId, state }) => {
+const Tracker = ({ collabId, state, stages = LIFECYCLE }) => {
     const still = useReducedMotion();
-    const current = stageIndexFor(state);
-    const filled = current < 0 ? 0 : current / (LIFECYCLE.length - 1);
+    const current = stageIndexFor(state, stages);
+    const filled = current < 0 ? 0 : current / (stages.length - 1);
 
     return (
         <div data-testid={IDS.tracker(collabId)} className="mt-6">
@@ -59,11 +62,11 @@ const Tracker = ({ collabId, state }) => {
                     animate={{ scaleX: filled }}
                     transition={{ duration: still ? 0 : 0.7, ease: [0.22, 1, 0.36, 1] }}
                 />
-                {LIFECYCLE.map((stage, i) => (
+                {stages.map((stage, i) => (
                     <span
                         key={stage.key}
                         aria-hidden="true"
-                        style={{ left: `${(i / (LIFECYCLE.length - 1)) * 100}%` }}
+                        style={{ left: `${(i / (stages.length - 1)) * 100}%` }}
                         className={
                             "absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-300 " +
                             (i <= current ? "bg-ember-500" : "bg-white/25")
@@ -75,14 +78,20 @@ const Tracker = ({ collabId, state }) => {
             {/* First and last labels align to the ends of the rail; the rest
                 centre in their column, which lands close enough to their
                 marker to read as attached to it. */}
-            <ol className="mt-3 grid grid-cols-6 gap-1">
-                {LIFECYCLE.map((stage, i) => {
+            {/* Six columns, or seven where a draft is reviewed. The count is a
+                style rather than a class because Tailwind can only see the
+                classes written literally in the source. */}
+            <ol
+                className="mt-3 grid gap-1"
+                style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
+            >
+                {stages.map((stage, i) => {
                     const done = i < current;
                     const here = i === current;
                     const align =
                         i === 0
                             ? "text-left"
-                            : i === LIFECYCLE.length - 1
+                            : i === stages.length - 1
                             ? "text-right"
                             : "text-center";
                     return (
@@ -116,6 +125,8 @@ const Tracker = ({ collabId, state }) => {
 
 const ACTION_ICON = {
     book_slot: CalendarClock,
+    submit_draft: FileVideo,
+    resubmit_draft: FileVideo,
     submit_content: Upload,
     resubmit_content: Send,
     add_payout_details: Wallet,
@@ -128,7 +139,7 @@ const Detail = ({ Icon, children, testid }) => (
     </div>
 );
 
-const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
+const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
     const still = useReducedMotion();
     const [releasing, setReleasing] = useState(false);
     const next = collab.next_action || {};
@@ -158,6 +169,18 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     Pick your slot
+                </Button>
+            );
+        }
+        if (next.action === "submit_draft" || next.action === "resubmit_draft") {
+            return (
+                <Button
+                    data-testid={IDS.primary(collab.id)}
+                    onClick={() => onDraft(collab)}
+                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                >
+                    <Icon className="mr-2 h-4 w-4" />
+                    {next.action === "resubmit_draft" ? "Replace your draft" : "Send your draft"}
                 </Button>
             );
         }
@@ -253,7 +276,11 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
                 </Money>
             </div>
 
-            <Tracker collabId={collab.id} state={collab.state} />
+            <Tracker
+                collabId={collab.id}
+                state={collab.state}
+                stages={lifecycleFor(collab)}
+            />
 
             {next.label && (
                 <p
@@ -336,6 +363,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onRefresh }) => {
 export default function ActiveCampaigns({ collaborations, onRefresh }) {
     const [booking, setBooking] = useState(null);
     const [submitting, setSubmitting] = useState(null);
+    const [drafting, setDrafting] = useState(null);
     const rows = collaborations || [];
 
     return (
@@ -380,6 +408,7 @@ export default function ActiveCampaigns({ collaborations, onRefresh }) {
                                 collab={c}
                                 onBook={setBooking}
                                 onSubmit={setSubmitting}
+                                onDraft={setDrafting}
                                 onRefresh={onRefresh}
                             />
                         ))}
@@ -397,6 +426,12 @@ export default function ActiveCampaigns({ collaborations, onRefresh }) {
                 open={Boolean(submitting)}
                 onOpenChange={(v) => !v && setSubmitting(null)}
                 collab={submitting}
+                onSubmitted={onRefresh}
+            />
+            <SubmitDraftDialog
+                open={Boolean(drafting)}
+                onOpenChange={(v) => !v && setDrafting(null)}
+                collab={drafting}
                 onSubmitted={onRefresh}
             />
         </>
