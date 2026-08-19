@@ -758,11 +758,13 @@ self-serve/managed choice **as an option, never as a fee they are locked into**.
   read by both, so they end with `TwoPaths` — the one place competing buttons
   are right, because picking for the visitor is the mistake. `TwoPaths` must
   not appear on an audience page; a test enforces both halves.
-- **Home is at most two screens.** Hero and slider, the counted proof strip,
-  one problem-and-promise section, the close. Measured at 1,780px of content —
-  under two viewport-heights at 1440×900 and above. Everything that used to be
-  below it has its own page, and the live brief feed went to `/campaigns`,
-  which is a better version of it.
+- **Home was at most two screens, and the film is the deliberate exception.**
+  Hero, the counted proof strip, the scroll film, one problem-and-promise
+  section, the close. Everything except the film still answers the old rule —
+  it was 1,780px of content before the film was added — and the film's own
+  length is scroll it spends telling the story rather than page a reader has to
+  get past. Everything else that used to be below home has its own page, and
+  the live brief feed went to `/campaigns`, which is a better version of it.
 - **Every proof figure is counted, never written down.** `_platform_proof`
   queries verified creators, campaigns that reached `in_progress` or beyond,
   verified brands and distinct cities; `GET /public/proof` serves them and
@@ -796,6 +798,185 @@ how to buy it back — point the rewrites at a prerender service, or add a Verce
 `PageMeta` writes title, description, canonical and the OG/Twitter tags per
 page. No two pages share a title — one title for two pages makes two links
 preview identically, which is the whole reason for separate pages.
+
+### The copy budget
+
+**One idea per screen-height, and a word count per page**: home under 120,
+`/for-brands` and `/for-creators` under 250 each, `/how-it-works` and
+`/why-weare` under 300. Headlines to eight words, supporting lines to twenty.
+`test_marketing_pages.py` enforces all of it.
+
+Every page keeps its words in one `COPY` object so the budget can be read
+rather than reconstructed by walking JSX — and so a section that wants to say
+more has to argue with a number.
+
+**The shape is what holds the rule.** No primitive in `Sections.jsx` takes a
+`body`; they take a label and one `line`. A four-word label plus a sentence
+carries the same point as the fifty-word paragraph it replaced and is read
+rather than skipped, and a section that wants to make two points has to become
+two sections. The detail that came out lives in onboarding and in the product,
+which is where somebody who has clicked actually needs it.
+
+This was a compression, not a repositioning: every claim survived, and the
+tests that pin what each audience must come away knowing were rewritten to
+look for the idea rather than the sentence it used to sit in.
+
+### The motion layer
+
+`components/marketing/motion.js` — one easing curve (`EASE`), durations
+between 200 and 400ms, transforms and opacity only. Entrances are `Reveal`
+(rise and fade, staggered by index); the proof figures use `CountUp`; cards
+lift 2px and warm their border toward ember on hover; images ease to 1.02x
+inside frames that clip.
+
+- **`prefers-reduced-motion` is handled in `Reveal` and `CountUp`, once.**
+  Under `reduce` the element renders at its final state and the number's first
+  paint is its final value — not a shorter animation. Verified by emulation:
+  at 50ms the hero heading is opacity 0 / y+14 normally, and opacity 1 /
+  `transform: none` under `reduce`.
+- **A hover transform must not sit on the element Framer animates.** Framer
+  writes `transform` as an inline style, so `hover:-translate-y-*` on the same
+  node is dead once the entrance settles at `transform: none`. Measured: the
+  border warmed and the card did not move. `Point` puts the hover on a child,
+  and a test pins it.
+- The image zoom scales a layer inside the frame, never the frame — scaling
+  the container would grow the hole it reserves.
+- `duration-[400ms]` is written `[transition-duration:400ms]`: the arbitrary
+  `duration-*` form matches both transition- and animation-duration, and
+  Tailwind warns on every build. It warns for the string anywhere, including
+  inside a comment.
+
+### The kinetic hero, and the imagery
+
+**The signature is the headline.** `KineticHeadline` morphs at letterform
+level between four kinds of campaign — launch night, fashion drop, travel
+stay, menu tasting — each resolving against a line that never moves. The
+motion *is* the message: what changes is the kind of work, what does not is
+how it is run.
+
+- **"Your" and "handled properly." are outside the morph.** Animating the
+  whole line would say four unrelated headlines are cycling rather than one
+  sentence being re-pointed.
+- **Per letter, on a stagger, moving as well as fading.** A single opacity
+  tween on the phrase is the thing this is specified not to be. ~4s a phrase;
+  the swap itself is under a second, so the phrase is still for most of its
+  life.
+- **The tallest phrase reserves the box.** A line that changes height moves
+  the page every four seconds — a CLS event per cycle.
+- One `aria-label` on the `h1`, with the animated spans hidden. A screen
+  reader reading four letters at a time as they arrive is gibberish.
+- Under `prefers-reduced-motion` the first phrase renders and no timer starts.
+
+**`FloatingCards`** are tilted photo cards drifting on scroll, in two clusters:
+four behind the hero (the four categories, said at once rather than one at a
+time) and two hanging past the edges of a proof strip. Rotation is static;
+the drift is `y` off the scroll position, so nothing touches layout. **Two
+cards below `md`, four above** — four overlapping compositing layers on a
+390px screen sit behind text nobody can read through them.
+
+**This is the only `box-shadow` on the marketing site**, and a deliberate
+exception to the elevation rule: a card drifting at a different rate from the
+page behind it is the one inline element that really is floating, and without
+the shadow the tilt reads as a mistake. Soft, and in black rather than the
+default grey. A test fails any other marketing file that grows one.
+
+The hero's full-bleed photo slider is gone. Its job was to say "we do all of
+these", which the cards now do better — and it cost a full-viewport layer
+cross-fading every seven seconds on the page most likely to be opened on
+mobile data.
+
+### The scroll film
+
+`CampaignFilm` — the centrepiece on home. Seven beats of a campaign playing
+itself out: a brief goes up, creators apply, one is accepted, they hear on
+WhatsApp, a slot is booked, the draft is approved, the creator is paid. The
+product demonstrating itself, which is the one thing a paragraph cannot do.
+
+- **The pin is `position: sticky` and nothing else.** No wheel listener, no
+  `scrollTo`, no `preventDefault` — the page scrolls at the rate the reader's
+  finger says and they can leave at any point. A test greps for all four.
+- **Every beat derives from `scrollYProgress`, never from state.** That is what
+  makes it reverse: scrolling up is the same function at smaller numbers. A
+  `useState` beat-tracker looks identical going down and is wrong going up, and
+  nobody sees it until they scroll back. The only `useState` in the file is the
+  media query.
+- **The payout counts with scroll and writes `textContent` on a ref.** A
+  `setState` per frame re-renders the whole stage sixty times a second to change
+  four characters. Measured unwinding: ₹2,722 at 87% → ₹12,000 at 97% → ₹2,722
+  back at 87%.
+- Elements persist once they arrive, so the campaign accumulates rather than
+  each beat replacing the last — one story instead of seven slides.
+
+**The fallback is a first-class design, not a degraded mode.** Below `md` and
+under `prefers-reduced-motion` the same seven beats render as a numbered
+stepped list: every UI piece drawn, every caption present, nothing pinned and
+nothing scroll-driven. `wide` starts `false`, so a phone never mounts the
+pinned version even for a frame — the other way round, five screens of scroll
+would appear and vanish on the device least able to afford it.
+
+**The interfaces are drawn, never screenshotted** (`filmUI.jsx`). A screenshot
+dates the moment somebody moves a button, and a real component would drag the
+app's data shapes, API calls and auth context onto a page that has none of
+them. They borrow the design language — `bg-card`, `grain-surface`, ember on
+the one thing that matters in each — and are simplified past literal: a real
+applicant row carries eight fields, this one carries three. The WhatsApp beat
+names the channel and borrows none of its marks.
+
+Measured on the mid-range Android profile: **zero long tasks over 50ms during
+a full scroll through the film**, on both the pinned and stepped paths. CLS
+0.0001. The four long tasks on the page are React bootstrapping, and the
+control page without a film has the same four.
+
+### The family handshake
+
+The closing band on every marketing page: full-bleed studio coral, white
+poster type, a black CTA block. **The only place the studio palette appears
+on the site** — a colour used twice is a co-brand rather than an endorsement,
+and Creators has its own identity to keep.
+
+- `lib/studioPalette.js` holds it, once, and a test fails any second importer.
+  **It is deliberately not a Tailwind token**: adding one would put the
+  studio's colour within reach of every authenticated screen, which is exactly
+  what "the only place" prevents.
+- The hex is a considered stand-in and says so in the file — nothing in this
+  repository carries the studio's registered brand colour, and inventing
+  precision would be worse than flagging it.
+- What is inherited is the confidence and the motion, never the assets: no
+  studio copy, no studio photography, no studio logo treatment.
+- `TwoPaths` takes a `tone`, because the dark card reads as a hole punched in
+  the coral. Same two doors, same words, inverted for the field.
+
+### Measured, not assumed
+
+Mid-range Android profile — 4× CPU throttle, Fast-3G, 390px:
+
+- **CLS was 0.0798 and is 0.0002.** The whole of it was the proof strip: it
+  rendered nothing until the figures landed and then appeared, pushing every
+  section below it down. It reserves its height now, at **both** widths — the
+  figures wrap below `md`, so a single value was right on desktop and 52px
+  wrong on a phone. Neither the headline nor the cards contributed anything.
+- **The flourishes cost no blocking time.** Home (kinetic headline + four
+  cards) blocks 969ms; `/for-brands`, which has neither, blocks 1012ms. The
+  cost on both is React and the CRA bundle. FCP and LCP are within 60ms of
+  each other.
+- Lighthouse itself is not installed here; these are its metrics measured
+  directly through the Performance Observer API, which is the same numbers by
+  a different route.
+
+### The marketing chrome
+
+`MarketingNavbar` and `MarketingFooter` are **variants, not edits**. The shared
+`Navbar` is on nineteen surfaces — every dashboard, the console, the manager
+screens, onboarding — where it carries role links, the bell and the avatar
+menu; the shared `Footer` stays on Legal, Campaigns and CampaignDetail. Neither
+was touched.
+
+The marketing bar takes no session: it has one audience, and a second mode is
+how a variant drifts back into being the component it was created to avoid
+editing. Logged out it carries the four pages, Sign in, Join, and the studio
+endorsement. `lib/siteNav.js` holds `MARKETING_LINKS` and `FOOTER_COLUMNS`; the
+shared navbar keeps its own copy of the four links because editing it was out
+of scope, and a drift test compares the two.
 
 ### The shared furniture
 

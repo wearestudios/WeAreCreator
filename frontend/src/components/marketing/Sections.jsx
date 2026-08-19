@@ -1,40 +1,47 @@
 // The marketing pages' shared furniture.
 //
-// Four pages — /for-brands, /for-creators, /how-it-works, /why-weare — plus
-// home and the 404. Bespoke layout on each would be five design systems inside
-// a fortnight, which is exactly what happened the first time these existed as
-// hand-written HTML on the backend.
+// Five pages plus the 404. Bespoke layout on each would be six design systems
+// inside a fortnight, which is what the hand-written HTML this replaced was
+// already becoming.
 //
-// Everything here is presentational and takes its copy as props. The pages own
-// what they say; this file owns how it looks.
+// **The shape enforces the copy rules.** Every primitive here takes a short
+// label and *one* supporting line — there is no prop that accepts a paragraph,
+// because the rule "replace prose with structure" survives about a fortnight
+// if it lives only in a style guide. A section that wants to make two points
+// has to be two sections, which is the constraint doing its job.
+//
+// Motion comes from `motion.js`: one easing curve, 200–400ms, transforms and
+// opacity, and `Reveal` handles `prefers-reduced-motion` once rather than at
+// each call site.
 import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
-import { Navbar } from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import MarketingNavbar from "@/components/marketing/MarketingNavbar";
+import MarketingFooter from "@/components/marketing/MarketingFooter";
 import PageMeta from "@/components/marketing/PageMeta";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
+import Reveal from "@/components/marketing/Reveal";
+import HandshakeBand from "@/components/marketing/HandshakeBand";
+import { CARD_HOVER } from "@/components/marketing/motion";
 import { Button } from "@/components/ui/button";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 /** Uppercase, tiny, wide — the design guidelines' overline rule. */
 export function Eyebrow({ children, className = "" }) {
     return (
-        <p
-            className={`text-xs uppercase tracking-[0.2em] text-ember-500 ${className}`}
-        >
+        <p className={`text-xs uppercase tracking-[0.2em] text-ember-500 ${className}`}>
             {children}
         </p>
     );
 }
 
 /**
- * The page shell: meta, navbar, the content, the footer.
+ * The page shell: meta, the marketing navbar, the content, the marketing
+ * footer.
  *
- * Every marketing page is on the grained page ground and carries the footer —
- * these are the pages a signed-out person lands on, and the footer is the only
- * route to terms, privacy and a human.
+ * Both bars are marketing variants. The shared `Navbar` and `Footer` are on
+ * authenticated surfaces and stay exactly as they are.
  */
 export function MarketingPage({ testid, title, description, path, children }) {
     return (
@@ -43,9 +50,9 @@ export function MarketingPage({ testid, title, description, path, children }) {
             className="min-h-screen bg-background text-foreground grain-page"
         >
             <PageMeta title={title} description={description} path={path} />
-            <Navbar />
+            <MarketingNavbar />
             <main>{children}</main>
-            <Footer />
+            <MarketingFooter />
         </div>
     );
 }
@@ -54,9 +61,8 @@ export function MarketingPage({ testid, title, description, path, children }) {
  * One ask, and the same ask each time.
  *
  * Every audience page states its CTA at the top and again at the bottom, in
- * **the same words**: two differently-worded buttons is a choice of doors,
- * one repeated is an ask. The nav's own button makes it three, which is the
- * same sentence a third time rather than a third option.
+ * **the same words**: two differently-worded buttons is a choice of doors, one
+ * repeated is an ask.
  */
 export function Cta({ to, label, testid, className = "" }) {
     return (
@@ -70,20 +76,53 @@ export function Cta({ to, label, testid, className = "" }) {
 }
 
 /**
- * The top of an audience page: eyebrow, headline, standfirst, the ask, and the
- * page's first image slot beside them.
+ * A short label and one line beneath it.
  *
- * The image is a slot rather than decoration — it is the first thing a visitor
- * looks at and the last thing we have. See `PlaceholderImage`.
+ * The unit that replaced the paragraph. Four words and a sentence carry the
+ * same point as fifty words and are read rather than skipped — and a reader
+ * scanning three of these has the whole section in about four seconds.
  */
-export function MarketingHero({
-    eyebrow,
-    title,
-    standfirst,
-    cta,
-    image,
-    footnote,
-}) {
+export function Point({ label, line, i = 0, testid = IDS.point }) {
+    // **The hover treatment is on a child, not on the animated element.**
+    // Framer Motion writes `transform` as an inline style, and an inline style
+    // beats a class — so `hover:-translate-y-0.5` on the same node the
+    // entrance animates is silently dead once the entrance settles at
+    // `transform: none`. The border warm worked and the lift did not, which is
+    // exactly the sort of half-working hover nobody notices.
+    return (
+        <Reveal i={i} as="li" className="flex">
+            <div
+                data-testid={testid}
+                className={`flex-1 rounded-lg border border-white/10 bg-card grain-surface p-6 ${CARD_HOVER}`}
+            >
+                <h3 className="font-serif text-fluid-xl leading-tight tracking-tight">
+                    {label}
+                </h3>
+                <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
+                    {line}
+                </p>
+            </div>
+        </Reveal>
+    );
+}
+
+/** Three or four `Point`s in a row. */
+export function Points({ items, testid, columns = 3 }) {
+    const cols = columns === 4 ? "md:grid-cols-2 lg:grid-cols-4" : "md:grid-cols-3";
+    return (
+        <ul data-testid={testid} className={`grid gap-4 ${cols}`}>
+            {items.map((p, i) => (
+                <Point key={p.label} label={p.label} line={p.line} i={i} />
+            ))}
+        </ul>
+    );
+}
+
+/**
+ * The top of a page: eyebrow, headline, one line, the ask, and the first
+ * image slot beside them.
+ */
+export function MarketingHero({ eyebrow, title, line, cta, image, footnote }) {
     return (
         <section
             data-testid={IDS.hero}
@@ -93,37 +132,46 @@ export function MarketingHero({
                 aria-hidden
                 className="pointer-events-none absolute -right-40 -top-24 h-[520px] w-[520px] rounded-full bg-ember-500/10 blur-[120px]"
             />
-            <div className="relative mx-auto grid max-w-7xl gap-12 px-6 py-16 md:grid-cols-12 md:items-center md:py-24">
-                <div className="md:col-span-6">
-                    <Eyebrow>{eyebrow}</Eyebrow>
-                    <h1 className="mt-5 font-serif text-fluid-5xl leading-none tracking-tight">
-                        {title}
-                    </h1>
-                    <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
-                        {standfirst}
-                    </p>
+            <div className="relative mx-auto grid max-w-7xl gap-12 px-6 py-16 md:grid-cols-12 md:items-center md:py-20">
+                <div className="group md:col-span-6">
+                    <Reveal onView={false}>
+                        <Eyebrow>{eyebrow}</Eyebrow>
+                    </Reveal>
+                    <Reveal i={1} onView={false}>
+                        <h1 className="mt-5 font-serif text-fluid-5xl leading-none tracking-tight">
+                            {title}
+                        </h1>
+                    </Reveal>
+                    <Reveal i={2} onView={false}>
+                        <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
+                            {line}
+                        </p>
+                    </Reveal>
                     {/* A page with two audiences has no single ask, and
                         inventing one puts half its readers through the wrong
                         door. Those pages route at the close instead. */}
                     {cta ? (
-                        <div className="mt-9">
+                        <Reveal i={3} onView={false} className="mt-8">
                             <Cta {...cta} />
-                        </div>
+                        </Reveal>
                     ) : null}
                     {footnote ? (
-                        <p className="mt-4 text-sm text-muted-foreground">{footnote}</p>
+                        <Reveal i={4} onView={false}>
+                            <p className="mt-4 text-sm text-muted-foreground">{footnote}</p>
+                        </Reveal>
                     ) : null}
                 </div>
-                <div className="md:col-span-6">
-                    <PlaceholderImage {...image} testid={IDS.heroImage} />
-                </div>
+                <Reveal i={2} onView={false} noTravel className="group md:col-span-6">
+                    <PlaceholderImage {...image} testid={IDS.heroImage} zoom />
+                </Reveal>
             </div>
         </section>
     );
 }
 
 /**
- * A block of prose beside an image, alternating sides down the page.
+ * A headline, one line, optional points, and an image — alternating sides
+ * down the page.
  *
  * `flip` puts the image on the left. Alternating is the whole reason these are
  * one component: doing it by hand means somebody eventually ships two in a row
@@ -132,7 +180,7 @@ export function MarketingHero({
 export function TextImageSection({
     eyebrow,
     title,
-    body,
+    line,
     points,
     image,
     flip = false,
@@ -141,88 +189,96 @@ export function TextImageSection({
     return (
         <section
             data-testid={testid}
-            className="border-b border-white/10 py-16 md:py-24"
+            className="border-b border-white/10 py-16 md:py-20"
         >
             <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 md:grid-cols-12">
                 <div className={`md:col-span-6 ${flip ? "md:order-2" : ""}`}>
-                    {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-                    <h2 className="mt-4 font-serif text-fluid-4xl leading-tight tracking-tight">
-                        {title}
-                    </h2>
-                    {body ? (
-                        <p className="mt-5 text-base leading-relaxed text-muted-foreground">
-                            {body}
-                        </p>
+                    {eyebrow ? (
+                        <Reveal>
+                            <Eyebrow>{eyebrow}</Eyebrow>
+                        </Reveal>
+                    ) : null}
+                    <Reveal i={1}>
+                        <h2 className="mt-4 font-serif text-fluid-4xl leading-tight tracking-tight">
+                            {title}
+                        </h2>
+                    </Reveal>
+                    {line ? (
+                        <Reveal i={2}>
+                            <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
+                                {line}
+                            </p>
+                        </Reveal>
                     ) : null}
                     {points?.length ? (
-                        <ul className="mt-7 space-y-4">
-                            {points.map((p) => (
-                                <li key={p} className="flex gap-3 text-sm leading-relaxed text-muted-foreground">
+                        <ul className="mt-8 space-y-4">
+                            {points.map((p, i) => (
+                                <Reveal
+                                    key={p.label}
+                                    i={i + 3}
+                                    as="li"
+                                    className="flex gap-3"
+                                >
                                     <span
                                         aria-hidden
-                                        className="mt-2 h-1 w-4 shrink-0 rounded-full bg-ember-500/70"
+                                        className="mt-2.5 h-1 w-4 shrink-0 rounded-full bg-ember-500/70"
                                     />
-                                    <span>{p}</span>
-                                </li>
+                                    <span>
+                                        <span className="font-serif text-fluid-lg leading-tight">
+                                            {p.label}
+                                        </span>
+                                        <span className="block text-sm leading-relaxed text-muted-foreground">
+                                            {p.line}
+                                        </span>
+                                    </span>
+                                </Reveal>
                             ))}
                         </ul>
                     ) : null}
                 </div>
-                <div className={`md:col-span-6 ${flip ? "md:order-1" : ""}`}>
-                    <PlaceholderImage {...image} />
-                </div>
+                <Reveal
+                    i={1}
+                    noTravel
+                    className={`group md:col-span-6 ${flip ? "md:order-1" : ""}`}
+                >
+                    <PlaceholderImage {...image} zoom />
+                </Reveal>
             </div>
         </section>
     );
 }
 
-/** Three value propositions in a row, each a card on the grained ground. */
-export function ValueProps({ items, testid }) {
-    return (
-        <section data-testid={testid} className="border-b border-white/10 py-16 md:py-24">
-            <div className="mx-auto max-w-7xl px-6">
-                <div className="grid gap-6 md:grid-cols-3">
-                    {items.map((item) => (
-                        <div
-                            key={item.title}
-                            className="rounded-lg border border-white/10 bg-card grain-surface p-7"
-                        >
-                            <h3 className="font-serif text-fluid-2xl leading-tight tracking-tight">
-                                {item.title}
-                            </h3>
-                            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                                {item.body}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </section>
-    );
-}
-
-/** A numbered sequence — how it works, from one side. */
+/** A numbered sequence — how it works, from one side. Label plus one line. */
 export function Steps({ eyebrow, title, items, testid }) {
     return (
-        <section data-testid={testid} className="border-b border-white/10 py-16 md:py-24">
+        <section data-testid={testid} className="border-b border-white/10 py-16 md:py-20">
             <div className="mx-auto max-w-7xl px-6">
-                {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-                <h2 className="mt-4 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
-                    {title}
-                </h2>
-                <ol className="mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
+                <Reveal>
+                    <Eyebrow>{eyebrow}</Eyebrow>
+                </Reveal>
+                <Reveal i={1}>
+                    <h2 className="mt-4 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
+                        {title}
+                    </h2>
+                </Reveal>
+                <ol className="mt-10 grid gap-8 md:grid-cols-2 lg:grid-cols-4">
                     {items.map((step, i) => (
-                        <li key={step.title} className="border-t border-white/10 pt-6">
+                        <Reveal
+                            key={step.label}
+                            i={i}
+                            as="li"
+                            className="border-t border-white/10 pt-6"
+                        >
                             <span className="font-serif text-sm text-ember-500">
                                 {String(i + 1).padStart(2, "0")}
                             </span>
-                            <h3 className="mt-3 font-serif text-fluid-2xl leading-tight tracking-tight">
-                                {step.title}
+                            <h3 className="mt-3 font-serif text-fluid-xl leading-tight tracking-tight">
+                                {step.label}
                             </h3>
-                            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                                {step.body}
+                            <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
+                                {step.line}
                             </p>
-                        </li>
+                        </Reveal>
                     ))}
                 </ol>
             </div>
@@ -240,74 +296,63 @@ export function Steps({ eyebrow, title, items, testid }) {
  *
  * The audience pages never use this. There, one ask stated twice is the rule.
  */
-export function TwoPaths({ testid }) {
+export function TwoPaths({ testid, tone = "dark" }) {
+    // On the handshake band the dark card would read as a hole punched in the
+    // coral. Same two doors, same words, inverted for the field they sit on.
+    const onCoral = tone === "coral";
     const card =
-        "group flex-1 rounded-lg border border-white/10 bg-card grain-surface p-7 transition-colors duration-200 hover:border-ember-500/40";
+        "group flex-1 rounded-lg p-7 " +
+        (onCoral
+            ? "border border-white/25 bg-white/10 hover:border-white/60 "
+            : "border border-white/10 bg-card grain-surface ") +
+        CARD_HOVER;
+    const heading = onCoral ? "text-white" : "";
+    const bodyClass = onCoral ? "text-white/80" : "text-muted-foreground";
+    const arrow = onCoral ? "text-white" : "text-ember-500";
     return (
         <div data-testid={testid} className="flex flex-col gap-4 sm:flex-row">
-            <Link to="/for-creators" data-testid={IDS.pathCreator} className={card}>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    I make content
-                </p>
-                <p className="mt-3 flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight">
-                    I&apos;m a creator
-                    <ArrowRight className="h-4 w-4 text-ember-500 transition-transform duration-200 group-hover:translate-x-1" />
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                    Paid briefs, your rate in writing, and payment on approved
-                    delivery.
-                </p>
-            </Link>
-            <Link to="/for-brands" data-testid={IDS.pathBrand} className={card}>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    I have something to launch
-                </p>
-                <p className="mt-3 flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight">
-                    I&apos;m a brand
-                    <ArrowRight className="h-4 w-4 text-ember-500 transition-transform duration-200 group-hover:translate-x-1" />
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                    Creators we have checked, approval before publication, and a
-                    report at the end.
-                </p>
-            </Link>
+            <Reveal as="div" className="flex flex-1">
+                <Link to="/for-creators" data-testid={IDS.pathCreator} className={card}>
+                    <p className={`flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight ${heading}`}>
+                        I&apos;m a creator
+                        <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
+                    </p>
+                    <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
+                        Paid briefs, your rate in writing, paid on approved delivery.
+                    </p>
+                </Link>
+            </Reveal>
+            <Reveal i={1} as="div" className="flex flex-1">
+                <Link to="/for-brands" data-testid={IDS.pathBrand} className={card}>
+                    <p className={`flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight ${heading}`}>
+                        I&apos;m a brand
+                        <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
+                    </p>
+                    <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
+                        Checked creators, approval before publication, a report at the
+                        end.
+                    </p>
+                </Link>
+            </Reveal>
         </div>
     );
 }
 
 /**
- * The closing ask. Same words as the hero's, one image slot behind it.
+ * The closing ask — now the family handshake band.
  *
- * `cta` for a page with one audience; `children` for a page with two, which
- * passes <TwoPaths /> instead.
+ * It was a dimmed image slot with centred text on our dark ground. The band
+ * replaces it on every marketing page: full-bleed studio coral, white poster
+ * type, a black block to press. See `HandshakeBand`, and `lib/studioPalette.js`
+ * for why the colour appears exactly here and nowhere else.
+ *
+ * The signature stayed the same otherwise — `cta` for a page with one
+ * audience, `children` for a page with two, which passes `<TwoPaths />`.
  */
-export function ClosingSection({ title, body, cta, image, children }) {
+export function ClosingSection({ title, line, cta, children }) {
     return (
-        <section
-            data-testid={IDS.closing}
-            className="relative overflow-hidden py-20 md:py-28"
-        >
-            <div aria-hidden className="absolute inset-0 opacity-40">
-                <PlaceholderImage {...image} fill />
-            </div>
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background"
-            />
-            <div className="relative mx-auto max-w-3xl px-6 text-center">
-                <h2 className="font-serif text-fluid-4xl leading-tight tracking-tight">
-                    {title}
-                </h2>
-                <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground">
-                    {body}
-                </p>
-                {cta ? (
-                    <div className="mt-9 flex justify-center">
-                        <Cta {...cta} />
-                    </div>
-                ) : null}
-                {children ? <div className="mt-10 text-left">{children}</div> : null}
-            </div>
-        </section>
+        <HandshakeBand title={title} line={line} cta={cta}>
+            {children}
+        </HandshakeBand>
     );
 }

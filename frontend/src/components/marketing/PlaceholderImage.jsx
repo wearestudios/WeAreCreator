@@ -18,6 +18,8 @@
 // A slot nobody can brief is a slot that stays empty.
 import React from "react";
 
+import { IMAGE_ZOOM } from "@/components/marketing/motion";
+
 /**
  * The tint, derived from the slot's own name.
  *
@@ -53,6 +55,12 @@ const RATIO = {
  * @param {string}  ratio  one of RATIO's keys; the container reserves it
  * @param {string=} src    a real image, once there is one — the tint stays
  *                         behind it as the loading ground
+ * @param {boolean=} zoom  ease to ~1.02x when the enclosing `group` is
+ *                         hovered. The frame clips, so the picture grows
+ *                         inside its box and the box does not move — which is
+ *                         the only version of this that cannot reflow the
+ *                         page. `group-hover` rather than `hover` so the whole
+ *                         card responds, not just the picture.
  * @param {boolean=} fill  fill a positioned parent instead of reserving a
  *                         ratio. For a slot whose height something else has
  *                         already decided — a section background. An aspect
@@ -65,6 +73,7 @@ export function PlaceholderImage({
     src,
     alt = "",
     fill = false,
+    zoom = false,
     className = "",
     testid,
     children,
@@ -80,29 +89,39 @@ export function PlaceholderImage({
                     ? "absolute inset-0"
                     : `rounded-lg border border-white/10 ${RATIO[ratio] || RATIO["16/9"]}`
             } ${className}`}
-            style={{
-                // Two stops and a dark floor, so the tint reads as lit rather
-                // than as a flat swatch. Kept off `bg-*` utilities because the
-                // hue is computed.
-                backgroundImage: `linear-gradient(135deg, hsl(${hue} 78% 22%) 0%, hsl(${
-                    hue + 6
-                } 60% 12%) 45%, hsl(24 18% 7%) 100%)`,
-            }}
         >
+            {/* The tint on its own layer rather than on the container, so the
+                zoom has something to scale that is not also the clipping box.
+                Scaling the container would grow the hole in the layout. */}
+            <div
+                aria-hidden
+                className={`absolute inset-0 ${zoom ? IMAGE_ZOOM : ""}`}
+                style={{
+                    // Two stops and a dark floor, so the tint reads as lit
+                    // rather than as a flat swatch. Kept off `bg-*` utilities
+                    // because the hue is computed.
+                    backgroundImage: `linear-gradient(135deg, hsl(${hue} 78% 22%) 0%, hsl(${
+                        hue + 6
+                    } 60% 12%) 45%, hsl(24 18% 7%) 100%)`,
+                }}
+            />
             {src ? (
                 <img
                     src={src}
                     alt={alt}
                     loading="lazy"
                     decoding="async"
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className={`absolute inset-0 h-full w-full object-cover ${
+                        zoom ? IMAGE_ZOOM : ""
+                    }`}
                 />
             ) : null}
 
-            {/* The overlay variant, never `.grain-surface`: this element sets
-                `background-image` for the gradient, and the surface variant
-                would set it too — one of the two silently wins. Same rule the
-                design foundations state, and the reason `.grain` exists. */}
+            {/* The overlay variant, never `.grain-surface`. The layer above
+                sets `background-image` for the gradient and the surface
+                variant would set it too — one of the two silently wins. Same
+                rule the design foundations state, and the reason `.grain`
+                exists as a separate absolutely-positioned overlay. */}
             <div aria-hidden className="grain pointer-events-none absolute inset-0" />
 
             {/* A hairline of ember along the top edge. Enough to say the slot

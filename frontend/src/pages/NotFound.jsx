@@ -14,13 +14,15 @@ import { Link, useLocation } from "react-router-dom";
 
 import { MarketingPage, Eyebrow } from "@/components/marketing/Sections";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
+import Reveal from "@/components/marketing/Reveal";
+import { CARD_HOVER } from "@/components/marketing/motion";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const WAYS_ON = [
     {
         to: "/campaigns",
         label: "Browse live briefs",
-        body: "Everything open right now, from brands we have checked.",
+        body: "Everything open right now, from brands we checked.",
     },
     {
         to: "/how-it-works",
@@ -51,17 +53,17 @@ export default function NotFound() {
                         That page isn&apos;t here.
                     </h1>
                     <p className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground">
-                        It may have moved, or the brief may have closed — campaigns come
-                        down when they fill. Nothing has gone wrong with your account.
+                        It may have moved, or the brief may have closed. Nothing has
+                        gone wrong with your account.
                     </p>
 
                     <ul className="mt-10 space-y-3">
-                        {WAYS_ON.map((w) => (
-                            <li key={w.to}>
+                        {WAYS_ON.map((w, i) => (
+                            <Reveal key={w.to} as="li" i={i}>
                                 <Link
                                     to={w.to}
                                     data-testid={`not-found-link-${w.to.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "home"}`}
-                                    className="group block rounded-lg border border-white/10 bg-card grain-surface p-5 transition-colors duration-200 hover:border-ember-500/40"
+                                    className={`group block rounded-lg border border-white/10 bg-card grain-surface p-5 ${CARD_HOVER}`}
                                 >
                                     <p className="font-serif text-fluid-xl leading-tight tracking-tight transition-colors duration-200 group-hover:text-ember-500">
                                         {w.label}
@@ -70,20 +72,21 @@ export default function NotFound() {
                                         {w.body}
                                     </p>
                                 </Link>
-                            </li>
+                            </Reveal>
                         ))}
                     </ul>
                 </div>
 
-                <div className="md:col-span-6">
+                <Reveal noTravel className="group md:col-span-6">
                     <PlaceholderImage
                         // PLACEHOLDER IMAGE: an empty venue between shoots —
                         // chairs stacked, light through a window. Quiet rather
                         // than apologetic. Portrait-friendly 4:3.
                         note="Empty venue between shoots, chairs stacked, light through a window, 4:3"
                         ratio="4/3"
+                        zoom
                     />
-                </div>
+                </Reveal>
             </section>
         </MarketingPage>
     );
