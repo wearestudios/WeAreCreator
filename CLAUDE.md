@@ -758,11 +758,13 @@ self-serve/managed choice **as an option, never as a fee they are locked into**.
   read by both, so they end with `TwoPaths` — the one place competing buttons
   are right, because picking for the visitor is the mistake. `TwoPaths` must
   not appear on an audience page; a test enforces both halves.
-- **Home is at most two screens.** Hero and slider, the counted proof strip,
-  one problem-and-promise section, the close. Measured at 1,780px of content —
-  under two viewport-heights at 1440×900 and above. Everything that used to be
-  below it has its own page, and the live brief feed went to `/campaigns`,
-  which is a better version of it.
+- **Home was at most two screens, and the film is the deliberate exception.**
+  Hero, the counted proof strip, the scroll film, one problem-and-promise
+  section, the close. Everything except the film still answers the old rule —
+  it was 1,780px of content before the film was added — and the film's own
+  length is scroll it spends telling the story rather than page a reader has to
+  get past. Everything else that used to be below home has its own page, and
+  the live brief feed went to `/campaigns`, which is a better version of it.
 - **Every proof figure is counted, never written down.** `_platform_proof`
   queries verified creators, campaigns that reached `in_progress` or beyond,
   verified brands and distinct cities; `GET /public/proof` serves them and
@@ -882,6 +884,48 @@ The hero's full-bleed photo slider is gone. Its job was to say "we do all of
 these", which the cards now do better — and it cost a full-viewport layer
 cross-fading every seven seconds on the page most likely to be opened on
 mobile data.
+
+### The scroll film
+
+`CampaignFilm` — the centrepiece on home. Seven beats of a campaign playing
+itself out: a brief goes up, creators apply, one is accepted, they hear on
+WhatsApp, a slot is booked, the draft is approved, the creator is paid. The
+product demonstrating itself, which is the one thing a paragraph cannot do.
+
+- **The pin is `position: sticky` and nothing else.** No wheel listener, no
+  `scrollTo`, no `preventDefault` — the page scrolls at the rate the reader's
+  finger says and they can leave at any point. A test greps for all four.
+- **Every beat derives from `scrollYProgress`, never from state.** That is what
+  makes it reverse: scrolling up is the same function at smaller numbers. A
+  `useState` beat-tracker looks identical going down and is wrong going up, and
+  nobody sees it until they scroll back. The only `useState` in the file is the
+  media query.
+- **The payout counts with scroll and writes `textContent` on a ref.** A
+  `setState` per frame re-renders the whole stage sixty times a second to change
+  four characters. Measured unwinding: ₹2,722 at 87% → ₹12,000 at 97% → ₹2,722
+  back at 87%.
+- Elements persist once they arrive, so the campaign accumulates rather than
+  each beat replacing the last — one story instead of seven slides.
+
+**The fallback is a first-class design, not a degraded mode.** Below `md` and
+under `prefers-reduced-motion` the same seven beats render as a numbered
+stepped list: every UI piece drawn, every caption present, nothing pinned and
+nothing scroll-driven. `wide` starts `false`, so a phone never mounts the
+pinned version even for a frame — the other way round, five screens of scroll
+would appear and vanish on the device least able to afford it.
+
+**The interfaces are drawn, never screenshotted** (`filmUI.jsx`). A screenshot
+dates the moment somebody moves a button, and a real component would drag the
+app's data shapes, API calls and auth context onto a page that has none of
+them. They borrow the design language — `bg-card`, `grain-surface`, ember on
+the one thing that matters in each — and are simplified past literal: a real
+applicant row carries eight fields, this one carries three. The WhatsApp beat
+names the channel and borrows none of its marks.
+
+Measured on the mid-range Android profile: **zero long tasks over 50ms during
+a full scroll through the film**, on both the pinned and stepped paths. CLS
+0.0001. The four long tasks on the page are React bootstrapping, and the
+control page without a film has the same four.
 
 ### The family handshake
 

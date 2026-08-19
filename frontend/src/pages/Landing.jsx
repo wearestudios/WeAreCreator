@@ -26,6 +26,7 @@ import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
+import CampaignFilm from "@/components/marketing/CampaignFilm";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -61,6 +62,8 @@ const COPY = {
         },
     ],
     promise: "We built the boring parts.",
+
+    filmTitle: "One campaign, start to finish.",
 
     closeTitle: "Which side are you on?",
     closeLine: "Creators join free. We check a brand before it reaches anyone.",
@@ -212,6 +215,11 @@ export default function Landing() {
             {/* Counted, never written down. The hero carried a hardcoded
                 "500+ verified creators" until this replaced it. */}
             <ProofStrip only={["creators", "campaigns", "cities"]} />
+
+            {/* The centrepiece: the product performing itself. Pinned and
+                scroll-driven where that runs well, the identical seven beats
+                as a stepped list everywhere else. */}
+            <CampaignFilm title={COPY.filmTitle} />
 
             <Problem />
 

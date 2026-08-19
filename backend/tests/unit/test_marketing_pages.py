@@ -801,10 +801,9 @@ def test_the_pending_proxy_decision_is_written_down():
 BUDGET = {"home": 120, "brands": 250, "creators": 250, "how": 300, "why": 300}
 
 
-def _copy_strings(name):
-    """Every string literal inside the page's COPY object."""
-    src = read(*PAGES[name])
-    start = src.index("const COPY = {")
+def _block_strings(src, marker):
+    """Every string literal inside one top-level object literal."""
+    start = src.index(marker)
     depth, i = 0, start
     while i < len(src):
         if src[i] == "{":
@@ -816,6 +815,25 @@ def _copy_strings(name):
         i += 1
     block = src[start : i + 1]
     return re.findall(r'"((?:[^"\\]|\\.)*)"', block)
+
+
+def _copy_strings(name):
+    """The page's own copy, plus any the components it mounts contribute.
+
+    The scroll film's seven captions live in `CampaignFilm` rather than in the
+    page — they belong to the component that draws them. They are still words
+    on the page, so they still count. Reading only the page's `COPY` would let
+    a section smuggle in copy by being a component."""
+    src = read(*PAGES[name])
+    out = _block_strings(src, "const COPY = {")
+    if "CampaignFilm" in src:
+        film = read("src", "components", "marketing", "CampaignFilm.jsx")
+        out += [
+            c for c in _block_strings(film, "export const BEATS = [")
+            if " " in c or c.isalpha()
+        ]
+        out += ["One campaign"]  # the section's eyebrow, set at the call site
+    return out
 
 
 def _words(text):
@@ -863,6 +881,17 @@ def _code(*parts):
     return "\n".join(
         l for l in src.splitlines() if not l.lstrip().startswith("//")
     )
+
+
+def test_every_film_caption_is_a_label_not_a_sentence():
+    """The UI piece beside each caption is the explanation. That is the entire
+    argument for building the film rather than writing seven more sentences —
+    so a caption that grows into a sentence has undone it."""
+    film = read("src", "components", "marketing", "CampaignFilm.jsx")
+    caps = re.findall(r'caption: "([^"]+)"', film)
+    assert len(caps) == 7, caps
+    for c in caps:
+        assert len(_words(c)) <= 5, f"{c!r} is {len(_words(c))} words"
 
 
 def test_the_primitives_have_no_prop_that_accepts_a_paragraph():
@@ -1235,3 +1264,120 @@ def test_the_proof_strip_reserves_its_height_while_loading():
     # Both widths, because the figures wrap below `md` and a single value was
     # wrong by 52px on a phone.
     assert "md:min-h-" in src
+
+
+# --- The scroll film ----------------------------------------------------------
+#
+# The centrepiece: a campaign playing itself out as you scroll. Seven beats,
+# pinned where that runs well and a stepped list everywhere else.
+
+
+def _film():
+    return read("src", "components", "marketing", "CampaignFilm.jsx")
+
+
+def test_the_film_tells_the_whole_campaign():
+    """Brief, applications, acceptance, the WhatsApp confirmation, the slot,
+    the approval, the payout. Dropping any one of them leaves a story with a
+    gap somebody has to fill from a paragraph."""
+    caps = " ".join(re.findall(r'caption: "([^"]+)"', _film())).lower()
+    for beat in ("brief", "apply", "accepted", "whatsapp", "slot", "approved", "paid"):
+        assert beat in caps, beat
+
+
+def test_the_pin_is_sticky_and_nothing_else():
+    """No wheel listener, no scrollTo, no preventDefault. The page scrolls at
+    the rate the user's finger says it should and they can leave at any point
+    — scroll hijack is what this pattern is usually guilty of."""
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    assert "sticky top-" in code
+    for hijack in ("preventDefault", "scrollTo", "addEventListener(\"wheel\"", "scrollIntoView"):
+        assert hijack not in code, hijack
+
+
+def test_every_beat_is_derived_from_scroll_progress_not_state():
+    """This is what makes it reverse. Scrolling up is the same function at
+    smaller numbers, so the film unwinds exactly. A `useState` beat-tracker
+    would look identical going down and be wrong going up — a failure nobody
+    sees until they scroll back."""
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    assert "useScroll" in code and "useTransform" in code
+    # The only state in the file is the media query, which is not a beat.
+    states = re.findall(r"useState\(([^)]*)\)", code)
+    assert states == ["false"], states
+
+
+def test_the_beats_are_transforms_and_opacity_only():
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    styles = re.findall(r"style=\{\{([^}]*)\}\}", code)
+    for st in styles:
+        keys = re.findall(r"(\w+):", st) or re.findall(r"^\s*(\w+),", st)
+        for k in keys + re.findall(r"\b(opacity|y|transform)\b", st):
+            assert k in ("opacity", "y", "transform"), f"{k} in {st!r}"
+
+
+def test_the_counting_payout_writes_the_dom_rather_than_re_rendering():
+    """A setState per frame re-renders the whole stage sixty times a second to
+    change four characters."""
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    assert "useMotionValueEvent" in code
+    assert "textContent" in code
+
+
+def test_the_fallback_renders_the_identical_story():
+    """Same seven beats, same captions, same UI pieces — a list rather than a
+    film. It is a first-class design, not a degraded mode."""
+    code = _film()
+    assert "function SteppedFilm" in code
+    stepped = code[code.index("function SteppedFilm") : code.index("export function CampaignFilm")]
+    for piece in ("BriefCard", "ApplicantRow", "MessageBubble", "SlotStrip",
+                  "ApprovalCard", "PayoutCard"):
+        assert piece in stepped, piece
+    assert "BEATS.map" in stepped
+
+
+def test_the_fallback_covers_phones_and_reduced_motion():
+    """A pinned section eats five screens of scroll, and a scroll-driven
+    composite per frame is exactly the work that makes a mid-range phone feel
+    cheap."""
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    assert "useReducedMotion" in code
+    assert '"(min-width: 768px)"' in code
+    assert "wide && !reduced" in code
+
+
+def test_the_first_paint_is_the_fallback():
+    """`wide` starts false, so a phone never mounts the pinned version even
+    for a frame. The other way round, five screens of scroll would appear and
+    vanish on the device least able to afford it."""
+    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
+    assert "useState(false)" in code
+
+
+def test_the_film_draws_its_own_interfaces_rather_than_screenshotting_ours():
+    """A screenshot dates the moment the product changes, and a real component
+    would drag data shapes, API calls and auth context onto a page that has
+    none of them."""
+    ui = read("src", "components", "marketing", "filmUI.jsx")
+    assert "img" not in _code("src", "components", "marketing", "filmUI.jsx")
+    # It borrows the design language, not the components.
+    assert "bg-card" in ui and "grain-surface" in ui and "ember-500" in ui
+    for real in ("CampaignCover", "BrandName", "@/pages/", "@/components/ui/"):
+        assert real not in ui, real
+
+
+def test_the_film_does_not_borrow_another_brand_s_marks():
+    """The WhatsApp beat is drawn as a bubble, not as WhatsApp. Using somebody
+    else's logo or green to make a claim about our product is a different
+    thing from saying which channel the message arrives on."""
+    ui = read("src", "components", "marketing", "filmUI.jsx")
+    assert "WhatsApp" in ui              # the channel is named, which is true
+    assert "#25D366" not in ui           # and nothing else is borrowed
+    assert "bg-green" not in ui
+
+
+def test_the_film_is_on_home_only():
+    """Marketing-only, and one page of it — /how-it-works already tells this
+    story as parallel tracks and two tellings compete."""
+    on = [n for n, parts in PAGES.items() if "CampaignFilm" in read(*parts)]
+    assert on == ["home"], on
