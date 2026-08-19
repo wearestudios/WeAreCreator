@@ -380,10 +380,28 @@ def test_the_marketing_shell_mounts_both_marketing_bars():
 # --- Image slots --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
-def test_every_page_has_deliberate_image_slots(name):
+def _with_marketing_components(name):
+    """A page's source, plus the marketing components it mounts.
+
+    Home's image slots live in `FloatingCards` rather than in the page — four
+    tilted cards behind the hero are a composition, not four props somebody
+    passes in. Reading the page alone would say home has no slots, which is
+    the opposite of true."""
     parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
     src = read(*parts)
+    out = [src]
+    for mod in re.findall(r'from "@/components/marketing/(\w+)"', src):
+        for ext in (".jsx", ".js"):
+            path = FRONTEND.joinpath("src", "components", "marketing", mod + ext)
+            if path.exists():
+                out.append(path.read_text())
+                break
+    return "\n".join(out)
+
+
+@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+def test_every_page_has_deliberate_image_slots(name):
+    src = _with_marketing_components(name)
     assert "PlaceholderImage" in src or "image={{" in src, name
 
 
@@ -392,8 +410,7 @@ def test_every_image_slot_says_what_belongs_in_it(name):
     """A slot nobody can brief is a slot that stays empty. Every `note` is a
     sentence somebody could hand to a photographer, and it rides on the
     element as `data-placeholder` as well as sitting in the source."""
-    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
-    src = read(*parts)
+    src = _with_marketing_components(name)
     notes = re.findall(r'note[:=]\s*"([^"]+)"', src)
     assert notes, name
     for n in notes:
@@ -404,9 +421,7 @@ def test_every_image_slot_says_what_belongs_in_it(name):
 def test_every_image_slot_is_marked_for_the_photographer(name):
     """The `PLACEHOLDER IMAGE:` comment is what makes these findable — real
     photography is meant to be dropped in one slot at a time."""
-    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
-    src = read(*parts)
-    assert "PLACEHOLDER IMAGE:" in src, name
+    assert "PLACEHOLDER IMAGE:" in _with_marketing_components(name), name
 
 
 def test_nothing_on_the_site_fetches_a_third_party_image():
@@ -1009,3 +1024,214 @@ def test_the_marketing_footer_names_terms_privacy_and_a_human():
     assert "copyrightYear" in footer
     site = read("src", "lib", "siteNav.js")
     assert '"/terms"' in site and '"/privacy"' in site
+
+
+# --- The kinetic headline -----------------------------------------------------
+#
+# The signature. Poster type that morphs at letterform level between four kinds
+# of campaign, resolving each time against a line that never moves — the motion
+# *is* the message: what changes is the kind of work, what does not is how it
+# is run.
+
+
+def test_the_headline_morphs_between_four_real_campaign_categories():
+    """A phrase naming a category `CampaignCategory` does not have is an
+    invitation to filter the brief list and find nothing. Same rule the hero
+    deck already followed."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    phrases = re.findall(r'"([a-z ]+)"', src[src.index("export const PHRASES") : src.index("const HOLD_MS")])
+    assert len(phrases) == 4, phrases
+    for banned in ("tech", "gadgets", "gaming", "automotive"):
+        assert not any(banned in p for p in phrases), banned
+
+
+def test_the_constant_half_of_the_headline_never_animates():
+    """"Your" and "handled properly." are outside the morph. Animating the
+    whole line would say four unrelated headlines are cycling rather than one
+    sentence being re-pointed."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    assert 'lead = "Your"' in src
+    assert 'tail = "handled properly."' in src
+    # The tail is rendered outside the AnimatePresence block.
+    after = src[src.index("</AnimatePresence>") :]
+    assert "{tail}" in after
+
+
+def test_the_morph_is_per_letter_rather_than_a_fade():
+    """"Letters sliding, swapping, resolving — not a plain fade." Each letter
+    is its own element on a stagger; a single opacity tween on the phrase is
+    the thing this is specified not to be."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "Array.from(text)" in src
+    assert "delay: i * STEP" in src
+    # And it moves, not just fades.
+    assert 'y: "-0.45em"' in src and 'y: "0.55em"' in src
+
+
+def test_the_headline_holds_each_phrase_about_four_seconds():
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    hold = int(re.search(r"const HOLD_MS = (\d+)", src).group(1))
+    assert 3500 <= hold <= 4500, hold
+
+
+def test_the_headline_is_poster_scale():
+    """Dramatically larger than the type ramp's top step, and sized in `vw` so
+    it fills the column at every width. `fluid-hero` tops out at 4.25rem; this
+    is the one element on the site past it."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', src)
+    assert m, "no clamp on the headline"
+    assert "vw" in m.group(2)
+    assert float(m.group(3).replace("rem", "")) >= 8
+
+
+def test_the_headline_reserves_the_tallest_phrase():
+    """A line that changes width is fine; one that changes height moves the
+    page every four seconds, which is a CLS event per cycle."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "longest" in src
+    assert 'className="invisible"' in src
+
+
+def test_the_headline_is_static_under_reduced_motion():
+    """First phrase, and no timer started — nothing running in the background
+    either."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "useReducedMotion" in src
+    assert "if (reduced) return undefined;" in src
+    assert "reduced ? (" in src
+
+
+def test_the_headline_has_one_stable_accessible_name():
+    """A screen reader reading four letters at a time as they animate in is
+    gibberish, so the animated spans are hidden and the h1 carries a name."""
+    src = read("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "aria-label={`${lead}" in src
+    assert 'aria-hidden className="block"' in src
+
+
+# --- Floating image cards -----------------------------------------------------
+
+
+def test_the_floating_cards_span_the_categories():
+    src = read("src", "components", "marketing", "FloatingCards.jsx")
+    keys = re.findall(r'key: "([\w-]+)"', src)
+    for expected in ("launch", "fashion", "travel", "fitness"):
+        assert expected in keys, expected
+
+
+def test_the_floating_cards_are_placeholders_not_photographs():
+    src = read("src", "components", "marketing", "FloatingCards.jsx")
+    assert "PlaceholderImage" in src
+    assert "http" not in re.sub(r"//.*", "", src)
+
+
+def test_the_floating_cards_drift_with_transforms_only():
+    """Rotation is set once; the drift is `y` off the scroll position. Nothing
+    animates a layout property, which is what keeps this composited."""
+    src = read("src", "components", "marketing", "FloatingCards.jsx")
+    assert "useTransform" in src
+    assert "style={{ y, rotate: card.rotate }}" in src
+    for banned in ("top:", "left:", "height:", "width:"):
+        assert banned not in _code("src", "components", "marketing", "FloatingCards.jsx"), banned
+
+
+def test_the_floating_cards_freeze_under_reduced_motion():
+    """The tilt and the shadow are static design, not animation — so the
+    composition stays and only the drift stops."""
+    src = read("src", "components", "marketing", "FloatingCards.jsx")
+    assert "reduced ? 0 : -card.depth" in src
+
+
+def test_the_floating_cards_thin_out_on_a_phone():
+    """Four overlapping compositing layers on a 390px screen sit behind text
+    nobody can read through them."""
+    src = read("src", "components", "marketing", "FloatingCards.jsx")
+    hidden = src.count('className: "hidden md:block')
+    assert hidden >= 2, hidden
+
+
+def test_the_only_shadow_on_the_marketing_site_is_the_floating_card():
+    """Elevation is a hairline plus a surface tint; `box-shadow` is reserved
+    for what genuinely floats. A tilted card drifting at a different rate from
+    the page behind it is the one inline element that really does — and the
+    exception is written down where it is taken."""
+    marketing = FRONTEND.joinpath("src", "components", "marketing")
+    for path in list(marketing.glob("*.js*")) + [
+        FRONTEND.joinpath("src", "pages", p[2]) for p in PAGES.values()
+    ]:
+        text = re.sub(r"//.*", "", path.read_text())
+        for m in re.findall(r"shadow-\[[^\]]+\]|\bshadow-(?:sm|md|lg|xl|2xl)\b", text):
+            assert path.name == "FloatingCards.jsx", f"{path.name}: {m}"
+
+
+# --- The family handshake -----------------------------------------------------
+
+
+def test_the_studio_palette_is_defined_once():
+    palette = read("src", "lib", "studioPalette.js")
+    assert "CORAL" in palette
+    # And flagged, because the real brand hex is not in this repository.
+    assert "NEEDS THE REAL HEX" in palette
+
+
+def test_the_studio_palette_appears_only_in_the_handshake_band():
+    """A colour used twice is a co-brand rather than an endorsement, and
+    Creators has its own identity to keep."""
+    importers = []
+    for path in FRONTEND.joinpath("src").rglob("*.js*"):
+        # An actual import, not a comment pointing at the file — `Sections.jsx`
+        # names it in prose to explain why the colour lives there.
+        if re.search(r'^import .*"@/lib/studioPalette"', path.read_text(), re.M):
+            importers.append(path.name)
+    assert importers == ["HandshakeBand.jsx"], importers
+
+
+def test_the_palette_is_not_a_tailwind_token():
+    """Adding it to `tailwind.config.js` would put the studio's colour within
+    reach of every authenticated screen in the app, which is precisely what
+    "the only place" is supposed to prevent."""
+    config = read("tailwind.config.js")
+    assert "coral" not in config.lower()
+
+
+def test_the_handshake_band_is_white_type_on_coral_with_a_black_block():
+    src = read("src", "components", "marketing", "HandshakeBand.jsx")
+    assert "backgroundColor: CORAL" in src
+    assert "text-white" in src
+    assert "backgroundColor: CORAL_INK" in src
+
+
+def test_the_handshake_closes_every_marketing_page():
+    """`ClosingSection` is the band now, so a page that had a close has one."""
+    shell = read("src", "components", "marketing", "Sections.jsx")
+    assert "<HandshakeBand" in shell
+    for name in ARGUING:
+        assert "ClosingSection" in read(*PAGES[name]), name
+    assert "HandshakeBand" in read(*PAGES["home"])
+
+
+def test_the_handshake_borrows_motion_and_confidence_not_assets():
+    """No studio copy, no studio photography, no studio logo treatment — that
+    would be putting somebody else's page at the bottom of ours. What is
+    shared is the endorsement line the site already carries."""
+    src = read("src", "components", "marketing", "HandshakeBand.jsx")
+    assert "StudioEndorsement" in src
+    assert "img" not in re.sub(r"//.*", "", src)
+    assert "logo" not in re.sub(r"//.*", "", src).lower()
+
+
+# --- Performance --------------------------------------------------------------
+
+
+def test_the_proof_strip_reserves_its_height_while_loading():
+    """It used to render nothing until the figures landed and then appear,
+    pushing every section below it down — measured at 0.0798 CLS on home, the
+    entire layout-shift budget of the page in one event. Reserved, it is
+    0.0002."""
+    src = read("src", "components", "marketing", "ProofStrip.jsx")
+    assert "const RESERVED" in src
+    assert "if (stats === null)" in src
+    # Both widths, because the figures wrap below `md` and a single value was
+    # wrong by 52px on a phone.
+    assert "md:min-h-" in src

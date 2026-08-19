@@ -22,6 +22,7 @@ import MarketingFooter from "@/components/marketing/MarketingFooter";
 import PageMeta from "@/components/marketing/PageMeta";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import Reveal from "@/components/marketing/Reveal";
+import HandshakeBand from "@/components/marketing/HandshakeBand";
 import { CARD_HOVER } from "@/components/marketing/motion";
 import { Button } from "@/components/ui/button";
 import { MARKETING as IDS } from "@/constants/testIds";
@@ -295,30 +296,39 @@ export function Steps({ eyebrow, title, items, testid }) {
  *
  * The audience pages never use this. There, one ask stated twice is the rule.
  */
-export function TwoPaths({ testid }) {
+export function TwoPaths({ testid, tone = "dark" }) {
+    // On the handshake band the dark card would read as a hole punched in the
+    // coral. Same two doors, same words, inverted for the field they sit on.
+    const onCoral = tone === "coral";
     const card =
-        "group flex-1 rounded-lg border border-white/10 bg-card grain-surface p-7 " +
+        "group flex-1 rounded-lg p-7 " +
+        (onCoral
+            ? "border border-white/25 bg-white/10 hover:border-white/60 "
+            : "border border-white/10 bg-card grain-surface ") +
         CARD_HOVER;
+    const heading = onCoral ? "text-white" : "";
+    const bodyClass = onCoral ? "text-white/80" : "text-muted-foreground";
+    const arrow = onCoral ? "text-white" : "text-ember-500";
     return (
         <div data-testid={testid} className="flex flex-col gap-4 sm:flex-row">
             <Reveal as="div" className="flex flex-1">
                 <Link to="/for-creators" data-testid={IDS.pathCreator} className={card}>
-                    <p className="flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight">
+                    <p className={`flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight ${heading}`}>
                         I&apos;m a creator
-                        <ArrowRight className="h-4 w-4 text-ember-500 transition-transform duration-200 group-hover:translate-x-1" />
+                        <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
                     </p>
-                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                    <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
                         Paid briefs, your rate in writing, paid on approved delivery.
                     </p>
                 </Link>
             </Reveal>
             <Reveal i={1} as="div" className="flex flex-1">
                 <Link to="/for-brands" data-testid={IDS.pathBrand} className={card}>
-                    <p className="flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight">
+                    <p className={`flex items-center gap-2 font-serif text-fluid-2xl leading-tight tracking-tight ${heading}`}>
                         I&apos;m a brand
-                        <ArrowRight className="h-4 w-4 text-ember-500 transition-transform duration-200 group-hover:translate-x-1" />
+                        <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
                     </p>
-                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                    <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
                         Checked creators, approval before publication, a report at the
                         end.
                     </p>
@@ -329,42 +339,20 @@ export function TwoPaths({ testid }) {
 }
 
 /**
- * The closing ask. Same words as the hero's, one image slot behind it.
+ * The closing ask — now the family handshake band.
  *
- * `cta` for a page with one audience; `children` for a page with two, which
- * passes <TwoPaths /> instead.
+ * It was a dimmed image slot with centred text on our dark ground. The band
+ * replaces it on every marketing page: full-bleed studio coral, white poster
+ * type, a black block to press. See `HandshakeBand`, and `lib/studioPalette.js`
+ * for why the colour appears exactly here and nowhere else.
+ *
+ * The signature stayed the same otherwise — `cta` for a page with one
+ * audience, `children` for a page with two, which passes `<TwoPaths />`.
  */
-export function ClosingSection({ title, line, cta, image, children }) {
+export function ClosingSection({ title, line, cta, children }) {
     return (
-        <section
-            data-testid={IDS.closing}
-            className="group relative overflow-hidden py-20 md:py-24"
-        >
-            <div aria-hidden className="absolute inset-0 opacity-40">
-                <PlaceholderImage {...image} fill zoom />
-            </div>
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background"
-            />
-            <div className="relative mx-auto max-w-3xl px-6 text-center">
-                <Reveal>
-                    <h2 className="font-serif text-fluid-4xl leading-tight tracking-tight">
-                        {title}
-                    </h2>
-                </Reveal>
-                <Reveal i={1}>
-                    <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground">
-                        {line}
-                    </p>
-                </Reveal>
-                {cta ? (
-                    <Reveal i={2} className="mt-8 flex justify-center">
-                        <Cta {...cta} />
-                    </Reveal>
-                ) : null}
-                {children ? <div className="mt-10 text-left">{children}</div> : null}
-            </div>
-        </section>
+        <HandshakeBand title={title} line={line} cta={cta}>
+            {children}
+        </HandshakeBand>
     );
 }

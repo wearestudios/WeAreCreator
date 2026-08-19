@@ -20,6 +20,7 @@ import {
     ClosingSection,
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
+import FloatingCards from "@/components/marketing/FloatingCards";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=creator", label: "Join as a creator" };
@@ -111,7 +112,12 @@ export default function ForCreators() {
                 }}
             />
 
-            <ProofStrip />
+            {/* The proof figures, with two cards floating past the strip's
+                edges — the second of the two card clusters. */}
+            <div className="relative">
+                <FloatingCards set="proof" />
+                <ProofStrip />
+            </div>
 
             <section className="border-b border-white/10 py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
@@ -156,13 +162,6 @@ export default function ForCreators() {
                 title={COPY.closeTitle}
                 line={COPY.closeLine}
                 cta={{ ...ASK, testid: IDS.ctaBottom }}
-                image={{
-                    // PLACEHOLDER IMAGE: a group of creators at a brand event,
-                    // shot from behind, phones up. Dark edges, busy centre —
-                    // it sits dimmed behind the closing CTA. 21:9.
-                    note: "Creators at a brand event shot from behind, phones up, dark edges, 21:9",
-                    ratio: "21/9",
-                }}
             />
         </MarketingPage>
     );

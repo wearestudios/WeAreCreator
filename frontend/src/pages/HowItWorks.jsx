@@ -239,15 +239,8 @@ export default function HowItWorks() {
             <ClosingSection
                 title={COPY.closeTitle}
                 line={COPY.closeLine}
-                image={{
-                    // PLACEHOLDER IMAGE: wide shot of a busy venue mid-shoot,
-                    // two creators working, staff in the background. Dark
-                    // edges — it sits dimmed behind the CTA. 21:9.
-                    note: "Wide shot of a busy venue mid-shoot, two creators working, dark edges, 21:9",
-                    ratio: "21/9",
-                }}
             >
-                <TwoPaths testid={IDS.twoPaths} />
+                <TwoPaths testid={IDS.twoPaths} tone="coral" />
             </ClosingSection>
         </MarketingPage>
     );

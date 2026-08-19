@@ -13,31 +13,23 @@
 //
 // **Nothing here is fetched from a third party.** The slider hotlinked four
 // stock photographs until the image slots replaced them.
-import React, { useCallback, useEffect, useState } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
-import {
-    AnimatePresence,
-    motion,
-    useReducedMotion,
-    useScroll,
-    useTransform,
-} from "framer-motion";
 import { ArrowRight } from "lucide-react";
 
 import MarketingNavbar from "@/components/marketing/MarketingNavbar";
 import MarketingFooter from "@/components/marketing/MarketingFooter";
 import { Button } from "@/components/ui/button";
 import PageMeta from "@/components/marketing/PageMeta";
-import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
+import KineticHeadline from "@/components/marketing/KineticHeadline";
+import FloatingCards from "@/components/marketing/FloatingCards";
+import HandshakeBand from "@/components/marketing/HandshakeBand";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
-import { StudioEndorsement } from "@/components/StudioEndorsement";
 import {
     LANDING_HERO as HERO_IDS,
     LANDING_PAGE as PAGE_IDS,
-    LANDING_CLOSING as CLOSING_IDS,
-    LANDING_STUDIO as STUDIO_IDS,
     MARKETING as IDS,
 } from "@/constants/testIds";
 
@@ -74,120 +66,41 @@ const COPY = {
     closeLine: "Creators join free. We check a brand before it reaches anyone.",
 };
 
-// **Every kicker is a real campaign category.** There was a "Tech & gadgets"
-// slide once; `CampaignCategory` has no such value, so a creator arriving off
-// it could filter the brief list and find the category does not exist.
-const SLIDES = [
-    {
-        key: "launch",
-        kicker: "Restaurant launch",
-        // PLACEHOLDER IMAGE: a packed Bengaluru restaurant on opening night,
-        // shot wide and warm, a creator filming at a table mid-ground. 16:9.
-        note: "Packed restaurant on opening night, creator filming at a table, 16:9",
-    },
-    {
-        key: "fashion",
-        kicker: "Fashion",
-        // PLACEHOLDER IMAGE: a rail of clothes and a creator shooting a
-        // try-on in a Bengaluru boutique, daylight. 16:9.
-        note: "Creator shooting a try-on beside a clothes rail in a boutique, 16:9",
-    },
-    {
-        key: "travel",
-        kicker: "Hotels & travel",
-        // PLACEHOLDER IMAGE: a hotel room opening onto a balcony at first
-        // light, a phone on a tripod framing it. 16:9.
-        note: "Hotel room opening onto a balcony at first light, phone on a tripod, 16:9",
-    },
-    {
-        key: "wellness",
-        kicker: "Wellness",
-        // PLACEHOLDER IMAGE: a fitness or yoga class mid-session, shot from
-        // the back of the room, one participant filming. 16:9.
-        note: "Fitness class mid-session shot from the back of the room, 16:9",
-    },
-];
-
-const SLIDE_INTERVAL_MS = 7000;
-
+/**
+ * The hero — the kinetic headline, floating cards, two doors.
+ *
+ * This replaced a full-bleed photo slider that cross-faded four category
+ * images behind the text. The slider's job was to say "we do all of these",
+ * and the floating cards now say it better: four categories visible *at once*
+ * rather than one at a time behind a scrim heavy enough to keep the headline
+ * readable. It also cost a full-viewport compositing layer cross-fading every
+ * seven seconds, on the page most likely to be opened on mobile data.
+ *
+ * What is left is the signature: poster type that morphs at letterform level
+ * against a line that never moves.
+ */
 function Hero() {
-    const reduced = useReducedMotion();
-    const [index, setIndex] = useState(0);
-    const [paused, setPaused] = useState(false);
-
-    // Parallax on the deck, not on any one slide, so crossfades don't fight it.
-    const { scrollY } = useScroll();
-    const imgY = useTransform(scrollY, [0, 400], [0, 60]);
-    const imgOpacity = useTransform(scrollY, [0, 400], [0.85, 0.3]);
-
-    // Reduced motion gets the first slide and nothing else: no timer, no
-    // crossfade, no dots to imply something is moving.
-    const animated = !reduced;
-
-    useEffect(() => {
-        if (!animated || paused) return undefined;
-        const t = setInterval(
-            () => setIndex((i) => (i + 1) % SLIDES.length),
-            SLIDE_INTERVAL_MS,
-        );
-        return () => clearInterval(t);
-    }, [animated, paused]);
-
-    const slides = animated ? SLIDES : SLIDES.slice(0, 1);
-    const current = slides[Math.min(index, slides.length - 1)];
-
-    // Pausing covers focus as well as hover: somebody tabbing through the CTAs
-    // shouldn't have the thing they're reading swapped out from under them.
-    const hold = useCallback(() => setPaused(true), []);
-    const release = useCallback(() => setPaused(false), []);
-
     return (
         <section
             data-testid={HERO_IDS.section}
-            aria-roledescription={animated ? "carousel" : undefined}
-            aria-label={animated ? "Campaign types" : undefined}
-            onMouseEnter={hold}
-            onMouseLeave={release}
-            onFocusCapture={hold}
-            onBlurCapture={release}
-            className="relative overflow-hidden"
+            className="relative overflow-hidden border-b border-white/10"
         >
-            <motion.div
-                style={animated ? { y: imgY, opacity: imgOpacity } : { opacity: 0.6 }}
-                data-testid={HERO_IDS.slides}
-                className="absolute inset-0"
-            >
-                <AnimatePresence initial={false}>
-                    <motion.div
-                        key={current.key}
-                        data-testid={HERO_IDS.slide(SLIDES.indexOf(current))}
-                        initial={animated ? { opacity: 0 } : false}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        // Slow enough to read as a dissolve rather than a cut.
-                        transition={{ duration: animated ? 1.6 : 0, ease: "linear" }}
-                        className="absolute inset-0"
-                    >
-                        <PlaceholderImage
-                            note={current.note}
-                            fill
-                            testid={HERO_IDS.slideImage(SLIDES.indexOf(current))}
-                        />
-                    </motion.div>
-                </AnimatePresence>
-            </motion.div>
+            {/* Decorative and absolutely positioned, so they never move the
+                headline. Behind it in the stacking order for the same reason
+                the scrim used to exist — except a tilted card at 26% width
+                does not need one. */}
+            <FloatingCards />
 
-            {/* Two overlays doing two jobs: the vertical one lands the image
-                into the page, the horizontal one is a scrim behind the text so
-                the headline stays readable whatever is behind it. */}
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/40 via-background/55 to-background" />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background/85 via-background/45 to-transparent" />
+            <div
+                aria-hidden
+                className="pointer-events-none absolute -right-40 -top-32 h-[560px] w-[560px] rounded-full bg-ember-500/10 blur-[130px]"
+            />
 
-            <div className="relative mx-auto max-w-7xl px-6 pb-12 pt-10 md:pb-14 md:pt-14">
+            <div className="relative mx-auto max-w-7xl px-6 pb-16 pt-14 md:pb-24 md:pt-20">
                 <Reveal onView={false}>
                     <p
                         data-testid={HERO_IDS.eyebrow}
-                        className="mb-6 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
+                        className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                     >
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500" />
                         Bengaluru · Influencer studio
@@ -195,48 +108,22 @@ function Hero() {
                 </Reveal>
 
                 <Reveal i={1} onView={false}>
-                    <h1
-                        data-testid={HERO_IDS.heading}
-                        className="max-w-4xl font-serif text-fluid-hero tracking-tightest"
-                    >
-                        Your creator campaigns,{" "}
-                        <span className="italic text-muted-foreground">
-                            handled properly.
-                        </span>
-                    </h1>
+                    <KineticHeadline />
                 </Reveal>
 
                 <Reveal i={2} onView={false}>
                     <p
                         data-testid={HERO_IDS.subheading}
-                        className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
+                        className="mt-10 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
                     >
                         {COPY.line}
                     </p>
                 </Reveal>
 
-                {/* The category, and nothing else. The slide used to carry a
-                    headline of its own beneath this. */}
-                <div className="mt-6 min-h-[1.75rem]">
-                    <AnimatePresence mode="wait">
-                        <motion.p
-                            key={current.key}
-                            data-testid={HERO_IDS.kicker}
-                            initial={animated ? { opacity: 0, y: 6 } : false}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: animated ? 0.32 : 0, ease: [0.22, 1, 0.36, 1] }}
-                            className="text-xs uppercase tracking-[0.2em] text-ember-500"
-                        >
-                            {current.kicker}
-                        </motion.p>
-                    </AnimatePresence>
-                </div>
-
                 {/* Two paths, not three asks. Home routes; the audience pages
                     sell — so these go to the pages, not to signup. */}
                 <Reveal i={3} onView={false}>
-                    <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
                         <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
                             <Button
                                 size="lg"
@@ -258,40 +145,6 @@ function Hero() {
                         </Link>
                     </div>
                 </Reveal>
-
-                {animated && (
-                    <div
-                        data-testid={HERO_IDS.dots}
-                        role="tablist"
-                        aria-label="Choose a campaign type"
-                        className="mt-8 flex items-center gap-3"
-                    >
-                        {SLIDES.map((s, i) => {
-                            const on = i === index;
-                            return (
-                                <button
-                                    key={s.key}
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={on}
-                                    aria-label={s.kicker}
-                                    data-testid={HERO_IDS.dot(i)}
-                                    onClick={() => setIndex(i)}
-                                    className="group -m-2 grid h-11 w-11 place-items-center rounded-full p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-auto md:w-auto"
-                                >
-                                    <span
-                                        className={
-                                            "block h-1 rounded-full transition-[width,background-color] duration-300 ease-out " +
-                                            (on
-                                                ? "w-10 bg-ember-500"
-                                                : "w-4 bg-white/20 group-hover:bg-white/40")
-                                        }
-                                    />
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
             </div>
         </section>
     );
@@ -362,42 +215,16 @@ export default function Landing() {
 
             <Problem />
 
-            <section
-                data-testid={CLOSING_IDS.section}
-                className="group relative overflow-hidden border-t border-white/10"
+            {/* The family handshake. Full-bleed studio coral, white poster
+                type, a black block — the one place the studio palette appears
+                on the whole site. Home routes rather than asks, so the band
+                carries the two doors instead of a single CTA. */}
+            <HandshakeBand
+                title={COPY.closeTitle}
+                line={COPY.closeLine}
             >
-                <div aria-hidden className="absolute inset-0 opacity-40">
-                    <PlaceholderImage
-                        // PLACEHOLDER IMAGE: a WeAre manager and a creator at a
-                        // check-in desk on a shoot day — the boring part,
-                        // working. Busy centre, dark edges.
-                        note="WeAre manager and creator at a check-in desk on a shoot day, dark edges, banner"
-                        fill
-                    />
-                </div>
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background"
-                />
-                <div className="relative mx-auto max-w-7xl px-6 py-14 md:py-16">
-                    <Reveal>
-                        <h2 className="max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
-                            {COPY.closeTitle}
-                        </h2>
-                    </Reveal>
-                    <Reveal i={1}>
-                        <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">
-                            {COPY.closeLine}
-                        </p>
-                    </Reveal>
-                    <div className="mt-8">
-                        <TwoPaths testid={IDS.twoPaths} />
-                    </div>
-                    <div className="mt-8">
-                        <StudioEndorsement testid={STUDIO_IDS.landing} />
-                    </div>
-                </div>
-            </section>
+                <TwoPaths testid={IDS.twoPaths} tone="coral" />
+            </HandshakeBand>
 
             <MarketingFooter />
         </div>

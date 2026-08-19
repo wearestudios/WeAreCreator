@@ -592,7 +592,11 @@ def test_home_reserves_the_space_its_images_will_fill():
     `PlaceholderImage` is the reservation: a ratio on the container, never on
     the <img>, so dropping real photography in moves nothing."""
     src = component("pages", "Landing.jsx")
-    assert "PlaceholderImage" in src
+    cards = component("components", "marketing", "FloatingCards.jsx")
+    # Home's slots moved into `FloatingCards` when the hero became a
+    # composition rather than a column with a picture beside it.
+    assert "PlaceholderImage" in src or "FloatingCards" in src
+    assert "PlaceholderImage" in cards
     assert "CampaignCover" not in src
 
     slot = component("components", "marketing", "PlaceholderImage.jsx")

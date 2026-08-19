@@ -844,6 +844,81 @@ inside frames that clip.
   Tailwind warns on every build. It warns for the string anywhere, including
   inside a comment.
 
+### The kinetic hero, and the imagery
+
+**The signature is the headline.** `KineticHeadline` morphs at letterform
+level between four kinds of campaign — launch night, fashion drop, travel
+stay, menu tasting — each resolving against a line that never moves. The
+motion *is* the message: what changes is the kind of work, what does not is
+how it is run.
+
+- **"Your" and "handled properly." are outside the morph.** Animating the
+  whole line would say four unrelated headlines are cycling rather than one
+  sentence being re-pointed.
+- **Per letter, on a stagger, moving as well as fading.** A single opacity
+  tween on the phrase is the thing this is specified not to be. ~4s a phrase;
+  the swap itself is under a second, so the phrase is still for most of its
+  life.
+- **The tallest phrase reserves the box.** A line that changes height moves
+  the page every four seconds — a CLS event per cycle.
+- One `aria-label` on the `h1`, with the animated spans hidden. A screen
+  reader reading four letters at a time as they arrive is gibberish.
+- Under `prefers-reduced-motion` the first phrase renders and no timer starts.
+
+**`FloatingCards`** are tilted photo cards drifting on scroll, in two clusters:
+four behind the hero (the four categories, said at once rather than one at a
+time) and two hanging past the edges of a proof strip. Rotation is static;
+the drift is `y` off the scroll position, so nothing touches layout. **Two
+cards below `md`, four above** — four overlapping compositing layers on a
+390px screen sit behind text nobody can read through them.
+
+**This is the only `box-shadow` on the marketing site**, and a deliberate
+exception to the elevation rule: a card drifting at a different rate from the
+page behind it is the one inline element that really is floating, and without
+the shadow the tilt reads as a mistake. Soft, and in black rather than the
+default grey. A test fails any other marketing file that grows one.
+
+The hero's full-bleed photo slider is gone. Its job was to say "we do all of
+these", which the cards now do better — and it cost a full-viewport layer
+cross-fading every seven seconds on the page most likely to be opened on
+mobile data.
+
+### The family handshake
+
+The closing band on every marketing page: full-bleed studio coral, white
+poster type, a black CTA block. **The only place the studio palette appears
+on the site** — a colour used twice is a co-brand rather than an endorsement,
+and Creators has its own identity to keep.
+
+- `lib/studioPalette.js` holds it, once, and a test fails any second importer.
+  **It is deliberately not a Tailwind token**: adding one would put the
+  studio's colour within reach of every authenticated screen, which is exactly
+  what "the only place" prevents.
+- The hex is a considered stand-in and says so in the file — nothing in this
+  repository carries the studio's registered brand colour, and inventing
+  precision would be worse than flagging it.
+- What is inherited is the confidence and the motion, never the assets: no
+  studio copy, no studio photography, no studio logo treatment.
+- `TwoPaths` takes a `tone`, because the dark card reads as a hole punched in
+  the coral. Same two doors, same words, inverted for the field.
+
+### Measured, not assumed
+
+Mid-range Android profile — 4× CPU throttle, Fast-3G, 390px:
+
+- **CLS was 0.0798 and is 0.0002.** The whole of it was the proof strip: it
+  rendered nothing until the figures landed and then appeared, pushing every
+  section below it down. It reserves its height now, at **both** widths — the
+  figures wrap below `md`, so a single value was right on desktop and 52px
+  wrong on a phone. Neither the headline nor the cards contributed anything.
+- **The flourishes cost no blocking time.** Home (kinetic headline + four
+  cards) blocks 969ms; `/for-brands`, which has neither, blocks 1012ms. The
+  cost on both is React and the CRA bundle. FCP and LCP are within 60ms of
+  each other.
+- Lighthouse itself is not installed here; these are its metrics measured
+  directly through the Performance Observer API, which is the same numbers by
+  a different route.
+
 ### The marketing chrome
 
 `MarketingNavbar` and `MarketingFooter` are **variants, not edits**. The shared

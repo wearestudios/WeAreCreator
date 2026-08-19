@@ -26,6 +26,7 @@ import {
     ClosingSection,
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
+import FloatingCards from "@/components/marketing/FloatingCards";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
@@ -122,7 +123,12 @@ export default function ForBrands() {
 
             {/* Counted, never written down — and absent entirely below the
                 floors, because a small number is not proof. */}
-            <ProofStrip />
+            {/* The proof figures, with two cards floating past the strip's
+                edges — the second of the two card clusters. */}
+            <div className="relative">
+                <FloatingCards set="proof" />
+                <ProofStrip />
+            </div>
 
             <section className="border-b border-white/10 py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
@@ -170,14 +176,6 @@ export default function ForBrands() {
                 title={COPY.closeTitle}
                 line={COPY.closeLine}
                 cta={{ ...ASK, testid: IDS.ctaBottom }}
-                image={{
-                    // PLACEHOLDER IMAGE: a creator's phone on a gimbal framing
-                    // a plated dish, shallow depth of field. Used as a dimmed
-                    // background behind the closing CTA, so it wants a busy
-                    // centre and dark edges. Landscape 21:9.
-                    note: "Creator's phone on a gimbal framing a plated dish, dark edges, 21:9",
-                    ratio: "21/9",
-                }}
             />
         </MarketingPage>
     );

@@ -26,6 +26,7 @@ import {
 } from "@/components/marketing/Sections";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
+import FloatingCards from "@/components/marketing/FloatingCards";
 import Reveal from "@/components/marketing/Reveal";
 import { MARKETING as IDS } from "@/constants/testIds";
 
@@ -111,7 +112,12 @@ export default function WhyWeAre() {
                 }}
             />
 
-            <ProofStrip />
+            {/* The proof figures, with two cards floating past the strip's
+                edges — the second of the two card clusters. */}
+            <div className="relative">
+                <FloatingCards set="proof" />
+                <ProofStrip />
+            </div>
 
             <TextImageSection
                 eyebrow="The pedigree"
@@ -193,13 +199,6 @@ export default function WhyWeAre() {
                 title={COPY.closeTitle}
                 line={COPY.closeLine}
                 cta={{ ...ASK, testid: IDS.ctaBottom }}
-                image={{
-                    // PLACEHOLDER IMAGE: a venue at golden hour just before
-                    // opening, tables set, nobody in yet. Dark edges — it sits
-                    // dimmed behind the CTA. 21:9.
-                    note: "Venue at golden hour just before opening, tables set, dark edges, 21:9",
-                    ratio: "21/9",
-                }}
             />
         </MarketingPage>
     );
