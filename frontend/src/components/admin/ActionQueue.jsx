@@ -317,18 +317,37 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                 reasonLabel: "Note",
                 placeholder: "e.g. Paid in the 4pm batch",
                 confirmLabel: "Record payout",
-                extra: {
-                    name: "payment_reference",
-                    label: "Payment reference",
-                    placeholder: "UTR or transaction id",
-                    required: true,
-                },
+                // **The same two fields as the collaboration page.** This is
+                // the door most payouts actually go through — working the
+                // queue is the fast path — so a withholding field on the
+                // detail page alone would mean TDS was recordable in theory
+                // and unrecorded in practice.
+                extras: [
+                    {
+                        name: "payment_reference",
+                        label: "Payment reference",
+                        placeholder: "UTR or transaction id",
+                        required: true,
+                    },
+                    {
+                        name: "tds_amount",
+                        label: "TDS withheld",
+                        type: "number",
+                        hint: "Leave blank if none applies. The platform records what you enter — it doesn't work the rate out.",
+                        placeholder: "e.g. 800",
+                    },
+                ],
                 onSubmit: (body) =>
                     run(
                         item,
                         () =>
                             api.post(`/admin/payments/${raw.payment.id}/mark_paid`, {
                                 payment_reference: body.payment_reference,
+                                // A figure means it applies, blank means none
+                                // does; "nobody has looked" is the state the
+                                // payment is in before this dialog.
+                                tds_applicable: body.tds_amount != null,
+                                tds_amount: body.tds_amount,
                             }),
                         "Payout recorded — collaboration closed",
                     ),
@@ -793,7 +812,14 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                 placeholder={confirm?.placeholder}
                 confirmLabel={confirm?.confirmLabel}
                 destructive={confirm?.destructive}
+                // **Both, because the configs above use both.** The reject
+                // paths carry a single `extra`; the payout carries `extras`.
+                // Forwarding only one silently drops every field of the other
+                // — which for the payout meant the reference field vanished
+                // and the server answered 422 on a field the form thought it
+                // was filling in.
                 extra={confirm?.extra}
+                extras={confirm?.extras}
                 onSubmit={(body) => confirm?.onSubmit(body)}
             />
 

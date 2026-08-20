@@ -34,6 +34,7 @@ import {
     OverviewRoute,
     PerformanceRoute,
     QueueRoute,
+    DeletionsRoute,
     TeamRoute,
 } from "@/components/admin/routes";
 import { CONSOLE_ROLES } from "@/lib/consoleScope";
@@ -345,6 +346,7 @@ function App() {
                             <Route path="health" element={<HealthRoute />} />
                             <Route path="audit" element={<AuditRoute />} />
                             <Route path="team" element={<TeamRoute />} />
+                            <Route path="deletions" element={<DeletionsRoute />} />
                             {/* A bad path under /admin lands on the console
                                 rather than the marketing site. */}
                             <Route path="*" element={<Navigate to="/admin" replace />} />

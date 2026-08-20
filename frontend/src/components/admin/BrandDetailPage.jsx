@@ -36,6 +36,7 @@ import { PerformanceRollup } from "@/components/admin/Performance";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import BrandAvatar from "@/components/BrandAvatar";
 import BrandTeamPanel from "@/components/admin/BrandTeamPanel";
+import CancellationHistory from "@/components/admin/CancellationHistory";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -142,6 +143,21 @@ export default function BrandDetailPage() {
                         >
                             {STATE_LABEL[brand.verification_state] || brand.verification_state}
                         </span>
+                        {/* **How many times they have come back.** A fourth
+                            attempt on the same business is a different
+                            conversation from a first, and a reviewer picking
+                            up the queue item cannot tell them apart without a
+                            count. Absent at zero, which is the ordinary case. */}
+                        {brand.verification_resubmissions > 0 && (
+                            <span
+                                data-testid={IDS.resubmissions}
+                                className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+                            >
+                                {brand.verification_resubmissions === 1
+                                    ? "Resubmitted once"
+                                    : `Resubmitted ${brand.verification_resubmissions} times`}
+                            </span>
+                        )}
                         {brand.category && <span>{brand.category}</span>}
                         {brand.areas?.length > 0 && <span>{brand.areas.join(", ")}</span>}
                         <span>Signed up {formatDate(brand.signed_up_at)}</span>
@@ -235,6 +251,19 @@ export default function BrandDetailPage() {
                                     </Field>
                                     <Field label="Business type">{brand.business_type}</Field>
                                     <Field label="GST number">{brand.gst_number}</Field>
+                                    {/* What we asked for last time. The current
+                                        refusal is cleared on a resubmission —
+                                        it is not a verdict on what they have
+                                        just sent — but the reviewer wants to
+                                        know what they were told to fix. */}
+                                    {brand.previous_verification_reason && (
+                                        <Field
+                                            label="Last time we asked for"
+                                            className="sm:col-span-2"
+                                        >
+                                            {brand.previous_verification_reason}
+                                        </Field>
+                                    )}
                                     <Field label="Registered address" className="sm:col-span-2">
                                         {brand.registered_address}
                                     </Field>
@@ -389,6 +418,20 @@ export default function BrandDetailPage() {
                             </ul>
                         )}
                     </Section>
+
+                    {/* How often work has fallen over around this brand, and
+                        on whose call. A number that only lives in the audit log
+                        is a number nobody looks at before agreeing to the next
+                        campaign. Renders nothing when nothing has. */}
+                    {data.cancellations?.length > 0 && (
+                        <Section
+                            id="cancellations"
+                            title="Cancelled and withdrawn"
+                            count={data.cancellations.length}
+                        >
+                            <CancellationHistory rows={data.cancellations} showCreator />
+                        </Section>
+                    )}
 
                     <Section id="team" title="Who at WeAre runs this">
                         <BrandTeamPanel brandId={id} canAssign={allAccess} />

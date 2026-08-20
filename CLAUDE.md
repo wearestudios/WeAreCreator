@@ -1486,9 +1486,10 @@ applied → verified → accepted → commercial_agreed → slot_booked → atte
         → content_approved → in_payment → closed
 ```
 
-Plus two terminal exits that are **not** steps: `declined`, `cancelled`
-(`TERMINAL_COLLAB_STATES`). The bracketed pair is optional per campaign — see
-"The draft gate" below. Who moves each step matters:
+Plus three terminal exits that are **not** steps: `declined`, `cancelled`,
+`withdrawn` (`TERMINAL_COLLAB_STATES`) — see "Taking it back, and calling it
+off". The bracketed pair is optional per campaign — see "The draft gate" below.
+Who moves each step matters:
 
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
@@ -1634,7 +1635,7 @@ the other.
   `_lifecycle_for` ships the whole ladder with the response. The status bar
   draws what it is given; rebuilding `COLLAB_STATE_ORDER` in the client would be
   a second copy of the state machine to keep in step.
-- An exit (`declined`, `cancelled`) is **the bar stopping, not an eleventh
+- An exit (`declined`, `cancelled`, `withdrawn`) is **the bar stopping, not an eleventh
   step** — it is said in words rather than drawn as a box.
 
 ### What a brief pays, at the fee step
@@ -1660,6 +1661,185 @@ not decide.
 After the fee, **the next action is the creator's** — they book, or on a
 `personal_table` they pick a time inside the window. Both notifications say so;
 neither quotes a rupee figure on a barter brief.
+
+## How a creator actually gets paid
+
+There was nowhere to record it, so every payment meant chasing an account
+number over WhatsApp and typing it into a bank portal from a chat window.
+`payout_method` is `upi` or `bank`, with `payout_upi` or the three bank fields
+(`payout_account_name`, `payout_account_number`, `payout_ifsc`) beside it.
+
+- **`_payout_method(profile)` reads absent-with-a-UPI-id as `"upi"`.** The
+  field is new and the UPI id is not, so the other reading would make every
+  currently payable creator unpayable the moment this deployed. Same
+  absent-reads-safe rule as `_compensation_type` and `_execution_owner`.
+- **`payout_missing` is the one definition of what is still needed and
+  `payout_ready` is `not payout_missing`** — one function, so the gate at
+  `in_payment`, the creator's own progress panel and the admin's payment row
+  cannot disagree about whether somebody can be paid. It names the fields in
+  words a person would use ("an IFSC code"), because "payout_ifsc" is not a
+  thing anybody can go and find.
+- **It is not part of completeness and not asked at signup.** A PAN must not be
+  the price of being looked at — the same reason `_profile_completeness` leaves
+  payout out — and this is required to reach `in_payment`, which is the moment
+  it is actually true.
+- `IFSC_RE` and `ACCOUNT_RE` refuse a shape that cannot be an IFSC or an
+  account number. A typo caught here is a form field; caught later it is a
+  failed transfer somebody has to unpick with a bank.
+- **Changing any of it re-triggers review.** Every payout field is in
+  `MATERIAL_PROFILE_FIELDS` — the account money goes to is exactly the kind of
+  change worth looking at again — and re-review is the existing
+  `pending_review` flag, never a downgrade.
+
+### Masked, and never brand-facing
+
+`mask_tail(value, keep=4)` is the only thing that shortens one of these, and
+`_masked_payout(profile)` is what an admin surface receives. `None` stays
+`None`: a masked blank would read as a number nobody can see rather than a
+number nobody has.
+
+- **Brands receive none of it, at any state.** The fields are in
+  `BRAND_FORBIDDEN_CREATOR_FIELDS` and off `_BRAND_VISIBLE_CREATOR_FIELDS`, so
+  the leak test that plants values and searches every brand response shape
+  covers them the way it covers the phone number and the map pin.
+- The UPI mask keeps the `@handle`, because that half is what tells two ids
+  apart when somebody is checking they are paying the right person, and it is
+  not the secret half.
+- The **payments export is the one place the real values may go** — the same
+  exception `EXPORTS_WITH_CONTACT` already carves out, for the same reason:
+  somebody is reconciling a bank statement, and a masked account number is
+  useless to them. `_payout_columns(snapshot, profile)` builds them, and **the
+  snapshot on the payment wins over the live profile**: what matters for
+  accounting is where the money actually went, not where it would go today.
+
+### PAN and withholding
+
+`pan` sits with the payout fields — admin-only, masked the same way, required
+before a first payout for the same tax reason it is collected at all.
+
+**Nothing here computes a tax rate.** `MarkPaidPayload` carries
+`tds_applicable` and `tds_amount` and records what the admin typed;
+`mark_payment_paid` stores both plus `net_paid`. A withholding rate depends on
+the payee's status and the section it falls under, and a rate hardcoded here
+would be wrong for somebody and silently wrong for everybody after the next
+budget.
+
+- **Three states, not two.** `None` is "nobody has said", `False` is "no
+  withholding", `True` carries an amount. The export prints blank, "no" and
+  "yes" — a `None` rendered as "no" is a claim we never made.
+- A `model_validator` refuses the incoherent pairs: `False` with an amount, and
+  `True` with none. Either one produces a payment record that contradicts
+  itself, which is the shape an accountant finds a year later.
+- **There are two mark-paid doors and both carry the fields.** The
+  collaboration page and the action queue, and the queue is the one most
+  payouts go through — working the queue is the fast path — so a withholding
+  field on the detail page alone is TDS recordable in theory and unrecorded in
+  practice. A test walks every `/mark_paid` caller under `components/admin/`.
+- `ConfirmDialog` takes `extra` (one field) or `extras` (several). A call site
+  that builds its config into state must forward **both**: the queue forwarded
+  only `extra`, so moving its payout config to the multi-field shape dropped
+  every field including the required reference, leaving a correct POST body
+  and an empty form. The `/mark_paid` test could not see that — the fields and
+  the submit handler are wired in different places — so a second test checks
+  the forwarding, and the browser is what caught it.
+
+## Taking it back, and calling it off
+
+Two exits that did not exist. Before them a creator who had changed their mind
+could only go quiet — and a brand then shortlisted somebody who was never going
+to turn up — while a cancellation after acceptance had no defined handling at
+all, so it happened over WhatsApp and left no record of who called it or how
+much notice anybody had.
+
+- **Withdrawal is the creator's, up to acceptance.**
+  `WITHDRAWABLE_COLLAB_STATES` is `("applied", "verified")`: after `accepted`
+  somebody has committed to them and taking it back unilaterally is a
+  cancellation, which is a different event with a different name. It writes the
+  terminal state `withdrawn`, captures the reason — required, because "one of
+  your three applicants is gone" is not something anybody can act on — and
+  notifies whoever runs the campaign through the same `execution_owner`
+  routing an application uses.
+- **`withdrawn` is a fourth terminal state, not a variant of `cancelled`.**
+  It is in `TERMINAL_COLLAB_STATES` and `COLLAB_GROUP_ENDED`, has its own
+  `_PROCESS_BANNERS` and `_NEXT_ACTION` entries, and the history panel prints
+  the two words differently: a withdrawal happens before anybody is committed
+  and is the creator's to make, so drawing it as a cancellation puts a black
+  mark where there is none.
+- **Cancellation records the notice, not a verdict on it.**
+  `_days_of_notice(campaign, collab)` is whole days in IST and **can be
+  negative** — a shoot cancelled after the fact is a real thing that happens
+  and rounding it to zero would hide it. Whether four days is enough is a
+  commercial judgement that differs by brand and by venue, so the panel reports
+  the number and leaves the judgement to whoever is reading.
+- `cancelled_by_id`/`_name`/`_role` are on the record because "the brand
+  cancelled" and "we cancelled" are different facts about the same row, and the
+  audit line alone does not travel with the collaboration.
+- **A kill fee keeps the payment row `pending`** rather than closing it — money
+  is owed, and a cancelled collaboration whose payment vanished is money nobody
+  chases. Where there is no payment row yet one is inserted, flagged
+  `is_kill_fee` and carrying the payout snapshot like any other. The creator is
+  told immediately and the message names the amount.
+- `_cancellation_history(creator_id=…| brand_ids=…)` feeds **one component on
+  two pages** (`CancellationHistory`). The same event is two questions — a
+  brand's page asks how often we pull out on people, a creator's asks how often
+  this happens around them — and two panels would answer them differently the
+  first time one was changed.
+
+## Rejection is not a dead end
+
+A rejected brand could read a WhatsApp message and then had nowhere to go: the
+profile stayed open to edit, and nothing turned a fixed profile back into a
+queue item.
+
+- The rejection reason is **on the brand's own onboarding page**, quoted, above
+  the fields it is about. Telling somebody they failed and not what to fix is
+  how a verification queue turns into a support thread.
+- Resubmitting goes through the **same** `POST /brand/verification/submit` —
+  same required set, same 409 naming what is absent. A second route would be a
+  second definition of what a submission is.
+- `verification_resubmissions` counts them and rides on the admin's brand page
+  and the review queue row. It is context, not a threshold: a third attempt
+  might be somebody who cannot read the form, and knowing that is what lets a
+  reviewer pick up the phone instead of rejecting again.
+
+## Being forgotten
+
+`deletion_router` at `/account`, and the admin half at
+`/admin/deletion-requests`. The DPDP Act 2023 gives a person the right to
+erasure and until this existed the only way to exercise it was to email
+somebody and hope — in a product that holds a WhatsApp number, a home address,
+a map pin, a PAN and a bank account.
+
+- **A request, reviewed by a person.** `DELETION_STATES` is
+  `("requested", "erased", "declined", "withdrawn")` — deliberately **not**
+  "approved", both because the guard test bans that legacy word and because
+  "erased" is the accurate one: what the admin does is not grant permission,
+  it is carry it out.
+- **Blocked while work is in flight, and the block names the work.**
+  `_blocking_collaborations(user)` returns the live rows and the 409 carries
+  them as `work_in_flight`; "you have three collaborations open" is not
+  something anybody can act on, "the Toit tasting, waiting on your draft" is.
+  The list is **re-read at the moment of erasure**, never trusted from when the
+  request was made — work can start in between, and erasing then leaves a brand
+  with a booking against nobody.
+- **Erasing removes the person and keeps the arithmetic.** Every write is
+  `$unset` plus a tombstone, never a document delete, so collaborations,
+  amounts and audit lines still resolve their joins — they simply have nobody
+  in them. `_ERASE_CREATOR_PROFILE` / `_ERASE_BRAND_PROFILE` / `_ERASE_ACCOUNT`
+  are the field lists, the private uploads are removed from disk, and the
+  Instagram connection and its encrypted token go with them.
+- **Payments are reached through the collaborations, not by a `creator_id` on
+  the payment.** There isn't one — the first version of this queried for it,
+  matched nothing, and would have left every bank account and PAN sitting in
+  `payments` after an erasure that reported success.
+- The screen says what "deleted" actually means **before** anybody agrees to
+  it, because it does not mean everything vanishes. Somebody who finds that out
+  afterwards has met exactly the surprise the right exists to prevent.
+- A refusal **closes the dialog**, because the blocking list renders in the
+  panel behind it — leaving it up shows an unchanged form and a button that
+  did nothing, which is the one reading of a refusal worse than the refusal.
+- The reason is **optional**. Nobody has to justify leaving, and a required box
+  there is a toll on a right.
 
 ## Content performance
 
@@ -1788,9 +1968,9 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Twelve list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+- Thirteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
   `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`, `team`) and four detail routes:
+  `performance`, `health`, `audit`, `team`, `deletions`) and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under

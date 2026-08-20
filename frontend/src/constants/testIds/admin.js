@@ -138,6 +138,7 @@ export const ADMIN_CREATOR_PAGE = {
 };
 
 export const ADMIN_BRAND_PAGE = {
+	resubmissions: 'admin-brand-page-resubmissions',
 	page: 'admin-brand-page',
 	manager: 'admin-brand-page-manager',
 	document: (id) => `admin-brand-page-document-${id}`,
@@ -370,6 +371,7 @@ export const ADMIN_AUDIT = {
 };
 
 export const ADMIN_CONFIRM = {
+	extraField: (name) => `admin-confirm-extra-${name}`,
 	dialog: 'admin-confirm-dialog',
 	title: 'admin-confirm-title',
 	reason: 'admin-confirm-reason',
@@ -515,4 +517,11 @@ export const ADMIN_BRAND_FILTER = {
 	root: 'admin-brand-filter',
 	option: (id) => `admin-brand-filter-option-${id}`,
 	clear: 'admin-brand-filter-clear',
+};
+
+// Work that fell over, on the creator's page and the brand's.
+export const ADMIN_CANCELLATIONS = {
+	list: 'admin-cancellations-list',
+	row: (id) => `admin-cancellation-row-${id}`,
+	fee: (id) => `admin-cancellation-fee-${id}`,
 };

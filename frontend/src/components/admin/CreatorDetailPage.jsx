@@ -36,6 +36,8 @@ import {
     formatRupees,
 } from "@/components/admin/shared";
 import { ConfirmDialog } from "@/components/admin/dialogs";
+import { payoutMethodLabel } from "@/lib/payout";
+import CancellationHistory from "@/components/admin/CancellationHistory";
 import { CampaignLink, CollaborationLink } from "@/components/admin/links";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import { useAdminConsole } from "@/pages/AdminConsole";
@@ -321,8 +323,31 @@ export default function CreatorDetailPage() {
                                             </a>
                                         )}
                                     </Field>
-                                    <Field label="UPI">{creator.payout_upi}</Field>
-                                    <Field label="PAN">{creator.pan}</Field>
+                                    {/* **Masked, and never the whole value.**
+                                        The only question answered from this
+                                        panel is "is this the row I am about to
+                                        pay", and the last four characters
+                                        answer it. The server sends nothing
+                                        else — an account number and a PAN
+                                        identify somebody to their bank and to
+                                        the tax department. */}
+                                    <Field label="Paid by">
+                                        {payoutMethodLabel(creator.payout_method)}
+                                    </Field>
+                                    <Field label="Payout ready">
+                                        {creator.payout_ready
+                                            ? "Yes"
+                                            : `No — ${(creator.payout_missing || []).join(", ")}`}
+                                    </Field>
+                                    <Field label="UPI">{creator.payout_upi_masked}</Field>
+                                    <Field label="Account name">
+                                        {creator.payout_account_name}
+                                    </Field>
+                                    <Field label="Account">
+                                        {creator.payout_account_number_masked}
+                                    </Field>
+                                    <Field label="IFSC">{creator.payout_ifsc}</Field>
+                                    <Field label="PAN">{creator.pan_masked}</Field>
                                 </dl>
                                 {creator.verification_reason && (
                                     <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
@@ -438,6 +463,20 @@ export default function CreatorDetailPage() {
                             </ul>
                         )}
                     </Section>
+
+                    {/* Read before taking somebody onto a shoot that costs
+                        money to staff — and a withdrawal in here is a fact,
+                        not a black mark: it happens before anybody is
+                        committed and is theirs to make. */}
+                    {creator.cancellations?.length > 0 && (
+                        <Section
+                            id="cancellations"
+                            title="Cancelled and withdrawn"
+                            count={creator.cancellations.length}
+                        >
+                            <CancellationHistory rows={creator.cancellations} />
+                        </Section>
+                    )}
 
                     <Section id="collaborations" title="Every collaboration">
                         <div className="space-y-8">

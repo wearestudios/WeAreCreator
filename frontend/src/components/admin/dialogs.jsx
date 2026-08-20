@@ -55,16 +55,23 @@ export function ConfirmDialog({
     destructive = false,
     submitting = false,
     extra = null,
+    // **More than one field, for the handful of decisions that need it.**
+    // Recording a payout has to capture the reference *and* what was withheld,
+    // and a second dialog for the second field would be a second definition of
+    // marking a payment paid. `extra` stays for the single-field call sites;
+    // this is the same thing as a list.
+    extras = null,
     onSubmit,
 }) {
+    const fields = extras || (extra ? [extra] : []);
     const [reason, setReason] = useState("");
-    const [extraValue, setExtraValue] = useState("");
+    const [values, setValues] = useState({});
     const [err, setErr] = useState("");
 
     useEffect(() => {
         if (open) {
             setReason("");
-            setExtraValue("");
+            setValues({});
             setErr("");
         }
     }, [open]);
@@ -75,14 +82,23 @@ export function ConfirmDialog({
             setErr("Give a reason — it's shown in the audit log and to the person affected.");
             return;
         }
-        if (extra?.required && !extraValue.trim()) {
-            setErr(`${extra.label} is required.`);
+        const missing = fields.find((f) => f.required && !String(values[f.name] || "").trim());
+        if (missing) {
+            setErr(`${missing.label} is required.`);
             return;
         }
         setErr("");
         onSubmit({
             reason: reason.trim(),
-            ...(extra ? { [extra.name]: extraValue.trim() || null } : {}),
+            ...Object.fromEntries(
+                fields.map((f) => {
+                    const raw = String(values[f.name] ?? "").trim();
+                    if (!raw) return [f.name, null];
+                    // A number field sends a number: `"800"` in a currency
+                    // column is a string that sorts next to `"1,200"`.
+                    return [f.name, f.type === "number" ? Number(raw) : raw];
+                }),
+            ),
         });
     };
 
@@ -117,25 +133,38 @@ export function ConfirmDialog({
                 </DialogHeader>
 
                 <form onSubmit={submit} noValidate className="mt-4 space-y-5">
-                    {extra && (
-                        <div>
+                    {fields.map((f, i) => (
+                        <div key={f.name}>
                             <Label
-                                htmlFor="admin-confirm-extra"
+                                htmlFor={`admin-confirm-extra-${f.name}`}
                                 className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                             >
-                                {extra.label}
+                                {f.label}
                             </Label>
+                            {f.hint && (
+                                <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">
+                                    {f.hint}
+                                </p>
+                            )}
                             <Input
-                                id="admin-confirm-extra"
-                                data-testid={ADMIN_CONFIRM.extra}
-                                value={extraValue}
-                                onChange={(e) => setExtraValue(e.target.value)}
-                                maxLength={140}
-                                placeholder={extra.placeholder}
+                                id={`admin-confirm-extra-${f.name}`}
+                                // The first field keeps the id every existing
+                                // test and call site already writes against.
+                                data-testid={
+                                    i === 0 ? ADMIN_CONFIRM.extra : ADMIN_CONFIRM.extraField(f.name)
+                                }
+                                type={f.type || "text"}
+                                min={f.type === "number" ? "0" : undefined}
+                                value={values[f.name] ?? ""}
+                                onChange={(e) =>
+                                    setValues((v) => ({ ...v, [f.name]: e.target.value }))
+                                }
+                                maxLength={f.type === "number" ? undefined : 140}
+                                placeholder={f.placeholder}
                                 className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                             />
                         </div>
-                    )}
+                    ))}
 
                     <div>
                         <Label

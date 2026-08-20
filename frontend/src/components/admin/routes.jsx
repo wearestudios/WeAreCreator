@@ -25,6 +25,7 @@ import AdminCampaigns from "@/components/admin/AdminCampaigns";
 import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
 import AdminTeam from "@/components/admin/AdminTeam";
+import AdminDeletions from "@/components/admin/AdminDeletions";
 
 /**
  * The overview, with the operational panels above it.
@@ -102,6 +103,9 @@ export const AuditRoute = () => <AdminAudit />;
 
 /** Our own staff, and which brands each of them runs. Admin-only. */
 export const TeamRoute = () => <AdminTeam />;
+
+/** People asking to be forgotten. Admin-only, and irreversible. */
+export const DeletionsRoute = () => <AdminDeletions />;
 
 /**
  * The campaigns list, with "just this brand" in the URL.

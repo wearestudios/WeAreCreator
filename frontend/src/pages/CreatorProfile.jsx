@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
+import { payoutMethodLabel } from "@/lib/payout";
+import DeleteAccount from "@/components/account/DeleteAccount";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { DetailPageSkeleton } from "@/components/data/PageSkeleton";
@@ -330,12 +332,30 @@ export default function CreatorProfile() {
 
                         <Section title="Getting paid" testid={IDS.payout}>
                             <dl className="grid gap-5 sm:grid-cols-2">
-                                <Row label="UPI ID" testid={IDS.upi}>
-                                    {profile.payout_upi}
+                                {/* The creator's own screen, so these are the
+                                    real values — they are theirs, and checking
+                                    a digit against a passbook is the reason
+                                    this page exists. Everywhere else they are
+                                    masked. */}
+                                <Row label="Paid by">
+                                    {payoutMethodLabel(profile.payout_method)}
                                 </Row>
+                                {profile.payout_upi && (
+                                    <Row label="UPI ID" testid={IDS.upi}>
+                                        {profile.payout_upi}
+                                    </Row>
+                                )}
                                 <Row label="Account name">
                                     {profile.payout_account_name}
                                 </Row>
+                                {profile.payout_account_number && (
+                                    <>
+                                        <Row label="Account number">
+                                            {profile.payout_account_number}
+                                        </Row>
+                                        <Row label="IFSC">{profile.payout_ifsc}</Row>
+                                    </>
+                                )}
                                 <Row label="PAN">{profile.pan}</Row>
                                 <Row label="GSTIN">{profile.gstin}</Row>
                             </dl>
@@ -344,6 +364,13 @@ export default function CreatorProfile() {
                                 before you can pitch on something new.
                             </p>
                         </Section>
+
+                        {/* Last on the page, deliberately: it is a right that
+                            has to be reachable, not a thing to put in front of
+                            somebody who came here to check their handle. */}
+                        <div className="mt-10">
+                            <DeleteAccount />
+                        </div>
                     </>
                 )}
             </main>

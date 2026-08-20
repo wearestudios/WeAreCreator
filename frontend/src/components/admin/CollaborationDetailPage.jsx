@@ -464,10 +464,23 @@ export default function CollaborationDetailPage() {
                 onOpenChange={(v) => !v && setDialog({ kind: null })}
                 kicker="Cancel"
                 title={collab?.creator?.name}
-                description="Ends this collaboration. The creator is told, their slot is released, and this cannot be undone."
+                description="Ends this collaboration. The creator is told, their slot is released, and this cannot be undone. How much notice this gives is recorded automatically — count back from the shoot before deciding on a fee."
                 confirmLabel="Cancel it"
                 destructive
                 submitting={busy === "cancel"}
+                extras={[
+                    {
+                        name: "kill_fee",
+                        label: "Cancellation fee",
+                        type: "number",
+                        // **What we owe them, as decided, not calculated.**
+                        // There is no schedule of notice periods in this
+                        // product; inventing one would apply it to
+                        // arrangements nobody agreed it against.
+                        hint: "Leave blank if none is owed. Raises a payable row and tells the creator the amount.",
+                        placeholder: "e.g. 2000",
+                    },
+                ]}
                 onSubmit={(body) =>
                     act(
                         "cancel",
@@ -485,16 +498,42 @@ export default function CollaborationDetailPage() {
                 reasonLabel="Note"
                 confirmLabel="Mark paid"
                 submitting={busy === "mark-paid"}
-                extra={{
-                    name: "reference",
-                    label: "Payment reference",
-                    required: true,
-                    placeholder: "UTR or transaction id",
-                }}
+                extras={[
+                    {
+                        // **`payment_reference`, which is what the server
+                        // reads.** This said `reference`, so every mark-paid
+                        // from this page answered 422 on a required field the
+                        // form was filling in under another name.
+                        name: "payment_reference",
+                        label: "Payment reference",
+                        required: true,
+                        placeholder: "UTR or transaction id",
+                    },
+                    {
+                        name: "tds_amount",
+                        label: "TDS withheld",
+                        type: "number",
+                        // **Recorded, never computed.** Which section applies
+                        // and whether this creator is under the threshold this
+                        // year change by finance act and by creator; a rate in
+                        // code would be quietly wrong for somebody.
+                        hint: "Leave blank if none applies. The platform records what you enter — it doesn't work the rate out.",
+                        placeholder: "e.g. 800",
+                    },
+                ]}
                 onSubmit={(body) =>
                     act(
                         "mark-paid",
-                        () => api.post(`/admin/payments/${payment.id}/mark_paid`, body),
+                        () =>
+                            api.post(`/admin/payments/${payment.id}/mark_paid`, {
+                                payment_reference: body.payment_reference,
+                                // Three states, and the form can only express
+                                // two: a figure means it applies, blank means
+                                // none does. "Nobody has looked yet" is the
+                                // state a payment is in *before* this dialog.
+                                tds_applicable: body.tds_amount != null,
+                                tds_amount: body.tds_amount,
+                            }),
                         "Marked paid",
                     )
                 }

@@ -29,6 +29,7 @@ import {
     Sparkles,
     Stethoscope,
     UserCog,
+    UserX,
     Users,
     X,
 } from "lucide-react";
@@ -96,6 +97,15 @@ export const ADMIN_SECTIONS = [
     },
     { key: "audit", to: "audit", label: "Audit", Icon: ScrollText, adminOnly: true },
     { key: "team", to: "team", label: "Team", Icon: UserCog, adminOnly: true },
+    // A right being exercised against the whole company, not scoped work.
+    {
+        key: "deletions",
+        to: "deletions",
+        label: "Deletions",
+        Icon: UserX,
+        badge: "deletions_waiting",
+        adminOnly: true,
+    },
 ];
 
 /**

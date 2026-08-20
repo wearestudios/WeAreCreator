@@ -287,9 +287,21 @@ class TestPayoutReadiness:
 class _PayoutPayload:
     """Stand-in for the profile payload's payout fields."""
 
-    def __init__(self, upi=None, name=None, pan=None, gstin=None):
+    def __init__(
+        self,
+        upi=None,
+        name=None,
+        pan=None,
+        gstin=None,
+        method=None,
+        account=None,
+        ifsc=None,
+    ):
+        self.payout_method = method
         self.payout_upi = upi
         self.payout_account_name = name
+        self.payout_account_number = account
+        self.payout_ifsc = ifsc
         self.pan = pan
         self.gstin = gstin
 
@@ -306,11 +318,38 @@ class TestPayoutValidation:
     def test_blank_fields_are_allowed_and_stored_as_none(self):
         out = server._clean_payout_fields(_PayoutPayload())
         assert out == {
+            "payout_method": None,
             "payout_upi": None,
             "payout_account_name": None,
+            "payout_account_number": None,
+            "payout_ifsc": None,
             "pan": None,
             "gstin": None,
         }
+
+    def test_a_bank_account_is_normalised_off_the_passbook(self):
+        """An account number is read off paper and typed with spaces in it.
+        Refusing that is a form arguing with the document it is copied from."""
+        out = server._clean_payout_fields(
+            _PayoutPayload(method="bank", account="5010 0123 4567 89", ifsc="hdfc0001234")
+        )
+        assert out["payout_account_number"] == "501001234567 89".replace(" ", "")
+        assert out["payout_ifsc"] == "HDFC0001234"
+        assert out["payout_method"] == "bank"
+
+    @pytest.mark.parametrize("bad", ["12345678", "50100123456789012345", "5010ABC1234"])
+    def test_a_malformed_account_number_is_refused(self, bad):
+        with pytest.raises(HTTPException) as exc:
+            server._clean_payout_fields(_PayoutPayload(account=bad))
+        assert exc.value.status_code == 422
+
+    @pytest.mark.parametrize("bad", ["HDFC1001234", "HDF0001234", "HDFC000123"])
+    def test_a_malformed_ifsc_is_refused(self, bad):
+        """The zero in position five is reserved by RBI, which is what catches
+        a transposed digit."""
+        with pytest.raises(HTTPException) as exc:
+            server._clean_payout_fields(_PayoutPayload(ifsc=bad))
+        assert exc.value.status_code == 422
 
     @pytest.mark.parametrize("bad_upi", ["notaupi", "@bank", "priya@", "priya bank"])
     def test_malformed_upi_is_refused(self, bad_upi):
@@ -2327,9 +2366,13 @@ class TestApplicantBuckets:
         assert "_ENGAGED_COLLAB_STATES" in active_block
         assert "_APPLICANT_APPROVED_STATES" not in active_block
 
-    def test_rejected_covers_both_exits(self):
+    def test_rejected_covers_every_exit(self):
+        """Three ways out now, not two. `withdrawn` is the creator's own, and
+        a board that did not account for it would show an applicant who has
+        gone as still waiting on somebody."""
         rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
-        assert set(rejected) == {"declined", "cancelled"}
+        assert set(rejected) == {"declined", "cancelled", "withdrawn"}
+        assert set(rejected) | {"closed"} == set(server.TERMINAL_COLLAB_STATES)
 
     def test_completed_is_reported_separately_from_approved(self):
         # "How many finished" is a different question from "how many were

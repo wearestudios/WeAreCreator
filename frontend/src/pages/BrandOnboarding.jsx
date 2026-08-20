@@ -75,6 +75,7 @@ import { IST } from "@/lib/time";
 // real-estate brand had to file itself as "Lifestyle" — and that is the word
 // its public page then prints.
 import { CATEGORY_OPTIONS } from "@/lib/categories";
+import DeleteAccount from "@/components/account/DeleteAccount";
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
@@ -1345,6 +1346,13 @@ export default function BrandOnboarding() {
                         </Button>
                     </div>
                 )}
+
+                {/* Last on the page: a right that has to be reachable, not
+                    something to put in front of a brand halfway through
+                    getting verified. */}
+                <div className="mt-12">
+                    <DeleteAccount />
+                </div>
             </main>
         </div>
     );

@@ -94,6 +94,12 @@ export const CREATOR_SUGGESTED = {
 };
 
 export const CREATOR_APPLICATIONS = {
+	withdraw: (id) => `creator-application-withdraw-${id}`,
+	withdrawDialog: 'creator-withdraw-dialog',
+	withdrawReason: 'creator-withdraw-reason',
+	withdrawError: 'creator-withdraw-error',
+	withdrawSubmit: 'creator-withdraw-submit',
+	withdrawCancel: 'creator-withdraw-cancel',
 	section: 'applications-section',
 	empty: 'applications-empty',
 	browse: 'applications-browse-link',
@@ -192,6 +198,9 @@ export const CREATOR_ONBOARDING = {
 	upi: 'onboarding-upi-input',
 	payoutName: 'onboarding-payout-name-input',
 	pan: 'onboarding-pan-input',
+	payoutMethod: (value) => `onboarding-payout-method-${value}`,
+	payoutAccount: 'onboarding-payout-account-input',
+	payoutIfsc: 'onboarding-payout-ifsc-input',
 	gstin: 'onboarding-gstin-input',
 
 	save: 'onboarding-save-btn',

@@ -492,6 +492,15 @@ CATEGORY_LITERAL = Literal[
 # Where a creator actually publishes. Deliberately a closed list: "youtube"
 # and "YT" in the same column makes the directory unsearchable.
 CreatorPlatform = Literal["instagram", "youtube"]
+
+# How a creator wants the money to arrive.
+#
+# **Stored rather than inferred from which fields are filled.** Inferring it
+# would make a half-typed bank account read as "they want UPI", and a creator
+# who switched from one to the other would carry both sets of details with no
+# record of which one is current — so an accounts payable run would have to
+# guess. The method is the answer to "where does this money go".
+PayoutMethod = Literal["upi", "bank"]
 CREATOR_PLATFORMS = ("instagram", "youtube")
 
 
@@ -623,8 +632,18 @@ class CreatorProfileUpdate(BaseModel):
     base_rate: Optional[float] = Field(default=None, ge=0)
     follower_count: Optional[int] = Field(default=None, ge=0)
     # Payout identity. Optional at onboarding, required before payment.
+    #
+    # **Two ways to be paid, and the method says which one is real.** UPI alone
+    # was the whole of this, which quietly excluded every creator whose bank
+    # does not do UPI collect and everyone who would rather be paid into an
+    # account — and it made "is this profile payable?" a question with a
+    # different answer depending on which fields happened to be filled. The
+    # method is the answer; `payout_ready` asks it.
+    payout_method: Optional[PayoutMethod] = None
     payout_upi: Optional[str] = Field(default=None, max_length=120)
     payout_account_name: Optional[str] = Field(default=None, max_length=140)
+    payout_account_number: Optional[str] = Field(default=None, max_length=20)
+    payout_ifsc: Optional[str] = Field(default=None, max_length=11)
     pan: Optional[str] = Field(default=None, max_length=10)
     gstin: Optional[str] = Field(default=None, max_length=15)
 
@@ -632,6 +651,12 @@ class CreatorProfileUpdate(BaseModel):
 PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]{3}$")
 UPI_RE = re.compile(r"^[a-zA-Z0-9.\-_]{2,64}@[a-zA-Z][a-zA-Z0-9]{1,30}$")
+# Four letters, a zero, then six of the bank's own characters. The zero in
+# position five is reserved by RBI and is what catches a transposed digit.
+IFSC_RE = re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$")
+# Indian account numbers run 9–18 digits and nothing else; a space or a dash
+# typed out of a passbook is normalised away rather than refused.
+ACCOUNT_RE = re.compile(r"^[0-9]{9,18}$")
 
 
 class ApplyPayload(BaseModel):
@@ -1869,9 +1894,36 @@ CancellationType = Literal["creator_no_show", "brand_cancelled", "admin_cancelle
 
 
 class MarkPaidPayload(BaseModel):
-    """Payload recording an actual payout that happened outside the platform."""
+    """Payload recording an actual payout that happened outside the platform.
+
+    **The withholding is recorded, never computed.** Which section applies,
+    whether the creator is a company or an individual, whether they are below
+    the threshold this year and what happens if their PAN is inoperative are
+    all questions with answers that change by finance act and by creator — and
+    a rate hardcoded here would be quietly wrong for somebody, in a direction
+    nobody notices until an assessment. So the admin enters what was actually
+    withheld and the platform keeps the record. See the NEEDS A LAWYER note.
+    """
 
     payment_reference: str = Field(min_length=1, max_length=140)
+    # Whether TDS was withheld at all. Deliberately separate from the amount:
+    # "we decided none applies" and "nobody has looked yet" are different
+    # facts, and a bare `0` cannot tell them apart.
+    tds_applicable: Optional[bool] = None
+    tds_amount: Optional[float] = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _withholding_is_coherent(self):
+        if self.tds_applicable is False and self.tds_amount:
+            raise ValueError(
+                "You've said no TDS applies but entered an amount. Pick one."
+            )
+        if self.tds_applicable and self.tds_amount is None:
+            raise ValueError(
+                "Enter the amount withheld — the platform records it rather "
+                "than working it out."
+            )
+        return self
 
 
 class ReasonPayload(BaseModel):
@@ -1891,6 +1943,12 @@ class CancelCollabPayload(ReasonPayload):
     # Defaults to the admin doing it, which is true whenever nobody says
     # otherwise, and keeps older callers working.
     cancellation_type: CancellationType = "admin_cancelled"
+    # **What we owe them for pulling out late, as decided, not as calculated.**
+    # There is no schedule of notice periods in this product and inventing one
+    # here would apply it to arrangements nobody agreed it against. The notice
+    # period is *recorded* beside it — see `_days_of_notice` — so the decision
+    # and the fact it was made on sit together in the record.
+    kill_fee: Optional[float] = Field(default=None, ge=0)
 
 
 class RefundPayload(ReasonPayload):
@@ -2014,7 +2072,19 @@ def _collab_ladder(campaign: Optional[dict]) -> list:
     return [s for s in COLLAB_STATE_ORDER if s not in DRAFT_REVIEW_STATES]
 
 # Once a collaboration is in one of these, nothing may move it again.
-TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled")
+# **Four ways out, and `withdrawn` is the creator's.** Until it existed the
+# only exits were ones somebody else took: a brand declining, an admin
+# cancelling, or the work finishing. A creator who had changed their mind — a
+# clashing shoot, a family thing, a rate they thought better of — had no way to
+# say so, so they went quiet, and a brand shortlisted somebody who was never
+# going to turn up. Silence is not a state anybody can plan around.
+TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled", "withdrawn")
+
+# Up to acceptance, and no further. Once a brand has taken somebody on, a
+# change of mind is a cancellation — the same event with a different name,
+# handled by the flow that captures notice period and a kill fee, because by
+# then there is a venue booked and a commitment on both sides.
+WITHDRAWABLE_COLLAB_STATES = ("applied", "verified")
 
 # How a creator's history reads back to an admin. Every state belongs to exactly
 # one group, so nothing can silently vanish from a creator's record.
@@ -2041,7 +2111,7 @@ DELIVERED_COLLAB_STATES = (
     "in_payment",
     "closed",
 )
-COLLAB_GROUP_ENDED = ("declined", "cancelled")
+COLLAB_GROUP_ENDED = ("declined", "cancelled", "withdrawn")
 
 # States where the next move is the admin's. Deliberately not derived from
 # _BRAND_OWNED_TRANSITIONS: `attended` and `content_submitted` are waiting on the
@@ -2166,8 +2236,11 @@ class CreatorProfile(BaseModel):
     # Set once by the 3-day nudge, so nobody gets chased twice.
     onboarding_nudge_sent_at: Optional[datetime] = None
     # Payout identity — required before a collaboration can enter payment.
+    payout_method: Optional[PayoutMethod] = None
     payout_upi: Optional[str] = None
     payout_account_name: Optional[str] = None
+    payout_account_number: Optional[str] = None
+    payout_ifsc: Optional[str] = None
     pan: Optional[str] = None
     gstin: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -2539,6 +2612,10 @@ NOTIFY_EVENTS = {
     "content_approved": "Your content was approved",
     "payment_sent": "Your payment has been sent",
     "new_applicant": "A creator applied to your campaign",
+    "application_withdrawn": "A creator withdrew their application",
+    "collaboration_cancelled": "A collaboration you were on was cancelled",
+    "account_deletion_requested": "Somebody asked for their account to be deleted",
+    "account_deleted": "Your account has been deleted",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
     # Suspension is not a verification decision — see suspend_creator.
@@ -2878,6 +2955,32 @@ def sniff_draft_type(head: bytes) -> Optional[tuple]:
     if head.startswith(b"\x1a\x45\xdf\xa3"):
         return "video/webm", ".webm"
     return sniff_image_type(head)
+
+
+def _remove_private_upload(stored_name: Optional[str]) -> bool:
+    """Delete one private file from disk, by the name *we* gave it.
+
+    **Only the stored name, never a path from a record.** The stored name is
+    ours and random — the uploader's filename is kept as a label and nowhere
+    near this — so there is no traversal to worry about, and the `.name` below
+    makes that structural rather than a promise.
+
+    Missing is success: erasure has to be idempotent, and a file already gone
+    is the state we wanted.
+    """
+    if not stored_name:
+        return False
+    try:
+        target = PRIVATE_UPLOAD_DIR / Path(str(stored_name)).name
+        target.unlink(missing_ok=True)
+        return True
+    except OSError:
+        # A file we cannot remove must not abort an erasure half-way through —
+        # the database writes are what the person actually asked for. The
+        # decision record names the collections, so a leftover file is
+        # findable rather than silent.
+        logger.exception("Could not remove private upload %s", stored_name)
+        return False
 
 
 async def _store_private_upload(
@@ -4096,6 +4199,212 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
     }
 
 
+# ---------------------------------------------------------------------------
+# Asking to be forgotten
+# ---------------------------------------------------------------------------
+#
+# **A right, not a feature.** The DPDP Act 2023 gives a person the right to
+# erasure of their personal data, and until this existed the only way to
+# exercise it was to email somebody and hope. A product that collects a
+# WhatsApp number, a home address, a map pin, a PAN and a bank account and has
+# no way to give any of it back is not one that can honestly claim to handle
+# them carefully.
+#
+# **Two things are in tension and both are real.** The person's data is theirs
+# to withdraw; the transaction records are an accounting obligation and a
+# brand's proof of what it paid for. So erasure removes the person and keeps
+# the arithmetic: names, numbers, addresses, payout identity and content links
+# go, while the collaboration, its dates, its amounts and its audit trail stay
+# with the identifying fields replaced by the reference the record already had.
+#
+# NEEDS A LAWYER: how long anonymised transaction records may be retained, and
+# whether a deletion request may be refused outright rather than deferred, are
+# questions this code takes a defensible position on rather than an
+# authoritative one. See the block in `pages/Legal.jsx`.
+
+deletion_router = APIRouter(prefix="/account", tags=["account"])
+
+# What happened to a request. **"Erased" rather than "approved"** — partly
+# because `approved` is the legacy verification word this codebase migrated
+# away from and a guard test refuses it, and partly because it is the better
+# word: what an admin agrees to here is not an application, it is the deletion
+# actually happening.
+DELETION_STATES = ("requested", "erased", "declined", "withdrawn")
+
+# Who may ask. Staff accounts are made by an admin and removed by an admin —
+# there is no personal-data case for a login that exists to do a job, and a
+# self-service door on one is a way to lock the company out of its own console.
+DELETABLE_ROLES = ("creator", *BRAND_ROLES)
+
+
+class DeletionRequestPayload(BaseModel):
+    """Why they are going. Optional — nobody has to give a reason to leave."""
+
+    reason: Optional[str] = Field(default=None, max_length=1000)
+
+
+async def _blocking_collaborations(user: dict) -> list:
+    """Work in flight that has to finish before anybody can be erased.
+
+    **Not a refusal, a wait.** Somebody owed money for a shoot they did last
+    week cannot be deleted without either losing the payment or losing the
+    record of what it was for — and neither is a thing to do to somebody who
+    has just asked to leave. So the request is refused *with the list*, and
+    they can come back when it has cleared.
+    """
+    role = user.get("role")
+    if role == "creator":
+        query = {"creator_id": ObjectId(user["_id"])}
+    elif is_brand_side(user):
+        campaign_ids = await db.campaigns.distinct(
+            "_id", {"brand_id": _brand_scope(user)}
+        )
+        if not campaign_ids:
+            return []
+        query = {"campaign_id": {"$in": campaign_ids}}
+    else:
+        return []
+
+    rows = await db.collaborations.find(
+        {**query, "state": {"$in": list(COLLAB_GROUP_ONGOING)}}
+    ).to_list(length=200)
+    if not rows:
+        return []
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [r["campaign_id"] for r in rows]}}
+        ).to_list(length=len(rows))
+    }
+    return [
+        {
+            "collaboration_id": str(r["_id"]),
+            "campaign_title": (campaigns.get(r["campaign_id"]) or {}).get("title"),
+            "state": r.get("state"),
+        }
+        for r in rows
+    ]
+
+
+def _serialize_deletion_request(doc: Optional[dict]) -> Optional[dict]:
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "state": doc.get("state"),
+        "reason": doc.get("reason"),
+        "requested_at": _iso(doc.get("requested_at")),
+        "decided_at": _iso(doc.get("decided_at")),
+        "decided_by_name": doc.get("decided_by_name"),
+        "decision_note": doc.get("decision_note"),
+    }
+
+
+@deletion_router.get("/deletion-request")
+async def read_deletion_request(user: dict = Depends(get_current_user)):
+    """Where a request stands, and whether one can be made at all.
+
+    Both halves in one call, because "you can't delete yet" and "you already
+    asked" are the two things a person opening this screen needs, and a screen
+    that had to ask twice would show one before the other.
+    """
+    existing = await db.deletion_requests.find_one(
+        {"user_id": ObjectId(user["_id"]), "state": "requested"}
+    )
+    blocking = await _blocking_collaborations(user)
+    return {
+        "eligible": user.get("role") in DELETABLE_ROLES,
+        "request": _serialize_deletion_request(existing),
+        # Named, not counted: "three collaborations" is not something anybody
+        # can act on, and "the Toit tasting, waiting on your draft" is.
+        "blocking": blocking,
+    }
+
+
+@deletion_router.post("/deletion-request")
+async def request_account_deletion(
+    payload: DeletionRequestPayload,
+    user: dict = Depends(get_current_user),
+):
+    """Ask for the account and its personal data to be erased."""
+    if user.get("role") not in DELETABLE_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Staff accounts are created and removed by an admin — ask the "
+                "team rather than this form."
+            ),
+        )
+
+    oid = ObjectId(user["_id"])
+    if await db.deletion_requests.find_one({"user_id": oid, "state": "requested"}):
+        raise HTTPException(
+            status_code=409, detail="You've already asked. We're looking at it."
+        )
+
+    blocking = await _blocking_collaborations(user)
+    if blocking:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "work_in_flight",
+                "message": (
+                    "There's still work under way on your account. We can't erase "
+                    "your details while somebody is owed a shoot or a payment for "
+                    "one — finish or cancel these and ask again."
+                ),
+                "blocking": blocking,
+            },
+        )
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "user_id": oid,
+        "role": user.get("role"),
+        "state": "requested",
+        "reason": (payload.reason or "").strip() or None,
+        "requested_at": now,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.deletion_requests.insert_one(doc)
+    await audit(
+        user,
+        "account.deletion_requested",
+        "user",
+        oid,
+        after={"state": "requested"},
+        note=doc["reason"],
+    )
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            "account_deletion_requested",
+            title="Somebody asked to be deleted",
+            body=f"{user.get('name') or 'A user'} requested account deletion.",
+            link="/admin/deletions",
+        )
+    return _serialize_deletion_request({**doc, "_id": result.inserted_id})
+
+
+@deletion_router.delete("/deletion-request")
+async def withdraw_deletion_request(user: dict = Depends(get_current_user)):
+    """Change your mind. Available right up until an admin acts on it."""
+    now = datetime.now(timezone.utc)
+    updated = await db.deletion_requests.find_one_and_update(
+        {"user_id": ObjectId(user["_id"]), "state": "requested"},
+        {"$set": {"state": "withdrawn", "decided_at": now, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="You have no open request.")
+    await audit(user, "account.deletion_withdrawn", "user", ObjectId(user["_id"]))
+    return _serialize_deletion_request(updated)
+
+
+api_router.include_router(deletion_router)
+
+
 api_router.include_router(auth_router)
 
 
@@ -4137,22 +4446,132 @@ def _serialize_creator_profile(doc: dict) -> dict:
         # it rather than "something".
         "pending_review_fields": doc.get("pending_review_fields") or [],
         "pending_review_since": _iso(doc.get("pending_review_since")),
+        # **The creator's own profile, so these are the real values.** They
+        # are theirs; checking a digit against a passbook is what this screen
+        # is for. Every other read path serves `_masked_payout` instead.
+        "payout_method": _payout_method(doc),
         "payout_upi": doc.get("payout_upi"),
         "payout_account_name": doc.get("payout_account_name"),
+        "payout_account_number": doc.get("payout_account_number"),
+        "payout_ifsc": doc.get("payout_ifsc"),
         "pan": doc.get("pan"),
         "gstin": doc.get("gstin"),
         "payout_ready": payout_ready(doc),
+        # Named, so the dashboard can say what is still needed rather than
+        # showing a disabled state with no explanation.
+        "payout_missing": payout_missing(doc),
         "created_at": _iso(doc.get("created_at")),
         "updated_at": _iso(doc.get("updated_at")),
     }
 
 
+# What each payout method needs before money can move, and the words for the
+# fields — so a refusal names what is missing rather than saying "incomplete".
+PAYOUT_METHOD_FIELDS = {
+    "upi": (("payout_upi", "a UPI ID"),),
+    "bank": (
+        ("payout_account_name", "the account holder's name"),
+        ("payout_account_number", "an account number"),
+        ("payout_ifsc", "an IFSC code"),
+    ),
+}
+
+
+def _payout_method(profile: Optional[dict]) -> Optional[str]:
+    """Which way this creator is paid.
+
+    **Absent falls back to UPI when a UPI ID is on file**, because every
+    profile written before the method existed is a UPI profile — that was the
+    only option. Without the fallback, deploying this would make every
+    already-payable creator unpayable at once, which is the kind of migration
+    that gets noticed on a payout run rather than in a test.
+    """
+    profile = profile or {}
+    method = profile.get("payout_method")
+    if method in PAYOUT_METHOD_FIELDS:
+        return method
+    return "upi" if profile.get("payout_upi") else None
+
+
+def payout_missing(profile: Optional[dict]) -> list:
+    """What is still needed before this creator can be paid, in words.
+
+    PAN is the minimum for TDS and is required whichever way the money moves;
+    GSTIN is only needed if they are registered, so it is never in here.
+    """
+    profile = profile or {}
+    method = _payout_method(profile)
+    if method is None:
+        return ["how you want to be paid"]
+    missing = [
+        label
+        for field, label in PAYOUT_METHOD_FIELDS[method]
+        if not profile.get(field)
+    ]
+    if not profile.get("pan"):
+        missing.append("your PAN")
+    return missing
+
+
 def payout_ready(profile: dict) -> bool:
     """We can only send money if we know where to send it and who to report it
-    against. PAN is the minimum for TDS; GSTIN is only needed if registered."""
+    against. One reader, so the gate on `in_payment`, the creator's own
+    dashboard and the admin's column cannot disagree about who is payable."""
     if not profile:
         return False
-    return bool(profile.get("payout_upi")) and bool(profile.get("pan"))
+    return not payout_missing(profile)
+
+
+# --- Showing it without publishing it ----------------------------------------
+#
+# **These are the most sensitive values in the product.** An account number and
+# a PAN identify a person to their bank and to the tax department, and the only
+# reason an admin ever needs to see one is to check that the row in front of
+# them is the row they are about to pay. The last four characters answer that
+# and nothing else does — so that is what is served, and the full value never
+# leaves the database on any read path.
+#
+# Brands never see any of it at all: it is off `_BRAND_VISIBLE_CREATOR_FIELDS`
+# and named in `BRAND_FORBIDDEN_CREATOR_FIELDS` so the leak test hunts for it.
+
+
+def mask_tail(value: Optional[str], keep: int = 4) -> Optional[str]:
+    """`••••4321`. `None` stays `None` — absent is not the same as hidden, and
+    a row of dots where there is no value would tell an admin the creator has
+    filled something in."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    if len(text) <= keep:
+        return "•" * len(text)
+    return "•" * (len(text) - keep) + text[-keep:]
+
+
+def _masked_payout(profile: Optional[dict]) -> dict:
+    """The payout identity as an admin may read it.
+
+    A UPI ID keeps its handle — `••••23@okhdfcbank` is what tells you the
+    money is going to the right bank — while the local part, which is usually
+    a phone number, is covered.
+    """
+    profile = profile or {}
+    upi = (profile.get("payout_upi") or "").strip()
+    local, _, handle = upi.partition("@")
+    return {
+        "payout_method": _payout_method(profile),
+        "payout_upi_masked": f"{mask_tail(local)}@{handle}" if upi and handle else None,
+        # The name is not a secret and is the thing an admin actually reads
+        # back to a bank; it is the number beside it that is.
+        "payout_account_name": profile.get("payout_account_name"),
+        "payout_account_number_masked": mask_tail(profile.get("payout_account_number")),
+        # An IFSC names a branch, not a person, and an admin checking a
+        # transfer needs the whole of it.
+        "payout_ifsc": profile.get("payout_ifsc"),
+        "pan_masked": mask_tail(profile.get("pan")),
+        "gstin_masked": mask_tail(profile.get("gstin")),
+        "payout_ready": payout_ready(profile),
+        "payout_missing": payout_missing(profile),
+    }
 
 
 YOUTUBE_URL_RE = re.compile(
@@ -4206,8 +4625,11 @@ MATERIAL_PROFILE_FIELDS = {
     "youtube_url": "your YouTube link",
     "facebook_url": "your Facebook link",
     "city": "your city",
+    "payout_method": "how you're paid",
     "payout_upi": "your UPI ID",
     "payout_account_name": "your payout account name",
+    "payout_account_number": "your account number",
+    "payout_ifsc": "your IFSC code",
     "pan": "your PAN",
     "gstin": "your GSTIN",
 }
@@ -4328,6 +4750,38 @@ def _clean_payout_fields(payload, only: Optional[set] = None) -> dict:
 
     if wanted("payout_account_name"):
         out["payout_account_name"] = (payload.payout_account_name or "").strip() or None
+
+    if wanted("payout_method"):
+        out["payout_method"] = payload.payout_method or None
+
+    # **Normalised, not refused, for the characters a passbook prints.** An
+    # account number is read off paper and typed with spaces in it; rejecting
+    # that is a form arguing with the document it is copied from.
+    account = re.sub(r"[\s-]", "", payload.payout_account_number or "")
+    if not wanted("payout_account_number"):
+        pass
+    elif account:
+        if not ACCOUNT_RE.match(account):
+            raise HTTPException(
+                status_code=422,
+                detail="An account number is 9 to 18 digits, and nothing else.",
+            )
+        out["payout_account_number"] = account
+    else:
+        out["payout_account_number"] = None
+
+    ifsc = re.sub(r"\s", "", (payload.payout_ifsc or "")).upper()
+    if not wanted("payout_ifsc"):
+        pass
+    elif ifsc:
+        if not IFSC_RE.match(ifsc):
+            raise HTTPException(
+                status_code=422,
+                detail="IFSC should be 11 characters, like HDFC0001234.",
+            )
+        out["payout_ifsc"] = ifsc
+    else:
+        out["payout_ifsc"] = None
 
     pan = (payload.pan or "").strip().upper()
     if not wanted("pan"):
@@ -6157,6 +6611,111 @@ async def creator_self_check_in(
     return await _check_in_collaboration(collab, campaign, user, method="self_qr")
 
 
+@creator_router.post("/collaborations/{collab_id}/withdraw")
+async def withdraw_application(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Take an application back, up to the moment somebody takes you on.
+
+    **The exit the creator did not have.** Every other way out of a
+    collaboration was somebody else's move — a brand declining, an admin
+    cancelling, the work finishing — so a creator who had changed their mind
+    could only go quiet. A brand then shortlisted somebody who was never going
+    to turn up, and found out on the day.
+
+    **Up to acceptance and no further.** After that there is a venue booked and
+    a commitment on both sides, and a change of mind is a cancellation — the
+    same event under a name that carries a notice period and a kill fee. The
+    refusal says so rather than saying no.
+
+    The reason is required and reaches whoever runs the campaign, because "one
+    of your three applicants is gone" is only actionable with the half that
+    says why.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    state = collab.get("state", "applied")
+
+    if state in TERMINAL_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409, detail=f"This application is already {state}."
+        )
+    if state not in WITHDRAWABLE_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "You've already been taken on for this one. Message the team and "
+                "we'll sort it out — there may be a venue booked around you."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    now = datetime.now(timezone.utc)
+    reason = payload.reason.strip()
+
+    updated = await db.collaborations.find_one_and_update(
+        # `state` as a write precondition, like every other transition here: a
+        # brand accepting at the same moment must win or lose cleanly rather
+        # than both writes landing.
+        {"_id": collab["_id"], "state": state},
+        {
+            "$set": {
+                "state": "withdrawn",
+                "active": False,
+                "exit_reason": reason,
+                "withdrawn_at": now,
+                "withdrawn_from_state": state,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409,
+            detail="This just moved — reload and see where it got to.",
+        )
+
+    await audit(
+        user,
+        "collaboration.withdraw",
+        "collaboration",
+        collab["_id"],
+        before={"state": state},
+        after={"state": "withdrawn"},
+        note=reason,
+        **_campaign_audit_context(campaign),
+    )
+    # A place they were counted in goes back on the board.
+    await _sync_campaign_fill(collab["campaign_id"])
+
+    # Whoever runs this brief, by the same reader every other routing decision
+    # uses — so on a weare-run campaign the brand is not paged about an
+    # applicant they were never shown.
+    name = (
+        await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+    ).get("name") or "A creator"
+    title = (campaign or {}).get("title") or "your campaign"
+    if _weare_runs(campaign or {}):
+        await notify_weare_team(
+            campaign or {},
+            "application_withdrawn",
+            title="An applicant withdrew",
+            body=f"{name} withdrew from “{title}”: {reason}",
+        )
+    elif campaign:
+        await notify_brand_manager(
+            campaign["brand_id"],
+            "application_withdrawn",
+            title="An applicant withdrew",
+            body=f"{name} withdrew from “{title}”: {reason}",
+            link=f"/brand/campaigns/{campaign['_id']}/applicants",
+        )
+
+    return {"id": collab_id, "state": "withdrawn", "withdrawn_at": _iso(now)}
+
+
 @creator_router.post("/collaborations/{collab_id}/cancel-slot")
 async def creator_cancel_slot(
     collab_id: str,
@@ -6539,6 +7098,10 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "submitted_for_verification_at": _iso(doc.get("submitted_for_verification_at")),
         # Set when we refuse a brand, so it can be shown rather than guessed at.
         "verification_reason": doc.get("verification_reason"),
+        # What we asked for last time, kept through a resubmission so neither
+        # the brand nor the reviewer has to remember it.
+        "previous_verification_reason": doc.get("previous_verification_reason"),
+        "verification_resubmissions": int(doc.get("verification_resubmissions") or 0),
         "created_at": _iso(doc.get("created_at")),
         "updated_at": _iso(doc.get("updated_at")),
     }
@@ -7269,6 +7832,15 @@ async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAN
         )
 
     now = datetime.now(timezone.utc)
+    # **A rejection is not a dead end, and the count says how far from one.**
+    # Coming back after a refusal is the system working — a brand read what was
+    # wrong and fixed it. But a fourth attempt on the same business is a
+    # different conversation from a first, and an admin picking up the queue
+    # item cannot tell them apart unless somebody counts. So this counts, and
+    # decides nothing: there is no cap, because a cap would refuse a brand that
+    # is genuinely trying on the attempt where they finally got it right.
+    was_rejected = _brand_verification_state(profile) == "rejected"
+
     updated = await db.brand_profiles.find_one_and_update(
         {"user_id": brand_oid},
         {
@@ -7276,10 +7848,15 @@ async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAN
                 "verification_state": "pending_verification",
                 "submitted_for_verification_at": now,
                 # A resubmission starts clean; the old refusal is not a verdict
-                # on the documents they have just sent.
+                # on the documents they have just sent. The reason is kept
+                # under `previous_verification_reason` rather than dropped —
+                # the reviewer wants to know what we asked for last time.
                 "verification_reason": None,
+                **({"previous_verification_reason": profile.get("verification_reason")}
+                   if was_rejected else {}),
                 "updated_at": now,
-            }
+            },
+            **({"$inc": {"verification_resubmissions": 1}} if was_rejected else {}),
         },
         return_document=True,
     )
@@ -7773,8 +8350,11 @@ BRAND_FORBIDDEN_CREATOR_FIELDS = (
     "location_lat",
     "location_lng",
     "location_place_id",
+    "payout_method",
     "payout_upi",
     "payout_account_name",
+    "payout_account_number",
+    "payout_ifsc",
     "pan",
     "gstin",
 )
@@ -9315,6 +9895,7 @@ _NEXT_ACTION = {
     "closed": (None, "Nothing — this is finished", ""),
     "declined": (None, "Nothing — the brand passed", ""),
     "cancelled": (None, "Nothing — this was cancelled", ""),
+    "withdrawn": (None, "Nothing — the creator withdrew", ""),
 }
 
 
@@ -9493,6 +10074,9 @@ _PROCESS_ACTION = {
 _PROCESS_BANNERS = {
     "declined": ("ended", "Not this time", "The brand went with somebody else. Nothing else is needed here."),
     "cancelled": ("ended", "Cancelled", "This application was cancelled."),
+    # The creator's own exit. Said as a fact rather than as a refusal: they
+    # withdrew, which is a decision they were entitled to make.
+    "withdrawn": ("ended", "Withdrawn", "The creator withdrew this application."),
 }
 
 
@@ -10192,15 +10776,20 @@ async def get_creator_detail(
             # diff against a profile nobody kept a copy of.
             "pending_review_fields": profile.get("pending_review_fields") or [],
             "pending_review_since": _iso(profile.get("pending_review_since")),
-            "payout_ready": payout_ready(profile),
-            "payout_upi": profile.get("payout_upi"),
-            "payout_account_name": profile.get("payout_account_name"),
-            "pan": profile.get("pan"),
-            "gstin": profile.get("gstin"),
+            # **Masked, and never the whole value.** The only question an
+            # admin answers from this panel is "is the row in front of me the
+            # row I am about to pay", and the last four characters answer it.
+            # The full account number and PAN stay in the database; the one
+            # place they leave it is the payout snapshot written onto a payment
+            # at the moment money is about to move.
+            **_masked_payout(profile),
             "verified_at": _iso(profile.get("verified_at")),
             "verification_reason": profile.get("verification_reason"),
             "terms_accepted_at": _iso(account.get("terms_accepted_at")),
             "joined_at": _iso(account.get("created_at")),
+            # Work that fell over around this creator, and on whose call. Read
+            # before taking somebody onto a shoot that costs money to staff.
+            "cancellations": await _cancellation_history(creator_id=oid),
         }
     )
 
@@ -12004,8 +12593,8 @@ async def _export_creators(*, date_from, date_to, status, q, **_):
     headers = [
         "Creator ID", "Name", "Phone", "Email", "City", "Address",
         "Instagram", "Followers", "Follower source", "Niches", "Base rate",
-        "Verification", "Payout ready", "UPI", "PAN", "Completed", "Ongoing",
-        "Lifetime earned", "Joined",
+        "Verification", "Payout ready", "Payout method", "UPI", "PAN",
+        "Completed", "Ongoing", "Lifetime earned", "Joined",
     ]
     rows = []
     for p in profiles:
@@ -12022,12 +12611,45 @@ async def _export_creators(*, date_from, date_to, status, q, **_):
             p.get("base_rate") if p.get("base_rate") is not None else "",
             p.get("verification_status") or "pending",
             "yes" if payout_ready(p) else "no",
-            p.get("payout_upi") or "", p.get("pan") or "",
+            # Masked here too: this export is a directory of who we work with,
+            # not the instruction sheet a payout run is made from. That one is
+            # `payments`, which carries the snapshot written when the money was
+            # actually committed.
+            _masked_payout(p)["payout_method"] or "",
+            mask_tail(p.get("payout_upi")) or "", mask_tail(p.get("pan")) or "",
             s.get("completed", 0), s.get("ongoing", 0),
             round(float(s.get("earned", 0) or 0), 2),
             _iso(p.get("created_at")) or "",
         ])
     return rows, headers
+
+
+def _payout_columns(snapshot: Optional[dict], profile: Optional[dict]) -> list:
+    """Where this payout was going, masked, from the record that owns it.
+
+    The snapshot is written onto the payment the moment the fee is agreed and
+    is the authority: it is what the money was committed against. The profile
+    is the fallback for a payment raised before snapshots carried the bank
+    half, and is right for exactly that case and no other.
+    """
+    src = snapshot or {}
+    fallback = profile or {}
+
+    def pick(snap_key, profile_key):
+        value = src.get(snap_key)
+        return value if value is not None else fallback.get(profile_key)
+
+    upi = pick("upi", "payout_upi") or ""
+    local, _, handle = upi.partition("@")
+    return [
+        src.get("method") or _payout_method(fallback) or "",
+        f"{mask_tail(local)}@{handle}" if upi and handle else "",
+        pick("account_name", "payout_account_name") or "",
+        mask_tail(pick("account_number", "payout_account_number")) or "",
+        pick("ifsc", "payout_ifsc") or "",
+        mask_tail(pick("pan", "pan")) or "",
+        mask_tail(pick("gstin", "gstin")) or "",
+    ]
 
 
 async def _export_brands(*, date_from, date_to, status, q, brand_scope=None, **_):
@@ -12241,10 +12863,19 @@ async def _export_payments(
             length=len(creator_ids) or 1
         )
     }
+    # **This is the one export an accountant reconciles a bank statement
+    # against**, so it carries the payout identity as it stood when the money
+    # was committed — the snapshot, not the profile, because a creator editing
+    # their bank details next week must not restate where last month's payout
+    # went. Masked to the last four like every other admin surface: it answers
+    # "is this the right row" without putting a full account number into a
+    # spreadsheet that gets emailed.
     headers = [
         "Payment ID", "State", "Campaign", "Campaign ID", "Brand", "Creator",
-        "Phone", "UPI", "PAN", "GSTIN", "Agreed amount", "Platform fee",
-        "Creator payout", "Brand invoice amount", "Invoice state", "Reference",
+        "Phone", "Payout method", "UPI", "Account name", "Account", "IFSC",
+        "PAN", "GSTIN", "Agreed amount", "Platform fee", "Creator payout",
+        "TDS applicable", "TDS amount", "Net paid",
+        "Brand invoice amount", "Invoice state", "Reference",
         "Raised", "Paid", "Collaboration ID",
     ]
     rows = []
@@ -12262,10 +12893,18 @@ async def _export_payments(
             (brands.get(camp.get("brand_id")) or {}).get("business_name") or "",
             names.get(cid) or "",
             (accounts.get(cid) or {}).get("phone") or "",
-            prof.get("payout_upi") or "", prof.get("pan") or "", prof.get("gstin") or "",
+            # The snapshot first, falling back to the profile for a payment
+            # raised before snapshots carried the bank half.
+            *_payout_columns(d.get("payout_snapshot"), prof),
             collab.get("agreed_amount") if collab.get("agreed_amount") is not None else "",
             d.get("platform_fee") if d.get("platform_fee") is not None else "",
             d.get("creator_payout") if d.get("creator_payout") is not None else "",
+            # **Three states, not two.** Blank means nobody has said yet; "no"
+            # means somebody decided none applies. Collapsing them would put a
+            # zero in a return against a payout nobody has looked at.
+            "" if d.get("tds_applicable") is None else ("yes" if d["tds_applicable"] else "no"),
+            d.get("tds_amount") if d.get("tds_amount") is not None else "",
+            d.get("net_paid") if d.get("net_paid") is not None else "",
             d.get("brand_invoice_amount") if d.get("brand_invoice_amount") is not None else "",
             d.get("invoice_state") or "", d.get("reference") or "",
             _iso(d.get("created_at")) or "", _iso(d.get("paid_at")) or "",
@@ -14038,6 +14677,12 @@ def _admin_brand_fields(p: dict, u: dict) -> dict:
         # name doesn't mean two different things on two screens.
         "verification_state": _brand_verification_state(p),
         "verification_reason": p.get("verification_reason"),
+        # **How many times they have come back.** A fourth attempt on the same
+        # business is a different conversation from a first, and a reviewer
+        # picking up the queue item cannot tell them apart without a count.
+        # Zero on a first submission, which is the ordinary case.
+        "verification_resubmissions": int(p.get("verification_resubmissions") or 0),
+        "previous_verification_reason": p.get("previous_verification_reason"),
         "verified_at": _iso(p.get("verified_at")),
         "rejected_at": _iso(p.get("rejected_at")),
         "submitted_at": _iso(p.get("submitted_for_verification_at")),
@@ -14269,6 +14914,10 @@ async def get_admin_brand_detail(
         },
         "documents": documents,
         "campaigns": campaign_rows,
+        # How often work has fallen over around this brand, and on whose call.
+        # A number that only lives in the audit log is a number nobody looks at
+        # before agreeing to the next campaign.
+        "cancellations": await _cancellation_history(brand_ids=[oid]),
         "totals": {
             "campaign_count": len(campaign_rows),
             "active_campaign_count": sum(
@@ -14915,9 +15564,17 @@ async def advance_collaboration(
                     "creator_payout": float(agreed),
                     "brand_invoice_amount": round(float(agreed) + fee, 2),
                     "brand_invoice_state": "pending",
+                    # **The one place the full details leave the profile**, and
+                    # deliberately: this is the record of where the money was
+                    # committed to go, taken at the moment it was committed, so
+                    # a creator editing their bank details next week cannot
+                    # rewrite where last month's payout went.
                     "payout_snapshot": {
+                        "method": _payout_method(profile),
                         "upi": (profile or {}).get("payout_upi"),
                         "account_name": (profile or {}).get("payout_account_name"),
+                        "account_number": (profile or {}).get("payout_account_number"),
+                        "ifsc": (profile or {}).get("payout_ifsc"),
                         "pan": (profile or {}).get("pan"),
                         "gstin": (profile or {}).get("gstin"),
                     },
@@ -15182,6 +15839,115 @@ async def decline_applicant(
 
 
 @admin_router.post("/collaborations/{collab_id}/cancel")
+async def _cancellation_history(*, creator_id=None, brand_ids=None) -> list:
+    """Every collaboration that ended badly, for the entity page it belongs to.
+
+    **On both sides, from one query shape**, because the same event is two
+    different questions: a brand's page asks "how often do we pull out on
+    people", a creator's asks "how often does this get cancelled around them".
+    Two builders would answer them differently the first time one was changed.
+
+    Withdrawals are in here too. A creator taking an application back is not a
+    black mark — it is up to them, and it happens before anybody is committed —
+    but a page claiming to show how a working relationship has gone that
+    silently omitted them would be telling half a story.
+    """
+    query: dict = {"state": {"$in": ["cancelled", "withdrawn"]}}
+    if creator_id is not None:
+        query["creator_id"] = creator_id
+    if brand_ids is not None:
+        campaign_ids = await db.campaigns.distinct("_id", {"brand_id": {"$in": brand_ids}})
+        if not campaign_ids:
+            return []
+        query["campaign_id"] = {"$in": campaign_ids}
+
+    rows = (
+        await db.collaborations.find(query)
+        .sort([("cancelled_at", -1), ("withdrawn_at", -1), ("_id", -1)])
+        .to_list(length=200)
+    )
+    if not rows:
+        return []
+
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [r["campaign_id"] for r in rows]}}
+        ).to_list(length=len(rows))
+    }
+    brands = await _load_brand_map([c["brand_id"] for c in campaigns.values()])
+    names = await _creator_names_for([r["creator_id"] for r in rows])
+
+    out = []
+    for r in rows:
+        campaign = campaigns.get(r["campaign_id"]) or {}
+        brand = brands.get(campaign.get("brand_id")) or {}
+        withdrawn = r.get("state") == "withdrawn"
+        out.append(
+            {
+                "collaboration_id": str(r["_id"]),
+                "reference": _reference_of(r),
+                "state": r.get("state"),
+                "campaign_id": str(r["campaign_id"]),
+                "campaign_title": campaign.get("title"),
+                "brand_id": str(campaign["brand_id"]) if campaign.get("brand_id") else None,
+                "brand_name": brand.get("business_name") or brand.get("name"),
+                "creator_id": str(r["creator_id"]),
+                "creator_name": names.get(r["creator_id"]),
+                "reason": r.get("exit_reason"),
+                # A withdrawal is always the creator's; a cancellation names
+                # whoever took it, which is the distinction the panel draws.
+                "cancelled_by": "The creator" if withdrawn else r.get("cancelled_by_name"),
+                "cancelled_by_role": "creator" if withdrawn else r.get("cancelled_by_role"),
+                "cancellation_type": r.get("cancellation_type"),
+                "notice_days": r.get("cancellation_notice_days"),
+                "kill_fee": r.get("kill_fee"),
+                "from_state": r.get("cancelled_from_state") or r.get("withdrawn_from_state"),
+                "at": _iso(r.get("cancelled_at") or r.get("withdrawn_at")),
+            }
+        )
+    return out
+
+
+def _shoot_starts_at(campaign: Optional[dict]):
+    """When this campaign's work actually begins.
+
+    An event has a day; a personal table has a window, and the window opening
+    is the moment planning stops being reversible. One reader so "how much
+    notice was this" means the same thing for both shapes.
+    """
+    campaign = campaign or {}
+    when = campaign.get("event_date") or campaign.get("start_date")
+    if when is None:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def _days_of_notice(campaign: Optional[dict], collab: Optional[dict], now=None):
+    """How many days before the shoot this cancellation landed.
+
+    **The fact, not the policy.** Whether four days is enough notice is a
+    commercial judgement that differs by brand and by venue; what the record
+    has to survive is *when* it happened, so that judgement can be made later
+    by somebody looking at it. Negative when the shoot has already been and
+    gone, `None` when the campaign never had a date to count back from.
+
+    Counted from the creator's booked slot where there is one — that is the day
+    they were actually holding — and from the campaign otherwise.
+    """
+    now = now or datetime.now(timezone.utc)
+    booked = (collab or {}).get("scheduled_at")
+    if booked is not None:
+        booked = booked if booked.tzinfo else booked.replace(tzinfo=timezone.utc)
+    when = booked or _shoot_starts_at(campaign)
+    if when is None:
+        return None
+    # Whole days, in IST, because a shoot at 10am on Friday cancelled at 11pm
+    # on Thursday is one day's notice to everybody involved — not zero because
+    # the arithmetic happened to cross midnight in UTC.
+    return (_ist(when).date() - _ist(now).date()).days
+
+
 async def cancel_collaboration(
     collab_id: str,
     payload: CancelCollabPayload,
@@ -15237,6 +16003,14 @@ async def cancel_collaboration(
     )
 
     now = datetime.now(timezone.utc)
+    # How much warning the other side got. Recorded rather than judged: whether
+    # it was enough is a commercial call somebody makes later, and they can
+    # only make it if the number survives.
+    notice_days = _days_of_notice(campaign, collab, now)
+    kill_fee = (
+        round(float(payload.kill_fee), 2) if payload.kill_fee is not None else None
+    )
+
     updated = await db.collaborations.find_one_and_update(
         {"_id": oid, "state": current},
         {
@@ -15247,6 +16021,14 @@ async def cancel_collaboration(
                 "cancellation_type": payload.cancellation_type,
                 "cancelled_at": now,
                 "cancelled_from_state": current,
+                # Who pulled out, in the actor's own name, so the history panel
+                # on the creator's and the brand's page can say it without
+                # joining back to the audit log.
+                "cancelled_by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+                "cancelled_by_name": user.get("name"),
+                "cancelled_by_role": user.get("role"),
+                "cancellation_notice_days": notice_days,
+                "kill_fee": kill_fee,
                 # Kept so a dropped commitment is still readable after the
                 # collaboration leaves the "ongoing" group it was counted in.
                 "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
@@ -15260,11 +16042,67 @@ async def cancel_collaboration(
     if not updated:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
 
-    # A cancelled collaboration must not leave a payable row behind.
+    # A cancelled collaboration must not leave a payable row behind — unless a
+    # kill fee is owed, which is the one case where cancelling *creates* a
+    # liability rather than clearing one.
     if payment:
         await db.payments.update_one(
             {"_id": payment["_id"]},
-            {"$set": {"state": "cancelled", "updated_at": now}},
+            {
+                "$set": {
+                    # A kill fee keeps the row payable: somebody still has to
+                    # send the money, and a `cancelled` payment is a row no
+                    # payout run looks at again.
+                    "state": "pending" if kill_fee else "cancelled",
+                    "kill_fee": kill_fee,
+                    "cancellation_notice_days": notice_days,
+                    **(
+                        # The payout shrinks to the kill fee, because that is
+                        # now the whole of what is owed. The original figure
+                        # stays on `agreed_amount` beside it.
+                        {"creator_payout": kill_fee, "net_paid": None}
+                        if kill_fee
+                        else {}
+                    ),
+                    "updated_at": now,
+                }
+            },
+        )
+    elif kill_fee:
+        # No payment row existed — one is only raised at `in_payment` — so the
+        # kill fee has nowhere to live. It gets its own, marked as what it is,
+        # or the money owed exists only in a cancellation reason nobody
+        # reconciles against.
+        profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+        await db.payments.insert_one(
+            {
+                "collaboration_id": oid,
+                "agreed_amount": agreed_amount,
+                "platform_fee": 0.0,
+                "fee_percent": 0.0,
+                "creator_payout": kill_fee,
+                "kill_fee": kill_fee,
+                "is_kill_fee": True,
+                "cancellation_notice_days": notice_days,
+                # Nothing is invoiced to the brand automatically: who bears a
+                # kill fee depends on who cancelled, and that is a conversation
+                # rather than a formula.
+                "brand_invoice_amount": None,
+                "brand_invoice_state": "pending",
+                "payout_snapshot": {
+                    "method": _payout_method(profile),
+                    "upi": (profile or {}).get("payout_upi"),
+                    "account_name": (profile or {}).get("payout_account_name"),
+                    "account_number": (profile or {}).get("payout_account_number"),
+                    "ifsc": (profile or {}).get("payout_ifsc"),
+                    "pan": (profile or {}).get("pan"),
+                    "gstin": (profile or {}).get("gstin"),
+                },
+                "state": "pending",
+                "paid_at": None,
+                "created_at": now,
+                "updated_at": now,
+            }
         )
 
     # And a seat it was holding goes back on sale — but only before the event:
@@ -15286,16 +16124,27 @@ async def cancel_collaboration(
             "state": "cancelled",
             "cancellation_type": payload.cancellation_type,
             "settlement_review_needed": settlement_review_needed,
+            "cancellation_notice_days": notice_days,
+            "kill_fee": kill_fee,
         },
         note=payload.reason,
         **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(collab["campaign_id"])
+    # **Immediately, and saying what they are owed.** A cancellation the
+    # creator finds out about by turning up is the failure this product is
+    # about; one they find out about without being told about the kill fee is
+    # a conversation they then have to start themselves.
     await notify(
         collab["creator_id"],
-        "application_declined",
+        "collaboration_cancelled",
         title="Collaboration cancelled",
-        body=payload.reason,
+        body=(
+            f"{payload.reason} A cancellation fee of ₹{kill_fee:,.0f} is owed to you "
+            "— we'll be in touch about paying it."
+            if kill_fee
+            else payload.reason
+        ),
         link="/dashboard",
     )
     # The brand loses a creator it had counted on — and if anything was agreed,
@@ -15377,6 +16226,23 @@ async def mark_payment_paid(
                 "state": "paid",
                 "paid_at": now,
                 "payment_reference": payload.payment_reference.strip(),
+                # What was actually withheld, as entered. `None` for both means
+                # nobody has said — which is a different fact from "none
+                # applies", and the export prints them differently.
+                "tds_applicable": payload.tds_applicable,
+                "tds_amount": (
+                    round(float(payload.tds_amount), 2)
+                    if payload.tds_amount is not None
+                    else None
+                ),
+                # What the creator actually received, once the withholding is
+                # off it. Stored rather than derived on read so a later change
+                # to how we record TDS cannot restate a settled payout.
+                "net_paid": round(
+                    float(existing.get("creator_payout") or 0)
+                    - float(payload.tds_amount or 0),
+                    2,
+                ),
                 "updated_at": now,
             }
         },
@@ -16269,6 +17135,310 @@ def _serialize_team_member(u: dict, brand_names: Optional[dict] = None) -> dict:
         ],
         "created_at": _iso(u.get("created_at")),
     }
+
+
+# --- Erasure -----------------------------------------------------------------
+
+
+class DeletionDecisionPayload(BaseModel):
+    """An admin answering a deletion request.
+
+    The note is required on a refusal and optional on an erasure: somebody told
+    they cannot leave is owed a reason, and somebody who has left cannot read
+    one.
+    """
+
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+# What gets removed from each collection when a request is granted, and what is
+# left standing.
+#
+# **The rule is: the person goes, the arithmetic stays.** A collaboration keeps
+# its dates, its states, its amounts and its reference — that is a brand's
+# proof of what it paid for and our own accounting record — and loses every
+# field that says who it was. `_reference_of` already gives every record a name
+# that is not a person's, which is what makes this possible at all.
+_ERASE_CREATOR_PROFILE = (
+    "name", "email", "phone", "whatsapp", "instagram_handle",
+    "instagram_profile_url", "youtube_url", "facebook_url", "about",
+    "address", "full_address", "location_lat", "location_lng",
+    "location_place_id", "profile_image_url",
+    "payout_method", "payout_upi", "payout_account_name",
+    "payout_account_number", "payout_ifsc", "pan", "gstin",
+)
+_ERASE_BRAND_PROFILE = (
+    "contact_person_name", "contact_person_designation", "contact_email",
+    "contact_phone", "registered_address", "gst_number", "website",
+    "instagram_handle", "facebook_url", "linkedin_url", "logo_url",
+    "about", "outlets",
+)
+_ERASE_ACCOUNT = (
+    "name", "email", "phone", "password_hash",
+    "manager_name", "manager_designation", "manager_email",
+)
+
+
+async def _erase_personal_data(account: dict) -> dict:
+    """Remove the person, keep the record.
+
+    Every write here is an `$unset` plus a tombstone, never a document delete:
+    a collaboration whose creator row had simply vanished would break every
+    join that reads it, and a payment with no counterparty is not a record of
+    anything. The reference the record already carries becomes its whole
+    identity.
+    """
+    oid = account["_id"]
+    now = datetime.now(timezone.utc)
+    role = account.get("role")
+    erased = {"collections": []}
+
+    # The login. Kept as a row so foreign keys resolve, but it can no longer be
+    # signed into and says nothing about who it was.
+    await db.users.update_one(
+        {"_id": oid},
+        {
+            "$unset": {f: "" for f in _ERASE_ACCOUNT},
+            "$set": {
+                "status": "deleted",
+                "deleted_at": now,
+                # A name every screen can print without inventing one.
+                "name": "Deleted account",
+            },
+        },
+    )
+    erased["collections"].append("users")
+
+    if role == "creator":
+        await db.creator_profiles.update_one(
+            {"user_id": oid},
+            {
+                "$unset": {f: "" for f in _ERASE_CREATOR_PROFILE},
+                "$set": {"name": "Deleted creator", "deleted_at": now},
+            },
+        )
+        # Tokens are credentials, not records: there is nothing to keep.
+        await db.instagram_connections.delete_many({"creator_id": oid})
+        erased["collections"] += ["creator_profiles", "instagram_connections"]
+    elif role in BRAND_ROLES:
+        brand_oid = ObjectId(account.get("brand_id") or oid)
+        await db.brand_profiles.update_one(
+            {"user_id": brand_oid},
+            {
+                "$unset": {f: "" for f in _ERASE_BRAND_PROFILE},
+                "$set": {"business_name": "Deleted brand", "deleted_at": now},
+            },
+        )
+        # **The documents go with the person.** They are scans of a GST
+        # certificate and a director's address; keeping them after erasure
+        # would be keeping the most identifying thing in the product.
+        async for doc in db.brand_documents.find({"brand_id": brand_oid}):
+            _remove_private_upload(doc.get("stored_name"))
+        await db.brand_documents.delete_many({"brand_id": brand_oid})
+        erased["collections"] += ["brand_profiles", "brand_documents"]
+
+    # The conversations. A work note and a question thread are somebody's
+    # words, so the words go; that they were said, and when, is what the
+    # collaboration's own history is made of and stays.
+    for collection in ("collaboration_notes", "campaign_questions"):
+        await db[collection].update_many(
+            {"author_id": oid},
+            {"$unset": {"body": "", "author_name": ""}, "$set": {"redacted_at": now}},
+        )
+    erased["collections"] += ["collaboration_notes", "campaign_questions"]
+
+    # Notifications are addressed to a person who no longer exists.
+    await db.notifications.delete_many({"user_id": oid})
+    erased["collections"].append("notifications")
+
+    # **Payout snapshots are the one hard case, and they go.** They carry a
+    # bank account and a PAN; the amount, the date and the reference beside
+    # them are the accounting record and stay, which is what keeps the ledger
+    # whole without keeping the person in it.
+    #
+    # **Reached through the collaborations, because a payment has no
+    # `creator_id`** — it keys on `collaboration_id` and nothing else. Querying
+    # the field that felt like it should be there would have matched no
+    # documents at all and left every bank account and PAN in place, silently,
+    # on the one operation whose whole purpose is removing them.
+    if role == "creator":
+        collab_ids = await db.collaborations.distinct("_id", {"creator_id": oid})
+        if collab_ids:
+            await db.payments.update_many(
+                {"collaboration_id": {"$in": collab_ids}},
+                {
+                    "$unset": {"payout_snapshot": ""},
+                    "$set": {"payout_redacted_at": now},
+                },
+            )
+        erased["collections"].append("payments")
+    return erased
+
+
+@admin_router.get("/deletion-requests")
+async def list_deletion_requests(
+    state: str = "requested",
+    user: dict = Depends(require_roles("admin")),
+):
+    """The erasure queue. Admin-only: this is not scoped work, it is a person
+    exercising a right against the whole company."""
+    if state not in DELETION_STATES:
+        raise HTTPException(status_code=422, detail=f"state must be one of {DELETION_STATES}.")
+    rows = (
+        await db.deletion_requests.find({"state": state})
+        .sort("requested_at", 1)
+        .to_list(length=500)
+    )
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find(
+            {"_id": {"$in": [r["user_id"] for r in rows]}}
+        ).to_list(length=len(rows) or 1)
+    }
+    out = []
+    for r in rows:
+        account = accounts.get(r["user_id"]) or {}
+        out.append(
+            {
+                **_serialize_deletion_request(r),
+                "user_id": str(r["user_id"]),
+                "name": account.get("name"),
+                "role": r.get("role") or account.get("role"),
+                # Re-read now rather than trusted from request time: work can
+                # start after somebody asks, and erasing then would strand it.
+                "blocking": await _blocking_collaborations(account) if account else [],
+            }
+        )
+    return out
+
+
+@admin_router.post("/deletion-requests/{request_id}/erase")
+async def approve_account_deletion(
+    request_id: str,
+    payload: DeletionDecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Grant it: erase the personal data, keep the anonymised records.
+
+    **Irreversible, and checked twice.** The blocking list is re-read here
+    rather than trusted from when the request was made, because work can start
+    in between — and erasing somebody mid-shoot would leave a brand with a
+    booking against nobody.
+    """
+    oid = _as_oid(request_id)
+    request = await db.deletion_requests.find_one({"_id": oid}) if oid else None
+    if not request or request.get("state") != "requested":
+        raise HTTPException(status_code=404, detail="No open request with that id.")
+
+    account = await db.users.find_one({"_id": request["user_id"]})
+    if not account:
+        raise HTTPException(status_code=404, detail="That account is already gone.")
+
+    blocking = await _blocking_collaborations(account)
+    if blocking:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{len(blocking)} collaboration(s) are still under way on this "
+                "account. Close or cancel them first — erasing now would leave "
+                "a brand with a booking against nobody."
+            ),
+        )
+
+    # **Told before they are erased, not after.** A confirmation sent to a
+    # number we have just deleted is a confirmation nobody receives.
+    await notify(
+        account["_id"],
+        "account_deleted",
+        title="Your account has been deleted",
+        body=(
+            "Your personal details have been erased. Records of completed work "
+            "are kept without your name for accounting."
+        ),
+    )
+
+    erased = await _erase_personal_data(account)
+    now = datetime.now(timezone.utc)
+    await db.deletion_requests.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "state": "erased",
+                "decided_at": now,
+                "decided_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "decided_by_name": user.get("name"),
+                "decision_note": (payload.note or "").strip() or None,
+                "erased": erased,
+                "updated_at": now,
+            }
+        },
+    )
+    # **The audit line names the record, not the person.** Erasing somebody and
+    # then writing their name into the log of having erased them is the whole
+    # exercise undone in its last line.
+    await audit(
+        user,
+        "account.erased",
+        "user",
+        account["_id"],
+        after={"role": account.get("role"), "collections": erased["collections"]},
+        note=(payload.note or "").strip() or None,
+    )
+    return {"id": request_id, "state": "erased", "erased": erased}
+
+
+@admin_router.post("/deletion-requests/{request_id}/decline")
+async def decline_account_deletion(
+    request_id: str,
+    payload: DeletionDecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Refuse it, with the reason they are owed.
+
+    The note is required here and optional on an erasure, which is the way
+    round it has to be: somebody told they cannot leave needs to know why, and
+    somebody who has left cannot read anything.
+    """
+    note = (payload.note or "").strip()
+    if len(note) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Say why — they're being told no and they're entitled to the reason.",
+        )
+    oid = _as_oid(request_id)
+    now = datetime.now(timezone.utc)
+    updated = await db.deletion_requests.find_one_and_update(
+        {"_id": oid, "state": "requested"} if oid else {"_id": None},
+        {
+            "$set": {
+                "state": "declined",
+                "decided_at": now,
+                "decided_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                "decided_by_name": user.get("name"),
+                "decision_note": note,
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="No open request with that id.")
+
+    await notify(
+        updated["user_id"],
+        "account_deletion_requested",
+        title="About your deletion request",
+        body=note,
+    )
+    await audit(
+        user,
+        "account.deletion_declined",
+        "user",
+        updated["user_id"],
+        after={"state": "declined"},
+        note=note,
+    )
+    return _serialize_deletion_request(updated)
 
 
 @admin_router.post("/team")
