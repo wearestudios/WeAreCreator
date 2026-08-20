@@ -75,7 +75,12 @@ class TestVerificationStatusIsOneWord:
     def test_the_migration_covers_every_legacy_value(self):
         # Databases from either previous version have to land on "verified".
         assert 'for legacy in ("approved", "vetted"):' in self.SOURCE
-        assert '{"state": "vetted"}, {"$set": {"state": "verified"}}' in self.SOURCE
+        assert '{"state": "vetted"},' in self.SOURCE
+        assert '{"$set": {"state": "verified"}},' in self.SOURCE
+        # **And it does not stamp the clock.** A rename is not a transition;
+        # stamping would date every historical record to the deploy that ran
+        # the migration. See test_the_clock.py.
+        assert "clock-exempt:" in self.SOURCE
         assert '("vetting_status", "verification_status")' in self.SOURCE
 
 
@@ -1304,7 +1309,9 @@ class TestRefunds:
         import inspect
 
         src = inspect.getsource(server.refund_payment)
-        assert '"state": "cancelled"' in src
+        # Written through `_state_stamp`, which carries the clock with the
+        # state — a cancelled collaboration still records when it happened.
+        assert '_state_stamp("cancelled"' in src
         assert "collaborations.update_one" in src
 
     def test_a_settled_brand_invoice_is_flagged_not_quietly_voided(self):
@@ -2367,11 +2374,18 @@ class TestApplicantBuckets:
         assert "_APPLICANT_APPROVED_STATES" not in active_block
 
     def test_rejected_covers_every_exit(self):
-        """Three ways out now, not two. `withdrawn` is the creator's own, and
-        a board that did not account for it would show an applicant who has
-        gone as still waiting on somebody."""
+        """Four ways out now, not two. `withdrawn` is the creator's own and
+        `expired` is nobody's — an application on a brief that started before
+        anybody answered. A board that did not account for either would show
+        an applicant who has gone as still waiting on somebody.
+
+        The bucket is named "rejected" and means "ended without being taken
+        on", which is the question a board actually asks. The second assertion
+        is the one that matters: a fifth exit added without a bucket fails
+        here rather than vanishing off a screen.
+        """
         rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
-        assert set(rejected) == {"declined", "cancelled", "withdrawn"}
+        assert set(rejected) == {"declined", "cancelled", "withdrawn", "expired"}
         assert set(rejected) | {"closed"} == set(server.TERMINAL_COLLAB_STATES)
 
     def test_completed_is_reported_separately_from_approved(self):

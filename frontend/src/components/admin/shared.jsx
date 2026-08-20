@@ -31,6 +31,8 @@ export const STATE_ORDER = [
     "closed",
     "declined",
     "cancelled",
+    "withdrawn",
+    "expired",
 ];
 
 export const STATE_META = {
@@ -52,6 +54,11 @@ export const STATE_META = {
     closed: { label: "Closed", tone: "bg-white/5 text-muted-foreground border-white/15" },
     declined: { label: "Declined", tone: "bg-white/5 text-muted-foreground border-white/15" },
     cancelled: { label: "Cancelled", tone: "bg-red-500/10 text-red-300/80 border-red-500/25" },
+    // The creator's own exit, and nobody's. Neither is a rejection, so neither
+    // wears the red a decline does — a withdrawal happens before anybody is
+    // committed, and an expiry is a decision that never got made.
+    withdrawn: { label: "Withdrawn", tone: "bg-white/5 text-muted-foreground border-white/15" },
+    expired: { label: "No answer", tone: "bg-white/5 text-muted-foreground border-white/15" },
 };
 
 export const CAMPAIGN_STATUS_META = {
@@ -114,15 +121,16 @@ export const formatDateTime = (iso) => {
     }
 };
 
-// Anything older than this has been ignored rather than queued.
-export const STALE_AFTER_HOURS = 48;
-
-export const isStale = (iso) => {
-    if (!iso) return false;
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return false;
-    return Date.now() - then > STALE_AFTER_HOURS * 3600 * 1000;
-};
+// `isStale` and its flat 48 hours lived here, and it was a second definition
+// of "too long" — one that disagreed with every real target the moment there
+// were nine of them. It called a payment overdue on day three of seven and a
+// campaign review fine on day two of one.
+//
+// **The server decides now**, against SLA targets an admin can edit, and sends
+// the verdict on the record as its `ageing` block. `components/AgeBadge.jsx`
+// draws it. Do not reintroduce a threshold here: a copy of a policy in the
+// browser is a copy that drifts, and this one had already drifted before it
+// was noticed.
 
 export const formatCompact = (n) => {
     if (typeof n !== "number") return "—";

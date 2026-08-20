@@ -28,6 +28,7 @@ import {
     ScrollText,
     Sparkles,
     Stethoscope,
+    Timer,
     UserCog,
     UserX,
     Users,
@@ -104,6 +105,15 @@ export const ADMIN_SECTIONS = [
         label: "Deletions",
         Icon: UserX,
         badge: "deletions_waiting",
+        adminOnly: true,
+    },
+    // **The standard every other section is measured against**, so somebody
+    // whose queue is being measured is not the one who can move the line.
+    {
+        key: "settings",
+        to: "settings",
+        label: "Targets",
+        Icon: Timer,
         adminOnly: true,
     },
 ];

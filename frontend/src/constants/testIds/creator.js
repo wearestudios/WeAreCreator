@@ -94,6 +94,7 @@ export const CREATOR_SUGGESTED = {
 };
 
 export const CREATOR_APPLICATIONS = {
+	ageing: (id) => `creator-application-ageing-${id}`,
 	withdraw: (id) => `creator-application-withdraw-${id}`,
 	withdrawDialog: 'creator-withdraw-dialog',
 	withdrawReason: 'creator-withdraw-reason',

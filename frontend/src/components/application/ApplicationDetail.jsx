@@ -43,6 +43,7 @@ import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
 import DraftReview from "./DraftReview";
+import AgeBadge from "@/components/AgeBadge";
 import ProcessFlow from "./ProcessFlow";
 import { IST } from "@/lib/time";
 
@@ -249,6 +250,14 @@ export default function ApplicationDetail({
                         views of it. The server decides the stage and the
                         voice; see ProcessFlow. */}
                     <ProcessFlow process={app.lifecycle?.process} />
+
+                    {/* How long this has been where it is, under the flow that
+                        says where that is. The queue that opens onto this page
+                        says "9 days over"; a detail page that said nothing is
+                        one people stop trusting. It renders nothing on a state
+                        with no clock — a finished collaboration, or one waiting
+                        on a date rather than on a person. */}
+                    <AgeBadge ageing={app.ageing} testid={APPLICATION.ageing} />
 
                     <Section id="commercial" title="Commercial">
                         <div

@@ -77,6 +77,10 @@ export const ADMIN_HEALTH = {
 	checkCount: (key) => `admin-health-count-${key}`,
 	item: (id) => `admin-health-item-${id}`,
 	more: (key) => `admin-health-more-${key}`,
+	// A row's shortfall figures, and the ways out of the problem it names.
+	shortfall: (id) => `admin-health-short-${id}`,
+	action: (id, label) =>
+		`admin-health-action-${id}-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
 	total: 'admin-health-total',
 };
 

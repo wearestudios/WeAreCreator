@@ -3,6 +3,8 @@
 // directive in ./auth.js.
 
 export const APPLICATION = {
+	// How long it has been in its current state, and whether that is too long.
+	ageing: 'application-ageing',
 	page: 'application-page',
 	// The eight-stage process flow, on all three views of one application.
 	process: 'application-process',

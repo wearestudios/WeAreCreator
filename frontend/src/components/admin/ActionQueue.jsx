@@ -34,7 +34,8 @@ import { TimeAgo } from "./console/format";
 import { CALM, DENSITY, FOCUS, PANEL, ROW_H, TEXT } from "./console/tokens";
 import useListState from "./console/useListState";
 import useTableKeys from "./console/useTableKeys";
-import { formatRupees, isStale } from "./shared";
+import { formatRupees } from "./shared";
+import AgeBadge from "@/components/AgeBadge";
 
 // Collaboration states where the next move is ours. Mirrors ADMIN_ACTION_STATES
 // on the server; anything else is waiting on the brand or the creator.
@@ -116,6 +117,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     id: `question-${q.campaign_id}-${q.creator_id}`,
                     kind: "question",
                     since: q.asked_at,
+                    ageing: q.ageing,
                     primary: `“${q.body?.length > 120 ? q.body.slice(0, 120) + "…" : q.body}”`,
                     secondary: [q.creator_name, q.campaign_title, q.brand_name]
                         .filter(Boolean)
@@ -133,6 +135,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     id: `brand-${b.user_id}`,
                     kind: "brand",
                     since: b.signed_up_at || b.created_at,
+                    ageing: b.ageing,
                     primary: b.business_name || b.name || "Unnamed brand",
                     secondary: [b.category, b.email || b.phone].filter(Boolean).join(" · "),
                     note:
@@ -148,6 +151,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     id: `campaign-${c.id}`,
                     kind: "campaign",
                     since: c.submitted_for_review_at || c.created_at,
+                    ageing: c.ageing,
                     primary: c.title,
                     secondary: [
                         c.brand_name || "Unknown brand",
@@ -169,6 +173,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     note: edited ? "Edited since approval — re-check what changed" : null,
                     kind: "creator",
                     since: c.created_at,
+                    ageing: c.ageing,
                     primary: c.name || "Unnamed creator",
                     secondary: [
                         c.instagram_handle ? `@${c.instagram_handle}` : null,
@@ -193,6 +198,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             id: `payment-${row.payment.id}`,
                             kind: "payment",
                             since: row.updated_at || row.created_at,
+                            ageing: row.ageing,
                             primary: `₹${formatRupees(row.payment.creator_payout)} to ${
                                 row.creator?.name || "creator"
                             }`,
@@ -208,6 +214,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             id: `collab-${row.id}`,
                             kind: "collaboration",
                             since: row.updated_at || row.created_at,
+                            ageing: row.ageing,
                             primary: row.creator?.name || "Creator",
                             secondary: [row.campaign?.title, row.brand_name]
                                 .filter(Boolean)
@@ -514,30 +521,39 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                 sortable: true,
                 numeric: true,
                 width: "w-28",
-                value: (i) => new Date(i.since || 0).getTime() || null,
-                cell: (i) => (
-                    <span
-                        data-testid={IDS.rowAge(i.id)}
-                        // Overdue is the one place a row changes colour: it is
-                        // a fact about this row, not a category of row. The
-                        // "!" is what fits in a 7rem column; the word is what
-                        // it means, and the phone has room for it.
-                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
-                        title={isStale(i.since) ? "Overdue" : undefined}
-                    >
-                        <TimeAgo iso={i.since} />
-                        {isStale(i.since) ? " !" : ""}
-                    </span>
-                ),
-                mobileCell: (i) => (
-                    <span
-                        data-testid={IDS.rowAge(i.id)}
-                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
-                    >
-                        <TimeAgo iso={i.since} />
-                        {isStale(i.since) ? " · overdue" : ""}
-                    </span>
-                ),
+                // **How much of its allowance this row has used**, which is
+                // the only figure that compares two different targets: 1.0 is
+                // exactly at the target, 5.0 is five times over. A payment
+                // eight days into a seven-day target has used 1.14; a campaign
+                // review five days into a one-day target has used 5.0, and it
+                // is the one to look at first. Sorting the raw age puts them
+                // the other way round.
+                //
+                // **One scale, not two.** The first version returned
+                // `1e12 + overdueHours` for overdue rows and a millisecond
+                // timestamp for the rest — and a timestamp is ~1.76e12, so
+                // every un-overdue row outranked every overdue one. Rows with
+                // no target cannot be measured against one, so they sort below
+                // everything that has one, ordered among themselves by age.
+                value: (i) => {
+                    const a = i.ageing;
+                    if (a?.sla_hours) return a.hours / a.sla_hours;
+                    const hours = (Date.now() - new Date(i.since || 0).getTime()) / 3600000;
+                    return Number.isFinite(hours) ? -1 / (hours + 1) : null;
+                },
+                cell: (i) =>
+                    // **The server's verdict, against the SLA an admin set.**
+                    // This used to be a flat 48 hours in the browser, which
+                    // disagreed with every one of the nine real targets — it
+                    // called a payment overdue on day three of seven and a
+                    // campaign review fine on day two of one.
+                    i.ageing ? (
+                        <AgeBadge ageing={i.ageing} testid={IDS.rowAge(i.id)} />
+                    ) : (
+                        <span data-testid={IDS.rowAge(i.id)} className="whitespace-nowrap">
+                            <TimeAgo iso={i.since} />
+                        </span>
+                    ),
             },
             {
                 key: "decision",
@@ -788,8 +804,11 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             </PeekField>
                         )}
                         <PeekField label="Waiting">
-                            <TimeAgo iso={peek.since} />
-                            {isStale(peek.since) ? " · overdue" : ""}
+                            {peek.ageing ? (
+                                <AgeBadge ageing={peek.ageing} />
+                            ) : (
+                                <TimeAgo iso={peek.since} />
+                            )}
                         </PeekField>
                         <PeekField label="Detail">{peek.secondary}</PeekField>
                         {peek.note && (

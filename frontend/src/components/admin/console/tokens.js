@@ -135,6 +135,12 @@ const TONE_BY_STATE = {
     paid: "good",
     declined: "bad",
     cancelled: "bad",
+    // **Neither of these is a rejection, and neither wears red.** A withdrawal
+    // is the creator's own decision, taken before anybody was committed; an
+    // expiry is a decision nobody ever made. Drawing either in the colour a
+    // decline uses puts a black mark on a record where there is none.
+    withdrawn: "idle",
+    expired: "idle",
 };
 
 /** The tone for a state string, defaulting to neutral rather than guessing. */

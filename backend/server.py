@@ -2078,7 +2078,13 @@ def _collab_ladder(campaign: Optional[dict]) -> list:
 # clashing shoot, a family thing, a rate they thought better of — had no way to
 # say so, so they went quiet, and a brand shortlisted somebody who was never
 # going to turn up. Silence is not a state anybody can plan around.
-TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled", "withdrawn")
+# **`expired` is a fifth way out, and it is nobody's decision.** An application
+# on a brief that has since started and was never actioned is not declined
+# (nobody decided), not withdrawn (the creator did not take it back) and not
+# cancelled (there was nothing to cancel). Calling it any of those three would
+# put a decision in the record that no one made — and on a creator's history,
+# "declined" and "nobody ever answered" are very different facts about them.
+TERMINAL_COLLAB_STATES = ("closed", "declined", "cancelled", "withdrawn", "expired")
 
 # Up to acceptance, and no further. Once a brand has taken somebody on, a
 # change of mind is a cancellation — the same event with a different name,
@@ -2111,7 +2117,7 @@ DELIVERED_COLLAB_STATES = (
     "in_payment",
     "closed",
 )
-COLLAB_GROUP_ENDED = ("declined", "cancelled", "withdrawn")
+COLLAB_GROUP_ENDED = ("declined", "cancelled", "withdrawn", "expired")
 
 # States where the next move is the admin's. Deliberately not derived from
 # _BRAND_OWNED_TRANSITIONS: `attended` and `content_submitted` are waiting on the
@@ -2141,6 +2147,281 @@ BRAND_SETTABLE_CAMPAIGN_STATUSES = ("draft", "pending_review")
 
 # Waiting on us to read it.
 CAMPAIGN_REVIEW_STATUS = "pending_review"
+
+
+# ---------------------------------------------------------------------------
+# The clock
+#
+# **Nothing in this system had one.** Every state waits indefinitely for a
+# human: an application sits at `applied` until somebody reads it, a draft
+# sits at `draft_submitted` until somebody looks, a brand sits in the
+# verification queue until somebody decides. None of that is wrong — these
+# *are* decisions people make — but with no clock on them a record that
+# stalled looked exactly like a record that was fine, and the first person to
+# notice was whoever eventually rang up to ask.
+#
+# So: every record knows when it entered the state it is in, every state has a
+# target, and anything past its target is loud rather than quiet.
+# ---------------------------------------------------------------------------
+
+# **`state_since` is the field, and `_state_stamp` is the only thing that
+# writes it.** There is no single transition function in this file — states are
+# written at a dozen call sites, each with its own `from_state` precondition —
+# so the stamp travels with the state rather than being applied centrally, and
+# a structural test fails any `$set` that writes one without the other.
+def _state_stamp(state: str, now: Optional[datetime] = None, *, field: str = "state") -> dict:
+    """The three keys every state change writes: the state, its clock, and the
+    row's own modification time.
+
+    Spread into a `$set`:
+
+        {"$set": {**_state_stamp(to_state, now), "agreed_amount": amount}}
+
+    `field` because the four records that need a clock do not agree on what
+    the column is called — a collaboration has `state`, a campaign `status`, a
+    brand `verification_state`, a creator `verification_status`. Renaming any
+    of them would be a migration across the whole file for a cosmetic win, so
+    the stamp takes the name instead.
+
+    `updated_at` is deliberately *not* the clock. It moves when anybody writes
+    anything — a note, a rate, a cover image — so a collaboration nobody has
+    advanced in a fortnight reads as touched five minutes ago, which is the
+    opposite of what an ageing display is for.
+    """
+    now = now or datetime.now(timezone.utc)
+    return {field: state, "state_since": now, "updated_at": now}
+
+
+# The four records that carry a clock, and what each calls its state column.
+# The structural test walks writes to these collections and fails any that set
+# the named field without `state_since` beside it.
+STATE_CLOCK_FIELDS = {
+    "collaborations": "state",
+    "campaigns": "status",
+    "brand_profiles": "verification_state",
+    "creator_profiles": "verification_status",
+}
+
+
+def _state_since(doc: Optional[dict]) -> Optional[datetime]:
+    """When this record entered the state it is in.
+
+    **Absent falls back to `updated_at`, then `created_at`.** Records written
+    before this field existed do not know when they last moved, and the
+    fallback deliberately *understates* the age: `updated_at` is at or after
+    the real transition, so the age it yields is a lower bound. That is the
+    safe direction — an escalation that fires late is a nuisance, one that
+    fires on a record that is actually fine teaches everybody to ignore the
+    signal. It self-corrects the first time the record moves.
+    """
+    if not doc:
+        return None
+    for key in ("state_since", "updated_at", "created_at"):
+        value = doc.get(key)
+        if isinstance(value, datetime):
+            return value
+    return None
+
+
+# What "waiting too long" means, per state, in hours.
+#
+# **Defaults, not settings.** Every one of these is an operating decision that
+# depends on how many people are working the queue this month, so needing a
+# deploy to change one means it never changes — it gets argued about and then
+# lived with. `sla_targets()` reads the stored overrides over the top of this
+# table; these are what a fresh install runs on.
+SLA_DEFAULT_HOURS = {
+    "creator_verification": 48,
+    "brand_verification": 48,
+    "campaign_review": 24,
+    "application_response": 72,
+    "commercial_agreement": 72,
+    "slot_booking": 48,
+    "draft_review": 48,
+    "content_submission": 72,
+    "payment": 24 * 7,
+}
+
+# What each target is called on screen, and the sentence saying whose delay it
+# measures. The wording matters: half of these are *our* delay and half are
+# somebody else's, and an operator reading the list has to be able to tell.
+SLA_LABELS = {
+    "creator_verification": ("Creator verification", "A creator submitted a profile and is waiting on us."),
+    "brand_verification": ("Brand verification", "A business sent documents and is waiting on us."),
+    "campaign_review": ("Campaign review", "A brief is written and waiting on us to let it go live."),
+    "application_response": ("Application response", "A creator pitched and nobody has answered."),
+    "commercial_agreement": ("Commercial agreement", "Accepted, with no fee agreed yet."),
+    "slot_booking": ("Slot booking", "The fee is agreed and the creator has not picked a time."),
+    "draft_review": ("Draft review", "A draft is up and nobody has reviewed it."),
+    "content_submission": ("Content submission", "They turned up and the live post hasn't landed."),
+    "payment": ("Payment", "Approved work with the money still here."),
+}
+
+# Which target a collaboration is measured against, by the state it is in.
+# **A state that is nobody's delay is deliberately absent**: `slot_booked` is
+# waiting on a date in the future rather than on a person, and `closed` is
+# finished. Absent means "no clock", not "zero".
+_SLA_BY_COLLAB_STATE = {
+    "applied": "application_response",
+    "verified": "application_response",
+    "accepted": "commercial_agreement",
+    "commercial_agreed": "slot_booking",
+    "attended": "content_submission",
+    "draft_submitted": "draft_review",
+    "content_submitted": "draft_review",
+    "content_approved": "payment",
+    "in_payment": "payment",
+}
+
+# How loud a record gets as it ages. Four bands rather than two, because
+# "fine" and "on fire" leaves nothing to say about the record that is about to
+# become a problem — which is the one somebody can still do something about.
+#
+# Fractions of the target: under half is calm, past half is worth seeing, past
+# the target is overdue, and double the target is a record that has been
+# forgotten rather than delayed.
+SLA_TONES = ("calm", "due", "overdue", "critical")
+_SLA_DUE_FRACTION = 0.5
+_SLA_CRITICAL_MULTIPLE = 2.0
+
+
+def _age_phrase(seconds: float) -> str:
+    """"waiting 3 days", in the words a person would use.
+
+    Hours below a day, because "waiting 0 days" is what a record two hours old
+    would otherwise read as, and that is the record nobody needs to look at.
+    """
+    if seconds < 3600:
+        minutes = max(1, int(seconds // 60))
+        return f"{minutes} min"
+    hours = int(seconds // 3600)
+    if hours < 48:
+        return f"{hours} hr" if hours == 1 else f"{hours} hrs"
+    days = int(seconds // 86400)
+    return f"{days} day" if days == 1 else f"{days} days"
+
+
+def _ageing_from(
+    since: Optional[datetime], sla_key: Optional[str] = None, *, targets=None, now=None
+) -> Optional[dict]:
+    """How long since a given moment, and whether that is too long.
+
+    The primitive, taking the instant rather than the record, because **the
+    clock does not always start when the state changed.** A creator profile
+    has been `pending` since the day they signed up; the wait somebody is
+    answerable for starts at `submitted_for_review_at`. Ageing that queue off
+    the state would report a fortnight of the creator's own half-finished
+    profile as our delay, which is both wrong and the kind of wrong that makes
+    an operator dismiss the whole panel.
+
+    Returns `None` when there is nothing honest to say — no timestamp at all —
+    rather than a zero, because a record whose age we cannot compute is not a
+    fresh one.
+
+    `sla_key` is optional: an age with no target still tells somebody how long
+    something has been sitting, and half the places this appears (a closed
+    collaboration, a live campaign) have no target by design.
+    """
+    if not since:
+        return None
+    now = now or datetime.now(timezone.utc)
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    seconds = max(0.0, (now - since).total_seconds())
+
+    block = {
+        "since": _iso(since),
+        "seconds": int(seconds),
+        "hours": round(seconds / 3600, 1),
+        "days": int(seconds // 86400),
+        "label": f"waiting {_age_phrase(seconds)}",
+        "sla_key": sla_key,
+        "sla_hours": None,
+        "overdue": False,
+        "overdue_hours": 0.0,
+        "tone": "calm",
+    }
+
+    target = (targets or {}).get(sla_key) if sla_key else None
+    if not target:
+        return block
+
+    limit = float(target) * 3600
+    block["sla_hours"] = target
+    block["overdue"] = seconds > limit
+    block["overdue_hours"] = round(max(0.0, seconds - limit) / 3600, 1)
+    if seconds > limit * _SLA_CRITICAL_MULTIPLE:
+        block["tone"] = "critical"
+    elif seconds > limit:
+        block["tone"] = "overdue"
+    elif seconds > limit * _SLA_DUE_FRACTION:
+        block["tone"] = "due"
+    if block["overdue"]:
+        block["label"] = f"{_age_phrase(seconds)} · {_age_phrase(seconds - limit)} over"
+    return block
+
+
+def _ageing(doc: Optional[dict], sla_key: Optional[str] = None, *, targets=None, now=None):
+    """The record-shaped entry point: age a document by its own state clock."""
+    return _ageing_from(_state_since(doc), sla_key, targets=targets, now=now)
+
+
+def _collab_ageing(collab: Optional[dict], targets=None, *, now=None) -> Optional[dict]:
+    """The ageing block for a collaboration, against the target for its state.
+
+    The serializers that call this are synchronous and `sla_targets()` is not,
+    so the targets are passed in — read once per request rather than once per
+    row. Omitting them yields the age with no verdict attached, which is the
+    right answer for a surface that has not asked for one.
+    """
+    if not collab:
+        return None
+    return _ageing(
+        collab, _SLA_BY_COLLAB_STATE.get(collab.get("state")), targets=targets, now=now
+    )
+
+
+# The three review queues. Each ages from **when the wait started**, which is
+# when somebody handed us something to decide — not when the record entered its
+# state. A creator profile has been `pending` since the day they signed up, and
+# reporting a fortnight of their own half-finished form as our delay is the
+# kind of wrong that makes an operator stop believing the panel.
+#
+# Each returns `None` when the record is not waiting on us. A verified creator
+# has no review clock, and drawing one would invent a queue they are not in.
+
+
+def _creator_review_ageing(profile: Optional[dict], targets=None, *, now=None):
+    """A creator waiting on a verification decision — first time or re-check."""
+    if not profile:
+        return None
+    status = profile.get("verification_status")
+    if status == "pending" and profile.get("submitted_for_review_at"):
+        started = profile.get("submitted_for_review_at")
+    elif status == "verified" and profile.get("pending_review"):
+        # A re-check after a material edit. `pending_review_since` is stamped
+        # by the edit; older rows fall back to when they were last written,
+        # which is that same edit for all but the busiest profiles.
+        started = profile.get("pending_review_since") or profile.get("updated_at")
+    else:
+        return None
+    return _ageing_from(started, "creator_verification", targets=targets, now=now)
+
+
+def _brand_review_ageing(profile: Optional[dict], targets=None, *, now=None):
+    """A business that sent documents and is waiting to hear."""
+    if not profile or _brand_verification_state(profile) != "pending_verification":
+        return None
+    started = profile.get("submitted_for_verification_at") or profile.get("updated_at")
+    return _ageing_from(started, "brand_verification", targets=targets, now=now)
+
+
+def _campaign_review_ageing(campaign: Optional[dict], targets=None, *, now=None):
+    """A brief written, submitted, and waiting on us to let it go live."""
+    if not campaign or campaign.get("status") != CAMPAIGN_REVIEW_STATUS:
+        return None
+    started = campaign.get("submitted_for_review_at") or _state_since(campaign)
+    return _ageing_from(started, "campaign_review", targets=targets, now=now)
 
 
 # How a connection can be. `stale` is recoverable by reconnecting; it is not
@@ -2541,6 +2822,16 @@ def _as_oid(value) -> Optional[ObjectId]:
         return None
 
 
+# Who the log credits when nothing human did it.
+#
+# **Named rather than blank.** A timed job flagging a delivery late is a real
+# decision with real consequences for a creator's record, and an audit line
+# with no actor reads as a gap in the log rather than as the system acting. The
+# `_id` is deliberately absent, so `actor_id` lands as `None` and nobody can
+# mistake this for a person's account.
+_SYSTEM_ACTOR = {"role": "system", "name": "WeAre (automatic)"}
+
+
 async def audit(
     actor: dict,
     action: str,
@@ -2662,6 +2953,16 @@ NOTIFY_EVENTS = {
     "draft_submitted": "A draft is waiting for your review",
     "draft_approved": "Your draft was approved",
     "draft_changes_requested": "Changes were asked for on your draft",
+    # The clock's own messages. Five reminders and the things that lapse —
+    # each named here so a template can be configured for it, because a
+    # reminder with no template is one that only ever reaches the in-app bell.
+    "reminder_book_slot": "Pick a time for your shoot",
+    "reminder_shoot_tomorrow": "Your shoot is coming up",
+    "reminder_content_due": "Your post is due",
+    "reminder_draft_review": "A draft is waiting for review",
+    "reminder_applications_waiting": "Creators are waiting to hear from you",
+    "content_overdue": "Content is overdue on a campaign",
+    "application_expired": "A brief started before your pitch was answered",
 }
 
 
@@ -3107,6 +3408,73 @@ def platform_fee_percent() -> float:
         logger.warning("PLATFORM_FEE_PERCENT out of range (%s) — falling back to 15", pct)
         return 15.0
     return pct
+
+
+# ---------------------------------------------------------------------------
+# SLA targets, stored rather than deployed
+#
+# `platform_settings` holds one document per settings group, keyed by a plain
+# string `_id`. The SLA group is a partial map — only the targets somebody
+# actually changed — laid over `SLA_DEFAULT_HOURS`, so adding a tenth target to
+# the table ships with a sensible number instead of being silently unset on
+# every install that has ever saved this form.
+# ---------------------------------------------------------------------------
+
+_SLA_SETTINGS_ID = "sla_targets"
+
+# A target of zero would mean "overdue the instant it arrives", which is not a
+# policy anybody wants and is what an empty number field posts.
+SLA_MIN_HOURS = 1
+SLA_MAX_HOURS = 24 * 90
+
+# Read often — every list of collaborations wants it — and changed about twice
+# a year, so it is cached with a short life rather than fetched per row. Short
+# enough that an admin who changes one and reloads sees it.
+_SLA_CACHE: dict = {"at": None, "value": None}
+SLA_CACHE_SECONDS = 30
+
+
+def _clean_sla_overrides(raw: Optional[dict]) -> dict:
+    """Keep the keys we know, the values that are numbers, and the numbers in
+    range. A stored setting is data somebody typed, and it outlives them."""
+    out = {}
+    for key, value in (raw or {}).items():
+        if key not in SLA_DEFAULT_HOURS:
+            continue
+        try:
+            hours = int(value)
+        except (TypeError, ValueError):
+            continue
+        if SLA_MIN_HOURS <= hours <= SLA_MAX_HOURS:
+            out[key] = hours
+    return out
+
+
+async def sla_targets(*, fresh: bool = False) -> dict:
+    """Every target in hours: the defaults with the stored overrides on top.
+
+    Never raises. A settings read that fails must not take down every screen
+    that shows an age — the defaults are a working answer, and an operator
+    seeing yesterday's SLA is better than an operator seeing an error page.
+    """
+    now = datetime.now(timezone.utc)
+    cached = _SLA_CACHE.get("value")
+    if not fresh and cached is not None:
+        at = _SLA_CACHE.get("at")
+        if at and (now - at).total_seconds() < SLA_CACHE_SECONDS:
+            return dict(cached)
+
+    stored = {}
+    try:
+        doc = await db.platform_settings.find_one({"_id": _SLA_SETTINGS_ID})
+        stored = _clean_sla_overrides((doc or {}).get("targets"))
+    except Exception as exc:
+        logger.error("could not read SLA settings, using defaults: %s", exc)
+
+    value = {**SLA_DEFAULT_HOURS, **stored}
+    _SLA_CACHE["at"] = now
+    _SLA_CACHE["value"] = value
+    return dict(value)
 
 
 def compute_fee(agreed_amount: float, override: Optional[float] = None) -> float:
@@ -5699,6 +6067,14 @@ def _serialize_collab_row(
         # The same eight stages the brand and the admin see, in the creator's
         # own voice — one process, read three ways round.
         "process": _process_flow(collab, campaign, viewer={"role": "creator"}),
+        # **The age, and deliberately not the verdict.** An SLA is the standard
+        # this operation holds itself to internally; it is not a promise made
+        # to the creator, and publishing "the brand is 4 days over target" to
+        # them would turn an internal target into a commitment nobody agreed
+        # to. "Waiting 5 days" is a fact and is useful to them; what to do
+        # about it reaches them through the process flow's next action and,
+        # when it is theirs to move, through a WhatsApp reminder.
+        "ageing": _ageing(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
         "campaign_id": str(collab["campaign_id"]),
@@ -5831,13 +6207,12 @@ async def submit_profile_for_review(user: dict = Depends(require_roles("creator"
         {"user_id": oid},
         {
             "$set": {
-                "verification_status": "pending",
+                **_state_stamp("pending", now, field="verification_status"),
                 "pending_review": True,
                 "submitted_for_review_at": now,
                 # A resubmission after a rejection starts clean; leaving the old
                 # reason on screen would read as a fresh verdict.
                 "verification_reason": None,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -6324,10 +6699,9 @@ async def submit_collab_content(
             "$set": {
                 "content_url": urls[0],          # keep legacy field in sync
                 "content_urls": urls,
-                "state": "content_submitted",
+                **_state_stamp("content_submitted", now),
                 # A fresh submission clears any outstanding change request.
                 "revision_note": None,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -6661,12 +7035,11 @@ async def withdraw_application(
         {"_id": collab["_id"], "state": state},
         {
             "$set": {
-                "state": "withdrawn",
+                **_state_stamp("withdrawn", now),
                 "active": False,
                 "exit_reason": reason,
                 "withdrawn_at": now,
                 "withdrawn_from_state": state,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -6755,8 +7128,7 @@ async def creator_cancel_slot(
         {"_id": collab["_id"], "state": "slot_booked", "slot_id": slot_oid},
         {
             "$set": {
-                "state": "commercial_agreed",
-                "updated_at": now,
+                **_state_stamp("commercial_agreed", now),
                 "slot_cancelled_at": now,
                 "slot_cancel_reason": (payload.reason or "").strip() or None,
             },
@@ -6847,9 +7219,49 @@ def _extract_ig_handle(raw: str) -> Optional[str]:
 # far as the creator's own record is concerned), and the two answers.
 INVITATION_OPEN_STATES = ("sent", "send_failed")
 
+# How long an invitation stands before it stops being one.
+#
+# An invitation with no deadline is a brief the brand can never take off the
+# table: somebody who never opened WhatsApp sits in "invited, not answered"
+# indefinitely, and the board's count of who is still deciding is a count of
+# people who decided nothing months ago.
+INVITATION_RESPONSE_DAYS = 7
+
 
 def _invitation_state(doc: dict) -> str:
     return (doc or {}).get("state") or "sent"
+
+
+def _invitation_deadline(invite: dict) -> Optional[datetime]:
+    """When this invitation stops standing.
+
+    Stored on the row when it is sent, and **derived from the send date for
+    rows written before the field existed** — the usual absent-reads-safe rule.
+    An invitation from last year lapsing the moment this deploys is correct;
+    it lapsed long ago, we simply had no way to say so.
+    """
+    stored = invite.get("respond_by")
+    if isinstance(stored, datetime):
+        return stored if stored.tzinfo else stored.replace(tzinfo=timezone.utc)
+    sent = invite.get("created_at")
+    if isinstance(sent, datetime):
+        sent = sent if sent.tzinfo else sent.replace(tzinfo=timezone.utc)
+        return sent + timedelta(days=INVITATION_RESPONSE_DAYS)
+    return None
+
+
+def _invitation_lapsed(invite: dict, now: Optional[datetime] = None) -> bool:
+    """Past its deadline and never answered.
+
+    **Read here, not only swept.** The sweep is a tidy-up that keeps the
+    database honest; this is the enforcement, so an invitation is history the
+    instant its deadline passes rather than the next time a job happens to run.
+    The alternative is an Accept button whose availability depends on cron.
+    """
+    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
+        return False
+    deadline = _invitation_deadline(invite)
+    return bool(deadline and deadline <= (now or datetime.now(timezone.utc)))
 
 
 def _serialize_invitation(invite: dict, campaign: Optional[dict], brand_name=None) -> dict:
@@ -6877,11 +7289,15 @@ def _serialize_invitation(invite: dict, campaign: Optional[dict], brand_name=Non
         "end_date": _iso(campaign.get("end_date")),
         "note": invite.get("note"),
         "state": _invitation_state(invite),
-        # Whether the brief is still live. An invitation to a campaign that
-        # has closed is history, not a decision — saying so is better than
-        # offering a button that 404s.
+        # Whether the brief is still live, and whether the invitation still
+        # stands. An invitation to a campaign that has closed — or one whose
+        # deadline has passed — is history, not a decision, and saying so is
+        # better than offering a button that 404s.
         "open": _invitation_state(invite) in INVITATION_OPEN_STATES
-        and campaign.get("status") in _LIVE_STATUSES,
+        and campaign.get("status") in _LIVE_STATUSES
+        and not _invitation_lapsed(invite),
+        "respond_by": _iso(_invitation_deadline(invite)),
+        "lapsed": _invitation_lapsed(invite),
         "invited_at": _iso(invite.get("created_at")),
         "responded_at": _iso(invite.get("responded_at")),
     }
@@ -6915,6 +7331,36 @@ async def _creator_invitations(creator_oid) -> list:
         for i in invites
         if i["campaign_id"] in by_id
     ]
+
+
+def _refuse_unanswerable_invitation(invite: dict) -> None:
+    """An invitation that can still be answered, or a 409 saying which way not.
+
+    **One guard behind both answers**, because accept and decline must agree
+    about what "still open" means — the alternative is an invitation somebody
+    can decline a fortnight after it lapsed but not accept, which is a rule
+    nobody wrote down.
+
+    The two refusals are different facts and read differently: one is "you
+    already did this", the other is "the offer ran out". Answering both with
+    the same sentence would tell somebody they had replied when they had not.
+    """
+    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="You've already answered this invitation.",
+        )
+    if _invitation_lapsed(invite):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This invitation ran out. The brief may still be open — "
+                    "have a look and apply if it is."
+                ),
+                "code": "invitation_lapsed",
+            },
+        )
 
 
 async def _invitation_or_404(invitation_id: str, creator_oid):
@@ -6958,11 +7404,7 @@ async def accept_invitation(
     """
     creator_oid = ObjectId(user["_id"])
     invite = await _invitation_or_404(invitation_id, creator_oid)
-    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
-        raise HTTPException(
-            status_code=409,
-            detail="You've already answered this invitation.",
-        )
+    _refuse_unanswerable_invitation(invite)
 
     out = await apply_to_campaign(str(invite["campaign_id"]), payload, user)
 
@@ -6996,11 +7438,7 @@ async def decline_invitation(
     declining an invitation is not a bar on applying later."""
     creator_oid = ObjectId(user["_id"])
     invite = await _invitation_or_404(invitation_id, creator_oid)
-    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
-        raise HTTPException(
-            status_code=409,
-            detail="You've already answered this invitation.",
-        )
+    _refuse_unanswerable_invitation(invite)
 
     now = datetime.now(timezone.utc)
     await db.campaign_invitations.update_one(
@@ -7845,7 +8283,7 @@ async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAN
         {"user_id": brand_oid},
         {
             "$set": {
-                "verification_state": "pending_verification",
+                **_state_stamp("pending_verification", now, field="verification_state"),
                 "submitted_for_verification_at": now,
                 # A resubmission starts clean; the old refusal is not a verdict
                 # on the documents they have just sent. The reason is kept
@@ -7854,7 +8292,6 @@ async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAN
                 "verification_reason": None,
                 **({"previous_verification_reason": profile.get("verification_reason")}
                    if was_rejected else {}),
-                "updated_at": now,
             },
             **({"$inc": {"verification_resubmissions": 1}} if was_rejected else {}),
         },
@@ -8174,9 +8611,8 @@ async def publish_brand_campaign(
         {"_id": doc["_id"], "status": "draft"},
         {
             "$set": {
-                "status": CAMPAIGN_REVIEW_STATUS,
+                **_state_stamp(CAMPAIGN_REVIEW_STATUS, now, field="status"),
                 "submitted_for_review_at": now,
-                "updated_at": now,
             },
             # A resubmission starts clean rather than carrying the last refusal.
             "$unset": {"review_reason": "", "reviewed_at": ""},
@@ -8216,7 +8652,7 @@ async def close_brand_campaign(
     now = datetime.now(timezone.utc)
     await db.campaigns.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"status": "closed", "closed_reason": payload.reason, "updated_at": now}},
+        {"$set": {**_state_stamp("closed", now, field="status"), "closed_reason": payload.reason}},
     )
     await audit(
         user,
@@ -8238,10 +8674,9 @@ async def close_brand_campaign(
             {"_id": collab["_id"]},
             {
                 "$set": {
-                    "state": "declined",
+                    **_state_stamp("declined", now),
                     "active": False,
                     "exit_reason": "The brand closed this campaign.",
-                    "updated_at": now,
                 }
             },
         )
@@ -8410,6 +8845,7 @@ def _serialize_applicant(
     profile: dict,
     payment: Optional[dict],
     campaign: Optional[dict] = None,
+    targets: Optional[dict] = None,
 ) -> dict:
     """An applicant as the brand sees them.
 
@@ -8425,6 +8861,13 @@ def _serialize_applicant(
         "process": _process_flow(collab, campaign, viewer={"role": "brand_manager"}),
         "slot_confirmed": _slot_confirmed(collab),
         "state": state,
+        # **The brand gets the verdict, unlike the creator.** Where the wait is
+        # theirs — an unanswered pitch, an unapproved draft — the target is a
+        # standard they are being held to and being told is the entire point;
+        # the same escalation reaches them on WhatsApp. The creator is a party
+        # to the arrangement rather than a party to our operating targets, so
+        # their row carries the age alone.
+        "ageing": _collab_ageing(collab, targets),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -8501,6 +8944,7 @@ async def list_campaign_applicants(
         ).to_list(length=len(collabs))
         payments_by_collab = {p["collaboration_id"]: p for p in payments}
 
+    targets = await sla_targets()
     rows = [
         _serialize_applicant(
             c,
@@ -8508,6 +8952,7 @@ async def list_campaign_applicants(
             profiles_by_uid.get(c["creator_id"]),
             payments_by_collab.get(c["_id"]),
             campaign,
+            targets,
         )
         for c in collabs
     ]
@@ -8739,11 +9184,10 @@ async def brand_accept_applicant(
         {"_id": collab["_id"], "state": "verified"},  # precondition, not a blind write
         {
             "$set": {
-                "state": "accepted",
+                **_state_stamp("accepted", now),
                 "agreed_amount": round(float(amount), 2),
                 "agreed_at": now,
                 "agreed_by": ObjectId(user["_id"]),
-                "updated_at": now,
             }
         },
     )
@@ -8797,10 +9241,9 @@ async def brand_decline_applicant(
         {"_id": collab["_id"], "state": collab["state"]},
         {
             "$set": {
-                "state": "declined",
+                **_state_stamp("declined", now),
                 "active": False,
                 "exit_reason": payload.reason,
-                "updated_at": now,
             }
         },
     )
@@ -8851,7 +9294,7 @@ async def brand_approve_content(
     now = datetime.now(timezone.utc)
     result = await db.collaborations.update_one(
         {"_id": collab["_id"], "state": "content_submitted"},
-        {"$set": {"state": "content_approved", "revision_note": None, "updated_at": now}},
+        {"$set": {**_state_stamp("content_approved", now), "revision_note": None}},
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
@@ -8900,9 +9343,8 @@ async def brand_request_changes(
         {"_id": collab["_id"], "state": "content_submitted"},
         {
             "$set": {
-                "state": "attended",  # back to "shoot done, content owed"
+                **_state_stamp("attended", now),
                 "revision_note": payload.reason.strip(),
-                "updated_at": now,
             }
         },
     )
@@ -9405,6 +9847,13 @@ async def _delivery_history(creator_ids: list) -> dict:
                                     "$and": [
                                         {"$in": ["$state", ["content_approved", "in_payment", "closed"]]},
                                         {"$ne": ["$no_show_reported", True]},
+                                        # **Late counts against on-time, and
+                                        # stays counted.** Delivering
+                                        # eventually does not make a delivery
+                                        # not have been late, and this is the
+                                        # only signal a brand has about
+                                        # whether somebody turns work in.
+                                        {"$ne": ["$content_overdue", True]},
                                     ]
                                 },
                                 1,
@@ -9660,11 +10109,10 @@ async def brand_record_agreed_amount(
         {"_id": collab["_id"], "state": state},  # precondition, never a blind write
         {
             "$set": {
-                "state": "commercial_agreed",
+                **_state_stamp("commercial_agreed", now),
                 "agreed_amount": amount,
                 "agreed_at": now,
                 "agreed_by": ObjectId(user["_id"]),
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -9896,6 +10344,7 @@ _NEXT_ACTION = {
     "declined": (None, "Nothing — the brand passed", ""),
     "cancelled": (None, "Nothing — this was cancelled", ""),
     "withdrawn": (None, "Nothing — the creator withdrew", ""),
+    "expired": (None, "Nothing — this was never answered", ""),
 }
 
 
@@ -10077,6 +10526,15 @@ _PROCESS_BANNERS = {
     # The creator's own exit. Said as a fact rather than as a refusal: they
     # withdrew, which is a decision they were entitled to make.
     "withdrawn": ("ended", "Withdrawn", "The creator withdrew this application."),
+    # **Said plainly, and as our failing rather than theirs.** The creator did
+    # everything asked of them and nobody replied; dressing that up as "not
+    # selected" would be a decision we never made, told to the one person who
+    # was let down by it not being made.
+    "expired": (
+        "ended",
+        "No answer",
+        "The campaign started before anybody answered this. Nothing you did — apply to another brief any time.",
+    ),
 }
 
 
@@ -10312,7 +10770,7 @@ class AdvanceCollabPayload(BaseModel):
     location_note: Optional[str] = Field(default=None, max_length=300)
 
 
-def _serialize_admin_creator(profile: dict, user: dict) -> dict:
+def _serialize_admin_creator(profile: dict, user: dict, targets=None) -> dict:
     return {
         "user_id": str(user["_id"]),
         "profile_id": str(profile["_id"]),
@@ -10344,6 +10802,10 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),
         "verification_status": profile.get("verification_status", "pending"),
+        # How long they have been waiting on us, `None` for anybody who is not
+        # — a verified creator is in no queue and drawing a clock on them
+        # would invent one.
+        "ageing": _creator_review_ageing(profile, targets),
         "created_at": _iso(profile.get("created_at")),
     }
 
@@ -10354,8 +10816,9 @@ async def _hydrate_creator_rows(profiles: list) -> list:
     user_ids = [p["user_id"] for p in profiles]
     users = await db.users.find({"_id": {"$in": user_ids}}).to_list(length=len(user_ids))
     users_by_id = {u["_id"]: u for u in users}
+    targets = await sla_targets()
     return [
-        _serialize_admin_creator(p, users_by_id.get(p["user_id"], {}))
+        _serialize_admin_creator(p, users_by_id.get(p["user_id"], {}), targets)
         for p in profiles
     ]
 
@@ -10776,6 +11239,7 @@ async def get_creator_detail(
             # diff against a profile nobody kept a copy of.
             "pending_review_fields": profile.get("pending_review_fields") or [],
             "pending_review_since": _iso(profile.get("pending_review_since")),
+            "ageing": _creator_review_ageing(profile, await sla_targets()),
             # **Masked, and never the whole value.** The only question an
             # admin answers from this panel is "is the row in front of me the
             # row I am about to pay", and the last four characters answer it.
@@ -10874,7 +11338,7 @@ async def _set_creator_verification(
         {"user_id": oid},
         {
             "$set": {
-                "verification_status": status,
+                **_state_stamp(status, now, field="verification_status"),
                 # A decision clears the re-review flag either way.
                 "pending_review": False,
                 # And the labels with it, or the next re-check would tell the
@@ -10882,7 +11346,6 @@ async def _set_creator_verification(
                 "pending_review_fields": [],
                 "verification_reason": reason,
                 "verified_at": now,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -12141,11 +12604,123 @@ def _days_ahead(n: int) -> datetime:
     return datetime.now(timezone.utc) + timedelta(days=n)
 
 
+async def _overdue_check(targets: dict, now: datetime) -> dict:
+    """Every record past its SLA, whatever kind it is, worst first.
+
+    **The order is how far over, not how old.** A creator verification two days
+    past a 48-hour target is a worse failure than a payment two days past a
+    seven-day one — the second is nearly on time. Sorting by age would put them
+    the other way round and quietly train whoever works this list to do the
+    least urgent thing first.
+
+    Every row carries who is being waited on, because half of these are our
+    delay and half are somebody else's, and the action is different: one is
+    "do it", the other is "ring them".
+    """
+    rows: list = []
+
+    def _add(ageing, *, label, detail, href, waiting_on):
+        if not ageing or not ageing.get("overdue"):
+            return
+        rows.append(
+            {
+                "id": href,
+                "label": label,
+                "detail": f"{detail} · {ageing['label']}",
+                "href": href,
+                "severity": "critical" if ageing["tone"] == "critical" else "warning",
+                "at": ageing["since"],
+                "overdue_hours": ageing["overdue_hours"],
+                "sla_key": ageing["sla_key"],
+                "waiting_on": waiting_on,
+            }
+        )
+
+    # Collaborations, which is most of them.
+    collabs = await db.collaborations.find(
+        {"state": {"$in": list(_SLA_BY_COLLAB_STATE)}}
+    ).to_list(length=2000)
+    campaign_ids = list({c["campaign_id"] for c in collabs})
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+            length=len(campaign_ids) or 1
+        )
+    }
+    for collab in collabs:
+        ageing = _collab_ageing(collab, targets, now=now)
+        campaign = campaigns.get(collab["campaign_id"]) or {}
+        owner, _, _ = _NEXT_ACTION.get(collab.get("state"), (None, "", ""))
+        _add(
+            ageing,
+            label=campaign.get("title") or "A collaboration",
+            detail=(SLA_LABELS.get(ageing["sla_key"], ("Waiting",))[0] if ageing else ""),
+            href=f"/admin/collaborations/{collab['_id']}",
+            # `brand` here means "whoever runs it", which on a weare-run brief
+            # is us — the same mapping the process flow makes, rather than a
+            # second one that would eventually disagree with it.
+            waiting_on=_process_owner(owner, campaign) if owner else None,
+        )
+
+    # Briefs waiting on us to read them.
+    for campaign in await db.campaigns.find({"status": CAMPAIGN_REVIEW_STATUS}).to_list(
+        length=500
+    ):
+        _add(
+            _campaign_review_ageing(campaign, targets, now=now),
+            label=campaign.get("title") or "Untitled brief",
+            detail="Campaign review",
+            href=f"/admin/campaigns/{campaign['_id']}",
+            waiting_on="admin",
+        )
+
+    # Businesses waiting on a verification decision.
+    for profile in await db.brand_profiles.find(
+        {"verified": False, "verification_state": "pending_verification"}
+    ).to_list(length=500):
+        _add(
+            _brand_review_ageing(profile, targets, now=now),
+            label=profile.get("business_name") or "A brand",
+            detail="Brand verification",
+            href=f"/admin/brands/{profile['user_id']}",
+            waiting_on="admin",
+        )
+
+    # Creators waiting on one, first time or after a material edit.
+    for profile in await db.creator_profiles.find(
+        {
+            "$or": [
+                _AWAITING_REVIEW_QUERY,
+                {"verification_status": "verified", "pending_review": True},
+            ]
+        }
+    ).to_list(length=500):
+        _add(
+            _creator_review_ageing(profile, targets, now=now),
+            label=profile.get("name") or "A creator",
+            detail="Creator verification",
+            href=f"/admin/creators/{profile['user_id']}",
+            waiting_on="admin",
+        )
+
+    rows.sort(key=lambda r: -r["overdue_hours"])
+    return {
+        "key": "overdue",
+        "presorted": True,
+        "label": "Past their target",
+        "blurb": "Records that have been waiting longer than the SLA allows, worst first.",
+        "items": rows[:100],
+        # The full number, because the list is capped and a panel that shows
+        # a hundred rows and says "100" reads as exactly a hundred.
+        "total_matching": len(rows),
+    }
+
+
 @admin_router.get("/health")
 async def admin_health(user: dict = Depends(require_roles("admin"))):
     """What is going wrong, before anybody outside finds out.
 
-    Six checks, each returning rows that link straight to the thing that needs
+    Nine checks, each returning rows that link straight to the thing that needs
     doing. Deliberately not a count — a number tells you there is a problem and
     then makes you go and find it.
 
@@ -12153,7 +12728,18 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
     `/admin/health`, one segment, and there is no bare `/admin/{id}`.
     """
     now = datetime.now(timezone.utc)
+    targets = await sla_targets()
     checks: list = []
+
+    # 0. Past the target, sorted by how far past.
+    #
+    # **The catch-all, and the reason it comes first.** Every other check here
+    # is a shape somebody thought to look for; this one is every record whose
+    # own clock says it has been waiting too long, whatever kind it is. A
+    # record can be missing from all eight of the others and still be four days
+    # over its target, and "never let an overdue record be invisible" is the
+    # promise this check keeps.
+    checks.append(await _overdue_check(targets, now))
 
     # 1. Underfilling with the day approaching.
     soon = _days_ahead(FILL_WARNING_DAYS)
@@ -12173,6 +12759,7 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         got = filled.get(c["_id"], 0)
         if needed and got / needed < FILL_WARNING_RATIO:
             when = c.get("event_date") or c.get("start_date")
+            days_left = _days_until(when, now)
             rows.append(
                 {
                     "id": str(c["_id"]),
@@ -12183,6 +12770,31 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
                     # from being two short.
                     "severity": "critical" if got == 0 else "warning",
                     "at": _iso(when),
+                    # The two numbers somebody needs to decide what to do, as
+                    # numbers rather than buried in a sentence — a panel that
+                    # says "underfilling" and makes you open the campaign to
+                    # find out by how much is a panel that costs a click per
+                    # row to read.
+                    "days_left": days_left,
+                    "slots_short": max(0, needed - got),
+                    # **And the three things that can actually be done about
+                    # it.** Naming a problem with no way out of it is how a
+                    # health panel becomes a list people scroll past: invite
+                    # somebody, move the date, or ask for fewer.
+                    "actions": [
+                        {
+                            "label": "Invite creators",
+                            "href": f"/admin/campaigns/{c['_id']}?panel=suggested",
+                        },
+                        {
+                            "label": "Extend the dates",
+                            "href": f"/admin/campaigns/{c['_id']}?edit=dates",
+                        },
+                        {
+                            "label": "Ask for fewer",
+                            "href": f"/admin/campaigns/{c['_id']}?edit=creators_needed",
+                        },
+                    ],
                 }
             )
     checks.append(
@@ -12394,8 +13006,80 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         }
     )
 
+    # 8. Deliveries that went past the grace and are now late on the record.
+    #    Separate from the overdue list above, which is "waiting too long": this
+    #    is the set that has been written down as late against a creator, and
+    #    that is a fact somebody should have seen before the brand asks.
+    late = await db.collaborations.find(
+        {"content_overdue": True, "state": {"$in": ["attended", *DRAFT_REVIEW_STATES]}}
+    ).to_list(length=500)
+    late_campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": list({r["campaign_id"] for r in late})}}
+        ).to_list(length=len(late) or 1)
+    }
+    checks.append(
+        {
+            "key": "late_delivery",
+            "label": "Late deliveries",
+            "blurb": (
+                f"Attended, past the target and past the {CONTENT_GRACE_HOURS}-hour "
+                "grace, with nothing posted."
+            ),
+            "items": [
+                {
+                    "id": str(r["_id"]),
+                    "label": (late_campaigns.get(r["campaign_id"]) or {}).get("title")
+                    or "A campaign",
+                    "detail": f"Late since {timeago_days(r.get('content_overdue_at'), now)}",
+                    "href": f"/admin/collaborations/{r['_id']}",
+                    "severity": "warning",
+                    "at": _iso(r.get("content_overdue_at")),
+                }
+                for r in late
+            ],
+        }
+    )
+
+    # 9. Drafts nobody has touched. **Flagged, never tidied away**: it is the
+    #    brand's own unpublished work, and a platform that deletes somebody's
+    #    draft is one they stop trusting with a draft.
+    stale_drafts = [
+        c
+        for c in await db.campaigns.find({"status": "draft"}).to_list(length=1000)
+        if _draft_is_stale(c, now)
+    ]
+    checks.append(
+        {
+            "key": "stale_drafts",
+            "label": "Abandoned drafts",
+            "blurb": f"Draft briefs untouched for over {DRAFT_STALE_DAYS} days.",
+            "items": [
+                {
+                    "id": str(c["_id"]),
+                    "label": c.get("title") or "Untitled draft",
+                    "detail": f"Last touched {timeago_days(c.get('updated_at'), now)}",
+                    "href": f"/admin/campaigns/{c['_id']}",
+                    "severity": "warning",
+                    "at": _iso(c.get("updated_at")),
+                }
+                for c in stale_drafts
+            ],
+        }
+    )
+
     for c in checks:
-        c["items"].sort(key=lambda i: (_HEALTH_ORDER.get(i["severity"], 9), i.get("at") or ""))
+        # **A check that sorted itself keeps its order.** The default here is
+        # severity then oldest-first, which is right for eight of the nine and
+        # actively wrong for the overdue list: "oldest" would put a seven-day
+        # payment one day over ahead of a one-day campaign review three days
+        # over, because the payment's clock started earlier. How far past the
+        # target is the question, and only that check knows the answer.
+        if not c.get("presorted"):
+            c["items"].sort(
+                key=lambda i: (_HEALTH_ORDER.get(i["severity"], 9), i.get("at") or "")
+            )
         c["count"] = len(c["items"])
         c["critical"] = sum(1 for i in c["items"] if i["severity"] == "critical")
 
@@ -12415,7 +13099,15 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
             "payment_overdue_days": PAYMENT_OVERDUE_DAYS,
             "verification_overdue_days": VERIFICATION_OVERDUE_DAYS,
             "profile_stale_days": PROFILE_STALE_DAYS,
+            "content_grace_hours": CONTENT_GRACE_HOURS,
+            "draft_stale_days": DRAFT_STALE_DAYS,
         },
+        # The live targets, so the panel quotes what the server is actually
+        # measuring against rather than the defaults it was built with — these
+        # are editable, and a panel showing 48 while the server enforces 24 is
+        # worse than a panel showing nothing.
+        "sla_targets": targets,
+        "sla_labels": {k: {"label": v[0], "blurb": v[1]} for k, v in SLA_LABELS.items()},
     }
 
 
@@ -13092,6 +13784,21 @@ async def _campaign_titles_for(campaign_ids: list) -> dict:
     }
 
 
+def _days_until(when: Optional[datetime], now: datetime) -> Optional[int]:
+    """Whole days from now until then, `None` when there is no date.
+
+    `None` rather than zero, for the reason absent is never zero anywhere else
+    here: a campaign with no date set is not a campaign happening today, and a
+    panel that said "0 days left" about one would be raising an alarm about a
+    field nobody filled in.
+    """
+    if not isinstance(when, datetime):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (when - now).days
+
+
 def _humanise_until(when: Optional[datetime], now: datetime) -> str:
     """"in 3 days", "tomorrow", "today". Read at a glance on a panel that
     exists to be scanned."""
@@ -13556,6 +14263,7 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_
     if not docs:
         return []
 
+    targets = await sla_targets()
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
     verified_brand_ids = {
         p["user_id"]
@@ -13587,6 +14295,7 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_
             "start_date": _iso(d.get("start_date")),
             "end_date": _iso(d.get("end_date")),
             "submitted_for_review_at": _iso(d.get("submitted_for_review_at")),
+            "ageing": _campaign_review_ageing(d, targets),
             "created_at": _iso(d.get("created_at")),
             # Present when this is a resubmission of something we sent back.
             "previous_review_reason": d.get("review_reason"),
@@ -13809,10 +14518,9 @@ async def approve_campaign(
         {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
         {
             "$set": {
-                "status": status,
+                **_state_stamp(status, now, field="status"),
                 "reviewed_at": now,
                 "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
-                "updated_at": now,
             },
             "$unset": {"review_reason": ""},
         },
@@ -13888,11 +14596,10 @@ async def reject_campaign(
         {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
         {
             "$set": {
-                "status": "draft",
+                **_state_stamp("draft", now, field="status"),
                 "review_reason": reason,
                 "reviewed_at": now,
                 "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -13982,11 +14689,10 @@ async def _pause_campaign(doc: dict, reason: Optional[str], user: dict) -> dict:
         {"_id": doc["_id"], "status": current},
         {
             "$set": {
-                "status": "paused",
+                **_state_stamp("paused", now, field="status"),
                 "paused_at": now,
                 "paused_from_status": current,
                 "pause_reason": reason,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -14054,7 +14760,7 @@ async def _resume_campaign(doc: dict, reason: Optional[str], user: dict) -> dict
     updated = await db.campaigns.find_one_and_update(
         {"_id": doc["_id"], "status": "paused"},
         {
-            "$set": {"status": back_to, "resumed_at": now, "updated_at": now},
+            "$set": {**_state_stamp(back_to, now, field="status"), "resumed_at": now},
             "$unset": {"paused_from_status": "", "pause_reason": ""},
         },
         return_document=True,
@@ -14119,11 +14825,10 @@ async def admin_close_campaign(
         {"_id": doc["_id"], "status": current},
         {
             "$set": {
-                "status": "closed",
+                **_state_stamp("closed", now, field="status"),
                 "closed_reason": payload.reason,
                 "closed_at": now,
                 "closed_by_admin": True,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -14139,11 +14844,10 @@ async def admin_close_campaign(
             {"_id": collab["_id"], "state": collab["state"]},
             {
                 "$set": {
-                    "state": "declined",
+                    **_state_stamp("declined", now),
                     "active": False,
                     "exit_reason": f"Campaign closed: {payload.reason}",
                     "declined_at": now,
-                    "updated_at": now,
                 }
             },
         )
@@ -14410,6 +15114,10 @@ async def _invite_creators(
                     "invited_by": ObjectId(user["_id"]) if user.get("_id") else None,
                     "note": payload.note,
                     "state": "sent",
+                    # Written on the row rather than only derived, so moving
+                    # INVITATION_RESPONSE_DAYS later cannot retroactively
+                    # shorten an offer somebody is already holding.
+                    "respond_by": now + timedelta(days=INVITATION_RESPONSE_DAYS),
                     "delivered_on_whatsapp": False,
                     "whatsapp_mode": None,
                     "error": None,
@@ -14773,6 +15481,7 @@ async def list_pending_brands(user: dict = Depends(require_roles(*CONSOLE_ROLES)
     ):
         drafts[row["_id"]] = row
 
+    targets = await sla_targets()
     out = []
     for p in profiles:
         u = users_by_id.get(p["user_id"], {})
@@ -14781,6 +15490,10 @@ async def list_pending_brands(user: dict = Depends(require_roles(*CONSOLE_ROLES)
             {
                 **_admin_brand_fields(p, u),
                 # In this queue it is always pending_verification or rejected.
+                # A rejected brand is waiting on *them*, not on us, so it has
+                # no clock — `_brand_review_ageing` returns None and the row
+                # simply carries no badge.
+                "ageing": _brand_review_ageing(p, targets),
                 "documents": docs_by_brand.get(p["user_id"], []),
                 "campaign_count": d.get("total", 0),
                 "campaigns_awaiting_review": d.get("awaiting_review", 0),
@@ -14905,6 +15618,7 @@ async def get_admin_brand_detail(
         "performance": performance,
         "brand": {
             **_admin_brand_fields(profile, account),
+            "ageing": _brand_review_ageing(profile, await sla_targets()),
             # The one login this brand has, and the person it belongs to.
             "manager_name": account.get("manager_name") or account.get("name"),
             "manager_designation": profile.get("contact_person_designation"),
@@ -15041,9 +15755,8 @@ async def verify_brand(
         {
             "$set": {
                 "verified": True,
-                "verification_state": "verified",
+                **_state_stamp("verified", now, field="verification_state"),
                 "verified_at": now,
-                "updated_at": now,
             },
             # Approving clears an earlier refusal; leaving it would keep telling
             # the brand it was rejected.
@@ -15103,10 +15816,9 @@ async def reject_brand(
         {
             "$set": {
                 "verified": False,
-                "verification_state": "rejected",
+                **_state_stamp("rejected", now, field="verification_state"),
                 "verification_reason": reason,
                 "rejected_at": now,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -15119,9 +15831,8 @@ async def reject_brand(
         {"brand_id": oid, "status": CAMPAIGN_REVIEW_STATUS},
         {
             "$set": {
-                "status": "draft",
+                **_state_stamp("draft", now, field="status"),
                 "review_reason": f"Brand not verified: {reason}",
-                "updated_at": now,
             }
         },
     )
@@ -15160,8 +15871,12 @@ async def unverify_brand(
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
-        {"$set": {"verified": False,
-                "verification_state": "pending_verification", "updated_at": now}},
+        {
+            "$set": {
+                **_state_stamp("pending_verification", now, field="verification_state"),
+                "verified": False,
+            }
+        },
         return_document=True,
     )
     if not result:
@@ -15184,11 +15899,17 @@ def _serialize_admin_collab(
     creator_user: Optional[dict],
     creator_profile: Optional[dict],
     payment: Optional[dict],
+    targets: Optional[dict] = None,
 ) -> dict:
     return {
         "id": str(collab["_id"]),
         "reference": _reference_of(collab),
         "state": collab.get("state"),
+        # How long it has been sitting here, and whether that is too long.
+        # Beside the state rather than anywhere else, because the two are one
+        # fact: "verified" says nothing until you know it has been verified and
+        # unanswered for nine days.
+        "ageing": _collab_ageing(collab, targets),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -15280,6 +16001,10 @@ async def list_all_collaborations(
     ).to_list(length=len(collabs))
     payment_by_collab = {p["collaboration_id"]: p for p in payments}
 
+    # Once for the board, not once per row: this is two thousand rows and the
+    # targets are the same for all of them.
+    targets = await sla_targets()
+
     by_state: dict = {s: [] for s in COLLAB_STATE_ORDER + ["declined", "cancelled"]}
     for c in collabs:
         camp = campaign_by_id.get(c["campaign_id"])
@@ -15289,7 +16014,7 @@ async def list_all_collaborations(
         creator_profile = creator_profile_by_uid.get(c["creator_id"])
         payment = payment_by_collab.get(c["_id"])
         row = _serialize_admin_collab(
-            c, camp, brand_name, creator_user, creator_profile, payment
+            c, camp, brand_name, creator_user, creator_profile, payment, targets
         )
         next_state = _next_collab_state(row["state"], camp)
         row["next_state"] = next_state
@@ -15356,6 +16081,7 @@ async def get_admin_collaboration_detail(
         creator_user,
         creator_profile,
         payment,
+        await sla_targets(),
     )
     next_state = _next_collab_state(row["state"], campaign)
     row["next_state"] = next_state
@@ -15703,11 +16429,10 @@ async def revert_collaboration(
         {"_id": oid, "state": current},  # precondition — never a blind write
         {
             "$set": {
-                "state": to_state,
+                **_state_stamp(to_state, now),
                 "reverted_at": now,
                 "reverted_from": current,
                 "revert_reason": payload.reason,
-                "updated_at": now,
             },
             # Stepping back out of slot_booked gives the seat up; the slot link
             # goes with it so a re-book claims fresh.
@@ -15806,11 +16531,10 @@ async def decline_applicant(
         {"_id": oid, "state": current},
         {
             "$set": {
-                "state": "declined",
+                **_state_stamp("declined", now),
                 "active": False,
                 "exit_reason": payload.reason,
                 "declined_at": now,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -16015,7 +16739,7 @@ async def cancel_collaboration(
         {"_id": oid, "state": current},
         {
             "$set": {
-                "state": "cancelled",
+                **_state_stamp("cancelled", now),
                 "active": False,
                 "exit_reason": payload.reason,
                 "cancellation_type": payload.cancellation_type,
@@ -16034,7 +16758,6 @@ async def cancel_collaboration(
                 "agreed_amount_at_cancellation": agreed_amount if had_agreement else None,
                 "creator_attended": creator_attended,
                 "settlement_review_needed": settlement_review_needed,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -16256,7 +16979,7 @@ async def mark_payment_paid(
     # Move the linked collaboration to 'closed'.
     await db.collaborations.update_one(
         {"_id": payment["collaboration_id"]},
-        {"$set": {"state": "closed", "updated_at": now}},
+        {"$set": _state_stamp("closed", now)},
     )
 
     collab = await db.collaborations.find_one({"_id": payment["collaboration_id"]})
@@ -16365,14 +17088,13 @@ async def refund_payment(
         {"_id": collab_id},
         {
             "$set": {
-                "state": "cancelled",
+                **_state_stamp("cancelled", now),
                 "active": False,
                 "cancellation_type": "admin_cancelled",
                 "exit_reason": payload.reason,
                 "cancelled_at": now,
                 "cancelled_from_state": previous_state,
                 "refunded": True,
-                "updated_at": now,
             }
         },
     )
@@ -16432,6 +17154,91 @@ async def set_brand_invoice_state(
         raise HTTPException(status_code=404, detail="Payment not found")
     await audit(user, "payment.invoice_state", "payment", pid, after={"brand_invoice_state": state})
     return {"id": payment_id, "brand_invoice_state": state}
+
+
+class SlaTargetsPayload(BaseModel):
+    """What an admin is changing. Partial, like every other settings save here:
+    an omitted key means "leave it alone", never "reset it to the default"."""
+
+    targets: dict[str, int] = Field(default_factory=dict)
+
+
+@admin_router.get("/settings/sla")
+async def get_sla_settings(user: dict = Depends(require_roles("admin"))):
+    """The targets, what each is called, and which of them somebody has changed.
+
+    `defaults` travels with the values so the form can say "48 (default)" and
+    offer a way back — a settings screen that cannot tell you what it started
+    as is one nobody dares touch.
+    """
+    doc = await db.platform_settings.find_one({"_id": _SLA_SETTINGS_ID})
+    overrides = _clean_sla_overrides((doc or {}).get("targets"))
+    targets = await sla_targets(fresh=True)
+    return {
+        "targets": targets,
+        "defaults": dict(SLA_DEFAULT_HOURS),
+        "overridden": sorted(overrides),
+        "labels": {k: {"label": v[0], "blurb": v[1]} for k, v in SLA_LABELS.items()},
+        "limits": {"min_hours": SLA_MIN_HOURS, "max_hours": SLA_MAX_HOURS},
+        "updated_at": _iso((doc or {}).get("updated_at")),
+        "updated_by_name": (doc or {}).get("updated_by_name"),
+    }
+
+
+@admin_router.put("/settings/sla")
+async def put_sla_settings(
+    payload: SlaTargetsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Change what "too long" means.
+
+    **Admin-only, not `CONSOLE_ROLES`.** An SLA is the standard the whole
+    operation is measured against, and somebody whose queue is being measured
+    is the wrong person to be able to move the line.
+
+    Audited like any other decision, and the audit carries both numbers: "who
+    changed the draft review target and what was it before" is exactly the
+    question asked the week after a report looks wrong.
+    """
+    cleaned = _clean_sla_overrides(payload.targets)
+    if payload.targets and not cleaned:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Targets are whole hours between {SLA_MIN_HOURS} and "
+                f"{SLA_MAX_HOURS}, on one of the known states."
+            ),
+        )
+    before = await sla_targets(fresh=True)
+    now = datetime.now(timezone.utc)
+    existing = await db.platform_settings.find_one({"_id": _SLA_SETTINGS_ID})
+    merged = {**_clean_sla_overrides((existing or {}).get("targets")), **cleaned}
+    await db.platform_settings.update_one(
+        {"_id": _SLA_SETTINGS_ID},
+        {
+            "$set": {
+                "targets": merged,
+                "updated_at": now,
+                "updated_by": ObjectId(user["_id"]),
+                "updated_by_name": user.get("name"),
+            }
+        },
+        upsert=True,
+    )
+    # The cache is 30 seconds, which is right for a read on every list and
+    # wrong for the admin who just pressed Save and is looking at the number.
+    _SLA_CACHE["at"] = None
+    after = await sla_targets(fresh=True)
+    changed = {k: v for k, v in after.items() if before.get(k) != v}
+    await audit(
+        user,
+        "settings.sla",
+        "settings",
+        _SLA_SETTINGS_ID,
+        before={k: before[k] for k in changed},
+        after=changed,
+    )
+    return await get_sla_settings(user)
 
 
 @admin_router.get("/metrics")
@@ -16865,6 +17672,11 @@ async def _pending_invitations_for(campaign_oid, applied_creator_ids) -> list:
         {"campaign_id": campaign_oid, "state": {"$in": list(INVITATION_OPEN_STATES)}}
     ).sort("created_at", -1).to_list(length=500)
     invites = [i for i in invites if i["creator_id"] not in set(applied_creator_ids)]
+    # **Lapsed is not "still deciding".** Both boards head this group "invited,
+    # not answered", and leaving an offer that ran out a fortnight ago in it
+    # makes the count a count of people who decided nothing rather than of
+    # people we are waiting on.
+    invites = [i for i in invites if not _invitation_lapsed(i)]
     if not invites:
         return []
 
@@ -16899,6 +17711,7 @@ async def _pending_invitations_for(campaign_oid, applied_creator_ids) -> list:
                 "state": "invited",
                 "note": i.get("note"),
                 "delivered_on_whatsapp": bool(i.get("delivered_on_whatsapp")),
+                "respond_by": _iso(_invitation_deadline(i)),
                 "created_at": _iso(i.get("created_at")),
             }
         )
@@ -18233,6 +19046,526 @@ async def _nudge_loop() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Chasing, and letting things lapse
+#
+# The clock says a record has been sitting. This is what *acts* on that —
+# because an escalation nobody is told about is a colour on a screen somebody
+# has to remember to open, and the whole failure this feature exists to fix is
+# that nobody was looking.
+#
+# Five reminders, each to the party who can actually move the thing, **at most
+# twice and then never again**. Chasing somebody a third time about the same
+# row is how a WhatsApp channel stops being read, and this operation runs on
+# that channel.
+# ---------------------------------------------------------------------------
+
+# Two, and the second is not a copy of the first — it goes out a day later and
+# says so. A third would be nagging, and the escalation is the answer to
+# somebody who has ignored two: a person picks up the phone.
+MAX_REMINDERS = 2
+REMINDER_SPACING_HOURS = 24
+
+# A shoot the creator should be reminded about the night before. Wider than 24
+# hours so a pass that runs at any point in the day still catches tomorrow's.
+SHOOT_REMINDER_WINDOW_HOURS = 36
+
+# Past the content SLA, this much more before we call it late **on the record**.
+#
+# **The SLA and the grace are two different things with two different
+# consequences**, and collapsing them would be unfair to the creator. Passing
+# the target means we chase and it shows up in the queue: somebody is waiting,
+# and a nudge is proportionate. Passing the target *and* the grace is what gets
+# written down as lateness against them, and a mark on somebody's reliability
+# should not be the same event as a reminder.
+CONTENT_GRACE_HOURS = 24
+
+
+def _reminder_kinds() -> tuple:
+    """Every reminder this system will ever send, named once.
+
+    Used by the job, by the environment documentation test, and by the
+    notification templates — a kind that exists in one and not the others is a
+    reminder that either cannot send or cannot be configured.
+    """
+    return (
+        "book_slot",
+        "shoot_tomorrow",
+        "content_due",
+        "draft_review",
+        "applications_waiting",
+    )
+
+
+async def _claim_reminder(collab_id, kind: str, state: str, now: datetime) -> bool:
+    """Take the right to send one reminder, or return False.
+
+    **The claim is the write**, exactly like the profile nudge: the counter is
+    incremented under a filter that only matches while another send is due, so
+    two workers racing produce one message and a send that fails afterwards
+    still counts as used up.
+
+    The filter carries `state` as a precondition, which is what makes "stops
+    once the state advances" structural rather than remembered — a
+    collaboration that moved between the query and the claim is simply not
+    matched, and there is no branch anywhere that has to notice.
+
+    `$lt` would not match a document that has never been reminded, because
+    Mongo's comparison operators skip missing fields. `$not: {$gte: n}` does —
+    the same absent-reads-safe trap this codebase keeps meeting.
+    """
+    due_before = now - timedelta(hours=REMINDER_SPACING_HOURS)
+    claimed = await db.collaborations.find_one_and_update(
+        {
+            "_id": collab_id,
+            "state": state,
+            f"reminders.{kind}.count": {"$not": {"$gte": MAX_REMINDERS}},
+            "$or": [
+                {f"reminders.{kind}.last_at": {"$exists": False}},
+                {f"reminders.{kind}.last_at": {"$lte": due_before}},
+            ],
+        },
+        {
+            "$inc": {f"reminders.{kind}.count": 1},
+            "$set": {f"reminders.{kind}.last_at": now},
+        },
+    )
+    return bool(claimed)
+
+
+def _reminder_number(collab: dict, kind: str) -> int:
+    """Which reminder this is, 1 or 2, read *before* the claim increments it."""
+    return int(((collab.get("reminders") or {}).get(kind) or {}).get("count") or 0) + 1
+
+
+async def _chase_creator(collab: dict, campaign: Optional[dict], kind: str, *, title: str, body: str) -> None:
+    await notify(
+        collab["creator_id"],
+        f"reminder_{kind}",
+        title=title,
+        body=body,
+        link="/dashboard",
+    )
+
+
+async def _escalate_to_whoever_runs_it(
+    campaign: Optional[dict], event: str, *, title: str, body: str
+) -> None:
+    """Reach the party answerable for this campaign, following `execution_owner`.
+
+    **The same routing a new application takes**, deliberately: a brand that
+    handed us a campaign is not the party to chase about it, and a WeAre
+    manager has no business being chased about a brief the brand is running.
+    Reusing the readers rather than writing a second rule is what stops the two
+    disagreeing the first time one is changed.
+
+    On a brand-run campaign **admin is copied**, because an overdue record is
+    an operational fact about the platform as well as a job for the brand — and
+    the brand manager going quiet is exactly the case where somebody here needs
+    to know.
+    """
+    if not campaign:
+        return
+    if _execution_owner(campaign) == "weare":
+        await notify_weare_team(campaign, event, title=title, body=body)
+        return
+    await notify_brand_manager(
+        campaign["brand_id"],
+        event,
+        title=title,
+        body=body,
+        link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
+    )
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            event,
+            title=title,
+            body=body,
+            link=f"/admin/campaigns/{str(campaign['_id'])}",
+        )
+
+
+async def run_lifecycle_chasers(limit: int = 500) -> dict:
+    """One pass: chase what is late, flag what is overdue, lapse what expired.
+
+    Idempotent and safe to call by hand — wired to a loop below and to
+    POST /admin/jobs/lifecycle, because this deployment has no external
+    scheduler. Every branch is wrapped: one bad campaign must not cost the
+    other four hundred their reminder.
+    """
+    now = datetime.now(timezone.utc)
+    targets = await sla_targets()
+    report = {k: 0 for k in _reminder_kinds()}
+    report.update(
+        {"content_flagged_overdue": 0, "invitations_lapsed": 0, "applications_expired": 0}
+    )
+
+    def _past(state: str) -> datetime:
+        """When a record in this state stopped being on time."""
+        hours = targets.get(_SLA_BY_COLLAB_STATE.get(state) or "", 0)
+        return now - timedelta(hours=hours or 0)
+
+    async def _campaigns_for(collabs: list) -> dict:
+        ids = list({c["campaign_id"] for c in collabs})
+        if not ids:
+            return {}
+        rows = await db.campaigns.find({"_id": {"$in": ids}}).to_list(length=len(ids))
+        return {r["_id"]: r for r in rows}
+
+    # 1. The fee is agreed and nobody has picked a time.
+    try:
+        rows = await db.collaborations.find(
+            {"state": "commercial_agreed", "state_since": {"$lte": _past("commercial_agreed")}}
+        ).to_list(length=limit)
+        campaigns = await _campaigns_for(rows)
+        for c in rows:
+            nth = _reminder_number(c, "book_slot")
+            if not await _claim_reminder(c["_id"], "book_slot", "commercial_agreed", now):
+                continue
+            camp = campaigns.get(c["campaign_id"])
+            title = (camp or {}).get("title") or "your campaign"
+            await _chase_creator(
+                c,
+                camp,
+                "book_slot",
+                title="Pick your slot",
+                body=(
+                    f"Your fee is agreed on {title} — pick a time that works and "
+                    "you're booked in."
+                    if nth == 1
+                    else f"{title} is still waiting on you to pick a time. "
+                    "The places go on a first-come basis."
+                ),
+            )
+            report["book_slot"] += 1
+    except Exception as exc:
+        logger.error("book_slot reminders failed: %s", exc)
+
+    # 2. A shoot tomorrow. Not a delay — the one reminder here that is simply
+    #    useful, and the one people thank you for.
+    try:
+        rows = await db.collaborations.find(
+            {
+                "state": "slot_booked",
+                "scheduled_at": {
+                    "$gte": now,
+                    "$lte": now + timedelta(hours=SHOOT_REMINDER_WINDOW_HOURS),
+                },
+            }
+        ).to_list(length=limit)
+        campaigns = await _campaigns_for(rows)
+        for c in rows:
+            if not await _claim_reminder(c["_id"], "shoot_tomorrow", "slot_booked", now):
+                continue
+            camp = campaigns.get(c["campaign_id"])
+            await _chase_creator(
+                c,
+                camp,
+                "shoot_tomorrow",
+                title="Your shoot is coming up",
+                body=(
+                    f"{(camp or {}).get('title') or 'Your campaign'} — "
+                    f"{_when_text(c.get('scheduled_at'))}."
+                    + (f" {c['location_note']}" if c.get("location_note") else "")
+                ),
+            )
+            report["shoot_tomorrow"] += 1
+    except Exception as exc:
+        logger.error("shoot reminders failed: %s", exc)
+
+    # 3. They turned up and the post hasn't landed. Chased at the target, and
+    #    flagged as late only after the grace on top of it.
+    try:
+        rows = await db.collaborations.find(
+            {"state": "attended", "state_since": {"$lte": _past("attended")}}
+        ).to_list(length=limit)
+        campaigns = await _campaigns_for(rows)
+        overdue_at = _past("attended") - timedelta(hours=CONTENT_GRACE_HOURS)
+        for c in rows:
+            camp = campaigns.get(c["campaign_id"])
+            title = (camp or {}).get("title") or "your campaign"
+            nth = _reminder_number(c, "content_due")
+            if await _claim_reminder(c["_id"], "content_due", "attended", now):
+                await _chase_creator(
+                    c,
+                    camp,
+                    "content_due",
+                    title="Your post is due",
+                    body=(
+                        f"Send the link for {title} when it's live and we can "
+                        "get your payment moving."
+                        if nth == 1
+                        else f"{title} is still waiting on your link. Tell us if "
+                        "something's holding it up."
+                    ),
+                )
+                report["content_due"] += 1
+
+            # The flag, which is a fact about this delivery rather than a
+            # message. Set once and never cleared: delivering late does not
+            # make it not have been late, and the reliability history is the
+            # record of what actually happened.
+            # **Normalised, not "normalised".** `since.replace(tzinfo=since.tzinfo)`
+            # is a no-op on a naive value — BSON returns naive datetimes, so
+            # this comparison raised on every real row and the whole content
+            # branch was swallowed by its own `except`. Same trap `_iso` and
+            # `_ist` exist to close.
+            since = _state_since(c)
+            if since is not None and since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+            if since and since <= overdue_at:
+                marked = await db.collaborations.find_one_and_update(
+                    {"_id": c["_id"], "state": "attended", "content_overdue": {"$ne": True}},
+                    {"$set": {"content_overdue": True, "content_overdue_at": now}},
+                )
+                if marked:
+                    report["content_flagged_overdue"] += 1
+                    await audit(
+                        _SYSTEM_ACTOR,
+                        "collaboration.content_overdue",
+                        "collaboration",
+                        c["_id"],
+                        after={"content_overdue": True},
+                        note=f"No content {_age_phrase((now - since).total_seconds())} after attending.",
+                        campaign_id=c.get("campaign_id"),
+                    )
+                    await _escalate_to_whoever_runs_it(
+                        camp,
+                        "content_overdue",
+                        title="Content is overdue",
+                        body=f"{title}: a creator attended and the post still isn't up.",
+                    )
+    except Exception as exc:
+        logger.error("content reminders failed: %s", exc)
+
+    # 4. A draft nobody has looked at. **The one where the delay is ours**, and
+    #    the creator is blocked the whole time it sits.
+    try:
+        rows = await db.collaborations.find(
+            {"state": "draft_submitted", "state_since": {"$lte": _past("draft_submitted")}}
+        ).to_list(length=limit)
+        campaigns = await _campaigns_for(rows)
+        for c in rows:
+            if not await _claim_reminder(c["_id"], "draft_review", "draft_submitted", now):
+                continue
+            camp = campaigns.get(c["campaign_id"])
+            await _escalate_to_whoever_runs_it(
+                camp,
+                "reminder_draft_review",
+                title="A draft is waiting",
+                body=(
+                    f"{(camp or {}).get('title') or 'A campaign'}: a creator's draft "
+                    "has been waiting for review, and they can't post until it's seen."
+                ),
+            )
+            report["draft_review"] += 1
+    except Exception as exc:
+        logger.error("draft reminders failed: %s", exc)
+
+    # 5. Pitches nobody has answered.
+    try:
+        rows = await db.collaborations.find(
+            {
+                "state": {"$in": list(COLLAB_GROUP_APPLIED)},
+                "state_since": {"$lte": _past("applied")},
+            }
+        ).to_list(length=limit)
+        campaigns = await _campaigns_for(rows)
+        # One message per campaign rather than per applicant: five pitches on
+        # one brief is one job, and five WhatsApps about it is five reasons to
+        # mute us.
+        by_campaign: dict = {}
+        for c in rows:
+            by_campaign.setdefault(c["campaign_id"], []).append(c)
+        for campaign_id, group in by_campaign.items():
+            camp = campaigns.get(campaign_id)
+            claimed = []
+            for c in group:
+                if await _claim_reminder(
+                    c["_id"], "applications_waiting", c.get("state"), now
+                ):
+                    claimed.append(c)
+            if not claimed:
+                continue
+            count = len(group)
+            await _escalate_to_whoever_runs_it(
+                camp,
+                "reminder_applications_waiting",
+                title="Creators are waiting to hear",
+                body=(
+                    f"{(camp or {}).get('title') or 'A campaign'}: {count} "
+                    f"{'pitch' if count == 1 else 'pitches'} with no answer yet."
+                ),
+            )
+            report["applications_waiting"] += len(claimed)
+    except Exception as exc:
+        logger.error("application reminders failed: %s", exc)
+
+    # 6. Things that lapse rather than being chased.
+    try:
+        report["invitations_lapsed"] = await _lapse_expired_invitations(now)
+    except Exception as exc:
+        logger.error("invitation expiry failed: %s", exc)
+    try:
+        report["applications_expired"] = await _expire_unanswered_applications(now)
+    except Exception as exc:
+        logger.error("application expiry failed: %s", exc)
+
+    if any(report.values()):
+        logger.info("lifecycle chasers: %s", report)
+    return report
+
+
+async def _lapse_expired_invitations(now: datetime) -> int:
+    """Move invitations past their deadline out of the open set.
+
+    **A tidy-up, not the enforcement.** `_invitation_lapsed` already decides
+    this on every read, so an invitation is history the moment its deadline
+    passes whether or not this has run. What this adds is a stored state, so
+    the boards' queries stay cheap and the record says plainly what happened
+    rather than leaving every reader to work it out.
+
+    The creator is not notified. Telling somebody "you didn't reply to a
+    message you never saw" is a message about our own bookkeeping, and it
+    arrives at exactly the moment it can't be acted on.
+    """
+    open_invites = await db.campaign_invitations.find(
+        {"state": {"$in": list(INVITATION_OPEN_STATES)}}
+    ).to_list(length=1000)
+    lapsed = 0
+    for invite in open_invites:
+        if not _invitation_lapsed(invite, now):
+            continue
+        moved = await db.campaign_invitations.update_one(
+            {"_id": invite["_id"], "state": {"$in": list(INVITATION_OPEN_STATES)}},
+            {"$set": {"state": "lapsed", "lapsed_at": now, "updated_at": now}},
+        )
+        lapsed += moved.modified_count
+    return lapsed
+
+
+async def _expire_unanswered_applications(now: datetime) -> int:
+    """Close applications on campaigns that started without anybody answering.
+
+    **The creator is told, and told it was not about them.** They did
+    everything asked and nobody replied; leaving the pitch showing "waiting to
+    hear back" for the rest of the year is the cruellest version of that, and
+    a silent state change they discover later is barely better.
+
+    Only campaigns that have actually begun — the shoot is under way or over,
+    so there is nothing left to accept somebody onto. A brief that is merely
+    old is still a brief somebody might answer tomorrow.
+    """
+    started = await db.campaigns.distinct(
+        "_id",
+        {
+            "$or": [
+                {"event_date": {"$ne": None, "$lt": now}},
+                {"start_date": {"$ne": None, "$lt": now}},
+                {"status": {"$in": ["completed", "closed", "cancelled"]}},
+            ]
+        },
+    )
+    if not started:
+        return 0
+    stale = await db.collaborations.find(
+        {"state": {"$in": list(COLLAB_GROUP_APPLIED)}, "campaign_id": {"$in": started}}
+    ).to_list(length=1000)
+
+    expired = 0
+    campaigns: dict = {}
+    for collab in stale:
+        moved = await db.collaborations.update_one(
+            # The state as a write precondition, like every other transition
+            # here: a brand answering between the read and the write wins.
+            {"_id": collab["_id"], "state": collab.get("state")},
+            {
+                "$set": {
+                    **_state_stamp("expired", now),
+                    "active": False,
+                    "expired_at": now,
+                    "expired_from_state": collab.get("state"),
+                    "exit_reason": "The campaign started before this was answered.",
+                }
+            },
+        )
+        if not moved.modified_count:
+            continue
+        expired += 1
+        campaign_id = collab["campaign_id"]
+        if campaign_id not in campaigns:
+            campaigns[campaign_id] = await db.campaigns.find_one({"_id": campaign_id})
+        campaign = campaigns[campaign_id]
+        await audit(
+            _SYSTEM_ACTOR,
+            "collaboration.expired",
+            "collaboration",
+            collab["_id"],
+            before={"state": collab.get("state")},
+            after={"state": "expired"},
+            note="The campaign started and nobody answered this application.",
+            campaign_id=campaign_id,
+        )
+        await notify(
+            collab["creator_id"],
+            "application_expired",
+            title="That brief has started",
+            body=(
+                f"{(campaign or {}).get('title') or 'A campaign'} began before "
+                "anybody answered your pitch, so we've closed it off. Nothing "
+                "you did — there are other briefs open."
+            ),
+            link="/campaigns",
+        )
+    return expired
+
+
+# A draft nobody has touched for this long has been abandoned rather than
+# written slowly. Flagged, never deleted or closed: it is the brand's own
+# unpublished work, and a platform that tidies away somebody's draft is a
+# platform they stop trusting with one.
+DRAFT_STALE_DAYS = 30
+
+
+def _draft_is_stale(campaign: Optional[dict], now: Optional[datetime] = None) -> bool:
+    """A draft brief that has sat untouched.
+
+    Derived rather than stored, because it is a fact about a timestamp and
+    nothing else — a stored flag would need clearing on every edit, and the
+    edit that forgot to clear it is the bug.
+    """
+    if not campaign or campaign.get("status") != "draft":
+        return False
+    touched = campaign.get("updated_at") or campaign.get("created_at")
+    if not isinstance(touched, datetime):
+        return False
+    if touched.tzinfo is None:
+        touched = touched.replace(tzinfo=timezone.utc)
+    return touched <= (now or datetime.now(timezone.utc)) - timedelta(days=DRAFT_STALE_DAYS)
+
+
+async def _lifecycle_loop() -> None:
+    """Drive the chasers on a timer. Same shape as the profile nudge loop."""
+    interval = _lifecycle_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            await run_lifecycle_chasers()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("lifecycle pass failed: %s", exc)
+
+
+def _lifecycle_interval_seconds() -> int:
+    """How often the chasers wake. Zero disables them entirely."""
+    try:
+        return max(0, int(os.environ.get("LIFECYCLE_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600
+
+
+# ---------------------------------------------------------------------------
 # Scheduled jobs: keep Instagram tokens alive and the stats current
 # ---------------------------------------------------------------------------
 
@@ -18398,6 +19731,20 @@ async def run_creator_nudges(user: dict = Depends(require_roles("admin"))):
     # A manual run puts messages on real phones, so it belongs in the log next
     # to every other admin action that reaches somebody.
     await audit(user, "job.creator_nudges", "job", "creator_nudges", after=report)
+    return report
+
+
+@admin_router.post("/jobs/lifecycle")
+async def run_lifecycle_job(user: dict = Depends(require_roles("admin"))):
+    """Run the chasers now: reminders, the overdue flag, and the things that
+    lapse.
+
+    Same function the timer calls and the same once-only claims, so a manual
+    run cannot double-message anybody — which is what makes it safe to press
+    when somebody asks "did that go out?".
+    """
+    report = await run_lifecycle_chasers()
+    await audit(user, "job.lifecycle", "job", "lifecycle", after=report)
     return report
 
 
@@ -19180,10 +20527,9 @@ async def _answer_slot_request(
         {"_id": collab["_id"], "state": "slot_booked", "slot_confirmed_at": None},
         {
             "$set": {
-                "state": "commercial_agreed",
+                **_state_stamp("commercial_agreed", now),
                 "slot_declined_at": now,
                 "slot_declined_reason": note,
-                "updated_at": now,
             },
             "$unset": {
                 "slot_id": "",
@@ -19272,10 +20618,9 @@ async def _check_in_collaboration(
         {"_id": collab["_id"], "state": "slot_booked"},
         {
             "$set": {
-                "state": "attended",
+                **_state_stamp("attended", now),
                 "checked_in_at": now,
                 "checked_in_by": ObjectId(user["_id"]),
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -19702,7 +21047,7 @@ async def _expire_stale_campaigns() -> None:
                     {"event_date": {"$ne": None, "$lt": now}},
                 ],
             },
-            {"$set": {"status": "completed", "updated_at": now}},
+            {"$set": _state_stamp("completed", now, field="status")},
         )
         if result.modified_count:
             logger.info("Expired %d campaign(s) past end_date", result.modified_count)
@@ -19780,14 +21125,14 @@ async def _sync_campaign_fill(campaign_id: ObjectId) -> None:
     if filled >= needed and campaign.get("status") in LIVE_CAMPAIGN_STATUSES:
         await db.campaigns.update_one(
             {"_id": campaign_id},
-            {"$set": {"status": "in_progress", "updated_at": now}},
+            {"$set": _state_stamp("in_progress", now, field="status")},
         )
         logger.info("Campaign %s filled (%d/%d)", campaign_id, filled, needed)
     elif filled < needed and campaign.get("status") == "in_progress":
         # A decline freed a slot — put the brief back on the feed.
         await db.campaigns.update_one(
             {"_id": campaign_id},
-            {"$set": {"status": "open", "updated_at": now}},
+            {"$set": _state_stamp("open", now, field="status")},
         )
 
 
@@ -21358,11 +22703,10 @@ async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -
         {"_id": collab["_id"], "state": {"$in": ["attended", "draft_submitted"]}},
         {
             "$set": {
-                "state": "draft_submitted",
+                **_state_stamp("draft_submitted", now),
                 "draft": {**draft, "submitted_at": now},
                 # A fresh draft answers the outstanding request.
                 "draft_revision_note": None,
-                "updated_at": now,
             }
         },
         return_document=True,
@@ -21537,11 +22881,10 @@ async def approve_draft(
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": "draft_submitted"},
         {"$set": {
-            "state": "draft_approved",
+            **_state_stamp("draft_approved", now),
             "draft_approved_at": now,
             "draft_approved_by": ObjectId(user["_id"]),
             "draft_revision_note": None,
-            "updated_at": now,
         }},
         return_document=True,
     )
@@ -21586,9 +22929,8 @@ async def request_draft_changes(
             # Back to "shoot done, draft owed" — the same shape as the live
             # content request-changes, which returns to `attended` too.
             "$set": {
-                "state": "attended",
+                **_state_stamp("attended", now),
                 "draft_revision_note": note,
-                "updated_at": now,
             },
             "$inc": {"draft_revision_count": 1},
         },
@@ -21656,6 +22998,10 @@ async def get_application(
         "reference": _reference_of(collab),
         "state": state,
         "pitch": collab.get("pitch"),
+        # The same block the console rows carry, on the page they open into.
+        # A queue that shows "9 days over" and a detail page that shows nothing
+        # is a detail page people stop trusting.
+        "ageing": _collab_ageing(collab, await sla_targets()),
         "applied_at": _iso(collab.get("created_at")),
         "updated_at": _iso(collab.get("updated_at")),
         "scheduled_at": _iso(collab.get("scheduled_at")),
@@ -23027,6 +24373,10 @@ async def _startup():
     for legacy in ("approved", "vetted"):
         migrated = await db.creator_profiles.update_many(
             {"verification_status": legacy},
+            # clock-exempt: a rename is not a transition. Stamping
+            # `state_since` here would date every historical record to
+            # the deploy that ran the migration, and every one of them
+            # would read as "waiting since this morning".
             {"$set": {"verification_status": "verified"}},
         )
         if migrated.modified_count:
@@ -23038,7 +24388,9 @@ async def _startup():
 
     # 3. The collaboration state carried the same word.
     collabs_migrated = await db.collaborations.update_many(
-        {"state": "vetted"}, {"$set": {"state": "verified"}}
+        # clock-exempt: a rename is not a transition — see above.
+        {"state": "vetted"},
+        {"$set": {"state": "verified"}},
     )
     if collabs_migrated.modified_count:
         logger.info(
@@ -23100,6 +24452,8 @@ async def _startup():
     ):
         moved = await db.brand_profiles.update_many(
             {**query, "verification_state": {"$exists": False}},
+            # clock-exempt: deriving a field that was always implied is not
+            # a state change — these brands did not move this morning.
             {"$set": {"verification_state": state}},
         )
         if moved.modified_count:
@@ -23237,6 +24591,18 @@ async def _startup():
             "Creator profile nudges on: every %ds, %d day(s) after signup",
             _nudge_interval_seconds(),
             _nudge_after_days(),
+        )
+
+    # The lifecycle chasers. Same shape and same reasoning as the nudge loop:
+    # zero turns it off for a deployment that would rather drive
+    # POST /admin/jobs/lifecycle from its own scheduler, because two things
+    # chasing the same rows is how somebody gets four WhatsApps.
+    if _lifecycle_interval_seconds() > 0:
+        app.state.lifecycle_task = asyncio.create_task(_lifecycle_loop())
+        logger.info(
+            "Lifecycle chasers on: every %ds, at most %d reminder(s) each",
+            _lifecycle_interval_seconds(),
+            MAX_REMINDERS,
         )
 
     # Instagram token renewal and stats caching. Off when the Meta app isn't
@@ -23569,7 +24935,7 @@ async def _seed_demo_campaigns() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown():
-    for name in ("nudge_task", "instagram_task"):
+    for name in ("nudge_task", "lifecycle_task", "instagram_task"):
         task = getattr(app.state, name, None)
         if task:
             task.cancel()
@@ -23713,7 +25079,7 @@ async def _seed_demo_creators() -> None:
                     "niches": c["niches"],
                     "follower_count": c["follower_count"],
                     "base_rate": c["base_rate"],
-                    "verification_status": "verified",
+                    **_state_stamp("verified", now, field="verification_status"),
                     "pending_review": False,
                     # Demo creators carry payout details so the full pipeline —
                     # including the payment step's payout check — is walkable
@@ -23721,7 +25087,6 @@ async def _seed_demo_creators() -> None:
                     "payout_upi": f"{c['instagram_handle']}@okhdfcbank",
                     "payout_account_name": c["name"],
                     "pan": c["pan"],
-                    "updated_at": now,
                 },
                 "$setOnInsert": {"user_id": uid, "created_at": now},
             },

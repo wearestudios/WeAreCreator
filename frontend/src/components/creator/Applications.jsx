@@ -20,6 +20,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import BrandAvatar from "@/components/BrandAvatar";
+import AgeBadge from "@/components/AgeBadge";
 import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
@@ -80,6 +81,13 @@ const Row = ({ row, testid, muted, onWithdraw }) => (
                 {formatRupees(row.agreed_amount ?? row.quoted_rate)}
             </Money>
             <StatePill state={row.state} testid={IDS.state(row.id)} />
+            {/* **The age, and no verdict.** The server sends this row no SLA
+                target on purpose: an SLA is the standard WeAre holds itself
+                to internally, not a promise made to the creator, and telling
+                them "the brand is 4 days over" would turn one into the other.
+                How long they have been waiting is simply a fact, and a useful
+                one. */}
+            <AgeBadge ageing={row.ageing} testid={IDS.ageing(row.id)} />
             {onWithdraw && WITHDRAWABLE.has(row.state) && (
                 <button
                     type="button"

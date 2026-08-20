@@ -286,11 +286,14 @@ def test_declining_hands_the_seat_back_and_returns_them_to_the_step_before():
     """Which is `commercial_agreed` — the same place cancelling puts them,
     because the thing they now have to do is the same."""
     src = inspect.getsource(server._answer_slot_request)
-    assert '"state": "commercial_agreed"' in src
+    # `_state_stamp` is how a state is written now — it carries the state and
+    # the clock that says when it changed, so a record that stalls here is
+    # visible rather than silent.
+    assert '_state_stamp("commercial_agreed"' in src
     assert '"$inc": {"booked_count": -1}' in src
     # The collaboration moves first: the other order puts a place on sale while
     # somebody still holds it.
-    assert src.index('"state": "commercial_agreed"') < src.index('"booked_count": -1')
+    assert src.index('_state_stamp("commercial_agreed"') < src.index('"booked_count": -1')
 
 
 def test_the_creator_is_told_either_way():

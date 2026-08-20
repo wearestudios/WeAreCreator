@@ -1486,9 +1486,9 @@ applied → verified → accepted → commercial_agreed → slot_booked → atte
         → content_approved → in_payment → closed
 ```
 
-Plus three terminal exits that are **not** steps: `declined`, `cancelled`,
-`withdrawn` (`TERMINAL_COLLAB_STATES`) — see "Taking it back, and calling it
-off". The bracketed pair is optional per campaign — see "The draft gate" below.
+Plus four terminal exits that are **not** steps: `declined`, `cancelled`,
+`withdrawn` and `expired` (`TERMINAL_COLLAB_STATES`) — see "Taking it back, and
+calling it off" and "Expiry". The bracketed pair is optional per campaign — see "The draft gate" below.
 Who moves each step matters:
 
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
@@ -1911,6 +1911,181 @@ effect of adding an export.
 campaigns we put in front of a prospect is not theirs to decide. The list filter
 uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
 
+## The clock
+
+**Nothing in this system had one.** Every state waited indefinitely for a
+human: an application sat at `applied` until somebody read it, a draft at
+`draft_submitted` until somebody looked, a brand in the verification queue
+until somebody decided. None of that is wrong — these *are* decisions people
+make — but with nothing measuring the wait, a record that had stalled looked
+exactly like a record that was fine, and the first person to notice was
+whoever eventually rang up. So: every record knows when it entered the state
+it is in, every state has a target, and anything past its target is loud.
+
+- **`state_since` is the field and `_state_stamp` is the only writer.** There
+  is no single transition function here — states are written at more than
+  thirty call sites, each with its own `from_state` precondition — so the
+  stamp travels with the state rather than being applied centrally, and a
+  structural test fails any `$set` that writes one without the other.
+  `_state_stamp` takes the column name because the four clocked records do not
+  agree on it (`STATE_CLOCK_FIELDS`): a collaboration has `state`, a campaign
+  `status`, a brand `verification_state`, a creator `verification_status`.
+- **`updated_at` is deliberately not the clock.** It moves when anybody writes
+  anything — a note, a rate, a cover image — so a collaboration nobody has
+  advanced in a fortnight would read as touched five minutes ago, which is the
+  opposite of what an ageing display is for.
+- **`_state_since` falls back to `updated_at`, and the fallback understates the
+  age.** A row written before the field existed does not know when it last
+  moved; `updated_at` is at or after the real transition, so the age it yields
+  is a lower bound. That is the safe direction — an escalation that fires late
+  is a nuisance, one that fires on a record that is fine teaches everybody to
+  ignore the signal — and it self-corrects the first time the record moves.
+- **The startup migrations are exempt and say so.** `clock-exempt:` marks
+  them: a rename (`vetted` → `verified`) and a derivation
+  (`verification_state` from a boolean) are not transitions, and stamping
+  either would date every historical record to the deploy and make the whole
+  platform read as "waiting since this morning". Exempted **by marker, not by
+  line number** — a test that names a line breaks on the next import.
+
+### What "too long" means, and who says
+
+`SLA_DEFAULT_HOURS` holds the nine targets — creator and brand verification
+48h, campaign review 24h, application response 72h, commercial agreement 72h,
+slot booking 48h, draft review 48h, content submission 72h, payment 7 days.
+
+**They are defaults, not constants.** Every one is an operating decision that
+depends on how many people are working the queue this month, so a target that
+needs a deploy to change is one that never changes — it gets argued about and
+then lived with. `sla_targets()` lays stored overrides from `platform_settings`
+over the table; `GET`/`PUT /admin/settings/sla` is the editor, **admin-only and
+not `CONSOLE_ROLES`**, because somebody whose queue is being measured is the
+wrong person to be able to move the line. Overrides are partial, so adding a
+tenth target ships with a sensible number rather than being silently unset on
+every install that ever saved the form.
+
+- `_SLA_BY_COLLAB_STATE` maps a state to its target. **A state that is nobody's
+  delay is absent**: `slot_booked` waits on a date in the future rather than on
+  a person, and the terminal states are finished. Absent means "no clock",
+  never "zero".
+- **`_ageing_from` takes the instant, not the record**, because the clock does
+  not always start when the state changed. A creator profile has been `pending`
+  since the day they signed up; the wait somebody is answerable for starts at
+  `submitted_for_review_at`. Ageing that queue off the state would report a
+  fortnight of the creator's own half-finished profile as our delay, which is
+  the kind of wrong that makes an operator dismiss the panel.
+  `_creator_review_ageing`, `_brand_review_ageing` and `_campaign_review_ageing`
+  each return `None` for a record that is not waiting on us — a verified
+  creator is in no queue, and drawing a clock on them would invent one.
+- **Four tones, not two** (`SLA_TONES`): calm, due at half the target, overdue,
+  critical at double. "Fine" and "on fire" leaves nothing to say about the
+  record that is *about* to become a problem, which is the only one somebody
+  can still act on.
+
+### Who sees the verdict
+
+The age goes on every record. The *verdict* does not.
+
+- Admin and staff surfaces get the whole block. So does the **brand**, on its
+  own applicant board: where the wait is theirs, the target is a standard they
+  are being held to and being told is the point.
+- The **creator's own row carries the age and no target** (`_serialize_collab_row`
+  passes no SLA). An SLA is the standard this operation holds itself to
+  internally; it is not a promise made to the creator, and publishing "the
+  brand is 4 days over target" would turn one into the other. What to do about
+  it reaches them through the process flow's next action and, when it is theirs
+  to move, through a WhatsApp reminder.
+- `components/AgeBadge.jsx` is the one renderer, and it **draws what the server
+  sent and computes nothing** — a test greps it for date arithmetic. It renders
+  nothing without a block.
+- **The browser holds no second definition of "too long".** The console had one
+  — `isStale`, a flat 48 hours — and against nine real targets it was wrong in
+  both directions: it called a payment overdue on day three of seven and a
+  campaign review fine on day two of one. It is gone, and a test fails any
+  threshold constant that reappears under `components/`.
+- **Sorting is by the fraction of the allowance used**, `hours / sla_hours`, on
+  both the server's overdue list and the queue's age column. A payment eight
+  days into a seven-day target has used 1.14; a campaign review five days into
+  a one-day target has used 5.0, and it is the one to look at first. The first
+  version of the client-side key returned `1e12 + overdue_hours` for overdue
+  rows and a millisecond timestamp for the rest — and a timestamp is ~1.76e12,
+  so every un-overdue row outranked every overdue one. **Caught in a browser,
+  not by a test**, which is why the test now names the arithmetic.
+
+### Chasing, and letting things lapse
+
+`run_lifecycle_chasers()` is one pass on a loop (`LIFECYCLE_INTERVAL_SECONDS`,
+0 disables) and behind `POST /admin/jobs/lifecycle`. Five reminders, each to
+the party who can actually move the thing: book a slot, a shoot tomorrow,
+content due after attending, a draft nobody has reviewed, pitches nobody has
+answered.
+
+- **At most twice, and then never again.** Chasing somebody a third time about
+  the same row is how a WhatsApp channel stops being read, and this operation
+  runs entirely on that channel. A third would be nagging; the escalation is
+  the answer to somebody who has ignored two.
+- **The claim is the write**, exactly like the profile nudge, and it carries
+  the state as a precondition — which is what makes "stops once the state
+  advances" structural rather than remembered. `$lt` would skip a row that has
+  never been reminded, because Mongo's comparison operators skip missing
+  fields; `$not: {$gte: n}` matches it. Same absent-reads-safe trap as
+  everywhere else here.
+- **Escalation follows `execution_owner`** (`_escalate_to_whoever_runs_it`) —
+  the same routing a new application takes, reusing the readers rather than
+  writing a second rule. Weare-run goes to the WeAre team; brand-run goes to
+  the brand manager **and copies admin**, because an overdue record is an
+  operational fact about the platform as well as a job for the brand, and the
+  brand going quiet is exactly the case somebody here needs to know about.
+- Unanswered pitches are **one message per campaign, not per applicant**: five
+  pitches on one brief is one job, and five WhatsApps about it is five reasons
+  to mute us.
+- Jobs credit `_SYSTEM_ACTOR` in the audit log — named rather than blank,
+  because an audit line with no actor reads as a gap rather than as the system
+  acting. Its `_id` is absent, so `actor_id` lands as `None` and nobody can
+  mistake it for a person.
+
+### Late delivery
+
+**The SLA and the grace are two different things with two different
+consequences**, and collapsing them would be unfair to the creator. Passing the
+content target means we chase — somebody is waiting and a nudge is
+proportionate. Passing the target *and* `CONTENT_GRACE_HOURS` on top is what
+writes `content_overdue` on the record, escalates, and counts against on-time
+delivery in `_delivery_history`. A mark on somebody's reliability should not be
+the same event as a reminder.
+
+The flag is set once and never cleared: delivering eventually does not make a
+delivery not have been late, and this is the only signal a brand has about
+whether somebody turns work in.
+
+### Expiry
+
+- **Invitations carry a deadline** (`INVITATION_RESPONSE_DAYS`, 7). Without
+  one, an invitation is a brief the brand can never take off the table, and
+  "invited, not answered" counts people who decided nothing months ago.
+  `_invitation_lapsed` is **read on every serialize, not only swept** — the
+  sweep keeps the database tidy, but the reader is the enforcement, or an
+  Accept button's availability would depend on whether cron ran.
+  `respond_by` is stored so moving the constant later cannot retroactively
+  shorten an offer somebody is already holding, and derived from the send date
+  for rows written before the field.
+  `_refuse_unanswerable_invitation` is **one guard behind both answers**, or an
+  invitation would be declinable a fortnight after it lapsed but not
+  acceptable. The two refusals read differently: "you already answered" and
+  "the offer ran out" are different facts.
+- **`expired` is a fifth terminal state, and it is nobody's decision.** An
+  application on a brief that started and was never actioned is not declined
+  (nobody decided), not withdrawn (the creator did not take it back) and not
+  cancelled (there was nothing to cancel) — and on a creator's history,
+  "declined" and "nobody ever answered" are very different facts about them.
+  The creator is told, and told plainly that it was not about them. Only
+  campaigns that have actually begun; a brief that is merely old is still one
+  somebody might answer tomorrow.
+- **Drafts untouched for `DRAFT_STALE_DAYS` (30) are flagged, never tidied
+  away.** It is the brand's own unpublished work, and a platform that deletes
+  somebody's draft is one they stop trusting with a draft. `_draft_is_stale` is
+  derived rather than stored — a stored flag needs clearing on every edit, and
+  the edit that forgets is the bug.
+
 ## Health, activity and exports
 
 The overview leads with **what is going wrong**, then what the business is
@@ -1918,17 +2093,33 @@ doing, then its own numbers, then the exports. A campaign quietly underfilling
 four days before the shoot generates no notification and sits in no queue — it
 is discovered when the brand rings up, unless something looks for it.
 
-`GET /admin/health` runs seven checks: underfilling campaigns near their day,
+`GET /admin/health` runs nine checks. **The first is the catch-all**: every
+record whose own clock says it is past its target, worst first — see "The
+clock" above. A record can be missing from all eight of the others and still be
+four days over, and "never let an overdue record be invisible" is the promise
+that check keeps. Then: underfilling campaigns near their day,
 accepted creators with no slot, content overdue after attendance, drafts nobody
 has reviewed, payments sitting unpaid, brands waiting on our verification, and
-profiles that stalled. The draft one has the shortest fuse
+profiles that stalled, deliveries past the grace, and drafts nobody has
+touched in a month. The draft one has the shortest fuse
 (`DRAFT_REVIEW_OVERDUE_DAYS`, 2) because it is the only row where the delay is
 *ours*: the creator has done the work and cannot publish until somebody looks.
 Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
 …) because each is a judgement about how much slack the operation has, and they
 travel back in the response so the panel quotes the server's numbers rather than
-a copy that drifts. **Every row carries an `href`** — a count tells you there is
-a problem and then makes you go and find it.
+a copy that drifts. **Every row carries an `href`** — a count tells you there
+is a problem and then makes you go and find it — and the underfilling rows
+carry **the numbers and the ways out**: how many slots short, how many days
+left, and links to invite creators, extend the dates or ask for fewer. Naming a
+problem with nothing to do about it is how a health panel becomes a list people
+scroll past.
+
+The row is a **stretched link, not a wrapping one**, because it now has its own
+actions and an anchor inside an anchor is invalid markup browsers resolve by
+dropping one of them — the same arrangement the campaign card uses. And **a
+check that sorted itself keeps its order**: the panel's default is severity
+then oldest-first, which is right for eight of the nine and actively wrong for
+the overdue list, so that one sets `presorted`.
 
 `GET /admin/intelligence` is four shapes and no more: campaigns posted per week
 by current status, fill-rate trend, repeat versus one-off brands, active versus
@@ -1968,9 +2159,10 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Thirteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+- Fourteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
   `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`, `team`, `deletions`) and four detail routes:
+  `performance`, `health`, `audit`, `team`, `deletions`, `settings`) and four
+  detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under

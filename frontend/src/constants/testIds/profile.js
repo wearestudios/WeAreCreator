@@ -46,6 +46,14 @@ export const ACCOUNT = {
 };
 
 // The admin's erasure queue.
+export const ADMIN_SLA = {
+	page: 'admin-sla-page',
+	row: (key) => `admin-sla-row-${key}`,
+	input: (key) => `admin-sla-input-${key}`,
+	reset: (key) => `admin-sla-reset-${key}`,
+	save: 'admin-sla-save',
+};
+
 export const ADMIN_DELETIONS = {
 	page: 'admin-deletions-page',
 	row: (id) => `admin-deletion-row-${id}`,
