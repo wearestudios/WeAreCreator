@@ -36,15 +36,34 @@ import {
 import { AdvanceDialog, ConfirmDialog } from "@/components/admin/dialogs";
 import { CampaignLink, CreatorLink } from "@/components/admin/links";
 import { PerformancePanel } from "@/components/admin/Performance";
+import DisputePanel from "@/components/DisputePanel";
+import { INVOICE } from "@/constants/testIds";
+import { TEXT } from "./console/tokens";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 // The transitions that need something typed before they can happen. Everything
 // else is a straight advance.
 const NEEDS_INPUT = ["commercial_agreed", "slot_booked", "in_payment"];
 
+// What the brand owes us, in the three words a person would use. The stored
+// values are `pending` / `sent` / `settled`; `void` exists too and is written
+// only by the refund path, so it is readable here and not settable.
+const INVOICE_WORDS = {
+    pending: "Not invoiced",
+    sent: "Issued",
+    settled: "Paid",
+    void: "Written off",
+};
+
+const INVOICE_STATES = [
+    { value: "sent", label: "Mark issued", done: "Invoice issued" },
+    { value: "settled", label: "Mark paid", done: "Invoice settled" },
+    { value: "pending", label: "Withdraw it", done: "Invoice withdrawn" },
+];
+
 export default function CollaborationDetailPage() {
     const { id } = useParams();
-    const { reloadCounts, feePercent } = useAdminConsole();
+    const { reloadCounts, feePercent, allAccess } = useAdminConsole();
 
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
@@ -83,6 +102,17 @@ export default function CollaborationDetailPage() {
             setBusy(null);
         }
     };
+
+    /** Where the invoice has got to. Marking it issued starts the clock the
+     *  health panel and the publish block both read. */
+    const setInvoice = (paymentId, row) =>
+        act(
+            `invoice-${row.value}`,
+            () => api.post(`/admin/payments/${paymentId}/invoice_state`, {
+                state: row.value,
+            }),
+            row.done
+        );
 
     const collab = data?.collaboration;
     const payment = data?.payment;
@@ -200,6 +230,25 @@ export default function CollaborationDetailPage() {
         >
             {data && (
                 <>
+                    {/* **Where the mediation is actually done.** The queue's
+                        job is to get you here; deciding it needs the pitch,
+                        the notes, the delivery and the amount in front of you,
+                        which is exactly what this page has. The panel is the
+                        same one both parties read — what differs is that this
+                        caller is an admin, so the server sends them
+                        `can_resolve_dispute` and neither of the other two. */}
+                    <div className="mb-6">
+                        <DisputePanel
+                            collaborationId={id}
+                            dispute={collab.dispute}
+                            actions={{
+                                can_resolve_dispute:
+                                    allAccess && collab.dispute?.state === "open",
+                            }}
+                            onChanged={load}
+                        />
+                    </div>
+
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <Stat
                             testid={DIDS.stat("quoted")}
@@ -378,8 +427,52 @@ export default function CollaborationDetailPage() {
                                     <Field label="Paid">
                                         {payment.paid_at ? formatDateTime(payment.paid_at) : "—"}
                                     </Field>
-                                    <Field label="Invoice">{payment.invoice_state}</Field>
+                                    <Field label="Invoice">
+                                        <span data-testid={INVOICE.state}>
+                                            {INVOICE_WORDS[payment.invoice_state] ||
+                                                "Not invoiced"}
+                                        </span>
+                                        {/* Derived server-side and never
+                                            recomputed here — the due date
+                                            depends on the terms in force when
+                                            the invoice went out, not on the
+                                            terms today. */}
+                                        {payment.invoice?.overdue && (
+                                            <span
+                                                data-testid={INVOICE.overdue}
+                                                className={`ml-2 rounded bg-destructive/20 px-2 py-0.5 ${TEXT.meta} text-destructive-foreground`}
+                                            >
+                                                {payment.invoice.days_overdue}d overdue
+                                            </span>
+                                        )}
+                                    </Field>
                                 </dl>
+
+                                {/* **Where the money owed to *us* is
+                                    recorded.** The payout row above is what we
+                                    pay the creator; this is what the brand
+                                    pays us, and they are two different debts
+                                    on one collaboration. Marking an invoice
+                                    sent starts the clock the health panel and
+                                    the publish block both read. */}
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    {INVOICE_STATES.map((row) => (
+                                        <Button
+                                            key={row.value}
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={
+                                                busy === `invoice-${row.value}` ||
+                                                payment.invoice_state === row.value
+                                            }
+                                            data-testid={INVOICE.set(row.value)}
+                                            onClick={() => setInvoice(payment.id, row)}
+                                            className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                                        >
+                                            {row.label}
+                                        </Button>
+                                    ))}
+                                </div>
                                 {payment.state !== "paid" && (
                                     <Button
                                         data-testid={DIDS.action("mark-paid")}

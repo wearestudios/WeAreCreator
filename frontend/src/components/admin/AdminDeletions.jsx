@@ -119,7 +119,7 @@ export default function AdminDeletions() {
                             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                                 <span className="text-sm">{row.name || "Unnamed"}</span>
                                 <span className={`${TEXT.meta} text-muted-foreground`}>
-                                    {row.role} · asked <TimeAgo value={row.requested_at} />
+                                    {row.role} · asked <TimeAgo iso={row.requested_at} />
                                 </span>
                             </div>
                             {row.reason && (

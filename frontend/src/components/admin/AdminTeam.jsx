@@ -121,7 +121,7 @@ export default function AdminTeam() {
             mobile: "meta",
             numeric: true,
             value: (r) => r.created_at || "",
-            cell: (r) => <TimeAgo value={r.created_at} />,
+            cell: (r) => <TimeAgo iso={r.created_at} />,
         },
     ];
 

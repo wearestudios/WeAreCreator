@@ -1802,6 +1802,221 @@ queue item.
   might be somebody who cannot read the form, and knowing that is what lets a
   reviewer pick up the phone instead of rejecting again.
 
+## When the two sides disagree
+
+A brand rejecting delivered content, or refusing to pay for it, left the
+creator with nothing: the collaboration hung at `content_submitted` forever,
+the payment sat unmade, and the only recourse was a WhatsApp message to
+whoever answered. `dispute` on the collaboration is the recourse.
+
+- **Raising is for the parties and resolving is for the mediator, and the two
+  are never offered to the same person.** The creator and whoever runs the
+  campaign may raise one (`_disputable_collab_or_404`, `DISPUTABLE_STATES` —
+  `commercial_agreed` onwards, because `applied` is a pitch nobody answered
+  rather than an argument about money). An admin resolves it and cannot raise
+  one: a mediator who opened the case is not a mediator. A brand on a
+  weare-run brief is not the runner and gets a **404**, through
+  `_question_staff_may_see` — the same reader the draft review and the slot
+  handshake use.
+- **`_refuse_if_disputed` is the freeze, and it is on every door that moves a
+  collaboration** — accept, decline, the fee, approve, request changes,
+  accept-partial, advance, revert, submitting content, marking a payment paid,
+  and cancelling. A named list in `test_unhappy_paths.py` holds it, and
+  writing that test found three doors that were open: a creator could swap the
+  link a mediator was looking at, a payment could go out under a freeze, and
+  **a cancellation could end the argument by ending the arrangement** — which
+  is the exact move the freeze exists to stop. `cancelled` is one of the four
+  outcomes a mediator can choose; going through them is the only way to reach
+  it.
+- Notes and ratings are deliberately **not** frozen: the paper trail is what
+  the mediation gets decided on.
+- **`frozen` on the payment is a flag, not a state.** The payment's own states
+  say where it is in the payout process; frozen says nobody may move it, and
+  collapsing the two would mean a released payment forgetting it was ever
+  held.
+- `DISPUTE_RESOLUTIONS` is four, and `cancelled` is deliberately among them —
+  sometimes the honest answer is that the arrangement should not have
+  happened, and forcing a mediator to pick "release" or "refund" records the
+  decision as something it was not. `partial_release` demands an amount; every
+  outcome demands a note, including the obvious ones, because "released" with
+  no reasoning is a decision nobody can defend six months later and the party
+  it went against is the one who will ask.
+- Only the side that raised it may withdraw it. The other side making a
+  dispute go away would mean the freeze protected nobody.
+- Both parties are told at every step (`_tell_both_sides`), routed the way an
+  application is: the creator always, the runner through `execution_owner`.
+- Surfaces: **one `DisputePanel` on all three**, above everything on each —
+  a freeze is the situation rather than a section — on the shared application
+  screen, the creator's own card, and the admin collaboration page where the
+  mediation is actually done. It never asks what role is looking; `actions`
+  carries `can_raise_dispute` / `can_withdraw_dispute` /
+  `can_resolve_dispute`, and a test greps the component for role checks.
+  `DisputeQueue` is the console section, badged `disputes_open` — counted
+  separately from the collaboration states because a frozen row is still
+  sitting at `content_submitted` and would otherwise hide behind a number that
+  says somebody is reviewing content.
+
+### Taking a live post down
+
+`takedown` on the collaboration, `TAKEDOWN_REASONS` and a 48-hour window.
+Content that was factually wrong, off-brand or legally problematic had no path
+at all: the brand messaged whoever they had a number for, and nothing recorded
+what happened next.
+
+- **Only on work that is actually live** (`DELIVERED_COLLAB_STATES`). A draft
+  that needs changing is the review flow, and pointing somebody at the wrong
+  one costs a round trip — so the button is absent rather than present and
+  409ing.
+- **Deliberately not blocked by the dispute freeze.** A post that is legally
+  problematic has to be dealt with whether or not there is an argument about
+  the money; those are different questions.
+- **Both answers are recorded and neither is assumed.** A refusal requires a
+  note and compliance requires nothing: "I took it down" is complete on its
+  own, and "it's staying up" with nothing beside it is an answer nobody can
+  act on. A takedown that silently never happened and one the creator
+  explained they could not do are very different facts, and the second is what
+  stops somebody being marked down unfairly.
+- `overdue` is **derived on serialize, never stored** — the usual rule: a
+  stored flag needs a sweep, and a rule that depends on cron is true on
+  Tuesdays.
+- `TakedownPanel` is the one renderer, on the application screen, the
+  creator's live card **and their past pitches** — delivered work keeps moving
+  down that list, and a takedown lands on a `closed` collaboration as often as
+  a running one.
+
+## Checked once is not checked
+
+A business verified two years ago still read `verified`, because nothing ever
+expired. `VERIFICATION_VALIDITY_DAYS` (365, configurable) is how long a check
+stands for.
+
+- **A record with no `verified_at` never expires.** Every creator and brand
+  verified before the date was recorded would otherwise lapse on the morning
+  this deployed, locking out the whole existing directory to enforce a rule
+  nobody had been told about. They get asked the next time they are verified,
+  which is the first moment there is a date to count from. Same
+  absent-reads-safe rule as `_compensation_type` and `_execution_owner`.
+- **A lapse is not a rejection.** `verified` stays true and the history is
+  intact; what runs out is our confidence that it is still current, and the
+  fix is a confirmation rather than a resubmission. `_revalidate` stamps a
+  fresh `verified_at`, counts the confirmation, and **never writes
+  `verification_status`**.
+- It gates **new work only**: a lapsed brand cannot publish, a lapsed creator
+  cannot apply, and everything already running is untouched. That is a matter
+  of where the check is *not* — `_creator_block` never reaches into
+  `collaborations`, and a test asserts it.
+- **Told before it bites.** `_verification_ageing` carries `days_left`,
+  `expiring_soon` and `lapsed`, and `VerificationExpiry` renders the same
+  prompt on both profiles — on the creator's **dashboard**, not their profile
+  form, because the form is the one screen a verified creator has no reason to
+  open. It renders nothing outside the warning window.
+- A rejected record is not also lapsed: they are refused for being rejected,
+  and stacking a second reason on top tells them to fix the wrong thing.
+
+### Suspension that actually blocks
+
+`suspend_creator` wrote `users.status = "suspended"` and **every gate read
+`creator_profiles`**, so suspension blocked precisely nothing.
+`_creator_block(profile, account)` is the one reader now — suspended, then
+lapsed, then awaiting re-check, each with a code and a sentence — and it stays
+separate from `verification_status`, because rejecting a verified creator to
+remove them would erase the record that they were ever approved.
+
+**Repeated no-shows surface a prompt, never an action.**
+`_suspension_prompts` lists creators at or past `SUSPENSION_PROMPT_NO_SHOWS`
+(3) who are still in good standing, worst first, **with the denominator** —
+three no-shows out of four is a different account from three out of forty, and
+a row that omits the second number asks somebody to decide blind. It renders
+as a band above the admin action queue, links to the page where the decision
+and its required reason are made, and renders nothing when nobody is over the
+line. Suspending automatically on a count would take a decision about
+somebody's livelihood away from the person who can ring them up and ask.
+
+## How long we keep things
+
+`RETENTION_DAYS` is the table, and it is **served rather than only
+documented**: `GET /admin/retention` feeds the console's Retention section and
+`Legal.jsx` quotes the same numbers, so the privacy page and the code cannot
+say different things. Business documents a year after the verification
+decision, drafts ninety days after close, payment records and the audit log
+eight years, **and nothing personal at all after an erasure**.
+
+- `purge_expired_documents` takes the file and **leaves a tombstone** — the
+  row stays with `purged_at` and no name, because a missing row would read as
+  never having held a document at all. Every deletion is audited.
+- **A rejected brand's documents are deliberately left alone.** Whether we may
+  keep them is one of the open legal questions, and deleting on a guess is the
+  one move that cannot be undone if the answer comes back the other way.
+- **Flagged, never invented.** `needs_legal_review` travels with the response
+  and the panel says so on screen; the `NEEDS A LAWYER` block in `Legal.jsx`
+  names the table as the working answer and narrows the open questions to two:
+  how long a *rejected* business's papers may be held, and whether an audit
+  line naming a person is a record we must keep or personal data we must
+  erase. Where those two duties conflict the code keeps the line and erases
+  the name — somebody has to say whether that is right.
+
+## When a brand owes us money
+
+The moment was undefined. `brand_invoice_state` existed with four values and
+nothing ever moved it, so "past due" was not a thing this system could think.
+
+- **`brand_invoice_state` is the stored key** — `pending | sent | settled |
+  void`. Three readers asked for `invoice_state`, which no payment document
+  has ever had, so the export's invoice column and both admin payment payloads
+  were a blank that read as "nobody has invoiced this" for every invoice ever
+  issued. A test greps for the wrong spelling.
+- **Issuing stamps the date it falls due**, from `payment_terms_days()` (14,
+  configurable), and `_invoice_due_at` prefers the stored date — so shortening
+  the terms cannot retroactively make a brand late for an invoice it was told
+  it had a fortnight to settle. `void` is written only by the refund path and
+  is **not settable by hand**: typing it on a live invoice is how a debt
+  disappears with no record of who decided that.
+- `_brand_overdue_invoices` reaches the brand **through the campaign** —
+  there is no `brand_id` on a payment, the same join the erasure code had to
+  learn.
+- **Money owed stops new work, not work under way.** `_verified_brand_or_403`
+  refuses a publish; campaigns already running are untouched, because the
+  creators on them did nothing wrong and punishing them for the brand's
+  accounts payable is the one outcome worse than the debt.
+- **The override is admin-only and reasoned.** An invoice is overdue because a
+  brand is not paying, or because our own accounts sent it to the wrong
+  address — and blocking a good client over the second is worse than the
+  problem the block solves. `BrandInvoices` on the admin brand page shows what
+  is owing, the override with who granted it and why, and the way to put the
+  block back.
+
+### The operating numbers, in one place
+
+Four stored settings with an editor: the nine SLA targets, the verification
+validity, the payment terms and the reschedule limit. Three of them had a
+stored setting, an editor endpoint and **no form anywhere**, which is a number
+that needs a deploy to change with extra steps. `PlatformSettings` is the
+section; `NumberSetting` is one control rather than three near-copies.
+
+**The fixed-height half goes first and the variable-height half last.** The
+targets are one row per target and nothing in the browser knows how many that
+is until they load, so anything below them moves when they arrive — measured
+at 0.19 CLS, and no skeleton height can be right for a list whose length is
+itself a setting. The three single-line rows are a shape the page does know.
+
+### Measured after the bands went in
+
+Same method as everywhere else — API delayed 700ms, CLS read through the
+Performance Observer, at 390 and 1280:
+
+- Creator dashboard **0.0000** at both widths with the revalidation prompt,
+  the dispute panel and the takedown panel on it.
+- Admin disputes, retention and settings **0.0000**. Retention and the SLA
+  targets were 0.043 and 0.19 before their headings were moved out of the
+  loaded branch: a page's own name is not something it has to fetch, and a
+  fixed-height skeleton standing in for a list of unknown length is a shift
+  every time the guess is wrong.
+- The action queue is **0.0069**, from the suspension band arriving above the
+  header. It is fetched inside the queue's own `Promise.all` so it lands in
+  the same commit as the rows — that took it from 0.055 — and the remainder is
+  a band that renders nothing most of the time and therefore cannot reserve
+  height. Reserving one on every load to avoid it would be the worse trade.
+
 ## Being forgotten
 
 `deletion_router` at `/account`, and the admin half at
@@ -2355,10 +2570,10 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Fifteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
-  `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`, `team`, `deletions`, `dormant`, `settings`)
-  and four detail routes:
+- Seventeen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `disputes`, `creators`, `campaigns`,
+  `brands`, `performance`, `health`, `audit`, `team`, `deletions`, `dormant`,
+  `retention`, `settings`) and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under
@@ -2701,7 +2916,14 @@ happens once on the way to a screen, and once on the way to a phone.
   same reason plus a second one — it mutates the Date it is called on, which in
   `ManagerHome`'s loop meant every campaign after the first with an end date
   was measured against midnight rather than now. Both are pinned by tests.
-- `timeAgo` lives in `lib/time.js` and nowhere else. The console keeps its own
+- **`TimeAgo` takes `iso`, not `value`.** Six call sites across four batches
+passed `value`, so every one rendered the component's own em-dash fallback
+where a relative time belonged — which looks exactly like "we have no date for
+this", the one reading that is never true on a row the server just stamped.
+Caught in a browser rather than by a test, which is why a test greps for it
+now.
+
+`timeAgo` lives in `lib/time.js` and nowhere else. The console keeps its own
   `relative` in `admin/console/format.jsx` — "3h ago" where the app says "3h",
   and days for a month rather than weeks after a fortnight — deliberately, and
   with the reason in the file. A dead third copy in `admin/shared.jsx` is what

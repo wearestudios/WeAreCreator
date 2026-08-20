@@ -46,6 +46,8 @@ import DraftReview from "./DraftReview";
 import AgeBadge from "@/components/AgeBadge";
 import Shortfall from "@/components/Shortfall";
 import RateCollaboration from "@/components/RateCollaboration";
+import DisputePanel from "@/components/DisputePanel";
+import TakedownPanel from "@/components/TakedownPanel";
 import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
@@ -262,6 +264,28 @@ export default function ApplicationDetail({
                         with no clock — a finished collaboration, or one waiting
                         on a date rather than on a person. */}
                     <AgeBadge ageing={app.ageing} testid={APPLICATION.ageing} />
+
+                    {/* **Above everything, because a freeze is the situation
+                        rather than a section.** Somebody opening a frozen
+                        collaboration and reading four panels before finding
+                        out why nothing will move is somebody who opens a
+                        support thread. Both panels decide what to offer from
+                        the server's `actions` — the screen never asks what
+                        role is looking, the same rule it holds everywhere
+                        else — and both render nothing when there is neither
+                        anything to say nor anything to offer. */}
+                    <DisputePanel
+                        collaborationId={id}
+                        dispute={app.dispute}
+                        actions={app.actions}
+                        onChanged={load}
+                    />
+                    <TakedownPanel
+                        collaborationId={id}
+                        takedown={app.takedown}
+                        canRequest={Boolean(app.actions?.can_request_takedown)}
+                        onChanged={load}
+                    />
 
                     <Section id="commercial" title="Commercial">
                         <div

@@ -22,6 +22,7 @@ import {
 import BrandAvatar from "@/components/BrandAvatar";
 import AgeBadge from "@/components/AgeBadge";
 import Shortfall from "@/components/Shortfall";
+import TakedownPanel from "@/components/TakedownPanel";
 import { SHORTFALL } from "@/constants/testIds";
 import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
@@ -40,7 +41,7 @@ import {
 // on both sides — and the button is absent rather than present and refused.
 const WITHDRAWABLE = new Set(["applied", "verified"]);
 
-const Row = ({ row, testid, muted, onWithdraw }) => (
+const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
     <li
         data-testid={testid}
         className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
@@ -95,6 +96,17 @@ const Row = ({ row, testid, muted, onWithdraw }) => (
                 payment than expected is the version of this that costs
                 somebody. */}
             <Shortfall shortfall={row.shortfall} testid={SHORTFALL.block(row.id)} />
+            {/* **Here as well as on the live card**, because delivered work
+                keeps moving down this list: a takedown lands on a
+                collaboration that is `closed` as often as one still running,
+                and the card above only shows what is in flight. Renders
+                nothing when there is no request. */}
+            <TakedownPanel
+                collaborationId={row.id}
+                takedown={row.takedown}
+                canRespond={Boolean(row.can_respond_takedown)}
+                onChanged={onRefresh}
+            />
             {onWithdraw && WITHDRAWABLE.has(row.state) && (
                 <button
                     type="button"
@@ -263,6 +275,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                                         row={row}
                                         testid={IDS.row(row.id)}
                                         onWithdraw={setWithdrawing}
+                                        onRefresh={onChanged}
                                     />
                                 ))}
                             </ul>
@@ -279,6 +292,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                                             key={row.id}
                                             row={row}
                                             testid={IDS.declinedRow(row.id)}
+                                            onRefresh={onChanged}
                                             muted
                                         />
                                     ))}

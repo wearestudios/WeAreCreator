@@ -390,7 +390,7 @@ class TestRefund:
     def test_a_settled_brand_invoice_is_flagged_as_money_we_hold(self, admin, collab):
         _, _, pid = self._paid(admin, collab)
         assert admin.post(f"{BASE_URL}/admin/payments/{pid}/invoice_state",
-                          params={"state": "settled"}).status_code == 200
+                          json={"state": "settled"}).status_code == 200
 
         out = admin.post(f"{BASE_URL}/admin/payments/{pid}/refund",
                          json={"reason": "Campaign was never delivered"}).json()

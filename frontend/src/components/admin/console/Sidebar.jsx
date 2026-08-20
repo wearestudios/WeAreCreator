@@ -26,6 +26,8 @@ import {
     Inbox,
     LayoutDashboard,
     MoonStar,
+    Archive,
+    Scale,
     ScrollText,
     Sparkles,
     Stethoscope,
@@ -85,6 +87,17 @@ export const ADMIN_SECTIONS = [
         Icon: Building2,
         badge: "brands_to_verify",
     },
+    // **Its own section rather than a filter on the collaborations list.**
+    // Every open row here is a frozen collaboration and usually a payment not
+    // going out — the one queue where the cost of not looking is measured in
+    // days of somebody's income.
+    {
+        key: "disputes",
+        to: "disputes",
+        label: "Disputes",
+        Icon: Scale,
+        badge: "disputes_open",
+    },
     { key: "creators", to: "creators", label: "Creators", Icon: Users, adminOnly: true },
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", to: "brands", label: "Brands", Icon: Building2 },
@@ -111,12 +124,23 @@ export const ADMIN_SECTIONS = [
     // Re-engagement, which is nobody's queue — it is the work that only gets
     // done if somebody can see who to do it for.
     { key: "dormant", to: "dormant", label: "Gone quiet", Icon: MoonStar },
+    // What we keep and for how long, served rather than only documented so
+    // the privacy page and the code cannot say different things.
+    {
+        key: "retention",
+        to: "retention",
+        label: "Retention",
+        Icon: Archive,
+        adminOnly: true,
+    },
     // **The standard every other section is measured against**, so somebody
-    // whose queue is being measured is not the one who can move the line.
+    // whose queue is being measured is not the one who can move the line —
+    // and, since it grew the payment terms, somebody whose brand owes us
+    // money is not the one who can move that either.
     {
         key: "settings",
         to: "settings",
-        label: "Targets",
+        label: "Settings",
         Icon: Timer,
         adminOnly: true,
     },

@@ -26,7 +26,9 @@ import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
 import AdminTeam from "@/components/admin/AdminTeam";
 import AdminDeletions from "@/components/admin/AdminDeletions";
-import SlaSettings from "@/components/admin/SlaSettings";
+import PlatformSettings from "@/components/admin/PlatformSettings";
+import DisputeQueue from "@/components/admin/DisputeQueue";
+import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
 
 /**
@@ -108,7 +110,13 @@ export const TeamRoute = () => <AdminTeam />;
 
 /** People asking to be forgotten. Admin-only, and irreversible. */
 export const DeletionsRoute = () => <AdminDeletions />;
-export const SettingsRoute = () => <SlaSettings />;
+export const SettingsRoute = () => <PlatformSettings />;
+
+/** Frozen collaborations, worst-waiting first. Scoped like every list. */
+export const DisputesRoute = () => <DisputeQueue />;
+
+/** What we keep and for how long, from the same table the code enforces. */
+export const RetentionRoute = () => <RetentionPanel />;
 export const DormantRoute = () => <AdminDormant />;
 
 /**

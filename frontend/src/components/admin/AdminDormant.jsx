@@ -111,7 +111,7 @@ export default function AdminDormant() {
             width: "w-32",
             hideBelow: true,
             cell: (r) =>
-                r.last_active_at ? <TimeAgo value={r.last_active_at} /> : <span>—</span>,
+                r.last_active_at ? <TimeAgo iso={r.last_active_at} /> : <span>—</span>,
         },
     ];
 

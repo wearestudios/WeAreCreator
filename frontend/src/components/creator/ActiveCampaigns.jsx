@@ -33,6 +33,8 @@ import {
 import ProcessFlow from "@/components/application/ProcessFlow";
 import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
+import DisputePanel from "@/components/DisputePanel";
+import TakedownPanel from "@/components/TakedownPanel";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
@@ -206,6 +208,30 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 the next line all come from the server — in the creator's
                 voice, because the server knows who asked. */}
             <ProcessFlow process={collab.process} className="mt-6" />
+
+            {/* **The creator sees both, and sees them first.** A freeze on
+                their own payment and a request to pull their own post are the
+                two things they would otherwise learn about from a payment that
+                never arrived. Both render nothing when there is neither
+                anything to say nor anything to offer, and what they may do
+                comes off the row rather than being worked out here. */}
+            <div className="mt-5 space-y-3 empty:mt-0">
+                <DisputePanel
+                    collaborationId={collab.id}
+                    dispute={collab.dispute}
+                    actions={{
+                        can_raise_dispute: collab.can_raise_dispute,
+                        can_withdraw_dispute: collab.can_withdraw_dispute,
+                    }}
+                    onChanged={onRefresh}
+                />
+                <TakedownPanel
+                    collaborationId={collab.id}
+                    takedown={collab.takedown}
+                    canRespond={Boolean(collab.can_respond_takedown)}
+                    onChanged={onRefresh}
+                />
+            </div>
 
             {/* The card's own next-action line stays where the server has
                 nothing more specific to say — it knows about slots, venues and

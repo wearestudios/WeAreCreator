@@ -37,6 +37,7 @@ import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import BrandAvatar from "@/components/BrandAvatar";
 import BrandTeamPanel from "@/components/admin/BrandTeamPanel";
 import CancellationHistory from "@/components/admin/CancellationHistory";
+import BrandInvoices from "@/components/admin/BrandInvoices";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -430,6 +431,21 @@ export default function BrandDetailPage() {
                             count={data.cancellations.length}
                         >
                             <CancellationHistory rows={data.cancellations} showCreator />
+                        </Section>
+                    )}
+
+                    {/* Money owed to us, and the one way past the block it
+                        causes. Admin-only: a scoped console can see that a
+                        brand is overdue, and letting somebody unblock the
+                        brand whose campaigns they run is not a control. */}
+                    {allAccess && (
+                        <Section id="invoices" title="What they owe us">
+                            <BrandInvoices
+                                userId={id}
+                                owing={data.invoices}
+                                override={data.invoice_override}
+                                onChanged={load}
+                            />
                         </Section>
                     )}
 

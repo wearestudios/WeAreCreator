@@ -144,19 +144,34 @@ def test_the_admin_queue_still_keys_on_the_same_pair():
 # --- What it blocks, and what it does not -----------------------------------
 
 
-def test_new_applications_are_refused_while_rechecking():
-    source = inspect.getsource(server.apply_to_campaign)
+# The three doors all go through `_creator_block` now, which folds the
+# re-check together with suspension and a lapsed verification. Asserted on the
+# behaviour rather than on the call, so the next thing folded in there does not
+# break these — what matters is that a re-checking creator is refused, not
+# which function says so.
+def _blocked_reason(**profile):
+    return server._creator_block({"verification_status": "verified", **profile}, {})
 
-    assert "_awaiting_recheck(profile)" in source
-    assert "_recheck_message(profile)" in source
+
+def test_new_applications_are_refused_while_rechecking():
+    assert _blocked_reason(pending_review=True)["code"] == "pending_recheck"
+    assert "another look" in _blocked_reason(pending_review=True)["message"]
+    # And the apply route consults it.
+    assert "_creator_block(" in inspect.getsource(server.apply_to_campaign)
+
+
+def test_a_creator_in_good_standing_is_not_blocked():
+    """The other half of the rule, and the one that would break silently: a
+    gate that refuses everybody passes every "is it refused" test."""
+    assert server._creator_block({"verification_status": "verified"}, {}) is None
 
 
 def test_the_button_agrees_with_the_api():
     """`can_apply` is computed server-side so the UI never offers a pitch the
-    API will refuse."""
+    API will refuse — and through the *same reader*, or the two drift."""
     source = inspect.getsource(server.get_campaign)
 
-    assert "_awaiting_recheck(profile)" in source
+    assert "_creator_block(" in source
 
 
 def test_an_invite_to_a_rechecking_creator_is_refused():
@@ -164,7 +179,7 @@ def test_an_invite_to_a_rechecking_creator_is_refused():
     reasoning the unverified check already gives."""
     source = inspect.getsource(server._invite_creators)
 
-    assert "_awaiting_recheck(profile)" in source
+    assert "_creator_block(" in source
 
 
 def test_nothing_touches_existing_collaborations():

@@ -3054,6 +3054,16 @@ NOTIFY_EVENTS = {
     "reminder_applications_waiting": "Creators are waiting to hear from you",
     "content_overdue": "Content is overdue on a campaign",
     "application_expired": "A brief started before your pitch was answered",
+    # When it goes wrong, and when somebody has decided. Both sides get both,
+    # because a mediation where one party hears about a step and the other does
+    # not is one the second party finds out about from an outcome.
+    "dispute_raised": "A collaboration is under dispute",
+    "dispute_resolved": "A dispute has been decided",
+    # Live content that needs to come down, and the answer to it.
+    "takedown_requested": "A post needs taking down",
+    "takedown_actioned": "A takedown was actioned",
+    # The check that has run out, and the confirmation that restarts it.
+    "verification_expiring": "Confirm your details are still current",
 }
 
 
@@ -3510,6 +3520,231 @@ def platform_fee_percent() -> float:
 # the table ships with a sensible number instead of being silently unset on
 # every install that has ever saved this form.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Verification does not last forever
+#
+# A creator verified two years ago has a phone number, an address, a bank
+# account and a following that may all have changed; a brand verified two years
+# ago may not be trading. Nothing expired, so "verified" meant "somebody looked
+# once", and the longer the platform runs the less that sentence is worth.
+#
+# **A lapse is not a rejection and not a suspension.** They were approved, that
+# happened, and the record keeps saying so — what lapses is our confidence that
+# it is still true. So `verification_status` and `verified` are untouched by
+# time, and the expiry is *derived* from `verified_at`: a stored flag would
+# need a sweep to set it, and anything that depends on cron having run is a
+# rule that is true on Tuesdays.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# When a brand owes us money
+#
+# The moment was undefined. `brand_invoice_state` existed with four values and
+# nothing ever moved it past `pending`, so "has this brand paid" was a question
+# answered by looking in a bank statement — and a brand with three unpaid
+# invoices could post a fourth campaign, which is the arrangement that ends
+# with creators unpaid for work somebody else was never billed for.
+#
+# **Overdue is derived, never stored.** It is a fact about a date and the
+# calendar; a stored flag needs a sweep to set it, and a rule that depends on
+# cron having run is a rule that is true on Tuesdays. The same reasoning as
+# `_draft_is_stale` and `_invitation_lapsed`.
+# ---------------------------------------------------------------------------
+
+_PAYMENT_TERMS_SETTINGS_ID = "payment_terms"
+PAYMENT_TERMS_DAYS = 14
+_PAYMENT_TERMS_MIN, _PAYMENT_TERMS_MAX = 0, 180
+
+# `sent` is what the model has always called an issued invoice, and `settled`
+# what it calls a paid one. Kept rather than renamed: every payment written so
+# far carries these words, and a rename to match a newer vocabulary is a
+# migration whose only benefit is the vocabulary.
+INVOICE_ISSUED, INVOICE_PAID = "sent", "settled"
+
+
+async def payment_terms_days() -> int:
+    """How long a brand has to settle. Zero is a real answer — due on issue."""
+    try:
+        doc = await db.platform_settings.find_one({"_id": _PAYMENT_TERMS_SETTINGS_ID})
+        value = int((doc or {}).get("days"))
+    except (TypeError, ValueError):
+        return PAYMENT_TERMS_DAYS
+    except Exception as exc:
+        logger.error("could not read the payment terms: %s", exc)
+        return PAYMENT_TERMS_DAYS
+    return value if _PAYMENT_TERMS_MIN <= value <= _PAYMENT_TERMS_MAX else PAYMENT_TERMS_DAYS
+
+
+def _invoice_due_at(payment: Optional[dict], days: Optional[int] = None):
+    """When an issued invoice was due, or `None` if it was never issued.
+
+    Stored on the row at issue time, and derived from `invoice_sent_at` for
+    rows written before the field — the usual absent-reads-safe rule. Storing
+    it means changing the terms later cannot retroactively make somebody late.
+    """
+    if not payment or payment.get("brand_invoice_state") != INVOICE_ISSUED:
+        return None
+    stored = payment.get("invoice_due_at")
+    if isinstance(stored, datetime):
+        return stored if stored.tzinfo else stored.replace(tzinfo=timezone.utc)
+    issued = payment.get("invoice_sent_at")
+    if isinstance(issued, datetime):
+        issued = issued if issued.tzinfo else issued.replace(tzinfo=timezone.utc)
+        return issued + timedelta(days=days if days is not None else PAYMENT_TERMS_DAYS)
+    return None
+
+
+def _invoice_overdue(payment: Optional[dict], days=None, now=None) -> bool:
+    """Issued, past its date, and not settled."""
+    due = _invoice_due_at(payment, days)
+    return bool(due and due <= (now or datetime.now(timezone.utc)))
+
+
+def _invoice_block(payment: Optional[dict], days=None, now=None) -> Optional[dict]:
+    """The overdue block a screen draws, or `None`."""
+    due = _invoice_due_at(payment, days)
+    if not due:
+        return None
+    now = now or datetime.now(timezone.utc)
+    late = (now - due).days
+    return {
+        "due_at": _iso(due),
+        "overdue": late >= 0,
+        "days_overdue": max(0, late),
+        "amount": payment.get("brand_invoice_amount"),
+    }
+
+
+async def _brand_overdue_invoices(brand_ids: Optional[list] = None) -> dict:
+    """`{brand_id: {count, total, worst_days}}` for brands with money owing.
+
+    Reached through the campaign, because a payment hangs off a collaboration
+    and a collaboration off a campaign — there is no `brand_id` on a payment,
+    the same join the erasure code had to learn.
+    """
+    days = await payment_terms_days()
+    now = datetime.now(timezone.utc)
+    query = {"brand_invoice_state": INVOICE_ISSUED}
+    payments = await db.payments.find(query).to_list(length=5000)
+    payments = [p for p in payments if _invoice_overdue(p, days, now)]
+    if not payments:
+        return {}
+
+    collab_ids = list({p["collaboration_id"] for p in payments})
+    collabs = {
+        c["_id"]: c
+        for c in await db.collaborations.find({"_id": {"$in": collab_ids}}).to_list(
+            length=len(collab_ids)
+        )
+    }
+    campaign_ids = list({c["campaign_id"] for c in collabs.values()})
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+            length=len(campaign_ids) or 1
+        )
+    }
+
+    out: dict = {}
+    for payment in payments:
+        collab = collabs.get(payment["collaboration_id"])
+        campaign = campaigns.get((collab or {}).get("campaign_id"))
+        brand_id = (campaign or {}).get("brand_id")
+        if brand_id is None or (brand_ids is not None and brand_id not in brand_ids):
+            continue
+        block = _invoice_block(payment, days, now) or {}
+        row = out.setdefault(brand_id, {"count": 0, "total": 0.0, "worst_days": 0})
+        row["count"] += 1
+        row["total"] += float(payment.get("brand_invoice_amount") or 0)
+        row["worst_days"] = max(row["worst_days"], int(block.get("days_overdue") or 0))
+    return out
+
+
+_VERIFICATION_SETTINGS_ID = "verification_validity"
+VERIFICATION_VALIDITY_DAYS = 365
+# Told before it happens, because the point is a confirmation rather than an
+# interruption: somebody who finds out on the day they try to apply has been
+# locked out, and somebody told a month early has a job to do.
+VERIFICATION_WARNING_DAYS = 30
+_VERIFICATION_MIN_DAYS, _VERIFICATION_MAX_DAYS = 30, 3650
+
+
+async def verification_validity_days() -> int:
+    """How long a check stands before we ask again.
+
+    Stored rather than constant, for the reason the SLA targets are. Never
+    raises: a settings read that fails falls back to the default rather than
+    taking down every screen that shows a verification.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _VERIFICATION_SETTINGS_ID})
+        value = int((doc or {}).get("days"))
+    except (TypeError, ValueError):
+        return VERIFICATION_VALIDITY_DAYS
+    except Exception as exc:
+        logger.error("could not read the verification validity: %s", exc)
+        return VERIFICATION_VALIDITY_DAYS
+    if _VERIFICATION_MIN_DAYS <= value <= _VERIFICATION_MAX_DAYS:
+        return value
+    return VERIFICATION_VALIDITY_DAYS
+
+
+def _verification_expires_at(record: Optional[dict], days: Optional[int] = None):
+    """When this check stops standing, or `None` for a record with no date.
+
+    **Absent means never expires**, deliberately. Every creator and brand
+    verified before `verified_at` was recorded would otherwise lapse on the
+    morning this deploys — locking out the entire existing directory to enforce
+    a rule nobody had been told about. They get asked the next time they are
+    verified, which is the first moment we have a date to count from.
+    """
+    if not record:
+        return None
+    verified_at = record.get("verified_at")
+    if not isinstance(verified_at, datetime):
+        return None
+    if verified_at.tzinfo is None:
+        verified_at = verified_at.replace(tzinfo=timezone.utc)
+    return verified_at + timedelta(days=days or VERIFICATION_VALIDITY_DAYS)
+
+
+def _verification_lapsed(record: Optional[dict], days=None, now=None) -> bool:
+    """Past its validity, and only for a record that is otherwise in good
+    standing — a rejected creator is refused for being rejected, and stacking a
+    second reason on top would tell them to fix the wrong thing."""
+    if not record:
+        return False
+    status = record.get("verification_status")
+    if status is not None and status != "verified":
+        return False
+    if status is None and not record.get("verified"):
+        return False  # a brand that was never verified
+    expires = _verification_expires_at(record, days)
+    return bool(expires and expires <= (now or datetime.now(timezone.utc)))
+
+
+def _verification_ageing(record: Optional[dict], days=None, now=None) -> Optional[dict]:
+    """What the screens draw: when it runs out, and whether that is soon.
+
+    One block, like `_ageing`, so the creator's own prompt, the admin queue and
+    the health panel cannot come to different conclusions about whose check is
+    about to run out.
+    """
+    expires = _verification_expires_at(record, days)
+    if not expires:
+        return None
+    now = now or datetime.now(timezone.utc)
+    left = (expires - now).days
+    return {
+        "expires_at": _iso(expires),
+        "days_left": left,
+        "lapsed": left <= 0,
+        # The window in which we ask rather than block.
+        "expiring_soon": 0 < left <= VERIFICATION_WARNING_DAYS,
+        "validity_days": days or VERIFICATION_VALIDITY_DAYS,
+    }
+
 
 _SLA_SETTINGS_ID = "sla_targets"
 
@@ -5109,6 +5344,62 @@ def _material_changes(existing: dict, update: dict) -> list:
     return changed
 
 
+# ---------------------------------------------------------------------------
+# May this creator take on new work?
+#
+# Three things can stop them and they were checked in three different places —
+# or, in the case of suspension, **in no place at all**. `suspend_creator` has
+# existed since the console was built: it writes `status: "suspended"` on the
+# account, notifies, audits, and gated nothing. The apply route reads
+# `creator_profiles`; the suspension is on `users`; so a suspended creator
+# could pitch and book exactly as before, and the only thing suspension
+# actually did was send them a message saying it had happened.
+#
+# One reader now, called at both doors — applying and accepting an invitation.
+# Every refusal names which of the three it is, because "you can't apply" with
+# no reason is a support email.
+# ---------------------------------------------------------------------------
+
+
+def _creator_block(profile: Optional[dict], account: Optional[dict]) -> Optional[dict]:
+    """Why this creator may not take on new work, or `None`.
+
+    **The act, never the record.** Work already accepted is untouched by all
+    three — a suspension does not evict somebody from a shoot on Saturday, and
+    a lapsed verification does not cancel a booking. This is checked where new
+    commitments are made and nowhere else, which is the same shape
+    `_awaiting_recheck` has always had.
+    """
+    account = account or {}
+    profile = profile or {}
+
+    if account.get("status") == "suspended":
+        reason = account.get("suspension_reason")
+        return {
+            "code": "suspended",
+            "message": (
+                f"Your account is on hold: {reason}"
+                if reason
+                else "Your account is on hold. Get in touch and we'll go through it."
+            ),
+        }
+
+    if _verification_lapsed(profile):
+        return {
+            "code": "verification_lapsed",
+            "message": (
+                "It's been a while since we checked your profile. Confirm your "
+                "details are still right and we'll put you straight back on the "
+                "directory — nothing you're already booked on is affected."
+            ),
+        }
+
+    if _awaiting_recheck(profile):
+        return {"code": "pending_recheck", "message": _recheck_message(profile)}
+
+    return None
+
+
 def _awaiting_recheck(profile: Optional[dict]) -> bool:
     """Whether this creator is verified but waiting on us to look again.
 
@@ -5957,6 +6248,10 @@ async def get_creator_profile(user: dict = Depends(require_roles("creator"))):
     return {
         **_serialize_creator_profile(doc),
         "profile_completeness": _profile_completeness(doc),
+        # **Told before it happens.** The point is a confirmation rather than
+        # an interruption: somebody who finds out on the day they try to apply
+        # has been locked out, and somebody told a month early has a job to do.
+        "verification": _verification_ageing(doc, await verification_validity_days()),
     }
 
 
@@ -6170,6 +6465,11 @@ def _serialize_collab_row(
         # shortfall is a judgement about, and finding out from a smaller
         # payment than expected is the version of this that costs a creator.
         "shortfall": _delivery_shortfall(campaign, collab),
+        # **The creator sees both, and sees them first.** A freeze on their own
+        # payment and a request to pull their own post are the two things they
+        # would otherwise learn about from a payment that never arrived.
+        "dispute": _serialize_dispute(collab),
+        "takedown": _serialize_takedown(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
         "campaign_id": str(collab["campaign_id"]),
@@ -6197,6 +6497,16 @@ def _serialize_collab_row(
         # `submit_collab_content` will actually accept.
         "can_submit_content": state == "content_submitted"
         or state == ("draft_approved" if _requires_draft_approval(campaign) else "attended"),
+        # **The creator's two answers, decided here and not in the browser.**
+        # Whether they may raise a dispute, take their own back, and answer a
+        # takedown are the same rules the routes enforce; a card that works
+        # them out for itself is a second copy of them, and the copy is what
+        # ends up offering a button the API refuses.
+        "can_raise_dispute": state in DISPUTABLE_STATES and not _dispute_of(collab),
+        "can_withdraw_dispute": (_dispute_of(collab) or {}).get("raised_by_role")
+        == "creator",
+        "can_respond_takedown": (collab.get("takedown") or {}).get("state")
+        == "requested",
         "created_at": _iso(collab.get("created_at")),
     }
 
@@ -6494,6 +6804,13 @@ async def get_creator_dashboard(
         # Whether they have actually asked us to look. Without this the UI
         # can't tell "still building" from "waiting on us".
         "submitted_for_review_at": _iso((profile or {}).get("submitted_for_review_at")),
+        # **Told on the home page, not only in the builder.** The point of a
+        # warning window is that somebody deals with it before it bites, and
+        # the profile form is the screen a verified creator has no reason to
+        # open. `None` on anybody whose check does not expire.
+        "verification": _verification_ageing(
+            profile, await verification_validity_days()
+        ),
         "niches": (profile or {}).get("niches") or [],
         "genres": (profile or {}).get("genres") or [],
         "platforms": (profile or {}).get("platforms") or [],
@@ -6764,6 +7081,13 @@ async def submit_collab_content(
 
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
 
+    # **Frozen means frozen, including for the side that raised it.** A dispute
+    # is usually *about* the content, so letting the creator swap the link
+    # while a mediator is looking at it would change the evidence mid-case —
+    # and would let a resubmission quietly reset a state somebody is arguing
+    # over. The way to submit again is to withdraw the dispute.
+    _refuse_if_disputed(collab)
+
     # Submitting is allowed from `attended`, and re-submitting from
     # `content_submitted` — a creator must be able to fix a wrong link, or
     # respond to a change request, without an admin unpicking the state by hand.
@@ -6959,6 +7283,7 @@ async def creator_book_slot(
 ):
     """Take a place on a slot on one of my collaborations."""
     collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     state = collab.get("state")
     if state == "slot_booked":
         raise HTTPException(status_code=409, detail="You already have a slot booked.")
@@ -7104,6 +7429,7 @@ async def withdraw_application(
     says why.
     """
     collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     state = collab.get("state", "applied")
 
     if state in TERMINAL_COLLAB_STATES:
@@ -7198,6 +7524,7 @@ async def creator_cancel_slot(
     different decision, and stays with the team.
     """
     collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     if collab.get("state") != "slot_booked" or not collab.get("slot_id"):
         raise HTTPException(
             status_code=409,
@@ -7869,6 +8196,52 @@ async def _verified_brand_or_403(user: dict) -> dict:
         )
     if not profile.get("verified", False):
         raise HTTPException(status_code=403, detail=_why_brand_is_blocked(profile))
+    # **Checked once is not checked.** A business verified two years ago may
+    # not be trading, and the record still says "verified" because nothing
+    # expired. A lapse is not a rejection: `verified` stays true and the
+    # verification history is intact — what runs out is our confidence that it
+    # is still current, and the fix is a confirmation rather than a
+    # resubmission.
+    if _verification_lapsed(profile, await verification_validity_days()):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": (
+                    "It's been a while since we checked your business details. "
+                    "Confirm they're still right and you can post again — "
+                    "campaigns already running are not affected."
+                ),
+                "code": "verification_lapsed",
+            },
+        )
+    # **Money owed stops new work, not work under way.** A brand with three
+    # unpaid invoices posting a fourth brief is the arrangement that ends with
+    # creators unpaid for work somebody was never billed for. Campaigns already
+    # running are untouched — the creators on them did nothing wrong, and
+    # punishing them for the brand's accounts payable would be the one outcome
+    # worse than the debt.
+    if not profile.get("invoice_override"):
+        owing = (await _brand_overdue_invoices([profile["user_id"]])).get(
+            profile["user_id"]
+        )
+        if owing:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": (
+                        f"{owing['count']} invoice"
+                        f"{'' if owing['count'] == 1 else 's'} "
+                        f"(₹{owing['total']:,.0f}) "
+                        f"{'is' if owing['count'] == 1 else 'are'} past due. "
+                        "Settle them and you can post again — campaigns already "
+                        "running carry on either way."
+                    ),
+                    "code": "invoice_overdue",
+                    "count": owing["count"],
+                    "total": owing["total"],
+                    "days_overdue": owing["worst_days"],
+                },
+            )
     return profile
 
 
@@ -8162,6 +8535,10 @@ async def _brand_profile_response(profile: dict) -> dict:
     state = _brand_verification_state(profile)
     out["verification"] = {
         "state": state,
+        # When the check runs out, folded into the block the verification
+        # screen already reads rather than added beside it — one place a brand
+        # looks to find out where it stands.
+        **(_verification_ageing(profile, await verification_validity_days()) or {}),
         "missing_fields": missing,
         "documents": documents,
         "document_count": len(documents),
@@ -9233,6 +9610,8 @@ def _serialize_applicant(
         # and the admin's — because "approved" on a row that was two stories
         # short is the same word for two different outcomes.
         "shortfall": _delivery_shortfall(campaign, collab),
+        "dispute": _serialize_dispute(collab),
+        "takedown": _serialize_takedown(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -9527,6 +9906,7 @@ async def brand_accept_applicant(
 ):
     """The brand picks a creator. Records who agreed to what, and when."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
     if collab.get("state") != "verified":
@@ -9602,6 +9982,7 @@ async def brand_decline_applicant(
 ):
     """Say no, out loud. Every applicant gets an answer instead of silence."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
     if collab.get("state") not in ("applied", "verified", "accepted"):
@@ -9658,6 +10039,7 @@ async def brand_approve_content(
     """Sign off the work. This is the step the landing page promises and the
     thing that should release payment."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
@@ -9726,6 +10108,7 @@ async def accept_partial_delivery(
     somebody has to reconstruct from a payment figure a year later.
     """
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
         raise HTTPException(
@@ -9831,6 +10214,7 @@ async def brand_request_changes(
     """Send the work back with a note. The creator can resubmit without an admin
     unpicking the state by hand."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
     if collab.get("state") != "content_submitted":
@@ -11053,6 +11437,7 @@ async def brand_record_agreed_amount(
     is agreed, the creator still has to book.
     """
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
 
@@ -11159,6 +11544,7 @@ async def brand_confirm_slot(
     brand there, and our manager's route is the one that gets used.
     """
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     await _verified_brand_or_403(user)
     return await _answer_slot_request(collab, campaign, user, confirm=True)
 
@@ -11172,6 +11558,7 @@ async def brand_decline_slot(
     """Say it doesn't. The reason goes to the creator — without it they pick
     the same time again."""
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     await _verified_brand_or_403(user)
     return await _answer_slot_request(
         collab, campaign, user, confirm=False, reason=payload.reason
@@ -11191,6 +11578,7 @@ async def brand_check_in_creator(
     check-in; only the door it is reached through differs.
     """
     collab, campaign = await _brand_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
     return await _check_in_collaboration(collab, campaign, user)
@@ -11778,6 +12166,9 @@ def _serialize_admin_creator(profile: dict, user: dict, targets=None) -> dict:
         # — a verified creator is in no queue and drawing a clock on them
         # would invent one.
         "ageing": _creator_review_ageing(profile, targets),
+        # And when the check they already passed runs out. `None` on anybody
+        # verified before we recorded a date — see `_verification_expires_at`.
+        "verification": _verification_ageing(profile),
         "created_at": _iso(profile.get("created_at")),
     }
 
@@ -12212,6 +12603,10 @@ async def get_creator_detail(
             "pending_review_fields": profile.get("pending_review_fields") or [],
             "pending_review_since": _iso(profile.get("pending_review_since")),
             "ageing": _creator_review_ageing(profile, await sla_targets()),
+            # When their check runs out, so the console can see it coming.
+            "verification": _verification_ageing(
+                profile, await verification_validity_days()
+            ),
             # **The whole record, because this is a staff screen.** Every count
             # here came from something that happened — a manager pressing
             # no-show at a venue, a grace period lapsing, a booking moving —
@@ -14048,6 +14443,94 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         }
     )
 
+    # 10. Brands that owe us money. **Named, not counted**: "three overdue
+    #     invoices" is a fact somebody has to go and reconstruct, and a row per
+    #     brand with the amount and the age on it is a phone call.
+    owing = await _brand_overdue_invoices()
+    owing_profiles = {
+        p["user_id"]: p
+        for p in await db.brand_profiles.find(
+            {"user_id": {"$in": list(owing)}}
+        ).to_list(length=len(owing) or 1)
+    }
+    checks.append(
+        {
+            "key": "invoices_overdue",
+            "label": "Brands owing us",
+            "blurb": f"Invoices past their {await payment_terms_days()}-day terms.",
+            "items": [
+                {
+                    "id": str(brand_id),
+                    "label": (owing_profiles.get(brand_id) or {}).get("business_name")
+                    or "A brand",
+                    "detail": (
+                        f"₹{row['total']:,.0f} across {row['count']} "
+                        f"invoice{'' if row['count'] == 1 else 's'} · "
+                        f"{row['worst_days']}d over"
+                    ),
+                    "href": f"/admin/brands/{brand_id}",
+                    # A brand somebody has waved through is not a problem
+                    # anybody has to act on today; it stays on the list because
+                    # the money is still owed, but it does not shout.
+                    "severity": (
+                        "warning"
+                        if (owing_profiles.get(brand_id) or {}).get("invoice_override")
+                        else "critical"
+                    ),
+                    "at": None,
+                    "overridden": bool(
+                        (owing_profiles.get(brand_id) or {}).get("invoice_override")
+                    ),
+                }
+                for brand_id, row in sorted(
+                    owing.items(), key=lambda kv: -kv[1]["worst_days"]
+                )
+            ],
+            "presorted": True,
+        }
+    )
+
+    # 11. Checks about to run out. **Before they bite**, because the point is a
+    #     confirmation rather than an interruption: somebody who finds out on
+    #     the day they try to post has been locked out.
+    validity = await verification_validity_days()
+    expiring = []
+    for collection, name_key, path in (
+        (db.brand_profiles, "business_name", "brands"),
+        (db.creator_profiles, "name", "creators"),
+    ):
+        async for record in collection.find(
+            {"$or": [{"verified": True}, {"verification_status": "verified"}]}
+        ):
+            block = _verification_ageing(record, validity, now)
+            if not block or not (block["lapsed"] or block["expiring_soon"]):
+                continue
+            expiring.append(
+                {
+                    "id": str(record["user_id"]),
+                    "label": record.get(name_key) or "Unnamed",
+                    "detail": (
+                        "lapsed"
+                        if block["lapsed"]
+                        else f"{block['days_left']} days left"
+                    ),
+                    "href": f"/admin/{path}/{record['user_id']}",
+                    "severity": "critical" if block["lapsed"] else "warning",
+                    "at": block["expires_at"],
+                }
+            )
+    checks.append(
+        {
+            "key": "verification_expiring",
+            "label": "Checks running out",
+            "blurb": (
+                f"Verified more than {validity} days ago, or within "
+                f"{VERIFICATION_WARNING_DAYS} days of it."
+            ),
+            "items": expiring,
+        }
+    )
+
     for c in checks:
         # **A check that sorted itself keeps its order.** The default here is
         # severity then oldest-first, which is right for eight of the nine and
@@ -14577,7 +15060,7 @@ async def _export_payments(
             d.get("tds_amount") if d.get("tds_amount") is not None else "",
             d.get("net_paid") if d.get("net_paid") is not None else "",
             d.get("brand_invoice_amount") if d.get("brand_invoice_amount") is not None else "",
-            d.get("invoice_state") or "", d.get("reference") or "",
+            d.get("brand_invoice_state") or "", d.get("reference") or "",
             _iso(d.get("created_at")) or "", _iso(d.get("paid_at")) or "",
             str(d["collaboration_id"]),
         ])
@@ -15394,7 +15877,7 @@ async def get_admin_campaign_detail(
                 "creator_payout": payout,
                 "platform_fee": p.get("platform_fee"),
                 "brand_invoice_amount": p.get("brand_invoice_amount"),
-                "invoice_state": p.get("invoice_state"),
+                "invoice_state": p.get("brand_invoice_state"),
                 "reference": p.get("reference"),
                 "paid_at": _iso(p.get("paid_at")),
                 "created_at": _iso(p.get("created_at")),
@@ -16217,13 +16700,25 @@ async def _invite_creators(
                 "reason": "This creator isn't verified yet, so they can't apply.",
             }
             continue
-        if _awaiting_recheck(profile):
-            # Same reasoning: they are verified but cannot pitch until we have
-            # looked at what they changed, so the invite would go nowhere.
+        # Suspended, lapsed, or being re-checked — all three mean the same
+        # thing here: they could not accept, so the invitation goes nowhere.
+        # The brand is told which, because "can't apply" with no reason reads
+        # as a platform fault.
+        blocked = _creator_block(profile, account)
+        if blocked:
             results[raw] = {
                 "status": "failed",
                 "name": name,
-                "reason": "This creator is being re-checked, so they can't apply just now.",
+                "reason": {
+                    "suspended": "This creator's account is on hold.",
+                    "verification_lapsed": (
+                        "This creator's check has lapsed — we've asked them to "
+                        "confirm their details."
+                    ),
+                }.get(
+                    blocked["code"],
+                    "This creator is being re-checked, so they can't apply just now.",
+                ),
             }
             continue
 
@@ -16743,12 +17238,28 @@ async def get_admin_brand_detail(
         "brand": {
             **_admin_brand_fields(profile, account),
             "ageing": _brand_review_ageing(profile, await sla_targets()),
+            "verification": _verification_ageing(
+                profile, await verification_validity_days()
+            ),
             # The one login this brand has, and the person it belongs to.
             "manager_name": account.get("manager_name") or account.get("name"),
             "manager_designation": profile.get("contact_person_designation"),
             "manager_phone": account.get("phone"),
             "manager_email": profile.get("contact_email") or account.get("email"),
             "manager_role": account.get("role"),
+        },
+        # **What this brand owes us, on the page where the decision is made.**
+        # The health panel says who is overdue across the platform; this says
+        # it about the brand somebody has open, beside the override that is
+        # the only way past the publish block — and the override's reason and
+        # who granted it, because an override nobody can revisit is one that
+        # quietly becomes permanent.
+        "invoices": (await _brand_overdue_invoices([oid])).get(oid),
+        "invoice_override": {
+            "active": bool(profile.get("invoice_override")),
+            "reason": profile.get("invoice_override_reason"),
+            "at": _iso(profile.get("invoice_override_at")),
+            "by_name": profile.get("invoice_override_by_name"),
         },
         "documents": documents,
         "campaigns": campaign_rows,
@@ -17038,6 +17549,8 @@ def _serialize_admin_collab(
         # and the admin's — because "approved" on a row that was two stories
         # short is the same word for two different outcomes.
         "shortfall": _delivery_shortfall(campaign, collab),
+        "dispute": _serialize_dispute(collab),
+        "takedown": _serialize_takedown(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -17250,7 +17763,8 @@ async def get_admin_collaboration_detail(
             "creator_payout": payment.get("creator_payout"),
             "platform_fee": payment.get("platform_fee"),
             "brand_invoice_amount": payment.get("brand_invoice_amount"),
-            "invoice_state": payment.get("invoice_state"),
+            "invoice_state": payment.get("brand_invoice_state"),
+            "invoice": _invoice_block(payment, await payment_terms_days()),
             "reference": payment.get("reference"),
             "paid_at": _iso(payment.get("paid_at")),
             "created_at": _iso(payment.get("created_at")),
@@ -17296,6 +17810,7 @@ async def advance_collaboration(
     # is on the list this row was clicked from. Resolving the id inline is how
     # an action becomes the way around a filter every list already honours.
     collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     oid = collab["_id"]
 
     current = collab.get("state", "applied")
@@ -17514,6 +18029,7 @@ async def revert_collaboration(
     # is on the list this row was clicked from. Resolving the id inline is how
     # an action becomes the way around a filter every list already honours.
     collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     oid = collab["_id"]
 
     current = collab.get("state", "applied")
@@ -17638,6 +18154,7 @@ async def decline_applicant(
     # is on the list this row was clicked from. Resolving the id inline is how
     # an action becomes the way around a filter every list already honours.
     collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     oid = collab["_id"]
 
     current = collab.get("state", "applied")
@@ -17820,6 +18337,13 @@ async def cancel_collaboration(
     # an action becomes the way around a filter every list already honours.
     collab = await _collab_or_404(collab_id, user)
     oid = collab["_id"]
+
+    # **Especially this one.** Cancelling out from under the person who raised
+    # a dispute is the exact move the freeze exists to stop: it ends the
+    # argument by ending the arrangement, before anybody neutral has decided
+    # anything. `cancelled` is one of the four outcomes a mediator can choose,
+    # and going through them is the only way to reach it from here.
+    _refuse_if_disputed(collab)
 
     current = collab.get("state", "applied")
     if current in TERMINAL_COLLAB_STATES:
@@ -18068,6 +18592,13 @@ async def mark_payment_paid(
         raise HTTPException(
             status_code=409, detail="This payment belongs to a cancelled collaboration."
         )
+    # **The freeze reaches the money, which is the point of it.** `frozen` on
+    # the payment is what a dispute sets, and the collaboration behind it is
+    # what says why — read it rather than the flag so the refusal carries the
+    # same sentence every other frozen door does.
+    _refuse_if_disputed(
+        await db.collaborations.find_one({"_id": existing["collaboration_id"]})
+    )
 
     now = datetime.now(timezone.utc)
     payment = await db.payments.find_one_and_update(
@@ -18264,24 +18795,142 @@ async def refund_payment(
     }
 
 
+class InvoiceStatePayload(BaseModel):
+    """Where this invoice has got to.
+
+    **A body rather than a bare query parameter**, which is what this was: a
+    scalar annotation on a POST is a query param to FastAPI, so the obvious
+    call — posting `{"state": "sent"}` — sent the value somewhere the route
+    never looked and answered 422. `void` is deliberately not offered here;
+    it is written by the refund path, where it means "nothing is owed on a
+    collaboration we cancelled", and typing it by hand on a live invoice is
+    how a debt disappears with no record of who decided that.
+    """
+
+    state: Literal["pending", "sent", "settled"]
+
+
 @admin_router.post("/payments/{payment_id}/invoice_state")
 async def set_brand_invoice_state(
     payment_id: str,
-    state: Literal["pending", "sent", "settled"],
+    payload: InvoiceStatePayload,
     user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
-    """Track what the brand owes us, separately from what we owe the creator."""
+    """Track what the brand owes us, separately from what we owe the creator.
+
+    Issuing stamps the date it went out **and the date it falls due**, so
+    changing the terms later cannot retroactively make somebody late. Settling
+    clears both — an invoice that is paid has no due date to be past.
+    """
+    state = payload.state
     pid = (await _console_payment_or_404(payment_id, user))["_id"]
     now = datetime.now(timezone.utc)
+    update = {"brand_invoice_state": state, "updated_at": now}
+    unset = {}
+    if state == INVOICE_ISSUED:
+        update["invoice_sent_at"] = now
+        update["invoice_due_at"] = now + timedelta(days=await payment_terms_days())
+    elif state == INVOICE_PAID:
+        update["invoice_settled_at"] = now
+    else:
+        # Back to pending: the invoice was withdrawn, so the clock it started
+        # goes with it rather than sitting on a row nobody owes anything on.
+        unset = {"invoice_due_at": "", "invoice_sent_at": ""}
+
     payment = await db.payments.find_one_and_update(
         {"_id": pid},
-        {"$set": {"brand_invoice_state": state, "updated_at": now}},
+        {"$set": update, **({"$unset": unset} if unset else {})},
         return_document=True,
     )
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
-    await audit(user, "payment.invoice_state", "payment", pid, after={"brand_invoice_state": state})
-    return {"id": payment_id, "brand_invoice_state": state}
+    await audit(
+        user,
+        "payment.invoice_state",
+        "payment",
+        pid,
+        after={"brand_invoice_state": state, "due_at": _iso(payment.get("invoice_due_at"))},
+    )
+    return {
+        "id": payment_id,
+        "brand_invoice_state": state,
+        "invoice": _invoice_block(payment, await payment_terms_days()),
+    }
+
+
+class PaymentTermsPayload(BaseModel):
+    days: int = Field(ge=_PAYMENT_TERMS_MIN, le=_PAYMENT_TERMS_MAX)
+
+
+@admin_router.get("/settings/payment-terms")
+async def get_payment_terms(user: dict = Depends(require_roles("admin"))):
+    return {"days": await payment_terms_days(), "default": PAYMENT_TERMS_DAYS,
+            "min": _PAYMENT_TERMS_MIN, "max": _PAYMENT_TERMS_MAX}
+
+
+@admin_router.put("/settings/payment-terms")
+async def put_payment_terms(
+    payload: PaymentTermsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Only new invoices.** Every issued one carries the date it was already
+    given, so shortening the terms cannot make a brand late this afternoon for
+    an invoice it was told it had a fortnight to settle."""
+    before = await payment_terms_days()
+    await db.platform_settings.update_one(
+        {"_id": _PAYMENT_TERMS_SETTINGS_ID},
+        {"$set": {"days": int(payload.days), "updated_at": datetime.now(timezone.utc),
+                  "updated_by": ObjectId(user["_id"]), "updated_by_name": user.get("name")}},
+        upsert=True,
+    )
+    await audit(user, "settings.payment_terms", "settings", _PAYMENT_TERMS_SETTINGS_ID,
+                before={"days": before}, after={"days": int(payload.days)})
+    return await get_payment_terms(user)
+
+
+class InvoiceOverridePayload(BaseModel):
+    """Why this brand may post while it owes us money."""
+
+    reason: str = Field(min_length=1, max_length=500)
+    active: bool = True
+
+
+@admin_router.post("/brands/{user_id}/invoice-override")
+async def set_invoice_override(
+    user_id: str,
+    payload: InvoiceOverridePayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Let a brand keep posting despite an overdue invoice.
+
+    **The escape hatch, and it is admin-only and reasoned.** An invoice can be
+    overdue because a brand is not paying or because our own accounts sent it
+    to the wrong address, and blocking a good client over the second is worse
+    than the problem the block exists to solve. The reason is required, because
+    an override with no reason is one nobody can revisit.
+    """
+    oid = await _console_brand_or_404(user_id, user)
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {"$set": {
+            "invoice_override": bool(payload.active),
+            "invoice_override_reason": payload.reason.strip() if payload.active else None,
+            "invoice_override_at": now if payload.active else None,
+            "invoice_override_by_name": user.get("name") if payload.active else None,
+            "updated_at": now,
+        }},
+    )
+    await audit(
+        user,
+        "brand.invoice_override",
+        "brand",
+        oid,
+        after={"invoice_override": bool(payload.active)},
+        note=payload.reason.strip()[:500],
+        brand_id=oid,
+    )
+    return {"user_id": user_id, "invoice_override": bool(payload.active)}
 
 
 class SlaTargetsPayload(BaseModel):
@@ -18374,6 +19023,195 @@ class RescheduleLimitPayload(BaseModel):
     zero rather than one."""
 
     limit: int = Field(ge=0, le=RESCHEDULE_LIMIT_MAX)
+
+
+# How many no-shows before somebody at WeAre is asked to look at an account.
+#
+# **A prompt, never an action.** A creator who missed three shoots might be a
+# bad actor or might have been in hospital, and a platform that suspends people
+# on a counter will suspend the wrong one eventually — and the person it wrongs
+# has no way to argue with a threshold. The queue asks a human; the human
+# decides.
+SUSPENSION_PROMPT_NO_SHOWS = 3
+
+
+async def _suspension_prompts(limit: int = 50) -> list:
+    """Accounts a person should look at, worst first.
+
+    Only creators still in good standing: somebody already suspended is not a
+    decision waiting on anybody, and leaving them on the list is how a queue
+    becomes something people scroll past.
+    """
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"no_show_reported": True}},
+            {"$group": {"_id": "$creator_id", "no_shows": {"$sum": 1},
+                        "last_at": {"$max": "$no_show_reported_at"}}},
+            {"$match": {"no_shows": {"$gte": SUSPENSION_PROMPT_NO_SHOWS}}},
+            {"$sort": {"no_shows": -1}},
+            {"$limit": limit},
+        ]
+    ).to_list(length=limit)
+    if not rows:
+        return []
+
+    ids = [r["_id"] for r in rows]
+    accounts = {
+        a["_id"]: a
+        for a in await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids))
+    }
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find({"user_id": {"$in": ids}}).to_list(
+            length=len(ids)
+        )
+    }
+    reliability = await _reliability_for(ids)
+
+    out = []
+    for row in rows:
+        account = accounts.get(row["_id"]) or {}
+        if account.get("status") == "suspended":
+            continue
+        profile = profiles.get(row["_id"]) or {}
+        stats = reliability.get(row["_id"]) or {}
+        out.append(
+            {
+                "user_id": str(row["_id"]),
+                "name": profile.get("name") or account.get("name") or "Unnamed",
+                "reference": _reference_of(profile),
+                "no_shows": int(row["no_shows"]),
+                # The denominator, because three no-shows out of four is a
+                # different account from three out of forty and a queue row
+                # that omits it is asking somebody to decide blind.
+                "completed": stats.get("completed"),
+                "on_time_rate": stats.get("on_time_rate"),
+                "last_no_show_at": _iso(row.get("last_at")),
+                "href": f"/admin/creators/{row['_id']}",
+            }
+        )
+    return out
+
+
+async def _revalidate(record_query: dict, collection, *, user: dict, kind: str) -> dict:
+    """Stamp a fresh `verified_at` because somebody confirmed their details.
+
+    **A confirmation, not a re-review.** The check that was done still stands —
+    what had run out was its age — so this restarts the clock rather than
+    putting anybody back in a queue. Submitting *changed* details is the other
+    path and already exists: a material profile edit sets `pending_review`, and
+    a brand fixing its documents resubmits for verification.
+
+    Audited, because "who said this was still true, and when" is exactly the
+    question asked of a check that turns out to be wrong.
+    """
+    now = datetime.now(timezone.utc)
+    updated = await collection.find_one_and_update(
+        record_query,
+        {"$set": {"verified_at": now, "revalidated_at": now,
+                  "revalidated_by": ObjectId(user["_id"]) if user.get("_id") else None},
+         "$inc": {"revalidation_count": 1}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Nothing to confirm here.")
+    await audit(
+        user,
+        f"{kind}.revalidate",
+        kind,
+        updated.get("user_id") or updated["_id"],
+        after={"verified_at": _iso(now)},
+        note="Confirmed their details are still current.",
+    )
+    return {
+        "ok": True,
+        **(_verification_ageing(updated, await verification_validity_days()) or {}),
+    }
+
+
+@creator_router.post("/verification/confirm")
+async def creator_confirm_verification(user: dict = Depends(require_roles("creator"))):
+    """"Yes, this is all still right."
+
+    Open whether or not the check has actually lapsed — somebody told a month
+    early should be able to deal with it then rather than being made to come
+    back on the day it stops working.
+    """
+    return await _revalidate(
+        {"user_id": ObjectId(user["_id"]), "verification_status": "verified"},
+        db.creator_profiles,
+        user=user,
+        kind="creator",
+    )
+
+
+@brand_router.post("/verification/confirm")
+async def brand_confirm_verification(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """The brand's half of the same thing."""
+    return await _revalidate(
+        {"user_id": _brand_scope(user), "verified": True},
+        db.brand_profiles,
+        user=user,
+        kind="brand",
+    )
+
+
+@admin_router.get("/suspension-prompts")
+async def admin_suspension_prompts(user: dict = Depends(require_roles("admin"))):
+    """Accounts with enough no-shows to be worth a person's attention.
+
+    **Admin-only, like the creator queues it sits beside**: suspending somebody
+    is a decision about a creator who works across every brand, not about the
+    campaigns one team happens to run.
+    """
+    return {
+        "threshold": SUSPENSION_PROMPT_NO_SHOWS,
+        "prompts": await _suspension_prompts(),
+    }
+
+
+class VerificationValidityPayload(BaseModel):
+    days: int = Field(ge=_VERIFICATION_MIN_DAYS, le=_VERIFICATION_MAX_DAYS)
+
+
+@admin_router.get("/settings/verification-validity")
+async def get_verification_validity(user: dict = Depends(require_roles("admin"))):
+    return {
+        "days": await verification_validity_days(),
+        "default": VERIFICATION_VALIDITY_DAYS,
+        "warning_days": VERIFICATION_WARNING_DAYS,
+        "min": _VERIFICATION_MIN_DAYS,
+        "max": _VERIFICATION_MAX_DAYS,
+    }
+
+
+@admin_router.put("/settings/verification-validity")
+async def put_verification_validity(
+    payload: VerificationValidityPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    before = await verification_validity_days()
+    await db.platform_settings.update_one(
+        {"_id": _VERIFICATION_SETTINGS_ID},
+        {
+            "$set": {
+                "days": int(payload.days),
+                "updated_at": datetime.now(timezone.utc),
+                "updated_by": ObjectId(user["_id"]),
+                "updated_by_name": user.get("name"),
+            }
+        },
+        upsert=True,
+    )
+    await audit(
+        user,
+        "settings.verification_validity",
+        "settings",
+        _VERIFICATION_SETTINGS_ID,
+        before={"days": before},
+        after={"days": int(payload.days)},
+    )
+    return await get_verification_validity(user)
 
 
 @admin_router.get("/settings/reschedule-limit")
@@ -18879,6 +19717,14 @@ async def admin_dashboard(
             collab_by_state.get(s, 0) for s in ADMIN_ACTION_STATES
         ),
         "payouts_to_record": payouts_pending_count,
+        # **Counted separately from the states.** A dispute is not a
+        # collaboration state — it rides on top of one, so a frozen row is
+        # still sitting at `content_submitted` and would otherwise be invisible
+        # here behind a number that says somebody is reviewing content. It is
+        # the one badge in this console where the count is money not moving.
+        "disputes_open": await db.collaborations.count_documents(
+            {"dispute.state": "open", **collab_scope}
+        ),
     }
 
     # --- the per-campaign summary -----------------------------------------
@@ -19247,6 +20093,163 @@ class DeletionDecisionPayload(BaseModel):
 # proof of what it paid for and our own accounting record — and loses every
 # field that says who it was. `_reference_of` already gives every record a name
 # that is not a person's, which is what makes this possible at all.
+# ---------------------------------------------------------------------------
+# How long we keep things
+#
+# Erasure existed and retention did not, which is a strange pair to have: the
+# product could delete everything about somebody on request, and otherwise kept
+# all of it forever. A verification document with a director's home address on
+# it sat in `PRIVATE_UPLOAD_DIR` indefinitely because nothing ever said when it
+# stopped being needed.
+#
+# **What is a product decision and what is a legal one are different, and this
+# file only makes the first kind.** How long a document is *useful* to us is
+# ours to say; how long we are *permitted* or *required* to hold one is not,
+# and the block below says so rather than inventing a number that reads like
+# advice.
+#
+# ---------------------------------------------------------------------------
+# NEEDS A LAWYER — none of these are product decisions and none are settled
+# here. The numbers in `RETENTION_DAYS` are working defaults chosen to be
+# short rather than to be right, and every one of them should be confirmed or
+# replaced before this is relied on:
+#
+#   * DPDP Act 2023 §8(7) requires erasure once the purpose is served and
+#     retention is no longer required by law. Which of these purposes is
+#     "served" at which moment is a judgement, not a constant.
+#   * Income-tax record-keeping (§44AA/Rule 6F) and the GST rules both impose
+#     minimum retention on books of account. A payment record carrying a PAN
+#     may be one; if it is, purging it on request would be unlawful and the
+#     current tombstone approach is right for the wrong reason.
+#   * TDS records and Form 26Q filings have their own retention, which may be
+#     longer than anything here.
+#   * Verification documents after a *rejection*: we hold a business's papers
+#     for a business we declined. There is a defensible argument for keeping
+#     them (a rejected brand that reapplies) and one for deleting them at once
+#     (we have no relationship). Somebody has to pick.
+#   * Whether an audit line naming a person is itself personal data that must
+#     be erased, or a record of processing that must be kept, is the question
+#     this whole design turns on.
+#   * Content licensing: how long a brand may keep using a post after the
+#     collaboration ends is a contract term, and nothing here expresses one.
+# ---------------------------------------------------------------------------
+
+RETENTION_DAYS = {
+    # The scan of a GST certificate, once the decision is made and the brand is
+    # verified. It proved the business exists; it does not need to keep proving
+    # it, and the decision itself is in the audit log.
+    "brand_documents_after_decision": 365,
+    # An unpublished draft after the collaboration closes. It is the creator's
+    # own work and the campaign is over.
+    "drafts_after_close": 90,
+    # A creator's profile photo and address after erasure — zero, because that
+    # is what erasure means. Named here so the table is the whole answer rather
+    # than most of it.
+    "personal_data_after_erasure": 0,
+    # Payment records, which carry amounts and references and, until erasure, a
+    # payout snapshot. **Retained** rather than purged: see the block above.
+    "payment_records": 8 * 365,
+    # Audit lines. The longest, deliberately: they are the record of who did
+    # what, and a log with a shorter life than the thing it describes cannot
+    # answer questions about it.
+    "audit_records": 8 * 365,
+}
+
+# What erasure removes immediately regardless of any of the above, because it
+# is personal data with no accounting purpose whatsoever.
+RETENTION_PURGED_ON_ERASURE = (
+    "name", "phone", "email", "full_address", "location_lat", "location_lng",
+    "profile_image_url", "payout details", "PAN", "Instagram token",
+)
+
+# What survives an erasure, without the person in it.
+RETENTION_KEPT_ANONYMISED = (
+    "collaboration records and their states",
+    "amounts agreed and paid",
+    "audit lines, with the actor id kept and the name gone",
+    "campaign and performance figures",
+)
+
+
+async def purge_expired_documents(limit: int = 500) -> dict:
+    """Delete verification documents we no longer need.
+
+    **Only for brands that were verified**, and only after the window above.
+    A rejected brand's papers are deliberately left alone: whether we may keep
+    them is one of the questions in the block above, and deleting them on a
+    guess is the one move that cannot be undone if the answer comes back the
+    other way.
+
+    Idempotent and safe to run by hand. Every deletion is audited, because a
+    document vanishing is exactly the kind of thing somebody later asks about.
+    """
+    cutoff = _days_ago(RETENTION_DAYS["brand_documents_after_decision"])
+    verified = await db.brand_profiles.distinct(
+        "user_id", {"verified": True, "verified_at": {"$lte": cutoff}}
+    )
+    if not verified:
+        return {"considered": 0, "purged": 0}
+
+    rows = await db.brand_documents.find(
+        {"brand_id": {"$in": verified}, "purged_at": {"$exists": False}}
+    ).to_list(length=limit)
+
+    purged = 0
+    for row in rows:
+        # The file goes; the row stays as a tombstone, so "we held a GST
+        # certificate and deleted it in March" is still answerable. A missing
+        # row would read as never having had one.
+        if _remove_private_upload(row.get("stored_name")):
+            purged += 1
+        await db.brand_documents.update_one(
+            {"_id": row["_id"]},
+            {"$set": {"purged_at": datetime.now(timezone.utc)},
+             "$unset": {"stored_name": "", "original_name": ""}},
+        )
+        await audit(
+            _SYSTEM_ACTOR,
+            "brand_document.purge",
+            "brand_document",
+            row["_id"],
+            after={"purged": True},
+            note=(
+                "Retention: "
+                f"{RETENTION_DAYS['brand_documents_after_decision']} days after "
+                "verification."
+            ),
+            brand_id=row.get("brand_id"),
+        )
+    if purged:
+        logger.info("retention: purged %d verification document(s)", purged)
+    return {"considered": len(rows), "purged": purged}
+
+
+@admin_router.get("/retention")
+async def admin_retention(user: dict = Depends(require_roles("admin"))):
+    """What the policy is, in one place a person can read.
+
+    Served rather than only documented, because the privacy page and the code
+    have to agree and the only way to be sure of that is for one to come from
+    the other.
+    """
+    return {
+        "periods": RETENTION_DAYS,
+        "purged_on_erasure": list(RETENTION_PURGED_ON_ERASURE),
+        "kept_anonymised": list(RETENTION_KEPT_ANONYMISED),
+        # Said out loud on the screen, not just in a comment: an operator
+        # reading this needs to know which half is settled.
+        "needs_legal_review": True,
+    }
+
+
+@admin_router.post("/jobs/retention")
+async def run_retention_job(user: dict = Depends(require_roles("admin"))):
+    """Run the purge now. Audited like every other job that reaches real data."""
+    report = await purge_expired_documents()
+    await audit(user, "job.retention", "job", "retention", after=report)
+    return report
+
+
 _ERASE_CREATOR_PROFILE = (
     "name", "email", "phone", "whatsapp", "instagram_handle",
     "instagram_profile_url", "youtube_url", "facebook_url", "about",
@@ -21943,6 +22946,7 @@ async def manager_confirm_slot(
 ):
     """Confirm a creator's slot, as the assigned WeAre manager."""
     collab, campaign = await _managed_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     return await _answer_slot_request(collab, campaign, user, confirm=True)
 
 
@@ -21954,6 +22958,7 @@ async def manager_decline_slot(
 ):
     """Turn a slot down, with the reason the creator needs to pick another."""
     collab, campaign = await _managed_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     return await _answer_slot_request(
         collab, campaign, user, confirm=False, reason=payload.reason
     )
@@ -21966,6 +22971,7 @@ async def check_in_creator(
 ):
     """Mark a creator as turned up, as the assigned WeAre manager."""
     collab, campaign = await _managed_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     return await _check_in_collaboration(collab, campaign, user)
 
 
@@ -22001,6 +23007,7 @@ async def mark_no_show(
     creator_no_show suppresses the settlement flag).
     """
     collab, campaign = await _managed_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     current = collab.get("state")
     if current in TERMINAL_COLLAB_STATES:
         raise HTTPException(
@@ -22078,6 +23085,7 @@ async def reschedule_creator(
     slot would free the creator's original place and leave them with neither.
     """
     collab, campaign = await _managed_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     if collab.get("state") != "slot_booked":
         raise HTTPException(
             status_code=409,
@@ -22782,8 +23790,12 @@ async def get_campaign(
             payload["apply_blocked_reason"] = (
                 "Your profile wasn't approved. Update it and we'll take another look."
             )
-        elif _awaiting_recheck(profile):
-            payload["apply_blocked_reason"] = _recheck_message(profile)
+        elif _creator_block(profile, await db.users.find_one({"_id": ObjectId(user["_id"])})):
+            # The same reader the apply route uses, so the button and the API
+            # cannot disagree about whether somebody may pitch.
+            payload["apply_blocked_reason"] = _creator_block(
+                profile, await db.users.find_one({"_id": ObjectId(user["_id"])})
+            )["message"]
         elif filled >= needed:
             payload["apply_blocked_reason"] = (
                 "This campaign has all the creators it needs."
@@ -22881,11 +23893,13 @@ async def apply_to_campaign(
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
     if (profile or {}).get("verification_status") != "verified":
         raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
-    # Verified, but they have changed something we verified. New pitches wait;
-    # anything already accepted is untouched, because this gate is only on the
-    # act of applying.
-    if _awaiting_recheck(profile):
-        raise HTTPException(status_code=403, detail=_recheck_message(profile))
+    # Suspended, lapsed, or waiting on a re-check. **One reader, and it covers
+    # the hole suspension had**: the block was written on the account and every
+    # gate read the profile, so a suspended creator could pitch exactly as
+    # before. All three refuse the *act*; work already accepted is untouched.
+    block = _creator_block(profile, await db.users.find_one({"_id": creator_oid}))
+    if block:
+        raise HTTPException(status_code=403, detail=block)
 
     # Don't take a pitch for a slot that's already gone.
     needed = int(campaign.get("creators_needed") or 1)
@@ -23531,6 +24545,726 @@ async def add_collaboration_note(
 # applying. It feeds the reliability view and the suggestion ranking, and goes
 # on no profile and into no brand-facing payload.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# When it goes wrong
+#
+# A brand rejecting delivered content or refusing to pay left the creator with
+# nowhere to go. The collaboration sat at `content_submitted` forever: the
+# creator could not force approval, the brand had no reason to act, and the
+# money — already owed — was neither released nor refunded. The only recourse
+# was a WhatsApp message to whoever answered, and the outcome depended on who
+# that was.
+#
+# **A dispute freezes the record and moves the decision to somebody neutral.**
+# Not a state on the ladder: freezing is orthogonal to where the work has got
+# to, and modelling it as a twelfth state would mean every transition table,
+# every process flow and every `from_state` precondition learning about it.
+# It is a flag with a guard, and the guard is called at every door that moves
+# a collaboration.
+# ---------------------------------------------------------------------------
+
+disputes_router = APIRouter(prefix="/disputes", tags=["disputes"])
+
+DISPUTE_STATES = ("open", "resolved", "withdrawn")
+
+# What an admin can decide. Deliberately four, and deliberately including
+# `cancelled`: sometimes the honest answer is that the arrangement should not
+# have happened, and forcing a mediator to pick "release" or "refund" when
+# neither is right is how a decision gets recorded as something it was not.
+DISPUTE_RESOLUTIONS = {
+    "release": "Pay the creator in full",
+    "partial_release": "Pay the creator part of it",
+    "refund": "Refund the brand",
+    "cancelled": "Call the whole thing off",
+}
+
+# Who may raise one. The creator and whoever runs the campaign — an admin does
+# not raise a dispute, they resolve it, and a mediator who opened the case is
+# not a mediator.
+DISPUTABLE_STATES = (
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "draft_submitted",
+    "draft_approved",
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+)
+
+
+class DisputePayload(BaseModel):
+    """Why. Required, and at length — a dispute with a one-word reason is one
+    the mediator has to start by asking about."""
+
+    reason: str = Field(min_length=10, max_length=2000)
+
+
+class DisputeResolutionPayload(BaseModel):
+    resolution: Literal["release", "partial_release", "refund", "cancelled"]
+    note: str = Field(min_length=1, max_length=2000)
+    # Required by the handler when the resolution is `partial_release`, refused
+    # otherwise — checked there rather than here so the refusal can say why.
+    amount: Optional[float] = Field(default=None, ge=0)
+
+
+def _dispute_of(collab: Optional[dict]) -> Optional[dict]:
+    """The open dispute on this collaboration, or `None`.
+
+    Read off the collaboration rather than queried, so every serializer that
+    already loads one can say whether it is frozen without a second round trip.
+    """
+    dispute = (collab or {}).get("dispute")
+    if not dispute or dispute.get("state") != "open":
+        return None
+    return dispute
+
+
+def _refuse_if_disputed(collab: Optional[dict]) -> None:
+    """**The freeze.** Called at every door that moves a collaboration.
+
+    A frozen collaboration does not advance, does not get approved, does not
+    get paid and does not get cancelled out from under the person who raised
+    the dispute — because the whole point is that somebody neutral decides what
+    happens next, and an action taken while they are deciding pre-empts them.
+
+    Reads and notes stay open: the mediator needs the paper trail, and so does
+    whoever is arguing.
+    """
+    dispute = _dispute_of(collab)
+    if not dispute:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "message": (
+                "This is under dispute and frozen while WeAre looks at it. "
+                "Nothing moves until it's resolved."
+            ),
+            "code": "disputed",
+            "raised_by": dispute.get("raised_by_role"),
+            "raised_at": _iso(dispute.get("raised_at")),
+        },
+    )
+
+
+def _serialize_dispute(collab: Optional[dict]) -> Optional[dict]:
+    """The dispute as any of the three parties reads it.
+
+    **The same block for everybody**, deliberately: a mediation where the two
+    sides see different accounts of what is being mediated is not one. What
+    differs is who can act, which the caller decides.
+    """
+    dispute = (collab or {}).get("dispute")
+    if not dispute:
+        return None
+    return {
+        "state": dispute.get("state"),
+        "reason": dispute.get("reason"),
+        "raised_by_role": dispute.get("raised_by_role"),
+        "raised_by_name": dispute.get("raised_by_name"),
+        "raised_at": _iso(dispute.get("raised_at")),
+        "resolution": dispute.get("resolution"),
+        "resolution_label": DISPUTE_RESOLUTIONS.get(dispute.get("resolution")),
+        "resolution_note": dispute.get("resolution_note"),
+        "resolution_amount": dispute.get("resolution_amount"),
+        "resolved_by_name": dispute.get("resolved_by_name"),
+        "resolved_at": _iso(dispute.get("resolved_at")),
+        "frozen": dispute.get("state") == "open",
+    }
+
+
+async def _disputable_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict, str]:
+    """A collaboration this caller may raise a dispute on, and which side they
+    are on. The same three doors the ratings use, and a 404 behind all of them.
+    """
+    if (user or {}).get("role") == "creator":
+        collab = await _own_collab_or_404(collab_id, user)
+        campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+        side = "creator"
+    else:
+        collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+        # An admin mediates rather than raises: see DISPUTE_RESOLUTIONS.
+        side = "runner" if _question_staff_may_see(campaign, user) else None
+    if not side:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    return collab, campaign, side
+
+
+async def _freeze_payment(collab_id, *, frozen: bool, reason: Optional[str] = None) -> None:
+    """Hold or release the money on a collaboration.
+
+    **A flag, not a state.** The payment's own states say where it is in the
+    payout process; frozen says nobody may move it. Collapsing the two would
+    mean a released payment forgetting whether it had ever been held, which is
+    exactly what somebody asks about afterwards.
+    """
+    now = datetime.now(timezone.utc)
+    await db.payments.update_one(
+        {"collaboration_id": collab_id},
+        {
+            "$set": {
+                "frozen": frozen,
+                "frozen_reason": reason if frozen else None,
+                "frozen_at": now if frozen else None,
+                "updated_at": now,
+            }
+        },
+    )
+
+
+async def _tell_both_sides(collab: dict, campaign: dict, *, event: str, title: str, body: str) -> None:
+    """Both parties, every time.
+
+    A mediation where one side hears about a step and the other does not is one
+    the second side finds out about from an outcome. The creator always; the
+    runner through `execution_owner`, so a weare-run brief tells our team and a
+    brand-run one tells the brand.
+    """
+    await notify(collab["creator_id"], event, title=title, body=body, link="/dashboard")
+    await _escalate_to_whoever_runs_it(campaign, event, title=title, body=body)
+
+
+@disputes_router.post("/{collab_id}")
+async def raise_dispute(
+    collab_id: str,
+    payload: DisputePayload,
+    user: dict = Depends(require_roles("creator", *BRAND_ROLES, "campaign_manager", "weare_team")),
+):
+    """Raise a dispute, from either side.
+
+    **Not an admin action.** An admin resolves these, and a mediator who opened
+    the case is not a mediator — so the roles that can raise one are the two
+    with something at stake.
+
+    Refused on a collaboration that has not got far enough to have anything to
+    argue about, and on one that already has an open dispute: a second case on
+    the same facts is two mediators reaching two answers.
+    """
+    collab, campaign, side = await _disputable_collab_or_404(collab_id, user)
+    if collab.get("state") not in DISPUTABLE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "There's nothing to dispute here yet — this is "
+                    f"{(collab.get('state') or '').replace('_', ' ')}."
+                ),
+                "code": "not_disputable",
+                "state": collab.get("state"),
+            },
+        )
+    if _dispute_of(collab):
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "This is already under dispute.", "code": "already_disputed"},
+        )
+
+    now = datetime.now(timezone.utc)
+    dispute = {
+        "state": "open",
+        "reason": payload.reason.strip(),
+        "raised_by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+        "raised_by_name": user.get("name"),
+        "raised_by_role": side,
+        "raised_at": now,
+        "raised_from_state": collab.get("state"),
+    }
+    updated = await db.collaborations.find_one_and_update(
+        # `dispute.state` as a precondition, so two people raising at once
+        # produce one case rather than overwriting each other's reason.
+        {"_id": collab["_id"], "dispute.state": {"$ne": "open"}},
+        {"$set": {"dispute": dispute, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This is already under dispute.")
+
+    # The money stops with the record. A payout released while a dispute is
+    # open is a payout the mediation cannot undo.
+    await _freeze_payment(collab["_id"], frozen=True, reason="Under dispute")
+
+    await audit(
+        user,
+        "collaboration.dispute_raised",
+        "collaboration",
+        collab["_id"],
+        before={"state": collab.get("state")},
+        after={"dispute": "open", "raised_by": side},
+        note=payload.reason.strip()[:500],
+        **_campaign_audit_context(campaign),
+    )
+    await _tell_both_sides(
+        collab,
+        campaign,
+        event="dispute_raised",
+        title="A collaboration is under dispute",
+        body=(
+            f"{campaign.get('title') or 'A campaign'}: this is frozen while WeAre "
+            "looks at it. We'll come back to both of you."
+        ),
+    )
+    # And every admin, because this is now ours to decide.
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            "dispute_raised",
+            title="A dispute needs mediating",
+            body=f"{campaign.get('title') or 'A campaign'} — raised by the {side}.",
+            link=f"/admin/collaborations/{collab['_id']}",
+        )
+    return {"id": collab_id, "dispute": _serialize_dispute(updated)}
+
+
+@disputes_router.post("/{collab_id}/withdraw")
+async def withdraw_dispute(
+    collab_id: str,
+    user: dict = Depends(require_roles("creator", *BRAND_ROLES, "campaign_manager", "weare_team")),
+):
+    """Take it back, which only the side that raised it may do.
+
+    Sorting it out between themselves is the best outcome available and the
+    product should not stand in the way of it — but the *other* side cannot
+    make a dispute go away, or the freeze would protect nobody.
+    """
+    collab, campaign, side = await _disputable_collab_or_404(collab_id, user)
+    dispute = _dispute_of(collab)
+    if not dispute:
+        raise HTTPException(status_code=409, detail="There's no open dispute here.")
+    if dispute.get("raised_by_role") != side:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the side that raised this can take it back.",
+        )
+
+    now = datetime.now(timezone.utc)
+    await db.collaborations.update_one(
+        {"_id": collab["_id"], "dispute.state": "open"},
+        {"$set": {"dispute.state": "withdrawn", "dispute.resolved_at": now,
+                  "updated_at": now}},
+    )
+    await _freeze_payment(collab["_id"], frozen=False)
+    await audit(
+        user,
+        "collaboration.dispute_withdrawn",
+        "collaboration",
+        collab["_id"],
+        after={"dispute": "withdrawn"},
+        **_campaign_audit_context(campaign),
+    )
+    await _tell_both_sides(
+        collab,
+        campaign,
+        event="dispute_resolved",
+        title="The dispute was taken back",
+        body=f"{campaign.get('title') or 'A campaign'} — it's unfrozen and carries on.",
+    )
+    return {"id": collab_id, "dispute": "withdrawn"}
+
+
+@admin_router.get("/disputes")
+async def list_disputes(
+    state: str = "open",
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """The mediation queue. **Declared before `/disputes/{id}`-shaped
+    siblings**, and scoped like every other console list."""
+    rows = (
+        await db.collaborations.find(
+            {"dispute.state": state, **(await _console_campaign_query(user))}
+        )
+        .sort("dispute.raised_at", 1)  # longest waiting first
+        .to_list(length=200)
+    )
+    if not rows:
+        return {"disputes": [], "resolutions": DISPUTE_RESOLUTIONS}
+
+    campaign_ids = list({r["campaign_id"] for r in rows})
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+            length=len(campaign_ids)
+        )
+    }
+    creator_ids = list({r["creator_id"] for r in rows})
+    creators = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": creator_ids}}
+        ).to_list(length=len(creator_ids))
+    }
+    payments = {
+        p["collaboration_id"]: p
+        for p in await db.payments.find(
+            {"collaboration_id": {"$in": [r["_id"] for r in rows]}}
+        ).to_list(length=len(rows))
+    }
+
+    return {
+        "resolutions": DISPUTE_RESOLUTIONS,
+        "disputes": [
+            {
+                "collaboration_id": str(r["_id"]),
+                "reference": _reference_of(r),
+                "state": r.get("state"),
+                "campaign_id": str(r["campaign_id"]),
+                "campaign_title": (campaigns.get(r["campaign_id"]) or {}).get("title"),
+                # The allow-list, even here: a mediation screen is still a
+                # screen, and nothing about arguing changes what a brand may
+                # see about somebody.
+                "creator": _brand_visible_creator(creators.get(r["creator_id"])),
+                "agreed_amount": r.get("agreed_amount"),
+                "payment_frozen": bool(
+                    (payments.get(r["_id"]) or {}).get("frozen")
+                ),
+                "dispute": _serialize_dispute(r),
+                "href": f"/admin/collaborations/{r['_id']}",
+            }
+            for r in rows
+        ],
+    }
+
+
+@admin_router.post("/disputes/{collab_id}/resolve")
+async def resolve_dispute(
+    collab_id: str,
+    payload: DisputeResolutionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Decide it, and write down what was decided and why.
+
+    **Admin-only.** A `weare_team` member runs campaigns for the brands they
+    are assigned to, which makes them a party rather than a mediator on exactly
+    the disputes they would be deciding.
+
+    The note is required on every outcome, including the ones that look
+    obvious: "released" with no reasoning is a decision nobody can defend six
+    months later, and the party it went against is the one who will ask.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    if not _dispute_of(collab):
+        raise HTTPException(status_code=409, detail="There's no open dispute here.")
+
+    amount = payload.amount
+    if payload.resolution == "partial_release":
+        if amount is None:
+            raise HTTPException(
+                status_code=422,
+                detail="A partial release needs the amount you're releasing.",
+            )
+    elif amount is not None:
+        # Refused rather than ignored: an amount on a full release is somebody
+        # believing they set the figure, and silently dropping it is how a
+        # payout goes out at the wrong number.
+        raise HTTPException(
+            status_code=422,
+            detail=f"An amount only applies to a partial release, not to “{payload.resolution}”.",
+        )
+
+    now = datetime.now(timezone.utc)
+    updates = {
+        "dispute.state": "resolved",
+        "dispute.resolution": payload.resolution,
+        "dispute.resolution_note": payload.note.strip(),
+        "dispute.resolution_amount": amount,
+        "dispute.resolved_by": ObjectId(user["_id"]),
+        "dispute.resolved_by_name": user.get("name"),
+        "dispute.resolved_at": now,
+        "updated_at": now,
+    }
+    # A partial release rewrites what is owed, through the same field every
+    # other fee decision writes, so the payout and the report agree.
+    if payload.resolution == "partial_release":
+        updates["agreed_amount"] = float(amount)
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "dispute.state": "open"},
+        {"$set": updates},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This was just resolved — reload.")
+
+    if payload.resolution == "refund":
+        # Nothing goes to the creator, and the payment says so rather than
+        # sitting pending forever.
+        await db.payments.update_one(
+            {"collaboration_id": collab["_id"]},
+            {"$set": {"state": "cancelled", "frozen": False, "frozen_reason": None,
+                      "updated_at": now}},
+        )
+    elif payload.resolution == "cancelled":
+        await db.collaborations.update_one(
+            {"_id": collab["_id"]},
+            {"$set": {**_state_stamp("cancelled", now), "active": False,
+                      "cancellation_type": "dispute",
+                      "exit_reason": payload.note.strip()[:500]}},
+        )
+        await db.payments.update_one(
+            {"collaboration_id": collab["_id"]},
+            {"$set": {"state": "cancelled", "frozen": False, "updated_at": now}},
+        )
+    else:
+        # Release and partial release both unfreeze and leave the payout to run
+        # its ordinary course — the money still goes out through mark-paid,
+        # with its reference and its withholding, rather than through here.
+        await _freeze_payment(collab["_id"], frozen=False)
+        if payload.resolution == "partial_release":
+            await db.payments.update_one(
+                {"collaboration_id": collab["_id"]},
+                {"$set": {
+                    "agreed_amount": float(amount),
+                    "creator_payout": round(float(amount) - compute_fee(float(amount)), 2),
+                    "platform_fee": compute_fee(float(amount)),
+                    "updated_at": now,
+                }},
+            )
+
+    await audit(
+        user,
+        "collaboration.dispute_resolved",
+        "collaboration",
+        collab["_id"],
+        before={"dispute": "open"},
+        after={"resolution": payload.resolution, "amount": amount},
+        note=payload.note.strip()[:500],
+        **_campaign_audit_context(campaign),
+    )
+    await _tell_both_sides(
+        collab,
+        campaign,
+        event="dispute_resolved",
+        title="The dispute has been decided",
+        body=(
+            f"{campaign.get('title') or 'A campaign'}: "
+            f"{DISPUTE_RESOLUTIONS[payload.resolution].lower()}. "
+            f"{payload.note.strip()[:200]}"
+        ),
+    )
+    return {"id": collab_id, "dispute": _serialize_dispute(updated)}
+
+
+# ---------------------------------------------------------------------------
+# Taking something down
+#
+# Live content that is wrong, off-brand or actively problematic had no path.
+# The collaboration was finished, the post was up, and the only recourse was a
+# message to whoever the brand had a number for — so whether a wrong price or a
+# misnamed dish came down depended on who happened to read it.
+#
+# **A request with a clock on it, not an instruction.** We cannot take anything
+# down: it is on the creator's account, posted from their phone, and pretending
+# otherwise would promise something the product cannot do. What this does is
+# make the ask formal, dated, visible to both sides and on the record — which
+# is what turns "did anyone ever tell them?" into a question with an answer.
+# ---------------------------------------------------------------------------
+
+TAKEDOWN_RESPONSE_HOURS = 48
+TAKEDOWN_STATES = ("requested", "actioned", "declined", "withdrawn")
+
+# Why something has to come down. A short list rather than free text alone,
+# because "wrong price" and "we have a legal problem" are the same request with
+# very different urgency, and a mediator triaging twenty of them needs to sort.
+TAKEDOWN_REASONS = {
+    "factual_error": "Something in it is factually wrong",
+    "off_brand": "It misrepresents the brand",
+    "legal": "There's a legal or compliance problem",
+    "rights": "It uses something we don't have the rights to",
+    "other": "Something else",
+}
+
+
+class TakedownPayload(BaseModel):
+    reason_code: Literal["factual_error", "off_brand", "legal", "rights", "other"]
+    # Always required, even beside a code: "off-brand" is a category, and the
+    # creator being asked to pull a post they were paid for is owed the actual
+    # sentence.
+    detail: str = Field(min_length=10, max_length=2000)
+
+
+class TakedownResponsePayload(BaseModel):
+    actioned: bool
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+def _serialize_takedown(collab: Optional[dict]) -> Optional[dict]:
+    row = (collab or {}).get("takedown")
+    if not row:
+        return None
+    due = row.get("respond_by")
+    return {
+        "state": row.get("state"),
+        "reason_code": row.get("reason_code"),
+        "reason_label": TAKEDOWN_REASONS.get(row.get("reason_code")),
+        "detail": row.get("detail"),
+        "requested_by_name": row.get("requested_by_name"),
+        "requested_by_role": row.get("requested_by_role"),
+        "requested_at": _iso(row.get("requested_at")),
+        "respond_by": _iso(due),
+        # Derived, like every other deadline here — a stored flag would need a
+        # sweep, and a rule that depends on cron is true on Tuesdays.
+        "overdue": bool(
+            row.get("state") == "requested"
+            and isinstance(due, datetime)
+            and (due if due.tzinfo else due.replace(tzinfo=timezone.utc))
+            <= datetime.now(timezone.utc)
+        ),
+        "actioned": row.get("state") == "actioned",
+        "response_note": row.get("response_note"),
+        "responded_at": _iso(row.get("responded_at")),
+    }
+
+
+@disputes_router.post("/{collab_id}/takedown")
+async def request_takedown(
+    collab_id: str,
+    payload: TakedownPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager", "weare_team")),
+):
+    """Ask for a live post to come down.
+
+    **Only on work that is actually live.** Asking for a takedown of a draft is
+    asking for a change, which is the review flow — and pointing somebody at
+    the wrong one costs a round trip.
+
+    Deliberately **not blocked by the dispute freeze**: a post that is legally
+    problematic has to be dealt with whether or not there is an argument about
+    the money, and those are genuinely different questions.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    if collab.get("state") not in DELIVERED_COLLAB_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "There's nothing live here yet. If the draft needs changing, "
+                    "ask for a change instead."
+                ),
+                "code": "not_delivered",
+            },
+        )
+    existing = (collab.get("takedown") or {}).get("state")
+    if existing == "requested":
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "There's already a takedown request on this.",
+                    "code": "already_requested"},
+        )
+
+    now = datetime.now(timezone.utc)
+    row = {
+        "state": "requested",
+        "reason_code": payload.reason_code,
+        "detail": payload.detail.strip(),
+        "requested_by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+        "requested_by_name": user.get("name"),
+        "requested_by_role": user.get("role"),
+        "requested_at": now,
+        "respond_by": now + timedelta(hours=TAKEDOWN_RESPONSE_HOURS),
+    }
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "takedown.state": {"$ne": "requested"}},
+        {"$set": {"takedown": row, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="There's already a request on this.")
+
+    await audit(
+        user,
+        "collaboration.takedown_requested",
+        "collaboration",
+        collab["_id"],
+        after={"takedown": payload.reason_code},
+        note=payload.detail.strip()[:500],
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "takedown_requested",
+        title="A post needs taking down",
+        body=(
+            f"{campaign.get('title') or 'A campaign'}: "
+            f"{TAKEDOWN_REASONS[payload.reason_code].lower()}. "
+            f"{payload.detail.strip()[:200]} "
+            f"Please take it down within {TAKEDOWN_RESPONSE_HOURS} hours, or tell "
+            "us why not."
+        ),
+        link="/dashboard",
+    )
+    # And WeAre, always — a takedown is a fact about the platform even when a
+    # brand and a creator sort it out between themselves in an hour.
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            "takedown_requested",
+            title="A takedown was requested",
+            body=f"{campaign.get('title') or 'A campaign'} — {payload.reason_code}.",
+            link=f"/admin/collaborations/{collab['_id']}",
+        )
+    return {"id": collab_id, "takedown": _serialize_takedown(updated)}
+
+
+@disputes_router.post("/{collab_id}/takedown/respond")
+async def respond_to_takedown(
+    collab_id: str,
+    payload: TakedownResponsePayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The creator's answer: taken down, or here is why not.
+
+    **Both answers are recorded, and neither is assumed.** A takedown that
+    silently never happens and one the creator explained they could not do are
+    very different facts, and the second is the one that gets somebody
+    unfairly marked down if the record cannot tell them apart.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    if (collab.get("takedown") or {}).get("state") != "requested":
+        raise HTTPException(status_code=409, detail="There's no open request here.")
+    if not payload.actioned and not (payload.note or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Tell us why it's staying up — a refusal with no reason can't be acted on.",
+        )
+
+    now = datetime.now(timezone.utc)
+    state = "actioned" if payload.actioned else "declined"
+    await db.collaborations.update_one(
+        {"_id": collab["_id"], "takedown.state": "requested"},
+        {"$set": {
+            "takedown.state": state,
+            "takedown.response_note": (payload.note or "").strip() or None,
+            "takedown.responded_at": now,
+            "updated_at": now,
+        }},
+    )
+    await audit(
+        user,
+        "collaboration.takedown_response",
+        "collaboration",
+        collab["_id"],
+        after={"takedown": state},
+        note=(payload.note or "").strip()[:500] or None,
+        **_campaign_audit_context(campaign),
+    )
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "takedown_actioned",
+        title="Takedown answered" if payload.actioned else "Takedown declined",
+        body=(
+            f"{campaign.get('title') or 'A campaign'}: the creator "
+            + ("took it down." if payload.actioned else "says it's staying up. ")
+            + ((payload.note or "").strip()[:200] if not payload.actioned else "")
+        ),
+    )
+    return {"id": collab_id, "takedown_state": state}
+
+
+api_router.include_router(disputes_router)
+
 
 ratings_router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -24526,6 +26260,11 @@ async def get_application(
         # counted deliverables, and on one nobody has counted against — which
         # is every collaboration finished before this existed.
         "shortfall": _delivery_shortfall(campaign, collab),
+        # Frozen, and by whom. The same block for all three parties: a
+        # mediation where the two sides see different accounts of what is being
+        # mediated is not one.
+        "dispute": _serialize_dispute(collab),
+        "takedown": _serialize_takedown(collab),
         # Whether this caller may open the creator's question thread — false
         # for a brand on a weare-run campaign, where the conversation is
         # between the creator and our team. Decided here so the shared screen
@@ -24604,6 +26343,31 @@ async def get_application(
                 | _CREATOR_OWNED_TRANSITIONS
             )
             and _next_collab_state(state, campaign) is not None,
+            # **Raising is for the parties, resolving is for the mediator**,
+            # and the two are never offered to the same person on the same
+            # row. An admin reading a brand-run collaboration is neither side
+            # of it, so they get the resolve button and no raise button;
+            # `weare_team` running the brief *is* a side, so they get the
+            # reverse. `_question_staff_may_see` is the reader for "runs this
+            # campaign", the same one the draft review and the slot handshake
+            # use — a fourth spelling of it is a fourth thing to keep in step.
+            "can_raise_dispute": state in DISPUTABLE_STATES
+            and not _dispute_of(collab)
+            and _question_staff_may_see(campaign, user)
+            and not is_admin,
+            # **Only the side that raised it.** Sorting it out between
+            # themselves is the best outcome available, but the *other* side
+            # making a dispute go away would mean the freeze protected nobody.
+            "can_withdraw_dispute": bool(_dispute_of(collab))
+            and (_dispute_of(collab) or {}).get("raised_by_role") == "runner"
+            and _question_staff_may_see(campaign, user)
+            and not is_admin,
+            "can_resolve_dispute": is_admin and bool(_dispute_of(collab)),
+            # Only on work that is actually live. A draft that needs changing
+            # is the review flow, and pointing somebody at the wrong one costs
+            # a round trip.
+            "can_request_takedown": state in DELIVERED_COLLAB_STATES
+            and (collab.get("takedown") or {}).get("state") != "requested",
         },
     }
 

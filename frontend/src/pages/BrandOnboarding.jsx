@@ -52,6 +52,7 @@ import VerificationDocuments, {
 } from "@/components/brand/VerificationDocuments";
 import { BRAND_LOGO, BRAND_PAGE, BRAND_VERIFICATION as IDS } from "@/constants/testIds";
 import AddressPicker from "@/components/AddressPicker";
+import VerificationExpiry from "@/components/VerificationExpiry";
 import { brandPageUrl } from "@/lib/brandPage";
 import { INDIAN_CITIES } from "@/lib/taxonomy";
 // Fallbacks only: the server ships these lists on the profile response, so a
@@ -612,11 +613,22 @@ export default function BrandOnboarding() {
                     <p className="mt-6 text-sm text-destructive">{loadError}</p>
                 )}
 
-                <div className="mt-10">
+                <div className="mt-10 space-y-4">
                     <StateBanner
                         state={state}
                         reason={verification?.verification_reason}
                         submittedAt={verification?.submitted_at}
+                    />
+                    {/* **Above the fields it is about**, like the rejection
+                        reason. A verified brand meets this and nothing else
+                        on the page has changed — the ask is a confirmation,
+                        not a resubmission, so it does not send them back
+                        through the documents. Renders nothing until the
+                        window opens. */}
+                    <VerificationExpiry
+                        verification={verification}
+                        kind="brand"
+                        onConfirmed={reloadVerification}
                     />
                 </div>
 

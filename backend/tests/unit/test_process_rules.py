@@ -884,7 +884,14 @@ class TestInviteEndpointShape:
         assert "one_invite_per_creator" in source
         # The send lives in `_invite_creators`, shared by the admin route and
         # the brand manager's, so the guarantee holds for both callers.
-        assert "DuplicateKeyError" in source.split("def _invite_creators")[1][:6000]
+        #
+        # Read as the whole function rather than the first 6000 characters
+        # after its name: that window was a magic number that broke the day
+        # somebody added a guard above the insert, which is a change that made
+        # the code better and the test angrier.
+        import inspect
+
+        assert "DuplicateKeyError" in inspect.getsource(server._invite_creators)
 
 
 class TestNotificationRecordSplit:

@@ -30,6 +30,7 @@ import { HomeSkeleton, Reveal } from "@/components/creator/shared";
 import { SafeSection } from "@/components/ErrorBoundary";
 import Hero from "@/components/creator/Hero";
 import Completeness from "@/components/creator/Completeness";
+import VerificationExpiry from "@/components/VerificationExpiry";
 import ActiveCampaigns from "@/components/creator/ActiveCampaigns";
 import Suggested from "@/components/creator/Suggested";
 import Applications from "@/components/creator/Applications";
@@ -277,6 +278,20 @@ const CreatorHome = ({ user, justOnboarded }) => {
                                 profile={data.profile}
                                 completeness={data.profile_completeness}
                                 justOnboarded={justOnboarded}
+                            />
+                        </SafeSection>
+
+                        {/* **Outside the tabs, like every other status.** A
+                            check that is about to run out is the situation
+                            rather than a section, and the profile form is the
+                            one screen a verified creator has no reason to
+                            open — so telling them there would be telling them
+                            nowhere. Renders nothing until the window opens. */}
+                        <SafeSection name="revalidate" className="mt-4">
+                            <VerificationExpiry
+                                verification={data.profile?.verification}
+                                kind="creator"
+                                onConfirmed={load}
                             />
                         </SafeSection>
 

@@ -32,9 +32,15 @@ import Footer from "@/components/Footer";
  *     obligation would mean at scale. We record consent at signup
  *     (`terms_accepted_at` + `terms_version`) but the notice itself is not
  *     drafted.
- *   - Retention periods. We say "as long as tax law requires" — somebody has
- *     to say what that period actually is per record type, and what happens
- *     to the rest on deletion.
+ *   - Retention periods. `RETENTION_DAYS` in server.py is now a real table
+ *     rather than a shrug, and the page below quotes it — but the numbers in
+ *     it are a considered guess at the statutory minimums, not advice. Two of
+ *     the rows are the actual open questions: how long a *rejected* business's
+ *     documents may be held (the accepted case is a year after the decision,
+ *     the rejected one has no obvious anchor), and whether an audit line
+ *     naming a person is a record we are obliged to keep or personal data we
+ *     are obliged to erase. Where the two duties conflict the code keeps the
+ *     line and erases the name; somebody has to say whether that is right.
  *   - Erasure, now that it exists. `_erase_personal_data` takes a defensible
  *     position — remove the person, keep the anonymised transaction — but
  *     whether an anonymised collaboration row is still personal data, how long
@@ -364,6 +370,35 @@ export function Privacy() {
                     We cannot erase you while a collaboration is still under way — a
                     shoot booked, a draft waiting, a payment owed. We will tell you
                     which ones, and you can ask again once they have finished.
+                </p>
+                <p>
+                    {/* **The retention section, and it names periods rather
+                        than saying "as long as necessary".** The phrase means
+                        nothing to the person reading it and everything to the
+                        person who wrote it, which is the wrong way round. The
+                        numbers here are the ones in RETENTION_DAYS in
+                        server.py; if the two ever disagree, the code is what
+                        actually happens and this page is the lie. */}
+                    <span className="text-foreground">How long we keep things.</span>{" "}
+                    Business verification documents are deleted a year after we verify
+                    a brand — they proved the business exists and the decision itself
+                    is recorded separately. Unpublished drafts are deleted ninety days
+                    after a collaboration closes. Payment records and the log of who did
+                    what are kept for eight years, because tax and accounting rules
+                    require it. Everything personal — your name, number, email, address,
+                    map pin, photo, payout details, PAN and Instagram token — goes on
+                    erasure, immediately and permanently.
+                </p>
+                <p>
+                    {/* Said plainly rather than buried: a page that implies
+                        certainty it does not have is worse than one that
+                        admits the gap, and somebody reading this is entitled
+                        to know which parts are settled. */}
+                    We are still taking advice on some of this — in particular how long
+                    we may hold a rejected business's documents, and whether an audit
+                    line naming you is a record we must keep or personal data we must
+                    erase. Where the answer is not settled we keep less rather than
+                    more, and this page will say so when it changes.
                 </p>
             </Section>
         </Shell>

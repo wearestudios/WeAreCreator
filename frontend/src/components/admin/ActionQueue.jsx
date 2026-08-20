@@ -36,6 +36,7 @@ import useListState from "./console/useListState";
 import useTableKeys from "./console/useTableKeys";
 import { formatRupees } from "./shared";
 import AgeBadge from "@/components/AgeBadge";
+import SuspensionPrompts from "./SuspensionPrompts";
 
 // Collaboration states where the next move is ours. Mirrors ADMIN_ACTION_STATES
 // on the server; anything else is waiting on the brand or the creator.
@@ -75,6 +76,8 @@ const DEFAULTS = { sort: { key: "kind", dir: "asc" } };
 
 export default function ActionQueue({ onChanged, feePercent, allAccess = true }) {
     const [items, setItems] = useState(null);
+    // The band above the queue, loaded with it rather than beside it.
+    const [suspensions, setSuspensions] = useState(null);
     const [waiting, setWaiting] = useState([]);
     const [kind, setKind] = useState("");
     const [showWaiting, setShowWaiting] = useState(false);
@@ -98,7 +101,8 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
             // empty a queue that is otherwise entirely theirs to work.
             // Everything else here comes back already scoped.
             const none = Promise.resolve({ data: [] });
-            const [brands, campaigns, creators, changed, board, questions] = await Promise.all([
+            const [brands, campaigns, creators, changed, board, questions, suspensions] =
+                await Promise.all([
                 api.get("/admin/brands/pending"),
                 api.get("/admin/campaigns/pending"),
                 allAccess ? api.get("/admin/creators/pending") : none,
@@ -108,7 +112,15 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                 api.get("/admin/collaborations"),
                 // Threads whose last word is a creator's.
                 api.get("/questions/unanswered"),
+                // **Fetched here rather than by the band itself**, so it lands
+                // in the same commit as the rows underneath it. On its own
+                // fetch it appeared a beat later and pushed the whole queue
+                // down — measured at 0.055 CLS, all of it that one push. A
+                // band that renders nothing most of the time cannot reserve
+                // height, so the fix is to arrive at the same moment.
+                allAccess ? api.get("/admin/suspension-prompts") : Promise.resolve({ data: {} }),
             ]);
+            setSuspensions(suspensions.data || {});
 
             const rows = [];
 
@@ -639,6 +651,14 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
 
     return (
         <section data-testid={IDS.section}>
+            {/* **Above the queue, not in it.** A suspension is a decision
+                about a creator who works across every brand rather than a row
+                somebody approves, so it does not belong among the rows — and
+                it is admin's rather than a scoped console's for the same
+                reason the two creator queues are. It renders nothing when
+                nobody is over the line. */}
+            {allAccess && <SuspensionPrompts data={suspensions} />}
+
             <header className="mb-3">
                 <h1 className={TEXT.heading}>
                     {total === 0 && items ? "Nothing waiting on you." : "Waiting on you"}
