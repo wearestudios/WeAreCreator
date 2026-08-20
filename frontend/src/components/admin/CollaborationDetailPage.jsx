@@ -122,7 +122,11 @@ export default function CollaborationDetailPage() {
                 },
                 { key: "collab", label: collab?.creator?.name || "Application" },
             ]}
-            kicker={collab?.brand_name || "Collaboration"}
+            kicker={
+                [collab?.reference, collab?.brand_name || "Collaboration"]
+                    .filter(Boolean)
+                    .join(" · ")
+            }
             title={collab?.creator?.name || "Collaboration"}
             loading={!data && !error && !notFound}
             error={error}

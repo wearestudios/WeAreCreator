@@ -274,13 +274,20 @@ def _component(name):
 
 
 def test_the_screen_does_not_rebuild_the_state_machine():
-    """The steps come from the server. A second copy of the ladder in the
+    """The stages come from the server. A second copy of the ladder in the
     client is a second thing to keep in step, and drift shows up as a screen
-    confidently telling somebody the wrong thing."""
-    bar = _component("LifecycleBar.jsx")
+    confidently telling somebody the wrong thing.
 
-    assert "lifecycle.steps" in bar or "steps = []" in bar
-    assert "COLLAB_STATE_ORDER" not in bar
+    `LifecycleBar` — which drew the raw twelve states — is gone; the same rule
+    now belongs to `ProcessFlow`, which draws the eight the server groups them
+    into. Leaving the old bar beside it would be exactly the second copy this
+    is about.
+    """
+    flow = _component("ProcessFlow.jsx")
+
+    assert "process.stages" in flow or "stages = []" in flow
+    assert "COLLAB_STATE_ORDER" not in flow
+    assert not (FRONTEND / "components" / "application" / "LifecycleBar.jsx").exists()
 
 
 def test_the_screen_asks_the_server_which_fee_control_to_draw():

@@ -214,8 +214,16 @@ class TestAdminActionQueue:
             assert state not in server.ADMIN_ACTION_STATES
 
     def test_the_admin_owned_steps_are_present(self):
-        for state in ("applied", "accepted", "commercial_agreed", "slot_booked"):
+        for state in ("applied", "accepted", "slot_booked"):
             assert state in server.ADMIN_ACTION_STATES
+
+    def test_waiting_for_a_booking_is_not_the_admins_desk(self):
+        """`commercial_agreed` used to be here, when an admin could book on a
+        creator's behalf. Booking is the creator's alone now — nobody else
+        chooses when somebody else's day goes — so an admin looking at this
+        queue can do nothing about it."""
+        assert "commercial_agreed" not in server.ADMIN_ACTION_STATES
+        assert "slot_booked" in server._CREATOR_OWNED_TRANSITIONS
 
     def test_terminal_states_need_no_action(self):
         for state in server.TERMINAL_COLLAB_STATES:
@@ -2027,6 +2035,9 @@ class TestManagerAudit:
                     "create_campaign_slot",
                     "_check_in_collaboration",
                     "_record_performance",
+                    # Both halves of the booking handshake audit inside the
+                    # one implementation the brand's routes share.
+                    "_answer_slot_request",
                 )
             ):
                 continue
@@ -4528,7 +4539,13 @@ class TestWorkNotes:
 
         src = inspect.getsource(server._note_readable_collab_or_404)
         assert 'role == "admin"' in src
-        assert "is_brand_side(user) and campaign.get(\"brand_id\") == _brand_scope(user)" in src
+        # The brand's door now has two locks: it owns the campaign, **and** the
+        # application is one we have finished shortlisting on a campaign it
+        # handed us. This is the second door onto an application, and a shield
+        # on only the other one would let a pasted id open everything.
+        assert "is_brand_side(user)" in src
+        assert 'campaign.get("brand_id") == _brand_scope(user)' in src
+        assert "_brand_sees_collab(campaign, collab)" in src
         assert 'role == "campaign_manager" and campaign.get("manager_id")' in src
         # Anything else falls through to the same 404 as a missing row.
         assert src.rstrip().endswith('raise HTTPException(status_code=404, detail="Application not found")')

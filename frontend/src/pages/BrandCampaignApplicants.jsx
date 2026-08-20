@@ -21,6 +21,7 @@ import { Navbar } from "@/components/Navbar";
 import { SafeSection } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import ProcessFlow from "@/components/application/ProcessFlow";
 import {
     ApplicantListSkeleton,
     ListEmptyState,
@@ -479,7 +480,20 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                             {c.name || "Creator"}
                         </Link>
                         <StatePill state={a.state} />
+                        {a.reference && (
+                            <span
+                                data-testid={`applicant-reference-${a.id}`}
+                                className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-muted-foreground"
+                            >
+                                {a.reference}
+                            </span>
+                        )}
                     </div>
+
+                    {/* The same eight stages the creator and the admin read,
+                        so a phone call between the three of them is about one
+                        picture. */}
+                    <ProcessFlow process={a.process} className="mt-4" />
 
                     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                         {c.instagram_handle && (

@@ -16,6 +16,7 @@
 // down, so the next row was never where it had just been; the panel opens
 // beside the list and leaves the queue exactly where it was.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { notifyError } from "@/lib/feedback";
 import {
     Building2,
@@ -126,7 +127,26 @@ function ReviewQueue({ config, onChanged }) {
                 cell: (r) => (
                     <span className="flex min-w-0 items-center gap-2">
                         {config.renderAvatar?.(r)}
-                        <span className="truncate">{config.primary(r)}</span>
+                        {/* **The name is a link to the whole record.** A row
+                            opens the peek, which is a preview; the name goes
+                            to the page, which is everything. Before this the
+                            queue was preview-only, so a brand's GST number
+                            and its documents were unreachable from the one
+                            screen where they decide it. `stopPropagation` so
+                            the peek does not also open behind the navigation. */}
+                        <Link
+                            to={config.href(r)}
+                            onClick={(e) => e.stopPropagation()}
+                            data-testid={IDS.open(config.idOf(r))}
+                            className="truncate transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                        >
+                            {config.primary(r)}
+                        </Link>
+                        {r.reference && (
+                            <span className="flex-none font-mono text-[10px] tracking-wider text-muted-foreground/70">
+                                {r.reference}
+                            </span>
+                        )}
                     </span>
                 ),
             },
@@ -263,6 +283,7 @@ function ReviewQueue({ config, onChanged }) {
                 onOpenChange={(o) => !o && setPeekId(null)}
                 title={peek ? String(config.primary(peek)) : "Review"}
                 subtitle={peek ? String(config.secondary(peek) || "") : undefined}
+                href={peek ? config.href(peek) : undefined}
                 actions={
                     peek ? (
                         <>
@@ -333,6 +354,11 @@ export function CreatorReviews({ onChanged }) {
                     "Nobody can pitch on a brief until we've approved them, so this queue is the thing standing between a creator and their first job.",
                 emptyText: "Inbox zero — every creator who finished signing up has an answer.",
                 idOf: (r) => r.user_id,
+                // **Where the whole record is.** A queue row is a summary and
+                // a peek is a preview; neither carries everything a decision
+                // needs, and an admin who could only see the preview was
+                // approving on a fraction of what we hold.
+                href: (r) => `/admin/creators/${r.user_id}`,
                 since: (r) => r.created_at,
                 primary: (r) => r.name || "Unnamed creator",
                 secondary: (r) =>
@@ -441,6 +467,7 @@ export function CampaignReviews({ onChanged }) {
                     "A campaign reaches creators when it's approved here, and not before. Read the brief; it's what a creator will act on.",
                 emptyText: "Nothing submitted for review.",
                 idOf: (r) => r.id,
+                href: (r) => `/admin/campaigns/${r.id}`,
                 since: (r) => r.submitted_for_review_at || r.created_at,
                 primary: (r) => r.title,
                 secondary: (r) =>
@@ -563,6 +590,11 @@ export function BrandReviews({ onChanged }) {
                     "These brands cannot post campaigns. They can write drafts, but submitting one is blocked until you verify them.",
                 emptyText: "Every brand that signed up has an answer.",
                 idOf: (r) => r.user_id,
+                // The GST number, the registered address and the documents
+                // themselves all live on the brand's page. Deciding without
+                // them is deciding on the business name alone, which is what
+                // this queue used to make an admin do.
+                href: (r) => `/admin/brands/${r.user_id}`,
                 since: (r) => r.signed_up_at || r.created_at,
                 primary: (r) => r.business_name || r.name || "Unnamed brand",
                 secondary: (r) =>

@@ -93,51 +93,17 @@ export const CAT_LABEL = {
 // The lifecycle, as a creator reads it
 // ---------------------------------------------------------------------------
 //
-// Six stages, not the backend's ten. `verified` and `commercial_agreed` are
-// our internal bookkeeping — a creator has no idea what happens between the
-// brand saying yes and a fee being settled, and showing them a stage they
-// cannot act on only makes the bar longer.
-export const LIFECYCLE = [
-    { key: "applied", label: "Applied", states: ["applied", "verified"] },
-    { key: "approved", label: "Approved", states: ["accepted", "commercial_agreed"] },
-    { key: "slot", label: "Slot booked", states: ["slot_booked"] },
-    { key: "attended", label: "Attended", states: ["attended"] },
-    {
-        key: "content",
-        label: "Content sent",
-        states: ["content_submitted", "content_approved"],
-    },
-    { key: "paid", label: "Paid", states: ["in_payment", "closed"] },
-];
-
-// The extra stage on a campaign that reviews drafts, inserted after Attended.
-// It is a stage rather than a footnote because it is a wait the creator will
-// otherwise read as nothing happening.
-const DRAFT_STAGE = {
-    key: "draft",
-    label: "Draft in review",
-    states: ["draft_submitted", "draft_approved"],
-};
-
-/**
- * The stages this collaboration actually walks.
- *
- * Per-collaboration rather than a constant, because the campaign decides:
- * with draft review off the bar is the six it has always been. Read off the
- * server's own answer (`draft` present on the row, or a state that only
- * exists on the draft ladder) rather than re-deriving the rule here.
- */
-export const lifecycleFor = (collab) => {
-    const reviews =
-        Boolean(collab?.draft) || DRAFT_STAGE.states.includes(collab?.state);
-    if (!reviews) return LIFECYCLE;
-    const i = LIFECYCLE.findIndex((s) => s.key === "attended");
-    return [...LIFECYCLE.slice(0, i + 1), DRAFT_STAGE, ...LIFECYCLE.slice(i + 1)];
-};
-
-/** Which stage a collaboration is standing on. -1 if it left the line. */
-export const stageIndexFor = (state, stages = LIFECYCLE) =>
-    stages.findIndex((stage) => stage.states.includes(state));
+// **It is not read here any more.** This file used to hold a six-stage list —
+// `LIFECYCLE`, `lifecycleFor`, `stageIndexFor` — because the backend's twelve
+// states were unreadable and the creator needed fewer. That was right about
+// the problem and wrong about where to fix it: the brand and the admin needed
+// the same thing, and ended up with a third and a fourth answer, so "where has
+// this got to" had a different picture depending on who was asked.
+//
+// `_process_flow` on the server is the one answer now — eight stages, decided
+// once, shipped with every application payload — and
+// `components/application/ProcessFlow.jsx` draws it. `STATE_META` below stays:
+// a pill naming one state is a different job from a bar naming the journey.
 
 export const STATE_META = {
     applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },

@@ -24,6 +24,15 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { DetailShell, Field, Section, Stat } from "@/components/admin/DetailPage";
 import { BrandLink, CampaignLink, CreatorLink } from "@/components/admin/links";
 import WorkNotes from "@/components/brand/WorkNotes";
@@ -34,11 +43,25 @@ import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
 import DraftReview from "./DraftReview";
-import LifecycleBar from "./LifecycleBar";
+import ProcessFlow from "./ProcessFlow";
 import { IST } from "@/lib/time";
 
 const formatRupees = (n) =>
     typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—";
+
+/** "20 Aug, 7:00 pm" — a time somebody has to turn up at, so it carries one. */
+const formatDateTime = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: IST,
+    });
+};
 
 const formatDate = (iso) => {
     if (!iso) return "—";
@@ -117,6 +140,10 @@ export default function ApplicationDetail({
     const [notFound, setNotFound] = useState(false);
     const [busy, setBusy] = useState(null);
     const [amount, setAmount] = useState("");
+    // The reason a time was turned down. Required, because without it the
+    // creator picks the same impossible slot again.
+    const [decliningSlot, setDecliningSlot] = useState(false);
+    const [slotReason, setSlotReason] = useState("");
 
     const load = useCallback(async () => {
         try {
@@ -196,7 +223,7 @@ export default function ApplicationDetail({
             backTo={backTo}
             backLabel={backLabel}
             crumbs={crumbs}
-            kicker="Application"
+            kicker={app?.reference ? `Application · ${app.reference}` : "Application"}
             title={app?.creator?.name || "Application"}
             subtitle={app ? app.campaign?.title : undefined}
             loading={!app && !error && !notFound}
@@ -206,7 +233,10 @@ export default function ApplicationDetail({
         >
             {app && (
                 <div className="mt-8 space-y-8">
-                    <LifecycleBar lifecycle={app.lifecycle} />
+                    {/* One process, eight stages, the same on all three
+                        views of it. The server decides the stage and the
+                        voice; see ProcessFlow. */}
+                    <ProcessFlow process={app.lifecycle?.process} />
 
                     <Section id="commercial" title="Commercial">
                         <div
@@ -379,6 +409,56 @@ export default function ApplicationDetail({
                         </div>
                     </Section>
 
+                    {/* The second half of the booking handshake. Offered only
+                        to whoever runs this campaign — the server decides —
+                        because a creator's chosen time is a request until the
+                        person holding the venue's diary says yes. */}
+                    {actions.can_confirm_slot && (
+                        <Section id="slot" title="Slot to confirm">
+                            <p
+                                data-testid={APPLICATION.slotPending}
+                                className="text-sm text-muted-foreground"
+                            >
+                                {app.creator?.name || "The creator"} asked for{" "}
+                                <span className="text-foreground">
+                                    {formatDateTime(app.scheduled_at)}
+                                </span>
+                                . Nothing is agreed until you say so.
+                            </p>
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                <Button
+                                    data-testid={APPLICATION.confirmSlot}
+                                    disabled={busy === "confirm-slot"}
+                                    className="min-h-[2.75rem]"
+                                    onClick={() =>
+                                        act(
+                                            "confirm-slot",
+                                            () =>
+                                                api.post(
+                                                    `/brand/collaborations/${id}/slot/confirm`,
+                                                ),
+                                            "Slot confirmed — the creator has been told",
+                                        )
+                                    }
+                                >
+                                    {busy === "confirm-slot" && (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    Confirm this time
+                                </Button>
+                                <Button
+                                    data-testid={APPLICATION.declineSlot}
+                                    variant="outline"
+                                    disabled={busy === "confirm-slot"}
+                                    className="min-h-[2.75rem]"
+                                    onClick={() => setDecliningSlot(true)}
+                                >
+                                    This time doesn't work
+                                </Button>
+                            </div>
+                        </Section>
+                    )}
+
                     {/* Every action that is currently legal, on the page rather
                         than behind a row menu. The server decided which; an
                         empty set means it is somebody else's move and the bar
@@ -506,6 +586,75 @@ export default function ApplicationDetail({
                     </Section>
                 </div>
             )}
+
+            {/* Turning a time down is destructive — the seat goes back on
+                sale — so it is confirmed, and the reason is required rather
+                than optional: it is the only thing that stops the creator
+                picking the same impossible slot again. */}
+            <Dialog
+                open={decliningSlot}
+                onOpenChange={(v) => {
+                    if (!v) {
+                        setDecliningSlot(false);
+                        setSlotReason("");
+                    }
+                }}
+            >
+                <DialogContent className="max-w-md rounded-md border border-white/10 bg-card">
+                    <DialogHeader className="text-left">
+                        <DialogTitle className="font-serif text-2xl leading-tight">
+                            That time doesn't work?
+                        </DialogTitle>
+                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                            The place goes back on sale and the creator is asked
+                            to pick another. Tell them why, or they'll pick the
+                            same one.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                        rows={3}
+                        value={slotReason}
+                        onChange={(e) => setSlotReason(e.target.value)}
+                        placeholder="e.g. the kitchen is closed that afternoon — anything after 6pm works"
+                        data-testid={APPLICATION.declineSlotReason}
+                        className="border-white/10 bg-background/60"
+                    />
+                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setDecliningSlot(false)}
+                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                        >
+                            Back
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={!slotReason.trim() || busy === "decline-slot"}
+                            data-testid={APPLICATION.declineSlotSubmit}
+                            onClick={() => {
+                                setDecliningSlot(false);
+                                act(
+                                    "decline-slot",
+                                    () =>
+                                        api.post(
+                                            `/brand/collaborations/${id}/slot/decline`,
+                                            { reason: slotReason.trim() },
+                                        ),
+                                    "The creator has been asked to pick another time",
+                                );
+                                setSlotReason("");
+                            }}
+                            className="h-12 rounded-full px-6 sm:h-11"
+                        >
+                            {busy === "decline-slot" && (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            )}
+                            Ask for another time
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </DetailShell>
     );
 

@@ -25,100 +25,23 @@ import { api } from "@/lib/api";
 import { CREATOR_ACTIVE as IDS } from "@/constants/testIds";
 import {
     EmptyState,
-    LIFECYCLE,
     Money,
     SectionHead,
     formatDateTime,
     formatRupees,
-    lifecycleFor,
-    stageIndexFor,
 } from "./shared";
+import ProcessFlow from "@/components/application/ProcessFlow";
 import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
 
-// ---------------------------------------------------------------------------
-// The tracker
-// ---------------------------------------------------------------------------
-
-const Tracker = ({ collabId, state, stages = LIFECYCLE }) => {
-    const still = useReducedMotion();
-    const current = stageIndexFor(state, stages);
-    const filled = current < 0 ? 0 : current / (stages.length - 1);
-
-    return (
-        <div data-testid={IDS.tracker(collabId)} className="mt-6">
-            {/* The rail is one element rather than six joined segments, so the
-                fill can move as a single stroke when a stage completes. The
-                markers sit on it at their true fraction — laying them out in
-                the six label columns would put "Paid" five-sixths along a bar
-                that a finished collaboration fills to the end. */}
-            <div className="relative h-[2px] w-full rounded-full bg-white/10">
-                <motion.div
-                    className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-ember-500"
-                    initial={still ? false : { scaleX: 0 }}
-                    animate={{ scaleX: filled }}
-                    transition={{ duration: still ? 0 : 0.7, ease: [0.22, 1, 0.36, 1] }}
-                />
-                {stages.map((stage, i) => (
-                    <span
-                        key={stage.key}
-                        aria-hidden="true"
-                        style={{ left: `${(i / (stages.length - 1)) * 100}%` }}
-                        className={
-                            "absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-300 " +
-                            (i <= current ? "bg-ember-500" : "bg-white/25")
-                        }
-                    />
-                ))}
-            </div>
-
-            {/* First and last labels align to the ends of the rail; the rest
-                centre in their column, which lands close enough to their
-                marker to read as attached to it. */}
-            {/* Six columns, or seven where a draft is reviewed. The count is a
-                style rather than a class because Tailwind can only see the
-                classes written literally in the source. */}
-            <ol
-                className="mt-3 grid gap-1"
-                style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
-            >
-                {stages.map((stage, i) => {
-                    const done = i < current;
-                    const here = i === current;
-                    const align =
-                        i === 0
-                            ? "text-left"
-                            : i === stages.length - 1
-                            ? "text-right"
-                            : "text-center";
-                    return (
-                        <li
-                            key={stage.key}
-                            data-testid={IDS.stage(collabId, stage.key)}
-                            aria-current={here ? "step" : undefined}
-                            className={
-                                "min-w-0 text-[9px] leading-tight sm:text-[10px] " +
-                                align +
-                                " " +
-                                (here
-                                    ? "text-ember-500"
-                                    : done
-                                    ? "text-muted-foreground"
-                                    : "text-muted-foreground/50")
-                            }
-                        >
-                            {stage.label}
-                        </li>
-                    );
-                })}
-            </ol>
-        </div>
-    );
-};
-
+// The tracker that used to live here — a six-stage rail with its own labels —
+// is gone. It was the third copy of the lifecycle in this repository, and the
+// three disagreed: a creator saw six stages, the console saw the raw twelve,
+// and the brand saw neither. `ProcessFlow` is the one answer now, and the
+// stages come from the server.
 // ---------------------------------------------------------------------------
 // The card
 // ---------------------------------------------------------------------------
@@ -276,13 +199,18 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 </Money>
             </div>
 
-            <Tracker
-                collabId={collab.id}
-                state={collab.state}
-                stages={lifecycleFor(collab)}
-            />
+            {/* **The same eight stages the brand and the admin read.** This
+                card used to draw its own six, which meant a creator asking
+                "where is this" and a brand answering the same question were
+                looking at two different pictures. The stages, the position and
+                the next line all come from the server — in the creator's
+                voice, because the server knows who asked. */}
+            <ProcessFlow process={collab.process} className="mt-6" />
 
-            {next.label && (
+            {/* The card's own next-action line stays where the server has
+                nothing more specific to say — it knows about slots, venues and
+                drafts that the generic flow does not. */}
+            {next.label && !collab.process?.next_action && (
                 <p
                     data-testid={IDS.nextAction(collab.id)}
                     className={

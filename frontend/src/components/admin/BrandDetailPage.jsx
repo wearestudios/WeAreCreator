@@ -114,7 +114,7 @@ export default function BrandDetailPage() {
                 { key: "brands", label: "Brands", to: "/admin/brands" },
                 { key: "brand", label: brand?.business_name || "Brand" },
             ]}
-            kicker="Brand"
+            kicker={brand?.reference ? `Brand · ${brand.reference}` : "Brand"}
             title={brand?.business_name || "Brand"}
             avatar={brand && <BrandAvatar brand={brand} size="h-11 w-11" />}
             loading={!data && !error && !notFound}

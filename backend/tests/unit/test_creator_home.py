@@ -150,11 +150,17 @@ def test_entrances_are_staggered_and_reduced_motion_is_respected():
     assert "delay" in reveal and "index" in reveal
 
 
-def test_the_tracker_fill_animates_as_one_stroke():
+def test_the_card_draws_the_shared_process_flow_rather_than_its_own_bar():
+    """**This replaces a rule about the old tracker.** The card used to draw a
+    six-stage rail with an animated fill — its own copy of the lifecycle, and
+    the third in the repository. The brand and the admin had the other two, so
+    "where has this got to" had a different picture depending on who was asked.
+    One component now, fed by the server."""
     src = read("components", "creator", "ActiveCampaigns.jsx")
 
-    assert "scaleX" in src
-    assert "useReducedMotion" in src
+    assert "<ProcessFlow" in src
+    assert "scaleX" not in src, "the old animated rail is gone"
+    assert "lifecycleFor" not in src
 
 
 def test_nothing_on_the_page_loops():

@@ -354,7 +354,12 @@ def test_every_sidebar_section_has_a_route():
 def test_below_md_the_rows_are_a_list_rather_than_a_table():
     code = code_of(CONSOLE / "DataTable.jsx")
     assert "function MobileList(" in code
-    assert '"(min-width: 768px)"' in code
+    # The breakpoint moved to `lib/useWide.js` when the application process
+    # flow needed the same answer — one definition of "is there room", asked
+    # by both. The table still has to read it.
+    assert 'from "@/lib/useWide"' in code
+    hook = code_of(CONSOLE.parents[2] / "lib" / "useWide.js")
+    assert '"(min-width: 768px)"' in hook
     # The branch itself, not just the string: `if (!wide)` also appears in the
     # skeleton, so looking for it alone passed with the table forced on.
     # Checked, by forcing it and watching this test pass.

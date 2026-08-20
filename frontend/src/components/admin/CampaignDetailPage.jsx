@@ -216,7 +216,11 @@ export default function CampaignDetailPage() {
                 },
                 { key: "campaign", label: campaign?.title || "Campaign" },
             ]}
-            kicker={campaign?.brand_name || "Campaign"}
+            kicker={
+                [campaign?.reference, campaign?.brand_name || "Campaign"]
+                    .filter(Boolean)
+                    .join(" · ")
+            }
             title={campaign?.title || "Campaign"}
             loading={!detail && !error && !notFound}
             error={error}

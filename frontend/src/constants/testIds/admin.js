@@ -204,6 +204,9 @@ export const ADMIN_REVIEWS = {
 	row: (id) => `admin-review-row-${id}`,
 	expand: (id) => `admin-review-expand-${id}`,
 	detail: (id) => `admin-review-detail-${id}`,
+	// The way to the whole record. A queue row is a summary and a peek is a
+	// preview; the decision needs the page.
+	open: (id) => `admin-review-open-${id}`,
 	approve: (id) => `admin-review-approve-${id}`,
 	reject: (id) => `admin-review-reject-${id}`,
 	instagram: (id) => `admin-review-instagram-${id}`,

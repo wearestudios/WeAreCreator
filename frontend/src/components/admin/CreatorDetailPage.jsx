@@ -132,7 +132,7 @@ export default function CreatorDetailPage() {
                 { key: "creators", label: "Creators", to: "/admin/creators" },
                 { key: "creator", label: creator?.name || "Creator" },
             ]}
-            kicker="Creator"
+            kicker={creator?.reference ? `Creator · ${creator.reference}` : "Creator"}
             title={creator?.name || "Creator"}
             loading={!data && !error && !notFound}
             error={error}

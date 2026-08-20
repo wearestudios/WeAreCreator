@@ -4,11 +4,23 @@
 
 export const APPLICATION = {
 	page: 'application-page',
-	lifecycle: 'application-lifecycle',
-	lifecycleStep: (state) => `application-lifecycle-step-${state}`,
-	lifecycleExit: 'application-lifecycle-exit',
-	nextAction: 'application-next-action',
-	nextOwner: 'application-next-owner',
+	// The eight-stage process flow, on all three views of one application.
+	process: 'application-process',
+	processStage: (key) => `application-process-stage-${key}`,
+	processToggle: 'application-process-toggle',
+	processNext: 'application-process-next',
+	processOwner: 'application-process-owner',
+	processBanner: 'application-process-banner',
+
+	// The booking handshake, offered to whoever runs the campaign.
+	confirmSlot: 'application-confirm-slot',
+	declineSlot: 'application-decline-slot',
+	slotPending: 'application-slot-pending',
+	declineSlotReason: 'application-decline-slot-reason',
+	declineSlotSubmit: 'application-decline-slot-submit',
+
+	// The record's readable name, on every view of it.
+	reference: 'application-reference',
 
 	creator: 'application-creator',
 	campaign: 'application-campaign',

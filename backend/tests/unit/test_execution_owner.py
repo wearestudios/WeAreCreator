@@ -108,12 +108,34 @@ def test_a_weare_run_campaign_notifies_the_weare_team():
     assert "notify_brand_manager(" not in weare_branch, "the brand is not the one actioning it"
 
 
-def test_the_brand_still_hears_about_its_own_campaign():
-    """Not being the one to action it is different from not being told."""
+def test_the_brand_is_not_told_about_a_raw_application_on_our_campaign():
+    """**This reverses an earlier rule**, on purpose.
+
+    The brand used to be copied in on every application to a campaign it had
+    handed us — "not the one actioning it is different from not being told".
+    That was wrong about what handing a campaign over means: the brand watched
+    thirty unchecked pitches arrive and was paged about each. Shortlisting is
+    the job they asked us to do, and a notification about a raw application is
+    that job leaking back to them in a different envelope.
+    """
     source = inspect.getsource(server.apply_to_campaign)
     weare_branch = source[source.index("if _weare_runs(campaign):") : source.index("    else:")]
 
-    assert "_tell_brand_manager_unless_managed" in weare_branch
+    assert "_tell_brand_manager_unless_managed" not in weare_branch
+    assert "notify_brand_manager" not in weare_branch
+
+
+def test_the_brand_hears_when_there_is_a_shortlisted_creator_and_a_number():
+    """And that is the moment it hears — both fee routes reach it, so which of
+    the two settled the number cannot change whether the brand finds out."""
+    helper = inspect.getsource(server._tell_brand_about_shortlist)
+    assert "_weare_runs" in helper, "it must stay silent on a brand-run brief"
+    assert "notify_brand_manager" in helper
+
+    for fn in (server.brand_record_agreed_amount, server.advance_collaboration):
+        assert "_tell_brand_about_shortlist" in inspect.getsource(fn), (
+            f"{fn.__name__} agrees a fee without telling the brand"
+        )
 
 
 def test_an_unstaffed_weare_campaign_still_reaches_an_admin():

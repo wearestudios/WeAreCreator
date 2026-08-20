@@ -1335,6 +1335,144 @@ few" is not a number anybody agreed to.
   shows the sentence the campaign will carry as it is being built, which is
   exactly the string the server derives.
 
+## Reference ids
+
+**An ObjectId is not something a person says out loud**, and every record here
+was addressed by one — in a URL, in a support thread, on a call with a brand —
+so "the campaign ending 4f2a" is what that turned into. `BRD-0012`, `CMP-0034`,
+`CRT-0108`, `COL-0456`: short, ordered, pronounceable, and narrow enough for a
+table column.
+
+- **A label, never a key.** Nothing looks a record up by one except search, and
+  every route still takes the ObjectId — a second identifier that can address a
+  record is a second thing to check permissions on.
+- `_next_reference(kind)` allocates from a counter document per kind under an
+  `$inc` upsert, so the sequence is decided inside the database. Counting rows
+  would hand out a duplicate the moment anything was deleted.
+- `_reference_of(doc)` is the one reader and **absent is `None`** — a record the
+  backfill has not reached has no number, and an invented one is worse than a
+  blank column because somebody would quote it. Every entity serializer emits
+  it; the creator's is on `_BRAND_VISIBLE_CREATOR_FIELDS` because it carries
+  nothing about the person and is what a brand and an admin quote at each other.
+- Startup migration 11 numbers everything **in `_id` order**, so `CMP-0001` is
+  the first brief this operation ever posted rather than whichever row the
+  migration reached first, then adds a unique sparse index.
+- `parse_reference` reads `"BRD-0012"`, `"brd12"` and `"crt 108"` alike — one
+  somebody has to spell exactly is one they retype three times. A typed
+  reference is answered **exactly** by `admin_global_search`, returning the one
+  record, and it is the only way to reach a *collaboration* from the palette:
+  nothing about one is a name, so there is nothing else to type.
+
+## The application process flow
+
+**Eight friendly stages over twelve internal states, and the states did not
+change.** `COLLAB_STATE_ORDER` is the machine — what transitions are checked
+against, what audit lines name, what a 409 is about — and it is unreadable:
+"commercial agreed", "draft approved" and "in payment" are twelve boxes
+describing our bookkeeping, and nobody can tell which one means "nearly done".
+
+Submitted → Verified → Negotiated → Scheduled → Attended → Content review →
+Content delivery → Payment. `_process_flow` groups; it decides nothing.
+
+- **A state missing from the mapping fails a test** rather than silently
+  rendering nothing. `_stage_of` is the one reader.
+- **Without a draft gate the two content stages shift by one**, and that is not
+  a fudge to keep the count at eight: with no gate the live link *is* the thing
+  being reviewed and approving it is the delivery being accepted, while with
+  the gate the draft is the review and the live post is the delivery. Both are
+  true of their own campaign; what would be false is drawing a "Content review"
+  stage on a campaign that reviews nothing.
+- **The picture is identical for all three and only the voice changes.** The
+  party who has to act reads an instruction ("Pick your slot"), everybody else
+  reads the wait ("Waiting for the creator to pick a slot"). The server knows
+  who called, so `ProcessFlow` never asks what role is looking — the same rule
+  the shared application screen holds, and a test greps for role checks in it.
+- `_process_owner` maps the table's `brand` steps through `execution_owner`: on
+  a weare-run brief they are ours, and telling a creator the brand is reviewing
+  their draft when our manager is would be a lie the screen tells twice a day.
+- **An exit is a banner, not a ninth box**, and a send-back is *this* stage
+  again with a reason — drawing it as a step backwards would lose the fact that
+  the work exists.
+- Below `md` the flow collapses to "Stage 4 of 8 · Scheduled", expandable.
+  Eight boxes on a 390px screen are eight illegible boxes. `useWide` moved to
+  `lib/useWide.js` for this — a component on the creator's dashboard importing
+  a hook out of the console kit is a dependency in the wrong direction.
+- **It replaced three disagreeing bars.** The creator's `LIFECYCLE` (six
+  stages), the console's raw ladder and the brand's state pill were three
+  answers to "where has this got to". The first is deleted, not left beside the
+  new one.
+
+## A booking is a request until somebody says yes
+
+Booking used to be one move: a creator picked a time and that was the
+arrangement, with nobody at the venue having agreed to it — so a creator turned
+up to a shoot nobody had planned for.
+
+- **It is not a new state.** The ladder still reads `commercial_agreed →
+  slot_booked`; what changed is that `slot_booked` carries `slot_confirmed_at`.
+  Absent means booked and waiting, set means agreed. Nothing mid-flight is
+  stranded and no transition check moved.
+- **`_slot_confirmed` reads absent as confirmed on a booking made before the
+  handshake existed** — those were agreed by the only mechanism there was,
+  nobody objecting, and reopening them all on deploy would put a decision in
+  front of every manager for shoots that already happened. `slot_booked_at` is
+  what tells the two apart.
+- **The seat is held from the moment of booking**, either way: a place somebody
+  is waiting on an answer for is not a place to sell twice.
+- **Nobody books on a creator's behalf.** `advance_collaboration` refuses
+  `slot_booked` outright now — it used to write the state and a time straight
+  onto the collaboration, which is an admin deciding when somebody else's day
+  is. `_CREATOR_OWNED_TRANSITIONS` names it, and `commercial_agreed` left
+  `ADMIN_ACTION_STATES` because there is nothing an admin can do there.
+- **`_answer_slot_request` is the one implementation** behind the brand's two
+  routes and the WeAre manager's two, because which of them answers depends on
+  `execution_owner` and a booking that meant different things depending on who
+  confirmed it would not be a confirmation. Confirming writes no state — only
+  the timestamp. Declining moves the collaboration back to `commercial_agreed`
+  **first** and releases the seat after, or a place is on sale while somebody
+  still holds it.
+- The creator is told either way (`slot_requested` on booking, then
+  `slot_confirmed` or `slot_declined`), and **the reason is required on a
+  decline** — without it they pick the same impossible time again.
+
+## What a brand sees on a campaign it handed to us
+
+**Handing a campaign to WeAre is handing over the shortlisting too.** That is
+what the brand is buying. The board used to show every application anyway, so
+the brand watched thirty unchecked pitches arrive, formed opinions about
+creators we had not checked, and was paged about each one.
+
+- **`agreed_at` is the line**, not a state: it is the moment somebody at WeAre
+  finished the job, it survives everything afterwards including a later
+  decline, and it is exactly what "with the agreed amount" means. Barter sets
+  it with no figure, which is right — the work was done, there is no money in
+  it. `_brand_sees_collab` and `_brand_visible_collab_query` are the readers.
+- **Every door carries it**, not just the board: `_brand_collab_or_404` *and*
+  `_note_readable_collab_or_404`. A shield on one of two doors is a shield on
+  neither — the board could hide a raw application while its id, pasted from
+  anywhere, opened the pitch and the creator. A 404, like every other ownership
+  refusal here.
+- Applications on a weare-run brief notify `notify_weare_team` and **not the
+  brand**. The brand hears once, at `_tell_brand_about_shortlist`, from both
+  fee routes — so which of the two settled the number cannot change whether the
+  brand finds out. `_awaiting_brand_counts` skips weare-run campaigns for the
+  same reason: a badge for work they cannot do.
+- **`advance_collaboration` allows the brand-owned transitions on a weare-run
+  campaign**, because the brand cannot reach the application to make them.
+  Refusing both would leave it stuck at `verified` with nobody able to move it.
+
+## Every review opens a full page
+
+A review queue row is a summary and its peek is a preview; neither carries what
+a decision needs. An admin verifying a brand could not see its GST number, its
+registered address or its documents from the screen where they decide it.
+
+- Every config in `Reviews.jsx` has an `href` to the entity's own page, the row
+  name is a link to it, and the peek carries "Open full page".
+- **The approval actions live on the page too** — otherwise "open the full
+  page" means losing the queue to read the record and going back to act on it.
+  All three pages already had them; what was missing was the way there.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:

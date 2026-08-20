@@ -163,7 +163,7 @@ export function CommandPalette() {
                             onKeyDown={onKeyDown}
                             data-testid={IDS.input}
                             aria-label="Search creators, brands, campaigns and phone numbers"
-                            placeholder="Name, business, campaign, or a phone number…"
+                            placeholder="Name, business, campaign, phone number, or an id like CMP-0034…"
                             className="h-14 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                         />
                     </div>
@@ -229,8 +229,17 @@ export function CommandPalette() {
                                                                 }
                                                             />
                                                             <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-sm">
-                                                                    {item.label}
+                                                                <span className="flex items-baseline gap-2">
+                                                                    <span className="min-w-0 truncate text-sm">
+                                                                        {item.label}
+                                                                    </span>
+                                                                    {/* The name somebody types to
+                                                                        get back here. */}
+                                                                    {item.reference && (
+                                                                        <span className="flex-none font-mono text-[10px] tracking-wider text-muted-foreground/70">
+                                                                            {item.reference}
+                                                                        </span>
+                                                                    )}
                                                                 </span>
                                                                 {item.sublabel && (
                                                                     <span className="block truncate text-sm text-muted-foreground">
