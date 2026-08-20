@@ -87,6 +87,16 @@ PERSONAS = [
         "role": "campaign_manager",
         "blurb": "Staff. Gets the roster, daysheet and check-in screen for assigned campaigns.",
     },
+    {
+        "key": "team",
+        "phone": phone(7),
+        "name": "Devika Rao (WeAre team)",
+        "role": "weare_team",
+        "blurb": (
+            "Staff. The admin console scoped to Thirdwave Coffee — no creator "
+            "directory, no health, no audit, and every list ends at that brand."
+        ),
+    },
 ]
 
 
@@ -240,6 +250,14 @@ async def main() -> int:
     manager = next(u for p, u in made if p["key"] == "manager")
     brand = next(u for p, u in made if p["key"] == "brand-verified")
     manager_p = next(p for p, _ in made if p["key"] == "manager")
+
+    # And put the team member on the verified brand, or their console is
+    # correctly empty and indistinguishable from a broken one — which is the
+    # exact confusion this file exists to prevent.
+    team = next(u for p, u in made if p["key"] == "team")
+    await server.db.users.update_one(
+        {"_id": team}, {"$addToSet": {"assigned_brand_ids": brand}}
+    )
     existing = await server.db.campaigns.find_one({"brand_id": brand, "title": {"$regex": "^Seed:"}})
     if not existing:
         await server.db.campaigns.insert_one(

@@ -399,9 +399,12 @@ def test_the_icon_rail_is_not_the_phone_navigation():
 
 def test_the_rail_and_the_sheet_are_one_list():
     """A phone finding different sections from a laptop is the bug this
-    shape exists to prevent."""
+    shape exists to prevent — and now a *role* finding a different set from
+    another role too, which is why both forms go through `sectionsFor` rather
+    than filtering the list themselves."""
     code = code_of(CONSOLE / "Sidebar.jsx")
-    assert code.count("ADMIN_SECTIONS.map") == 2
+    assert code.count("sectionsFor(role).map") == 2
+    assert "ADMIN_SECTIONS.map" not in code, "one of the two forms is unfiltered"
     # The parenthesis matters: "function SectionLink" is a prefix of
     # "function SectionLinkAnythingElse", so the bare string passed a rename.
     assert "function SectionLink(" in code, "the row is written once"

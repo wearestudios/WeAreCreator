@@ -70,20 +70,11 @@ import ImageUploadField, {
     FALLBACK_MAX_IMAGE_BYTES,
 } from "@/components/ImageUploadField";
 import { IST } from "@/lib/time";
-
-// The full set the server accepts (CATEGORY_LITERAL). This used to be four of
-// the eight, so a fashion, travel, wellness or real-estate brand had to file
-// itself as "Lifestyle" — and that is the word its public page then prints.
-const CATEGORY_OPTIONS = [
-    { value: "fnb", label: "F&B" },
-    { value: "hospitality", label: "Hospitality" },
-    { value: "retail", label: "Retail" },
-    { value: "real_estate", label: "Real estate" },
-    { value: "fashion", label: "Fashion" },
-    { value: "travel", label: "Travel" },
-    { value: "wellness", label: "Wellness" },
-    { value: "lifestyle", label: "Lifestyle" },
-];
+// The full set the server accepts (CATEGORY_LITERAL), from the one list. This
+// form used to name four of the eight, so a fashion, travel, wellness or
+// real-estate brand had to file itself as "Lifestyle" — and that is the word
+// its public page then prints.
+import { CATEGORY_OPTIONS } from "@/lib/categories";
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [

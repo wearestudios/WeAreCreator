@@ -38,8 +38,16 @@ export const isBrandSide = (role) => BRAND_ROLES.includes(role);
  * Exported from here so the navbar, the route guard and the dashboard root all
  * agree; three copies of this rule is how you get a redirect loop.
  */
+// `weare_team` lands in the console like an admin does — it *is* the console,
+// with a scope around it, and sending them to a creator dashboard they have no
+// account for would be the same bug the admin branch of `linksFor` used to
+// have the other way round.
 export const homePathFor = (role) =>
-    role === "admin" ? "/admin" : role === "campaign_manager" ? "/manager" : "/dashboard";
+    role === "admin" || role === "weare_team"
+        ? "/admin"
+        : role === "campaign_manager"
+          ? "/manager"
+          : "/dashboard";
 
 export const AuthProvider = ({ children }) => {
     // null = checking, false = anonymous, object = authenticated

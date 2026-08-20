@@ -535,12 +535,20 @@ def test_the_picker_is_no_longer_filed_under_creator():
 
 def test_the_form_offers_every_category_the_server_accepts():
     """It offered four of eight, so a fashion or travel brand had to file
-    itself as "Lifestyle" — and that is the word its public page prints."""
-    src = frontend("pages", "BrandOnboarding.jsx")
-    block = src[src.index("const CATEGORY_OPTIONS"):src.index("const BUSINESS_TYPE_OPTIONS")]
+    itself as "Lifestyle" — and that is the word its public page prints.
 
+    The list now lives in `lib/categories.js`, because it had been written out
+    twice and a third copy was about to be typed for the admin's create
+    dialog. The form is checked for *using* it; `test_access_matrix.py` checks
+    the list itself against the server and fails any file that re-declares
+    one."""
+    form = frontend("pages", "BrandOnboarding.jsx")
+    assert 'from "@/lib/categories"' in form
+    assert "CATEGORY_OPTIONS.map" in form
+
+    src = frontend("lib", "categories.js")
     for value in server.CATEGORY_LITERAL.__args__:
-        assert f'"{value}"' in block, f"the brand form cannot pick {value}"
+        assert f'"{value}"' in src, f"the brand form cannot pick {value}"
 
 
 def test_every_category_has_words_for_the_public_page():

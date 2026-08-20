@@ -35,6 +35,7 @@ import { CampaignLink } from "@/components/admin/links";
 import { PerformanceRollup } from "@/components/admin/Performance";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import BrandAvatar from "@/components/BrandAvatar";
+import BrandTeamPanel from "@/components/admin/BrandTeamPanel";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -46,7 +47,7 @@ const STATE_LABEL = {
 
 export default function BrandDetailPage() {
     const { id } = useParams();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
 
     const [data, setData] = useState(null);
     const [audit, setAudit] = useState(null);
@@ -67,6 +68,11 @@ export default function BrandDetailPage() {
     }, [id]);
 
     const loadAudit = useCallback(async () => {
+        // **The log itself stays admin-only.** A team member's own actions are
+        // recorded under their name like anybody else's; reading the platform's
+        // log is a different thing, and asking for it would only produce a 403
+        // and an empty panel that looked like nothing had ever happened.
+        if (!allAccess) return;
         try {
             // brand_id rather than subject: a brand's history lands on its
             // campaigns and collaborations as much as on the profile itself.
@@ -77,7 +83,7 @@ export default function BrandDetailPage() {
         } catch {
             setAudit([]);
         }
-    }, [id]);
+    }, [id, allAccess]);
 
     useEffect(() => {
         setData(null);
@@ -384,6 +390,11 @@ export default function BrandDetailPage() {
                         )}
                     </Section>
 
+                    <Section id="team" title="Who at WeAre runs this">
+                        <BrandTeamPanel brandId={id} canAssign={allAccess} />
+                    </Section>
+
+                    {allAccess && (
                     <Section id="audit" title="Everything that happened" count={audit?.length}>
                         <AuditTrail
                             rows={audit}
@@ -391,6 +402,7 @@ export default function BrandDetailPage() {
                             emptyMessage="Nothing recorded against this brand yet."
                         />
                     </Section>
+                    )}
                 </>
             )}
 

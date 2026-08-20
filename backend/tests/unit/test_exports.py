@@ -178,8 +178,21 @@ class TestAdminExportsMayCarryContact:
         assert 'f"export.{kind}"' in src
         assert '"includes_contact_details"' in src
 
-    def test_exports_are_admin_only(self):
-        assert 'require_roles("admin")' in inspect.getsource(server.admin_export)
+    def test_exports_are_console_only_and_scoped(self):
+        """WeAre's own staff export their brands' work; the narrowing is passed
+        into the builder rather than applied to the rows afterwards."""
+        src = inspect.getsource(server.admin_export)
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "brand_scope=_console_brand_ids(user)" in src
+
+    def test_the_platform_wide_exports_stay_with_admin(self):
+        """**Two of the six cannot be narrowed without becoming a different
+        document.** The creator roster is the global directory in CSV form and
+        the audit log is the whole platform's history — neither is a brand's
+        work, so neither is a scoped role's to download."""
+        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit"}
+        src = inspect.getsource(server.admin_export)
+        assert "kind in ADMIN_ONLY_EXPORTS and not is_all_access(user)" in src
 
     def test_exports_are_not_cached(self):
         # They carry phone numbers and payout figures.

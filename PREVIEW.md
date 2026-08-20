@@ -98,6 +98,7 @@ docker compose logs -f api | grep -i "simulation mode"
 | `+919900000004` | Verified brand manager — can publish, invite, see applicants |
 | `+919900000005` | Unverified brand — for testing the verification gate |
 | `+919900000006` | WeAre campaign manager, with a campaign assigned |
+| `+919900000007` | WeAre team — the admin console scoped to one brand |
 
 Admin signs in separately at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 

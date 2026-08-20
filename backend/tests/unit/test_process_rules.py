@@ -972,12 +972,29 @@ class TestModerationRoutes:
             "reinstate_creator",
         ],
     )
-    def test_the_new_detail_and_account_routes_are_admin_only(self, fn_name):
-        # The detail pages assemble contact numbers, documents and payouts in
-        # one response. Nothing here may be reachable by a brand or a manager.
+    def test_the_new_detail_and_account_routes_are_console_only(self, fn_name):
+        """The detail pages assemble contact numbers, documents and payouts in
+        one response. Nothing here may be reachable by a brand, a creator or a
+        campaign manager.
+
+        **The console answers to two roles now** — `admin` and `weare_team` —
+        and the three entity pages are among the scoped ones: a `weare_team`
+        member opens them for the brands they are assigned to and 404s on the
+        rest, which `_console_may_see_brand` enforces at the guard. Suspension
+        and reinstatement stay admin's alone: they are account decisions about
+        a creator, not work on a brand's campaign.
+        """
         import inspect
 
-        assert 'require_roles("admin")' in inspect.getsource(getattr(server, fn_name))
+        src = inspect.getsource(getattr(server, fn_name))
+        scoped = fn_name in (
+            "get_admin_campaign_detail",
+            "get_admin_brand_detail",
+            "get_admin_collaboration_detail",
+        )
+        expected = "require_roles(*CONSOLE_ROLES)" if scoped else 'require_roles("admin")'
+        assert expected in src
+        assert set(server.CONSOLE_ROLES) == {"admin", "weare_team"}
 
     def test_suspension_is_not_a_verification_decision(self):
         """Suspending an account must not touch the profile's verification.
@@ -1009,7 +1026,11 @@ class TestModerationRoutes:
         assert "db.audit_log.find" in src
         assert '"subject_type": "collaboration"' in src
 
-    def test_every_moderation_decision_is_guarded_by_the_admin_role(self):
+    def test_every_moderation_decision_is_guarded_by_the_console_roles(self):
+        """Reviewing a brand or a brief is console work, and WeAre's own staff
+        do it for the brands they are assigned to. What that does **not** open
+        is the platform: the scope is enforced inside each of these, and the
+        creator vetting queue is not among them."""
         import inspect
 
         for fn in (
@@ -1019,7 +1040,15 @@ class TestModerationRoutes:
             server.approve_campaign,
             server.reject_campaign,
         ):
-            assert 'require_roles("admin")' in inspect.getsource(fn)
+            src = inspect.getsource(fn)
+            assert "require_roles(*CONSOLE_ROLES)" in src
+            # And each of them narrows: a queue that took the new role without
+            # a scope would show one brand's staff every other brand's work.
+            assert (
+                "_console_brand_query" in src
+                or "_console_brand_or_404" in src
+                or "_admin_campaign_or_404(campaign_id, user)" in src
+            ), f"{fn.__name__} takes the console roles without scoping"
 
 
 class TestModerationNotifications:
@@ -1787,7 +1816,11 @@ class TestCampaignManagerRole:
         import inspect
 
         src = inspect.getsource(server.assign_campaign_manager)
-        assert 'require_roles("admin")' in src
+        # Console work on a campaign, scoped by `_admin_campaign_or_404` — a
+        # `weare_team` member staffs their own brands' briefs and nobody
+        # else's.
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "_admin_campaign_or_404(campaign_id, user)" in src
         # The snapshot is the point: the brand and the creators see these, and
         # they must not change under them if the manager edits their account.
         for field in ("manager_name", "manager_phone", "manager_email"):
@@ -2312,11 +2345,13 @@ class TestApplicantBuckets:
 
 
 class TestDashboardEndpoint:
-    def test_it_is_admin_only(self):
+    def test_it_is_console_only_and_scoped(self):
         import inspect
 
         for fn in (server.admin_dashboard, server.admin_campaign_applicants):
-            assert 'require_roles("admin")' in inspect.getsource(fn)
+            src = inspect.getsource(fn)
+            assert "require_roles(*CONSOLE_ROLES)" in src
+            assert "_console_" in src or "_admin_campaign_or_404(campaign_id, user)" in src
 
     def test_it_takes_an_optional_campaign_scope(self):
         params = __import__("inspect").signature(server.admin_dashboard).parameters
@@ -3780,7 +3815,11 @@ class TestVerificationDocumentsAreNotPublic:
         import inspect
 
         src = inspect.getsource(server.download_brand_document)
-        assert 'require_roles("admin")' in inspect.getsource(server.download_brand_document)
+        # Console-only, and scoped: a brand's registered address and its
+        # directors' names are readable by the staff who work that brand, and
+        # by nobody else at all.
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "_console_brand_or_404(user_id, user)" in src
         # Both ids in the filter, so a document id can't be pulled out from
         # under a different brand.
         assert '{"_id": doc_oid, "brand_id": brand_oid}' in src

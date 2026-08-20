@@ -17,6 +17,7 @@ import { api, formatApiError } from "@/lib/api";
 // from this form rather than present and disabled, so there is nothing here to
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
+import { CATEGORY_OPTIONS } from "@/lib/categories";
 import { EXECUTION_OPTIONS } from "@/lib/execution";
 import { dayKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
@@ -48,17 +49,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-
-const CATEGORY_OPTIONS = [
-    { value: "fnb", label: "F&B" },
-    { value: "hospitality", label: "Hospitality" },
-    { value: "retail", label: "Retail" },
-    { value: "real_estate", label: "Real Estate" },
-    { value: "fashion", label: "Fashion" },
-    { value: "travel", label: "Travel" },
-    { value: "wellness", label: "Wellness" },
-    { value: "lifestyle", label: "Lifestyle" },
-];
 
 // An ISO timestamp back into the yyyy-mm-dd an <input type="date"> expects.
 //

@@ -34,7 +34,9 @@ import {
     OverviewRoute,
     PerformanceRoute,
     QueueRoute,
+    TeamRoute,
 } from "@/components/admin/routes";
+import { CONSOLE_ROLES } from "@/lib/consoleScope";
 import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
 import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
 import AdminBrandDetail from "@/components/admin/BrandDetailPage";
@@ -263,7 +265,7 @@ function App() {
                         <Route
                             path="/admin"
                             element={
-                                <ProtectedRoute roles={["admin"]}>
+                                <ProtectedRoute roles={CONSOLE_ROLES}>
                                     <AdminConsole />
                                 </ProtectedRoute>
                             }
@@ -312,6 +314,7 @@ function App() {
                             <Route path="performance" element={<PerformanceRoute />} />
                             <Route path="health" element={<HealthRoute />} />
                             <Route path="audit" element={<AuditRoute />} />
+                            <Route path="team" element={<TeamRoute />} />
                             {/* A bad path under /admin lands on the console
                                 rather than the marketing site. */}
                             <Route path="*" element={<Navigate to="/admin" replace />} />

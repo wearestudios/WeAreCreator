@@ -332,10 +332,17 @@ def test_a_follow_up_reopens_the_thread():
     assert len(rows) == 1 and rows[0]["body"] == "And charging?"
 
 
-def test_the_queue_is_admin_only():
+def test_the_queue_is_console_only_and_scoped_to_what_the_caller_runs():
+    """It is a queue of work, and work belongs to whoever runs the campaign —
+    so a WeAre team member gets theirs. **Scoped in the query, not on the
+    rows**: the cap below is applied after the sort, so filtering afterwards
+    would shorten a scoped queue to whatever survived somebody else's
+    hundred."""
     src = source(server.unanswered_questions)
 
-    assert 'require_roles("admin")' in src
+    assert "require_roles(*CONSOLE_ROLES)" in src
+    assert "_console_campaign_query(user)" in src
+    assert "find({})" not in src
 
 
 # --- What a brand may read ---------------------------------------------------

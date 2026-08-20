@@ -97,7 +97,7 @@ const GROUPS = [
 
 export default function CampaignDetailPage() {
     const { id } = useParams();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
 
     const [detail, setDetail] = useState(null);
     const [applicants, setApplicants] = useState(null);
@@ -129,6 +129,11 @@ export default function CampaignDetailPage() {
     }, [id]);
 
     const loadAudit = useCallback(async () => {
+        // The platform's log stays admin-only. A team member's own actions are
+        // recorded under their name like anybody else's — reading everybody's
+        // is a different thing, and asking would only produce a 403 and an
+        // empty panel that looked like nothing had ever happened here.
+        if (!allAccess) return;
         try {
             const { data } = await api.get("/admin/audit", {
                 params: { campaign_id: id, limit: 200 },
@@ -137,7 +142,7 @@ export default function CampaignDetailPage() {
         } catch {
             setAudit([]);
         }
-    }, [id]);
+    }, [id, allAccess]);
 
     const loadAll = useCallback(async () => {
         await Promise.all([loadDetail(), loadApplicants(), loadAudit()]);
@@ -767,13 +772,19 @@ export default function CampaignDetailPage() {
                         )}
                     </Section>
 
-                    <Section id="audit" title="Everything that happened" count={audit?.length}>
-                        <AuditTrail
-                            rows={audit}
-                            formatWhen={formatDateTime}
-                            emptyMessage="Nothing has happened on this campaign yet."
-                        />
-                    </Section>
+                    {allAccess && (
+                        <Section
+                            id="audit"
+                            title="Everything that happened"
+                            count={audit?.length}
+                        >
+                            <AuditTrail
+                                rows={audit}
+                                formatWhen={formatDateTime}
+                                emptyMessage="Nothing has happened on this campaign yet."
+                            />
+                        </Section>
+                    )}
                 </>
             )}
 

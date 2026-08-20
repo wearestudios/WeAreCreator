@@ -147,11 +147,24 @@ REFRESH_TOKEN_DAYS = 7
 # at registration, not an extra seat. `brand` is what that role used to be
 # called; both are accepted everywhere a brand acts (BRAND_ROLES) so accounts
 # created before the rename keep working, and startup migrates them over.
-Role = Literal["creator", "brand", "brand_manager", "admin", "campaign_manager"]
+#
+# `weare_team` is WeAre's own staff running campaigns for our internal clients.
+# They get the admin console — the same sidebar, the same queues, the same
+# entity pages, the same collaboration actions — **scoped to the brands they
+# are assigned to**. It is not a weaker admin: within its brands it does
+# everything an admin does, and outside them the records do not exist.
+Role = Literal[
+    "creator", "brand", "brand_manager", "admin", "campaign_manager", "weare_team"
+]
 
 # Every guard on a brand-facing endpoint uses this rather than naming the
 # strings, so a third spelling can never drift into existence.
 BRAND_ROLES = ("brand", "brand_manager")
+
+# The two roles the admin console answers to. Named as a pair everywhere so a
+# route added later has to decide which it is rather than inheriting admin
+# access by being written with the old string.
+CONSOLE_ROLES = ("admin", "weare_team")
 
 
 def _pyobjectid_validator(v):
@@ -269,7 +282,19 @@ IMPERSONATION_MIN = 30
 # Who an admin may look through. Not other admins: an admin already sees
 # everything an admin sees, so the only thing it would add is a way to act as a
 # colleague, and that is the one thing this must never be.
-IMPERSONATABLE_ROLES = ("creator", "brand", "brand_manager", "campaign_manager")
+#
+# `weare_team` *is* here, and for exactly the reason admins are not: a team
+# member's console is the admin console with a scope around it, so what they
+# can see is genuinely something an admin cannot otherwise look at — "why is
+# that brand missing from my list" is answered by looking, and the alternative
+# is reconstructing an assignment set by hand.
+IMPERSONATABLE_ROLES = (
+    "creator",
+    "brand",
+    "brand_manager",
+    "campaign_manager",
+    "weare_team",
+)
 
 # The methods that cannot change anything. Everything else is refused while a
 # view-as session is active.
@@ -1674,6 +1699,27 @@ class UpdateCampaignPayload(BaseModel):
     on_site_contact: Optional[str] = Field(default=None, max_length=200)
 
 
+class CreateTeamMemberPayload(BaseModel):
+    """An admin creating a `weare_team` account. Staff, so email + password.
+
+    Brands can be assigned at creation or afterwards from the brand page —
+    somebody with none yet is a real state, and the console says so rather than
+    showing them an empty platform they cannot tell from a broken one.
+    """
+
+    name: str = Field(min_length=1, max_length=140)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    phone: Optional[str] = Field(default=None, max_length=20)
+    brand_ids: list[str] = Field(default_factory=list)
+
+
+class AssignBrandPayload(BaseModel):
+    """Put one of our staff on a brand, or take them off it."""
+
+    user_id: str
+
+
 class CreateManagerPayload(BaseModel):
     """An admin creating a campaign-manager account. Staff, so email+password."""
 
@@ -2313,6 +2359,98 @@ def _brand_scope(user: dict) -> ObjectId:
     another brand's campaigns.
     """
     return ObjectId(user.get("brand_id") or user["_id"])
+
+
+# ---------------------------------------------------------------------------
+# The console's scope
+# ---------------------------------------------------------------------------
+#
+# **Two roles read the admin console and only one of them sees everything.**
+# A `weare_team` member runs campaigns for the brands they are assigned to, and
+# outside those brands the records must not exist for them — not be hidden, not
+# be greyed out, not be filtered in the UI. Every console query goes through
+# one of the three functions below, so "what can this person see" is a single
+# answer that can be read, tested and changed in one place.
+#
+# The shape is deliberately the same as `_brand_visible_creator`'s: one reader,
+# and the thing it guards is enforced in the database rather than in a
+# component. A filter applied only on the way out is a filter somebody removes
+# while debugging.
+
+
+def is_all_access(user: Optional[dict]) -> bool:
+    """Only `admin` sees the whole platform. The one place that is decided."""
+    return (user or {}).get("role") == "admin"
+
+
+def _console_brand_ids(user: Optional[dict]) -> Optional[list]:
+    """The brands this console user may work in.
+
+    **`None` means every brand**, and is only ever an admin. A *list* — which
+    may legitimately be empty, for somebody assigned nothing yet — means those
+    brands and no others. The two are different answers and the distinction is
+    load-bearing: an empty list that read as "no filter" would hand a new
+    starter the whole platform on their first day.
+    """
+    if is_all_access(user):
+        return None
+    ids = []
+    for value in (user or {}).get("assigned_brand_ids") or []:
+        oid = _as_oid(value)
+        if oid is not None:
+            ids.append(oid)
+    return ids
+
+
+def _console_brand_query(user: Optional[dict], field: str = "brand_id") -> dict:
+    """The scope as a Mongo filter, to `**`-spread into a query.
+
+    `{}` for an admin, so the caller reads the same either way and cannot
+    accidentally apply a scope to somebody who has none.
+    """
+    ids = _console_brand_ids(user)
+    if ids is None:
+        return {}
+    return {field: {"$in": ids}}
+
+
+def _console_may_see_brand(user: Optional[dict], brand_id) -> bool:
+    """Is this brand inside the caller's scope?"""
+    ids = _console_brand_ids(user)
+    if ids is None:
+        return True
+    oid = _as_oid(brand_id)
+    return oid is not None and oid in ids
+
+
+async def _console_campaign_ids(user: Optional[dict]) -> Optional[list]:
+    """Every campaign inside the caller's scope, or `None` for all of them.
+
+    Collaborations, payments and slots hang off a campaign rather than a brand,
+    so scoping them means resolving the campaigns first. One `distinct` per
+    request rather than a `$lookup` on every query — the console makes several
+    calls per screen and they would each pay for the join.
+    """
+    ids = _console_brand_ids(user)
+    if ids is None:
+        return None
+    if not ids:
+        return []
+    return await db.campaigns.distinct("_id", {"brand_id": {"$in": ids}})
+
+
+async def _console_campaign_query(user: Optional[dict], field: str = "campaign_id") -> dict:
+    ids = await _console_campaign_ids(user)
+    if ids is None:
+        return {}
+    return {field: {"$in": ids}}
+
+
+def _out_of_scope(what: str = "Not found"):
+    """**A 404, never a 403.** Whether a brand we do not work with exists is
+    not something a scoped console answers — the same rule every ownership
+    refusal in this codebase already holds."""
+    return HTTPException(status_code=404, detail=what)
 
 
 # ---------------------------------------------------------------------------
@@ -3020,7 +3158,10 @@ async def login(payload: LoginInput, response: Response):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Staff sign in here; creators and brands use WhatsApp OTP.
-    if user.get("role") not in ("admin", "campaign_manager"):
+    # Staff sign in with a password; creators and brands use WhatsApp OTP only.
+    # `weare_team` is staff — it reads creators' phone numbers on the brands it
+    # runs, which is exactly the reason this list is an allow-list.
+    if user.get("role") not in ("admin", "campaign_manager", "weare_team"):
         raise HTTPException(
             status_code=403,
             detail="Please sign in with your WhatsApp number.",
@@ -10719,6 +10860,30 @@ SEARCH_MIN_CHARS = 2
 SEARCH_GROUP_LIMIT = 6
 
 
+async def _console_creator_ids(user: Optional[dict]) -> Optional[list]:
+    """Creators this console caller has any business with.
+
+    `None` for an admin — the whole roster. For a `weare_team` member it is the
+    people who applied to or were invited to one of their brands' campaigns,
+    which is the requirement stated exactly: creators reach them **through**
+    the work, not through a directory. The global roster, the vetting queue and
+    a creator's own page stay admin-only, so this set is only ever used to
+    narrow a search result to somebody they could already see on a board.
+    """
+    campaign_ids = await _console_campaign_ids(user)
+    if campaign_ids is None:
+        return None
+    if not campaign_ids:
+        return []
+    applied = await db.collaborations.distinct(
+        "creator_id", {"campaign_id": {"$in": campaign_ids}}
+    )
+    invited = await db.campaign_invitations.distinct(
+        "creator_id", {"campaign_id": {"$in": campaign_ids}}
+    )
+    return list({*applied, *invited})
+
+
 _REFERENCE_GROUP_LABELS = {
     "brand": "Brands",
     "campaign": "Campaigns",
@@ -10727,7 +10892,9 @@ _REFERENCE_GROUP_LABELS = {
 }
 
 
-async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]:
+async def _search_row_for_reference(
+    kind: str, reference: str, user: Optional[dict] = None
+) -> Optional[dict]:
     """The one record a reference names, in the shape the palette draws.
 
     Each kind is looked up in its own collection and turned into the same row
@@ -10737,6 +10904,8 @@ async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]
     if kind == "brand":
         profile = await db.brand_profiles.find_one({"reference": reference})
         if not profile:
+            return None
+        if not _console_may_see_brand(user, profile["user_id"]):
             return None
         account = await db.users.find_one({"_id": profile["user_id"]}) or {}
         return {
@@ -10755,6 +10924,9 @@ async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]
     if kind == "creator":
         profile = await db.creator_profiles.find_one({"reference": reference})
         if not profile:
+            return None
+        allowed = await _console_creator_ids(user)
+        if allowed is not None and profile["user_id"] not in allowed:
             return None
         account = await db.users.find_one({"_id": profile["user_id"]}) or {}
         return {
@@ -10778,6 +10950,8 @@ async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]
         campaign = await db.campaigns.find_one({"reference": reference})
         if not campaign:
             return None
+        if not _console_may_see_brand(user, campaign.get("brand_id")):
+            return None
         brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
         return {
             "id": str(campaign["_id"]),
@@ -10794,6 +10968,8 @@ async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]
     if not collab:
         return None
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    if not _console_may_see_brand(user, campaign.get("brand_id")):
+        return None
     profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
     return {
         "id": str(collab["_id"]),
@@ -10808,7 +10984,7 @@ async def _search_row_for_reference(kind: str, reference: str) -> Optional[dict]
 @admin_router.get("/search")
 async def admin_global_search(
     q: str = "",
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """One box over creators, brands, campaigns and phone numbers.
 
@@ -10835,7 +11011,7 @@ async def admin_global_search(
     ref = parse_reference(term)
     if ref:
         kind, reference = ref
-        row = await _search_row_for_reference(kind, reference)
+        row = await _search_row_for_reference(kind, reference, user)
         if row:
             return {
                 "query": term,
@@ -10861,10 +11037,27 @@ async def admin_global_search(
     if phone_rx:
         creator_or.append({"phone": phone_rx})
 
+    # **The scope is in the query, not in the result.** A scoped console user
+    # searches the same box; what it reaches is their brands, their campaigns
+    # and the creators who have applied to or been invited to one of them.
+    brand_scope = _console_brand_query(user, "user_id")
+    campaign_scope = _console_brand_query(user)
+    creator_scope: dict = {}
+    creator_profile_scope: dict = {}
+    allowed_creators = await _console_creator_ids(user)
+    if allowed_creators is not None:
+        creator_scope = {"_id": {"$in": allowed_creators}}
+        creator_profile_scope = {"user_id": {"$in": allowed_creators}}
+
     creator_users, profiles, brand_profiles, brand_users, campaigns = await asyncio.gather(
-        db.users.find({"role": "creator", "$or": creator_or}).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
+        db.users.find(
+            {"role": "creator", "$or": creator_or, **creator_scope}
+        ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
         db.creator_profiles.find(
-            {"$or": [{"name": rx}, {"instagram_handle": rx}, {"city": rx}, {"reference": rx}]}
+            {
+                "$or": [{"name": rx}, {"instagram_handle": rx}, {"city": rx}, {"reference": rx}],
+                **creator_profile_scope,
+            }
         ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
         db.brand_profiles.find(
             {
@@ -10873,13 +11066,20 @@ async def admin_global_search(
                     {"legal_entity_name": rx},
                     {"contact_person_name": rx},
                     {"reference": rx},
-                ]
+                ],
+                **brand_scope,
             }
         ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
         db.users.find(
-            {"role": {"$in": list(BRAND_ROLES)}, "$or": creator_or}
+            {
+                "role": {"$in": list(BRAND_ROLES)},
+                "$or": creator_or,
+                **({"_id": brand_scope["user_id"]} if brand_scope else {}),
+            }
         ).limit(SEARCH_GROUP_LIMIT).to_list(length=SEARCH_GROUP_LIMIT),
-        db.campaigns.find({"$or": [{"title": rx}, {"area": rx}, {"reference": rx}]})
+        db.campaigns.find(
+            {"$or": [{"title": rx}, {"area": rx}, {"reference": rx}], **campaign_scope}
+        )
         .sort("created_at", -1)
         .limit(SEARCH_GROUP_LIMIT)
         .to_list(length=SEARCH_GROUP_LIMIT),
@@ -10999,11 +11199,22 @@ async def admin_global_search(
     }
 
 
-async def _collab_or_404(collab_id: str) -> dict:
+async def _collab_or_404(collab_id: str, user: Optional[dict] = None) -> dict:
+    """One collaboration, as the console reaches it.
+
+    Scoped through its campaign's brand, for the same reason
+    `_admin_campaign_or_404` is: this is the door every console action on a
+    collaboration comes through, and a scope enforced anywhere else is a scope
+    somebody reaches around with an id.
+    """
     oid = _as_oid(collab_id)
     collab = await db.collaborations.find_one({"_id": oid}) if oid else None
     if not collab:
         raise HTTPException(status_code=404, detail="Collaboration not found")
+    if user is not None and not is_all_access(user):
+        campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+        if not _console_may_see_brand(user, (campaign or {}).get("brand_id")):
+            raise _out_of_scope("Collaboration not found")
     return collab
 
 
@@ -11687,7 +11898,7 @@ async def admin_export(
     campaign_id: Optional[str] = None,
     q: Optional[str] = None,
     action: Optional[str] = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Six exports, one route.
 
@@ -11703,6 +11914,13 @@ async def admin_export(
             status_code=422,
             detail=f"Unknown export. One of: {', '.join(EXPORT_KINDS)}.",
         )
+    # **Two of the six are the platform, not a brand's work.** The creator
+    # roster is the global directory in CSV form and the audit log is the whole
+    # platform's history; neither can be narrowed to a set of brands without
+    # becoming a different document. They stay with the role that already sees
+    # them on screen.
+    if kind in ADMIN_ONLY_EXPORTS and not is_all_access(user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     builder = globals()[f"_export_{kind}"]
     rows, headers = await builder(
         date_from=date_from,
@@ -11712,6 +11930,10 @@ async def admin_export(
         campaign_id=_as_oid(campaign_id) if campaign_id else None,
         q=q,
         action=action,
+        # The scope the builder has to narrow to. `None` is an admin and means
+        # no narrowing at all — distinct from an empty list, which is somebody
+        # assigned nothing and must export nothing.
+        brand_scope=_console_brand_ids(user),
     )
     await audit(
         user,
@@ -11743,6 +11965,26 @@ EXPORT_KINDS = (
 # Which of them carry a way to reach somebody. Named so the audit line can say
 # so, and so a reviewer can see the answer without reading six builders.
 EXPORTS_WITH_CONTACT = ("creators", "brands", "collaborations", "payments")
+# And which are the platform's rather than a brand's. See admin_export.
+ADMIN_ONLY_EXPORTS = ("creators", "audit")
+
+
+def _scoped_brand_filter(query: dict, field: str, brand_scope) -> dict:
+    """Narrow an export query to a console user's brands.
+
+    `brand_scope` is `None` for an admin — no narrowing — and a list otherwise,
+    which may be empty. An empty list has to produce an empty export rather
+    than an unfiltered one, which is why this ANDs with whatever brand filter
+    the caller already asked for instead of overwriting it.
+    """
+    if brand_scope is None:
+        return query
+    already = query.get(field)
+    allowed = brand_scope
+    if already is not None:
+        allowed = [b for b in brand_scope if b == already]
+    query[field] = {"$in": allowed}
+    return query
 
 
 async def _export_creators(*, date_from, date_to, status, q, **_):
@@ -11788,12 +12030,13 @@ async def _export_creators(*, date_from, date_to, status, q, **_):
     return rows, headers
 
 
-async def _export_brands(*, date_from, date_to, status, q, **_):
+async def _export_brands(*, date_from, date_to, status, q, brand_scope=None, **_):
     query: dict = {**_export_window(date_from, date_to, "created_at")}
     if status:
         query["verification_state"] = status
     if q:
         query["business_name"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    _scoped_brand_filter(query, "user_id", brand_scope)
     profiles = await db.brand_profiles.find(query).sort("created_at", -1).to_list(length=10000)
     ids = [p["user_id"] for p in profiles]
     accounts = {
@@ -11829,7 +12072,7 @@ async def _export_brands(*, date_from, date_to, status, q, **_):
     return rows, headers
 
 
-async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
+async def _export_campaigns(*, date_from, date_to, status, brand_id, q, brand_scope=None, **_):
     query: dict = {**_export_window(date_from, date_to, "created_at")}
     if status:
         query["status"] = status
@@ -11837,6 +12080,7 @@ async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
         query["brand_id"] = brand_id
     if q:
         query["title"] = {"$regex": re.escape(q[:120]), "$options": "i"}
+    _scoped_brand_filter(query, "brand_id", brand_scope)
     docs = await db.campaigns.find(query).sort("created_at", -1).to_list(length=10000)
     brands = await _load_brand_map([d["brand_id"] for d in docs])
     filled = await _filled_counts_for([d["_id"] for d in docs])
@@ -11870,16 +12114,24 @@ async def _export_campaigns(*, date_from, date_to, status, brand_id, q, **_):
     return rows, headers
 
 
-async def _export_collaborations(*, date_from, date_to, status, campaign_id, brand_id, **_):
+async def _export_collaborations(
+    *, date_from, date_to, status, campaign_id, brand_id, brand_scope=None, **_
+):
     query: dict = {**_export_window(date_from, date_to, "created_at")}
     if status:
         query["state"] = status
     if campaign_id:
         query["campaign_id"] = campaign_id
-    if brand_id:
-        # Filtering by brand means going through their campaigns first.
-        ids = await db.campaigns.distinct("_id", {"brand_id": brand_id})
-        query["campaign_id"] = {"$in": ids}
+    # Filtering by brand — asked for, or imposed by the caller's scope — means
+    # going through those brands' campaigns first.
+    brand_filter = _scoped_brand_filter(
+        {"brand_id": brand_id} if brand_id else {}, "brand_id", brand_scope
+    )
+    if brand_filter:
+        ids = await db.campaigns.distinct("_id", brand_filter)
+        query["campaign_id"] = (
+            {"$in": [i for i in ids if i == campaign_id]} if campaign_id else {"$in": ids}
+        )
     docs = await db.collaborations.find(query).sort("created_at", -1).to_list(length=20000)
     campaigns = {
         c["_id"]: c
@@ -11929,7 +12181,9 @@ async def _export_collaborations(*, date_from, date_to, status, campaign_id, bra
     return rows, headers
 
 
-async def _export_payments(*, date_from, date_to, status, brand_id, campaign_id, **_):
+async def _export_payments(
+    *, date_from, date_to, status, brand_id, campaign_id, brand_scope=None, **_
+):
     """The accounting export.
 
     Everything needed to reconcile a bank statement without opening the app:
@@ -11940,6 +12194,21 @@ async def _export_payments(*, date_from, date_to, status, brand_id, campaign_id,
     query: dict = {**_export_window(date_from, date_to, "created_at")}
     if status:
         query["state"] = status
+    # Payments hang off collaborations, which hang off campaigns — so a brand
+    # scope reaches them two joins away and has to be resolved, not assumed.
+    brand_filter = _scoped_brand_filter(
+        {"brand_id": brand_id} if brand_id else {}, "brand_id", brand_scope
+    )
+    if brand_filter or campaign_id:
+        campaign_ids = (
+            [campaign_id]
+            if campaign_id
+            else await db.campaigns.distinct("_id", brand_filter)
+        )
+        collab_ids = await db.collaborations.distinct(
+            "_id", {"campaign_id": {"$in": campaign_ids}}
+        )
+        query["collaboration_id"] = {"$in": collab_ids}
     docs = await db.payments.find(query).sort("created_at", -1).to_list(length=20000)
     collabs = {
         c["_id"]: c
@@ -12214,7 +12483,7 @@ def timeago_days(when: Optional[datetime], now: datetime) -> str:
 async def campaign_report(
     campaign_id: str,
     format: str = "json",
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """The close-of-campaign summary, in whichever shape is being asked for.
 
@@ -12230,7 +12499,7 @@ async def campaign_report(
     **Declared before `/campaigns/{id}` would swallow it** — see the route
     ordering test.
     """
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
     report = await _build_campaign_report(campaign)
     slug = re.sub(r"[^a-z0-9]+", "-", (campaign.get("title") or "campaign").lower()).strip("-")[:60]
 
@@ -12260,7 +12529,7 @@ async def campaign_report(
 async def set_campaign_showcase(
     campaign_id: str,
     payload: ShowcasePayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Flag a campaign as one worth showing people.
 
@@ -12268,7 +12537,7 @@ async def set_campaign_showcase(
     is shared with the brand's edit route, and which of our campaigns we put in
     front of a prospect is not a brand's decision to make.
     """
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
     now = datetime.now(timezone.utc)
     update = {"showcase": payload.showcase, "updated_at": now}
     if payload.showcase:
@@ -12303,16 +12572,16 @@ async def set_campaign_showcase(
 async def record_collaboration_performance(
     collab_id: str,
     payload: PerformancePayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Type in what a post did. Always available — see `_record_performance`."""
-    return await _record_performance(await _collab_or_404(collab_id), payload, user)
+    return await _record_performance(await _collab_or_404(collab_id, user), payload, user)
 
 
 @admin_router.post("/collaborations/{collab_id}/performance/fetch")
 async def fetch_collaboration_performance(
     collab_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Try Instagram, and say plainly when it can't be done.
 
@@ -12321,7 +12590,7 @@ async def fetch_collaboration_performance(
     the answer to it is the manual form that is already on screen. Returning a
     4xx would make the UI treat "this creator uses YouTube" as a fault.
     """
-    collab = await _collab_or_404(collab_id)
+    collab = await _collab_or_404(collab_id, user)
     metrics, reason = await _fetch_instagram_performance(collab)
     if reason:
         return {"fetched": False, "reason": reason, "performance": None}
@@ -12429,7 +12698,7 @@ async def list_all_campaigns(
     q: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Every campaign in every state, closed and draft included.
 
@@ -12466,6 +12735,16 @@ async def list_all_campaigns(
             match["brand_id"] = ObjectId(brand_id)
         except Exception:
             raise HTTPException(status_code=422, detail="brand_id is not a valid id.")
+    # **The scope goes on last and wins.** A `weare_team` member filtering by a
+    # brand outside their scope gets the empty set rather than a refusal —
+    # answering "no such brand for you" and "no campaigns match" differently
+    # would be a way to enumerate the brands they are not assigned to.
+    scope = _console_brand_ids(user)
+    if scope is not None:
+        allowed = (
+            [match["brand_id"]] if match.get("brand_id") in scope else []
+        ) if "brand_id" in match else scope
+        match["brand_id"] = {"$in": allowed}
     if date_from or date_to:
         window: dict = {}
         if date_from:
@@ -12622,14 +12901,16 @@ async def list_all_campaigns(
 
 
 @admin_router.get("/campaigns/pending")
-async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))):
+async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_ROLES))):
     """The review queue: briefs a brand has submitted and nobody has read yet.
 
     Declared before /campaigns/{campaign_id}/... so the fixed path wins. Oldest
     first — a queue people jump is not a queue.
     """
     docs = (
-        await db.campaigns.find({"status": CAMPAIGN_REVIEW_STATUS})
+        await db.campaigns.find(
+            {"status": CAMPAIGN_REVIEW_STATUS, **_console_brand_query(user)}
+        )
         .sort("submitted_for_review_at", 1)
         .to_list(length=500)
     )
@@ -12678,7 +12959,7 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
 @admin_router.get("/campaigns/{campaign_id}")
 async def get_admin_campaign_detail(
     campaign_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """One campaign, whole picture.
 
@@ -12691,7 +12972,7 @@ async def get_admin_campaign_detail(
     **Declared after /campaigns/pending**, or `pending` would be read as a
     campaign id and that route would never match again.
     """
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
     cid = campaign["_id"]
 
     brand_map = await _load_brand_map([campaign["brand_id"]])
@@ -12848,21 +13129,15 @@ async def get_admin_campaign_detail(
 async def approve_campaign(
     campaign_id: str,
     payload: DecisionPayload | None = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Publish a reviewed campaign — this is the only route to the creator feed.
 
     Whether it lands on `upcoming` or `open` is the start date's call, the same
     rule the brand's own publish button used before review existed.
     """
-    try:
-        cid = ObjectId(campaign_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    campaign = await db.campaigns.find_one({"_id": cid})
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    cid = campaign["_id"]
 
     current = campaign.get("status")
     if current != CAMPAIGN_REVIEW_STATUS:
@@ -12938,7 +13213,7 @@ async def approve_campaign(
 async def reject_campaign(
     campaign_id: str,
     payload: DecisionPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Send a submitted campaign back to the brand with a reason.
 
@@ -12946,10 +13221,7 @@ async def reject_campaign(
     about and submits again. The reason rides on the campaign so they are not
     guessing at what to change.
     """
-    try:
-        cid = ObjectId(campaign_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    cid = (await _admin_campaign_or_404(campaign_id, user))["_id"]
 
     reason = (payload.reason or "").strip()
     if not reason:
@@ -13022,7 +13294,16 @@ _PAUSABLE_STATUSES = ("upcoming", "open", "in_progress")
 _CLOSED_CAMPAIGN_STATUSES = ("completed", "closed")
 
 
-async def _admin_campaign_or_404(campaign_id: str) -> dict:
+async def _admin_campaign_or_404(campaign_id: str, user: Optional[dict] = None) -> dict:
+    """One campaign, as the console reaches it.
+
+    **The scope check lives here**, not at the forty call sites: every console
+    route that acts on a campaign comes through this door, so a `weare_team`
+    member cannot reach a brief belonging to a brand they were never assigned
+    to — whatever id they paste. `user` is optional only because a handful of
+    internal callers have no request behind them; a route that omits it is
+    caught by the test that walks the console's signatures.
+    """
     try:
         cid = ObjectId(campaign_id)
     except Exception:
@@ -13030,6 +13311,8 @@ async def _admin_campaign_or_404(campaign_id: str) -> dict:
     doc = await db.campaigns.find_one({"_id": cid})
     if not doc:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    if user is not None and not _console_may_see_brand(user, doc.get("brand_id")):
+        raise _out_of_scope("Campaign not found")
     return doc
 
 
@@ -13099,10 +13382,10 @@ async def _pause_campaign(doc: dict, reason: Optional[str], user: dict) -> dict:
 async def pause_campaign(
     campaign_id: str,
     payload: ReasonPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Pause any campaign, as WeAre."""
-    doc = await _admin_campaign_or_404(campaign_id)
+    doc = await _admin_campaign_or_404(campaign_id, user)
     return await _pause_campaign(doc, payload.reason, user)
 
 
@@ -13166,10 +13449,10 @@ async def _resume_campaign(doc: dict, reason: Optional[str], user: dict) -> dict
 async def resume_campaign(
     campaign_id: str,
     payload: DecisionPayload | None = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Resume any campaign, as WeAre."""
-    doc = await _admin_campaign_or_404(campaign_id)
+    doc = await _admin_campaign_or_404(campaign_id, user)
     return await _resume_campaign(doc, (payload.reason if payload else None), user)
 
 
@@ -13177,7 +13460,7 @@ async def resume_campaign(
 async def admin_close_campaign(
     campaign_id: str,
     payload: ReasonPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Stop a campaign for good, and answer everyone still waiting on it.
 
@@ -13185,7 +13468,7 @@ async def admin_close_campaign(
     won't or can't: collaborations under way are left alone, and applications
     nobody ever decided on are declined rather than left hanging forever.
     """
-    doc = await _admin_campaign_or_404(campaign_id)
+    doc = await _admin_campaign_or_404(campaign_id, user)
     current = doc.get("status")
     if current in _CLOSED_CAMPAIGN_STATUSES:
         raise HTTPException(
@@ -13253,7 +13536,7 @@ async def admin_close_campaign(
 async def admin_update_campaign(
     campaign_id: str,
     payload: UpdateCampaignPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Correct a campaign, including a live one.
 
@@ -13262,7 +13545,7 @@ async def admin_update_campaign(
     the fact. What this adds is the ability to fix a live brief without going
     through the brand, which is what support actually needs.
     """
-    doc = await _admin_campaign_or_404(campaign_id)
+    doc = await _admin_campaign_or_404(campaign_id, user)
     current = doc.get("status")
     if current in _CLOSED_CAMPAIGN_STATUSES:
         raise HTTPException(
@@ -13592,10 +13875,10 @@ async def _invite_creators(
 async def invite_creators_to_campaign(
     campaign_id: str,
     payload: CampaignInvitePayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Invite creators to any campaign, as WeAre."""
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
     return await _invite_creators(campaign, payload, user)
 
 
@@ -13658,7 +13941,7 @@ async def _brand_spend_map(brand_ids: list) -> dict:
 async def list_brands_for_review(
     unverified_only: bool = False,
     q: Optional[str] = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Every brand, with what they've run and what they've spent.
 
@@ -13669,6 +13952,10 @@ async def list_brands_for_review(
     if q:
         term = re.escape(q.strip()[:120])
         query["business_name"] = {"$regex": term, "$options": "i"}
+    # A brand outside the scope is not a brand this caller has. `user_id` is
+    # the brand's key on its own profile — `_console_brand_query` is told which
+    # field to look at rather than assuming one.
+    query.update(_console_brand_query(user, "user_id"))
 
     profiles = (
         await db.brand_profiles.find(query)
@@ -13784,7 +14071,7 @@ def _admin_brand_fields(p: dict, u: dict) -> dict:
 
 
 @admin_router.get("/brands/pending")
-async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
+async def list_pending_brands(user: dict = Depends(require_roles(*CONSOLE_ROLES))):
     """Brands waiting on us, with what they told us at signup.
 
     Declared before any /brands/{user_id} route so the fixed path keeps
@@ -13794,7 +14081,11 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     """
     profiles = (
         await db.brand_profiles.find(
-            {"verified": False, "verification_state": {"$in": ["pending_verification", "rejected"]}}
+            {
+                "verified": False,
+                "verification_state": {"$in": ["pending_verification", "rejected"]},
+                **_console_brand_query(user, "user_id"),
+            }
         )
         .sort("submitted_for_verification_at", 1)  # longest wait first
         .to_list(length=500)
@@ -13853,10 +14144,26 @@ async def list_pending_brands(user: dict = Depends(require_roles("admin"))):
     return out
 
 
+async def _console_brand_or_404(user_id: str, user: dict) -> ObjectId:
+    """A brand id this console caller may act on, or a 404.
+
+    Every `/admin/brands/{user_id}` route calls this first. The scope has to be
+    checked where the id arrives rather than where the data is read — a route
+    that reads two collections would otherwise need the check twice, and one of
+    the two would eventually be added without it.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    if not _console_may_see_brand(user, oid):
+        raise _out_of_scope("Brand not found")
+    return oid
+
+
 @admin_router.get("/brands/{user_id}")
 async def get_admin_brand_detail(
     user_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """One brand, whole picture: the claim, the documents behind it, the named
     person who signed up, and every campaign they have run with what it filled
@@ -13864,9 +14171,7 @@ async def get_admin_brand_detail(
 
     **Declared after /brands/pending**, or `pending` becomes a user id.
     """
-    oid = _as_oid(user_id)
-    if oid is None:
-        raise HTTPException(status_code=404, detail="Brand not found")
+    oid = await _console_brand_or_404(user_id, user)
 
     profile = await db.brand_profiles.find_one({"user_id": oid})
     account = await db.users.find_one({"_id": oid})
@@ -13980,7 +14285,7 @@ async def get_admin_brand_detail(
 async def download_brand_document(
     user_id: str,
     document_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Stream one verification document to a reviewing admin.
 
@@ -13989,8 +14294,8 @@ async def download_brand_document(
     certificate carries a registered address and a director's name, and it must
     never be one guessed URL away from the public internet.
     """
+    brand_oid = await _console_brand_or_404(user_id, user)
     try:
-        brand_oid = ObjectId(user_id)
         doc_oid = ObjectId(document_id)
     except Exception:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -14030,7 +14335,7 @@ async def review_brand_document(
     user_id: str,
     document_id: str,
     payload: DocumentReviewPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Mark one document accepted or rejected, with a note.
 
@@ -14044,8 +14349,8 @@ async def review_brand_document(
             status_code=422,
             detail="Say what's wrong with it — the brand is told what to re-upload.",
         )
+    brand_oid = await _console_brand_or_404(user_id, user)
     try:
-        brand_oid = ObjectId(user_id)
         doc_oid = ObjectId(document_id)
     except Exception:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -14078,12 +14383,9 @@ async def review_brand_document(
 async def verify_brand(
     user_id: str,
     payload: DecisionPayload | None = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Brand not found")
+    oid = await _console_brand_or_404(user_id, user)
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
@@ -14129,7 +14431,7 @@ async def verify_brand(
 async def reject_brand(
     user_id: str,
     payload: DecisionPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Refuse a brand, with the reason on the record.
 
@@ -14137,10 +14439,7 @@ async def reject_brand(
     without explaining itself. A rejection is a decision we have to be able to
     tell the brand about, so the reason is required.
     """
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Brand not found")
+    oid = await _console_brand_or_404(user_id, user)
 
     reason = (payload.reason or "").strip()
     if not reason:
@@ -14206,12 +14505,9 @@ async def reject_brand(
 async def unverify_brand(
     user_id: str,
     payload: DecisionPayload | None = None,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
-    try:
-        oid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Brand not found")
+    oid = await _console_brand_or_404(user_id, user)
     now = datetime.now(timezone.utc)
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": oid},
@@ -14303,10 +14599,12 @@ def _serialize_admin_collab(
 
 @admin_router.get("/collaborations")
 async def list_all_collaborations(
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     collabs = (
-        await db.collaborations.find({}).sort("created_at", -1).to_list(length=2000)
+        await db.collaborations.find(await _console_campaign_query(user))
+        .sort("created_at", -1)
+        .to_list(length=2000)
     )
     if not collabs:
         return {"by_state": {s: [] for s in COLLAB_STATE_ORDER}, "total": 0}
@@ -14369,7 +14667,7 @@ async def list_all_collaborations(
 @admin_router.get("/collaborations/{collab_id}")
 async def get_admin_collaboration_detail(
     collab_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """One application, end to end.
 
@@ -14381,14 +14679,14 @@ async def get_admin_collaboration_detail(
 
     **Declared after GET /collaborations**, which takes no path parameter, so
     ordering only matters against future fixed paths under this prefix.
-    """
-    oid = _as_oid(collab_id)
-    if oid is None:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
 
-    collab = await db.collaborations.find_one({"_id": oid})
-    if not collab:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
+    Reached through `_collab_or_404` rather than by resolving the id here, so
+    the scope is applied by the same door every console action on a
+    collaboration comes through. Resolving it inline is how a page ends up
+    being the one way around a filter every list already honours.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    oid = collab["_id"]
 
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     brand = None
@@ -14489,16 +14787,13 @@ async def get_admin_collaboration_detail(
 async def advance_collaboration(
     collab_id: str,
     payload: AdvanceCollabPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
-    try:
-        oid = ObjectId(collab_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
-
-    collab = await db.collaborations.find_one({"_id": oid})
-    if not collab:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
+    # Through the one door, so the console scope is applied here exactly as it
+    # is on the list this row was clicked from. Resolving the id inline is how
+    # an action becomes the way around a filter every list already honours.
+    collab = await _collab_or_404(collab_id, user)
+    oid = collab["_id"]
 
     current = collab.get("state", "applied")
 
@@ -14691,7 +14986,7 @@ async def advance_collaboration(
 async def revert_collaboration(
     collab_id: str,
     payload: ReasonPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Move a collaboration back one step.
 
@@ -14704,14 +14999,11 @@ async def revert_collaboration(
     been paid, and the exits are decisions rather than steps, so neither can be
     walked back from here.
     """
-    try:
-        oid = ObjectId(collab_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
-
-    collab = await db.collaborations.find_one({"_id": oid})
-    if not collab:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
+    # Through the one door, so the console scope is applied here exactly as it
+    # is on the list this row was clicked from. Resolving the id inline is how
+    # an action becomes the way around a filter every list already honours.
+    collab = await _collab_or_404(collab_id, user)
+    oid = collab["_id"]
 
     current = collab.get("state", "applied")
     if current == "closed":
@@ -14823,7 +15115,7 @@ async def revert_collaboration(
 async def decline_applicant(
     collab_id: str,
     payload: ReasonPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Turn down an applicant before anyone took them on.
 
@@ -14832,14 +15124,11 @@ async def decline_applicant(
     `verified` the brand has accepted them, and ending it there is a
     cancellation.
     """
-    try:
-        oid = ObjectId(collab_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
-
-    collab = await db.collaborations.find_one({"_id": oid})
-    if not collab:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
+    # Through the one door, so the console scope is applied here exactly as it
+    # is on the list this row was clicked from. Resolving the id inline is how
+    # an action becomes the way around a filter every list already honours.
+    collab = await _collab_or_404(collab_id, user)
+    oid = collab["_id"]
 
     current = collab.get("state", "applied")
     if current in TERMINAL_COLLAB_STATES:
@@ -14896,7 +15185,7 @@ async def decline_applicant(
 async def cancel_collaboration(
     collab_id: str,
     payload: CancelCollabPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """End a collaboration that is already under way — a no-show, a pull-out, a
     brand cancelling the shoot. Without this the only exit was to leave the row
@@ -14908,14 +15197,11 @@ async def cancel_collaboration(
     recorded on the way out, and a cancellation after the creator has already
     turned up is flagged for a settlement decision rather than silently dropped.
     """
-    try:
-        oid = ObjectId(collab_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
-
-    collab = await db.collaborations.find_one({"_id": oid})
-    if not collab:
-        raise HTTPException(status_code=404, detail="Collaboration not found")
+    # Through the one door, so the console scope is applied here exactly as it
+    # is on the list this row was clicked from. Resolving the id inline is how
+    # an action becomes the way around a filter every list already honours.
+    collab = await _collab_or_404(collab_id, user)
+    oid = collab["_id"]
 
     current = collab.get("state", "applied")
     if current in TERMINAL_COLLAB_STATES:
@@ -15037,25 +15323,42 @@ async def cancel_collaboration(
     }
 
 
+async def _console_payment_or_404(payment_id: str, user: dict) -> dict:
+    """One payment this console caller may act on.
+
+    A payment reaches a brand two joins away — payment → collaboration →
+    campaign → brand — so the scope has to be resolved rather than read off the
+    row. Every `/admin/payments/{id}` route goes through here, for the same
+    reason the campaign and collaboration guards exist: an id pasted from
+    somewhere else must not be a way round the scope.
+    """
+    pid = _as_oid(payment_id)
+    payment = await db.payments.find_one({"_id": pid}) if pid else None
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if not is_all_access(user):
+        collab = await db.collaborations.find_one({"_id": payment.get("collaboration_id")})
+        campaign = (
+            await db.campaigns.find_one({"_id": collab["campaign_id"]}) if collab else None
+        )
+        if not _console_may_see_brand(user, (campaign or {}).get("brand_id")):
+            raise _out_of_scope("Payment not found")
+    return payment
+
+
 @admin_router.post("/payments/{payment_id}/mark_paid")
 async def mark_payment_paid(
     payment_id: str,
     payload: MarkPaidPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Record a payout that happened in the bank.
 
     This does not move money — it asserts that money moved — so it demands a
     reference you can reconcile against, and refuses to fire twice.
     """
-    try:
-        pid = ObjectId(payment_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Payment not found")
-
-    existing = await db.payments.find_one({"_id": pid})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Payment not found")
+    existing = await _console_payment_or_404(payment_id, user)
+    pid = existing["_id"]
     if existing.get("state") == "paid":
         raise HTTPException(
             status_code=409,
@@ -15128,7 +15431,7 @@ async def mark_payment_paid(
 async def refund_payment(
     payment_id: str,
     payload: RefundPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Claw back a payout that already went out, and end the collaboration.
 
@@ -15142,14 +15445,8 @@ async def refund_payment(
     their money — that is flagged rather than resolved, because paying a brand
     back is a decision with an invoice attached.
     """
-    try:
-        pid = ObjectId(payment_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Payment not found")
-
-    existing = await db.payments.find_one({"_id": pid})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Payment not found")
+    existing = await _console_payment_or_404(payment_id, user)
+    pid = existing["_id"]
 
     state = existing.get("state")
     if state == "refunded":
@@ -15255,13 +15552,10 @@ async def refund_payment(
 async def set_brand_invoice_state(
     payment_id: str,
     state: Literal["pending", "sent", "settled"],
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Track what the brand owes us, separately from what we owe the creator."""
-    try:
-        pid = ObjectId(payment_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Payment not found")
+    pid = (await _console_payment_or_404(payment_id, user))["_id"]
     now = datetime.now(timezone.utc)
     payment = await db.payments.find_one_and_update(
         {"_id": pid},
@@ -15436,7 +15730,7 @@ def _bucket_counts_expr() -> dict:
 async def admin_dashboard(
     campaign_id: Optional[str] = None,
     limit: int = 50,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Everything the console's landing view needs, in one call.
 
@@ -15458,11 +15752,16 @@ async def admin_dashboard(
             scoped_oid = ObjectId(campaign_id)
         except Exception:
             raise HTTPException(status_code=422, detail="campaign_id is not a valid id.")
-        if not await db.campaigns.find_one({"_id": scoped_oid}):
-            raise HTTPException(status_code=404, detail="Campaign not found")
+        # Through the console guard, so zooming into a campaign outside the
+        # caller's scope 404s rather than answering with its numbers.
+        await _admin_campaign_or_404(str(scoped_oid), user)
 
-    campaign_match = {"_id": scoped_oid} if scoped_oid else {}
-    collab_match = {"campaign_id": scoped_oid} if scoped_oid else {}
+    campaign_match = {"_id": scoped_oid} if scoped_oid else _console_brand_query(user)
+    collab_match = (
+        {"campaign_id": scoped_oid}
+        if scoped_oid
+        else await _console_campaign_query(user)
+    )
 
     # --- campaigns: statuses, the summary rows, and the active-brand count ---
     campaign_facet = await db.campaigns.aggregate(
@@ -15534,13 +15833,14 @@ async def admin_dashboard(
     active_creators = active_creator_rows[0]["n"] if active_creator_rows else 0
 
     # --- money: settled and outstanding, one pass -------------------------
+    # Payments hang off collaborations, so scoping to a campaign — or to a
+    # console user's brands — means naming those collaborations first.
     payment_match: dict = {}
-    if scoped_oid:
-        # Payments hang off collaborations, so scoping to a campaign means
-        # naming that campaign's collaborations first.
-        ids = await db.collaborations.find(
-            {"campaign_id": scoped_oid}, {"_id": 1}
-        ).to_list(length=1000)
+    collab_scope = (
+        {"campaign_id": scoped_oid} if scoped_oid else await _console_campaign_query(user)
+    )
+    if collab_scope:
+        ids = await db.collaborations.find(collab_scope, {"_id": 1}).to_list(length=5000)
         payment_match = {"collaboration_id": {"$in": [d["_id"] for d in ids]}}
 
     money = await db.payments.aggregate(
@@ -15742,7 +16042,7 @@ async def _pending_invitations_for(campaign_oid, applied_creator_ids) -> list:
 @admin_router.get("/campaigns/{campaign_id}/applicants")
 async def admin_campaign_applicants(
     campaign_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Everyone who ever applied to one campaign, in three groups.
 
@@ -15754,7 +16054,7 @@ async def admin_campaign_applicants(
     One pipeline with the three joins; the bucketing is done here because
     splitting a list already in memory is cheaper than three more passes.
     """
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
 
     rows = await db.collaborations.aggregate(
         [
@@ -15947,6 +16247,206 @@ async def list_audit_log(
 # --- Campaign managers -------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# WeAre's own staff, and the brands they run
+# ---------------------------------------------------------------------------
+
+
+def _serialize_team_member(u: dict, brand_names: Optional[dict] = None) -> dict:
+    names = brand_names or {}
+    ids = [_as_oid(b) for b in (u.get("assigned_brand_ids") or [])]
+    return {
+        "id": str(u["_id"]),
+        "name": u.get("name"),
+        "email": u.get("email"),
+        "phone": u.get("phone"),
+        "role": u.get("role"),
+        "status": u.get("status"),
+        # Named, not just counted: "assigned to 3 brands" is a number somebody
+        # then has to go and look up.
+        "brands": [
+            {"user_id": str(b), "business_name": names.get(b)} for b in ids if b
+        ],
+        "created_at": _iso(u.get("created_at")),
+    }
+
+
+@admin_router.post("/team")
+async def create_team_member(
+    payload: CreateTeamMemberPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Create a `weare_team` account.
+
+    Staff, so an admin makes it and they sign in with email and password — the
+    same shape as a campaign manager, and for the same reason: this role reads
+    creators' phone numbers on the brands it runs, so there is deliberately no
+    self-signup into it.
+    """
+    email = payload.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="That email already has an account.")
+
+    brand_ids = await _valid_brand_ids(payload.brand_ids)
+    now = datetime.now(timezone.utc)
+    doc = {
+        "email": email,
+        "name": payload.name.strip(),
+        "role": "weare_team",
+        "phone": (payload.phone or "").strip() or None,
+        "status": "active",
+        "password_hash": hash_password(payload.password),
+        "assigned_brand_ids": brand_ids,
+        "created_at": now,
+    }
+    result = await db.users.insert_one(doc)
+    await audit(
+        user,
+        "team.create",
+        "user",
+        result.inserted_id,
+        after={
+            "email": email,
+            "role": "weare_team",
+            "assigned_brand_ids": [str(b) for b in brand_ids],
+        },
+    )
+    return _serialize_team_member({**doc, "_id": result.inserted_id})
+
+
+@admin_router.get("/team")
+async def list_team_members(user: dict = Depends(require_roles("admin"))):
+    """Our own staff and what each of them runs."""
+    rows = (
+        await db.users.find({"role": "weare_team"})
+        .sort("created_at", -1)
+        .to_list(length=500)
+    )
+    every = [b for r in rows for b in (r.get("assigned_brand_ids") or [])]
+    names = {}
+    if every:
+        oids = [x for x in (_as_oid(b) for b in every) if x]
+        names = {
+            p["user_id"]: p.get("business_name")
+            for p in await db.brand_profiles.find(
+                {"user_id": {"$in": oids}}, {"user_id": 1, "business_name": 1}
+            ).to_list(length=len(oids))
+        }
+    return [_serialize_team_member(r, names) for r in rows]
+
+
+async def _valid_brand_ids(values) -> list:
+    """Turn ids from a payload into brands that exist.
+
+    Refused rather than silently dropped: assigning somebody to a brand that
+    does not exist and reporting success is how a person ends up looking at an
+    empty console wondering what they did wrong.
+    """
+    oids = []
+    for value in values or []:
+        oid = _as_oid(value)
+        if oid is None:
+            raise HTTPException(status_code=422, detail=f"{value} is not a valid brand id.")
+        oids.append(oid)
+    if not oids:
+        return []
+    found = await db.brand_profiles.distinct("user_id", {"user_id": {"$in": oids}})
+    missing = [str(o) for o in oids if o not in found]
+    if missing:
+        raise HTTPException(
+            status_code=404, detail=f"No such brand: {', '.join(missing)}."
+        )
+    # De-duplicated and ordered, so the stored list is the same whichever order
+    # the ids arrived in.
+    return sorted(set(oids))
+
+
+@admin_router.get("/brands/{user_id}/team")
+async def list_brand_team(
+    user_id: str,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Who at WeAre runs this brand. Read from the brand's own page."""
+    oid = await _console_brand_or_404(user_id, user)
+    rows = await db.users.find(
+        {"role": "weare_team", "assigned_brand_ids": oid}
+    ).sort("name", 1).to_list(length=200)
+    return [_serialize_team_member(r) for r in rows]
+
+
+@admin_router.post("/brands/{user_id}/team")
+async def assign_brand_to_team_member(
+    user_id: str,
+    payload: AssignBrandPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Put one of our staff on this brand.
+
+    **Admin only**, deliberately: a scoped role that could widen its own scope
+    is not a scope. Assignment is idempotent — `$addToSet` — so pressing the
+    button twice is not two assignments.
+    """
+    oid = _as_oid(user_id)
+    if oid is None or not await db.brand_profiles.find_one({"user_id": oid}):
+        raise HTTPException(status_code=404, detail="Brand not found")
+    member = await _team_member_or_404(payload.user_id)
+
+    await db.users.update_one(
+        {"_id": member["_id"]}, {"$addToSet": {"assigned_brand_ids": oid}}
+    )
+    await audit(
+        user,
+        "team.assign_brand",
+        "user",
+        member["_id"],
+        after={"brand_id": str(oid)},
+        brand_id=oid,
+    )
+    updated = await db.users.find_one({"_id": member["_id"]})
+    return _serialize_team_member(updated)
+
+
+@admin_router.delete("/brands/{user_id}/team/{member_id}")
+async def unassign_brand_from_team_member(
+    user_id: str,
+    member_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take one of our staff off this brand.
+
+    Their work on it stays in the audit log under their name — the assignment
+    is what they can reach today, not a claim about what they did.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    member = await _team_member_or_404(member_id)
+
+    await db.users.update_one(
+        {"_id": member["_id"]}, {"$pull": {"assigned_brand_ids": oid}}
+    )
+    await audit(
+        user,
+        "team.unassign_brand",
+        "user",
+        member["_id"],
+        before={"brand_id": str(oid)},
+        brand_id=oid,
+    )
+    updated = await db.users.find_one({"_id": member["_id"]})
+    return _serialize_team_member(updated)
+
+
+async def _team_member_or_404(member_id: str) -> dict:
+    oid = _as_oid(member_id)
+    member = (
+        await db.users.find_one({"_id": oid, "role": "weare_team"}) if oid else None
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    return member
+
+
 @admin_router.post("/managers")
 async def create_manager_account(
     payload: CreateManagerPayload,
@@ -15986,6 +16486,348 @@ async def create_manager_account(
         "email": email,
         "phone": doc["phone"],
         "role": "campaign_manager",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Admin creation
+#
+# **We are the operator as well as the platform.** Some campaigns are ours to
+# run for our own clients, some briefs are barter, and some brands and creators
+# come in through a conversation rather than a signup form. Before these three
+# routes there was no way to enter any of that: an admin could review, edit,
+# publish and close, but the record itself had to be created by the person it
+# belonged to, so an internal client had to be walked through a signup screen
+# for an account nobody would ever log into.
+#
+# What is *not* relaxed: everything here writes the same documents the ordinary
+# paths write, through the same resolvers, with the same references allocated
+# the same way. An admin-created record is not a second kind of record — the
+# only difference is who typed it and what that lets us assume.
+# ---------------------------------------------------------------------------
+
+
+class AdminCreateCampaignPayload(PostCampaignPayload):
+    """An admin posting a brief on a brand's behalf.
+
+    Everything the brand's own form carries, plus the brand, and with two
+    defaults pointed the other way — see the handler.
+    """
+
+    brand_id: str
+    # **Ours to run unless told otherwise.** The brand's form defaults the
+    # other way for the same reason: posting a brief means running it, and the
+    # party doing the posting here is us.
+    execution_owner: ExecutionOwner = "weare"
+    # **Live, not queued.** The review gate exists so somebody at WeAre reads a
+    # brief before creators do; a brief an admin just typed has been read.
+    # `draft` is still available for one that is not finished.
+    status: Literal["draft", "open"] = "open"
+
+
+@admin_router.post("/campaigns")
+async def admin_create_campaign(
+    payload: AdminCreateCampaignPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Post a brief ourselves — for an internal client, or in barter.
+
+    **It skips the review gate because we are the reviewer.** `pending_review`
+    is not even in the payload's statuses: submitting a brief to ourselves and
+    then approving it would be a queue item that exists to be dismissed.
+
+    **`_refuse_brand_barter` is deliberately not called**, the same asymmetry
+    `admin_update_campaign` holds and for the same reason: barter is admin-only
+    and this is the admin route. A unit test pins both halves — adding the
+    guard here would make a barter brief impossible to *create*, leaving the
+    edit route as the only way to reach one.
+    """
+    brand_oid = _as_oid(payload.brand_id)
+    profile = (
+        await db.brand_profiles.find_one({"user_id": brand_oid}) if brand_oid else None
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    now = datetime.now(timezone.utc)
+    status = payload.status
+    if status == "open":
+        # The same gate `approve_campaign` holds, and for the identical reason:
+        # creators must never be reachable by a brand nobody has checked. An
+        # admin-created brand enters verified, so the ordinary path here is
+        # clear — this catches publishing onto a brand that arrived some other
+        # way.
+        if not profile.get("verified", False):
+            raise HTTPException(
+                status_code=409,
+                detail="Verify the brand before publishing its campaigns.",
+            )
+        start = payload.start_date
+        if start is not None and start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        status = "upcoming" if start and start > now else "open"
+
+    doc = {
+        "brand_id": brand_oid,
+        "title": payload.title.strip(),
+        "brief": payload.brief.strip(),
+        **_resolve_deliverables(payload.deliverable_items, payload.deliverables, True),
+        "budget_per_creator": float(payload.budget_per_creator),
+        "category": payload.category,
+        "area": payload.area.strip(),
+        "city": _canonical_city(payload.city) or DEFAULT_CAMPAIGN_CITY,
+        "creators_needed": int(payload.creators_needed),
+        "campaign_type": payload.campaign_type,
+        "compensation_type": payload.compensation_type,
+        "execution_owner": payload.execution_owner,
+        "visibility": payload.visibility,
+        "requires_draft_approval": (
+            payload.execution_owner != "weare"
+            if payload.requires_draft_approval is None
+            else bool(payload.requires_draft_approval)
+        ),
+        "restricted_days": _clean_restricted_days(payload.restricted_days),
+        "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
+        "event_date": payload.event_date,
+        "start_date": payload.start_date,
+        "end_date": payload.end_date,
+        "venue_address": (payload.venue_address or "").strip() or None,
+        "venue_instructions": (payload.venue_instructions or "").strip() or None,
+        "on_site_contact": (payload.on_site_contact or "").strip() or None,
+        # Same rule as the brand's route: a weare-run brief waits for a real
+        # manager rather than routing applications to the brand that asked us
+        # to take it on.
+        **(
+            _NO_CAMPAIGN_MANAGER
+            if payload.execution_owner == "weare"
+            else await _brand_manager_contact(brand_oid)
+        ),
+        "status": status,
+        "reviewed_at": now if status != "draft" else None,
+        "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    doc["reference"] = await _next_reference("campaign")
+    result = await db.campaigns.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    # `campaign.create`, not a second action name: the log is asked "when was
+    # this brief created", and the actor already says by whom.
+    await audit(
+        user,
+        "campaign.create",
+        "campaign",
+        result.inserted_id,
+        after={
+            "title": doc["title"],
+            "status": status,
+            # Through the readers, like every other emission of these two —
+            # the audit line is read back by a person and must say the same
+            # word every other surface does.
+            "compensation_type": _compensation_type(doc),
+            "execution_owner": _execution_owner(doc),
+        },
+        **_campaign_audit_context(doc),
+    )
+    return _serialize_brand_campaign(doc, 0)
+
+
+class AdminCreateBrandPayload(BaseModel):
+    """An admin entering a brand we already know.
+
+    The named person is not optional, because a brand *is* its one login and
+    that login belongs to somebody: `one_manager_per_brand` is a database
+    constraint, and a brand row with nobody on it is an account nobody can
+    ever sign into.
+    """
+
+    business_name: str = Field(min_length=1, max_length=140)
+    manager_name: str = Field(min_length=1, max_length=140)
+    # The WhatsApp number *is* the login, exactly as it is after a signup.
+    manager_phone: str = Field(min_length=8, max_length=20)
+    manager_email: Optional[EmailStr] = None
+    manager_designation: Optional[str] = Field(default=None, max_length=80)
+    category: Optional[CATEGORY_LITERAL] = None
+    city: Optional[str] = Field(default=None, max_length=80)
+    about: Optional[str] = Field(default=None, max_length=2000)
+
+
+@admin_router.post("/brands")
+async def admin_create_brand(
+    payload: AdminCreateBrandPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Enter a brand ourselves, verified.
+
+    **Verified because the check has happened** — somebody at WeAre is typing
+    this because they have spoken to the business — and `verification_state`
+    says `verified` beside the boolean so the two cannot disagree. It is not a
+    way around verification: it is the record of one, and the audit line names
+    who made the call.
+
+    The account is otherwise identical to a self-registered one, down to
+    `brand_id` pointing at itself, so `_brand_scope` and every brand endpoint
+    read it without a special case.
+    """
+    phone = _normalize_phone(payload.manager_phone)
+    if await db.users.find_one({"phone": phone}):
+        raise HTTPException(
+            status_code=409, detail="That number already has an account."
+        )
+
+    now = datetime.now(timezone.utc)
+    account = {
+        "email": None,
+        "password_hash": None,
+        "name": payload.business_name.strip(),
+        "role": "brand_manager",
+        "phone": phone,
+        # Active rather than pending: there is nothing left to wait for.
+        "status": "active",
+        "manager_name": payload.manager_name.strip(),
+        "manager_designation": (payload.manager_designation or "").strip() or None,
+        "manager_email": payload.manager_email,
+        "created_at": now,
+    }
+    result = await db.users.insert_one(account)
+    brand_oid = result.inserted_id
+    await db.users.update_one({"_id": brand_oid}, {"$set": {"brand_id": brand_oid}})
+
+    profile = {
+        "user_id": brand_oid,
+        "reference": await _next_reference("brand"),
+        "business_name": payload.business_name.strip(),
+        "category": payload.category,
+        "city": _canonical_city(payload.city) if payload.city else None,
+        "about": (payload.about or "").strip() or None,
+        "areas": [],
+        "outlets": [],
+        "verified": True,
+        "verification_state": "verified",
+        "verified_at": now,
+        "verified_by": ObjectId(user["_id"]) if user.get("_id") else None,
+        "contact_person_name": payload.manager_name.strip(),
+        "contact_person_designation": (payload.manager_designation or "").strip() or None,
+        "contact_email": payload.manager_email,
+        "contact_phone": phone,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.brand_profiles.insert_one(profile)
+    await audit(
+        user,
+        "brand.create",
+        "user",
+        brand_oid,
+        after={
+            "business_name": profile["business_name"],
+            "verified": True,
+            "created_by": "admin",
+        },
+        brand_id=brand_oid,
+    )
+    return {
+        "user_id": str(brand_oid),
+        "business_name": profile["business_name"],
+        "reference": profile["reference"],
+        "verified": True,
+        "verification_state": "verified",
+    }
+
+
+class AdminCreateCreatorPayload(BaseModel):
+    """An admin entering a creator we already work with.
+
+    A name and a number, the same two things signup asks for. Everything else
+    is the profile builder's job — filling a stub in here would be guessing on
+    somebody else's behalf about the fields brands shortlist on.
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    phone: str = Field(min_length=8, max_length=20)
+    instagram_handle: Optional[str] = Field(default=None, max_length=60)
+    city: Optional[str] = Field(default=None, max_length=80)
+
+
+@admin_router.post("/creators")
+async def admin_create_creator(
+    payload: AdminCreateCreatorPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Enter a creator ourselves, verified.
+
+    Same reasoning as the brand: verified is a record of a check that has
+    already happened offline, not a way around one, and the audit line says who
+    made it. `pending_review` stays false and `submitted_for_review_at` is never
+    stamped, so this account does not appear in a queue somebody then has to
+    dismiss.
+
+    **The profile is a stub, not a guess.** They can still be shortlisted the
+    moment somebody fills it in, and `_profile_completeness` will say what is
+    missing in the ordinary way.
+    """
+    phone = _normalize_phone(payload.phone)
+    if await db.users.find_one({"phone": phone}):
+        raise HTTPException(
+            status_code=409, detail="That number already has an account."
+        )
+
+    now = datetime.now(timezone.utc)
+    account = {
+        "email": None,
+        "password_hash": None,
+        "name": payload.name.strip(),
+        "role": "creator",
+        "phone": phone,
+        "status": "active",
+        "created_at": now,
+    }
+    result = await db.users.insert_one(account)
+    creator_oid = result.inserted_id
+
+    handle = (payload.instagram_handle or "").strip().lstrip("@") or None
+    await db.creator_profiles.insert_one(
+        {
+            "user_id": creator_oid,
+            "reference": await _next_reference("creator"),
+            "name": payload.name.strip(),
+            "instagram_handle": handle,
+            "instagram_profile_url": (
+                f"https://instagram.com/{handle}" if handle else None
+            ),
+            "youtube_url": None,
+            "email": None,
+            "city": _canonical_city(payload.city) if payload.city else None,
+            "address": None,
+            "full_address": None,
+            "niches": [],
+            "genres": [],
+            "platforms": [],
+            "base_rate": None,
+            "follower_count": None,
+            "verification_status": "verified",
+            "pending_review": False,
+            "verified_at": now,
+            "verified_by": ObjectId(user["_id"]) if user.get("_id") else None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    await audit(
+        user,
+        "creator.create",
+        "user",
+        creator_oid,
+        after={
+            "name": account["name"],
+            "verification_status": "verified",
+            "created_by": "admin",
+        },
+    )
+    return {
+        "user_id": str(creator_oid),
+        "name": account["name"],
+        "verification_status": "verified",
     }
 
 
@@ -16031,7 +16873,7 @@ async def list_managers(user: dict = Depends(require_roles("admin"))):
 async def assign_campaign_manager(
     campaign_id: str,
     payload: AssignManagerPayload,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
     """Assign (or reassign) the manager who runs a campaign.
 
@@ -16039,7 +16881,7 @@ async def assign_campaign_manager(
     brand and the accepted creators see, and it must not silently change if the
     manager later edits their account mid-campaign.
     """
-    campaign = await _admin_campaign_or_404(campaign_id)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
 
     try:
         manager_oid = ObjectId(payload.manager_user_id)
@@ -17262,7 +18104,7 @@ async def manager_record_performance(
     Scoped to their assigned campaigns by `_managed_campaign_or_404`, which is
     what keeps a manager out of a campaign they were never given.
     """
-    collab = await _collab_or_404(collab_id)
+    collab = await _collab_or_404(collab_id, user)
     await _managed_campaign_or_404(str(collab["campaign_id"]), user)
     return await _record_performance(collab, payload, user)
 
@@ -18696,6 +19538,10 @@ async def _note_readable_collab_or_404(collab_id: str, user: dict) -> tuple[dict
 
     if role == "admin":
         return collab, campaign
+    # WeAre's own staff, on a brand they are assigned to. Their console is the
+    # admin's, so this door opens the same way — but only inside their scope.
+    if role == "weare_team" and _console_may_see_brand(user, campaign.get("brand_id")):
+        return collab, campaign
     # **Ownership is not enough on a campaign the brand handed to us.** This is
     # the second door onto an application — `_brand_collab_or_404` is the other
     # — and a shield on one of two doors is a shield on neither: the brand's
@@ -18830,14 +19676,17 @@ class QuestionPayload(BaseModel):
 def _question_staff_may_see(campaign: dict, user: dict) -> bool:
     """Which side of the house may read and answer this campaign's threads.
 
-    Admins always; the assigned WeAre manager on their own campaigns; the
-    owning brand **only when the campaign is brand-run** — handing a campaign
-    to WeAre hands the creator conversations with it, and a creator asking
-    "our team" a question has not agreed to the brand reading it.
+    Admins always; WeAre's own staff on the brands they are assigned to; the
+    assigned WeAre manager on their own campaigns; the owning brand **only when
+    the campaign is brand-run** — handing a campaign to WeAre hands the creator
+    conversations with it, and a creator asking "our team" a question has not
+    agreed to the brand reading it.
     """
     role = (user or {}).get("role")
     if role == "admin":
         return True
+    if role == "weare_team":
+        return _console_may_see_brand(user, campaign.get("brand_id"))
     if role == "campaign_manager":
         return campaign.get("manager_id") == ObjectId(user["_id"])
     if is_brand_side(user):
@@ -19126,16 +19975,22 @@ async def answer_campaign_question(
 
 
 @questions_router.get("/unanswered")
-async def unanswered_questions(user: dict = Depends(require_roles("admin"))):
+async def unanswered_questions(user: dict = Depends(require_roles(*CONSOLE_ROLES))):
     """Threads whose last word is a creator's, for the action queue.
 
     A question nobody answered generates no state change and sits in no other
     list — it is discovered when the creator stops applying, unless something
     looks for it. Newest first, joined to the campaign and the creator's name
     so a queue row reads as a sentence.
+
+    Scoped like the rest of the queue: a team member is answerable for the
+    questions on the brands they run and for no others. The filter is on the
+    query rather than on the rows, because the cap below is applied *after*
+    the sort — filtering afterwards would silently shorten a scoped queue to
+    whatever survived somebody else's hundred.
     """
     docs = (
-        await db.campaign_questions.find({})
+        await db.campaign_questions.find(await _console_campaign_query(user))
         # Same tiebreak as _thread_docs, reversed, and for the same reason.
         .sort([("created_at", -1), ("_id", -1)])
         .to_list(length=2000)

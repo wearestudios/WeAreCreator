@@ -72,7 +72,7 @@ const KINDS = ["payment", "question", "collaboration", "campaign", "brand", "cre
 // default sort rather than a column somebody has to find.
 const DEFAULTS = { sort: { key: "kind", dir: "asc" } };
 
-export default function ActionQueue({ onChanged, feePercent }) {
+export default function ActionQueue({ onChanged, feePercent, allAccess = true }) {
     const [items, setItems] = useState(null);
     const [waiting, setWaiting] = useState([]);
     const [kind, setKind] = useState("");
@@ -90,13 +90,20 @@ export default function ActionQueue({ onChanged, feePercent }) {
     const load = useCallback(async () => {
         setItems(null);
         try {
+            // **The creator queues are the platform's, not a brand's.**
+            // Verifying a creator is a decision about somebody who applies
+            // everywhere, so it stays admin-only on the server — a team member
+            // is not asked for it, because one 403 in this `Promise.all` would
+            // empty a queue that is otherwise entirely theirs to work.
+            // Everything else here comes back already scoped.
+            const none = Promise.resolve({ data: [] });
             const [brands, campaigns, creators, changed, board, questions] = await Promise.all([
                 api.get("/admin/brands/pending"),
                 api.get("/admin/campaigns/pending"),
-                api.get("/admin/creators/pending"),
+                allAccess ? api.get("/admin/creators/pending") : none,
                 // Verified creators who edited something material — still live
                 // to brands, still a decision waiting on us.
-                api.get("/admin/creators/changed"),
+                allAccess ? api.get("/admin/creators/changed") : none,
                 api.get("/admin/collaborations"),
                 // Threads whose last word is a creator's.
                 api.get("/questions/unanswered"),
@@ -234,7 +241,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             setItems([]);
             setWaiting([]);
         }
-    }, []);
+    }, [allAccess]);
 
     useEffect(() => {
         load();

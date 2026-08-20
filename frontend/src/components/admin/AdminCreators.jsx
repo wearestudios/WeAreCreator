@@ -14,13 +14,19 @@
 // shape here is the shape they take.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Search, Users } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 
 import { notifyError } from "@/lib/feedback";
 import { api } from "@/lib/api";
 import { CITY_OPTIONS, CREATOR_TAXONOMY_TERMS } from "@/lib/taxonomy";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ADMIN_CREATORS as IDS, ADMIN_TABLE as TABLE_IDS } from "@/constants/testIds";
+import {
+    ADMIN_CREATE as CREATE_IDS,
+    ADMIN_CREATORS as IDS,
+    ADMIN_TABLE as TABLE_IDS,
+} from "@/constants/testIds";
+import { CreateCreatorDialog } from "./CreateDialogs";
 import { FilterChips, ListEmptyState } from "@/components/data/DenseView";
 
 import DataTable, { sortRows } from "./console/DataTable";
@@ -56,6 +62,7 @@ const DEFAULTS = {
 };
 
 export default function AdminCreators() {
+    const [creating, setCreating] = useState(false);
     const [data, setData] = useState(null);
     const [focused, setFocused] = useState(-1);
     const [peek, setPeek] = useState(null);
@@ -251,12 +258,31 @@ export default function AdminCreators() {
                         {data ? `${total.toLocaleString("en-IN")} on the platform` : "Loading…"}
                     </p>
                 </div>
-                <SaveFilter
-                    onSave={save}
-                    disabled={!filtered}
-                    savedNames={saved.map((s) => s.name)}
-                />
+                <div className="flex items-center gap-2">
+                    {/* This section is admin-only in the first place — a
+                        scoped console never reaches the global directory — so
+                        there is no role check here to get wrong. */}
+                    <Button
+                        size="sm"
+                        data-testid={CREATE_IDS.creatorOpen}
+                        onClick={() => setCreating(true)}
+                    >
+                        <Plus className="mr-1.5 h-3.5 w-3.5" />
+                        New creator
+                    </Button>
+                    <SaveFilter
+                        onSave={save}
+                        disabled={!filtered}
+                        savedNames={saved.map((s) => s.name)}
+                    />
+                </div>
             </header>
+
+            <CreateCreatorDialog
+                open={creating}
+                onOpenChange={setCreating}
+                onCreated={() => load()}
+            />
 
             {/* The toolbar. One row, one height, no wrapping panel — the table
                 below is the thing, and a filter bar in a card of its own reads

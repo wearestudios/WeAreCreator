@@ -25,6 +25,9 @@ import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { Keyboard, Menu } from "lucide-react";
 
 import { Navbar } from "@/components/Navbar";
+import { useAuth } from "@/context/AuthContext";
+import { consoleLabel, isAllAccess } from "@/lib/consoleScope";
+import BrandFilter from "@/components/admin/console/BrandFilter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SHORTCUTS } from "@/constants/testIds";
@@ -44,7 +47,13 @@ export const ADMIN_TABS = ADMIN_SECTIONS;
 
 /**
  * What the shell hands every screen under it: a way to refresh the badge
- * counts after an action, and the platform fee the payment screens quote.
+ * counts after an action, the platform fee the payment screens quote, and
+ * whether the caller is an admin or a team member working inside a scope.
+ *
+ * `allAccess` is for **drawing**, never for allowing. Every scoped endpoint
+ * filters in its own query and every admin-only one answers 403 whoever asks;
+ * this only decides whether a panel that would come back empty is offered at
+ * all.
  *
  * Read with `useAdminConsole()` rather than `useOutletContext()` directly, so a
  * screen rendered outside the shell fails with a clear message instead of
@@ -59,6 +68,9 @@ export function useAdminConsole() {
 }
 
 export default function AdminConsole() {
+    const { user } = useAuth();
+    const role = user?.role;
+    const allAccess = isAllAccess(role);
     const [counts, setCounts] = useState(null);
     const [feePercent, setFeePercent] = useState(null);
     const [showKeys, setShowKeys] = useState(false);
@@ -70,9 +82,14 @@ export default function AdminConsole() {
     // badge always matches what is actually left in its section.
     const loadCounts = useCallback(async () => {
         try {
+            // `/admin/metrics` is the platform's own numbers and stays
+            // admin-only, so a team member is not asked for it — the alternative
+            // is one 403 taking the whole `Promise.all` down and every badge
+            // with it. The fee it carries is only quoted on payment screens,
+            // which are an admin's.
             const [{ data }, metrics] = await Promise.all([
                 api.get("/admin/dashboard", { params: { limit: 1 } }),
-                api.get("/admin/metrics"),
+                allAccess ? api.get("/admin/metrics") : Promise.resolve(null),
             ]);
             const awaiting = data.awaiting || {};
             setCounts({
@@ -82,12 +99,12 @@ export default function AdminConsole() {
                     (awaiting.collaborations_to_move || 0) +
                     (awaiting.payouts_to_record || 0),
             });
-            setFeePercent(metrics.data.platform_fee_percent);
+            if (metrics) setFeePercent(metrics.data.platform_fee_percent);
         } catch {
             // Badges are a convenience; the sections work without them.
             setCounts({});
         }
-    }, []);
+    }, [allAccess]);
 
     useEffect(() => {
         loadCounts();
@@ -113,7 +130,7 @@ export default function AdminConsole() {
             <Navbar />
 
             <div className="flex">
-                <AdminSidebar counts={counts} />
+                <AdminSidebar counts={counts} role={role} />
 
                 {/* The canvas. `min-w-0` so a wide table scrolls inside it
                     rather than pushing the sidebar off the screen. */}
@@ -133,9 +150,18 @@ export default function AdminConsole() {
                             >
                                 <Menu className="h-4 w-4" />
                             </button>
+                            {/* The bar says which console this is. A team
+                                member's is the admin console with a scope
+                                around it, and a header reading "Admin" over a
+                                list quietly missing half the platform is a
+                                header that has lied about why. */}
                             <p className={`${TEXT.meta} truncate uppercase tracking-[0.16em] text-muted-foreground`}>
-                                WeAre · Admin
+                                {consoleLabel(role)}
                             </p>
+                            {/* All your brands at once, with a filter — which
+                                is the one piece of chrome a scope needs that
+                                all-access does not. */}
+                            {!allAccess && <BrandFilter />}
                         </div>
                         <div className="flex items-center gap-2">
                             <button
@@ -176,13 +202,25 @@ export default function AdminConsole() {
                             label="This screen couldn't load"
                             resetOn={pathname}
                         >
-                            <Outlet context={{ reloadCounts: loadCounts, feePercent }} />
+                            <Outlet
+                                context={{
+                                    reloadCounts: loadCounts,
+                                    feePercent,
+                                    role,
+                                    allAccess,
+                                }}
+                            />
                         </ErrorBoundary>
                     </main>
                 </div>
             </div>
 
-            <AdminNavSheet open={showNav} onOpenChange={setShowNav} counts={counts} />
+            <AdminNavSheet
+                open={showNav}
+                onOpenChange={setShowNav}
+                counts={counts}
+                role={role}
+            />
             <ShortcutsOverlay open={showKeys} onOpenChange={setShowKeys} />
         </div>
     );

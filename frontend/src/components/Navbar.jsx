@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { useAuth, homePathFor, isBrandSide } from "@/context/AuthContext";
+import { isAllAccess, isConsoleRole } from "@/lib/consoleScope";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
 import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
@@ -27,19 +28,26 @@ import {
  * navigate to staff tools.
  */
 const linksFor = (role) => {
-    if (role === "admin") {
+    if (isConsoleRole(role)) {
         // The console's own sections, so the work is one tap from anywhere
         // rather than a tap to /admin and another to the right tab.
         // `secondary` holds the section shortcuts back to wide screens — four
         // links plus the bell and Log out do not fit beside the wordmark at
         // 640px. They are all in the mobile sheet and in the console's own tab
         // strip regardless, so nothing is only reachable here.
+        //
+        // A `weare_team` member gets the same navigation minus Creators: the
+        // global directory is the platform's, not a brand's, and a link that
+        // opens on a 403 is worse than one that is absent. Everything else
+        // here comes back scoped to the brands they run.
         return [
             { to: "/admin/queue", label: "Queue", testId: "nav-admin-queue", secondary: true },
             { to: "/admin/campaigns", label: "Campaigns", testId: "nav-admin-campaigns", secondary: true },
-            { to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true },
+            ...(isAllAccess(role)
+                ? [{ to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true }]
+                : []),
             { to: "/calendar", label: "Calendar", testId: "nav-calendar", secondary: true },
-            { to: "/admin", label: "Admin", testId: "nav-admin", accent: true },
+            { to: "/admin", label: isAllAccess(role) ? "Admin" : "Console", testId: "nav-admin", accent: true },
         ];
     }
     if (role === "campaign_manager") {

@@ -4,9 +4,10 @@ Two-sided marketplace connecting verified creators with brands running paid
 campaigns in Bengaluru. The product is Bengaluru-first — user-facing copy says
 Bengaluru, not "every city in India". The city field and the category list are
 deliberately open for later expansion, but don't write claims the operation
-can't back. Roles: `creator`, `brand_manager`, `admin`, `campaign_manager`
-(staff, assigned per campaign — sees only what they're assigned to). `brand` is
-the old name for `brand_manager` and both are still accepted — see below.
+can't back. Roles: `creator`, `brand_manager`, `admin`, `weare_team` (staff,
+the admin console scoped to assigned brands), `campaign_manager` (staff,
+assigned per campaign — sees only what they're assigned to). `brand` is the old
+name for `brand_manager` and both are still accepted — see below.
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
   JWT in httpOnly cookies (`access_token` / `refresh_token`).
@@ -31,8 +32,9 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
 ```
 
 `get_current_user` decodes the cookie (or `Authorization: Bearer`) and returns the
-user document with `password_hash` stripped. Admins sign in with email + password;
-creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
+user document with `password_hash` stripped. **Staff sign in with email +
+password** — admin, `campaign_manager` and `weare_team`, which `/auth/login`
+holds as an allow-list; creators and brands use WhatsApp OTP only.
 
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
@@ -1261,10 +1263,11 @@ it in half.
 422s on both brand write paths — `create_brand_campaign` and
 `update_brand_campaign`, the second because its update loop copies the payload
 generically and `compensation_type` would otherwise ride along with everything
-else. `PATCH /admin/campaigns/{id}` is the **only** route that accepts it, and
-deliberately does not call the guard; a unit test pins both halves. There is no
-admin campaign-*create* route, so in practice a barter brief is one an admin
-converted, which means somebody read it first.
+else. The **two** routes that accept it are `PATCH /admin/campaigns/{id}` and
+`POST /admin/campaigns`, both of which deliberately do not call the guard; a
+unit test pins every half. So a barter brief is one an admin either posted or
+converted — either way somebody at WeAre typed it, which is the property the
+restriction is actually about.
 
 The guard refuses two different things: writing `barter`, and rewriting the
 compensation of a campaign that already *is* barter — otherwise a brand could
@@ -1785,9 +1788,9 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Eleven list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+- Twelve list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
   `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`) and four detail routes:
+  `performance`, `health`, `audit`, `team`) and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under
@@ -1945,6 +1948,104 @@ Every entity name in the console is a link, through `components/admin/links.jsx`
 plain text when the id is missing rather than a link to nowhere. Detail pages
 carry `crumbs` into `DetailShell`, which draws breadcrumbs above the back link —
 the crumbs say what you are inside, the back link is the one-tap way out.
+
+## The internal team, and the console with a scope around it
+
+WeAre runs campaigns for its own clients, and the people who do that are not
+admins: they need the console, and they need it to end at the brands they are
+on. `weare_team` is that role — **the same sidebar, action queue, review tabs,
+entity pages, collaboration actions and exports, filtered server-side to
+assigned brands.**
+
+`CONSOLE_ROLES = ("admin", "weare_team")` is spread into `require_roles` on
+every scoped console endpoint, exactly the way `BRAND_ROLES` is. `is_all_access`
+is the one place "everything" is decided, and it is only ever `admin`.
+
+- **`_console_brand_ids(user)` returns `None` for an admin and a list for
+  everybody else, and that distinction is load-bearing.** `None` means no
+  filter; a list — which may legitimately be empty, for somebody assigned
+  nothing yet — means those brands and no others. An empty list reading as "no
+  filter" would hand a new starter the whole platform on their first morning,
+  and a test drives every list handler with exactly that user.
+- `_console_brand_query`, `_console_campaign_query` and `_console_creator_ids`
+  are the readers every scoped query spreads. Collaborations, payments, slots
+  and question threads hang off a campaign rather than a brand, so the campaign
+  ids are resolved once per request instead of joining on every query.
+- **The scope is on the query, never on the rows.** Several of these lists sort
+  and then cap; filtering afterwards would silently shorten a scoped queue to
+  whatever survived somebody else's hundred.
+- **Every door is the same door.** `_admin_campaign_or_404`, `_collab_or_404`,
+  `_console_brand_or_404` and `_console_payment_or_404` take the caller and
+  apply the scope, and a **404 — never a 403**, because whether a brand we do
+  not work with exists is itself what the scope protects. A structural test
+  fails any console handler that resolves a path id without going through one;
+  it found five real gaps when it was written, the collaboration detail page
+  and all four collaboration actions, each of which resolved its own id inline.
+- **What stays admin-only**: the global creator directory and its review queue,
+  the platform-wide instruments (`/admin/metrics`, `/admin/health`,
+  `/admin/intelligence`), the audit log, the creator and audit exports
+  (`ADMIN_ONLY_EXPORTS`), and the settings that hand out scope. A scoped role
+  that could widen its own scope is not a scope, so `POST`/`DELETE
+  /admin/brands/{id}/team` are admin-only while the `GET` beside them is not.
+- Assignment is `$addToSet`/`$pull` on `assigned_brand_ids`, **from the brand's
+  own page** — that is where the decision is made. Accounts are created under
+  `/admin/team`; a team member can be on any number of brands.
+- Every action audits under their own name like an admin's. `weare_team` **is**
+  in `IMPERSONATABLE_ROLES`, for the reason `admin` is not: a scoped console is
+  a view an admin cannot otherwise see, so "why is that brand missing from my
+  list" is answered by looking.
+
+The frontend half is a courtesy on top, never the enforcement.
+`lib/consoleScope.js` mirrors the two roles with a drift test, `adminOnly` on a
+section in `Sidebar.jsx` keeps it out of `sectionsFor(role)` — which feeds the
+rail *and* the sheet, so a phone cannot find a different set from a laptop —
+and the action queue simply does not ask for the two creator queues, because
+one 403 inside its `Promise.all` would empty a queue that is otherwise entirely
+theirs to work. `BrandFilter` writes `?brand=<id>` to the URL rather than to
+state, so a narrowed console is a link somebody can send; it renders nothing
+for somebody on one brand. **No screen filters by brand itself** — a test greps
+the whole frontend for `assigned_brand_ids` and fails on a hit.
+
+## What an admin may create
+
+We are the operator as well as the platform. Some campaigns are ours to run,
+some briefs are barter, and some brands and creators arrive through a
+conversation rather than a signup form. Before `POST /admin/campaigns`,
+`/admin/brands` and `/admin/creators` an admin could review, edit, publish and
+close but never *create*, so an internal client had to be walked through a
+signup screen for an account nobody would ever log into.
+
+- **The campaign skips the review gate because we are the reviewer.**
+  `pending_review` is not in `AdminCreateCampaignPayload`'s statuses at all —
+  submitting a brief to ourselves and then approving it is a queue item that
+  exists to be dismissed. `execution_owner` defaults to `weare` (the brand's
+  own form defaults the other way for the same reason: the party posting is the
+  party running it), and a weare-run brief still gets `_NO_CAMPAIGN_MANAGER`.
+- **`_refuse_brand_barter` is deliberately not called** — the same asymmetry
+  `admin_update_campaign` holds. Adding the guard here would make a barter
+  brief impossible to *create*, leaving an edit as the only way to reach one. A
+  unit test pins both halves.
+- **Publishing still needs a verified brand**, the identical 409
+  `approve_campaign` raises: creators are never reachable by a brand nobody has
+  checked, and a new route is not a reason to lose that. A draft reaches
+  nobody, so a draft is fine.
+- **Admin-created brands and creators enter verified**, because verification is
+  a check that has already happened offline and this is the record of it — the
+  audit line names who made the call. The brand is otherwise identical to a
+  self-registered one, `brand_id` pointing at itself so `_brand_scope` reads it
+  without a special case; the creator's profile is a **stub, not a guess**, and
+  lands in no review queue for somebody to dismiss.
+- All three are **admin-only, not `CONSOLE_ROLES`**: minting a verified brand
+  is a statement about a check, and a scoped console could otherwise create the
+  brand it then gets assigned to.
+- The UI is `components/admin/CreateDialogs.jsx`, three dialogs opened from the
+  list each new row lands in. The campaign one carries what the payload
+  requires and no more — everything else is editable on the campaign's own page
+  a moment later, and a twenty-field dialog is a form somebody abandons. It is
+  the second control in the product that can set barter (`CampaignEditDialog`
+  is the other), and dates go out as instants the way the brand's form sends
+  them. `lib/categories.js` holds the category list, which until this was
+  written out twice and about to be a third time.
 
 ## View-as (impersonation)
 

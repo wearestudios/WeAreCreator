@@ -443,3 +443,76 @@ export const ADMIN_SHORTCUTS = {
 	root: 'admin-shortcuts',
 	open: 'admin-shortcuts-open',
 };
+
+// --- Our own staff, and the brands they run ---------------------------------
+
+export const ADMIN_TEAM = {
+	page: 'admin-team-page',
+	row: (id) => `admin-team-row-${id}`,
+	create: 'admin-team-create',
+	name: 'admin-team-name',
+	email: 'admin-team-email',
+	password: 'admin-team-password',
+	phone: 'admin-team-phone',
+	submit: 'admin-team-submit',
+	empty: 'admin-team-empty',
+};
+
+// On the brand's own page: who at WeAre runs it.
+export const ADMIN_BRAND_TEAM = {
+	section: 'admin-brand-team',
+	member: (id) => `admin-brand-team-member-${id}`,
+	remove: (id) => `admin-brand-team-remove-${id}`,
+	picker: 'admin-brand-team-picker',
+	assign: 'admin-brand-team-assign',
+	empty: 'admin-brand-team-empty',
+};
+
+// Creating a record from the console: a brand, a creator, or a brief of ours.
+export const ADMIN_CREATE = {
+	brandOpen: 'admin-create-brand-open',
+	brandDialog: 'admin-create-brand-dialog',
+	brandName: 'admin-create-brand-name',
+	brandManager: 'admin-create-brand-manager',
+	brandDesignation: 'admin-create-brand-designation',
+	brandPhone: 'admin-create-brand-phone',
+	brandEmail: 'admin-create-brand-email',
+	brandCategory: 'admin-create-brand-category',
+	brandCity: 'admin-create-brand-city',
+
+	creatorOpen: 'admin-create-creator-open',
+	creatorDialog: 'admin-create-creator-dialog',
+	creatorName: 'admin-create-creator-name',
+	creatorPhone: 'admin-create-creator-phone',
+	creatorHandle: 'admin-create-creator-handle',
+	creatorCity: 'admin-create-creator-city',
+
+	campaignOpen: 'admin-create-campaign-open',
+	campaignDialog: 'admin-create-campaign-dialog',
+	campaignBrand: 'admin-create-campaign-brand',
+	campaignTitle: 'admin-create-campaign-title',
+	campaignBrief: 'admin-create-campaign-brief',
+	campaignDeliverables: 'admin-create-campaign-deliverables',
+	campaignCompensation: 'admin-create-campaign-compensation',
+	campaignBudget: 'admin-create-campaign-budget',
+	campaignExecution: 'admin-create-campaign-execution',
+	campaignCreatorsNeeded: 'admin-create-campaign-creators-needed',
+	campaignCategory: 'admin-create-campaign-category',
+	campaignArea: 'admin-create-campaign-area',
+	campaignType: 'admin-create-campaign-type',
+	campaignStatus: 'admin-create-campaign-status',
+	campaignEventDate: 'admin-create-campaign-event-date',
+	campaignStart: 'admin-create-campaign-start',
+	campaignEnd: 'admin-create-campaign-end',
+
+	submit: 'admin-create-submit',
+	cancel: 'admin-create-cancel',
+	error: 'admin-create-error',
+};
+
+// The scoped console's own chrome: which of your brands you are looking at.
+export const ADMIN_BRAND_FILTER = {
+	root: 'admin-brand-filter',
+	option: (id) => `admin-brand-filter-option-${id}`,
+	clear: 'admin-brand-filter-clear',
+};

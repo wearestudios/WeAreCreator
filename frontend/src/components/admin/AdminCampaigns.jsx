@@ -15,6 +15,7 @@ import {
     Pencil,
     Play,
     Search,
+    Plus,
     Send,
     Sparkles,
     Star,
@@ -28,9 +29,11 @@ import { compensationLabel, isBarter } from "@/lib/compensation";
 import { EXECUTION_FILTERS } from "@/lib/execution";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import { EXECUTION_META, executionOwner } from "@/lib/execution";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     ADMIN_CAMPAIGNS as IDS,
+    ADMIN_CREATE as CREATE_IDS,
     ADMIN_PEEK,
     ADMIN_TABLE as TABLE_IDS,
     EXECUTION,
@@ -40,6 +43,7 @@ import { FilterChips, ListEmptyState } from "@/components/data/DenseView";
 
 import InviteCreatorsDialog from "./InviteCreatorsDialog";
 import { CampaignEditDialog, ConfirmDialog } from "./dialogs";
+import { CreateCampaignDialog } from "./CreateDialogs";
 import DataTable, { sortRows } from "./console/DataTable";
 import PeekPanel, { PeekField } from "./console/PeekPanel";
 import SaveFilter from "./console/SaveFilter";
@@ -85,7 +89,13 @@ const asDate = (v) => (v ? new Date(v) : null);
 /** What a brief is worth, said honestly: barter never renders as a figure. */
 const money = (c) => (isBarter(c) ? "Barter" : rupees(c.budget_per_creator));
 
-export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged }) {
+export default function AdminCampaigns({
+    brandFilter,
+    onClearBrand,
+    onChanged,
+    allAccess = true,
+}) {
+    const [creating, setCreating] = useState(false);
     const [data, setData] = useState(null);
     const [busyId, setBusyId] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -511,8 +521,29 @@ export default function AdminCampaigns({ brandFilter, onClearBrand, onChanged })
                             : "Loading…"}
                     </p>
                 </div>
-                <SaveFilter onSave={save} disabled={!filtered} savedNames={saved.map((s) => s.name)} />
+                <div className="flex items-center gap-2">
+                    {/* Admin-only, and deliberately: this route skips the
+                        review gate and can post barter, both of which are ours
+                        to decide rather than a scoped console's. */}
+                    {allAccess && (
+                        <Button
+                            size="sm"
+                            data-testid={CREATE_IDS.campaignOpen}
+                            onClick={() => setCreating(true)}
+                        >
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            New campaign
+                        </Button>
+                    )}
+                    <SaveFilter onSave={save} disabled={!filtered} savedNames={saved.map((s) => s.name)} />
+                </div>
             </header>
+
+            <CreateCampaignDialog
+                open={creating}
+                onOpenChange={setCreating}
+                onCreated={() => load()}
+            />
 
             <div
                 data-testid={TABLE_IDS.toolbar}
