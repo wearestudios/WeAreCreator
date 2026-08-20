@@ -64,7 +64,7 @@ export function ViewAsButton({ userId, name, role, disabled }) {
             </Button>
 
             <AlertDialog open={open} onOpenChange={setOpen}>
-                <AlertDialogContent className="rounded-md border border-white/10 bg-card grain-surface">
+                <AlertDialogContent className="rounded-md border border-white/10 bg-card">
                     <AlertDialogHeader>
                         <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                             View as

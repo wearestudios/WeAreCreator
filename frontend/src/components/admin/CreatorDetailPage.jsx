@@ -312,7 +312,7 @@ export default function CreatorDetailPage() {
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 data-testid={ADDRESS.openInMaps}
-                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:text-ember-400 md:min-h-0"
+                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-150 hover:text-ember-400 md:min-h-0"
                                             >
                                                 <MapPin className="h-3.5 w-3.5" />
                                                 {creator.location_lat != null
@@ -325,7 +325,7 @@ export default function CreatorDetailPage() {
                                     <Field label="PAN">{creator.pan}</Field>
                                 </dl>
                                 {creator.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
                                         Last decision: {creator.verification_reason}
                                     </p>
                                 )}
@@ -385,7 +385,7 @@ export default function CreatorDetailPage() {
                                             href={data.youtube.url}
                                             target="_blank"
                                             rel="noreferrer noopener"
-                                            className="mt-4 block break-all text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                                            className="mt-4 block break-all text-sm text-ember-500 transition-colors duration-150 hover:text-ember-400"
                                         >
                                             {data.youtube.url}
                                         </a>
@@ -394,7 +394,7 @@ export default function CreatorDetailPage() {
                                             No channel given.
                                         </p>
                                     )}
-                                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                                         A link, not a connection — we have no numbers for
                                         YouTube.
                                     </p>
@@ -411,12 +411,12 @@ export default function CreatorDetailPage() {
                         {!data.slot_bookings?.length ? (
                             <p
                                 data-testid={IDS.bookingsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 Nothing booked. A slot is taken once a fee is agreed.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                 {data.slot_bookings.map((b) => (
                                     <li
                                         key={b.id}
@@ -451,7 +451,7 @@ export default function CreatorDetailPage() {
                                             {data.collaborations[g.key].length}
                                         </span>
                                     </p>
-                                    <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                                    <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                         {data.collaborations[g.key].map((c) => (
                                             <li
                                                 key={c.id}
@@ -463,7 +463,7 @@ export default function CreatorDetailPage() {
                                                         id={c.campaign_id}
                                                         title={c.campaign_title}
                                                     />
-                                                    <span className="block text-xs text-muted-foreground">
+                                                    <span className="block text-sm text-muted-foreground">
                                                         {c.brand_name}
                                                         <CollaborationLink
                                                             id={c.id}
@@ -473,7 +473,7 @@ export default function CreatorDetailPage() {
                                                         </CollaborationLink>
                                                     </span>
                                                 </span>
-                                                <span className="flex-none text-xs text-muted-foreground">
+                                                <span className="flex-none text-sm text-muted-foreground">
                                                     {c.agreed_amount != null
                                                         ? `₹${formatRupees(c.agreed_amount)}`
                                                         : c.quoted_rate != null
@@ -489,7 +489,7 @@ export default function CreatorDetailPage() {
                             {COLLAB_GROUPS.every(
                                 (g) => (data.collaborations[g.key] || []).length === 0,
                             ) && (
-                                <p className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface">
+                                <p className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground">
                                     They haven't applied to anything yet.
                                 </p>
                             )}

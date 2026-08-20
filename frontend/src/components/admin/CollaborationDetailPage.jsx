@@ -161,12 +161,12 @@ export default function CollaborationDetailPage() {
                         {collab.next_owner === "brand" && collab.next_state && (
                             // Saying why the button is missing beats leaving a
                             // gap where somebody expects one.
-                            <span className="text-xs leading-relaxed text-muted-foreground">
+                            <span className="text-sm leading-relaxed text-muted-foreground">
                                 {STATE_META[collab.next_state]?.label} is the brand's to do.
                             </span>
                         )}
                         {collab.state !== "closed" && !collab.can_advance && collab.can_cancel && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-sm text-muted-foreground">
                                 Waiting on the creator.
                             </span>
                         )}
@@ -268,10 +268,10 @@ export default function CollaborationDetailPage() {
                                                     {STATE_META[state]?.label || state}
                                                 </span>
                                             </span>
-                                            <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                                            <span className="min-w-0 flex-1 text-sm text-muted-foreground">
                                                 {event?.note || ""}
                                             </span>
-                                            <span className="flex-none text-xs text-muted-foreground">
+                                            <span className="flex-none text-sm text-muted-foreground">
                                                 {event
                                                     ? `${event.actor_name || "—"} · ${formatDateTime(event.created_at)}`
                                                     : ""}
@@ -289,7 +289,7 @@ export default function CollaborationDetailPage() {
                                             {STATE_META[collab.state]?.label || collab.state}
                                         </span>
                                         {collab.exit_reason && (
-                                            <span className="min-w-0 text-xs text-muted-foreground">
+                                            <span className="min-w-0 text-sm text-muted-foreground">
                                                 {collab.exit_reason}
                                             </span>
                                         )}
@@ -334,7 +334,7 @@ export default function CollaborationDetailPage() {
                                                     href={url}
                                                     target="_blank"
                                                     rel="noreferrer noopener"
-                                                    className="inline-flex items-center gap-2 break-all text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                                                    className="inline-flex items-center gap-2 break-all text-sm text-ember-500 transition-colors duration-150 hover:text-ember-400"
                                                 >
                                                     <ExternalLink className="h-3.5 w-3.5 flex-none" />
                                                     {url}
@@ -348,7 +348,7 @@ export default function CollaborationDetailPage() {
                                     </p>
                                 )}
                                 {collab.revision_note && (
-                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
                                         Changes asked for: {collab.revision_note}
                                     </p>
                                 )}

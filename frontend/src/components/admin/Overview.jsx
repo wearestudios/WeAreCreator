@@ -9,10 +9,8 @@ import { Link } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowLeft,
-    ArrowUpDown,
     CalendarClock,
     CheckCircle2,
-    ChevronRight,
     IndianRupee,
     Sparkles,
     Users,
@@ -30,17 +28,16 @@ import {
 } from "@/constants/testIds";
 import { FilterChips, ListEmptyState, StickyBar } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
+import DataTable, { sortRows } from "./console/DataTable";
+import StatusTag from "./console/StatusTag";
+import { CALM, FOCUS } from "./console/tokens";
 import {
     CAMPAIGN_STATUS_META,
     CreatorAvatar,
     DateFilter,
-    EmptyState,
     FilterSelect,
     ListSkeleton,
-    Pill,
     SectionHeader,
-    StatePill,
-    TableSkeleton,
     endOfDay,
     formatCompact,
     formatDate,
@@ -80,26 +77,12 @@ const STATUS_OPTIONS = Object.entries(CAMPAIGN_STATUS_META).map(([value, m]) => 
     label: m.label,
 }));
 
-const SORTS = [
-    { key: "created", label: "Newest" },
-    { key: "title", label: "Title" },
-    { key: "applied", label: "Applied" },
-    { key: "approved", label: "Approved" },
-];
-
 /** Whichever date the campaign's type actually carries. */
 const campaignWhen = (c) => {
     if (c.campaign_type === "personal_table") {
         return c.start_date ? `${formatDate(c.start_date)} – ${formatDate(c.end_date)}` : "—";
     }
     return c.event_date ? formatDate(c.event_date) : "—";
-};
-
-const sortValue = (c, key) => {
-    if (key === "title") return (c.title || "").toLowerCase();
-    if (key === "applied") return c.applied ?? 0;
-    if (key === "approved") return c.approved ?? 0;
-    return c.created_at || "";
 };
 
 export default function Overview({ onChanged }) {
@@ -113,8 +96,9 @@ export default function Overview({ onChanged }) {
     const [type, setType] = useState("");
     const [from, setFrom] = useState(null);
     const [to, setTo] = useState(null);
-    const [sort, setSort] = useState("created");
-    const [desc, setDesc] = useState(true);
+    // Newest first: the overview is read to see what has happened lately.
+    const [sort, setSort] = useState({ key: "created", dir: "desc" });
+    const [focused, setFocused] = useState(-1);
 
     const load = useCallback(async () => {
         setData(null);
@@ -161,14 +145,129 @@ export default function Overview({ onChanged }) {
             const t = endOfDay(to).getTime();
             list = list.filter((c) => new Date(c.created_at).getTime() <= t);
         }
-        list.sort((a, b) => {
-            const av = sortValue(a, sort);
-            const bv = sortValue(b, sort);
-            if (av === bv) return 0;
-            return (av > bv ? 1 : -1) * (desc ? -1 : 1);
-        });
         return list;
-    }, [data, brand, status, type, from, to, sort, desc]);
+    }, [data, brand, status, type, from, to]);
+
+    /**
+     * The columns.
+     *
+     * The three counts are the reason this table exists — how many applied,
+     * how many got on, how many did not — so they are numeric columns you can
+     * sort and compare down, which is what the four sort chips above the list
+     * were trying to be.
+     */
+    const columns = useMemo(
+        () => [
+            {
+                key: "title",
+                mobile: "primary",
+                header: "Campaign",
+                sortable: true,
+                testid: IDS.sort("title"),
+                value: (c) => (c.title || "").toLowerCase(),
+                cell: (c) => (
+                    <Link
+                        to={`/admin/campaigns/${c.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                    >
+                        {c.title}
+                    </Link>
+                ),
+            },
+            {
+                key: "brand_name",
+                mobile: "meta",
+                header: "Brand",
+                sortable: true,
+                hideBelow: true,
+                width: "w-44",
+                cell: (c) => (
+                    <span className="block truncate text-muted-foreground">
+                        {c.brand_name || "Unknown brand"}
+                    </span>
+                ),
+            },
+            {
+                key: "status",
+                mobile: "meta",
+                header: "Status",
+                sortable: true,
+                width: "w-36",
+                cell: (c) => (
+                    <StatusTag state={c.status} label={CAMPAIGN_STATUS_META[c.status]?.label} />
+                ),
+            },
+            {
+                key: "when",
+                mobile: "meta",
+                header: "When",
+                hideBelow: true,
+                width: "w-44",
+                cell: (c) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {campaignWhen(c)}
+                    </span>
+                ),
+            },
+            {
+                key: "applied",
+                mobile: "trailing",
+                header: "Applied",
+                sortable: true,
+                numeric: true,
+                width: "w-24",
+                testid: IDS.sort("applied"),
+                value: (c) => c.applied ?? 0,
+                cell: (c) => <span data-testid={IDS.rowApplied(c.id)}>{c.applied ?? 0}</span>,
+            },
+            {
+                key: "approved",
+                header: "Approved",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                testid: IDS.sort("approved"),
+                value: (c) => c.approved ?? 0,
+                cell: (c) => (
+                    <span data-testid={IDS.rowApproved(c.id)} className="text-emerald-300">
+                        {c.approved ?? 0}
+                    </span>
+                ),
+            },
+            {
+                key: "rejected",
+                header: "Rejected",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                value: (c) => c.rejected ?? 0,
+                cell: (c) => (
+                    <span data-testid={IDS.rowRejected(c.id)} className="text-rose-300">
+                        {c.rejected ?? 0}
+                    </span>
+                ),
+            },
+            {
+                key: "created",
+                header: "Created",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                hideBelow: true,
+                testid: IDS.sort("created"),
+                value: (c) => new Date(c.created_at || 0).getTime() || null,
+                cell: (c) => (
+                    <span className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(c.created_at)}
+                    </span>
+                ),
+            },
+        ],
+        [],
+    );
+
+    const sorted = useMemo(() => sortRows(rows, columns, sort), [rows, columns, sort]);
 
     const filtered = Boolean(brand || status || type || from || to);
 
@@ -206,15 +305,6 @@ export default function Overview({ onChanged }) {
         }
     };
 
-    const toggleSort = (key) => {
-        if (sort === key) {
-            setDesc((v) => !v);
-        } else {
-            setSort(key);
-            setDesc(key !== "title");
-        }
-    };
-
     if (openCampaign) {
         return (
             <CampaignDetail
@@ -244,7 +334,7 @@ export default function Overview({ onChanged }) {
                     {STAT_CARDS.map((c) => (
                         <div
                             key={c.key}
-                            className="rounded-md border border-white/10 bg-card p-5 grain-surface"
+                            className="rounded-md border border-white/10 bg-card p-5"
                         >
                             <Skeleton className="h-3 w-16" />
                             <Skeleton className="mt-4 h-7 w-20" />
@@ -270,10 +360,10 @@ export default function Overview({ onChanged }) {
                                 onClick={() => applyCard(card)}
                                 data-testid={IDS.stat(card.key)}
                                 className={
-                                    "rounded-md border p-5 text-left transition-colors duration-200 " +
+                                    "rounded-md border p-5 text-left transition-colors duration-150 " +
                                     (on
                                         ? "border-ember-500 bg-ember-500/10"
-                                        : "border-white/10 bg-card grain-surface hover:border-ember-500/40")
+                                        : "border-white/10 bg-card hover:border-ember-500/40")
                                 }
                             >
                                 <div className="flex items-center justify-between gap-2">
@@ -340,7 +430,7 @@ export default function Overview({ onChanged }) {
                         type="button"
                         onClick={clearFilters}
                         data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
                     >
                         <X className="h-3.5 w-3.5" />
                         Clear
@@ -350,38 +440,21 @@ export default function Overview({ onChanged }) {
 
             <FilterChips chips={chips} onClearAll={clearFilters} className="mt-3" />
 
-            <div className="mt-3 flex flex-wrap gap-2">
-                {SORTS.map((s) => {
-                    const on = sort === s.key;
-                    return (
-                        <button
-                            key={s.key}
-                            type="button"
-                            onClick={() => toggleSort(s.key)}
-                            aria-pressed={on}
-                            data-testid={IDS.sort(s.key)}
-                            className={
-                                "inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
-                                (on
-                                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                                    : "border-white/10 text-muted-foreground hover:border-white/25")
-                            }
-                        >
-                            {s.label}
-                            {on && (
-                                <ArrowUpDown className="h-3 w-3" />
-                            )}
-                        </button>
-                    );
-                })}
-            </div>
-
             </StickyBar>
 
-            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
-                {!data ? (
-                    <TableSkeleton rows={6} cols={5} testid={IDS.tableSkeleton} />
-                ) : rows.length === 0 ? (
+            <DataTable
+                columns={columns}
+                rows={sorted}
+                rowKey={(c) => c.id}
+                rowTestId={(c) => IDS.row(c.id)}
+                sort={sort}
+                onSortChange={setSort}
+                focused={focused}
+                onFocus={setFocused}
+                onOpen={(i) => sorted[i] && setOpenCampaign(sorted[i].id)}
+                loading={!data}
+                testid={IDS.table}
+                empty={
                     <ListEmptyState
                         Icon={Sparkles}
                         testid={IDS.empty}
@@ -391,64 +464,9 @@ export default function Overview({ onChanged }) {
                         emptyBody="Every brief a brand drafts appears here, from draft through to closed, with its applicant counts."
                         filteredTitle="No campaign matches those filters."
                         filteredBody="Widen the brand, status, type or date range."
-                        className="border-0 bg-transparent"
                     />
-                ) : (
-                    <ul data-testid={IDS.table} className="divide-y divide-white/10">
-                        {rows.map((c) => (
-                            <li key={c.id}>
-                                {/* A link now. The inline panel below is still
-                                    here for a quick look, but a campaign has a
-                                    page of its own and that is where a row
-                                    should take you. */}
-                                <Link
-                                    to={`/admin/campaigns/${c.id}`}
-                                    data-testid={IDS.row(c.id)}
-                                    className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors duration-200 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
-                                >
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <Pill meta={CAMPAIGN_STATUS_META} value={c.status} />
-                                            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                                {(c.campaign_type || "").replace(/_/g, " ")} ·{" "}
-                                                {campaignWhen(c)}
-                                            </span>
-                                        </div>
-                                        <p className="mt-1.5 truncate text-sm">{c.title}</p>
-                                        <p className="truncate text-xs text-muted-foreground">
-                                            {c.brand_name || "Unknown brand"} ·{" "}
-                                            {c.creators_needed} needed
-                                        </p>
-                                    </div>
-
-                                    {/* The three counts, the reason this table
-                                        exists. Stacked on a phone, inline above. */}
-                                    <div className="flex flex-none items-center gap-3 text-xs sm:gap-5">
-                                        <Count
-                                            testid={IDS.rowApplied(c.id)}
-                                            label="Applied"
-                                            value={c.applied}
-                                        />
-                                        <Count
-                                            testid={IDS.rowApproved(c.id)}
-                                            label="Approved"
-                                            value={c.approved}
-                                            tone="text-emerald-300"
-                                        />
-                                        <Count
-                                            testid={IDS.rowRejected(c.id)}
-                                            label="Rejected"
-                                            value={c.rejected}
-                                            tone="text-red-300/80"
-                                        />
-                                    </div>
-                                    <ChevronRight className="hidden h-4 w-4 flex-none text-muted-foreground sm:block" />
-                                </Link>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+                }
+            />
 
             {data && rows.length > 0 && (
                 <p
@@ -462,15 +480,6 @@ export default function Overview({ onChanged }) {
         </section>
     );
 }
-
-const Count = ({ label, value, testid, tone = "" }) => (
-    <span data-testid={testid} className="flex flex-col items-center">
-        <span className={"font-serif text-lg leading-none " + tone}>{value ?? 0}</span>
-        <span className="mt-1 text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
-            {label}
-        </span>
-    </span>
-);
 
 // ---------------------------------------------------------------------------
 // One campaign's applicants, in three columns
@@ -570,7 +579,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                 type="button"
                 onClick={onBack}
                 data-testid={DETAIL_IDS.back}
-                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 All campaigns
@@ -581,7 +590,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                     <Skeleton className="h-8 w-2/3" />
                     <div className="grid gap-4 lg:grid-cols-3">
                         {COLUMNS.map((c) => (
-                            <div key={c.key} className="rounded-md border border-white/10 bg-card grain-surface">
+                            <div key={c.key} className="rounded-md border border-white/10 bg-card">
                                 <ListSkeleton rows={3} />
                             </div>
                         ))}
@@ -591,7 +600,11 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                 <>
                     <div className="mt-6">
                         <div className="flex flex-wrap items-center gap-2">
-                            <Pill meta={CAMPAIGN_STATUS_META} value={data.campaign.status} />
+                            <StatusTag
+                                state={data.campaign.status}
+                                label={CAMPAIGN_STATUS_META[data.campaign.status]?.label}
+                                chip
+                            />
                             <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                                 {(data.campaign.campaign_type || "").replace(/_/g, " ")} ·{" "}
                                 {campaignWhen(data.campaign)}
@@ -617,7 +630,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 <div
                                     key={col.key}
                                     data-testid={DETAIL_IDS.column(col.key)}
-                                    className="rounded-md border border-white/10 bg-card grain-surface"
+                                    className="rounded-md border border-white/10 bg-card"
                                 >
                                     <div className="flex items-baseline justify-between border-b border-white/10 px-5 py-4">
                                         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -634,7 +647,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                     {entries.length === 0 ? (
                                         <p
                                             data-testid={DETAIL_IDS.columnEmpty(col.key)}
-                                            className="px-5 py-8 text-center text-xs text-muted-foreground"
+                                            className="px-5 py-8 text-center text-sm text-muted-foreground"
                                         >
                                             {col.empty}
                                         </p>
@@ -691,17 +704,17 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                 <CreatorAvatar creator={entry} size="h-10 w-10" />
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-sm">{entry.name || "Unnamed"}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="truncate text-sm text-muted-foreground">
                         {entry.instagram_handle ? `@${entry.instagram_handle}` : "No handle"}
                         {typeof entry.follower_count === "number"
                             ? ` · ${formatCompact(entry.follower_count)}`
                             : ""}
                     </p>
                 </div>
-                <StatePill state={entry.state} />
+                <StatusTag state={entry.state} />
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span className="inline-flex items-baseline">
                     Quoted
                     <IndianRupee className="ml-1.5 h-3 w-3" />
@@ -715,7 +728,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
             </div>
 
             {entry.exit_reason && (
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                     {entry.exit_reason}
                 </p>
             )}
@@ -728,7 +741,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onAdvance(entry)}
                             data-testid={DETAIL_IDS.creatorAdvance(entry.collaboration_id)}
-                            className="h-9 rounded-full bg-ember-500 px-3 text-xs text-black hover:bg-ember-400"
+                            className="h-9 rounded-full bg-ember-500 px-3 text-sm text-black hover:bg-ember-400"
                         >
                             Move forward
                         </Button>
@@ -740,7 +753,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onDecline(entry)}
                             data-testid={DETAIL_IDS.creatorDecline(entry.collaboration_id)}
-                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-xs text-red-300 hover:bg-red-500/10"
+                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-sm text-red-300 hover:bg-red-500/10"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Decline
@@ -752,7 +765,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onCancel(entry)}
                             data-testid={DETAIL_IDS.creatorCancel(entry.collaboration_id)}
-                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-xs text-red-300 hover:bg-red-500/10"
+                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-sm text-red-300 hover:bg-red-500/10"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Cancel

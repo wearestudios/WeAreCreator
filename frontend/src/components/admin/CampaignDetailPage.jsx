@@ -394,7 +394,7 @@ export default function CampaignDetailPage() {
                                     <Field label="Visibility">
                                         {visibilityLabel(campaign)}
                                         {isPrivate(campaign) && (
-                                            <span className="mt-1 block text-xs text-muted-foreground">
+                                            <span className="mt-1 block text-sm text-muted-foreground">
                                                 Invite-only — reachable through invites,
                                                 never through browse or the share page.
                                             </span>
@@ -411,12 +411,12 @@ export default function CampaignDetailPage() {
                                     </Field>
                                 </dl>
                                 {campaign.review_reason && (
-                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
                                         Sent back: {campaign.review_reason}
                                     </p>
                                 )}
                                 {campaign.pause_reason && (
-                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-200">
+                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
                                         Paused: {campaign.pause_reason}
                                     </p>
                                 )}
@@ -458,7 +458,7 @@ export default function CampaignDetailPage() {
                                     <Link
                                         to={`/admin/brands/${detail.brand.user_id}`}
                                         data-testid={IDS.brandLink}
-                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-200 hover:text-ember-500"
+                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-150 hover:text-ember-500"
                                     >
                                         <BrandAvatar brand={detail.brand} />
                                         {detail.brand.business_name || "Unknown brand"}
@@ -494,7 +494,7 @@ export default function CampaignDetailPage() {
                                             loadManagers();
                                             setDialog({ kind: "reassign" });
                                         }}
-                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 md:min-h-0"
+                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
                                     >
                                         <UserCog className="h-3.5 w-3.5" />
                                         Reassign
@@ -508,7 +508,7 @@ export default function CampaignDetailPage() {
                                         in one place or they read as unrelated. */}
                                     <div className="mb-4 flex flex-wrap items-center gap-3">
                                         <ExecutionBadge campaign={campaign} />
-                                        <ExecutionNote campaign={campaign} className="min-w-0 text-xs" />
+                                        <ExecutionNote campaign={campaign} className="min-w-0 text-sm" />
                                     </div>
                                     <p
                                         data-testid={IDS.managerName}
@@ -560,13 +560,13 @@ export default function CampaignDetailPage() {
                         {detail.slots.length === 0 ? (
                             <p
                                 data-testid={IDS.slotsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 No slots yet. The campaign manager sets these once the brief is
                                 approved — until then nobody can book a time.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                 {detail.slots.map((s) => (
                                     <li
                                         key={s.id}
@@ -582,7 +582,7 @@ export default function CampaignDetailPage() {
                                         </span>
                                         <span className="flex min-w-0 flex-1 flex-wrap gap-2">
                                             {s.bookings.length === 0 ? (
-                                                <span className="text-xs text-muted-foreground">
+                                                <span className="text-sm text-muted-foreground">
                                                     Nobody yet
                                                 </span>
                                             ) : (
@@ -593,7 +593,7 @@ export default function CampaignDetailPage() {
                                                         data-testid={IDS.slotBooking(
                                                             b.collaboration_id,
                                                         )}
-                                                        className="rounded-full border border-white/10 px-2.5 py-1 text-xs transition-colors duration-200 hover:border-ember-500 hover:text-ember-500"
+                                                        className="rounded-full border border-white/10 px-2.5 py-1 text-sm transition-colors duration-150 hover:border-ember-500 hover:text-ember-500"
                                                     >
                                                         {b.creator_name || "Creator"}
                                                     </Link>
@@ -618,7 +618,7 @@ export default function CampaignDetailPage() {
                         {!groups ? null : groups.every((g) => g.rows.length === 0) ? (
                             <p
                                 data-testid={IDS.applicantsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 Nobody has applied yet. Invite creators, or wait — a brief
                                 usually takes a day or two to gather applications.
@@ -638,7 +638,7 @@ export default function CampaignDetailPage() {
                                                     {g.rows.length}
                                                 </span>
                                             </p>
-                                            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                                            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                                 {g.rows.map((a) => (
                                                     <li
                                                         key={a.collaboration_id}
@@ -655,7 +655,7 @@ export default function CampaignDetailPage() {
                                                             name={a.name}
                                                             className="min-w-0 flex-1 text-sm"
                                                         />
-                                                        <span className="flex-none text-xs text-muted-foreground">
+                                                        <span className="flex-none text-sm text-muted-foreground">
                                                             quoted ₹
                                                             {formatRupees(a.quoted_rate)}
                                                             {a.agreed_amount != null
@@ -665,7 +665,7 @@ export default function CampaignDetailPage() {
                                                         <StatePill state={a.state} />
                                                         <Link
                                                             to={`/admin/applications/${a.collaboration_id}`}
-                                                            className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                                                            className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
                                                         >
                                                             Open
                                                         </Link>
@@ -682,13 +682,13 @@ export default function CampaignDetailPage() {
                         {detail.payments.length === 0 ? (
                             <p
                                 data-testid={IDS.paymentsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 No payments yet. One is raised when a collaboration reaches
                                 payment.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                 {detail.payments.map((p) => (
                                     <li
                                         key={p.id}
@@ -713,7 +713,7 @@ export default function CampaignDetailPage() {
                                         <span className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground">
                                             {p.state}
                                         </span>
-                                        <span className="w-40 flex-none text-xs text-muted-foreground">
+                                        <span className="w-40 flex-none text-sm text-muted-foreground">
                                             {p.paid_at ? formatDateTime(p.paid_at) : "—"}
                                         </span>
                                     </li>
@@ -844,7 +844,7 @@ function ReassignManagerDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={DIDS.action("reassign-dialog")}
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                className="max-w-md rounded-md border border-white/10 bg-card"
             >
                 <DialogHeader className="text-left">
                     <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
@@ -875,7 +875,7 @@ function ReassignManagerDialog({
                         >
                             <SelectValue placeholder="Pick a manager" />
                         </SelectTrigger>
-                        <SelectContent className="rounded-md border-white/10 bg-card grain-surface">
+                        <SelectContent className="rounded-md border-white/10 bg-card">
                             {managers.map((m) => (
                                 <SelectItem key={m.user_id} value={m.user_id}>
                                     {m.name}
@@ -884,7 +884,7 @@ function ReassignManagerDialog({
                         </SelectContent>
                     </Select>
                     {managers.length === 0 && (
-                        <p className="text-xs leading-relaxed text-muted-foreground">
+                        <p className="text-sm leading-relaxed text-muted-foreground">
                             There are no WeAre managers yet. Create one first — until then a
                             campaign stays with the brand's own person.
                         </p>

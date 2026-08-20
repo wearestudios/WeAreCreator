@@ -36,18 +36,15 @@ import AdminAudit from "@/components/admin/AdminAudit";
 export const OverviewRoute = () => {
     const { reloadCounts } = useAdminConsole();
     return (
-        <div className="space-y-12">
-            {/* Four independent panels behind four independent endpoints, so
-                they get four boundaries. Health degrading because one check
-                returned an unexpected row should not also cost the admin the
-                exports, and one shared boundary around all four would mean
-                exactly that. */}
-            <SafeSection name="health" label="Health checks couldn't load">
-                <HealthPanel />
-            </SafeSection>
-            <SafeSection name="intelligence" label="Activity charts couldn't load">
-                <IntelligencePanel />
-            </SafeSection>
+        <div className="space-y-8">
+            {/* Health and the activity charts moved to sidebar sections of
+                their own. They were stacked here because a tab strip could not
+                afford two more tabs; a sidebar can, and an admin looking for
+                "what is going wrong" should not have to scroll past the stat
+                tiles to find it.
+
+                Independent panels behind independent endpoints get independent
+                boundaries: the exports failing should not also cost the tiles. */}
             <SafeSection name="overview" label="The overview couldn't load">
                 <Overview onChanged={reloadCounts} />
             </SafeSection>
@@ -57,6 +54,20 @@ export const OverviewRoute = () => {
         </div>
     );
 };
+
+/** What is going wrong, on its own screen. */
+export const HealthRoute = () => (
+    <SafeSection name="health" label="Health checks couldn't load">
+        <HealthPanel />
+    </SafeSection>
+);
+
+/** What the business is doing — the counted shapes, not the to-do list. */
+export const PerformanceRoute = () => (
+    <SafeSection name="intelligence" label="Activity charts couldn't load">
+        <IntelligencePanel />
+    </SafeSection>
+);
 
 export const CreatorReviewsRoute = () => {
     const { reloadCounts } = useAdminConsole();

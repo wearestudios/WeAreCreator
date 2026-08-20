@@ -132,7 +132,7 @@ export function CommandPalette() {
                 type="button"
                 onClick={() => setOpen(true)}
                 data-testid={IDS.trigger}
-                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-white/10 bg-card px-3.5 text-sm text-muted-foreground transition-colors duration-200 hover:border-white/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
+                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-white/10 bg-card px-3.5 text-sm text-muted-foreground transition-colors duration-150 hover:border-white/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
             >
                 <Search className="h-4 w-4 flex-none" />
                 <span className="min-w-0 flex-1 truncate text-left">
@@ -149,7 +149,7 @@ export function CommandPalette() {
                     aria-describedby={undefined}
                     // Anchored high rather than centred: the list grows
                     // downwards, and a centred box jumps as results arrive.
-                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-white/10 bg-card p-0 grain-surface"
+                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-white/10 bg-card p-0"
                 >
                     <DialogTitle className="sr-only">Search everything</DialogTitle>
 
@@ -233,7 +233,7 @@ export function CommandPalette() {
                                                                     {item.label}
                                                                 </span>
                                                                 {item.sublabel && (
-                                                                    <span className="block truncate text-xs text-muted-foreground">
+                                                                    <span className="block truncate text-sm text-muted-foreground">
                                                                         {item.sublabel}
                                                                     </span>
                                                                 )}

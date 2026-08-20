@@ -1543,17 +1543,20 @@ Planting a leak in `_build_campaign_report` fails the suite — checked.
 
 ## The admin console
 
-`/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the tab
-strip and the badge counts and renders the matched route into an `<Outlet>`. The
-URL is the state. It used to be one route with a `useState` tab, which made every
-screen unaddressable — no deep link, no back button, and a reload always landed
-on Overview.
+`/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the
+sidebar and the badge counts and renders the matched route into an `<Outlet>`.
+The URL is the state. It used to be one route with a `useState` tab, which made
+every screen unaddressable — no deep link, no back button, and a reload always
+landed on Overview.
 
-- Nine list routes off the tab strip (`""` index, `creator-reviews`,
-  `campaign-reviews`, `brand-reviews`, `queue`, `creators`, `campaigns`,
-  `brands`, `audit`) and four detail routes: `/admin/campaigns/:id`,
-  `/creators/:id`, `/brands/:id`, `/collaborations/:id`. `ADMIN_TABS` in
-  `AdminConsole.jsx` is both the strip and the route table.
+- Eleven list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
+  `performance`, `health`, `audit`) and four detail routes:
+  `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
+  `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
+  is both the navigation and the route table, re-exported as `ADMIN_TABS` under
+  its old name because the router builds from it; a unit test fails a section
+  that routes nowhere.
 - `/admin/login` is declared **outside** the layout — it is the one `/admin`
   path that must not require an admin.
 - Filters that are worth sharing live in the query string, not in state:
@@ -1571,6 +1574,112 @@ on Overview.
   address at all; the drawer is gone. Campaign rows keep the chevron as a
   peek-inline affordance, with the title as the link — two affordances, kept
   separate.
+
+### The working surface
+
+Everything above is the architecture. **How it looks and handles is a separate
+set of decisions, and they are the ones a person notices after the fortieth
+load.** The console was built like the rest of the product — cards, grain,
+entrance motion, a horizontal tab strip — which is right for a page a creator
+reads once and wrong for a tool somebody sits in front of for an hour.
+`components/admin/console/` is the kit, and `tests/unit/test_admin_console.py`
+holds every rule below.
+
+- **A sidebar, not a tab strip.** Nine tabs across the top scrolled sideways on
+  anything under a laptop, so half the sections and all of their badge counts
+  were off-screen — you could not see that six brands were waiting without
+  scrolling the navigation. It also spent the screen's widest dimension on
+  chrome when the thing that needs width is a table. Collapse to icons persists
+  (`localStorage`), because it is a preference rather than a per-visit choice,
+  and **below `md` the icon rail is the only form** — 224px of a 390px screen
+  spent on navigation leaves 166px for the table.
+- **Tables, through one `DataTable`.** Cards are right when each item is a
+  thing you look *at* and wrong when they are rows you look *across*: you
+  cannot compare a follower count in card three with the one in card eleven,
+  and a screen that fits nine cards fits about thirty rows. Sticky header,
+  44px rows, right-aligned numerics in tabular figures, and **a column sorts
+  on its `value`, not on what its `cell` prints** — sorting the formatted
+  string is how "9k" ends up above "24k". Nullish sorts last in both
+  directions: a row with no value is unknown, not smallest. Past
+  `VIRTUALISE_ABOVE` (150) the body is windowed; below it everything stays in
+  the DOM, because windowing forty rows costs more than it saves and breaks
+  ⌘F. Measured: 400 rows render 31, and the page still scrolls at 390px.
+  Cards survive in exactly one place — Overview's stat tiles, which are things
+  you look at.
+- **One density scale** (`tokens.js`): `DENSITY`, `ROW_H`/`ROW_PX` (which must
+  agree — one renders, the other is what virtualisation measures with), and
+  `TEXT`, where `text-xs` means *true* metadata. The console had 158 uses of
+  it and was effectively set in 12px; a test now fails any `text-xs` that is
+  not on an uppercase eyebrow.
+- **One semantic colour per state, always with the word beside it.**
+  `STATUS_TONE` is five tones, `TONE_BY_STATE` maps every wire value onto one,
+  and `StatusTag` is the only thing that draws a state — the four `meta`
+  objects it replaced are why a closed campaign read grey on one screen and
+  red on the next. **Ember is never a status**: it is the primary action, and
+  a status wearing it makes every row look like a call to action.
+- **The console is calm.** No grain (the shared dialog primitive grains
+  itself, so the three console dialogs turn it off at the call site), no
+  entrance animation, 150ms colour transitions and nothing else. A list that
+  animates in is a list you cannot read until it has finished. Skeletons stay:
+  that is shape, not motion, and CLS measures 0.0000 with the API delayed.
+- **The peek panel** (`PeekPanel`) is a row's detail without leaving the list —
+  working a queue is "check this one, act, next", and a full-page round trip
+  per row loses the filter, the sort and the scroll forty times an hour. It
+  **always offers "Open full page"**: a peek that quietly became the only way
+  to see something would be a detail page with less in it.
+- **The keyboard is a faster way to the same actions, never a way around a
+  confirmation.** `useTableKeys` binds ↑↓/kj, Enter, A, R, Esc and ?; A and R
+  call the same handlers the buttons do, so R still opens the reason dialog —
+  verified by pressing it and watching nothing POST until a reason was typed.
+  **Typing is never intercepted**: every handler bails on an input, a textarea,
+  a select, anything `contentEditable`, and anything inside a Radix dialog, so
+  "j" in a search box is a letter. `ShortcutsOverlay` is generated from one
+  `SHORTCUTS` list and a test checks the bindings it advertises exist.
+- **Filters, sort and scroll persist per section** (`useListState`), in
+  `sessionStorage` — a working context should survive a detail page and a
+  refresh and be gone tomorrow. **Saved filter sets are the deliberate
+  exception** and live in `localStorage`, appearing under their section in the
+  sidebar; naming one is an explicit act, so it should still be there next
+  week. The sidebar picks a new set up through a `weare:saved-filters` event
+  rather than a prop drilled through the shell.
+- **A row keeps the test id its screen already had.** `DataTable` takes a
+  `rowTestId`, so the creator list's rows are still `admin-creator-tile-<id>`
+  and a column header can carry the id its sort chip used to. Changing the
+  layout is not a reason to break "the element for creator X".
+
+#### On a phone it is not a table at all
+
+A table earns its keep by letting you read *across*, and at 390px there is no
+across: six columns become two and the rest — **including every action** — sit
+behind a sideways scroll nobody finds. Measured on the action queue, whose
+entire purpose is the approve/reject pair: both were off-screen. The first
+attempt at a fix made it worse in a different way, squashing the name column to
+nothing and overlapping two headers.
+
+- **Below `md`, `DataTable` renders a stacked list of the same rows**, and the
+  call site says which column goes where: `mobile: "primary" | "meta" |
+  "trailing" | "action"`. No hint means desktop-only, which is the honest
+  default — most columns exist to be compared, and comparison is the thing a
+  phone cannot do. A test fails a list that declares no `primary`, and one
+  with decisions that declares no `action`.
+- `useWide()` reads `matchMedia` **synchronously on first render**, so neither
+  form appears for a frame before being replaced. Only one of the two is in
+  the DOM.
+- **The phone list is not its own scroll container** — the page scrolls, which
+  is what a phone expects, and a fixed-height box inside a short viewport is
+  worse than the problem it solves. That means no windowing there: measured,
+  400 rows all render. The lists that get long are paginated at 50 or capped
+  at 200, so the ceiling is the audit log at 200 rows.
+- `mobileCell` is the escape hatch for a value whose desktop form is a
+  compromise with a column width — used once, for the queue's overdue marker,
+  which is "!" in a 7rem column and "· overdue" where there is room.
+- **The icon rail is not the phone's navigation.** 56px of a 390px screen is
+  14% of the width spent on nine unlabelled glyphs, on a device with no hover
+  to explain them — the `title` that carries the rail on a laptop is invisible
+  under a finger. The rail is `hidden md:flex`; below that the sections are
+  `AdminNavSheet`, opened from the console's own header. Both render the same
+  `SectionLink`, so a phone cannot find a different set of sections from a
+  laptop, and the badge is a number wherever there is room to read one.
 
 Backed by three detail endpoints — `GET /admin/campaigns/{id}`,
 `/admin/brands/{user_id}`, `/admin/collaborations/{id}` — each **declared after

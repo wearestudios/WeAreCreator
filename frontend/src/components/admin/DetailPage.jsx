@@ -51,7 +51,7 @@ export const Breadcrumbs = ({ crumbs }) => (
                             <Link
                                 to={c.to}
                                 data-testid={BREADCRUMBS.crumb(c.key)}
-                                className="max-w-[14rem] truncate transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="max-w-[14rem] truncate transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 {c.label}
                             </Link>
@@ -114,7 +114,7 @@ export const Stat = ({ label, value, testid, highlight }) => (
             "rounded-md border p-5 " +
             (highlight
                 ? "border-ember-500/40 bg-ember-500/10"
-                : "border-white/10 bg-card grain-surface")
+                : "border-white/10 bg-card")
         }
     >
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -137,7 +137,7 @@ export const Panel = ({ children, className = "", ...rest }) => (
     <div
         {...rest}
         className={
-            "rounded-md border border-white/10 bg-card p-6 grain-surface " + className
+            "rounded-md border border-white/10 bg-card p-6 " + className
         }
     >
         {children}
@@ -180,7 +180,7 @@ export function DetailShell({
                 to={backTo}
                 data-testid={IDS.back}
                 className={
-                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                     (crumbs ? "mt-2" : "")
                 }
             >
@@ -205,7 +205,7 @@ export function DetailShell({
             ) : notFound ? (
                 <div
                     data-testid={IDS.notFound}
-                    className="mt-10 rounded-md border border-white/10 bg-card px-6 py-12 grain-surface"
+                    className="mt-10 rounded-md border border-white/10 bg-card px-6 py-12"
                 >
                     <p className="font-serif text-2xl">Nothing here.</p>
                     <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
@@ -276,21 +276,21 @@ export const AuditTrail = ({ rows, emptyMessage, formatWhen }) => {
         return (
             <p
                 data-testid={IDS.timelineEmpty}
-                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface"
+                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
             >
                 {emptyMessage || "Nothing has happened to this yet."}
             </p>
         );
     }
     return (
-        <ol data-testid={IDS.timeline} className="divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface">
+        <ol data-testid={IDS.timeline} className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
             {rows.map((e) => (
                 <li
                     key={e.id}
                     data-testid={IDS.auditRow(e.id)}
                     className="flex flex-col gap-1.5 px-5 py-4 md:flex-row md:items-baseline md:gap-6"
                 >
-                    <span className="w-40 flex-none text-xs text-muted-foreground">
+                    <span className="w-40 flex-none text-sm text-muted-foreground">
                         {formatWhen(e.created_at)}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -298,13 +298,13 @@ export const AuditTrail = ({ rows, emptyMessage, formatWhen }) => {
                         {e.note && (
                             <span
                                 title={e.note}
-                                className="mt-1 block line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+                                className="mt-1 block line-clamp-2 text-sm leading-relaxed text-muted-foreground"
                             >
                                 {e.note}
                             </span>
                         )}
                     </span>
-                    <span className="flex-none text-xs text-muted-foreground">
+                    <span className="flex-none text-sm text-muted-foreground">
                         {e.actor_name || "—"}
                         {e.actor_role ? ` · ${e.actor_role}` : ""}
                     </span>

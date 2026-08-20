@@ -1,51 +1,67 @@
 // The three review queues: creators, campaigns, brands.
 //
-// Same shape each time — a list of things waiting, each expanding to whatever
-// you need to make the call, with approve and reject inline. They are separate
+// Same shape each time — a table of things waiting, each opening a panel with
+// whatever you need to make the call, with approve and reject on the row and in
+// the panel, and on the A and R keys. They are separate
 // tabs rather than one list because the three decisions need different things
 // in front of you: a creator's Instagram, a campaign's brief, a brand's
 // paperwork.
 //
 // Approving is one tap. Rejecting always opens a dialog and always requires a
-// reason, because the person on the other end is told what it said.
-import React, { useCallback, useEffect, useState } from "react";
+// reason, because the person on the other end is told what it said — and that
+// stays true of the A and R keys, which reach these same two handlers.
+//
+// **The expanding card became a row and a panel.** A queue is worked one item
+// at a time: read, decide, next. Expanding in place pushed everything below it
+// down, so the next row was never where it had just been; the panel opens
+// beside the list and leaves the queue exactly where it was.
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { notifyError } from "@/lib/feedback";
 import {
     Building2,
     CheckCircle2,
-    ChevronDown,
     ExternalLink,
     Instagram,
     Sparkles,
     XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { ADMIN_REVIEWS as IDS } from "@/constants/testIds";
+import { ADMIN_PEEK, ADMIN_REVIEWS as IDS } from "@/constants/testIds";
+import { ListEmptyState } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
 import { useOptimisticList } from "./useOptimistic";
+import DataTable, { sortRows } from "./console/DataTable";
+import PeekPanel from "./console/PeekPanel";
+import { PeekButton, RowButton } from "./console/RowActions";
+import StatusTag from "./console/StatusTag";
+import { TimeAgo } from "./console/format";
+import { TEXT } from "./console/tokens";
+import useListState from "./console/useListState";
+import useTableKeys from "./console/useTableKeys";
 import {
     CAMPAIGN_STATUS_META,
     CreatorAvatar,
-    EmptyState,
-    ListSkeleton,
-    Pill,
-    SectionHeader,
     formatCompact,
     formatDate,
     formatRupees,
-    timeAgo,
 } from "./shared";
+
+const DEFAULTS = { sort: { key: "since", dir: "asc" } };
 
 /**
  * One review queue. The three tabs differ only in what they fetch, what each
  * row says, and what the two buttons call — so that is all `config` carries.
  */
 function ReviewQueue({ config, onChanged }) {
-    const { rows, setRows, removeOptimistically, isBusy } = useOptimisticList(null);
-    const [openId, setOpenId] = useState(null);
+    const { rows: raw, setRows, removeOptimistically, isBusy } = useOptimisticList(null);
     const [confirm, setConfirm] = useState(null);
     const [submitting, setSubmitting] = useState(false);
+    const [focused, setFocused] = useState(-1);
+    const [peekId, setPeekId] = useState(null);
+    // The queues carry no filters, but sort and scroll are worth keeping
+    // across a trip to somebody's page and back.
+    const { state, patch, scrollRef } = useListState(`reviews:${config.kind}`, DEFAULTS);
+    const { sort } = state;
 
     const load = useCallback(async () => {
         setRows(null);
@@ -62,151 +78,227 @@ function ReviewQueue({ config, onChanged }) {
         load();
     }, [load]);
 
-    const approve = (row) => {
-        const id = config.idOf(row);
-        removeOptimistically(id, () => api.post(config.approvePath(row)), {
-            successMessage: config.approvedMessage(row),
-            onDone: () => onChanged?.(),
-        });
-    };
+    const approve = useCallback(
+        (row) => {
+            if (!row) return;
+            setPeekId(null);
+            removeOptimistically(config.idOf(row), () => api.post(config.approvePath(row)), {
+                successMessage: config.approvedMessage(row),
+                onDone: () => onChanged?.(),
+            });
+        },
+        [config, onChanged, removeOptimistically],
+    );
 
-    const reject = (row) => {
-        const id = config.idOf(row);
-        setConfirm({
-            row,
-            onSubmit: async (body) => {
-                setSubmitting(true);
-                const ok = await removeOptimistically(
-                    id,
-                    () => api.post(config.rejectPath(row), body),
-                    { successMessage: config.rejectedMessage(row), onDone: () => onChanged?.() },
-                );
-                setSubmitting(false);
-                if (ok) setConfirm(null);
+    const reject = useCallback(
+        (row) => {
+            if (!row) return;
+            const id = config.idOf(row);
+            setConfirm({
+                row,
+                onSubmit: async (body) => {
+                    setSubmitting(true);
+                    const ok = await removeOptimistically(
+                        id,
+                        () => api.post(config.rejectPath(row), body),
+                        { successMessage: config.rejectedMessage(row), onDone: () => onChanged?.() },
+                    );
+                    setSubmitting(false);
+                    if (ok) {
+                        setConfirm(null);
+                        setPeekId(null);
+                    }
+                },
+            });
+        },
+        [config, onChanged, removeOptimistically],
+    );
+
+    const columns = useMemo(
+        () => [
+            {
+                key: "primary",
+                mobile: "primary",
+                header: config.rowHeader || "Waiting",
+                sortable: true,
+                value: (r) => String(config.primary(r) || ""),
+                cell: (r) => (
+                    <span className="flex min-w-0 items-center gap-2">
+                        {config.renderAvatar?.(r)}
+                        <span className="truncate">{config.primary(r)}</span>
+                    </span>
+                ),
             },
-        });
-    };
+            {
+                key: "secondary",
+                mobile: "meta",
+                header: "Detail",
+                hideBelow: true,
+                cell: (r) => (
+                    <span className="block truncate text-muted-foreground">{config.secondary(r)}</span>
+                ),
+            },
+            {
+                key: "since",
+                mobile: "meta",
+                header: "Waiting",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                // Ascending is longest-waiting first, which is the order a
+                // queue is meant to be worked in.
+                value: (r) => new Date(config.since(r) || 0).getTime() || null,
+                cell: (r) => <TimeAgo iso={config.since(r)} />,
+            },
+            {
+                key: "decision",
+                mobile: "action",
+                header: "",
+                width: "w-40",
+                cell: (r) => {
+                    const id = config.idOf(r);
+                    return (
+                        <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            <RowButton
+                                tone="bad"
+                                disabled={isBusy(id)}
+                                onClick={() => reject(r)}
+                                testid={IDS.reject(id)}
+                            >
+                                {config.rejectLabel}
+                            </RowButton>
+                            <RowButton
+                                tone="primary"
+                                disabled={isBusy(id)}
+                                onClick={() => approve(r)}
+                                testid={IDS.approve(id)}
+                            >
+                                {config.approveLabel}
+                            </RowButton>
+                        </span>
+                    );
+                },
+            },
+        ],
+        [config, approve, reject, isBusy],
+    );
 
-    const count = rows?.length ?? 0;
+    const rows = useMemo(() => sortRows(raw || [], columns, sort), [raw, columns, sort]);
+    const peek = useMemo(
+        () => rows.find((r) => config.idOf(r) === peekId) || null,
+        [rows, peekId, config],
+    );
+
+    const openPeek = useCallback(
+        (i) => {
+            setFocused(i);
+            setPeekId(rows[i] ? config.idOf(rows[i]) : null);
+        },
+        [rows, config],
+    );
+
+    useTableKeys({
+        count: rows.length,
+        focused,
+        setFocused,
+        onOpen: openPeek,
+        onApprove: (i) => approve(rows[i]),
+        onReject: (i) => reject(rows[i]),
+        onEscape: () => (peekId ? setPeekId(null) : setFocused(-1)),
+        enabled: !confirm,
+    });
+
+    const count = raw?.length ?? 0;
 
     return (
         <section data-testid={IDS.section(config.kind)}>
-            <SectionHeader
-                kicker={config.kicker}
-                title={count === 0 && rows ? config.clearTitle : config.title}
-                blurb={config.blurb}
-                onRefresh={load}
-                refreshTestId={IDS.refresh(config.kind)}
-            />
+            <header className="mb-3">
+                <h1 className={TEXT.heading}>
+                    {count === 0 && raw ? config.clearTitle : config.title}
+                </h1>
+                <p data-testid={IDS.count(config.kind)} className={`${TEXT.meta} text-muted-foreground`}>
+                    {raw ? `${count} waiting · longest first` : "Loading…"}
+                </p>
+            </header>
 
-            {config.note && rows && count > 0 && (
+            {config.note && raw && count > 0 && (
                 <p
                     data-testid={IDS.blockedNote}
-                    className="mt-6 rounded-md border border-ember-500/30 bg-ember-500/10 px-5 py-4 text-sm leading-relaxed text-ember-500"
+                    className={`mb-3 rounded border border-ember-500/30 bg-ember-500/10 px-3 py-2 ${TEXT.body} text-ember-500`}
                 >
                     {config.note}
                 </p>
             )}
 
-            <div className="mt-6">
-                {!rows ? (
-                    <ListSkeleton rows={4} testid={IDS.skeleton(config.kind)} />
-                ) : count === 0 ? (
-                    <EmptyState testid={IDS.empty(config.kind)} Icon={CheckCircle2}>
-                        {config.emptyText}
-                    </EmptyState>
-                ) : (
-                    <ul
-                        data-testid={IDS.list(config.kind)}
-                        className="space-y-3"
-                    >
-                        {rows.map((row) => {
-                            const id = config.idOf(row);
-                            const open = openId === id;
-                            const busy = isBusy(id);
-                            return (
-                                <li
-                                    key={id}
-                                    data-testid={IDS.row(id)}
-                                    className="overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
-                                >
-                                    <button
-                                        type="button"
-                                        aria-expanded={open}
-                                        onClick={() => setOpenId(open ? null : id)}
-                                        data-testid={IDS.expand(id)}
-                                        className="flex w-full items-start gap-4 p-5 text-left transition-colors duration-200 hover:bg-white/5"
-                                    >
-                                        {config.renderAvatar?.(row)}
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                                {config.renderBadge?.(row)}
-                                                <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                                    waiting {timeAgo(config.since(row))}
-                                                </span>
-                                            </div>
-                                            <p className="mt-1.5 truncate text-sm text-foreground">
-                                                {config.primary(row)}
-                                            </p>
-                                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                                {config.secondary(row)}
-                                            </p>
-                                        </div>
-                                        <ChevronDown
-                                            className={
-                                                "mt-1 h-4 w-4 flex-none text-muted-foreground transition-transform duration-200 " +
-                                                (open ? "rotate-180" : "")
-                                            }
-                                        />
-                                    </button>
+            <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(r) => config.idOf(r)}
+                rowTestId={(r) => IDS.row(config.idOf(r))}
+                sort={sort}
+                onSortChange={(s) => patch({ sort: s })}
+                focused={focused}
+                onFocus={setFocused}
+                onOpen={openPeek}
+                loading={!raw}
+                scrollRef={scrollRef}
+                testid={IDS.list(config.kind)}
+                empty={
+                    <ListEmptyState
+                        Icon={CheckCircle2}
+                        testid={IDS.empty(config.kind)}
+                        filtered={false}
+                        emptyTitle={config.clearTitle}
+                        emptyBody={config.emptyText}
+                    />
+                }
+            />
 
-                                    {open && (
-                                        <div
-                                            data-testid={IDS.detail(id)}
-                                            className="border-t border-white/10 px-5 py-5"
-                                        >
-                                            {config.renderDetail(row)}
-                                        </div>
-                                    )}
-
-                                    <div className="flex flex-col gap-2 border-t border-white/10 p-4 sm:flex-row sm:justify-end">
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            disabled={busy}
-                                            onClick={() => reject(row)}
-                                            data-testid={IDS.reject(id)}
-                                            className="h-11 rounded-full border-red-500/30 bg-transparent px-5 text-sm text-red-300 hover:bg-red-500/10 hover:text-red-200 sm:h-9"
-                                        >
-                                            <XCircle className="mr-1.5 h-4 w-4" />
-                                            {config.rejectLabel}
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() => approve(row)}
-                                            data-testid={IDS.approve(id)}
-                                            className="h-11 rounded-full bg-ember-500 px-5 text-sm text-black hover:bg-ember-400 sm:h-9"
-                                        >
-                                            <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                                            {config.approveLabel}
-                                        </Button>
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
+            {/* Everything you need to make the call, beside the queue rather
+                than inside it. `IDS.detail` is here because this is where the
+                detail went, not a new thing. */}
+            <PeekPanel
+                open={Boolean(peek)}
+                onOpenChange={(o) => !o && setPeekId(null)}
+                title={peek ? String(config.primary(peek)) : "Review"}
+                subtitle={peek ? String(config.secondary(peek) || "") : undefined}
+                actions={
+                    peek ? (
+                        <>
+                            <PeekButton
+                                tone="bad"
+                                disabled={isBusy(config.idOf(peek))}
+                                onClick={() => reject(peek)}
+                                testid={ADMIN_PEEK.action("reject")}
+                            >
+                                <XCircle className="h-3.5 w-3.5" />
+                                {config.rejectLabel}
+                            </PeekButton>
+                            <PeekButton
+                                tone="primary"
+                                disabled={isBusy(config.idOf(peek))}
+                                onClick={() => approve(peek)}
+                                testid={ADMIN_PEEK.action("approve")}
+                            >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                {config.approveLabel}
+                            </PeekButton>
+                        </>
+                    ) : null
+                }
+            >
+                {peek && (
+                    <div data-testid={IDS.detail(config.idOf(peek))}>
+                        <div className="mb-3 flex items-center gap-3">
+                            {config.renderBadge?.(peek)}
+                            <span className={`${TEXT.meta} text-muted-foreground`}>
+                                waiting <TimeAgo iso={config.since(peek)} />
+                            </span>
+                        </div>
+                        {config.renderDetail(peek)}
+                    </div>
                 )}
-            </div>
-
-            {rows && count > 0 && (
-                <p
-                    data-testid={IDS.count(config.kind)}
-                    className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground"
-                >
-                    {count} waiting
-                </p>
-            )}
+            </PeekPanel>
 
             <ConfirmDialog
                 open={Boolean(confirm)}
@@ -252,7 +344,7 @@ export function CreatorReviews({ onChanged }) {
                     ]
                         .filter(Boolean)
                         .join(" · "),
-                renderAvatar: (r) => <CreatorAvatar creator={r} size="h-11 w-11" />,
+                renderAvatar: (r) => <CreatorAvatar creator={r} size="h-6 w-6" />,
                 renderDetail: (r) => (
                     <div className="space-y-4 text-sm">
                         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
@@ -308,7 +400,7 @@ export function CreatorReviews({ onChanged }) {
                                 target="_blank"
                                 rel="noreferrer"
                                 data-testid={IDS.instagram(r.user_id)}
-                                className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                                className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500"
                             >
                                 <Instagram className="h-4 w-4" />
                                 Open @{r.instagram_handle}
@@ -360,15 +452,19 @@ export function CampaignReviews({ onChanged }) {
                     ]
                         .filter(Boolean)
                         .join(" · "),
-                renderBadge: (r) => (
-                    <Pill meta={CAMPAIGN_STATUS_META} value="pending_review" />
+                renderBadge: () => (
+                    <StatusTag
+                        state="pending_review"
+                        label={CAMPAIGN_STATUS_META.pending_review?.label}
+                        chip
+                    />
                 ),
                 renderDetail: (r) => (
                     <div className="space-y-5 text-sm">
                         {/* A brand that lost its verification while the brief
                             sat here can't have it approved — say so up front. */}
                         {!r.brand_verified && (
-                            <p className="rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-3 text-xs leading-relaxed text-ember-500">
+                            <p className="rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-3 text-sm leading-relaxed text-ember-500">
                                 {r.brand_name || "This brand"} isn't verified. Approve them
                                 in Brand reviews first — this brief can't go live until
                                 they are.
@@ -376,7 +472,7 @@ export function CampaignReviews({ onChanged }) {
                         )}
 
                         {r.previous_review_reason && (
-                            <p className="rounded-md border border-white/10 bg-background/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+                            <p className="rounded-md border border-white/10 bg-background/60 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
                                 Last time we sent this back: “{r.previous_review_reason}”
                             </p>
                         )}
@@ -475,8 +571,8 @@ export function BrandReviews({ onChanged }) {
                         .filter(Boolean)
                         .join(" · "),
                 renderAvatar: () => (
-                    <span className="grid h-11 w-11 flex-none place-items-center rounded-md border border-white/10 bg-ember-500/10 text-ember-500">
-                        <Building2 className="h-5 w-5" />
+                    <span className="grid h-6 w-6 flex-none place-items-center rounded border border-white/10 bg-ember-500/10 text-ember-500">
+                        <Building2 className="h-3.5 w-3.5" />
                     </span>
                 ),
                 renderDetail: (r) => (
@@ -509,7 +605,7 @@ export function BrandReviews({ onChanged }) {
                         {/* Briefs stacked up behind this decision make it urgent
                             in a way the signup date alone doesn't show. */}
                         {r.campaigns_awaiting_review > 0 && (
-                            <p className="inline-flex items-center gap-2 rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-2.5 text-xs text-ember-500">
+                            <p className="inline-flex items-center gap-2 rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-2.5 text-sm text-ember-500">
                                 <Sparkles className="h-3.5 w-3.5" />
                                 {r.campaigns_awaiting_review} brief
                                 {r.campaigns_awaiting_review === 1 ? "" : "s"} queued behind
@@ -518,7 +614,7 @@ export function BrandReviews({ onChanged }) {
                         )}
 
                         {r.campaign_count > 0 && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-sm text-muted-foreground">
                                 {r.campaign_count} campaign
                                 {r.campaign_count === 1 ? "" : "s"} written so far.
                             </p>

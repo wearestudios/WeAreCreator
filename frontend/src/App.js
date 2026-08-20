@@ -30,7 +30,9 @@ import {
     CampaignsRoute,
     CreatorReviewsRoute,
     CreatorsRoute,
+    HealthRoute,
     OverviewRoute,
+    PerformanceRoute,
     QueueRoute,
 } from "@/components/admin/routes";
 import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
@@ -307,6 +309,8 @@ function App() {
                                     />
                                 }
                             />
+                            <Route path="performance" element={<PerformanceRoute />} />
+                            <Route path="health" element={<HealthRoute />} />
                             <Route path="audit" element={<AuditRoute />} />
                             {/* A bad path under /admin lands on the console
                                 rather than the marketing site. */}

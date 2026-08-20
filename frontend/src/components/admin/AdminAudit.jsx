@@ -1,31 +1,30 @@
 // Who did what, when, and — for anything destructive — why. The reason column
 // is the point: every reject, cancel, revert and refund records one, and this
 // is where it surfaces.
-import React, { useCallback, useEffect, useState } from "react";
+//
+// This screen was already a table; what it gains from the console's shared one
+// is a sticky header that works, sortable columns, and the same row height and
+// focus treatment as every other list. The reason stays clamped to one line
+// with the full text on hover and in the peek panel — a long reason took a row
+// from 64px to 201px, which turns a log you scan into one you scroll.
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { ScrollText } from "lucide-react";
+
 import { notifyError } from "@/lib/feedback";
-import { ScrollText, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
-import { ADMIN_AUDIT as IDS, STICKY_BAR } from "@/constants/testIds";
-import {
-    FilterChips,
-    ListEmptyState,
-    ResultCount,
-    ScrollTable,
-    StickyBar,
-    pinnedCellClass,
-    pinnedHeadClass,
-    tableHeadClass,
-} from "@/components/data/DenseView";
-import {
-    DateFilter,
-    FilterSelect,
-    SectionHeader,
-    TableSkeleton,
-    endOfDay,
-    formatDate,
-    formatDateTime,
-} from "./shared";
+import { ADMIN_AUDIT as IDS, ADMIN_TABLE as TABLE_IDS } from "@/constants/testIds";
+import { FilterChips, ListEmptyState } from "@/components/data/DenseView";
+
+import DataTable, { sortRows } from "./console/DataTable";
+import PeekPanel, { PeekField } from "./console/PeekPanel";
+import SaveFilter from "./console/SaveFilter";
+import { TimeAgo, absolute } from "./console/format";
+import { DENSITY, PANEL, TEXT } from "./console/tokens";
+import useListState from "./console/useListState";
+import useTableKeys from "./console/useTableKeys";
+import { DateFilter, FilterSelect, endOfDay, formatDate } from "./shared";
 
 const ACTION_LABEL = {
     "creator.verified": "approved creator",
@@ -75,34 +74,57 @@ const summarizeChange = (entry) => {
     return null;
 };
 
+const DEFAULTS = {
+    family: "",
+    actor: "",
+    from: null,
+    to: null,
+    // Newest first is what a log is for. The column is sortable, but nobody
+    // arrives at an audit trail wanting the oldest entry.
+    sort: { key: "created_at", dir: "desc" },
+};
+
+/** The stored dates are ISO strings; the pickers want Date objects. */
+const asDate = (v) => (v ? new Date(v) : null);
+
 export default function AdminAudit() {
-    const [rows, setRows] = useState(null);
-    const [family, setFamily] = useState("");
-    const [actor, setActor] = useState("");
-    const [actorQuery, setActorQuery] = useState("");
-    const [from, setFrom] = useState(null);
-    const [to, setTo] = useState(null);
+    const [data, setData] = useState(null);
+    const [focused, setFocused] = useState(-1);
+    const [peek, setPeek] = useState(null);
+    const { state, patch, reset, scrollRef, saved, save, apply } = useListState(
+        "audit",
+        DEFAULTS,
+    );
+    const { family, actor, from, to, sort } = state;
+    const [typedActor, setTypedActor] = useState(actor);
+    const location = useLocation();
 
     useEffect(() => {
-        const t = setTimeout(() => setActorQuery(actor.trim()), 300);
+        if (location.state?.savedFilter) apply(location.state.savedFilter);
+    }, [location.state, apply]);
+
+    useEffect(() => {
+        const t = setTimeout(() => {
+            if (typedActor.trim() !== actor) patch({ actor: typedActor.trim() });
+        }, 300);
         return () => clearTimeout(t);
-    }, [actor]);
+    }, [typedActor, actor, patch]);
 
     const load = useCallback(async () => {
-        setRows(null);
+        setData(null);
         try {
-            const { data } = await api.get("/admin/audit", {
+            const { data: d } = await api.get("/admin/audit", {
                 params: {
                     limit: 200,
                     ...(family ? { action: family } : {}),
-                    ...(from ? { date_from: from.toISOString() } : {}),
-                    ...(to ? { date_to: endOfDay(to).toISOString() } : {}),
+                    ...(from ? { date_from: new Date(from).toISOString() } : {}),
+                    ...(to ? { date_to: endOfDay(new Date(to)).toISOString() } : {}),
                 },
             });
-            setRows(data);
+            setData(d);
         } catch (e) {
             notifyError(e);
-            setRows([]);
+            setData([]);
         }
     }, [family, from, to]);
 
@@ -110,24 +132,117 @@ export default function AdminAudit() {
         load();
     }, [load]);
 
-    // Actor filtering is by name, client-side: admins know each other by name,
-    // not by ObjectId, and the list is already capped at 200 rows.
-    const visible = (rows || []).filter(
-        (r) =>
-            !actorQuery ||
-            (r.actor_name || "").toLowerCase().includes(actorQuery.toLowerCase()),
+    const columns = useMemo(
+        () => [
+            {
+                key: "created_at",
+                mobile: "trailing",
+                header: "When",
+                sortable: true,
+                width: "w-32",
+                value: (r) => (r.created_at ? new Date(r.created_at).getTime() : null),
+                cell: (r) => <TimeAgo iso={r.created_at} />,
+            },
+            {
+                key: "actor_name",
+                mobile: "meta",
+                header: "Who",
+                sortable: true,
+                width: "w-44",
+                value: (r) => r.actor_name || "",
+                cell: (r) => (
+                    <span data-testid={IDS.rowActor(r.id)} className="truncate">
+                        {r.actor_name || "—"}
+                        <span className={`ml-2 ${TEXT.meta} text-muted-foreground`}>
+                            {r.actor_role}
+                        </span>
+                    </span>
+                ),
+            },
+            {
+                key: "action",
+                mobile: "primary",
+                header: "Did what",
+                sortable: true,
+                value: (r) => ACTION_LABEL[r.action] || r.action || "",
+                cell: (r) => (
+                    <span data-testid={IDS.rowAction(r.id)} className="whitespace-nowrap">
+                        {ACTION_LABEL[r.action] || r.action}
+                    </span>
+                ),
+            },
+            {
+                key: "change",
+                mobile: "meta",
+                header: "Change",
+                hideBelow: true,
+                width: "w-44",
+                cell: (r) => (
+                    <span
+                        data-testid={IDS.rowChange(r.id)}
+                        className="whitespace-nowrap text-muted-foreground"
+                    >
+                        {summarizeChange(r) || "—"}
+                    </span>
+                ),
+            },
+            {
+                key: "note",
+                header: "Reason",
+                width: "w-[20rem]",
+                cell: (r) => (
+                    <span
+                        data-testid={IDS.rowReason(r.id)}
+                        // Clamped rather than wrapped, so the row height holds.
+                        // The whole reason is on the title, and in the panel.
+                        title={r.note || undefined}
+                        className="line-clamp-1 text-muted-foreground"
+                    >
+                        {r.note || "—"}
+                    </span>
+                ),
+            },
+        ],
+        [],
     );
 
-    const filtered = Boolean(family || actorQuery || from || to);
+    // Actor filtering is by name, client-side: admins know each other by name,
+    // not by ObjectId, and the list is already capped at 200 rows.
+    const matched = useMemo(
+        () =>
+            (data || []).filter(
+                (r) =>
+                    !actor ||
+                    (r.actor_name || "").toLowerCase().includes(actor.toLowerCase()),
+            ),
+        [data, actor],
+    );
 
-    // One implementation behind the Clear button, the chips and the empty
-    // state's own clear, so all three undo exactly the same thing.
+    const rows = useMemo(() => sortRows(matched, columns, sort), [matched, columns, sort]);
+
+    const openPeek = useCallback(
+        (i) => {
+            setFocused(i);
+            setPeek(rows[i] || null);
+        },
+        [rows],
+    );
+
+    useTableKeys({
+        count: rows.length,
+        focused,
+        setFocused,
+        onOpen: openPeek,
+        onEscape: () => (peek ? setPeek(null) : setFocused(-1)),
+    });
+
+    const filtered = Boolean(family || actor || from || to);
+
+    // One implementation behind the chips, the empty state's clear and the
+    // saved-set reset, so all three undo exactly the same thing.
     const clearAll = () => {
-        setFamily("");
-        setActor("");
-        setActorQuery("");
-        setFrom(null);
-        setTo(null);
+        setTypedActor("");
+        reset();
     };
 
     const chips = [
@@ -137,94 +252,101 @@ export default function AdminAudit() {
             value: family
                 ? (FAMILY_OPTIONS.find((o) => o.value === family) || {}).label || family
                 : "",
-            onRemove: () => setFamily(""),
+            onRemove: () => patch({ family: "" }),
         },
         {
             key: "actor",
             label: "Admin",
-            value: actorQuery,
+            value: actor,
             onRemove: () => {
-                setActor("");
-                setActorQuery("");
+                setTypedActor("");
+                patch({ actor: "" });
             },
         },
         {
             key: "from",
             label: "From",
-            value: from ? formatDate(from.toISOString()) : "",
-            onRemove: () => setFrom(null),
+            value: from ? formatDate(from) : "",
+            onRemove: () => patch({ from: null }),
         },
         {
             key: "to",
             label: "To",
-            value: to ? formatDate(to.toISOString()) : "",
-            onRemove: () => setTo(null),
+            value: to ? formatDate(to) : "",
+            onRemove: () => patch({ to: null }),
         },
     ];
 
     return (
         <section data-testid={IDS.section}>
-            <SectionHeader
-                kicker="Audit"
-                title="Who did what"
-                blurb="Every decision that moved a creator, a campaign or money — with the person who made it and the reason they gave."
-                onRefresh={load}
-                refreshTestId={IDS.refresh}
-            />
+            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className={TEXT.heading}>Audit</h1>
+                    <p data-testid={IDS.count} className={`${TEXT.meta} text-muted-foreground`}>
+                        {data
+                            ? `${rows.length} of ${data.length} · newest first, capped at 200`
+                            : "Loading…"}
+                    </p>
+                </div>
+                <SaveFilter onSave={save} disabled={!filtered} savedNames={saved.map((s) => s.name)} />
+            </header>
 
-            <StickyBar level="headerFromMd" testid={STICKY_BAR.audit} className="mt-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <div
+                data-testid={TABLE_IDS.toolbar}
+                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+            >
                 <FilterSelect
+                    dense
                     label="Everything"
                     value={family}
-                    onChange={setFamily}
+                    onChange={(v) => patch({ family: v })}
                     options={FAMILY_OPTIONS}
                     testid={IDS.filterAction}
                 />
                 <Input
-                    value={actor}
-                    onChange={(e) => setActor(e.target.value)}
+                    value={typedActor}
+                    onChange={(e) => setTypedActor(e.target.value)}
                     data-testid={IDS.filterActor}
                     placeholder="Filter by admin name"
                     aria-label="Filter by admin"
-                    className="h-11 md:h-10 w-full rounded-md border-white/10 bg-background/60 text-sm focus-visible:ring-ember-500 sm:w-48"
+                    className={`h-8 w-48 border-white/10 bg-transparent ${TEXT.body}`}
                 />
-                <DateFilter label="From" value={from} onChange={setFrom} testid={IDS.filterDateFrom} />
-                <DateFilter label="To" value={to} onChange={setTo} testid={IDS.filterDateTo} />
-                {filtered && (
-                    <button
-                        type="button"
-                        onClick={clearAll}
-                        data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
-                    >
-                        <X className="h-3.5 w-3.5" />
-                        Clear
-                    </button>
-                )}
+                <DateFilter
+                    dense
+                    label="From"
+                    value={asDate(from)}
+                    onChange={(d) => patch({ from: d ? d.toISOString() : null })}
+                    testid={IDS.filterDateFrom}
+                />
+                <DateFilter
+                    dense
+                    label="To"
+                    value={asDate(to)}
+                    onChange={(d) => patch({ to: d ? d.toISOString() : null })}
+                    testid={IDS.filterDateTo}
+                />
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <FilterChips chips={chips} onClearAll={clearAll} />
-                {rows && (
-                    <ResultCount
-                        shown={visible.length}
-                        total={rows.length}
-                        noun="entry"
-                        nounPlural="entries"
-                        testid={IDS.count}
-                        className="ml-auto"
-                    />
-                )}
-            </div>
-            </StickyBar>
+            {filtered && (
+                <div className="mb-3">
+                    <FilterChips chips={chips} onClearAll={clearAll} />
+                </div>
+            )}
 
-            <div className="mt-6">
-                {!rows ? (
-                    <div className="rounded-lg border border-white/10 bg-card grain-surface">
-                        <TableSkeleton rows={10} cols={4} testid={IDS.skeleton} />
-                    </div>
-                ) : visible.length === 0 ? (
+            <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(r) => r.id}
+                rowTestId={(r) => IDS.row(r.id)}
+                sort={sort}
+                onSortChange={(s) => patch({ sort: s })}
+                focused={focused}
+                onFocus={setFocused}
+                onOpen={openPeek}
+                loading={!data}
+                scrollRef={scrollRef}
+                testid={IDS.table}
+                empty={
                     <ListEmptyState
                         Icon={ScrollText}
                         testid={IDS.empty}
@@ -235,83 +357,33 @@ export default function AdminAudit() {
                         filteredTitle="No entries match those filters."
                         filteredBody="Widen the date range, or clear the action and admin filters."
                     />
-                ) : (
-                    // Scrolls sideways rather than forcing the page wide, with
-                    // the timestamp pinned: five columns of values with no idea
-                    // which entry they belong to is not a readable log. The
-                    // header sticks to this container — `overflow-x` makes it
-                    // the scroller, so it has to own the height too.
-                    <ScrollTable testid={IDS.scroll}>
-                        <table data-testid={IDS.table} className="w-full min-w-[46rem] text-sm">
-                            <thead>
-                                <tr className="border-b border-white/10 text-left">
-                                    {["When", "Who", "Did what", "Change", "Reason"].map((h, i) => (
-                                        <th
-                                            key={h}
-                                            className={i === 0 ? pinnedHeadClass : tableHeadClass}
-                                        >
-                                            {h}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/10">
-                                {visible.map((r) => (
-                                    <tr key={r.id} data-testid={IDS.row(r.id)}>
-                                        <td
-                                            className={
-                                                pinnedCellClass +
-                                                " whitespace-nowrap px-5 py-3 text-xs text-muted-foreground"
-                                            }
-                                        >
-                                            {formatDateTime(r.created_at)}
-                                        </td>
-                                        <td
-                                            data-testid={IDS.rowActor(r.id)}
-                                            className="whitespace-nowrap px-5 py-3"
-                                        >
-                                            {r.actor_name || "—"}
-                                            <span className="ml-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-                                                {r.actor_role}
-                                            </span>
-                                        </td>
-                                        <td
-                                            data-testid={IDS.rowAction(r.id)}
-                                            className="whitespace-nowrap px-5 py-3"
-                                        >
-                                            {ACTION_LABEL[r.action] || r.action}
-                                        </td>
-                                        <td
-                                            data-testid={IDS.rowChange(r.id)}
-                                            className="whitespace-nowrap px-5 py-3 text-xs text-muted-foreground"
-                                        >
-                                            {summarizeChange(r) || "—"}
-                                        </td>
-                                        <td
-                                            data-testid={IDS.rowReason(r.id)}
-                                            // Clamped rather than wrapped. A long
-                                            // reason took a row from 64px to 201px
-                                            // on a phone, which turns a log you
-                                            // scan into one you scroll. The full
-                                            // text is on the title attribute.
-                                            title={r.note || undefined}
-                                            className="w-[18rem] max-w-[18rem] px-5 py-3 text-xs leading-relaxed text-muted-foreground"
-                                        >
-                                            <span className="line-clamp-2">{r.note || "—"}</span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </ScrollTable>
-                )}
-            </div>
+                }
+            />
 
-            {rows && (
-                <p className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Newest first · capped at 200
-                </p>
-            )}
+            {/* The panel is where a long reason is actually readable, and where
+                the exact instant lives — a log is read for both. */}
+            <PeekPanel
+                open={Boolean(peek)}
+                onOpenChange={(o) => !o && setPeek(null)}
+                title={peek ? ACTION_LABEL[peek.action] || peek.action : "Entry"}
+                subtitle={peek?.actor_name}
+            >
+                {peek && (
+                    <div>
+                        <PeekField label="When">{absolute(peek.created_at)}</PeekField>
+                        <PeekField label="Who">
+                            {peek.actor_name} · {peek.actor_role}
+                        </PeekField>
+                        <PeekField label="Action">{peek.action}</PeekField>
+                        <PeekField label="Change">{summarizeChange(peek)}</PeekField>
+                        {peek.note ? (
+                            <p className={`mt-3 whitespace-pre-wrap rounded border border-white/10 p-3 ${TEXT.body} text-muted-foreground`}>
+                                {peek.note}
+                            </p>
+                        ) : null}
+                    </div>
+                )}
+            </PeekPanel>
         </section>
     );
 }

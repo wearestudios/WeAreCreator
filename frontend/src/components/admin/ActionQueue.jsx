@@ -21,20 +21,20 @@ import {
     Wallet,
     XCircle,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { ADMIN_QUEUE as IDS } from "@/constants/testIds";
+import { ADMIN_PEEK, ADMIN_QUEUE as IDS } from "@/constants/testIds";
+import { ListEmptyState } from "@/components/data/DenseView";
 import { AdvanceDialog, ConfirmDialog } from "./dialogs";
-import {
-    EmptyState,
-    ListSkeleton,
-    SectionHeader,
-    StatePill,
-    formatRupees,
-    isStale,
-    timeAgo,
-} from "./shared";
+import DataTable, { sortRows } from "./console/DataTable";
+import PeekPanel, { PeekField } from "./console/PeekPanel";
+import { PeekButton, RowButton } from "./console/RowActions";
+import StatusTag from "./console/StatusTag";
+import { TimeAgo } from "./console/format";
+import { CALM, DENSITY, FOCUS, PANEL, ROW_H, TEXT } from "./console/tokens";
+import useListState from "./console/useListState";
+import useTableKeys from "./console/useTableKeys";
+import { formatRupees, isStale } from "./shared";
 
 // Collaboration states where the next move is ours. Mirrors ADMIN_ACTION_STATES
 // on the server; anything else is waiting on the brand or the creator.
@@ -68,6 +68,10 @@ const KIND_META = {
 
 const KINDS = ["payment", "question", "collaboration", "campaign", "brand", "creator"];
 
+// The queue's own order is the point of the screen, so "priority" is the
+// default sort rather than a column somebody has to find.
+const DEFAULTS = { sort: { key: "kind", dir: "asc" } };
+
 export default function ActionQueue({ onChanged, feePercent }) {
     const [items, setItems] = useState(null);
     const [waiting, setWaiting] = useState([]);
@@ -77,6 +81,11 @@ export default function ActionQueue({ onChanged, feePercent }) {
     const [submitting, setSubmitting] = useState(false);
     const [confirm, setConfirm] = useState(null);
     const [advance, setAdvance] = useState(null);
+    const [focused, setFocused] = useState(-1);
+    const [peekId, setPeekId] = useState(null);
+    const { state, patch, scrollRef } = useListState("queue", DEFAULTS);
+    const { sort } = state;
+    const navigate = useNavigate();
 
     const load = useCallback(async () => {
         setItems(null);
@@ -256,7 +265,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
 
     // --- the actions themselves -------------------------------------------
 
-    const approve = (item) => {
+    const approve = useCallback((item) => {
         const { kind: k, raw } = item;
         if (k === "brand") {
             return run(item, () => api.post(`/admin/brands/${raw.user_id}/verify`), "Brand verified");
@@ -319,9 +328,9 @@ export default function ActionQueue({ onChanged, feePercent }) {
             });
         }
         return undefined;
-    };
+    }, [run]);
 
-    const reject = (item) => {
+    const reject = useCallback((item) => {
         const { kind: k, raw } = item;
         const config = {
             brand: {
@@ -368,9 +377,9 @@ export default function ActionQueue({ onChanged, feePercent }) {
             ...config,
             onSubmit: (body) => run(item, () => config.request(body), config.success),
         });
-    };
+    }, [run]);
 
-    const revert = (item) => {
+    const revert = useCallback((item) => {
         const { raw } = item;
         setConfirm({
             item,
@@ -383,7 +392,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             onSubmit: (body) =>
                 run(item, () => api.post(`/admin/collaborations/${raw.id}/revert`, body), "Stepped back"),
         });
-    };
+    }, [run]);
 
     // --- rendering ---------------------------------------------------------
 
@@ -399,104 +408,267 @@ export default function ActionQueue({ onChanged, feePercent }) {
         [items, kind],
     );
 
+    /**
+     * The columns.
+     *
+     * The queue is already ordered by what it costs to leave a thing — money,
+     * then a creator waiting on a reply, then stalled work, then people who
+     * cannot start. That order is the screen's argument, so it is the default
+     * sort and the "Priority" column is what expresses it; sorting by age is
+     * still one click away when the question is "what is oldest".
+     */
+    const columns = useMemo(
+        () => [
+            {
+                key: "kind",
+                mobile: "meta",
+                header: "Kind",
+                sortable: true,
+                width: "w-40",
+                value: (i) => KIND_META[i.kind].band,
+                cell: (i) => {
+                    const meta = KIND_META[i.kind];
+                    return (
+                        <span
+                            data-testid={IDS.rowKind(i.id)}
+                            className="inline-flex items-center gap-2 whitespace-nowrap text-muted-foreground"
+                        >
+                            <meta.Icon className="h-3.5 w-3.5 shrink-0" />
+                            {meta.label}
+                        </span>
+                    );
+                },
+            },
+            {
+                key: "primary",
+                mobile: "primary",
+                header: "Waiting on you",
+                sortable: true,
+                value: (i) => String(i.primary || ""),
+                cell: (i) => (
+                    <span className="flex min-w-0 flex-col">
+                        <span data-testid={IDS.rowPrimary(i.id)} className="truncate">
+                            {i.primary}
+                        </span>
+                        {/* The note is why this row is not simply "approve" —
+                            a blocked campaign, a re-check, briefs queued behind
+                            a brand. It belongs on the row, not in a panel
+                            somebody has to open to find out. */}
+                        {i.note && (
+                            <span className={`truncate ${TEXT.meta} text-ember-500`}>{i.note}</span>
+                        )}
+                    </span>
+                ),
+            },
+            {
+                key: "secondary",
+                header: "Detail",
+                hideBelow: true,
+                cell: (i) => (
+                    <span
+                        data-testid={IDS.rowSecondary(i.id)}
+                        className="block truncate text-muted-foreground"
+                    >
+                        {i.secondary}
+                    </span>
+                ),
+            },
+            {
+                key: "state",
+                mobile: "meta",
+                header: "State",
+                width: "w-36",
+                hideBelow: true,
+                cell: (i) => (i.state ? <StatusTag state={i.state} /> : null),
+            },
+            {
+                key: "since",
+                mobile: "meta",
+                header: "Age",
+                sortable: true,
+                numeric: true,
+                width: "w-28",
+                value: (i) => new Date(i.since || 0).getTime() || null,
+                cell: (i) => (
+                    <span
+                        data-testid={IDS.rowAge(i.id)}
+                        // Overdue is the one place a row changes colour: it is
+                        // a fact about this row, not a category of row. The
+                        // "!" is what fits in a 7rem column; the word is what
+                        // it means, and the phone has room for it.
+                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
+                        title={isStale(i.since) ? "Overdue" : undefined}
+                    >
+                        <TimeAgo iso={i.since} />
+                        {isStale(i.since) ? " !" : ""}
+                    </span>
+                ),
+                mobileCell: (i) => (
+                    <span
+                        data-testid={IDS.rowAge(i.id)}
+                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
+                    >
+                        <TimeAgo iso={i.since} />
+                        {isStale(i.since) ? " · overdue" : ""}
+                    </span>
+                ),
+            },
+            {
+                key: "decision",
+                mobile: "action",
+                header: "",
+                width: "w-44",
+                cell: (i) => (
+                    <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        {i.kind === "question" ? (
+                            // Not an approve/reject: the reply box lives on the
+                            // campaign page's threads panel, one click away.
+                            <Link
+                                to={i.link}
+                                data-testid={IDS.row(i.id) + "-answer"}
+                                className={`inline-flex items-center gap-1 whitespace-nowrap rounded border border-ember-500/40 bg-ember-500/10 px-2 py-0.5 ${TEXT.meta} text-ember-500 ${CALM} hover:bg-ember-500/20 ${FOCUS}`}
+                            >
+                                Answer
+                                <ArrowRight className="h-3 w-3" />
+                            </Link>
+                        ) : (
+                            <>
+                                {i.kind !== "payment" && (
+                                    <RowButton
+                                        tone="bad"
+                                        disabled={busyId === i.id}
+                                        onClick={() => reject(i)}
+                                        testid={IDS.rowSecondaryAction(i.id)}
+                                    >
+                                        {i.kind === "collaboration" ? "Cancel" : "Reject"}
+                                    </RowButton>
+                                )}
+                                <RowButton
+                                    tone="primary"
+                                    disabled={busyId === i.id || i.blocked}
+                                    onClick={() => approve(i)}
+                                    testid={IDS.rowPrimaryAction(i.id)}
+                                    title={i.blocked ? "Verify the brand first" : undefined}
+                                >
+                                    {nextLabelFor(i)}
+                                </RowButton>
+                            </>
+                        )}
+                    </span>
+                ),
+            },
+        ],
+        [approve, reject, busyId],
+    );
+
+    const rows = useMemo(() => sortRows(visible, columns, sort), [visible, columns, sort]);
+    const peek = useMemo(() => rows.find((i) => i.id === peekId) || null, [rows, peekId]);
+
+    const openPeek = useCallback(
+        (i) => {
+            setFocused(i);
+            setPeekId(rows[i]?.id ?? null);
+        },
+        [rows],
+    );
+
+    useTableKeys({
+        count: rows.length,
+        focused,
+        setFocused,
+        onOpen: openPeek,
+        // A on a question would be an approval of something nobody approves;
+        // the row's own action is a link, and the keyboard follows it.
+        onApprove: (i) => {
+            const item = rows[i];
+            if (!item || item.blocked) return;
+            if (item.kind === "question") navigate(item.link);
+            else approve(item);
+        },
+        onReject: (i) => {
+            const item = rows[i];
+            if (item && item.kind !== "payment" && item.kind !== "question") reject(item);
+        },
+        onEscape: () => (peekId ? setPeekId(null) : setFocused(-1)),
+        enabled: !confirm && !advance,
+    });
+
     const total = items?.length ?? 0;
 
     return (
         <section data-testid={IDS.section}>
-            <SectionHeader
-                kicker="Action queue"
-                title={total === 0 && items ? "Nothing waiting on you." : "Waiting on you"}
-                blurb="Everything that needs a decision, most costly first. Clear it here — you shouldn't need to go looking."
-                onRefresh={load}
-                refreshTestId={IDS.refresh}
-            />
+            <header className="mb-3">
+                <h1 className={TEXT.heading}>
+                    {total === 0 && items ? "Nothing waiting on you." : "Waiting on you"}
+                </h1>
+                <p data-testid={IDS.count} className={`${TEXT.meta} text-muted-foreground`}>
+                    {items ? `${rows.length} of ${total} · most costly first` : "Loading…"}
+                </p>
+            </header>
 
             {items && total > 0 && (
                 <div
                     data-testid={IDS.stats}
-                    className="mt-8 flex flex-wrap items-center gap-2"
+                    className={`mb-3 flex flex-wrap items-center gap-1.5 ${PANEL} ${DENSITY.row}`}
                 >
-                    <button
-                        type="button"
-                        aria-pressed={!kind}
+                    <KindChip
+                        on={!kind}
                         onClick={() => setKind("")}
-                        data-testid={IDS.filter("all")}
-                        className={
-                            "rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
-                            (!kind
-                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                                : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
-                        }
-                    >
-                        All {total}
-                    </button>
-                    {KINDS.filter((k) => counts[k] > 0).map((k) => {
-                        const meta = KIND_META[k];
-                        const on = kind === k;
-                        return (
-                            <button
-                                key={k}
-                                type="button"
-                                aria-pressed={on}
-                                onClick={() => setKind(on ? "" : k)}
-                                data-testid={IDS.filter(k)}
-                                className={
-                                    "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
-                                    (on
-                                        ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                                        : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
-                                }
-                            >
-                                <meta.Icon className="h-3.5 w-3.5" />
-                                {meta.label} {counts[k]}
-                            </button>
-                        );
-                    })}
+                        testid={IDS.filter("all")}
+                        label={`All ${total}`}
+                    />
+                    {KINDS.filter((k) => counts[k] > 0).map((k) => (
+                        <KindChip
+                            key={k}
+                            on={kind === k}
+                            onClick={() => setKind(kind === k ? "" : k)}
+                            testid={IDS.filter(k)}
+                            Icon={KIND_META[k].Icon}
+                            label={`${KIND_META[k].label} ${counts[k]}`}
+                        />
+                    ))}
                 </div>
             )}
 
-            <div className="mt-6 rounded-md border border-white/10 bg-card grain-surface">
-                {!items ? (
-                    <ListSkeleton rows={6} testid={IDS.skeleton} />
-                ) : visible.length === 0 ? (
-                    <EmptyState testid={IDS.empty} Icon={CheckCircle2}>
-                        {total === 0
-                            ? "Inbox zero. Nothing is waiting on a decision from you."
-                            : "Nothing of that kind is waiting."}
-                    </EmptyState>
-                ) : (
-                    <ul data-testid={IDS.list} className="divide-y divide-white/10">
-                        {visible.map((item) => (
-                            <QueueRow
-                                key={item.id}
-                                item={item}
-                                busy={busyId === item.id}
-                                onApprove={approve}
-                                onReject={reject}
-                                onRevert={revert}
-                            />
-                        ))}
-                    </ul>
-                )}
-            </div>
+            <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(i) => i.id}
+                rowTestId={(i) => IDS.row(i.id)}
+                sort={sort}
+                onSortChange={(s) => patch({ sort: s })}
+                focused={focused}
+                onFocus={setFocused}
+                onOpen={openPeek}
+                loading={!items}
+                scrollRef={scrollRef}
+                testid={IDS.list}
+                empty={
+                    <ListEmptyState
+                        Icon={CheckCircle2}
+                        testid={IDS.empty}
+                        filtered={Boolean(kind)}
+                        onClearFilters={() => setKind("")}
+                        emptyTitle="Inbox zero."
+                        emptyBody="Nothing is waiting on a decision from you."
+                        filteredTitle="Nothing of that kind is waiting."
+                        filteredBody="Clear the filter to see the rest of the queue."
+                        clearLabel="Show everything"
+                    />
+                }
+            />
 
-            {items && (
-                <p
-                    data-testid={IDS.count}
-                    className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground"
-                >
-                    {visible.length} of {total} shown
-                </p>
-            )}
-
+            {/* In flight, waiting on somebody else. Folded shut because it is
+                not a to-do list — but kept, because losing sight of a stalled
+                collaboration entirely is how one stalls for a fortnight. */}
             {waiting.length > 0 && (
-                <div className="mt-10">
+                <div className="mt-6">
                     <button
                         type="button"
                         onClick={() => setShowWaiting((v) => !v)}
                         aria-expanded={showWaiting}
                         data-testid={IDS.showWaiting}
-                        className="text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                        className={`${TEXT.meta} ${CALM} text-muted-foreground hover:text-ember-500 ${FOCUS}`}
                     >
                         {showWaiting ? "Hide" : "Show"} {waiting.length} in flight, waiting on
                         somebody else
@@ -505,34 +677,103 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     {showWaiting && (
                         <ul
                             data-testid={IDS.waitingList}
-                            className="mt-4 divide-y divide-white/10 rounded-md border border-white/10 bg-card grain-surface"
+                            className={`mt-2 divide-y divide-white/5 ${PANEL}`}
                         >
                             {waiting.map((row) => (
                                 <li
                                     key={row.id}
-                                    className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+                                    className={`flex items-center justify-between gap-4 ${DENSITY.row} ${ROW_H}`}
                                 >
-                                    <div className="min-w-0">
-                                        <p className="truncate text-sm">
+                                    <span className="min-w-0">
+                                        <span className={`block truncate ${TEXT.body}`}>
                                             {row.creator?.name || "Creator"}
-                                        </p>
-                                        <p className="truncate text-xs text-muted-foreground">
+                                        </span>
+                                        <span className={`block truncate ${TEXT.meta} text-muted-foreground`}>
                                             {row.campaign?.title || "—"}
                                             {row.brand_name ? ` · ${row.brand_name}` : ""}
-                                        </p>
-                                    </div>
-                                    <div className="flex flex-none items-center gap-3">
-                                        <span className="text-xs text-muted-foreground">
-                                            {timeAgo(row.updated_at)}
                                         </span>
-                                        <StatePill state={row.state} />
-                                    </div>
+                                    </span>
+                                    <span className="flex flex-none items-center gap-3">
+                                        <span className={`${TEXT.meta} text-muted-foreground`}>
+                                            <TimeAgo iso={row.updated_at} />
+                                        </span>
+                                        <StatusTag state={row.state} />
+                                    </span>
                                 </li>
                             ))}
                         </ul>
                     )}
                 </div>
             )}
+
+            <PeekPanel
+                open={Boolean(peek)}
+                onOpenChange={(o) => !o && setPeekId(null)}
+                title={peek ? String(peek.primary) : "Waiting"}
+                subtitle={peek?.secondary}
+                href={peek?.link}
+                actions={
+                    peek && peek.kind !== "question" ? (
+                        <>
+                            {(peek.kind === "collaboration" || peek.kind === "payment") && (
+                                <PeekButton
+                                    disabled={busyId === peek.id}
+                                    onClick={() => revert(peek)}
+                                    testid={ADMIN_PEEK.action("revert")}
+                                >
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                    Revert
+                                </PeekButton>
+                            )}
+                            {peek.kind !== "payment" && (
+                                <PeekButton
+                                    tone="bad"
+                                    disabled={busyId === peek.id}
+                                    onClick={() => reject(peek)}
+                                    testid={ADMIN_PEEK.action("reject")}
+                                >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                    {peek.kind === "collaboration" ? "Cancel" : "Reject"}
+                                </PeekButton>
+                            )}
+                            <PeekButton
+                                tone="primary"
+                                disabled={busyId === peek.id || peek.blocked}
+                                onClick={() => approve(peek)}
+                                testid={ADMIN_PEEK.action("approve")}
+                            >
+                                {peek.kind === "payment" ? (
+                                    <IndianRupee className="h-3.5 w-3.5" />
+                                ) : (
+                                    <ArrowRight className="h-3.5 w-3.5" />
+                                )}
+                                {nextLabelFor(peek)}
+                            </PeekButton>
+                        </>
+                    ) : null
+                }
+            >
+                {peek && (
+                    <div>
+                        <PeekField label="Kind">{KIND_META[peek.kind].label}</PeekField>
+                        {peek.state && (
+                            <PeekField label="State">
+                                <StatusTag state={peek.state} chip />
+                            </PeekField>
+                        )}
+                        <PeekField label="Waiting">
+                            <TimeAgo iso={peek.since} />
+                            {isStale(peek.since) ? " · overdue" : ""}
+                        </PeekField>
+                        <PeekField label="Detail">{peek.secondary}</PeekField>
+                        {peek.note && (
+                            <p className={`mt-3 rounded border border-ember-500/25 bg-ember-500/5 p-3 ${TEXT.body} text-ember-500`}>
+                                {peek.note}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </PeekPanel>
 
             <ConfirmDialog
                 open={Boolean(confirm)}
@@ -572,118 +813,31 @@ export default function ActionQueue({ onChanged, feePercent }) {
     );
 }
 
-function QueueRow({ item, busy, onApprove, onReject, onRevert }) {
-    const meta = KIND_META[item.kind];
-    const stale = isStale(item.since);
-    const collab = item.kind === "collaboration";
-    const nextLabel = collab
-        ? NEXT_STEP_LABEL[item.raw.next_state] || "Move forward"
-        : item.kind === "payment"
-        ? "Record payout"
-        : "Approve";
+/** What the primary action on this row is actually called. */
+function nextLabelFor(item) {
+    if (item.kind === "collaboration") {
+        return NEXT_STEP_LABEL[item.raw.next_state] || "Move forward";
+    }
+    return item.kind === "payment" ? "Record payout" : "Approve";
+}
 
+/** One kind of thing, and how many of them are waiting. */
+function KindChip({ on, onClick, testid, Icon, label }) {
     return (
-        <li
-            data-testid={IDS.row(item.id)}
-            className="flex flex-col gap-4 px-5 py-4 md:flex-row md:items-center md:gap-6"
+        <button
+            type="button"
+            aria-pressed={on}
+            onClick={onClick}
+            data-testid={testid}
+            className={
+                `inline-flex h-7 items-center gap-1.5 rounded border px-2 ${TEXT.meta} ${CALM} ${FOCUS} ` +
+                (on
+                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                    : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
+            }
         >
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-                <meta.Icon className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
-                <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span
-                            data-testid={IDS.rowKind(item.id)}
-                            className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
-                        >
-                            {meta.label}
-                        </span>
-                        {collab && <StatePill state={item.state} />}
-                        <span
-                            data-testid={IDS.rowAge(item.id)}
-                            className={
-                                "text-[10px] uppercase tracking-[0.18em] " +
-                                (stale ? "text-ember-500" : "text-muted-foreground")
-                            }
-                        >
-                            {timeAgo(item.since)}
-                            {stale ? " · overdue" : ""}
-                        </span>
-                    </div>
-                    <p
-                        data-testid={IDS.rowPrimary(item.id)}
-                        className="mt-1 truncate text-sm text-foreground"
-                    >
-                        {item.primary}
-                    </p>
-                    {item.secondary && (
-                        <p
-                            data-testid={IDS.rowSecondary(item.id)}
-                            className="mt-0.5 truncate text-xs text-muted-foreground"
-                        >
-                            {item.secondary}
-                        </p>
-                    )}
-                    {item.note && (
-                        <p className="mt-1.5 text-xs text-ember-500">{item.note}</p>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex flex-none flex-wrap items-center gap-2 md:justify-end">
-                {item.kind === "question" ? (
-                    // Not an approve/reject: the reply box lives on the
-                    // campaign page's threads panel, one click away.
-                    <Link
-                        to={item.link}
-                        data-testid={IDS.row(item.id) + "-answer"}
-                        className="inline-flex h-8 items-center rounded-full bg-ember-500 px-4 text-xs text-black transition-colors duration-200 hover:bg-ember-400"
-                    >
-                        <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
-                        Answer
-                    </Link>
-                ) : (
-                    <>
-                {(collab || item.kind === "payment") && (
-                    <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => onRevert(item)}
-                        className="h-8 rounded-full border-white/15 bg-transparent px-3 text-xs hover:bg-white/5"
-                    >
-                        <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                        Revert
-                    </Button>
-                )}
-                {item.kind !== "payment" && (
-                    <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => onReject(item)}
-                        className="h-8 rounded-full border-red-500/30 bg-transparent px-3 text-xs text-red-300 hover:bg-red-500/10 hover:text-red-200"
-                    >
-                        <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                        {collab ? "Cancel" : "Reject"}
-                    </Button>
-                )}
-                <Button
-                    type="button"
-                    disabled={busy || item.blocked}
-                    onClick={() => onApprove(item)}
-                    title={item.blocked ? "Verify the brand first" : undefined}
-                    className="h-8 rounded-full bg-ember-500 px-4 text-xs text-black hover:bg-ember-400 disabled:opacity-40"
-                >
-                    {item.kind === "payment" ? (
-                        <IndianRupee className="mr-1.5 h-3.5 w-3.5" />
-                    ) : (
-                        <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    {nextLabel}
-                </Button>
-                    </>
-                )}
-            </div>
-        </li>
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {label}
+        </button>
     );
 }

@@ -12,7 +12,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 const CLASS =
-    "transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm";
+    "transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm";
 
 function EntityLink({ to, id, children, className = "", testid, fallback }) {
     const label = children || fallback || "—";

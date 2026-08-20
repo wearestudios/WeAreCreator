@@ -87,7 +87,7 @@ export function HealthPanel() {
             {withItems.length === 0 ? (
                 <div
                     data-testid={IDS.allClear}
-                    className="flex items-center gap-4 rounded-md border border-emerald-500/25 bg-emerald-500/[0.07] px-6 py-8 grain-surface"
+                    className="flex items-center gap-4 rounded-md border border-emerald-500/25 bg-emerald-500/[0.07] px-6 py-8"
                 >
                     <CheckCircle2 className="h-5 w-5 flex-none text-emerald-400" />
                     <p className="text-sm leading-relaxed text-muted-foreground">
@@ -133,7 +133,7 @@ function HealthCheck({ check }) {
                     {/* The threshold, said out loud. Otherwise the only way to
                         know why something is on this list is to read the
                         server. */}
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
                         {check.blurb}
                     </p>
                 </div>
@@ -145,7 +145,7 @@ function HealthCheck({ check }) {
                         <Link
                             to={item.href}
                             data-testid={IDS.item(item.id)}
-                            className="group flex items-center gap-3 px-5 py-3 transition-colors duration-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
+                            className="group flex items-center gap-3 px-5 py-3 transition-colors duration-150 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
                         >
                             <span
                                 aria-hidden="true"
@@ -158,11 +158,11 @@ function HealthCheck({ check }) {
                             />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm">{item.label}</span>
-                                <span className="block truncate text-xs text-muted-foreground">
+                                <span className="block truncate text-sm text-muted-foreground">
                                     {item.detail}
                                 </span>
                             </span>
-                            <ArrowRight className="h-3.5 w-3.5 flex-none text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ember-500" />
+                            <ArrowRight className="h-3.5 w-3.5 flex-none text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-ember-500" />
                         </Link>
                     </li>
                 ))}
@@ -173,7 +173,7 @@ function HealthCheck({ check }) {
                     type="button"
                     onClick={() => setExpanded(true)}
                     data-testid={IDS.more(check.key)}
-                    className="min-h-[2.75rem] w-full border-t border-white/10 px-5 py-3 text-left text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 md:min-h-0"
+                    className="min-h-[2.75rem] w-full border-t border-white/10 px-5 py-3 text-left text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
                 >
                     {hidden} more
                 </button>
@@ -276,7 +276,7 @@ function SplitBar({ a, b, labelA, labelB }) {
             <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-white/10">
                 <div className="bg-ember-500" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-3 flex items-baseline justify-between text-xs">
+            <div className="mt-3 flex items-baseline justify-between text-sm">
                 <span className="text-ember-500">
                     {formatCompact(a)} {labelA}
                 </span>
@@ -292,7 +292,7 @@ const Card = ({ title, sub, testid, children }) => (
     <Panel data-testid={testid}>
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
         {children}
-        {sub && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{sub}</p>}
+        {sub && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{sub}</p>}
     </Panel>
 );
 
@@ -418,7 +418,7 @@ export function ExportsPanel() {
                                 setTo(null);
                             }}
                             data-testid={EXPORT_IDS.clearDates}
-                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 md:min-h-0"
+                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
                         >
                             Clear dates
                         </button>
@@ -435,12 +435,12 @@ export function ExportsPanel() {
                         key={e.key}
                         href={href(e.key)}
                         data-testid={EXPORT_IDS.kind(e.key)}
-                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-white/10 bg-card px-4 py-3.5 transition-colors duration-200 hover:border-ember-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background grain-surface"
+                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-white/10 bg-card px-4 py-3.5 transition-colors duration-150 hover:border-ember-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
-                        <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-200 group-hover:text-ember-500" />
+                        <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-150 group-hover:text-ember-500" />
                         <span className="min-w-0 flex-1">
                             <span className="block text-sm">{e.label}</span>
-                            <span className="block truncate text-xs text-muted-foreground">
+                            <span className="block truncate text-sm text-muted-foreground">
                                 {e.note}
                             </span>
                         </span>
@@ -452,7 +452,7 @@ export function ExportsPanel() {
                 the building; the person clicking should know what is in them. */}
             <p
                 data-testid={EXPORT_IDS.note}
-                className="mt-4 text-xs leading-relaxed text-muted-foreground"
+                className="mt-4 text-sm leading-relaxed text-muted-foreground"
             >
                 {from || to
                     ? "Filtered to the dates above. "
