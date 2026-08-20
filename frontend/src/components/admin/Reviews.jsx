@@ -33,6 +33,7 @@ import { useOptimisticList } from "./useOptimistic";
 import DataTable, { sortRows } from "./console/DataTable";
 import PeekPanel from "./console/PeekPanel";
 import { PeekButton, RowButton } from "./console/RowActions";
+import { DeliverableList } from "@/components/Deliverables";
 import StatusTag from "./console/StatusTag";
 import { TimeAgo } from "./console/format";
 import { TEXT } from "./console/tokens";
@@ -489,9 +490,7 @@ export function CampaignReviews({ onChanged }) {
                             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                 Deliverables
                             </p>
-                            <p className="mt-2 whitespace-pre-wrap leading-relaxed">
-                                {r.deliverables}
-                            </p>
+                            <DeliverableList campaign={r} className="mt-2" />
                         </div>
 
                         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">

@@ -25,6 +25,11 @@ import {
     DEFAULT_COMPENSATION_TYPE,
     compensationType,
 } from "@/lib/compensation";
+import DeliverablePicker, {
+    emptyDeliverables,
+    fromDeliverableItems,
+    toDeliverableItems,
+} from "@/components/DeliverablePicker";
 import { formatRupees } from "./shared";
 
 // The server's ReasonPayload floor. Enforced here too so a three-character
@@ -472,7 +477,10 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
     const [budget, setBudget] = useState("");
     const [compensation, setCompensation] = useState(DEFAULT_COMPENSATION_TYPE);
     const [needed, setNeeded] = useState("");
-    const [deliverables, setDeliverables] = useState("");
+    // The same structured picker the brand's form uses. An admin editing a
+    // brief and a brand posting one must produce the same shape, or the
+    // console becomes the way a campaign ends up with prose again.
+    const [deliverables, setDeliverables] = useState(emptyDeliverables());
     const [err, setErr] = useState("");
 
     useEffect(() => {
@@ -481,7 +489,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         setBudget(campaign.budget_per_creator != null ? String(campaign.budget_per_creator) : "");
         setCompensation(compensationType(campaign));
         setNeeded(campaign.creators_needed != null ? String(campaign.creators_needed) : "");
-        setDeliverables(campaign.deliverables || "");
+        setDeliverables(fromDeliverableItems(campaign.deliverable_items));
         setErr("");
     }, [open, campaign]);
 
@@ -489,8 +497,13 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         e.preventDefault();
         const changes = {};
         if (title.trim() && title.trim() !== campaign.title) changes.title = title.trim();
-        if (deliverables.trim() && deliverables.trim() !== campaign.deliverables) {
-            changes.deliverables = deliverables.trim();
+        // Sent only when it actually changed: the resolver refuses an empty
+        // ask, so posting the picker's state unconditionally would 422 every
+        // edit of a brief written before this field existed.
+        const items = toDeliverableItems(deliverables);
+        const wasItems = toDeliverableItems(fromDeliverableItems(campaign.deliverable_items));
+        if (items.length > 0 && JSON.stringify(items) !== JSON.stringify(wasItems)) {
+            changes.deliverable_items = items;
         }
         const b = Number(budget);
         if (budget !== "" && b !== campaign.budget_per_creator) {
@@ -560,18 +573,16 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         />
                     </div>
                     <div>
-                        <Label htmlFor="ce-deliv" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                             Deliverables
                         </Label>
-                        <Textarea
-                            id="ce-deliv"
-                            data-testid={ADMIN_CAMPAIGN_EDIT.deliverables}
-                            value={deliverables}
-                            onChange={(e) => setDeliverables(e.target.value)}
-                            maxLength={1000}
-                            rows={2}
-                            className="mt-2 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
-                        />
+                        <div className="mt-2">
+                            <DeliverablePicker
+                                value={deliverables}
+                                onChange={setDeliverables}
+                                testid={ADMIN_CAMPAIGN_EDIT.deliverables}
+                            />
+                        </div>
                     </div>
                     <div>
                         <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">

@@ -105,6 +105,19 @@ export const CREATOR_APPLICATIONS = {
 	declinedList: 'creator-declined-list',
 	declinedRow: (id) => `creator-declined-row-${id}`,
 	declinedBrowse: 'creator-declined-browse',
+
+	// Invitations. Being asked and asking are the same conversation, so they
+	// live in the same view — an invitation that lives only in a WhatsApp
+	// message is one a creator cannot find again.
+	invitationList: 'creator-invitations-list',
+	invitation: (id) => `creator-invitation-${id}`,
+	invitationAccept: (id) => `creator-invitation-accept-${id}`,
+	invitationDecline: (id) => `creator-invitation-decline-${id}`,
+	invitationNote: (id) => `creator-invitation-note-${id}`,
+	invitationDialog: 'creator-invitation-dialog',
+	invitationRate: 'creator-invitation-rate',
+	invitationPitch: 'creator-invitation-pitch',
+	invitationSubmit: 'creator-invitation-submit',
 };
 
 export const CREATOR_EARNINGS = {

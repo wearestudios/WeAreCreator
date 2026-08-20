@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BrandAvatar from "@/components/BrandAvatar";
+import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
     CAT_LABEL,
@@ -67,14 +68,24 @@ const Row = ({ row, testid, muted }) => (
     </li>
 );
 
-export default function Applications({ applied, declined }) {
+export default function Applications({ applied, declined, invitations, onChanged }) {
     const waiting = applied || [];
     const notThisTime = declined || [];
+    // An open invitation is something to answer, so it counts as work in this
+    // view even though no application exists yet.
+    const open = (invitations || []).filter((i) => i.open);
     const total = waiting.length + notThisTime.length;
 
     return (
         <>
+            {/* Above the section heading, not under it: an invitation is not a
+                pitch, and "Pitched — waiting to hear back" printed over a row
+                the creator has not answered describes the wrong party as the
+                one being waited on. It renders nothing when there are none. */}
+            <Invitations invitations={invitations} onChanged={onChanged} />
+
             <SectionHead
+                className={open.length > 0 ? "mt-10" : ""}
                 kicker="Pitched"
                 title="Waiting to hear back."
                 aside={
@@ -87,6 +98,10 @@ export default function Applications({ applied, declined }) {
             />
 
             <div className="mt-8 space-y-4">
+                {/* Shown whenever there are no pitches, invitation or not: the
+                    heading above says "Pitched", and a heading with nothing
+                    under it is a section that looks broken. It is also still
+                    true — being asked is not the same as having pitched. */}
                 {total === 0 ? (
                     <EmptyState
                         testid={IDS.empty}

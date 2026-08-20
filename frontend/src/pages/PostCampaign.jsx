@@ -18,10 +18,16 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { EXECUTION_OPTIONS } from "@/lib/execution";
+import { dayKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
+import DeliverablePicker, {
+    emptyDeliverables,
+    fromDeliverableItems,
+    toDeliverableItems,
+} from "@/components/DeliverablePicker";
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -55,14 +61,11 @@ const CATEGORY_OPTIONS = [
 ];
 
 // An ISO timestamp back into the yyyy-mm-dd an <input type="date"> expects.
-const toDateInput = (iso) => {
-    if (!iso) return "";
-    try {
-        return new Date(iso).toISOString().slice(0, 10);
-    } catch {
-        return "";
-    }
-};
+//
+// **The IST date, not the UTC one.** `toISOString()` is UTC, so an event at
+// 00:30 on the 1st reads back as the 31st and the brand re-saves the wrong
+// day without touching the field.
+const toDateInput = (iso) => dayKey(iso);
 
 export default function PostCampaign() {
     const navigate = useNavigate();
@@ -76,7 +79,9 @@ export default function PostCampaign() {
 
     const [title, setTitle] = useState("");
     const [brief, setBrief] = useState("");
-    const [deliverables, setDeliverables] = useState("");
+    // The structured ask, as `{reel: 1, story: 3}`. This was a free-text box;
+    // see `lib/deliverables.js` for why it stopped being one.
+    const [deliverables, setDeliverables] = useState(emptyDeliverables());
     const [budget, setBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
@@ -139,7 +144,12 @@ export default function PostCampaign() {
                     setExisting(data);
                     setTitle(data.title || "");
                     setBrief(data.brief || "");
-                    setDeliverables(data.deliverables || "");
+                    // Re-seeded from the structure so an edit round trip
+                    // doesn't quietly clear what the brief asks for. A brief
+                    // posted before the field existed comes back with no items
+                    // and starts empty, which is the honest state — its
+                    // sentence is still on the campaign until this is saved.
+                    setDeliverables(fromDeliverableItems(data.deliverable_items));
                     setBudget(
                         data.budget_per_creator == null
                             ? ""
@@ -211,7 +221,8 @@ export default function PostCampaign() {
     const validateBase = () => {
         if (!title.trim()) return "Please enter a campaign title.";
         if (!brief.trim()) return "Please add a brief.";
-        if (!deliverables.trim()) return "What deliverables are you expecting?";
+        if (toDeliverableItems(deliverables).length === 0)
+            return "What are you asking for? Pick at least one deliverable.";
         if (!isBarter) {
             const budgetNum = Number(budget);
             if (!Number.isFinite(budgetNum) || budgetNum < 0)
@@ -236,7 +247,7 @@ export default function PostCampaign() {
     const buildPayload = (status) => ({
         title: title.trim(),
         brief: brief.trim(),
-        deliverables: deliverables.trim(),
+        deliverable_items: toDeliverableItems(deliverables),
         // Both omitted on a barter campaign: the field isn't rendered, so
         // Number("") would silently write the fee down to zero.
         ...(isBarter
@@ -566,19 +577,24 @@ export default function PostCampaign() {
                             />
                         </div>
                         <div>
-                            <Label htmlFor="pc-deliverables" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                                 Deliverables
                             </Label>
-                            <Textarea
-                                id="pc-deliverables"
-                                data-testid="pc-deliverables-input"
-                                rows={2}
-                                maxLength={1000}
-                                value={deliverables}
-                                onChange={(e) => setDeliverables(e.target.value)}
-                                className="mt-2 min-h-[92px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="e.g. 1 Instagram reel (30-45s) + 3 stories, tag @yourbrand"
-                            />
+                            {/* Counted, not written. Anything about *how* —
+                                a hashtag, a handle to tag, a turnaround —
+                                belongs in the brief above, which is the field
+                                a creator reads before deciding. */}
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                How many of each. Tags, turnaround and anything
+                                else you want go in the brief.
+                            </p>
+                            <div className="mt-3">
+                                <DeliverablePicker
+                                    value={deliverables}
+                                    onChange={setDeliverables}
+                                    testid="pc-deliverables"
+                                />
+                            </div>
                         </div>
                         <div>
                             {/* Optional, and said so: a brief with no picture

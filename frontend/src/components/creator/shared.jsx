@@ -10,6 +10,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { IndianRupee } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IST } from "@/lib/time";
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -32,6 +33,7 @@ export const formatDate = (iso) => {
             day: "2-digit",
             month: "short",
             year: "numeric",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -45,6 +47,7 @@ export const formatDay = (iso) => {
             weekday: "short",
             day: "2-digit",
             month: "short",
+            timeZone: IST,
         });
     } catch {
         return null;
@@ -57,6 +60,7 @@ export const formatTime = (iso) => {
         return new Date(iso).toLocaleTimeString("en-IN", {
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return "—";
@@ -71,6 +75,7 @@ export const formatDateTime = (iso) => {
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -275,8 +280,8 @@ export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => 
 // Layout furniture
 // ---------------------------------------------------------------------------
 
-export const SectionHead = ({ kicker, title, aside }) => (
-    <div className="flex flex-wrap items-end justify-between gap-3">
+export const SectionHead = ({ kicker, title, aside, className = "" }) => (
+    <div className={"flex flex-wrap items-end justify-between gap-3 " + className}>
         <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">{kicker}</p>
             <h2 className="mt-3 font-serif text-fluid-3xl leading-none tracking-tight">

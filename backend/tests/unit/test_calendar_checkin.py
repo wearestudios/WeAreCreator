@@ -432,13 +432,24 @@ def test_the_agenda_is_the_mobile_view_and_the_grid_is_the_extra():
     assert "hidden" not in src[src.index("data-testid={IDS.agenda}") : src.index("agendaDays.length")]
 
 
-def test_the_calendar_buckets_by_local_day():
+def test_the_calendar_buckets_by_the_ist_day():
     """`toISOString` would bucket an evening shoot into the next day for
-    everybody in IST, which is the bug this product keeps having to answer."""
-    src = read("pages", "ShootCalendar.jsx")
-    bucket = src[src.index("const dayKey") : src.index("const startOfMonth")]
+    everybody in IST, which is the bug this product keeps having to answer.
+
+    The bucketing moved into `lib/time.js` when the whole portal was put on
+    IST — it used to be the browser's local day, which is right in Bengaluru
+    and wrong everywhere else somebody might open it."""
+    shared = read("lib", "time.js")
+    bucket = shared[shared.index("export function dayKey") : shared.index("export const todayKey")]
     assert "toISOString" not in bucket
-    assert "getFullYear()" in bucket
+    assert "timeZone: IST" in bucket
+
+    src = read("pages", "ShootCalendar.jsx")
+    assert "toISOString().slice" not in src
+    # Entries are bucketed on the instant's IST day; grid cells are keyed from
+    # the parts they were built from. Two functions, so they cannot disagree.
+    assert "dayKey(e.starts_at)" in src
+    assert "cellKey(d)" in src
 
 
 def test_the_qr_refreshes_before_the_code_expires():

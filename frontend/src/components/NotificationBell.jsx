@@ -7,6 +7,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover";
+import { IST } from "@/lib/time";
 
 const formatWhen = (iso) => {
     if (!iso) return "";
@@ -16,7 +17,7 @@ const formatWhen = (iso) => {
         if (mins < 1) return "just now";
         if (mins < 60) return `${mins}m ago`;
         if (mins < 24 * 60) return `${Math.round(mins / 60)}h ago`;
-        return then.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+        return then.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: IST });
     } catch {
         return "";
     }

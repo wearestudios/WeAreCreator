@@ -227,6 +227,43 @@ has the creator as a party, and both are append-only for the same reason.
   applicant board; hides itself on the staff routes' 404 and renders nothing
   until somebody has asked).
 
+## Being asked
+
+An invitation used to exist only as a WhatsApp message and a row in
+`campaign_invitations`. **Every "who is on this campaign" view read
+`collaborations`**, and an invitation is not one until the creator pitches — so
+somebody who missed the message had no way to find out they had been asked, and
+a campaign we had invited six people to looked empty on both applicant boards.
+
+- `INVITATION_OPEN_STATES = ("sent", "send_failed")`; `_invitation_state` and
+  `_serialize_invitation` are the readers. **`open` is decided server-side** —
+  open state *and* a live campaign — so an invitation to a brief that has since
+  closed reads as history rather than offering an Accept that would 404.
+- `GET /creator/invitations` and the dashboard both call `_creator_invitations`;
+  the dashboard's `totals.invitations` counts only the open ones.
+- **Accepting goes through `apply_to_campaign`** — same verification gate, same
+  re-check gate, same capacity check, same duplicate refusal, same routing of
+  the notification. A second implementation would be a second definition of
+  what an application is. Declining writes no collaboration and is **not** a bar
+  on applying later. Either way it can only be answered once (409), and
+  somebody else's invitation is a 404, never a 403.
+- `_pending_invitations_for(campaign_oid, applied_creator_ids)` feeds both
+  boards — `groups["invited"]` on the admin's, `invited` + `totals.invited` on
+  the brand's — and excludes anyone who has since applied, who is on the board
+  under their own application. One of those boards is brand-facing, so the
+  creator half comes through `_brand_visible_creator` like every other brand
+  surface and the flat keys are read back off it.
+- The rows are **not applicants and are not counted as such**: `invited` is not
+  a collaboration state, is in no `_APPLICANT_BUCKETS` entry, and the admin
+  page's "Applicants" count skips it. `collaboration_id` is `None` — a made-up
+  id is an id somebody tries to act on.
+- Surfaces: `components/creator/Invitations.jsx` (above the pitches in the
+  applications view, carrying both answers on the row — Accept opens the same
+  short rate-and-pitch form the campaign page does, because an application with
+  no rate is one the brand cannot act on), the admin campaign page's "Invited,
+  not answered" group, and `InvitedStrip` on the brand's applicant board. Open
+  invitations count toward the dashboard's Applications tab badge.
+
 ## Suggesting creators
 
 `GET /brand/campaigns/{id}/suggested-creators` ranks verified creators against a
@@ -573,6 +610,23 @@ shipped, whatever the tests say.
 - A file that fails the local check is **queued as already-failed rather than
   dropped**, with the error on that file's own row. Dropping it silently is how
   somebody submits believing four documents went up.
+- **The counter says "1 document uploaded", not "1 of 12".** `max_documents` is
+  a ceiling, not a target, and the copy two lines above says any one of the four
+  kinds is enough — so a fraction reads as eleven more to find. The limit
+  appears only on the last couple of slots, which is when it is a fact somebody
+  needs.
+- **The "still needed" checklist filters the server's list by what is on
+  screen.** It used to be pure server state: it named what the *stored* profile
+  was missing and never looked at the form under it, so a brand filled every
+  box — Category included, two sections up the same page — and was told the
+  boxes were empty, with `Send for verification` greyed out and the Save button
+  that would have made the list agree 200px away in a different section. The
+  labels stay the server's, so there is still one vocabulary. And **`Send for
+  verification` saves first**, because the route judges the stored profile and
+  noticing a distant Save button is not the price of submitting.
+  `test_brand_checklist.py` drives the real `PUT` handler with the body the real
+  form sends, so a field renamed on one side and not the other fails there
+  rather than in somebody's onboarding.
 
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
@@ -1237,6 +1291,50 @@ refuses it with the actual reason instead.
   re-enable from devtools. `ALL_COMPENSATION_OPTIONS` is admin-only and is used
   by exactly one control, `CampaignEditDialog`.
 
+## What a brief asks for
+
+`deliverable_items` on a campaign: `[{type, quantity}]` over five formats
+(`DELIVERABLE_TYPES` — reel, story, static post, YouTube Short, video). It was
+a free-text box, and free text is what made it unanswerable: "1 reel + 3
+stories", "one reel, three stories", "reel x1, stories x3" and "a reel and a
+few stories" are four spellings of one brief, so nothing could count what a
+campaign asked for, a creator comparing two briefs was comparing prose, and "a
+few" is not a number anybody agreed to.
+
+- **`deliverables` stays, and is now derived rather than typed.**
+  `_deliverables_text` renders the items as "1 reel · 3 stories" and that is
+  what gets stored — because the campaign keyword search regexes it, the CSV
+  and the printable report print it, and `/c/{id}` renders it. Deriving means
+  one answer in two shapes that cannot disagree, and means **no campaign
+  written before this field has to be migrated to keep working**.
+- **`_deliverable_items(doc)` is the one reader and absent is `[]`** — not
+  "asked for nothing". An empty list is what tells every surface to fall back
+  to the sentence, which is all a pre-field brief has.
+- **`_resolve_deliverables(items, text, required)` is the only writer**, shared
+  by `create_brand_campaign`, `update_brand_campaign` and
+  `admin_update_campaign` — the same rule `_resolve_agreed_amount` holds for
+  the fee. Items win and the sentence is derived from them; a bare sentence is
+  accepted only when no items came with it (the shape a pre-field campaign
+  takes coming back through an edit) and **clears the structure**, so a brief's
+  words and its counted pieces can never describe different asks. The edit
+  handlers pop both keys out of the generic copy loop before resolving, for the
+  same reason `_refuse_brand_barter` exists.
+- `_clean_deliverables` merges duplicate rows (two "reel" rows are one ask with
+  a quantity) and orders by the vocabulary, so two campaigns wanting the same
+  thing read the same way round. Singulars and plurals are spelled out —
+  lowercasing "YouTube Short" to fit mid-sentence gives "youtube short", and a
+  proper noun is not a word a formatter gets to recase.
+- `lib/deliverables.js` mirrors the vocabulary and a unit test fails if they
+  drift. `components/Deliverables.jsx` is the one renderer — `DeliverableList`
+  (counted chips, falling back to the sentence) and `DeliverableSummary` (one
+  line, for a card) — and a test fails any surface still printing
+  `campaign.deliverables` directly.
+- `DeliverablePicker` is the one control, on the brand form and in the admin's
+  edit dialog. **Zero is how it says no**: there is no checkbox beside the
+  number, so a ticked row asking for nothing is a state it cannot reach. It
+  shows the sentence the campaign will carry as it is being built, which is
+  exactly the string the server derives.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:
@@ -1755,6 +1853,52 @@ Admins get **admin navigation only**. `linksFor()` in `Navbar.jsx` returns from
 one branch per role; admin used to share the creator branch, which put the
 creator brief feed in staff navigation. The marketing strip renders only when
 nobody is signed in.
+
+## The portal is IST, the database is UTC
+
+**BSON has no time zone.** A value written as `datetime.now(timezone.utc)`
+comes back from Mongo *naive*, and `datetime.isoformat()` on a naive value
+emits no offset at all — so the same instant serialised two different ways
+depending on whether it had been round tripped through the database, and
+`new Date()` read the naive half as the reader's **local** time. That is 5½
+hours here, and it is why the notification panel said "6h ago" about something
+twenty minutes old. The relative-time arithmetic was always right; its input
+was wrong.
+
+Storage stays UTC. The API emits UTC *with its offset*. The conversion to IST
+happens once on the way to a screen, and once on the way to a phone.
+
+- **`_iso(value)` is the only way a datetime becomes a string.** It stamps a
+  naive value as UTC — which states a fact rather than guessing, since every
+  write goes through `datetime.now(timezone.utc)` — and leaves an aware one
+  alone. `_jsonable` routes through it too, so the audit log's raw before/after
+  blobs hold the same rule as the hand-written serializers. A unit test fails
+  any bare `.isoformat()` outside `_iso` (a `date` has no time and so no zone;
+  `.date().isoformat()` is exempt).
+- **`_when_text` is the only human-facing time this server writes** — the
+  WhatsApp messages telling a creator when to turn up. Formatting the stored
+  UTC directly said 2:00 pm for a 7:30 pm sitting: the same 5½ hours arriving
+  on a phone instead of on a screen. It goes through `_ist`, which reads a
+  naive value as UTC for the same reason `_iso` does.
+- `SHOOT_TZ` is a fixed +05:30 rather than a named zone, and that is correct:
+  IST has no daylight saving, so there is no rule to look up.
+- **`frontend/src/lib/time.js` is the only place the zone is named**, and every
+  formatter in it passes `timeZone: IST`. A unit test walks every `.js`/`.jsx`
+  under `src/` and fails a `toLocale*` call that carries date options without a
+  `timeZone`, fails a second file spelling out `"Asia/Kolkata"`, and fails a
+  file that formats dates without importing the zone. A manager opening the
+  daysheet from another country reads the same times as the person at the door.
+- **`dayKey` is how a day is bucketed**, via `en-CA` + the zone.
+  `toISOString().slice(0, 10)` is the *UTC* day, which moves every evening
+  shoot in India to the next date. `setHours(0, 0, 0, 0)` is banned for the
+  same reason plus a second one — it mutates the Date it is called on, which in
+  `ManagerHome`'s loop meant every campaign after the first with an end date
+  was measured against midnight rather than now. Both are pinned by tests.
+- `timeAgo` lives in `lib/time.js` and nowhere else. The console keeps its own
+  `relative` in `admin/console/format.jsx` — "3h ago" where the app says "3h",
+  and days for a month rather than weeks after a fortnight — deliberately, and
+  with the reason in the file. A dead third copy in `admin/shared.jsx` is what
+  the test now stops coming back.
 
 ## Design system
 

@@ -35,6 +35,7 @@ import { APPLICATION } from "@/constants/testIds";
 
 import DraftReview from "./DraftReview";
 import LifecycleBar from "./LifecycleBar";
+import { IST } from "@/lib/time";
 
 const formatRupees = (n) =>
     typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—";
@@ -43,7 +44,7 @@ const formatDate = (iso) => {
     if (!iso) return "—";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: IST });
 };
 
 /**

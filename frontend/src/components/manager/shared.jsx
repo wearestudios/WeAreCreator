@@ -7,6 +7,7 @@ import React from "react";
 import { Loader2, RotateCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { IST } from "@/lib/time";
 
 // Minimum comfortable one-handed target. Below this you get mis-taps, and a
 // mis-tap here marks the wrong person as a no-show.
@@ -39,6 +40,7 @@ export const formatTime = (iso) => {
         return new Date(iso).toLocaleTimeString("en-IN", {
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return "—";
@@ -52,6 +54,7 @@ export const formatDay = (iso) => {
             weekday: "short",
             day: "2-digit",
             month: "short",
+            timeZone: IST,
         });
     } catch {
         return null;
@@ -213,11 +216,11 @@ export const BigButton = ({ children, busy, className = "", ...props }) => (
 // ---------------------------------------------------------------------------
 
 /** Local midnight, because "today" is the manager's day, not UTC's. */
-const startOfDay = (d) => {
-    const x = new Date(d);
-    x.setHours(0, 0, 0, 0);
-    return x;
-};
+// **IST midnight, not the browser's.** `setHours(0,0,0,0)` is midnight
+// wherever the laptop happens to be; the venue's day is the day in Bengaluru,
+// and a manager checking the daysheet from anywhere else must see the same
+// one. `lib/time.js` owns the zone.
+const startOfDay = (d) => istStartOfDay(d) || new Date(d);
 
 /**
  * Is this campaign happening today?

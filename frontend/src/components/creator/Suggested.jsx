@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { CREATOR_SUGGESTED as IDS } from "@/constants/testIds";
 import { isBarter } from "@/lib/compensation";
 import BrandAvatar from "@/components/BrandAvatar";
+import { DeliverableSummary } from "@/components/Deliverables";
 import CampaignCover from "@/components/CampaignCover";
 import { CAT_LABEL, EmptyState, Money, SectionHead, formatRupees } from "./shared";
 
@@ -91,11 +92,10 @@ export default function Suggested({ campaigns }) {
                                     {c.match_reason}
                                 </p>
 
-                                {c.deliverables && (
-                                    <p className="mt-4 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-                                        {c.deliverables}
-                                    </p>
-                                )}
+                                <DeliverableSummary
+                                    campaign={c}
+                                    className="mt-4 line-clamp-3 block text-sm leading-relaxed text-muted-foreground"
+                                />
 
                                 <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
                                     {c.area && (

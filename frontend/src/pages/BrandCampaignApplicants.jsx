@@ -45,6 +45,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { IST } from "@/lib/time";
 
 const CAT_LABEL = {
     fnb: "F&B",
@@ -142,6 +143,7 @@ const formatDateTime = (iso) => {
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -154,6 +156,7 @@ const formatDate = (iso) => {
         return new Date(iso).toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -679,6 +682,53 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
     );
 };
 
+/**
+ * Creators asked to this brief who have not answered.
+ *
+ * **Not applicants, so not a tab.** The tabs above filter collaborations by
+ * state, and an invitation has no collaboration — nothing to accept, decline
+ * or review. It sits between the board and the suggestions panel because that
+ * is the order of the question: who came, who we asked and haven't heard from,
+ * who else to ask.
+ *
+ * It renders nothing when nobody is waiting. A permanently empty box headed
+ * "Invited" reads as "invitations don't work".
+ */
+const InvitedStrip = ({ invited }) => {
+    const rows = invited || [];
+    if (rows.length === 0) return null;
+
+    return (
+        <section data-testid="applicants-invited" className="mt-10">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                Invited, waiting to hear back
+                <span className="ml-2 text-ember-500">{rows.length}</span>
+            </p>
+            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                {rows.map((i) => (
+                    <li
+                        key={i.invitation_id}
+                        data-testid={`applicants-invited-${i.invitation_id}`}
+                        className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
+                    >
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                            {i.name || "Creator"}
+                            {i.instagram_handle && (
+                                <span className="ml-2 text-muted-foreground">
+                                    @{i.instagram_handle}
+                                </span>
+                            )}
+                        </span>
+                        <span className="flex-none text-xs text-muted-foreground">
+                            invited {formatDate(i.created_at)}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -978,6 +1028,10 @@ export default function BrandCampaignApplicants() {
                         </ul>
                     )}
                 </div>
+                </SafeSection>
+
+                <SafeSection name="invited" label="Invitations couldn't load">
+                    <InvitedStrip invited={data.invited} />
                 </SafeSection>
 
                 {/* Applicants are who came to you. This is who to go and ask —

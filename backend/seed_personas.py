@@ -247,7 +247,16 @@ async def main() -> int:
                 "brand_id": brand,
                 "title": "Seed: weekend brunch reel",
                 "brief": "A seeded brief so the manager and brand screens have something on them.",
-                "deliverables": "1 Instagram reel + 3 stories",
+                # Structured, and the sentence derived from it — the same
+                # shape a brief posted through the form takes.
+                **server._resolve_deliverables(
+                    [
+                        {"type": "reel", "quantity": 1},
+                        {"type": "story", "quantity": 3},
+                    ],
+                    None,
+                    True,
+                ),
                 "budget_per_creator": 8000,
                 "compensation_type": "fixed",
                 "category": "fnb",

@@ -14,6 +14,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { mediaUrl } from "@/lib/api";
+import { IST } from "@/lib/time";
 
 export const STATE_ORDER = [
     "applied",
@@ -33,6 +34,10 @@ export const STATE_ORDER = [
 ];
 
 export const STATE_META = {
+    // Not a collaboration state — there is no collaboration yet. It is what an
+    // applicant board calls somebody we asked and who has not answered, and it
+    // is here because that row sits in the same list as the real ones.
+    invited: { label: "Invited", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
     verified: { label: "Verified", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     accepted: { label: "Accepted", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
@@ -87,6 +92,7 @@ export const formatDate = (iso) => {
             day: "2-digit",
             month: "short",
             year: "numeric",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -101,28 +107,11 @@ export const formatDateTime = (iso) => {
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return iso;
     }
-};
-
-/**
- * How long something has been waiting, in the shortest true form. The queue is
- * read at a glance, and "3d" lands faster than a date does.
- */
-export const timeAgo = (iso) => {
-    if (!iso) return "—";
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return "—";
-    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.round(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.round(hours / 24);
-    if (days < 14) return `${days}d`;
-    return `${Math.round(days / 7)}w`;
 };
 
 // Anything older than this has been ignored rather than queued.

@@ -451,11 +451,23 @@ export default function VerificationDocuments({
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     Proof of business
                 </p>
+                {/* **A count, not a target.** "1 of 12 uploaded" reads as
+                  * eleven still to go, on a panel whose own copy says any one
+                  * of them is enough — the 12 is the point at which we stop
+                  * accepting more, which is only worth saying when somebody is
+                  * near it. */}
                 <span
                     data-testid={IDS.documentCount}
                     className="text-xs text-muted-foreground"
                 >
-                    {documents.length} of {maxDocuments} uploaded
+                    {documents.length === 0
+                        ? "None uploaded yet"
+                        : documents.length === 1
+                        ? "1 document uploaded"
+                        : `${documents.length} documents uploaded`}
+                    {documents.length >= maxDocuments - 2 && documents.length > 0
+                        ? ` · ${maxDocuments} is the limit`
+                        : ""}
                 </span>
             </div>
 

@@ -28,6 +28,7 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
 import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
+import { DeliverableList } from "@/components/Deliverables";
 import BrandAvatar from "@/components/BrandAvatar";
 import ImageUploadField from "@/components/ImageUploadField";
 import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
@@ -83,7 +84,12 @@ import { useAdminConsole } from "@/pages/AdminConsole";
 // active/completed/ended, which match nothing on the server, so every group
 // resolved to undefined and the section rendered its empty state however many
 // applicants a campaign had.
+// Invited leads, because it is the group with nothing under it yet: an
+// invitation is somebody we asked and who has not answered, and a board that
+// only listed collaborations showed a campaign we had invited six people to as
+// empty.
 const GROUPS = [
+    { key: "invited", label: "Invited, not answered" },
     { key: "applied", label: "Waiting on us" },
     { key: "approved", label: "Approved" },
     { key: "rejected", label: "Declined & cancelled" },
@@ -379,9 +385,10 @@ export default function CampaignDetailPage() {
                                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                         Deliverables
                                     </p>
-                                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed">
-                                        {campaign.deliverables}
-                                    </p>
+                                    <DeliverableList
+                                        campaign={campaign}
+                                        className="mt-1.5"
+                                    />
                                 </div>
                                 <dl className="grid gap-5 border-t border-white/10 pt-6 sm:grid-cols-3">
                                     <Field label="Category">{campaign.category}</Field>
@@ -609,9 +616,16 @@ export default function CampaignDetailPage() {
                     <Section
                         id="applicants"
                         title="Applicants"
+                        // Invited rows are in the section but not in the
+                        // count: nobody has applied, and "Applicants 2" over
+                        // two people who have not answered says otherwise.
                         count={
                             groups
-                                ? groups.reduce((n, g) => n + g.rows.length, 0)
+                                ? groups.reduce(
+                                      (n, g) =>
+                                          g.key === "invited" ? n : n + g.rows.length,
+                                      0,
+                                  )
                                 : undefined
                         }
                     >
@@ -641,9 +655,13 @@ export default function CampaignDetailPage() {
                                             <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                                                 {g.rows.map((a) => (
                                                     <li
-                                                        key={a.collaboration_id}
+                                                        key={
+                                                            a.collaboration_id ||
+                                                            `invite-${a.invitation_id}`
+                                                        }
                                                         data-testid={IDS.applicant(
-                                                            a.collaboration_id,
+                                                            a.collaboration_id ||
+                                                                a.invitation_id,
                                                         )}
                                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                                     >
@@ -655,20 +673,43 @@ export default function CampaignDetailPage() {
                                                             name={a.name}
                                                             className="min-w-0 flex-1 text-sm"
                                                         />
-                                                        <span className="flex-none text-sm text-muted-foreground">
-                                                            quoted ₹
-                                                            {formatRupees(a.quoted_rate)}
-                                                            {a.agreed_amount != null
-                                                                ? ` · agreed ₹${formatRupees(a.agreed_amount)}`
-                                                                : ""}
-                                                        </span>
-                                                        <StatePill state={a.state} />
-                                                        <Link
-                                                            to={`/admin/applications/${a.collaboration_id}`}
-                                                            className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
-                                                        >
-                                                            Open
-                                                        </Link>
+                                                        {/* An invitation has no collaboration, so
+                                                            it has no quote, no agreed fee and
+                                                            nothing to open. It says when it was
+                                                            sent instead — the only question about
+                                                            an unanswered invitation is how long it
+                                                            has been unanswered. */}
+                                                        {a.collaboration_id ? (
+                                                            <>
+                                                                <span className="flex-none text-sm text-muted-foreground">
+                                                                    quoted ₹
+                                                                    {formatRupees(
+                                                                        a.quoted_rate,
+                                                                    )}
+                                                                    {a.agreed_amount != null
+                                                                        ? ` · agreed ₹${formatRupees(a.agreed_amount)}`
+                                                                        : ""}
+                                                                </span>
+                                                                <StatePill state={a.state} />
+                                                                <Link
+                                                                    to={`/admin/applications/${a.collaboration_id}`}
+                                                                    className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
+                                                                >
+                                                                    Open
+                                                                </Link>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="flex-none text-sm text-muted-foreground">
+                                                                    invited{" "}
+                                                                    {formatDate(a.created_at)}
+                                                                    {a.delivered_on_whatsapp
+                                                                        ? ""
+                                                                        : " · WhatsApp didn't go"}
+                                                                </span>
+                                                                <StatePill state="invited" />
+                                                            </>
+                                                        )}
                                                     </li>
                                                 ))}
                                             </ul>

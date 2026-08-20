@@ -14,12 +14,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QUESTIONS } from "@/constants/testIds";
+import { IST } from "@/lib/time";
 
 const formatWhen = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: IST });
 };
 
 function Row({ q }) {

@@ -230,8 +230,13 @@ const CreatorHome = ({ user, justOnboarded }) => {
             (completeness.missing || []).length > 0,
     );
     const suggestedCount = (data?.suggested_campaigns || []).length;
+    // Invitations sit in this tab and count toward its badge: an invitation
+    // the creator has not answered is the most actionable thing in there, and
+    // a badge that ignores it is a badge that says "nothing for you".
     const applicationsCount =
-        (groups.applied || []).length + (groups.declined || []).length;
+        (groups.applied || []).length +
+        (groups.declined || []).length +
+        (data?.invitations || []).filter((i) => i.open).length;
 
     return (
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
@@ -346,6 +351,8 @@ const CreatorHome = ({ user, justOnboarded }) => {
                                                 <Applications
                                                     applied={groups.applied}
                                                     declined={groups.declined}
+                                                    invitations={data?.invitations}
+                                                    onChanged={load}
                                                 />
                                             </div>
                                         </SafeSection>

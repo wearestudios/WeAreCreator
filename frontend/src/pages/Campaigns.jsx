@@ -11,6 +11,8 @@ import {
     Search,
     ArrowDownUp,
 } from "lucide-react";
+import { DeliverableSummary } from "@/components/Deliverables";
+import { deliverablesText } from "@/lib/deliverables";
 import { Navbar } from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import {
@@ -185,9 +187,10 @@ const CampaignCard = ({ c, index }) => (
                     </Link>
                 </h3>
 
-                <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-                    {c.deliverables}
-                </p>
+                <DeliverableSummary
+                    campaign={c}
+                    className="mt-3 line-clamp-2 block text-sm leading-relaxed text-muted-foreground"
+                />
 
                 <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {c.area && (
@@ -239,7 +242,7 @@ const CampaignCard = ({ c, index }) => (
                             <ShareButton
                                 campaignId={c.id}
                                 title={c.title}
-                                summary={c.deliverables}
+                                summary={deliverablesText(c)}
                                 variant="icon"
                                 className="relative z-10"
                             />

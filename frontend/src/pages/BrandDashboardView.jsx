@@ -53,6 +53,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { IST } from "@/lib/time";
 
 const CAT_LABEL = {
     fnb: "F&B",
@@ -132,6 +133,7 @@ const formatDate = (iso) => {
         return new Date(iso).toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
+            timeZone: IST,
         });
     } catch {
         return iso;

@@ -916,6 +916,36 @@ EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
 # every reader already goes through one function.
 SHOOT_TZ = timezone(timedelta(hours=5, minutes=30))
 
+
+def _ist(value: Optional[datetime]) -> Optional[datetime]:
+    """The same instant, in the zone the operation actually runs in.
+
+    Mongo returns naive datetimes and everything here is written as UTC, so a
+    missing tzinfo is a statement about BSON rather than about the value.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(SHOOT_TZ)
+
+
+def _when_text(value: Optional[datetime]) -> str:
+    """A time as the person receiving it reads it: "20 Aug, 7:30 pm".
+
+    **Every human-facing time this server writes goes through here.** These
+    strings are WhatsApp messages telling a creator when to turn up; formatting
+    the stored UTC directly told them 2:00 pm for a 7:30 pm sitting, which is
+    the same 5½ hours the frontend was out by, arriving on a phone instead of a
+    screen.
+    """
+    local = _ist(value)
+    if not local:
+        return ""
+    hour = local.hour % 12 or 12
+    suffix = "am" if local.hour < 12 else "pm"
+    return f"{local.strftime('%d %b')}, {hour}:{local.strftime('%M')} {suffix}"
+
 # Index matches datetime.weekday(): Monday is 0.
 WEEKDAY_NAMES = (
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
@@ -1106,6 +1136,137 @@ def _shoot_time_refusal(campaign: Optional[dict], starts, ends=None) -> Optional
     return f"This campaign shoots in set windows: {readable} (IST)."
 
 
+# What the brand is actually asking for, in counted pieces.
+#
+# **This was free text**, and free text is what made it unanswerable. "1 reel +
+# 3 stories", "one reel, three stories", "reel x1, stories x3" and "a reel and a
+# few stories" are four spellings of one brief, so nothing could count what a
+# campaign asked for, a creator comparing two briefs was comparing prose, and
+# "a few" is not a number anybody agreed to.
+#
+# The keys are the formats this product actually deals in; the labels are what
+# a person calls them. `_DELIVERABLE_PLURALS` exists because "3 story" is not
+# English and the derived sentence is read by creators.
+DELIVERABLE_TYPES = {
+    "reel": "Reel",
+    "story": "Story",
+    "static_post": "Static post",
+    "youtube_short": "YouTube Short",
+    "video": "Video",
+}
+# Spelled out rather than derived from the labels: lowercasing "YouTube Short"
+# to fit mid-sentence gives "youtube short", and a proper noun is not a word
+# whose case a formatter gets to decide.
+_DELIVERABLE_SINGULARS = {
+    "reel": "reel",
+    "story": "story",
+    "static_post": "static post",
+    "youtube_short": "YouTube Short",
+    "video": "video",
+}
+_DELIVERABLE_PLURALS = {
+    "reel": "reels",
+    "story": "stories",
+    "static_post": "static posts",
+    "youtube_short": "YouTube Shorts",
+    "video": "videos",
+}
+# One brief asking for forty of anything is a brief somebody mistyped.
+MAX_DELIVERABLE_QUANTITY = 50
+
+
+def _clean_deliverables(items) -> list:
+    """The structured ask, normalised: known types only, merged, ordered.
+
+    Merged rather than kept as written because two "reel" rows are one ask with
+    a quantity, and a creator reading "1 reel · 2 reels" would reasonably wonder
+    whether they were different reels. Ordered by `DELIVERABLE_TYPES` so two
+    campaigns asking for the same thing read the same way round.
+    """
+    if not items:
+        return []
+    totals: dict = {}
+    for raw in items:
+        if hasattr(raw, "model_dump"):
+            raw = raw.model_dump()
+        if not isinstance(raw, dict):
+            continue
+        key = str(raw.get("type") or "").strip()
+        if key not in DELIVERABLE_TYPES:
+            continue
+        try:
+            qty = int(raw.get("quantity") or 0)
+        except (TypeError, ValueError):
+            continue
+        if qty <= 0:
+            continue
+        totals[key] = min(MAX_DELIVERABLE_QUANTITY, totals.get(key, 0) + qty)
+    return [
+        {"type": k, "quantity": totals[k]} for k in DELIVERABLE_TYPES if k in totals
+    ]
+
+
+def _deliverables_text(items) -> str:
+    """The structured ask as the sentence every existing surface already reads.
+
+    The free-text `deliverables` field stays, derived from this rather than
+    typed: the campaign search matches against it, the CSV and the printable
+    report print it, and the share page renders it. Deriving it means one
+    answer in two shapes that cannot disagree, and means no campaign written
+    before this field existed has to be migrated to keep working.
+    """
+    parts = [
+        f"{i['quantity']} "
+        + (
+            _DELIVERABLE_SINGULARS[i["type"]]
+            if i["quantity"] == 1
+            else _DELIVERABLE_PLURALS[i["type"]]
+        )
+        for i in _clean_deliverables(items)
+    ]
+    return " · ".join(parts)
+
+
+def _deliverable_items(campaign: dict) -> list:
+    """The one reader. Absent is `[]` — every campaign posted before this field
+    existed has a sentence and no structure, and an empty list is what says
+    "read the sentence" rather than "they asked for nothing"."""
+    return _clean_deliverables((campaign or {}).get("deliverable_items"))
+
+
+def _resolve_deliverables(items, text: Optional[str], required: bool) -> dict:
+    """What to write for a brief's ask. **Both write paths go through this**,
+    so the structure and the sentence cannot drift apart.
+
+    Items win and the sentence is derived from them. A bare sentence is
+    accepted only when no items came with it — that is the shape a campaign
+    written before this field takes when the admin's edit dialog sends it back,
+    and refusing it would make those campaigns uneditable.
+    """
+    cleaned = _clean_deliverables(items)
+    if cleaned:
+        return {"deliverable_items": cleaned, "deliverables": _deliverables_text(cleaned)}
+    if items:
+        # Rows arrived and none survived: every one had an unknown type or a
+        # quantity of zero, which is a form that looks filled in and asks for
+        # nothing.
+        raise HTTPException(
+            status_code=422,
+            detail="Give a quantity for at least one deliverable.",
+        )
+    if text and text.strip():
+        # Both keys, always: writing the sentence without clearing the
+        # structure would leave an edit whose words and whose counted pieces
+        # describe different briefs, and every surface picks the structure.
+        return {"deliverable_items": [], "deliverables": text.strip()}
+    if required:
+        raise HTTPException(
+            status_code=422,
+            detail="Say what you're asking for — pick at least one deliverable.",
+        )
+    return {}
+
+
 # What a creator is actually being offered.
 #
 #   fixed       the budget on the brief is the fee, take it or leave it
@@ -1258,12 +1419,28 @@ async def _creator_may_see(campaign: dict, creator_oid: ObjectId) -> bool:
     )
 
 
+class DeliverableItem(BaseModel):
+    """One counted piece of a brief: a format and how many of it."""
+
+    type: Literal["reel", "story", "static_post", "youtube_short", "video"]
+    quantity: int = Field(ge=1, le=MAX_DELIVERABLE_QUANTITY)
+
+
 class PostCampaignPayload(BaseModel):
     """Payload for a brand posting a new campaign."""
 
     title: str = Field(min_length=1, max_length=140)
     brief: str = Field(min_length=1, max_length=5000)
-    deliverables: str = Field(min_length=1, max_length=1000)
+    # The structured ask. Optional on the model and required by the handler,
+    # which refuses an empty brief with the reason rather than pydantic's
+    # "Field required" against a field the form does not name.
+    deliverable_items: Optional[list[DeliverableItem]] = None
+    # Kept, and no longer typed by anyone: it is derived from the items above
+    # so that the search index, the CSV, the report and the share page keep
+    # reading one sentence. A client that still sends it is honoured only when
+    # it sends no items — that is what a campaign written before this field
+    # looks like on the way back in through the admin's edit dialog.
+    deliverables: Optional[str] = Field(default=None, min_length=1, max_length=1000)
     budget_per_creator: float = Field(ge=0)
     category: CATEGORY_LITERAL
     area: str = Field(min_length=1, max_length=80)
@@ -1345,6 +1522,9 @@ class UpdateCampaignPayload(BaseModel):
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=140)
     brief: Optional[str] = Field(default=None, min_length=1, max_length=5000)
+    # Same pair as the create payload: send items and the sentence is derived,
+    # send neither and the brief's deliverables are left alone.
+    deliverable_items: Optional[list[DeliverableItem]] = None
     deliverables: Optional[str] = Field(default=None, min_length=1, max_length=1000)
     budget_per_creator: Optional[float] = Field(default=None, ge=0)
     category: Optional[CATEGORY_LITERAL] = None
@@ -2667,7 +2847,7 @@ async def register(payload: RegisterInput, response: Response):
         "role": doc["role"],
         "phone": doc["phone"],
         "status": doc["status"],
-        "created_at": doc["created_at"].isoformat(),
+        "created_at": _iso(doc.get("created_at")),
     }
 
 
@@ -2700,7 +2880,7 @@ async def login(payload: LoginInput, response: Response):
         "role": user["role"],
         "phone": user.get("phone"),
         "status": user.get("status"),
-        "created_at": user["created_at"].isoformat() if user.get("created_at") else None,
+        "created_at": _iso(user.get("created_at")),
     }
 
 
@@ -2720,7 +2900,7 @@ async def me(user: dict = Depends(get_current_user)):
         "role": user["role"],
         "phone": user.get("phone"),
         "status": user.get("status"),
-        "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+        "created_at": _iso(user.get("created_at")),
         # Present only during a view-as session. The frontend draws its banner
         # off this rather than off anything it stored when it started, so a
         # session resumed in a second tab — or one that expired while the tab
@@ -3609,7 +3789,7 @@ async def verify_otp(payload: OtpVerifyInput, response: Response):
         "role": user["role"],
         "phone": user.get("phone"),
         "status": user.get("status"),
-        "created_at": user["created_at"].isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at"),
+        "created_at": _iso(user.get("created_at")),
     }
 
 
@@ -3659,8 +3839,8 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "pan": doc.get("pan"),
         "gstin": doc.get("gstin"),
         "payout_ready": payout_ready(doc),
-        "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
-        "updated_at": doc["updated_at"].isoformat() if isinstance(doc.get("updated_at"), datetime) else doc.get("updated_at"),
+        "created_at": _iso(doc.get("created_at")),
+        "updated_at": _iso(doc.get("updated_at")),
     }
 
 
@@ -4710,7 +4890,27 @@ _PAYMENT_STATES = ("in_payment",)
 
 
 def _iso(value):
-    return value.isoformat() if isinstance(value, datetime) else value
+    """A timestamp the browser cannot misread.
+
+    **Every datetime this app writes is UTC, but only some of them say so.**
+    BSON has no timezone, so a value read back from Mongo is *naive* — and
+    `datetime.isoformat()` on a naive value emits no offset at all, which
+    `new Date()` then reads as the reader's local time. The same instant
+    therefore serialised two ways depending on whether it had been round
+    tripped through the database, and the naive half was 5½ hours out for
+    everybody here: that is the notification panel's "6h ago" on something
+    that happened twenty minutes ago.
+
+    Naive means UTC by construction — every write goes through
+    `datetime.now(timezone.utc)` — so stamping it is a statement of fact
+    rather than a guess. The frontend converts to IST for display; see
+    `frontend/src/lib/time.js`.
+    """
+    if not isinstance(value, datetime):
+        return value
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
 
 
 def _jsonable(value):
@@ -4723,7 +4923,9 @@ def _jsonable(value):
     if isinstance(value, ObjectId):
         return str(value)
     if isinstance(value, datetime):
-        return value.isoformat()
+        # Through `_iso`, so a snapshot carries an offset like every other
+        # timestamp rather than being the one shape that does not.
+        return _iso(value)
     return value
 
 
@@ -5131,9 +5333,7 @@ async def get_creator_dashboard(
                 "platform_fee": p.get("platform_fee"),
                 "creator_payout": p.get("creator_payout"),
                 "state": p.get("state", "pending"),
-                "paid_at": p["paid_at"].isoformat()
-                if isinstance(p.get("paid_at"), datetime)
-                else p.get("paid_at"),
+                "paid_at": _iso(p.get("paid_at")),
             }
         )
 
@@ -5237,6 +5437,7 @@ async def get_creator_dashboard(
     grouped["active"] = active_rows
 
     completeness = _profile_completeness(profile or {})
+    invitations = await _creator_invitations(creator_oid)
     suggestions = await _suggested_campaigns(
         profile or {}, {c["campaign_id"] for c in collabs}
     )
@@ -5245,6 +5446,11 @@ async def get_creator_dashboard(
         "profile": profile_summary,
         "profile_completeness": completeness,
         "applications": applications,
+        # **Invitations sit beside applications, not behind them.** Being asked
+        # is the start of the same conversation as asking, and an invitation
+        # that lives only in a WhatsApp message is one a creator cannot find
+        # again once the message scrolls away.
+        "invitations": invitations,
         "collaborations": grouped,
         "upcoming": upcoming,
         "payments": payments,
@@ -5257,6 +5463,9 @@ async def get_creator_dashboard(
         "suggested_campaigns": suggestions,
         "totals": {
             "applications": len(applications),
+            # Only the ones still open: an answered invitation is history,
+            # and a badge counting it would never clear.
+            "invitations": sum(1 for i in invitations if i["open"]),
             "upcoming": len(upcoming),
             "payments": len(payments) + len(in_payment_collabs),
             "active": len(grouped["active"]),
@@ -5750,6 +5959,196 @@ def _extract_ig_handle(raw: str) -> Optional[str]:
 
 
 
+# ---------------------------------------------------------------------------
+# Invitations a creator can see and act on
+# ---------------------------------------------------------------------------
+#
+# **An invitation used to be invisible until it turned into something else.**
+# It was written to `campaign_invitations`, sent as a WhatsApp, and then had no
+# home in the product: the creator's applications view reads `collaborations`,
+# and an invitation is not one until they pitch. So a creator who missed the
+# message had no way to find out they had been asked, and the campaign board
+# showed nobody — the invitation existed only in a table and a phone.
+#
+# It is a first-class row on both sides now: the creator sees it with Accept
+# and Decline, and every applicant board counts it in its own group so
+# "who is on this brief" accounts for the people we asked.
+
+# Where an invitation can be: sent (or failed to send, which is still sent as
+# far as the creator's own record is concerned), and the two answers.
+INVITATION_OPEN_STATES = ("sent", "send_failed")
+
+
+def _invitation_state(doc: dict) -> str:
+    return (doc or {}).get("state") or "sent"
+
+
+def _serialize_invitation(invite: dict, campaign: Optional[dict], brand_name=None) -> dict:
+    """One invitation as the creator reads it.
+
+    Carries the campaign it is for, because an invitation with no brief
+    attached is a notification rather than something you can act on.
+    """
+    campaign = campaign or {}
+    return {
+        "id": str(invite["_id"]),
+        "campaign_id": str(invite["campaign_id"]),
+        "campaign_title": campaign.get("title"),
+        "brand_name": brand_name,
+        "area": campaign.get("area"),
+        "city": campaign.get("city"),
+        "campaign_status": campaign.get("status"),
+        # The fee and what kind of fee it is, in that order and never apart: a
+        # rupee figure with no word beside it reads as cash, and a barter brief
+        # keeps whatever budget it was posted with.
+        "budget_per_creator": campaign.get("budget_per_creator"),
+        "compensation_type": _compensation_type(campaign),
+        "event_date": _iso(campaign.get("event_date")),
+        "start_date": _iso(campaign.get("start_date")),
+        "end_date": _iso(campaign.get("end_date")),
+        "note": invite.get("note"),
+        "state": _invitation_state(invite),
+        # Whether the brief is still live. An invitation to a campaign that
+        # has closed is history, not a decision — saying so is better than
+        # offering a button that 404s.
+        "open": _invitation_state(invite) in INVITATION_OPEN_STATES
+        and campaign.get("status") in _LIVE_STATUSES,
+        "invited_at": _iso(invite.get("created_at")),
+        "responded_at": _iso(invite.get("responded_at")),
+    }
+
+
+async def _creator_invitations(creator_oid) -> list:
+    """Every invitation this creator holds, newest first."""
+    invites = (
+        await db.campaign_invitations.find({"creator_id": creator_oid})
+        .sort("created_at", -1)
+        .to_list(length=200)
+    )
+    if not invites:
+        return []
+    campaign_ids = list({i["campaign_id"] for i in invites})
+    campaigns = await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+        length=len(campaign_ids)
+    )
+    by_id = {c["_id"]: c for c in campaigns}
+    brand_ids = list({c.get("brand_id") for c in campaigns if c.get("brand_id")})
+    names = {}
+    if brand_ids:
+        profiles = await db.brand_profiles.find(
+            {"user_id": {"$in": brand_ids}}
+        ).to_list(length=len(brand_ids))
+        names = {p["user_id"]: p.get("business_name") for p in profiles}
+    # An invitation whose campaign has been deleted is not shown: there is
+    # nothing to accept.
+    return [
+        _serialize_invitation(i, by_id[i["campaign_id"]], names.get(by_id[i["campaign_id"]].get("brand_id")))
+        for i in invites
+        if i["campaign_id"] in by_id
+    ]
+
+
+async def _invitation_or_404(invitation_id: str, creator_oid):
+    """This creator's own invitation, or a 404 — never somebody else's."""
+    try:
+        oid = ObjectId(invitation_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    invite = await db.campaign_invitations.find_one(
+        {"_id": oid, "creator_id": creator_oid}
+    )
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    return invite
+
+
+@creator_router.get("/invitations")
+async def list_creator_invitations(user: dict = Depends(require_roles("creator"))):
+    """What this creator has been asked to do.
+
+    Also folded into the dashboard, which is one call by design — this route
+    exists so the applications view can refresh just this list after an answer
+    rather than reloading the whole screen.
+    """
+    return {"invitations": await _creator_invitations(ObjectId(user["_id"]))}
+
+
+@creator_router.post("/invitations/{invitation_id}/accept")
+async def accept_invitation(
+    invitation_id: str,
+    payload: ApplyPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Say yes, which is an application like any other.
+
+    **It goes through `apply_to_campaign`.** Accepting is applying with the
+    door already open — same verification gate, same re-check gate, same
+    capacity check, same duplicate refusal, same routing of the notification
+    to whoever runs the campaign. A second implementation here would be a
+    second definition of what an application is, and they would drift.
+    """
+    creator_oid = ObjectId(user["_id"])
+    invite = await _invitation_or_404(invitation_id, creator_oid)
+    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="You've already answered this invitation.",
+        )
+
+    out = await apply_to_campaign(str(invite["campaign_id"]), payload, user)
+
+    await db.campaign_invitations.update_one(
+        {"_id": invite["_id"]},
+        {
+            "$set": {
+                "state": "accepted",
+                "responded_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+    await audit(
+        user,
+        "invitation.accept",
+        "campaign_invitation",
+        invite["_id"],
+        after={"state": "accepted"},
+        campaign_id=invite["campaign_id"],
+    )
+    return out
+
+
+@creator_router.post("/invitations/{invitation_id}/decline")
+async def decline_invitation(
+    invitation_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Say no. No collaboration is created, and the brief stays visible —
+    declining an invitation is not a bar on applying later."""
+    creator_oid = ObjectId(user["_id"])
+    invite = await _invitation_or_404(invitation_id, creator_oid)
+    if _invitation_state(invite) not in INVITATION_OPEN_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="You've already answered this invitation.",
+        )
+
+    now = datetime.now(timezone.utc)
+    await db.campaign_invitations.update_one(
+        {"_id": invite["_id"]},
+        {"$set": {"state": "declined", "responded_at": now, "updated_at": now}},
+    )
+    await audit(
+        user,
+        "invitation.decline",
+        "campaign_invitation",
+        invite["_id"],
+        after={"state": "declined"},
+        campaign_id=invite["campaign_id"],
+    )
+    return {"ok": True, "state": "declined"}
+
+
 api_router.include_router(creator_router)
 
 
@@ -5830,12 +6229,8 @@ def _serialize_brand_profile(doc: dict) -> dict:
         "submitted_for_verification_at": _iso(doc.get("submitted_for_verification_at")),
         # Set when we refuse a brand, so it can be shown rather than guessed at.
         "verification_reason": doc.get("verification_reason"),
-        "created_at": doc["created_at"].isoformat()
-        if isinstance(doc.get("created_at"), datetime)
-        else doc.get("created_at"),
-        "updated_at": doc["updated_at"].isoformat()
-        if isinstance(doc.get("updated_at"), datetime)
-        else doc.get("updated_at"),
+        "created_at": _iso(doc.get("created_at")),
+        "updated_at": _iso(doc.get("updated_at")),
     }
 
 
@@ -5857,6 +6252,10 @@ def _serialize_brand_campaign(
         "shoot_windows": _shoot_windows(doc),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
+        # The counted pieces beside the sentence derived from them. `[]` on a
+        # brief posted before this existed, which is what says "read the
+        # sentence" — every surface falls back to it.
+        "deliverable_items": _deliverable_items(doc),
         "budget_per_creator": doc.get("budget_per_creator"),
         # Travels with the figure everywhere the figure goes. A number with no
         # word beside it is read as cash, which on a barter brief is a lie.
@@ -6658,7 +7057,9 @@ async def create_brand_campaign(
         "brand_id": _brand_scope(user),
         "title": payload.title.strip(),
         "brief": payload.brief.strip(),
-        "deliverables": payload.deliverables.strip(),
+        # Structure plus the sentence derived from it, from one resolver the
+        # edit route shares.
+        **_resolve_deliverables(payload.deliverable_items, payload.deliverables, True),
         "budget_per_creator": float(payload.budget_per_creator),
         "category": payload.category,
         "area": payload.area.strip(),
@@ -6767,6 +7168,18 @@ async def update_brand_campaign(
         update["restricted_days"] = _clean_restricted_days(update["restricted_days"])
     if "shoot_windows" in update:
         update["shoot_windows"] = _clean_shoot_windows(update["shoot_windows"])
+    # The structure and the sentence are one field in two shapes, so they are
+    # resolved together rather than copied separately by the loop above — the
+    # other way, an edit could leave a brief whose words and whose counted
+    # pieces ask for different things.
+    if "deliverable_items" in update or "deliverables" in update:
+        update.update(
+            _resolve_deliverables(
+                update.pop("deliverable_items", None),
+                update.pop("deliverables", None),
+                True,
+            )
+        )
     _refuse_brand_barter(doc, update)
     _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
@@ -7170,6 +7583,14 @@ async def list_campaign_applicants(
         for c in collabs
     ]
 
+    # Invited and still deciding. The brand asked for these people; a board
+    # that showed nothing until one of them pitched made an invite look like it
+    # had gone nowhere. Contact details are not in this shape either — the
+    # same allow-list rule as everything else brand-facing.
+    invited = await _pending_invitations_for(
+        campaign["_id"], [c["creator_id"] for c in collabs]
+    )
+
     needed = int(campaign.get("creators_needed") or 1)
     filled = (await _filled_counts_for([campaign["_id"]])).get(campaign["_id"], 0)
     return {
@@ -7189,8 +7610,10 @@ async def list_campaign_applicants(
             "category": campaign.get("category"),
         },
         "applicants": rows,
+        "invited": invited,
         "totals": {
             "all": len(rows),
+            "invited": len(invited),
             "awaiting_you": sum(1 for r in rows if r["state"] == "verified"),
             "with_weare": sum(1 for r in rows if r["state"] == "applied"),
             "in_progress": sum(
@@ -8711,9 +9134,7 @@ def _serialize_admin_creator(profile: dict, user: dict) -> dict:
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),
         "verification_status": profile.get("verification_status", "pending"),
-        "created_at": profile["created_at"].isoformat()
-        if isinstance(profile.get("created_at"), datetime)
-        else profile.get("created_at"),
+        "created_at": _iso(profile.get("created_at")),
     }
 
 
@@ -10043,6 +10464,7 @@ async def _build_campaign_report(campaign: dict) -> dict:
                 **_follower_provenance(prof),
                 # What they were asked for, and the links that prove it.
                 "deliverables": campaign.get("deliverables"),
+                "deliverable_items": _deliverable_items(campaign),
                 "content_urls": c.get("content_urls")
                 or ([c["content_url"]] if c.get("content_url") else []),
                 "delivered_state": c.get("state"),
@@ -10071,6 +10493,7 @@ async def _build_campaign_report(campaign: dict) -> dict:
             "start_date": _iso(campaign.get("start_date")),
             "end_date": _iso(campaign.get("end_date")),
             "deliverables": campaign.get("deliverables"),
+            "deliverable_items": _deliverable_items(campaign),
             "showcase": bool(campaign.get("showcase")),
         },
         "creators": rows,
@@ -11557,6 +11980,7 @@ async def list_all_campaigns(
                 "visibility": _campaign_visibility(d),
                 "brief": d.get("brief"),
                 "deliverables": d.get("deliverables"),
+                "deliverable_items": _deliverable_items(d),
                 "budget_per_creator": d.get("budget_per_creator"),
                 "compensation_type": _compensation_type(d),
                 "showcase": bool(d.get("showcase")),
@@ -11626,6 +12050,7 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles("admin"))
             "title": d.get("title"),
             "brief": d.get("brief"),
             "deliverables": d.get("deliverables"),
+            "deliverable_items": _deliverable_items(d),
             "budget_per_creator": d.get("budget_per_creator"),
             "compensation_type": _compensation_type(d),
             "category": d.get("category"),
@@ -12246,6 +12671,17 @@ async def admin_update_campaign(
         update[key] = value
     if not update:
         raise HTTPException(status_code=422, detail="Nothing to update")
+
+    # Resolved together, same as the brand's edit — the sentence is derived
+    # from the structure, so the loop above must not copy either alone.
+    if "deliverable_items" in update or "deliverables" in update:
+        update.update(
+            _resolve_deliverables(
+                update.pop("deliverable_items", None),
+                update.pop("deliverables", None),
+                True,
+            )
+        )
 
     # No _refuse_brand_barter here, and that is the whole point of the feature:
     # this route is the only way a campaign becomes barter. There is no admin
@@ -13613,7 +14049,7 @@ async def advance_collaboration(
             link="/dashboard",
         )
     elif to_state == "slot_booked":
-        when = update["scheduled_at"].strftime("%d %b, %I:%M %p")
+        when = _when_text(update["scheduled_at"])
         await notify(
             collab["creator_id"],
             "slot_booked",
@@ -14629,6 +15065,61 @@ async def admin_dashboard(
     }
 
 
+async def _pending_invitations_for(campaign_oid, applied_creator_ids) -> list:
+    """Creators asked to this campaign who have not answered yet.
+
+    **An invitation is part of "who is on this brief".** Before this the board
+    showed only collaborations, so a campaign we had invited six people to
+    looked empty until one of them pitched — and there was no way to tell an
+    invitation that had gone unanswered from one that was never sent.
+
+    Anyone who has since applied is excluded: they are on the board under their
+    own application, and listing them twice would double-count the campaign.
+    """
+    invites = await db.campaign_invitations.find(
+        {"campaign_id": campaign_oid, "state": {"$in": list(INVITATION_OPEN_STATES)}}
+    ).sort("created_at", -1).to_list(length=500)
+    invites = [i for i in invites if i["creator_id"] not in set(applied_creator_ids)]
+    if not invites:
+        return []
+
+    ids = [i["creator_id"] for i in invites]
+    profiles = await db.creator_profiles.find({"user_id": {"$in": ids}}).to_list(length=len(ids))
+    by_uid = {p["user_id"]: p for p in profiles}
+    accounts = await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids))
+    account_by_id = {u["_id"]: u for u in accounts}
+
+    out = []
+    for i in invites:
+        # One of the two boards this feeds is brand-facing, so the creator half
+        # comes through the allow-list like every other brand surface rather
+        # than being assembled here. The flat keys below are read back off it,
+        # so a field that is not brand-visible cannot reach this row at all.
+        creator = _brand_visible_creator(
+            by_uid.get(i["creator_id"]), account_by_id.get(i["creator_id"])
+        )
+        out.append(
+            {
+                # No collaboration exists yet, so there is no id to give — and
+                # a made-up one would be an id somebody tries to act on.
+                "collaboration_id": None,
+                "invitation_id": str(i["_id"]),
+                "creator_id": str(i["creator_id"]),
+                "creator": creator,
+                "name": creator.get("name"),
+                "profile_image_url": creator.get("profile_image_url"),
+                "instagram_handle": creator.get("instagram_handle"),
+                "follower_count": creator.get("follower_count"),
+                "verification_status": creator.get("verification_status"),
+                "state": "invited",
+                "note": i.get("note"),
+                "delivered_on_whatsapp": bool(i.get("delivered_on_whatsapp")),
+                "created_at": _iso(i.get("created_at")),
+            }
+        )
+    return out
+
+
 @admin_router.get("/campaigns/{campaign_id}/applicants")
 async def admin_campaign_applicants(
     campaign_id: str,
@@ -14709,6 +15200,12 @@ async def admin_campaign_applicants(
             if state in states:
                 groups[name].append(entry)
                 break
+
+    # Invited and still deciding. Their own group rather than mixed into
+    # "applied": nobody has pitched, so there is nothing yet to approve.
+    groups["invited"] = await _pending_invitations_for(
+        campaign["_id"], [r["creator_id"] for r in rows]
+    )
 
     needed = int(campaign.get("creators_needed") or 1)
     filled = (await _filled_counts_for([campaign["_id"]])).get(campaign["_id"], 0)
@@ -16210,7 +16707,7 @@ async def reschedule_creator(
         title="Your slot moved",
         body=(
             f"{campaign.get('title')} — you're now at "
-            f"{target['starts_at'].strftime('%d %b, %I:%M %p')}."
+            f"{_when_text(target['starts_at'])}."
         ),
         link=f"/campaigns/{str(campaign['_id'])}",
     )
@@ -16221,7 +16718,7 @@ async def reschedule_creator(
         title="A creator's slot moved",
         body=(
             f"{(moved_profile or {}).get('name') or 'A creator'} is now at "
-            f"{target['starts_at'].strftime('%d %b, %I:%M %p')} on "
+            f"{_when_text(target['starts_at'])} on "
             f"“{campaign.get('title')}”."
         ),
     )
@@ -16318,6 +16815,10 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "title": doc.get("title"),
         "brief": doc.get("brief"),
         "deliverables": doc.get("deliverables"),
+        # The counted pieces beside the sentence derived from them. `[]` on a
+        # brief posted before this existed, which is what says "read the
+        # sentence" — every surface falls back to it.
+        "deliverable_items": _deliverable_items(doc),
         "budget_per_creator": doc.get("budget_per_creator"),
         "compensation_type": _compensation_type(doc),
         # Safe on a creator-facing row: anyone receiving a private campaign's
@@ -16349,11 +16850,11 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         # WhatsApp they will be on. Carries no contact detail — just which of
         # us they will be dealing with.
         "execution_owner": _execution_owner(doc),
-        "event_date": doc["event_date"].isoformat() if isinstance(doc.get("event_date"), datetime) else doc.get("event_date"),
-        "start_date": doc["start_date"].isoformat() if isinstance(doc.get("start_date"), datetime) else doc.get("start_date"),
-        "end_date": doc["end_date"].isoformat() if isinstance(doc.get("end_date"), datetime) else doc.get("end_date"),
+        "event_date": _iso(doc.get("event_date")),
+        "start_date": _iso(doc.get("start_date")),
+        "end_date": _iso(doc.get("end_date")),
         "status": doc.get("status"),
-        "created_at": doc["created_at"].isoformat() if isinstance(doc.get("created_at"), datetime) else doc.get("created_at"),
+        "created_at": _iso(doc.get("created_at")),
     }
 
 
@@ -16820,9 +17321,7 @@ async def get_campaign(
                 "pitch": existing.get("pitch"),
                 "quoted_rate": existing.get("quoted_rate"),
                 "agreed_amount": existing.get("agreed_amount"),
-                "created_at": existing["created_at"].isoformat()
-                if isinstance(existing.get("created_at"), datetime)
-                else existing.get("created_at"),
+                "created_at": _iso(existing.get("created_at")),
             }
 
         # The venue and the person running the campaign, for creators the brand
@@ -16980,7 +17479,7 @@ async def apply_to_campaign(
         "state": "applied",
         "pitch": payload.pitch.strip(),
         "quoted_rate": float(payload.quoted_rate),
-        "created_at": now.isoformat(),
+        "created_at": _iso(now),
     }
 
 
@@ -17085,7 +17584,7 @@ async def _claim_slot(
         "slot_confirmed",
         title="Slot booked",
         body=f"{campaign.get('title')} — "
-        f"{when.strftime('%d %b, %I:%M %p')}. See the campaign for the venue.",
+        f"{_when_text(when)}. See the campaign for the venue.",
         link=f"/campaigns/{str(campaign['_id'])}",
     )
     # The manager is the one who has to plan around it.
@@ -17096,7 +17595,7 @@ async def _claim_slot(
         "manager_slot_booked",
         title="A creator booked a slot",
         body=f"{creator_name} booked "
-        f"{when.strftime('%d %b, %I:%M %p')} on {campaign.get('title')}.",
+        f"{_when_text(when)} on {campaign.get('title')}.",
     )
     # And the brand, which has a table to hold whoever is running the day.
     # `notify_brand_manager` no-ops when the campaign manager *is* the brand
@@ -17105,7 +17604,7 @@ async def _claim_slot(
         campaign,
         "brand_slot_booked",
         title="A creator booked a slot",
-        body=f"{creator_name} booked {when.strftime('%d %b, %I:%M %p')} on "
+        body=f"{creator_name} booked {_when_text(when)} on "
         f"“{campaign.get('title')}”.",
     )
     return {
@@ -19949,7 +20448,7 @@ def _demo_campaign_specs() -> list[dict]:
                 "capturing 3 signature dishes and the roastery ambience. Free brunch for two, "
                 "plus paid fee. Deliver within 10 days of the shoot."
             ),
-            "deliverables": "1 Instagram reel (30-45s) + 3 stories, tag @bluetokaicoffee",
+            "deliverable_items": [{"type": "reel", "quantity": 1}, {"type": "story", "quantity": 3}],
             "budget_per_creator": 8000,
             "category": "fnb",
             "area": "Koramangala",
@@ -19966,7 +20465,7 @@ def _demo_campaign_specs() -> list[dict]:
                 "We want creators known for craft F&B storytelling to visit the pub, sample the "
                 "flight of 4 cocktails and shoot content around it. Slot is fixed (weekday evening)."
             ),
-            "deliverables": "1 reel + 3 stories + 1 static feed post",
+            "deliverable_items": [{"type": "reel", "quantity": 1}, {"type": "story", "quantity": 3}, {"type": "static_post", "quantity": 1}],
             "budget_per_creator": 12000,
             "category": "fnb",
             "area": "Indiranagar",
@@ -19983,7 +20482,7 @@ def _demo_campaign_specs() -> list[dict]:
                 "cohort of Bengaluru lifestyle & F&B creators for the opening night to shoot cover-"
                 "worthy content of the space, the menu and the vibe. Black-tie dress code."
             ),
-            "deliverables": "1 reel + 5 stories that night; 1 recap post within 5 days",
+            "deliverable_items": [{"type": "reel", "quantity": 1}, {"type": "story", "quantity": 5}, {"type": "static_post", "quantity": 1}],
             "budget_per_creator": 15000,
             "category": "hospitality",
             "area": "MG Road",
@@ -20000,7 +20499,7 @@ def _demo_campaign_specs() -> list[dict]:
                 "creator with a fine-dining audience for a full editorial-style coverage — writeup, "
                 "reel, and stills. Complimentary tasting for two included."
             ),
-            "deliverables": "1 long-form reel (60-90s) + carousel post (5 stills) + writeup",
+            "deliverable_items": [{"type": "reel", "quantity": 1}, {"type": "static_post", "quantity": 1}],
             "budget_per_creator": 25000,
             "category": "fnb",
             "area": "Whitefield",
@@ -20017,7 +20516,7 @@ def _demo_campaign_specs() -> list[dict]:
                 "Looking for a creator who can attend, shoot behind-the-scenes and produce a "
                 "warm, personal recap for their audience."
             ),
-            "deliverables": "1 reel + 4 stories same-day, 1 carousel post within 3 days",
+            "deliverable_items": [{"type": "reel", "quantity": 1}, {"type": "story", "quantity": 4}, {"type": "static_post", "quantity": 1}],
             "budget_per_creator": 6000,
             "category": "fnb",
             "area": "Indiranagar",
@@ -20031,7 +20530,7 @@ def _demo_campaign_specs() -> list[dict]:
             "brand_email": "hello+demo@toit.in",
             "title": "[Internal draft — should not appear]",
             "brief": "Internal draft used to verify status filtering.",
-            "deliverables": "n/a",
+            "deliverable_items": [{"type": "reel", "quantity": 1}],
             "budget_per_creator": 5000,
             "category": "fnb",
             "area": "Indiranagar",
@@ -20045,7 +20544,7 @@ def _demo_campaign_specs() -> list[dict]:
             "brand_email": "hello+demo@farmlore.in",
             "title": "[Closed — should not appear]",
             "brief": "Closed campaign used to verify status filtering.",
-            "deliverables": "n/a",
+            "deliverable_items": [{"type": "reel", "quantity": 1}],
             "budget_per_creator": 5000,
             "category": "fnb",
             "area": "Whitefield",
@@ -20111,7 +20610,8 @@ async def _seed_demo_campaigns() -> None:
                 "brand_id": brand_id,
                 "title": spec["title"],
                 "brief": spec["brief"],
-                "deliverables": spec["deliverables"],
+                # Derived from the structured ask, exactly as a posted brief is.
+                **_resolve_deliverables(spec["deliverable_items"], None, True),
                 "budget_per_creator": spec["budget_per_creator"],
                 # The demo feed is all paid work, which is also the only kind a
                 # brand can post — a seeded barter brief would show creators an
