@@ -17391,6 +17391,10 @@ async def list_managed_campaigns(
 
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
     filled = await _filled_counts_for([d["_id"] for d in docs])
+    # Bookings waiting on an answer — see `attentionFor`, which raises them
+    # whatever the date, because a creator holding a seat nobody has confirmed
+    # is not a problem that starts two days before the shoot.
+    pending = await _pending_slot_counts_for([d["_id"] for d in docs])
 
     # Slot totals per campaign, one pass.
     slot_totals: dict = {}
@@ -17434,6 +17438,7 @@ async def list_managed_campaigns(
                 "slot_count": s.get("slots", 0),
                 "slot_capacity": s.get("capacity", 0),
                 "slot_booked": s.get("booked", 0),
+                "slots_pending": pending.get(d["_id"], 0),
             }
         )
     return out
@@ -17728,6 +17733,14 @@ async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
                     else "expected"
                 ),
                 "booked": state != "accepted" and bool(r.get("slot_id")),
+                # **Booked and agreed, or booked and waiting.** Without this a
+                # seat somebody is holding an answer on looked exactly like a
+                # settled one on the only screen built to answer it — the
+                # handshake existed in the state machine and nowhere a manager
+                # could see. `_slot_confirmed` is the one reader, so a booking
+                # made before the handshake still reads as confirmed here.
+                "slot_confirmed": _slot_confirmed(r),
+                "slot_pending": state == "slot_booked" and not _slot_confirmed(r),
                 "agreed_amount": r.get("agreed_amount"),
             }
         )
@@ -17744,9 +17757,33 @@ async def campaign_roster(
     rows = await _roster_rows(campaign)
     return {
         "campaign_id": campaign_id,
+        "reference": _reference_of(campaign),
         "title": campaign.get("title"),
         "campaign_type": campaign.get("campaign_type"),
+        # **The window, which the page has always read and this has never
+        # sent.** `ManagerCampaign` builds its `campaign` object out of this
+        # payload, so `whenText` printed "Dates not set" on every personal
+        # table, and `SlotEditor` — which clamps a new slot to the campaign's
+        # own dates — was validating against `undefined`.
         "event_date": _iso(campaign.get("event_date")),
+        "start_date": _iso(campaign.get("start_date")),
+        "end_date": _iso(campaign.get("end_date")),
+        # **What the shoot is actually for.** No manager surface carried the
+        # brief or the counted deliverables at all, so the person running the
+        # day could not answer "what am I meant to be getting from this
+        # creator" without ringing somebody. Both, because the sentence is
+        # what a pre-field campaign has and the items are what everything
+        # since asks for.
+        "brief": campaign.get("brief"),
+        "deliverables": campaign.get("deliverables"),
+        "deliverable_items": _deliverable_items(campaign),
+        # The fee, and **the word for what kind of fee it is right after it** —
+        # a barter shoot keeps whatever budget it was posted with, so a rupee
+        # figure alone would read to the person running the day as money the
+        # creator is owed.
+        "budget_per_creator": campaign.get("budget_per_creator"),
+        "compensation_type": _compensation_type(campaign),
+        "execution_owner": _execution_owner(campaign),
         "venue_address": campaign.get("venue_address"),
         "venue_instructions": campaign.get("venue_instructions"),
         "on_site_contact": campaign.get("on_site_contact"),
@@ -18507,6 +18544,37 @@ async def _expire_stale_campaigns() -> None:
 _FILLED_COLLAB_STATES = [
     s for s in COLLAB_STATE_ORDER if s not in ("applied", "verified")
 ]
+
+
+async def _pending_slot_counts_for(campaign_ids: list) -> dict:
+    """Bookings on each campaign that nobody has answered yet.
+
+    The second half of the handshake is the manager's, and until this existed
+    the only thing that told them was a notification — which links to a page
+    that had no idea. A count on the card is what makes "two people are
+    waiting on you" visible before somebody rings.
+
+    `slot_booked_at` is the marker `_slot_confirmed` reads, so this counts
+    exactly what that function calls unconfirmed and leaves pre-handshake
+    bookings alone.
+    """
+    if not campaign_ids:
+        return {}
+    unique = list({cid for cid in campaign_ids})
+    rows = await db.collaborations.aggregate(
+        [
+            {
+                "$match": {
+                    "campaign_id": {"$in": unique},
+                    "state": "slot_booked",
+                    "slot_booked_at": {"$ne": None},
+                    "slot_confirmed_at": None,
+                }
+            },
+            {"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=len(unique))
+    return {r["_id"]: r["n"] for r in rows}
 
 
 async def _filled_counts_for(campaign_ids: list) -> dict:

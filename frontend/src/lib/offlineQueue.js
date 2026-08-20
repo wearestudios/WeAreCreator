@@ -112,8 +112,17 @@ export function enqueue({ key, method = "post", url, body = null, label }) {
     return summary();
 }
 
-/** Is this failure worth keeping, or is the request itself the problem? */
-function shouldRetry(error) {
+/**
+ * Is this failure worth keeping, or is the request itself the problem?
+ *
+ * **Exported, because the two ends have to agree.** A call site decides
+ * whether to enqueue and the flusher decides whether to keep replaying; if
+ * those were two copies of the rule, a caller could queue something the
+ * flusher drops on its first pass — a request that vanishes while the UI says
+ * it is waiting to sync, which is the exact failure the queue exists to
+ * prevent. One function, both ends.
+ */
+export function shouldRetry(error) {
     // No response at all: the request never landed, so nothing about it is
     // known to be wrong.
     if (error && !error.response) return true;

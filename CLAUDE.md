@@ -2275,7 +2275,71 @@ gets recorded days later.
   the manager finds out about from a phone call: no slots, unbooked places,
   fewer creators than the brief asked for, no venue address on the day. It stays
   short deliberately; a list of eleven warnings is a list nobody reads standing
-  up.
+  up. **`slots_pending` is the one exception and is raised whatever the date**:
+  everything else there becomes a problem as the shoot approaches, while a
+  creator holding a seat nobody has answered is a problem the moment they book.
+- `shared.jsx` imports the zone helper as `startOfDay as istStartOfDay`, because
+  the wrapper beside it keeps the shorter name. Without that alias the wrapper
+  was a bare `ReferenceError`, thrown by `isToday` for every campaign in the
+  list — **the manager's entire home page fell through to the route boundary on
+  every render, and shipped that way.** Every test about this file read
+  functions out of it rather than rendering the page, and an imported function
+  still resolves its own module scope, so the missing name only bit at call
+  time.
+
+### Told about work you can do
+
+The manager's screens and the manager's *jobs* drifted apart. The `/manager`
+router grew endpoints, `notify_campaign_manager` grew events, and
+`_question_staff_may_see` grew a `campaign_manager` branch, while the frontend
+kept the three tabs it started with — so the role was **paged about work it had
+no way to do**. Five routes had no caller anywhere; the notification for one of
+them deep-linked to a page that showed neither the request nor a button.
+
+`test_manager_experience.py` holds the line now: **every route on the manager
+router must have a caller in the frontend**, and every new panel must be
+rendered by a screen. The second half matters as much as the first — deleting
+`<SlotAnswer />` from the campaign page left the route-has-a-caller check green,
+because the component file still held the only `slot/confirm` call in the
+repository. A caller with no mount is as unreachable as a route with no caller.
+
+- **`SlotAnswer` is the second half of the booking handshake**, a band above
+  everything on the campaign page rather than a tab: somebody is holding a seat
+  waiting on an answer, which is not a section you go and look in. It renders
+  nothing when nothing is waiting. `_roster_rows` emits `slot_pending` so a held
+  booking is told apart from a settled one, and `_pending_slot_counts_for` puts
+  the number on the home card.
+- **`/manager/applications/:id` mounts the shared `ApplicationDetail`** — the
+  third route onto one component, not a fourth copy of the screen.
+  `get_application` had always accepted a `campaign_manager` and no URL reached
+  it, which cost them the three things the server already lets them do: review a
+  draft, answer a creator's question, and read the work notes. `slotBase` is the
+  only prop that differs (`/manager` rather than `/brand`) — the component is
+  *told* where to post, the way it is told about `entityLinks`, and still never
+  asks what role is looking. The other actions are brand-owned transitions the
+  server never offers a manager, so their buttons do not render.
+- **`BriefPanel` is a tab, because no manager surface carried the brief at
+  all.** The person running the day could see who was coming, when and where,
+  and not one word of what the creators had been asked to produce. The roster
+  payload carries `brief`, `deliverable_items` and the fee *with its
+  compensation type beside it*; the panel renders through `DeliverableList` and
+  `formatCompensation` rather than growing a fourth spelling of either.
+- **`PerformanceSheet` records what the published work did**, from the roster
+  row, and only on a collaboration that has actually delivered — before that the
+  button opens a form nobody can fill in honestly. A blank field is omitted from
+  the payload rather than sent as zero: unknown and none are different, and
+  averaging the second is how a report starts lying.
+- **All three day-of actions now survive the venue's wifi.** Check-in already
+  queued; no-show and reschedule raised a Retry toast, which is the same manager
+  in the same basement being asked to do the network's job — and a reschedule
+  that silently failed is worse than a lost check-in, because the creator has
+  been told a time nobody recorded. `shouldRetry` is exported so the call site
+  and the flusher cannot disagree about what is worth keeping.
+- The roster payload also carries `start_date`/`end_date`, which
+  `ManagerCampaign` has always read off it. Without them the header said "Dates
+  not set" on every personal table and `SlotEditor` validated a new slot against
+  `undefined` — a test now walks the page for every `roster.*` it reads and
+  fails any the endpoint does not send.
 
 ### The calendar, and checking yourself in
 

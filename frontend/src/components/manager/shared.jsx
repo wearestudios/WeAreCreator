@@ -7,7 +7,11 @@ import React from "react";
 import { Loader2, RotateCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { IST } from "@/lib/time";
+// Aliased on the way in because the wrapper below keeps the shorter name —
+// and **without this import the wrapper was a `ReferenceError`**, thrown by
+// `isToday` for every campaign in the list, which took the manager's entire
+// home page down to the route boundary on every render.
+import { IST, startOfDay as istStartOfDay } from "@/lib/time";
 
 // Minimum comfortable one-handed target. Below this you get mis-taps, and a
 // mis-tap here marks the wrong person as a no-show.
@@ -264,6 +268,25 @@ export function attentionFor(campaign, now = new Date()) {
     const today = isToday(campaign, now);
     const days = daysUntil(campaign, now);
     const soon = today || (days !== null && days >= 0 && days <= 2);
+
+    // **Raised whatever the date, and before the date-gated ones.** Everything
+    // below this is a thing that becomes a problem as the shoot approaches; a
+    // creator holding a seat nobody has answered is a problem the moment they
+    // book. It is also the only signal here that is waiting on *this manager*
+    // rather than on the world — the notification says so and then links to a
+    // page that, until the answer band existed, showed nothing.
+    const pending = campaign.slots_pending || 0;
+    if (pending > 0) {
+        out.push({
+            key: "slots-pending",
+            severity: today ? "urgent" : "warn",
+            text:
+                pending === 1
+                    ? "A booking is waiting on you"
+                    : `${pending} bookings are waiting on you`,
+        });
+    }
+
     if (!soon) return out;
 
     // Nowhere for anybody to book. On the day, this is the whole shoot.

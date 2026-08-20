@@ -316,9 +316,15 @@ def test_the_screen_sends_no_amount_when_the_server_owns_it():
     assert "agreed_amount: Number(amount)" in detail
 
 
-def test_both_routes_render_the_one_component():
+def test_all_three_routes_render_the_one_component():
+    """Three now, not two. The campaign manager was the role the server had
+    always served an application to and no route reached — so the draft they
+    review, the thread they answer and the notes they read had no address.
+    Adding a *fourth* copy of this screen is what the count is guarding
+    against; adding a third caller of the one component is the point of it."""
     app_js = (FRONTEND / "App.js").read_text()
 
-    assert app_js.count("<ApplicationDetail") == 2
+    assert app_js.count("<ApplicationDetail") == 3
     assert "/brand/applications/:id" in app_js
     assert 'path="applications/:id"' in app_js
+    assert "/manager/applications/:id" in app_js

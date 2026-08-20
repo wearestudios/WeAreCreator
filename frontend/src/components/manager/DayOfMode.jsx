@@ -17,7 +17,7 @@ import {
     UserX,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { enqueue } from "@/lib/offlineQueue";
+import { enqueue, shouldRetry } from "@/lib/offlineQueue";
 import QueueBanner from "@/components/manager/QueueBanner";
 import CheckInQr from "@/components/manager/CheckInQr";
 import { Button } from "@/components/ui/button";
@@ -119,20 +119,40 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
     const done = shown.filter((r) => r.attendance !== "expected").length;
     const total = shown.length;
 
-    // Every failure here offers Retry, because the reason is almost always a
-    // venue's wifi rather than anything wrong with what was asked, and the
-    // person holding the phone has somebody standing in front of them.
-    const run = async (row, fn, message) => {
-        setBusyId(row.collaboration_id);
+    // No-show and reschedule, **queued on a network failure exactly like a
+    // check-in**.
+    //
+    // They used to raise a Retry toast instead. That was the wrong half of a
+    // rule the check-in already got right: it is the same manager, in the same
+    // basement, on the same phone, in the same minute — and asking somebody
+    // mid-queue to notice a toast and tap it is asking them to do the
+    // network's job. A reschedule that silently failed is worse than a lost
+    // check-in, because the creator has been told a new time nobody recorded.
+    //
+    // A 4xx still drops through and says why: a refusal is the server telling
+    // us the truth about state, and replaying it can never succeed.
+    const run = async (row, { url, body = null }, message) => {
+        const id = row.collaboration_id;
+        setBusyId(id);
         try {
-            await fn();
+            await api.post(url, body);
             notifySuccess(message);
             setNoShowFor(null);
             setRescheduleFor(null);
             setOpenId(null);
             await onChanged?.();
         } catch (e) {
-            notifyError(e, { onRetry: () => run(row, fn, message) });
+            if (shouldRetry(e)) {
+                // Keyed on the action, so a second tap replaces rather than
+                // stacks — the same rule the check-in queue holds.
+                enqueue({ key: `${url}`, url, body, label: `${message} for ${row.name || "a creator"}` });
+                notifySuccess(`${message} — will sync`);
+                setNoShowFor(null);
+                setRescheduleFor(null);
+                setOpenId(null);
+            } else {
+                notifyError(e);
+            }
         } finally {
             setBusyId(null);
         }
@@ -171,9 +191,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
             // the new state, or the row would flicker back for a frame.
             drop();
         } catch (e) {
-            const status = e?.response?.status;
-            const networkish = !e?.response || status === 408 || status === 429 || status >= 500;
-            if (networkish) {
+            if (shouldRetry(e)) {
                 enqueue({
                     key: `check-in:${id}`,
                     url: `/manager/collaborations/${id}/check-in`,
@@ -402,12 +420,11 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                 onSubmit={(note) =>
                     run(
                         noShowFor,
-                        () =>
-                            api.post(
-                                `/manager/collaborations/${noShowFor.collaboration_id}/no-show`,
-                                { note },
-                            ),
-                        "Reported — the WeAre team will pick it up",
+                        {
+                            url: `/manager/collaborations/${noShowFor.collaboration_id}/no-show`,
+                            body: { note },
+                        },
+                        "Reported",
                     )
                 }
             />
@@ -420,11 +437,10 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                 onSubmit={(body) =>
                     run(
                         rescheduleFor,
-                        () =>
-                            api.post(
-                                `/manager/collaborations/${rescheduleFor.collaboration_id}/reschedule`,
-                                body,
-                            ),
+                        {
+                            url: `/manager/collaborations/${rescheduleFor.collaboration_id}/reschedule`,
+                            body,
+                        },
                         "Moved",
                     )
                 }

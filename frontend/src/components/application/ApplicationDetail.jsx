@@ -133,6 +133,18 @@ export default function ApplicationDetail({
     // the navbar and the <main> wrapper. The brand route stands on its own and
     // has to bring its own chrome, at the brand pages' width.
     standalone = false,
+    // **Where the booking handshake is answered.** `_answer_slot_request` is
+    // one implementation behind four routes — the brand's pair and the WeAre
+    // manager's — because which of them answers depends on `execution_owner`,
+    // and a booking that meant different things depending on who confirmed it
+    // would not be a confirmation. The *route* differs by caller, so the route
+    // is told rather than sniffed: this component still never asks what role
+    // is looking, which is the rule it has always held.
+    //
+    // Only the slot pair takes it. Accept, decline and the agreed amount are
+    // brand-owned transitions the server never offers a manager, so their
+    // buttons do not render for one and their paths stay `/brand`.
+    slotBase = "/brand",
 }) {
     const { id } = useParams();
     const [app, setApp] = useState(null);
@@ -435,7 +447,7 @@ export default function ApplicationDetail({
                                             "confirm-slot",
                                             () =>
                                                 api.post(
-                                                    `/brand/collaborations/${id}/slot/confirm`,
+                                                    `${slotBase}/collaborations/${id}/slot/confirm`,
                                                 ),
                                             "Slot confirmed — the creator has been told",
                                         )
@@ -638,7 +650,7 @@ export default function ApplicationDetail({
                                     "decline-slot",
                                     () =>
                                         api.post(
-                                            `/brand/collaborations/${id}/slot/decline`,
+                                            `${slotBase}/collaborations/${id}/slot/decline`,
                                             { reason: slotReason.trim() },
                                         ),
                                     "The creator has been asked to pick another time",

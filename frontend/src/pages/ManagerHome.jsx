@@ -291,6 +291,19 @@ export default function ManagerHome() {
                     <QueueBanner />
                 </div>
 
+                {/* The calendar is the same work seen by date, and it is the
+                    view somebody wants before agreeing to a Tuesday. It was in
+                    the navbar and nowhere on the page the manager actually
+                    lives on, which on a phone means behind the menu sheet. */}
+                <Link
+                    to="/calendar"
+                    data-testid={IDS.calendar}
+                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-white/10 text-sm text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                >
+                    <CalendarClock className="h-4 w-4" />
+                    Everything by date
+                </Link>
+
                 {error && (
                     <p
                         data-testid={IDS.error}
