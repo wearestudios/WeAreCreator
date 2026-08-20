@@ -25,6 +25,7 @@ import {
     ChevronsRight,
     Inbox,
     LayoutDashboard,
+    MoonStar,
     ScrollText,
     Sparkles,
     Stethoscope,
@@ -107,6 +108,9 @@ export const ADMIN_SECTIONS = [
         badge: "deletions_waiting",
         adminOnly: true,
     },
+    // Re-engagement, which is nobody's queue — it is the work that only gets
+    // done if somebody can see who to do it for.
+    { key: "dormant", to: "dormant", label: "Gone quiet", Icon: MoonStar },
     // **The standard every other section is measured against**, so somebody
     // whose queue is being measured is not the one who can move the line.
     {

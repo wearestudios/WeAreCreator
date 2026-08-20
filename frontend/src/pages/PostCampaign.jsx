@@ -23,6 +23,7 @@ import { dayKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
+import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
 import DeliverablePicker, {
     emptyDeliverables,
@@ -108,6 +109,47 @@ export default function PostCampaign() {
     const [venueInstructions, setVenueInstructions] = useState("");
     const [onSiteContact, setOnSiteContact] = useState("");
     const [submitting, setSubmitting] = useState(false);
+
+    /**
+     * Fill the form in from a saved template.
+     *
+     * **Every field except the dates**, which is what makes a template a
+     * template: the brief is the same and the day is different. Written as a
+     * table rather than a chain of ifs so a field added to the form and not
+     * here is visible as an absence rather than buried in a branch.
+     *
+     * Each setter is called only when the template actually carries the field.
+     * A template saved before a field existed must not blank it — "the
+     * template does not mention this" is a different thing from "the template
+     * says leave it empty".
+     */
+    const applyTemplate = (fields) => {
+        const apply = (key, setter, transform) => {
+            if (fields?.[key] === undefined || fields?.[key] === null) return;
+            setter(transform ? transform(fields[key]) : fields[key]);
+        };
+        apply("title", setTitle);
+        apply("brief", setBrief);
+        apply("deliverable_items", setDeliverables, (items) => ({
+            ...emptyDeliverables(),
+            ...Object.fromEntries(items.map((i) => [i.type, i.quantity])),
+        }));
+        apply("budget_per_creator", setBudget, String);
+        apply("compensation_type", setCompensationType);
+        apply("execution_owner", setExecutionOwner);
+        apply("visibility", setVisibility);
+        apply("requires_draft_approval", setRequiresDraft, Boolean);
+        apply("restricted_days", setRestrictedDays);
+        apply("shoot_windows", setShootWindows);
+        apply("category", setCategory);
+        apply("area", setArea);
+        apply("creators_needed", setCreatorsNeeded, String);
+        apply("campaign_type", setCampaignType);
+        apply("venue_address", setVenueAddress);
+        apply("venue_instructions", setVenueInstructions);
+        apply("on_site_contact", setOnSiteContact);
+        // Dates are deliberately untouched — see the note on the picker.
+    };
     const [savingDraft, setSavingDraft] = useState(false);
     const [error, setError] = useState("");
 
@@ -380,6 +422,17 @@ export default function PostCampaign() {
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Dashboard
                 </button>
+
+                {/* **Above the form, and only on a new brief.** A template
+                    picker below the fields is one somebody finds after they
+                    have filled them in, which is the one moment it is worth
+                    nothing; and offering "start from a template" on an edit
+                    would mean overwriting a live brief from a saved one. */}
+                {!isEditing && (
+                    <div className="mt-6">
+                        <CampaignTemplates onUse={applyTemplate} />
+                    </div>
+                )}
 
                 <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
                     {isEditing ? "Edit campaign" : "New campaign"}

@@ -27,6 +27,7 @@ import AdminAudit from "@/components/admin/AdminAudit";
 import AdminTeam from "@/components/admin/AdminTeam";
 import AdminDeletions from "@/components/admin/AdminDeletions";
 import SlaSettings from "@/components/admin/SlaSettings";
+import AdminDormant from "@/components/admin/AdminDormant";
 
 /**
  * The overview, with the operational panels above it.
@@ -108,6 +109,7 @@ export const TeamRoute = () => <AdminTeam />;
 /** People asking to be forgotten. Admin-only, and irreversible. */
 export const DeletionsRoute = () => <AdminDeletions />;
 export const SettingsRoute = () => <SlaSettings />;
+export const DormantRoute = () => <AdminDormant />;
 
 /**
  * The campaigns list, with "just this brand" in the URL.

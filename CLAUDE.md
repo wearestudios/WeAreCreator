@@ -1911,6 +1911,202 @@ effect of adding an export.
 campaigns we put in front of a prospect is not theirs to decide. The list filter
 uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
 
+## Doing it again
+
+A brand's second campaign was as much work as its first. Every field went back
+in by hand, including the twelve that were identical — the category, the
+neighbourhood, the venue, the deliverables, the days the kitchen is closed. A
+café running a tasting every month retyped its own brief twelve times a year,
+and the twelfth was no faster than the first.
+
+Two shapes of one idea: **duplicating** is "again, like that one", **a
+template** is "this is how we always brief". They share `_CAMPAIGN_BRIEF_FIELDS`,
+because the thing they both copy is the brief rather than the instance of it —
+**one list, three readers** (duplicate, save-as-template, apply-template), or a
+field added to the form next month is carried by one and silently dropped by
+the other.
+
+- **The dates are the point of the exercise.** A duplicate that carried them
+  would brief a day that has passed. `_CAMPAIGN_NOT_COPIED` documents the
+  intent, and the test that *enforces* it is the one asserting the two tuples
+  do not overlap — `_brief_fields_of` is an allow-list, so adding a date there
+  to "carry a bit more" is what would break the rule, and that is what fails.
+- A copy is a **draft whoever makes it**: an admin can publish directly
+  elsewhere, but a duplicate is by definition unreviewed against dates it does
+  not yet have. It gets its own reference and remembers `duplicated_from`.
+- `manager_id` is never inherited. Assignment is a staffing decision made per
+  campaign, and carrying it would quietly assign somebody to work nobody told
+  them about.
+- **Applying a template is a form prefill, not a second creation path.** The
+  campaign is made by the ordinary `POST` with the ordinary validation behind
+  it; `POST /brand/campaign-templates/{id}/used` only moves a counter. Minting
+  one here would be a second idea of what a valid brief is.
+- A field absent from a template stays absent rather than becoming `None` —
+  "the template does not mention this" is not "the template says leave it
+  empty", and the other reading would blank a field on every campaign made
+  from a template saved before it existed.
+- The picker sits **above the form and only on a new brief**: below the fields
+  it is found after they are filled in, and on an edit it would mean
+  overwriting a live brief from a saved one. It renders nothing when a brand
+  has none.
+
+## What somebody is like to work with
+
+Quality signal never accumulated. A creator who was excellent on three shoots
+and one who no-showed twice read identically on the fourth brief, because the
+difference lived in whoever ran that campaign and left with them.
+
+`_reliability_for` is one aggregation: completed, on-time rate, no-shows, late
+deliveries, cancellations, withdrawals, reschedules, average draft revisions,
+partial deliveries, and the runner's rating. **Every count is already recorded
+by something that happened** — a manager pressing no-show at a venue, a grace
+period lapsing, a booking moving. Nothing here asks anybody to score something
+they were not already doing.
+
+- **An unknown rate is `None`, never zero.** A creator with no finished
+  campaigns has an unknown on-time rate, not a 0% one, and every surface draws
+  unknown as an em dash.
+- **Only the cancellations they caused** (`cancelled_by_role == "creator"`). A
+  brand pulling out of a shoot is not a fact about the creator, and counting it
+  against them would mark somebody for being let down.
+- Revisions are averaged over the drafts that existed, not over every
+  collaboration: a campaign with no draft gate has no revisions to have, and
+  folding those in as zeroes flatters whoever worked brand-run briefs.
+
+### The band, and who gets the counts
+
+**Brands get a band and never a number.** "2 no-shows" against forty campaigns
+is a good record read as a bad one, and a brand has no denominator to hand;
+`_reliability_band` does the interpreting once, on the server, where it is
+known. It is on `_BRAND_VISIBLE_CREATOR_FIELDS` as `reliability` and carries
+`band`, `label`, `blurb` and `enough_history` — nothing to divide.
+
+- **`new` is not a low band.** A creator on their first brief has no history,
+  which is the ordinary state of everybody the platform is trying to bring in.
+  Sorting them below somebody with one late delivery would make the directory a
+  ranking of who got here first. Below `RELIABILITY_MIN_SAMPLE` (3) nobody gets
+  a verdict, because one campaign delivered on time is not "consistently
+  delivers".
+- A surface that has not fetched the history **omits the key** rather than
+  sending an empty band: "we did not look" and "they have no history" are
+  different, and only one belongs on a card.
+- Admin, `weare_team` and the campaign manager get `reliability` as the full
+  block — on the creator's own page and inline on the application, which is
+  where the accept decision is actually made.
+
+### Ratings, both ways, and ours alone
+
+`collaboration_ratings`, one per (collaboration, side). The runner rates the
+creator; the creator rates the experience. **One score and an optional
+sentence** — a form asking separately about punctuality, quality and
+communication is one people abandon on the second field.
+
+- **Private to WeAre, and that is the decision to revisit rather than quietly
+  extend.** A public average on a profile turns a considered three into a
+  reputational act, and the first creator who loses work over one stops
+  applying. It is on no brand-facing shape and no public page.
+- **Only once the collaboration closes.** A score sitting on the record while
+  the person being scored still has to be worked with is leverage rather than a
+  record.
+- **Each side sees its own and never the other's.** A runner reading the
+  creator's score before writing their own is the anchoring problem collecting
+  both exists to avoid; staff see both, because acting on the signal is the job.
+- Which side somebody is on follows `execution_owner` through
+  `_question_staff_may_see`, so a weare-run brief is rated by our manager and a
+  brand-run one by the brand — in both cases the person who was there.
+- Changeable, unlike a work note: a note records what was said, a rating is a
+  current opinion, and one that cannot be revised after the payment landed late
+  describes a moment rather than the collaboration. Every version audits.
+- **It rides in on the existing `delivery` weight**, blended with the on-time
+  rate by `_reliability_signal`. A rating and an on-time rate measure the same
+  thing at different grains; a tenth weight would mean re-tuning a table that
+  sums to 100 and silently changing what everything else is worth. 3 out of 5
+  maps to exactly `_UNKNOWN_SIGNAL`, which is the honest relationship between
+  "they were fine" and "we do not know".
+
+## People you would ask again
+
+`creator_lists` — named lists for a brand or for WeAre, and `POST
+/brand/campaigns/{id}/invite-list/{id}` to ask all of them at once.
+
+- **A brand's lists belong to the brand, not the login**, so the manager
+  leaving does not take them. WeAre's belong to `_WEARE_LIST_OWNER` rather than
+  to whoever typed them: "creators who are good at launch nights" is
+  operational knowledge, not a personal note.
+- **Inviting a list goes through `_invite_creators`**, the same function the
+  one-at-a-time route uses — the verification gate, the duplicate refusal, the
+  per-creator results and the fact that a number is read and never returned are
+  all one implementation. Ownership is checked before verification, as
+  everywhere.
+- Members come through `_brand_visible_creator` on a brand surface: a saved
+  list is not a way around the contact rule.
+
+## Moving a booking, and how many times
+
+A creator handing a slot back and taking another is the reschedule this product
+actually has: nothing called it that, nothing counted it, and a creator could
+move five times while the venue rearranged its staffing around each one.
+
+- `reschedule_count` is `$inc`'d by **both** paths — the creator's cancel and
+  the runner's move. The runner's is usually made on the creator's behalf and
+  past their own limit, so a count recording only the allowed ones would
+  understate exactly the creator it exists to describe.
+- **The cap is on the creator and the runner is the override.**
+  `reschedule_limit()` (default 2, stored in `platform_settings`, admin-only to
+  change) refuses the creator's own move past the limit with a `code` and
+  points them at whoever runs the campaign, who can still do it from the
+  manager screen. A cap on both sides would be a cap with no way through it,
+  and "no" with no next step is how somebody just stops turning up.
+- Absent reads as zero moves: nothing recorded is nothing we can hold against
+  anybody.
+
+## When some of it arrives
+
+Two of three stories delivered was neither complete nor failed. The
+collaboration could be approved — paying in full for work that did not all
+happen — or sent back forever, paying nothing for work that mostly did. Both
+were happening over WhatsApp with a figure nobody wrote down.
+
+- **Counted against the structured ask**, which is what `deliverable_items`
+  exists for. `_delivery_shortfall` returns **`None`, not an empty shortfall**,
+  on a brief with no counted ask and on a collaboration nobody counted against:
+  an empty shortfall means "all of it arrived", and saying that about a
+  campaign nobody counted is a claim we cannot support.
+- **Not a new state.** `POST /brand/collaborations/{id}/accept-partial` lands
+  on `content_approved` exactly like a full approval, because what happens next
+  — payment — is the same. A ninth state would fork a ladder that works.
+- **The amount is typed, never computed.** Two of three stories is not
+  two-thirds of the value when the reel was the point, so `pro_rata_fraction`
+  travels as a suggestion beside an empty box and the recorded figure is the
+  one somebody agreed. Same rule the withholding field holds.
+- Accepting through this route and finding everything did arrive leaves an
+  **ordinary approval** behind — `partial_delivery` is set only when something
+  is actually missing, or a runner double-checking would put a flag on
+  somebody's reliability history for nothing.
+- Over-counting is clamped rather than refused: four stories where three were
+  asked is a miscount, not 133%, and losing the runner's note over it helps
+  nobody. The note is required.
+- The shortfall renders on every surface **including the creator's own row** —
+  they are the party it is a judgement about, and finding out from a smaller
+  payment than expected is the version of this that costs somebody.
+
+## Who has gone quiet
+
+`GET /admin/dormant` — verified brands with no campaign and verified creators
+with no collaboration in `DORMANT_AFTER_DAYS` (60), with the last activity
+date. The intelligence panel already counted these and named nobody, which is
+the difference between knowing there is a problem and being able to work it.
+
+- **Two lists, because the message is different**: a brand that has not briefed
+  in two months is a sales conversation, a creator who has not worked in two
+  months is a supply one, and mixing them gives one screen two jobs.
+- **Never active sorts first, not last.** A brand we verified and never heard
+  from again got stuck somewhere and nobody found out — the strongest signal on
+  the list rather than the weakest, which is the opposite of how an unknown
+  sorts in a data column.
+- Half-finished creators are not on it: they are unfinished rather than quiet,
+  and `nudge_stale_creator_profiles` already chases them.
+
 ## The clock
 
 **Nothing in this system had one.** Every state waited indefinitely for a
@@ -2159,10 +2355,10 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Fourteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+- Fifteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
   `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`, `team`, `deletions`, `settings`) and four
-  detail routes:
+  `performance`, `health`, `audit`, `team`, `deletions`, `dormant`, `settings`)
+  and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under

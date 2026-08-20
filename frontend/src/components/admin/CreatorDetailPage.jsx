@@ -38,6 +38,8 @@ import {
 import { ConfirmDialog } from "@/components/admin/dialogs";
 import { payoutMethodLabel } from "@/lib/payout";
 import CancellationHistory from "@/components/admin/CancellationHistory";
+import { ReliabilityPanel } from "@/components/ReliabilityBadge";
+import { RELIABILITY } from "@/constants/testIds";
 import { CampaignLink, CollaborationLink } from "@/components/admin/links";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import { useAdminConsole } from "@/pages/AdminConsole";
@@ -355,6 +357,19 @@ export default function CreatorDetailPage() {
                                     </p>
                                 )}
                             </Panel>
+                        </Section>
+
+                        {/* **The whole record, because this is a staff page.**
+                            Every count came from something that happened — a
+                            manager pressing no-show at a venue, a grace period
+                            lapsing, a booking moving — so there is nothing to
+                            soften and a denominator on every one. A brand sees
+                            the band this is behind, and never these numbers. */}
+                        <Section id="reliability" title="Track record">
+                            <ReliabilityPanel
+                                stats={data.reliability}
+                                testid={RELIABILITY.panel}
+                            />
                         </Section>
 
                         <Section id="channels" title="Channels">

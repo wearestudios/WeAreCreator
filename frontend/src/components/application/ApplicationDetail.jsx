@@ -44,6 +44,10 @@ import { APPLICATION } from "@/constants/testIds";
 
 import DraftReview from "./DraftReview";
 import AgeBadge from "@/components/AgeBadge";
+import Shortfall from "@/components/Shortfall";
+import RateCollaboration from "@/components/RateCollaboration";
+import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
+import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
 import { IST } from "@/lib/time";
 
@@ -328,6 +332,34 @@ export default function ApplicationDetail({
                         )}
                     </Section>
 
+                    {/* **What they are like to work with, before deciding.**
+                        The band comes on the creator block for everybody; the
+                        counts behind it arrive only for staff, so this panel
+                        is the record on an admin's screen and the badge alone
+                        on a brand's — decided by what the server sent, never
+                        by asking what role is looking. */}
+                    <Section id="reliability" title="Track record">
+                        <ReliabilityBadge
+                            reliability={app.creator?.reliability}
+                            testid={RELIABILITY.badge(app.creator?.user_id || "x")}
+                            className="mb-4"
+                        />
+                        {app.reliability !== undefined && (
+                            <ReliabilityPanel stats={app.reliability} testid={RELIABILITY.panel} />
+                        )}
+                    </Section>
+
+                    {/* What arrived against what was asked. Renders nothing
+                        where there is nothing counted to say. */}
+                    {app.shortfall && (
+                        <Section id="shortfall" title="Delivered">
+                            <Shortfall
+                                shortfall={app.shortfall}
+                                testid={SHORTFALL.block(id)}
+                            />
+                        </Section>
+                    )}
+
                     <Section id="creator" title="Creator">
                         <div
                             data-testid={APPLICATION.creator}
@@ -597,6 +629,12 @@ export default function ApplicationDetail({
                     {/* Open by default here, unlike on a list row: this whole
                         page is about one application, so the thread is the
                         thing you came to read rather than a detail to expand. */}
+                    {/* Rating opens when the collaboration closes, and the
+                        component renders nothing until then — a score given
+                        while the work is still in flight is leverage rather
+                        than a record. */}
+                    <RateCollaboration collabId={id} />
+
                     <Section id="notes" title="Work notes">
                         <WorkNotes
                             collaborationId={id}

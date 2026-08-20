@@ -21,6 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import BrandAvatar from "@/components/BrandAvatar";
 import AgeBadge from "@/components/AgeBadge";
+import Shortfall from "@/components/Shortfall";
+import { SHORTFALL } from "@/constants/testIds";
 import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
@@ -88,6 +90,11 @@ const Row = ({ row, testid, muted, onWithdraw }) => (
                 How long they have been waiting is simply a fact, and a useful
                 one. */}
             <AgeBadge ageing={row.ageing} testid={IDS.ageing(row.id)} />
+            {/* **Said to them, and not only to the brand.** A shortfall is a
+                judgement about the creator, and finding out from a smaller
+                payment than expected is the version of this that costs
+                somebody. */}
+            <Shortfall shortfall={row.shortfall} testid={SHORTFALL.block(row.id)} />
             {onWithdraw && WITHDRAWABLE.has(row.state) && (
                 <button
                     type="button"

@@ -1284,6 +1284,97 @@ def _deliverable_items(campaign: dict) -> list:
     return _clean_deliverables((campaign or {}).get("deliverable_items"))
 
 
+# ---------------------------------------------------------------------------
+# When some of it arrives
+#
+# Two of three stories delivered was neither complete nor failed. The
+# collaboration could be approved — which pays in full for work that did not
+# all happen — or sent back forever, which pays nothing for work that mostly
+# did. Both are wrong, and both were happening over WhatsApp with a number
+# somebody agreed verbally and nobody wrote down.
+#
+# **Counted against the structured ask**, which is the whole reason
+# `deliverable_items` exists: "1 reel + 3 stories" is countable and "a reel and
+# a few stories" is not, so a brief written before that field has no shortfall
+# to compute and says so rather than guessing one.
+# ---------------------------------------------------------------------------
+
+
+def _delivered_counts(collab: Optional[dict]) -> dict:
+    """`{type: n}` of what has actually landed and been accepted.
+
+    Absent is `{}`, which means "nothing recorded" rather than "nothing
+    delivered" — the difference matters on every collaboration that finished
+    before this existed, and `_delivery_shortfall` reads it as unknown.
+    """
+    raw = (collab or {}).get("delivered_items") or {}
+    out = {}
+    for key, value in raw.items():
+        if key not in DELIVERABLE_TYPES:
+            continue
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            continue
+        if n > 0:
+            out[key] = n
+    return out
+
+
+def _delivery_shortfall(campaign: Optional[dict], collab: Optional[dict]) -> Optional[dict]:
+    """What was asked for against what arrived, or `None` when unanswerable.
+
+    `None` — not an empty shortfall — when the brief has no structured ask or
+    nothing was ever recorded against it. An empty shortfall means "all of it
+    arrived", and saying that about a campaign nobody counted would be a claim
+    we cannot support.
+    """
+    asked = _deliverable_items(campaign)
+    if not asked:
+        return None
+    got = _delivered_counts(collab)
+    if not got and not (collab or {}).get("partial_delivery"):
+        return None
+
+    missing = []
+    asked_total = 0
+    got_total = 0
+    for item in asked:
+        wanted = int(item["quantity"])
+        landed = min(wanted, int(got.get(item["type"], 0)))
+        asked_total += wanted
+        got_total += landed
+        if landed < wanted:
+            missing.append(
+                {
+                    "type": item["type"],
+                    "label": DELIVERABLE_TYPES[item["type"]],
+                    "asked": wanted,
+                    "delivered": landed,
+                    "short": wanted - landed,
+                }
+            )
+    return {
+        "asked_total": asked_total,
+        "delivered_total": got_total,
+        "complete": not missing,
+        "missing": missing,
+        # The sentence, built once here so the CSV, the report and the screen
+        # cannot phrase the same shortfall three ways.
+        "summary": (
+            "Everything asked for"
+            if not missing
+            else " · ".join(f"{m['short']} {m['label'].lower()} short" for m in missing)
+        ),
+        # What a proportionate fee *would* be, as a suggestion and nothing
+        # more. The runner types the number: two of three stories is not
+        # two-thirds of the value when the reel was the point, and a formula
+        # that decided it would be confidently wrong on exactly the
+        # collaborations somebody is arguing about.
+        "pro_rata_fraction": round(got_total / asked_total, 3) if asked_total else None,
+    }
+
+
 def _resolve_deliverables(items, text: Optional[str], required: bool) -> dict:
     """What to write for a brief's ask. **Both write paths go through this**,
     so the structure and the sentence cannot drift apart.
@@ -6075,6 +6166,10 @@ def _serialize_collab_row(
         # about it reaches them through the process flow's next action and,
         # when it is theirs to move, through a WhatsApp reminder.
         "ageing": _ageing(collab),
+        # **Said to the creator too, and first.** They are the party a
+        # shortfall is a judgement about, and finding out from a smaller
+        # payment than expected is the version of this that costs a creator.
+        "shortfall": _delivery_shortfall(campaign, collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
         "campaign_id": str(collab["campaign_id"]),
@@ -7120,6 +7215,28 @@ async def creator_cancel_slot(
             ),
         )
 
+    # **The cap, and the way through it.** A venue rearranges its staffing
+    # around a booking, so the third move is a different kind of ask from the
+    # first. The refusal names the number and points at the person who can
+    # still do it, because "no" with no next step is how somebody just stops
+    # turning up instead.
+    limit = await reschedule_limit()
+    moved = _reschedule_count(collab)
+    if moved >= limit:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    f"You've already moved this booking {moved} "
+                    f"time{'' if moved == 1 else 's'}. Message whoever runs the "
+                    "campaign and they can move it for you."
+                ),
+                "code": "reschedule_limit",
+                "limit": limit,
+                "moved": moved,
+            },
+        )
+
     slot_oid = collab["slot_id"]
     # The collaboration moves first. If the seat were released first and this
     # write then lost a race, the place would be on sale while the creator
@@ -7132,6 +7249,10 @@ async def creator_cancel_slot(
                 "slot_cancelled_at": now,
                 "slot_cancel_reason": (payload.reason or "").strip() or None,
             },
+            # Counted here rather than on the re-book, because this is the move
+            # the creator decided to make — whether they book again tonight or
+            # next week does not change that the venue lost a booking.
+            "$inc": {"reschedule_count": 1},
             "$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""},
         },
         return_document=True,
@@ -7226,6 +7347,53 @@ INVITATION_OPEN_STATES = ("sent", "send_failed")
 # indefinitely, and the board's count of who is still deciding is a count of
 # people who decided nothing months ago.
 INVITATION_RESPONSE_DAYS = 7
+
+
+# ---------------------------------------------------------------------------
+# Moving a booking, and how many times
+#
+# A creator handing a slot back and taking another is the reschedule this
+# product actually has: nothing called it that, nothing counted it, and a
+# creator could move five times while the venue rearranged its staffing around
+# each one. The venue finds out from the fifth message, not the first.
+#
+# **The cap is on the creator's own move, and the runner is the override.**
+# Past the limit the creator is refused and pointed at whoever runs the
+# campaign, who can still reschedule them from the manager screen — which is
+# what "requiring campaign-runner approval beyond that" means when the runner
+# already has a reschedule button. A cap on both sides would be a cap with no
+# way through it.
+RESCHEDULE_LIMIT_DEFAULT = 2
+_RESCHEDULE_SETTINGS_ID = "reschedule_limit"
+RESCHEDULE_LIMIT_MAX = 20
+
+
+async def reschedule_limit() -> int:
+    """How many times a creator may move their own booking.
+
+    Stored rather than constant, for the reason the SLA targets are: how much
+    slack the operation has depends on the operation, and a number that needs
+    a deploy to change is one that never changes. Never raises — a settings
+    read that fails falls back to the default rather than taking down a
+    booking screen.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _RESCHEDULE_SETTINGS_ID})
+    except Exception as exc:
+        logger.error("could not read the reschedule limit: %s", exc)
+        return RESCHEDULE_LIMIT_DEFAULT
+    try:
+        value = int((doc or {}).get("limit"))
+    except (TypeError, ValueError):
+        return RESCHEDULE_LIMIT_DEFAULT
+    return value if 0 <= value <= RESCHEDULE_LIMIT_MAX else RESCHEDULE_LIMIT_DEFAULT
+
+
+def _reschedule_count(collab: Optional[dict]) -> int:
+    """How many times this booking has moved. **Absent is zero**, which is the
+    honest reading for a collaboration written before the counter existed:
+    nothing recorded is nothing we can hold against anybody."""
+    return int((collab or {}).get("reschedule_count") or 0)
 
 
 def _invitation_state(doc: dict) -> str:
@@ -8328,6 +8496,181 @@ async def _applicant_counts_for(campaign_ids: list) -> dict:
     return {c["_id"]: c["n"] for c in counts}
 
 
+class TemplateNamePayload(BaseModel):
+    """What a template is called, which is the only thing a brand types."""
+
+    name: str = Field(min_length=1, max_length=80)
+
+
+class DuplicatePayload(BaseModel):
+    """An optional new title. Absent keeps the original's, which is the right
+    default for "the September one, again" — the brand renames it or does not."""
+
+    title: Optional[str] = Field(default=None, max_length=140)
+
+
+def _serialize_template(row: dict) -> dict:
+    """A template as the picker reads it.
+
+    Carries enough to recognise which one this is without opening it — the
+    deliverables and the fee are what tell two tasting briefs apart — and the
+    whole brief block, so applying one is a client-side prefill rather than a
+    second round trip.
+    """
+    brief = _brief_fields_of(row)
+    return {
+        "id": str(row["_id"]),
+        "name": row.get("name"),
+        "title": brief.get("title"),
+        "category": brief.get("category"),
+        "area": brief.get("area"),
+        "budget_per_creator": brief.get("budget_per_creator"),
+        # Never a fee without the word beside it, on any surface.
+        "compensation_type": _compensation_type(row),
+        "deliverables": brief.get("deliverables"),
+        "deliverable_items": _deliverable_items(row),
+        "creators_needed": brief.get("creators_needed"),
+        "campaign_type": brief.get("campaign_type"),
+        "used_count": int(row.get("used_count") or 0),
+        "last_used_at": _iso(row.get("last_used_at")),
+        "created_at": _iso(row.get("created_at")),
+        # The whole block, for the form to fill itself in from.
+        "brief_fields": _jsonable(brief),
+    }
+
+
+async def _templates_for_brand(brand_oid) -> list:
+    """A brand's own templates, most recently useful first.
+
+    Ordered by last use rather than by creation: the one they reached for a
+    fortnight ago is the one they are most likely to want, and a picker that
+    puts a template somebody made once and abandoned at the top is a picker
+    they scroll past.
+    """
+    rows = (
+        await db.campaign_templates.find({"brand_id": brand_oid})
+        .sort([("last_used_at", -1), ("created_at", -1)])
+        .to_list(length=100)
+    )
+    return [_serialize_template(r) for r in rows]
+
+
+@brand_router.get("/campaign-templates")
+async def list_brand_templates(user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """**Declared before `/campaigns/{id}` shaped siblings**, and on its own
+    path rather than under `/campaigns`, so "templates" can never be read as a
+    campaign id."""
+    return {"templates": await _templates_for_brand(_brand_scope(user))}
+
+
+@brand_router.post("/campaigns/{campaign_id}/save-as-template")
+async def save_campaign_as_template(
+    campaign_id: str,
+    payload: TemplateNamePayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """Keep this brief's shape under a name.
+
+    Any campaign of theirs, at any status — **including a draft**. The most
+    likely moment somebody realises "we always brief it like this" is while
+    writing one, not months after it finished.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    now = datetime.now(timezone.utc)
+    doc = {
+        **_brief_fields_of(campaign),
+        "brand_id": campaign["brand_id"],
+        "name": payload.name.strip(),
+        "created_at": now,
+        "created_by": ObjectId(user["_id"]) if user.get("_id") else None,
+        "source_campaign_id": campaign["_id"],
+        "used_count": 0,
+    }
+    result = await db.campaign_templates.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit(
+        user,
+        "campaign_template.create",
+        "campaign_template",
+        result.inserted_id,
+        after={"name": doc["name"], "from_campaign": str(campaign["_id"])},
+        brand_id=campaign["brand_id"],
+        campaign_id=campaign["_id"],
+    )
+    return _serialize_template(doc)
+
+
+@brand_router.post("/campaign-templates/{template_id}/used")
+async def mark_template_used(
+    template_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """Record that a brief was started from this one.
+
+    **A counter, not a campaign.** Applying a template is a form prefill —
+    creating the campaign is the ordinary POST, with the ordinary validation
+    behind it. Minting the campaign here instead would be a second creation
+    path with its own idea of what a valid brief is, and the two would drift.
+    """
+    try:
+        oid = ObjectId(template_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Template not found")
+    row = await db.campaign_templates.find_one_and_update(
+        {"_id": oid, "brand_id": _brand_scope(user)},
+        {"$inc": {"used_count": 1}, "$set": {"last_used_at": datetime.now(timezone.utc)}},
+        return_document=True,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return _serialize_template(row)
+
+
+@brand_router.delete("/campaign-templates/{template_id}")
+async def delete_brand_template(
+    template_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """Templates accumulate, and a picker full of dead ones is a picker nobody
+    reads. Campaigns already made from it are untouched — a template is a
+    starting point, not a parent."""
+    try:
+        oid = ObjectId(template_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Template not found")
+    row = await db.campaign_templates.find_one_and_delete(
+        {"_id": oid, "brand_id": _brand_scope(user)}
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+    await audit(
+        user,
+        "campaign_template.delete",
+        "campaign_template",
+        oid,
+        before={"name": row.get("name")},
+        brand_id=row.get("brand_id"),
+    )
+    return {"ok": True}
+
+
+@brand_router.post("/campaigns/{campaign_id}/duplicate")
+async def duplicate_brand_campaign(
+    campaign_id: str,
+    payload: DuplicatePayload | None = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES)),
+):
+    """"That one again, on a different day."
+
+    Deliberately **not** behind `_verified_brand_or_403`: the copy is a draft
+    and a draft reaches nobody. Publish already has the gate, which is where it
+    belongs — the same reasoning as the cover image upload.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    doc = await _duplicate_campaign(campaign, user, title=(payload.title if payload else None))
+    return _serialize_brand_campaign(doc, 0)
+
+
 @brand_router.get("/campaigns")
 async def list_brand_campaigns(
     execution_owner: Optional[str] = None,
@@ -8765,6 +9108,11 @@ _BRAND_VISIBLE_CREATOR_FIELDS = (
     "platforms",
     "base_rate",
     "verification_status",
+    # **A band and a sentence, never the counts behind them.** See
+    # `_reliability_band`: the interpreting happens on the server, where the
+    # denominator is known, because a brand reading "2 no-shows" has no way to
+    # tell forty campaigns from three.
+    "reliability",
 )
 
 # The fields that must never appear in a brand-scoped response, under any key
@@ -8795,12 +9143,22 @@ BRAND_FORBIDDEN_CREATOR_FIELDS = (
 )
 
 
-def _brand_visible_creator(profile: Optional[dict], account: Optional[dict] = None) -> dict:
+def _brand_visible_creator(
+    profile: Optional[dict],
+    account: Optional[dict] = None,
+    reliability: Optional[dict] = None,
+) -> dict:
     """A creator as a brand is allowed to see them.
 
     One function behind every brand surface — the directory, the applicant
     board, the suggestions panel — so "what a brand can see about a creator" is
     a single answer that can be read, tested and changed in one place.
+
+    `reliability` is the **band only, never the counts**. "2 no-shows" against
+    forty campaigns is a good record read as a bad one, and a brand has no
+    denominator to hand; the band does the interpreting once, here, where the
+    denominator is known. Omitted entirely when not passed, so a surface that
+    has not fetched the history says nothing rather than implying none exists.
     """
     profile = profile or {}
     account = account or {}
@@ -8834,6 +9192,8 @@ def _brand_visible_creator(profile: Optional[dict], account: Optional[dict] = No
         "base_rate": profile.get("base_rate"),
         "verification_status": profile.get("verification_status"),
     }
+    if reliability is not None:
+        row["reliability"] = _reliability_band(reliability)
     # Belt and braces: the allow-list is the contract, so anything that drifts
     # into the dict above without being declared there does not go out.
     return {k: v for k, v in row.items() if k in _BRAND_VISIBLE_CREATOR_FIELDS}
@@ -8846,6 +9206,7 @@ def _serialize_applicant(
     payment: Optional[dict],
     campaign: Optional[dict] = None,
     targets: Optional[dict] = None,
+    reliability: Optional[dict] = None,
 ) -> dict:
     """An applicant as the brand sees them.
 
@@ -8868,6 +9229,10 @@ def _serialize_applicant(
         # to the arrangement rather than a party to our operating targets, so
         # their row carries the age alone.
         "ageing": _collab_ageing(collab, targets),
+        # What arrived against what was asked, on both boards — the brand's
+        # and the admin's — because "approved" on a row that was two stories
+        # short is the same word for two different outcomes.
+        "shortfall": _delivery_shortfall(campaign, collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -8885,7 +9250,13 @@ def _serialize_applicant(
         "can_accept": state == "verified",
         "can_decline": state in ("applied", "verified", "accepted"),
         "can_review_content": state == "content_submitted",
-        "creator": _brand_visible_creator(profile, creator_user),
+        # **Only where the brief counted what it asked for.** A campaign
+        # written before `deliverable_items` has a sentence and no structure,
+        # so there is nothing to be short of and the route refuses it — the
+        # button is absent rather than present and 409ing.
+        "can_accept_partial": state == "content_submitted"
+        and bool(_deliverable_items(campaign)),
+        "creator": _brand_visible_creator(profile, creator_user, reliability=reliability),
         "payment": (
             {
                 "state": payment.get("state"),
@@ -8945,6 +9316,8 @@ async def list_campaign_applicants(
         payments_by_collab = {p["collaboration_id"]: p for p in payments}
 
     targets = await sla_targets()
+    # One aggregation for the whole board rather than one per applicant.
+    reliability = await _reliability_for([c["creator_id"] for c in collabs])
     rows = [
         _serialize_applicant(
             c,
@@ -8953,6 +9326,7 @@ async def list_campaign_applicants(
             payments_by_collab.get(c["_id"]),
             campaign,
             targets,
+            reliability.get(c["creator_id"]),
         )
         for c in collabs
     ]
@@ -9316,6 +9690,136 @@ async def brand_approve_content(
         link="/dashboard",
     )
     return {"id": collab_id, "state": "content_approved"}
+
+
+class PartialDeliveryPayload(BaseModel):
+    """What arrived, and what we are paying for it.
+
+    `delivered` is `{type: n}` — the runner counts what is actually up, which
+    is a thing they can see. `agreed_amount` is **required and typed, never
+    computed**: two of three stories is not two-thirds of the value when the
+    reel was the point, and a formula would be confidently wrong on exactly the
+    collaborations somebody is arguing about. The response carries a pro-rata
+    suggestion beside the box; the number recorded is the one somebody agreed.
+    """
+
+    delivered: dict[str, int] = Field(default_factory=dict)
+    agreed_amount: Optional[float] = Field(default=None, ge=0)
+    note: str = Field(min_length=1, max_length=1000)
+
+
+@brand_router.post("/collaborations/{collab_id}/accept-partial")
+async def accept_partial_delivery(
+    collab_id: str,
+    payload: PartialDeliveryPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """Accept less than the brief asked for, on purpose and on the record.
+
+    **Not a new state.** It lands on `content_approved` exactly like a full
+    approval, because what happens next — payment — is the same. What changes
+    is that the record says how much arrived and what was agreed for it, so the
+    report, the payout and the creator's history all describe the same event.
+    Drawing a ninth state would put a fork in a ladder that already works.
+
+    The note is required. "Accepted partial" with no reason is a decision
+    somebody has to reconstruct from a payment figure a year later.
+    """
+    collab, campaign = await _brand_collab_or_404(collab_id, user)
+    await _verified_brand_or_403(user)
+    if collab.get("state") != "content_submitted":
+        raise HTTPException(
+            status_code=409, detail="There's no content waiting for review here."
+        )
+
+    asked = _deliverable_items(campaign)
+    if not asked:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "This brief has no counted deliverables, so there is nothing "
+                    "to be short of. Approve it or ask for changes."
+                ),
+                "code": "no_structured_ask",
+            },
+        )
+
+    delivered = {}
+    wanted = {i["type"]: int(i["quantity"]) for i in asked}
+    for key, value in (payload.delivered or {}).items():
+        if key not in wanted:
+            continue
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            continue
+        # Clamped rather than refused: a runner typing 4 where 3 were asked has
+        # miscounted, and losing their note over it helps nobody.
+        delivered[key] = max(0, min(wanted[key], n))
+
+    now = datetime.now(timezone.utc)
+    shortfall = _delivery_shortfall(campaign, {"delivered_items": delivered, "partial_delivery": True})
+    # The fee, through the same resolver every other fee goes through, so a
+    # barter brief still records no amount rather than a zero.
+    amount = _resolve_agreed_amount(campaign, payload.agreed_amount)
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "content_submitted"},
+        {
+            "$set": {
+                **_state_stamp("content_approved", now),
+                "revision_note": None,
+                "delivered_items": delivered,
+                # **Only when something is actually missing.** A runner using
+                # this dialog and then finding everything did arrive should
+                # leave an ordinary approval behind, not a record flagged as
+                # partial on somebody's reliability history.
+                "partial_delivery": bool(shortfall and not shortfall["complete"]),
+                "partial_note": payload.note.strip(),
+                "partial_shortfall": (shortfall or {}).get("missing") or [],
+                **({"agreed_amount": amount} if amount is not None else {}),
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "collaboration.accept_partial",
+        "collaboration",
+        collab["_id"],
+        before={"state": "content_submitted", "agreed_amount": collab.get("agreed_amount")},
+        after={
+            "state": "content_approved",
+            "delivered_items": delivered,
+            "agreed_amount": amount,
+            "shortfall": (shortfall or {}).get("summary"),
+        },
+        note=payload.note.strip()[:500],
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "content_approved",
+        title="Content approved",
+        body=(
+            f"{campaign.get('title')} — accepted with "
+            f"{(shortfall or {}).get('summary', 'a change to the ask')}. "
+            + (f"Agreed at ₹{amount:,.0f}. " if amount is not None else "")
+            + "Payment is next."
+        ),
+        link="/dashboard",
+    )
+    return {
+        "id": collab_id,
+        "state": "content_approved",
+        "partial_delivery": bool(shortfall and not shortfall["complete"]),
+        "shortfall": shortfall,
+        "agreed_amount": amount,
+    }
 
 
 @brand_router.post("/collaborations/{collab_id}/request_changes")
@@ -9731,7 +10235,13 @@ def score_creator_for_campaign(
 
     completed = int((delivery or {}).get("completed") or 0)
     on_time = int((delivery or {}).get("on_time") or 0)
-    reliability = (on_time / completed) if completed else None
+    # A pre-blended signal when the caller worked one out — it folds in the
+    # ratings a runner left, which measure the same thing at a finer grain.
+    # Falling back to the raw rate keeps this function usable, and testable,
+    # with nothing but a count of deliveries.
+    reliability = (delivery or {}).get("signal")
+    if reliability is None:
+        reliability = (on_time / completed) if completed else None
 
     components = {
         "niche": round(w["niche"] * (1.0 if niches else 0.0), 1),
@@ -9813,6 +10323,199 @@ def score_creator_for_campaign(
         "wanted_tier_stated": tier_stated,
         "wanted_content_types": wanted_content,
     }
+
+
+# ---------------------------------------------------------------------------
+# What somebody is actually like to work with
+#
+# Quality signal never accumulated. A creator who was excellent on three shoots
+# and one who no-showed twice read identically on the fourth brief — the
+# difference lived in whoever ran that campaign and left with them.
+#
+# Seven counts and a rating, from one aggregation. Every one of them is
+# **already recorded** by something that happened: a no-show is a manager
+# pressing a button at a venue, a late delivery is the grace period lapsing, a
+# reschedule is a booking moving. Nothing here asks anybody to score anything
+# they were not already doing.
+# ---------------------------------------------------------------------------
+
+# Below this many finished collaborations, a rate is a coincidence rather than
+# a pattern. Three campaigns is where "two of three" stops being noise — and
+# the rate is still shown, with `enough_history` false beside it, because
+# hiding it entirely reads as "we have nothing" when we have something.
+RELIABILITY_MIN_SAMPLE = 3
+
+# What a brand is told, and the boundaries between them.
+#
+# **Bands, never counts.** "2 no-shows" against a creator with forty campaigns
+# is a good record read as a bad one, and a brand has no denominator to hand.
+# The bands do the interpreting once, here, where the denominator is known.
+#
+# **`new` is not a low band.** A creator on their first brief has no history,
+# which is the ordinary state of everybody the platform is trying to bring in;
+# sorting them below somebody with one late delivery would make the directory
+# a ranking of who got here first.
+RELIABILITY_BANDS = (
+    ("strong", 0.95, "Consistently delivers", "Turns up and posts on time, every time so far."),
+    ("steady", 0.80, "Reliable", "Turns up and posts on time on nearly every campaign."),
+    ("mixed", 0.0, "Some missed commitments", "Has missed or been late on some campaigns."),
+)
+_RELIABILITY_NEW = (
+    "new",
+    "New here",
+    "Not enough campaigns with us yet to say — which is true of most people at the start.",
+)
+
+
+def _reliability_band(stats: Optional[dict]) -> dict:
+    """The brand-facing verdict: a word, a sentence, and nothing to misread."""
+    completed = int((stats or {}).get("completed") or 0)
+    rate = (stats or {}).get("on_time_rate")
+    if completed < RELIABILITY_MIN_SAMPLE or rate is None:
+        key, label, blurb = _RELIABILITY_NEW
+        return {"band": key, "label": label, "blurb": blurb, "enough_history": False}
+    for key, floor, label, blurb in RELIABILITY_BANDS:
+        if rate >= floor:
+            return {"band": key, "label": label, "blurb": blurb, "enough_history": True}
+    key, label, blurb = _RELIABILITY_NEW
+    return {"band": key, "label": label, "blurb": blurb, "enough_history": False}
+
+
+async def _reliability_for(creator_ids: list) -> dict:
+    """Every signal we hold about how each creator works, in one round trip.
+
+    Returns `{creator_oid: {...}}`, absent for anybody with no collaborations
+    at all — absent being different from all-zeroes, which would read as a
+    perfect record on somebody who has never worked here.
+    """
+    ids = [i for i in (creator_ids or []) if i is not None]
+    if not ids:
+        return {}
+
+    def _count_when(condition):
+        return {"$sum": {"$cond": [condition, 1, 0]}}
+
+    finished = {"$in": ["$state", list(DELIVERED_COLLAB_STATES)]}
+    rows = await db.collaborations.aggregate(
+        [
+            {"$match": {"creator_id": {"$in": ids}}},
+            {
+                "$group": {
+                    "_id": "$creator_id",
+                    "total": {"$sum": 1},
+                    "completed": _count_when(
+                        {"$in": ["$state", ["content_approved", "in_payment", "closed"]]}
+                    ),
+                    # On time means delivered with neither a no-show nor the
+                    # grace period lapsed against it — the same definition
+                    # `_delivery_history` uses, because two answers to "did
+                    # they deliver" is how a directory and a profile disagree.
+                    "on_time": _count_when(
+                        {
+                            "$and": [
+                                {"$in": ["$state", ["content_approved", "in_payment", "closed"]]},
+                                {"$ne": ["$no_show_reported", True]},
+                                {"$ne": ["$content_overdue", True]},
+                            ]
+                        }
+                    ),
+                    "no_shows": _count_when({"$eq": ["$no_show_reported", True]}),
+                    "late_deliveries": _count_when({"$eq": ["$content_overdue", True]}),
+                    # **Only the ones they caused.** A brand pulling out of a
+                    # shoot is not a fact about the creator, and counting it
+                    # against them would put a mark on somebody for being let
+                    # down.
+                    "cancellations": _count_when(
+                        {
+                            "$and": [
+                                {"$eq": ["$state", "cancelled"]},
+                                {"$eq": ["$cancelled_by_role", "creator"]},
+                            ]
+                        }
+                    ),
+                    "withdrawals": _count_when({"$eq": ["$state", "withdrawn"]}),
+                    "reschedules": {"$sum": {"$ifNull": ["$reschedule_count", 0]}},
+                    # Revisions are averaged over the drafts that existed, not
+                    # over every collaboration — a campaign with no draft gate
+                    # has no revisions to have, and folding those in as zeroes
+                    # would flatter whoever happened to work brand-run briefs.
+                    "revision_total": {"$sum": {"$ifNull": ["$draft_revision_count", 0]}},
+                    "drafts": _count_when({"$gt": [{"$ifNull": ["$draft_revision_count", None]}, None]}),
+                    "partial_deliveries": _count_when({"$eq": ["$partial_delivery", True]}),
+                    "last_active_at": {"$max": "$updated_at"},
+                    "delivered": _count_when(finished),
+                }
+            },
+        ]
+    ).to_list(length=len(ids))
+
+    ratings = {
+        r["_id"]: r
+        for r in await db.collaboration_ratings.aggregate(
+            [
+                {"$match": {"creator_id": {"$in": ids}, "side": "runner"}},
+                {"$group": {"_id": "$creator_id", "n": {"$sum": 1}, "avg": {"$avg": "$score"}}},
+            ]
+        ).to_list(length=len(ids))
+    }
+
+    out = {}
+    for row in rows:
+        completed = int(row.get("completed") or 0)
+        on_time = int(row.get("on_time") or 0)
+        drafts = int(row.get("drafts") or 0)
+        rating = ratings.get(row["_id"]) or {}
+        out[row["_id"]] = {
+            "total": int(row.get("total") or 0),
+            "completed": completed,
+            "on_time": on_time,
+            # **`None`, never zero, with nothing to divide.** A creator with no
+            # finished campaigns has an unknown rate, not a 0% one, and every
+            # surface draws unknown as an em dash rather than as a failure.
+            "on_time_rate": round(on_time / completed, 3) if completed else None,
+            "no_shows": int(row.get("no_shows") or 0),
+            "late_deliveries": int(row.get("late_deliveries") or 0),
+            "cancellations": int(row.get("cancellations") or 0),
+            "withdrawals": int(row.get("withdrawals") or 0),
+            "reschedules": int(row.get("reschedules") or 0),
+            "partial_deliveries": int(row.get("partial_deliveries") or 0),
+            "avg_revisions": (
+                round(float(row.get("revision_total") or 0) / drafts, 2) if drafts else None
+            ),
+            "drafts_reviewed": drafts,
+            "rating_avg": round(float(rating["avg"]), 2) if rating.get("avg") is not None else None,
+            "rating_count": int(rating.get("n") or 0),
+            "enough_history": completed >= RELIABILITY_MIN_SAMPLE,
+            "last_active_at": _iso(row.get("last_active_at")),
+        }
+    return out
+
+
+def _reliability_signal(stats: Optional[dict]) -> Optional[float]:
+    """The 0–1 number the suggestion scorer uses for its `delivery` weight.
+
+    **Folded into the existing weight rather than given a new one.** A rating
+    and an on-time rate measure the same thing — how this went last time — at
+    different grains, and adding a separate weight would mean re-tuning a table
+    that sums to 100 and silently changing what every other signal is worth.
+
+    Each half is used only when it exists, and `None` when neither does, which
+    the scorer already reads as unknown-scores-at-the-midpoint. A creator's
+    first campaign must stay rankable.
+    """
+    if not stats:
+        return None
+    parts = []
+    if stats.get("on_time_rate") is not None:
+        parts.append(float(stats["on_time_rate"]))
+    if stats.get("rating_avg") is not None:
+        # 1–5 onto 0–1, so a 3 sits at the midpoint exactly where an unknown
+        # would — a middling rating and no rating rank the same, which is the
+        # honest relationship between them.
+        parts.append((float(stats["rating_avg"]) - RATING_MIN) / (RATING_MAX - RATING_MIN))
+    if not parts:
+        return None
+    return round(sum(parts) / len(parts), 3)
 
 
 async def _delivery_history(creator_ids: list) -> dict:
@@ -9917,7 +10620,20 @@ async def _suggest_creators_for_campaign(
         query["user_id"] = {"$nin": list(excluded)}
 
     profiles = await db.creator_profiles.find(query).to_list(length=500)
-    history = await _delivery_history([p["user_id"] for p in profiles])
+    # **Ratings ride in on the existing `delivery` weight**, blended with the
+    # on-time rate by `_reliability_signal`. Both measure how the last one
+    # went; a separate weight would mean re-tuning a table that sums to 100 and
+    # silently changing what every other signal is worth.
+    reliability = await _reliability_for([p["user_id"] for p in profiles])
+    history = {
+        uid: {
+            **(stats or {}),
+            # The scorer reads `completed`/`on_time`; the signal below is what
+            # it actually scores on when a rating exists.
+            "signal": _reliability_signal(stats),
+        }
+        for uid, stats in reliability.items()
+    }
     # What this brand told us it is looking for, once for the whole page. A
     # standing preference beats re-deriving it from each brief's budget.
     brand = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
@@ -9929,7 +10645,9 @@ async def _suggest_creators_for_campaign(
         )
         scored.append(
             {
-                **_brand_visible_creator(profile),
+                **_brand_visible_creator(
+                    profile, reliability=reliability.get(profile["user_id"])
+                ),
                 "match_score": result["score"],
                 "match_reason": result["reason"],
                 "match_components": result["components"],
@@ -10045,6 +10763,260 @@ async def brand_resume_campaign(
     """Put it back on the feed, in whatever state it was paused from."""
     campaign = await _own_campaign_or_404(campaign_id, user)
     return await _resume_campaign(campaign, (payload.reason if payload else None), user)
+
+
+# ---------------------------------------------------------------------------
+# People you would ask again
+#
+# A brand that found four good creators for its launch had no way to keep them
+# together. Next launch, it searched the directory again from nothing and hoped
+# it recognised the handles — which meant the knowledge built by running a
+# campaign evaporated the moment it finished.
+#
+# **Scoped like everything else brand-facing.** A brand's lists belong to the
+# brand, not to the login, so the manager leaving does not take them; WeAre's
+# belong to WeAre rather than to whoever typed them, because "creators who are
+# good at launch nights" is operational knowledge and not a personal note.
+# ---------------------------------------------------------------------------
+
+# The owner of a WeAre-side list. A single sentinel rather than a user id, so a
+# team member's lists are the team's and survive them moving on.
+_WEARE_LIST_OWNER = "weare"
+
+MAX_LIST_MEMBERS = 200
+
+
+class CreatorListPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    creator_ids: list[str] = Field(default_factory=list)
+
+
+class CreatorListMembersPayload(BaseModel):
+    """Add or remove in one call, because the UI does both in one drag."""
+
+    add: list[str] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list)
+
+
+def _list_owner_for(user: dict):
+    """Whose lists this caller reads and writes.
+
+    A brand's own brand; WeAre's shared pool for staff. Two owners rather than
+    one per user for the reason in the header — and a `weare_team` member sees
+    the WeAre pool rather than the brands they are assigned to, because a list
+    is a note about creators and creators are not scoped by brand.
+    """
+    if is_brand_side(user):
+        return _brand_scope(user)
+    return _WEARE_LIST_OWNER
+
+
+async def _serialize_creator_list(row: dict, *, brand_side: bool) -> dict:
+    """A list, with its members through the brand allow-list when a brand asks.
+
+    The members are hydrated rather than returned as ids: a list of ObjectIds
+    is a list nobody can read, and the caller would immediately fetch them
+    anyway. Brand-side goes through `_brand_visible_creator` like every other
+    brand surface — a saved list is not a way around the contact rule.
+    """
+    ids = [i for i in (row.get("creator_ids") or []) if i is not None]
+    profiles = (
+        await db.creator_profiles.find({"user_id": {"$in": ids}}).to_list(length=len(ids))
+        if ids
+        else []
+    )
+    by_uid = {p["user_id"]: p for p in profiles}
+    accounts = (
+        await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids)) if ids else []
+    )
+    by_id = {a["_id"]: a for a in accounts}
+    reliability = await _reliability_for(ids)
+
+    members = []
+    for oid in ids:
+        profile = by_uid.get(oid)
+        account = by_id.get(oid)
+        if not profile and not account:
+            # Erased, or never existed. Dropped rather than rendered as a blank
+            # row: a list is a list of people, and a tombstone is not one.
+            continue
+        members.append(
+            _brand_visible_creator(profile, account, reliability=reliability.get(oid))
+            if brand_side
+            else {
+                **_brand_visible_creator(profile, account, reliability=reliability.get(oid)),
+                # Staff get the record behind the band, the same split every
+                # other creator surface makes.
+                "reliability_detail": reliability.get(oid),
+            }
+        )
+    return {
+        "id": str(row["_id"]),
+        "name": row.get("name"),
+        "member_count": len(members),
+        "members": members,
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+        "created_by_name": row.get("created_by_name"),
+    }
+
+
+async def _own_creator_list_or_404(list_id: str, user: dict) -> dict:
+    try:
+        oid = ObjectId(list_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="List not found")
+    row = await db.creator_lists.find_one({"_id": oid, "owner": _list_owner_for(user)})
+    if not row:
+        # Somebody else's list is a 404, never a 403 — the same rule every
+        # ownership refusal here follows.
+        raise HTTPException(status_code=404, detail="List not found")
+    return row
+
+
+def _clean_member_ids(raw) -> list:
+    out, seen = [], set()
+    for value in raw or []:
+        oid = _as_oid(value)
+        if oid is not None and oid not in seen:
+            seen.add(oid)
+            out.append(oid)
+    return out[:MAX_LIST_MEMBERS]
+
+
+@brand_router.get("/creator-lists")
+async def list_creator_lists(
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+):
+    """**Declared before `/creator-lists/{id}`**, and on its own path rather
+    than under `/creators`, so no id can ever be read as this word."""
+    rows = (
+        await db.creator_lists.find({"owner": _list_owner_for(user)})
+        .sort("updated_at", -1)
+        .to_list(length=100)
+    )
+    brand_side = is_brand_side(user)
+    return {
+        "lists": [await _serialize_creator_list(r, brand_side=brand_side) for r in rows]
+    }
+
+
+@brand_router.post("/creator-lists")
+async def create_creator_list(
+    payload: CreatorListPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+):
+    now = datetime.now(timezone.utc)
+    doc = {
+        "owner": _list_owner_for(user),
+        "name": payload.name.strip(),
+        "creator_ids": _clean_member_ids(payload.creator_ids),
+        "created_at": now,
+        "updated_at": now,
+        "created_by": ObjectId(user["_id"]) if user.get("_id") else None,
+        "created_by_name": user.get("name"),
+    }
+    result = await db.creator_lists.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    await audit(
+        user,
+        "creator_list.create",
+        "creator_list",
+        result.inserted_id,
+        after={"name": doc["name"], "members": len(doc["creator_ids"])},
+    )
+    return await _serialize_creator_list(doc, brand_side=is_brand_side(user))
+
+
+@brand_router.patch("/creator-lists/{list_id}")
+async def update_creator_list_members(
+    list_id: str,
+    payload: CreatorListMembersPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+):
+    """Add and remove in one write.
+
+    `$addToSet` and `$pull` rather than replacing the array, so two people
+    editing the same list at once both keep their change — the same reasoning
+    as the brand team assignment.
+    """
+    row = await _own_creator_list_or_404(list_id, user)
+    add = _clean_member_ids(payload.add)
+    remove = _clean_member_ids(payload.remove)
+    now = datetime.now(timezone.utc)
+    if add:
+        await db.creator_lists.update_one(
+            {"_id": row["_id"]},
+            {"$addToSet": {"creator_ids": {"$each": add}}, "$set": {"updated_at": now}},
+        )
+    if remove:
+        await db.creator_lists.update_one(
+            {"_id": row["_id"]},
+            {"$pull": {"creator_ids": {"$in": remove}}, "$set": {"updated_at": now}},
+        )
+    updated = await db.creator_lists.find_one({"_id": row["_id"]})
+    await audit(
+        user,
+        "creator_list.update",
+        "creator_list",
+        row["_id"],
+        after={"added": len(add), "removed": len(remove)},
+    )
+    return await _serialize_creator_list(updated, brand_side=is_brand_side(user))
+
+
+@brand_router.delete("/creator-lists/{list_id}")
+async def delete_creator_list(
+    list_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+):
+    row = await _own_creator_list_or_404(list_id, user)
+    await db.creator_lists.delete_one({"_id": row["_id"]})
+    await audit(
+        user,
+        "creator_list.delete",
+        "creator_list",
+        row["_id"],
+        before={"name": row.get("name")},
+    )
+    return {"ok": True}
+
+
+@brand_router.post("/campaigns/{campaign_id}/invite-list/{list_id}")
+async def invite_creator_list(
+    campaign_id: str,
+    list_id: str,
+    payload: CampaignInvitePayload | None = None,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+):
+    """Ask everybody on a list, in one action.
+
+    **Through `_invite_creators`**, the same function the one-at-a-time route
+    uses, so the verification gate, the duplicate refusal, the per-creator
+    result rows and the fact that a number is read and never returned are all
+    one implementation. A second invite path would be a second definition of
+    what an invitation is.
+
+    Ownership before verification, as everywhere: an unverified brand asking
+    after another brand's campaign must learn nothing from the refusal.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    await _verified_brand_or_403(user)
+    row = await _own_creator_list_or_404(list_id, user)
+    members = [str(i) for i in (row.get("creator_ids") or [])]
+    if not members:
+        raise HTTPException(
+            status_code=409,
+            detail=f"“{row.get('name')}” has nobody in it yet.",
+        )
+    return await _invite_creators(
+        campaign,
+        CampaignInvitePayload(
+            creator_ids=members,
+            note=(payload.note if payload else None),
+        ),
+        user,
+    )
 
 
 @brand_router.post("/campaigns/{campaign_id}/invite")
@@ -11240,6 +12212,13 @@ async def get_creator_detail(
             "pending_review_fields": profile.get("pending_review_fields") or [],
             "pending_review_since": _iso(profile.get("pending_review_since")),
             "ageing": _creator_review_ageing(profile, await sla_targets()),
+            # **The whole record, because this is a staff screen.** Every count
+            # here came from something that happened — a manager pressing
+            # no-show at a venue, a grace period lapsing, a booking moving —
+            # so there is nothing to soften and a denominator on every one.
+            "reliability": (await _reliability_for([profile["user_id"]])).get(
+                profile["user_id"]
+            ),
             # **Masked, and never the whole value.** The only question an
             # admin answers from this panel is "is the row in front of me the
             # row I am about to pay", and the last four characters answer it.
@@ -14662,6 +15641,133 @@ async def _admin_campaign_or_404(campaign_id: str, user: Optional[dict] = None) 
     return doc
 
 
+# ---------------------------------------------------------------------------
+# Doing it again
+#
+# A brand's second campaign was as much work as their first. Every field went
+# back in by hand, including the twelve that were identical — the category, the
+# neighbourhood, the venue, the deliverables, the days the kitchen is closed.
+# A café running a tasting every month retyped its own brief twelve times a
+# year, and the twelfth was no faster than the first.
+#
+# Two shapes of the same idea. **Duplicating** is "again, like that one";
+# **a template** is "this is how we always brief". They share a field list,
+# because the thing they both copy is the brief rather than the instance of it.
+# ---------------------------------------------------------------------------
+
+# What describes the *brief* rather than this run of it.
+#
+# **One list, three readers** — duplicate, save-as-template, apply-template.
+# Three copies is how a field added to the form next month ends up carried by
+# duplication and silently dropped by templates.
+_CAMPAIGN_BRIEF_FIELDS = (
+    "title",
+    "brief",
+    "deliverable_items",
+    "deliverables",
+    "budget_per_creator",
+    "category",
+    "area",
+    "city",
+    "creators_needed",
+    "campaign_type",
+    "compensation_type",
+    "execution_owner",
+    "visibility",
+    "requires_draft_approval",
+    "restricted_days",
+    "shoot_windows",
+    "venue_address",
+    "venue_instructions",
+    "on_site_contact",
+    "cover_image_url",
+)
+
+# What is emphatically *not* copied, and why each one would be wrong.
+#
+# **Dates are the point of the exercise.** A duplicate carries them and it is a
+# brief for a day that has passed; the whole reason to duplicate is that the
+# brief is the same and the day is different. `status` resets to draft because
+# a copy has not been reviewed, and reference/applicants/slots belong to the
+# run rather than to the brief. `manager_id` is a staffing decision made per
+# campaign — inheriting it would quietly assign somebody to work they have not
+# been told about.
+_CAMPAIGN_NOT_COPIED = (
+    "event_date",
+    "start_date",
+    "end_date",
+    "status",
+    "reference",
+    "manager_id",
+    "manager_name",
+    "manager_phone",
+    "manager_email",
+    "showcase",
+    "review_reason",
+    "reviewed_at",
+    "reviewed_by",
+    "submitted_for_review_at",
+    "closed_reason",
+    "paused_from_status",
+    "pause_reason",
+)
+
+
+def _brief_fields_of(doc: Optional[dict]) -> dict:
+    """The brief half of a campaign, ready to be written into a new one.
+
+    Absent keys are simply absent rather than `None`: a template saved before a
+    field existed must not blank that field on every campaign made from it, and
+    "the template does not mention this" is a different thing from "the
+    template says leave it empty".
+    """
+    out = {}
+    for key in _CAMPAIGN_BRIEF_FIELDS:
+        if doc and key in doc and doc[key] is not None:
+            out[key] = doc[key]
+    return out
+
+
+async def _duplicate_campaign(source: dict, user: dict, *, title: Optional[str] = None) -> dict:
+    """A new draft that briefs the same work on a day nobody has picked yet.
+
+    **One implementation behind the brand's route and the admin's**, the same
+    arrangement pause, resume, invite and check-in already use, so the two
+    cannot come to disagree about what a duplicate carries.
+
+    The copy lands as a **draft** whoever they are. An admin can publish
+    directly elsewhere, but a duplicate is by definition unreviewed against the
+    dates it does not yet have.
+    """
+    now = datetime.now(timezone.utc)
+    doc = {
+        **_brief_fields_of(source),
+        "brand_id": source["brand_id"],
+        # A copy is a draft. The dates are deliberately absent rather than
+        # null-and-present, so the form's own "required" logic treats them as
+        # unanswered rather than as answered with nothing.
+        **_state_stamp("draft", now, field="status"),
+        "created_at": now,
+        "duplicated_from": source["_id"],
+        "reference": await _next_reference("campaign"),
+    }
+    if title:
+        doc["title"] = title.strip()[:140]
+    result = await db.campaigns.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    await audit(
+        user,
+        "campaign.duplicate",
+        "campaign",
+        result.inserted_id,
+        after={"duplicated_from": str(source["_id"]), "title": doc.get("title")},
+        brand_id=source["brand_id"],
+        campaign_id=result.inserted_id,
+    )
+    return doc
+
+
 async def _pause_campaign(doc: dict, reason: Optional[str], user: dict) -> dict:
     """Take a live campaign off the feed without ending it.
 
@@ -14873,6 +15979,24 @@ async def admin_close_campaign(
         "status": "closed",
         "applications_closed": len(stale),
     }
+
+
+@admin_router.post("/campaigns/{campaign_id}/duplicate")
+async def admin_duplicate_campaign(
+    campaign_id: str,
+    payload: DuplicatePayload | None = None,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """The same duplicate, from the console.
+
+    Through `_admin_campaign_or_404` so a scoped console cannot copy a brand it
+    does not work with, and through `_duplicate_campaign` so what a copy
+    carries is one answer rather than two — the same arrangement pause, resume
+    and invite already use.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    doc = await _duplicate_campaign(campaign, user, title=(payload.title if payload else None))
+    return {"id": str(doc["_id"]), "title": doc.get("title"), "status": "draft"}
 
 
 @admin_router.patch("/campaigns/{campaign_id}")
@@ -15910,6 +17034,10 @@ def _serialize_admin_collab(
         # fact: "verified" says nothing until you know it has been verified and
         # unanswered for nine days.
         "ageing": _collab_ageing(collab, targets),
+        # What arrived against what was asked, on both boards — the brand's
+        # and the admin's — because "approved" on a row that was two stories
+        # short is the same word for two different outcomes.
+        "shortfall": _delivery_shortfall(campaign, collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -17239,6 +18367,153 @@ async def put_sla_settings(
         after=changed,
     )
     return await get_sla_settings(user)
+
+
+class RescheduleLimitPayload(BaseModel):
+    """Zero is a real answer — "no self-service moves at all" — so the floor is
+    zero rather than one."""
+
+    limit: int = Field(ge=0, le=RESCHEDULE_LIMIT_MAX)
+
+
+@admin_router.get("/settings/reschedule-limit")
+async def get_reschedule_limit(user: dict = Depends(require_roles("admin"))):
+    return {"limit": await reschedule_limit(), "default": RESCHEDULE_LIMIT_DEFAULT,
+            "max": RESCHEDULE_LIMIT_MAX}
+
+
+@admin_router.put("/settings/reschedule-limit")
+async def put_reschedule_limit(
+    payload: RescheduleLimitPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Admin-only for the reason the SLA editor is**: this is a rule the
+    operation holds creators to, and somebody working a campaign is the wrong
+    person to be able to loosen it for their own week."""
+    before = await reschedule_limit()
+    await db.platform_settings.update_one(
+        {"_id": _RESCHEDULE_SETTINGS_ID},
+        {
+            "$set": {
+                "limit": int(payload.limit),
+                "updated_at": datetime.now(timezone.utc),
+                "updated_by": ObjectId(user["_id"]),
+                "updated_by_name": user.get("name"),
+            }
+        },
+        upsert=True,
+    )
+    await audit(
+        user,
+        "settings.reschedule_limit",
+        "settings",
+        _RESCHEDULE_SETTINGS_ID,
+        before={"limit": before},
+        after={"limit": int(payload.limit)},
+    )
+    return await get_reschedule_limit(user)
+
+
+@admin_router.get("/dormant")
+async def admin_dormant(
+    kind: Optional[str] = None,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Who has gone quiet, with the date they last did anything.
+
+    **The intelligence panel already counted these and named nobody**, which is
+    the difference between knowing there is a problem and being able to do
+    something about it: "48 dormant creators" is a fact you cannot act on, and
+    a list with a last-active date beside each name is a morning's work.
+
+    Two lists rather than one, because the message is different: a brand that
+    has not briefed in two months is a sales conversation, and a creator who
+    has not worked in two months is a supply one.
+    """
+    cutoff = _days_ago(DORMANT_AFTER_DAYS)
+    now = datetime.now(timezone.utc)
+    out = {"window_days": DORMANT_AFTER_DAYS, "generated_at": _iso(now)}
+
+    if kind in (None, "brands"):
+        # Last campaign per brand, in one pass, rather than a query per brand.
+        last_by_brand = {
+            r["_id"]: r["last"]
+            for r in await db.campaigns.aggregate(
+                [{"$group": {"_id": "$brand_id", "last": {"$max": "$created_at"}}}]
+            ).to_list(length=5000)
+        }
+        profiles = await db.brand_profiles.find(
+            {"verified": True, **_console_brand_query(user, "user_id")}
+        ).to_list(length=2000)
+        rows = []
+        for profile in profiles:
+            last = last_by_brand.get(profile["user_id"])
+            last_utc = _as_utc(last)
+            # **Never briefed at all is dormant too**, and is the more urgent
+            # of the two: a brand we verified and never heard from again got
+            # stuck somewhere, and nobody found out.
+            if last_utc and last_utc > cutoff:
+                continue
+            rows.append(
+                {
+                    "id": str(profile["user_id"]),
+                    "name": profile.get("business_name") or "Unnamed brand",
+                    "reference": _reference_of(profile),
+                    "category": profile.get("category"),
+                    "city": profile.get("city"),
+                    "last_active_at": _iso(last),
+                    "days_quiet": (now - last_utc).days if last_utc else None,
+                    "never_active": last is None,
+                    "href": f"/admin/brands/{profile['user_id']}",
+                }
+            )
+        # Longest quiet first, and never-active ahead of everybody — `None`
+        # sorts before any number by design here, unlike in a table column
+        # where unknown sorts last: a brand that never started is the strongest
+        # signal on the list, not the weakest.
+        rows.sort(key=lambda r: (r["days_quiet"] is not None, -(r["days_quiet"] or 0)))
+        out["brands"] = rows[:200]
+        out["brands_total"] = len(rows)
+
+    if kind in (None, "creators"):
+        last_by_creator = {
+            r["_id"]: r["last"]
+            for r in await db.collaborations.aggregate(
+                [{"$group": {"_id": "$creator_id", "last": {"$max": "$updated_at"}}}]
+            ).to_list(length=5000)
+        }
+        # **Verified only.** Somebody half-way through onboarding is not
+        # dormant, they are unfinished — and `nudge_stale_creator_profiles`
+        # already chases them, so listing them here would be a second chase
+        # from a different screen.
+        profiles = await db.creator_profiles.find(
+            {"verification_status": "verified"}
+        ).to_list(length=5000)
+        rows = []
+        for profile in profiles:
+            last = last_by_creator.get(profile["user_id"])
+            last_utc = _as_utc(last)
+            if last_utc and last_utc > cutoff:
+                continue
+            rows.append(
+                {
+                    "id": str(profile["user_id"]),
+                    "name": profile.get("name") or "Unnamed",
+                    "reference": _reference_of(profile),
+                    "instagram_handle": profile.get("instagram_handle"),
+                    "city": profile.get("city"),
+                    "follower_count": profile.get("follower_count"),
+                    "last_active_at": _iso(last),
+                    "days_quiet": (now - last_utc).days if last_utc else None,
+                    "never_active": last is None,
+                    "href": f"/admin/creators/{profile['user_id']}",
+                }
+            )
+        rows.sort(key=lambda r: (r["days_quiet"] is not None, -(r["days_quiet"] or 0)))
+        out["creators"] = rows[:200]
+        out["creators_total"] = len(rows)
+
+    return out
 
 
 @admin_router.get("/metrics")
@@ -20839,7 +22114,12 @@ async def reschedule_creator(
                 "rescheduled_at": now,
                 "reschedule_reason": (payload.reason or "").strip() or None,
                 "updated_at": now,
-            }
+            },
+            # **The runner's move counts too.** It is usually made on the
+            # creator's behalf and past their own limit, and a count that only
+            # recorded the ones they were allowed to make would understate
+            # exactly the creator it exists to describe.
+            "$inc": {"reschedule_count": 1},
         },
         return_document=True,
     )
@@ -22230,6 +23510,208 @@ async def add_collaboration_note(
     return _serialize_note(doc)
 
 
+# ---------------------------------------------------------------------------
+# Ratings, both ways
+#
+# Quality signal never accumulated. A creator who was brilliant on three shoots
+# and one who turned up late twice read identically on the fourth brief,
+# because nothing anybody thought about either of them was ever written down —
+# it lived in whoever happened to be running that campaign, and left when they
+# moved to another one.
+#
+# **Both directions, because the platform is two-sided.** A brand that briefs
+# badly, moves the date twice and pays late is a fact worth knowing before we
+# send four more creators at them, and a creator with no way to say so has no
+# reason to tell us anything.
+#
+# **Private to WeAre, deliberately, and this is the decision to revisit rather
+# than the one to quietly extend.** A public five-star average on a creator
+# profile changes what people write: it turns a considered three into a
+# reputational act, and the first creator who loses work over one stops
+# applying. It feeds the reliability view and the suggestion ranking, and goes
+# on no profile and into no brand-facing payload.
+# ---------------------------------------------------------------------------
+
+ratings_router = APIRouter(prefix="/ratings", tags=["ratings"])
+
+# Who is rating whom. The word matters on screen: a runner rates *the creator*,
+# a creator rates *the experience of the campaign* — not the brand's staff.
+RATING_SIDES = ("runner", "creator")
+RATING_MIN, RATING_MAX = 1, 5
+
+
+class RatingPayload(BaseModel):
+    """One score and an optional sentence.
+
+    **One number, not four.** A form asking separately about punctuality,
+    quality, communication and professionalism is a form people abandon on the
+    second field, and four averages nobody can act on is worse signal than one
+    somebody actually gave.
+    """
+
+    score: int = Field(ge=RATING_MIN, le=RATING_MAX)
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+def _rating_side_for(user: dict, collab: dict, campaign: dict) -> Optional[str]:
+    """Which side this caller rates from, or `None` if neither.
+
+    The creator on the collaboration rates the experience; whoever runs the
+    campaign rates the creator. **Read from `execution_owner` through the same
+    door the draft review uses** rather than from the role, so a weare-run
+    brief is rated by our manager and a brand-run one by the brand — which is
+    in both cases the person who was actually there.
+    """
+    if (user or {}).get("role") == "creator":
+        return "creator" if str(collab.get("creator_id")) == str(user.get("_id")) else None
+    return "runner" if _question_staff_may_see(campaign, user) else None
+
+
+def _serialize_rating(row: Optional[dict]) -> Optional[dict]:
+    if not row:
+        return None
+    return {
+        "id": str(row["_id"]),
+        "side": row.get("side"),
+        "score": row.get("score"),
+        "note": row.get("note"),
+        "by_name": row.get("by_name"),
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+async def _rateable_collab_or_404(collab_id: str, user: dict) -> tuple[dict, dict, str]:
+    """A collaboration this caller may rate, and which side they are on.
+
+    **Only once it is closed.** Rating work that is still in flight is rating a
+    prediction — and worse, a score given at `attended` would sit on the record
+    while the person being scored still has to be worked with, which is how a
+    rating becomes leverage rather than a record.
+    """
+    if (user or {}).get("role") == "creator":
+        collab = await _own_collab_or_404(collab_id, user)
+        campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    else:
+        collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+
+    side = _rating_side_for(user, collab, campaign)
+    if not side:
+        # A 404 rather than a 403, like every other access refusal here: whether
+        # somebody else's collaboration exists is not a question this answers.
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    if collab.get("state") != "closed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This isn't finished yet — ratings open once it closes.",
+                "code": "not_closed",
+                "state": collab.get("state"),
+            },
+        )
+    return collab, campaign, side
+
+
+@ratings_router.get("/{collab_id}")
+async def get_collaboration_ratings(
+    collab_id: str,
+    user: dict = Depends(require_roles("creator", *BRAND_ROLES, "admin", "campaign_manager", "weare_team")),
+):
+    """This collaboration's ratings, and whether the caller can leave one.
+
+    **Each side sees its own and never the other's.** A creator reading the
+    score a brand gave them would make every three a conversation, and a runner
+    reading the creator's score before writing their own is an anchoring
+    problem the whole point of collecting both is to avoid. Admins and WeAre
+    staff see both, because acting on the signal is the job this is for.
+    """
+    collab, campaign = (
+        (await _own_collab_or_404(collab_id, user), None)
+        if (user or {}).get("role") == "creator"
+        else await _note_readable_collab_or_404(collab_id, user)
+    )
+    if campaign is None:
+        campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+
+    side = _rating_side_for(user, collab, campaign)
+    rows = {
+        r["side"]: r
+        async for r in db.collaboration_ratings.find({"collaboration_id": collab["_id"]})
+    }
+    all_access = is_all_access(user) or (user or {}).get("role") in (
+        "weare_team",
+        "campaign_manager",
+    )
+    visible = RATING_SIDES if all_access else ([side] if side else [])
+    return {
+        "can_rate": bool(side) and collab.get("state") == "closed",
+        "side": side,
+        "state": collab.get("state"),
+        "ratings": {s: _serialize_rating(rows.get(s)) for s in visible},
+        "scale": {"min": RATING_MIN, "max": RATING_MAX},
+    }
+
+
+@ratings_router.post("/{collab_id}")
+async def rate_collaboration(
+    collab_id: str,
+    payload: RatingPayload,
+    user: dict = Depends(require_roles("creator", *BRAND_ROLES, "admin", "campaign_manager", "weare_team")),
+):
+    """Leave or change this side's rating.
+
+    **Changeable, unlike a note.** The work notes are append-only because they
+    are a record of what was said; a rating is somebody's current opinion, and
+    an opinion that cannot be revised after the payment landed late is one that
+    describes a moment rather than the collaboration. Every version is audited,
+    so the trail is intact either way.
+
+    Upserted on `(collaboration, side)`, so a double-tap is one rating rather
+    than two halves of an average.
+    """
+    collab, campaign, side = await _rateable_collab_or_404(collab_id, user)
+    now = datetime.now(timezone.utc)
+    existing = await db.collaboration_ratings.find_one(
+        {"collaboration_id": collab["_id"], "side": side}
+    )
+    row = await db.collaboration_ratings.find_one_and_update(
+        {"collaboration_id": collab["_id"], "side": side},
+        {
+            "$set": {
+                "score": int(payload.score),
+                "note": (payload.note or "").strip() or None,
+                "by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+                "by_name": user.get("name"),
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "collaboration_id": collab["_id"],
+                "campaign_id": collab["campaign_id"],
+                # Denormalised so the reliability aggregation does not have to
+                # join back through collaborations for every rating it reads.
+                "creator_id": collab["creator_id"],
+                "brand_id": campaign.get("brand_id"),
+                "side": side,
+                "created_at": now,
+            },
+        },
+        upsert=True,
+        return_document=True,
+    )
+    await audit(
+        user,
+        "collaboration.rate",
+        "collaboration",
+        collab["_id"],
+        before={"score": (existing or {}).get("score")} if existing else None,
+        after={"side": side, "score": int(payload.score)},
+        note=(payload.note or "").strip()[:500] or None,
+        **_campaign_audit_context(campaign),
+    )
+    return _serialize_rating(row)
+
+
+api_router.include_router(ratings_router)
 api_router.include_router(notes_router)
 
 
@@ -22991,6 +24473,16 @@ async def get_application(
 
     state = collab.get("state", "applied")
     is_admin = (user or {}).get("role") == "admin"
+    # **Who sees the record and who sees the reading of it.** The staff roles
+    # get the counts; the brand gets the band on the creator block, which is
+    # the same information with the denominator already applied.
+    is_staff_side = is_admin or (user or {}).get("role") in (
+        "weare_team",
+        "campaign_manager",
+    )
+    reliability_stats = (await _reliability_for([collab["creator_id"]])).get(
+        collab["creator_id"]
+    )
 
     return {
         "id": str(collab["_id"]),
@@ -23022,7 +24514,18 @@ async def get_application(
         # admin screen could show more, but this screen is one component and a
         # phone number that only appears for one role is a phone number waiting
         # to be rendered for the other.
-        "creator": _brand_visible_creator(profile, creator_user),
+        "creator": _brand_visible_creator(
+            profile, creator_user, reliability=reliability_stats
+        ),
+        # **The counts, for staff only.** A brand deciding on an application
+        # gets the band on the creator block above; an admin gets the record
+        # behind it, because "accept or not" is a judgement somebody makes with
+        # the numbers in front of them.
+        "reliability": reliability_stats if is_staff_side else None,
+        # What arrived against what was asked. `None` on a brief with no
+        # counted deliverables, and on one nobody has counted against — which
+        # is every collaboration finished before this existed.
+        "shortfall": _delivery_shortfall(campaign, collab),
         # Whether this caller may open the creator's question thread — false
         # for a brand on a weare-run campaign, where the conversation is
         # between the creator and our team. Decided here so the shared screen
@@ -23074,6 +24577,13 @@ async def get_application(
             and state in ("accepted", "commercial_agreed"),
             "can_review_content": state == "content_submitted"
             and (is_admin or is_brand_side(user)),
+            # **Only where there is a counted ask to be short of.** A brief
+            # written before `deliverable_items` existed has a sentence and no
+            # structure, so there is nothing to count against and the server
+            # refuses it — the button is absent rather than present and 409ing.
+            "can_accept_partial": state == "content_submitted"
+            and (is_admin or is_brand_side(user))
+            and bool(_deliverable_items(campaign)),
             # Who reviews a draft follows execution_owner, so the same reader
             # the questions panel uses answers it: a brand on a weare-run
             # campaign is not the reviewer, and never sees the button.

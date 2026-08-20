@@ -2,6 +2,32 @@
 // both open at their own routes off one component. Naming follows the
 // directive in ./auth.js.
 
+export const RATINGS = {
+	panel: 'rating-panel',
+	stars: 'rating-stars',
+	star: (n) => `rating-star-${n}`,
+	note: 'rating-note',
+	submit: 'rating-submit',
+	existing: 'rating-existing',
+};
+
+// Reliability, and the shortfall a partial delivery leaves.
+export const RELIABILITY = {
+	badge: (id) => `reliability-badge-${id}`,
+	panel: 'reliability-panel',
+};
+
+export const SHORTFALL = {
+	block: (id) => `shortfall-${id}`,
+	dialog: 'partial-dialog',
+	count: (type) => `partial-count-${type}`,
+	amount: 'partial-amount',
+	note: 'partial-note',
+	submit: 'partial-submit',
+	open: 'partial-open',
+	suggestion: 'partial-suggestion',
+};
+
 export const APPLICATION = {
 	// How long it has been in its current state, and whether that is too long.
 	ageing: 'application-ageing',

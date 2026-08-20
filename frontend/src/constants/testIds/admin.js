@@ -529,3 +529,38 @@ export const ADMIN_CANCELLATIONS = {
 	row: (id) => `admin-cancellation-row-${id}`,
 	fee: (id) => `admin-cancellation-fee-${id}`,
 };
+
+// Who has gone quiet, and the two re-engagement lists.
+export const ADMIN_DORMANT = {
+	page: 'admin-dormant-page',
+	tab: (kind) => `admin-dormant-tab-${kind}`,
+	row: (id) => `admin-dormant-row-${id}`,
+	empty: 'admin-dormant-empty',
+	count: (kind) => `admin-dormant-count-${kind}`,
+};
+
+// Reusable briefs, and duplicating a past one.
+export const CAMPAIGN_TEMPLATES = {
+	picker: 'campaign-template-picker',
+	option: (id) => `campaign-template-${id}`,
+	use: (id) => `campaign-template-use-${id}`,
+	remove: (id) => `campaign-template-remove-${id}`,
+	save: 'campaign-template-save',
+	saveName: 'campaign-template-name',
+	saveSubmit: 'campaign-template-save-submit',
+	duplicate: (id) => `campaign-duplicate-${id}`,
+	empty: 'campaign-template-empty',
+};
+
+// Saved creator lists.
+export const CREATOR_LISTS = {
+	panel: 'creator-lists-panel',
+	row: (id) => `creator-list-${id}`,
+	create: 'creator-list-create',
+	name: 'creator-list-name',
+	submit: 'creator-list-submit',
+	invite: (id) => `creator-list-invite-${id}`,
+	remove: (id) => `creator-list-remove-${id}`,
+	add: (listId) => `creator-list-add-${listId}`,
+	empty: 'creator-lists-empty',
+};

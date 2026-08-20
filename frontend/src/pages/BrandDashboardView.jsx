@@ -4,13 +4,14 @@ import CampaignCover from "@/components/CampaignCover";
 import { isPrivate } from "@/lib/visibility";
 import { EXECUTION_FILTERS, executionOwner } from "@/lib/execution";
 import { EXECUTION } from "@/constants/testIds";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
     CalendarDays,
     Compass,
+    Copy,
     Eye,
     IndianRupee,
     Loader2,
@@ -34,7 +35,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSkeleton } from "@/components/data/DenseView";
-import { BRAND_CAMPAIGN_CONTROLS, VISIBILITY } from "@/constants/testIds";
+import { BRAND_CAMPAIGN_CONTROLS, CAMPAIGN_TEMPLATES as TEMPLATES, VISIBILITY } from "@/constants/testIds";
+import { SaveAsTemplate } from "@/components/brand/CampaignTemplates";
 import {
     Dialog,
     DialogContent,
@@ -220,6 +222,29 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
             () => api.post(`/brand/campaigns/${c.id}/publish`),
             "Sent for review — we'll publish it once we've read it",
         );
+
+    /**
+     * "That one again, on a different day."
+     *
+     * Straight to the new draft's edit screen rather than back to the list:
+     * the one thing a duplicate is missing is its dates, so leaving somebody
+     * on a list with a new untitled draft on it is leaving them to find the
+     * one field they have to fill in.
+     */
+    const duplicate = async (c) => {
+        setBusyId(c.id);
+        try {
+            const { data } = await api.post(`/brand/campaigns/${c.id}/duplicate`, {});
+            notifySuccess("Copied — set the dates and it's ready");
+            navigate(`/campaigns/${data.id}/edit`);
+        } catch (err) {
+            notifyError(err, { fallback: "That couldn't be duplicated." });
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const navigate = useNavigate();
 
     const closeCampaign = (c) =>
         runAction(
@@ -669,6 +694,29 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 Send for review
                                                             </Button>
                                                         )}
+
+                                                        {/* **"That one again."** Offered on every
+                                                            campaign whatever its status, because the
+                                                            one most worth repeating is the one that
+                                                            finished. Lands as a draft with the dates
+                                                            cleared, which is the only thing that
+                                                            changes between one run and the next. */}
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            disabled={busy}
+                                                            data-testid={TEMPLATES.duplicate(c.id)}
+                                                            onClick={() => duplicate(c)}
+                                                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                        >
+                                                            <Copy className="mr-1.5 h-3.5 w-3.5" />
+                                                            Duplicate
+                                                        </Button>
+
+                                                        <SaveAsTemplate
+                                                            campaignId={c.id}
+                                                            defaultName={c.title}
+                                                        />
 
                                                         {c.can_edit && (
                                                             <Link

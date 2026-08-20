@@ -13,6 +13,7 @@ import {
     Loader2,
     MapPin,
     MessageSquare,
+    PackageOpen,
     Send,
     Users,
     X,
@@ -22,6 +23,11 @@ import { SafeSection } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
 import ProcessFlow from "@/components/application/ProcessFlow";
+import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
+import Shortfall from "@/components/Shortfall";
+import CreatorLists from "@/components/CreatorLists";
+import { ReliabilityBadge } from "@/components/ReliabilityBadge";
+import { SHORTFALL } from "@/constants/testIds";
 import {
     ApplicantListSkeleton,
     ListEmptyState,
@@ -445,7 +451,16 @@ function ReasonDialog({
 // Applicant row
 // ---------------------------------------------------------------------------
 
-const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onApprove, onRequestChanges }) => {
+const ApplicantCard = ({
+    applicant: a,
+    budget,
+    busy,
+    onAccept,
+    onDecline,
+    onApprove,
+    onRequestChanges,
+    onAcceptPartial,
+}) => {
     const meta = STATE_META[a.state] || {};
     const c = a.creator || {};
     const overBudget =
@@ -655,6 +670,16 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                             Accept
                         </Button>
                     )}
+                    {/* What arrived against what was asked, when anybody has
+                        counted. Absent on a brief with no structured ask and
+                        on one nobody counted — unknown, not complete. */}
+                    {a.shortfall && (
+                        <Shortfall
+                            shortfall={a.shortfall}
+                            testid={SHORTFALL.block(a.id)}
+                            className="w-full"
+                        />
+                    )}
                     {a.can_review_content && (
                         <>
                             <Button
@@ -676,6 +701,24 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                                 <MessageSquare className="mr-1.5 h-4 w-4" />
                                 Ask for a change
                             </Button>
+                            {/* **The third answer, which did not exist.** Two
+                                of three stories delivered was neither
+                                complete nor failed, so it got settled over
+                                WhatsApp with a number nobody wrote down.
+                                Absent on a brief with no counted ask — there
+                                is nothing to be short of. */}
+                            {a.can_accept_partial && (
+                                <Button
+                                    data-testid={SHORTFALL.open}
+                                    disabled={busy}
+                                    variant="outline"
+                                    onClick={() => onAcceptPartial(a)}
+                                    className="rounded-full border-amber-400/40 bg-transparent text-amber-200 hover:bg-amber-400/10"
+                                >
+                                    <PackageOpen className="mr-1.5 h-4 w-4" />
+                                    Accept what arrived
+                                </Button>
+                            )}
                         </>
                     )}
                     {a.can_decline && (
@@ -1037,6 +1080,9 @@ export default function BrandCampaignApplicants() {
                                     onRequestChanges={(x) =>
                                         setDialog({ kind: "changes", applicant: x })
                                     }
+                                    onAcceptPartial={(x) =>
+                                        setDialog({ kind: "partial", applicant: x })
+                                    }
                                 />
                             ))}
                         </ul>
@@ -1054,6 +1100,16 @@ export default function BrandCampaignApplicants() {
                     screen and the least essential to it. */}
                 <SafeSection name="suggested-creators" label="Suggestions couldn't load">
                     <SuggestedCreators campaignId={id} />
+                </SafeSection>
+
+                {/* People you already know are good. Beside the suggestions
+                    rather than instead of them: one is who to try, the other
+                    is who worked last time, and a brand filling a brief wants
+                    both on the same screen. */}
+                <SafeSection name="creator-lists" label="Your lists couldn't load">
+                    <div className="mt-10">
+                        <CreatorLists campaignId={id} onInvited={load} />
+                    </div>
                 </SafeSection>
 
                 {/* Creator questions on this campaign. The server 404s this
@@ -1090,6 +1146,22 @@ export default function BrandCampaignApplicants() {
                 busy={busyId === dialog.applicant?.id}
                 onConfirm={(reason) =>
                     act(dialog.applicant, "decline", { reason }, "Applicant declined")
+                }
+            />
+
+            <PartialDeliveryDialog
+                open={dialog.kind === "partial"}
+                onOpenChange={(v) => !v && closeDialog()}
+                campaign={campaign}
+                applicant={dialog.applicant}
+                busy={busyId === dialog.applicant?.id}
+                onConfirm={(body) =>
+                    act(
+                        dialog.applicant,
+                        "accept-partial",
+                        body,
+                        "Accepted, with the shortfall on the record",
+                    )
                 }
             />
 

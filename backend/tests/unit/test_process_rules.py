@@ -1423,6 +1423,7 @@ class TestAuditCoverage:
                     "_resume_campaign",
                     "_invite_creators",
                     "_check_in_collaboration",
+                    "_duplicate_campaign",
                 )
             )
             if not delegates:
@@ -4319,6 +4320,13 @@ class TestBrandManagerRole:
         assert server._brand_scope({"_id": str(own), "brand_id": brand}) == brand
 
 
+# Fields that record *who acted*, where the login id is the right value.
+# Everything else that carries `user["_id"]` into a query is scoping by the
+# login, which is only correct while the login and the brand are one row — and
+# they are not.
+_ACTOR_FIELDS = ("agreed_by", "checked_in_by", "created_by")
+
+
 class TestBrandEndpointsAreScoped:
     """Every brand-facing query goes through `_brand_scope`.
 
@@ -4354,12 +4362,15 @@ class TestBrandEndpointsAreScoped:
         offenders = [
             f"{path} ({fn})"
             for path, fn, body in self._brand_blocks()
-            # `agreed_by`/`checked_in_by` record the actor, which really is the
-            # login. Everything else that filters is the brand.
+            # **Recording the actor is not scoping by them.** `agreed_by`,
+            # `created_by` and friends are "who did this", which really is the
+            # login; everything that *filters* must go through `_brand_scope`,
+            # because the login and the brand are not the same row. Named
+            # rather than pattern-matched, so a new field has to be a decision.
             if 'ObjectId(user["_id"])' in body
-            and not all(
-                marker in body
-                for marker in ('"agreed_by": ObjectId(user["_id"])',)
+            and not any(
+                f'"{actor_field}": ObjectId(user["_id"])' in body
+                for actor_field in _ACTOR_FIELDS
             )
         ]
         assert not offenders, f"brand endpoints scoping by login id: {offenders}"

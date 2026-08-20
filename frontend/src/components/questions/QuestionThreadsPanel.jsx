@@ -19,7 +19,11 @@ export default function QuestionThreadsPanel({ campaignId, className = "" }) {
     const load = useCallback(async () => {
         try {
             const { data } = await api.get(`/questions/campaign/${campaignId}/threads`);
-            setThreads(data.threads);
+            // `|| []` because the catch below only covers a failed request:
+            // a 200 with an unexpected shape would reach `.map` and take the
+            // section down, which is a louder failure than the empty panel
+            // this component is already designed to render.
+            setThreads(data.threads || []);
         } catch {
             setHidden(true);
         }
