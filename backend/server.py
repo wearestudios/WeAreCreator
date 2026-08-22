@@ -1726,6 +1726,8 @@ class PostCampaignPayload(BaseModel):
     # audience is the problem this exists to fix. An explicit false turns it
     # off and the lifecycle behaves exactly as it did before.
     requires_draft_approval: Optional[bool] = None
+    # Off unless asked for — see `_requires_slot_confirmation`.
+    requires_slot_confirmation: Optional[bool] = None
     # When a shoot may happen. Both optional and both default to "no
     # restriction", because most briefs have none and a form that demands an
     # answer gets a made-up one.
@@ -1805,6 +1807,8 @@ class UpdateCampaignPayload(BaseModel):
     # in _creator_may_see, not here.
     visibility: Optional[CampaignVisibility] = None
     requires_draft_approval: Optional[bool] = None
+    # Off unless asked for — see `_requires_slot_confirmation`.
+    requires_slot_confirmation: Optional[bool] = None
     restricted_days: Optional[list[int]] = None
     shoot_windows: Optional[list[ShootWindow]] = None
     event_date: Optional[datetime] = None
@@ -2140,6 +2144,28 @@ def _slot_confirmed(collab: Optional[dict]) -> bool:
         return True
     # No booking timestamp at all means it predates the handshake.
     return not collab.get("slot_booked_at")
+
+
+def _requires_slot_confirmation(campaign: Optional[dict]) -> bool:
+    """Does a booking on this campaign wait for the runner to agree the time?
+
+    **Absent reads False, and that is a deliberate change of default.** The
+    two-step handshake was built for the case it is right for — a venue that
+    genuinely has to check the day before it holds a table — and then applied
+    to every campaign, which put a human decision in front of a booking on
+    briefs where nobody was ever going to say no. On most of them the creator
+    picked one of the manager's own published slots: confirming it is agreeing
+    with yourself.
+
+    So it is per-campaign and off unless asked for. Where it is on, nothing
+    about the existing flow changes.
+
+    Absent reads off for old campaigns too, which is the safe direction here:
+    it cannot strand anybody. A booking already sitting unconfirmed keeps its
+    `slot_confirmed_at: None` and stays answerable — see `_slot_confirmed`,
+    which reads the collaboration and not this.
+    """
+    return bool((campaign or {}).get("requires_slot_confirmation"))
 
 
 def _requires_draft_approval(campaign: dict) -> bool:
@@ -2998,6 +3024,8 @@ NOTIFY_EVENTS = {
     "collaboration_cancelled": "A collaboration you were on was cancelled",
     "account_deletion_requested": "Somebody asked for their account to be deleted",
     "account_deleted": "Your account has been deleted",
+    "held_applications_released": "Your held pitches went in",
+    "held_application_withdrawn": "A held pitch was taken back",
     "creator_verified": "You're verified — briefs are open to you",
     "creator_rejected": "We couldn't approve your profile yet",
     # Suspension is not a verification decision — see suspend_creator.
@@ -3659,6 +3687,138 @@ async def _brand_overdue_invoices(brand_ids: Optional[list] = None) -> dict:
         row["total"] += float(payment.get("brand_invoice_amount") or 0)
         row["worst_days"] = max(row["worst_days"], int(block.get("days_overdue") or 0))
     return out
+
+
+# --- Brands we have stopped needing to check ---------------------------------
+#
+# Every campaign waited on a human, forever. That is right for a brand's first
+# brief and increasingly hard to justify by their twelfth: an operator opening
+# the review queue to approve the same café's monthly tasting for the ninth
+# time is doing data entry, and the brand is waiting a day for it.
+#
+# **Earned, not granted.** A brand that has had `TRUSTED_BRAND_APPROVALS`
+# campaigns approved with none rejected has shown us what its briefs look like.
+# From then on its campaigns publish on submission and land in the queue
+# *flagged* rather than blocking — the check moves from before publication to
+# after it, which is the trade being made and worth stating plainly: a bad
+# brief from a trusted brand is live for the time it takes somebody to notice.
+# That is why a single rejection ends it, and why an admin can revoke by hand.
+
+_TRUSTED_SETTINGS_ID = "trusted_brands"
+TRUSTED_BRAND_APPROVALS = 3
+_TRUSTED_MIN, _TRUSTED_MAX = 1, 100
+
+
+async def trusted_brand_threshold() -> int:
+    """How many clean approvals earn a brand its own publish button."""
+    row = await db.platform_settings.find_one({"_id": _TRUSTED_SETTINGS_ID})
+    value = (row or {}).get("approvals")
+    return int(value) if isinstance(value, int) and value > 0 else TRUSTED_BRAND_APPROVALS
+
+
+def _trust_revoked(profile: Optional[dict]) -> bool:
+    """Whether an admin has taken it away by hand.
+
+    Separate from the count, and deliberately: re-earning trust by posting
+    three more good briefs would undo a decision somebody made on purpose. The
+    revocation stands until it is lifted the same way.
+    """
+    return bool((profile or {}).get("trust_revoked"))
+
+
+async def _brand_is_trusted(profile: Optional[dict], threshold: Optional[int] = None) -> bool:
+    """Does this brand's next campaign go live without waiting on us?
+
+    Four conditions, and all of them: verified, not revoked, enough approvals,
+    and **none ever rejected**. The last is not a ratio — one brief we had to
+    send back is one we are glad we read, and "mostly fine" is not the standard
+    for skipping the read entirely.
+    """
+    if not profile or not profile.get("verified") or _trust_revoked(profile):
+        return False
+    counts = await _brand_review_record(profile["user_id"])
+    if counts["rejections"]:
+        return False
+    return counts["approvals"] >= (threshold or await trusted_brand_threshold())
+
+
+def _auto_published_fields(campaign: dict, now: datetime) -> dict:
+    """The fields that put a trusted brand's brief straight into the feed.
+
+    **The same status rule the human approval uses** — `upcoming` when the
+    start date is ahead, `open` otherwise — because two ways of deciding when a
+    campaign is live is one way too many. `auto_published_at` is what marks it
+    for the spot-check queue, and `reviewed_at` stays absent on purpose:
+    nobody reviewed it, and writing a timestamp that says somebody did is the
+    kind of thing an audit is supposed to be able to disprove.
+    """
+    start = campaign.get("start_date")
+    if start is not None and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    status = "upcoming" if start and start > now else "open"
+    return {
+        **_state_stamp(status, now, field="status"),
+        "auto_published_at": now,
+        # Cleared, so a brief that was rejected once and is now being posted by
+        # a brand that has since become trusted does not carry the old reason.
+        "review_reason": None,
+    }
+
+
+async def _brand_review_record(brand_oid) -> dict:
+    """`{approved, rejected}` — what our review has said about this brand.
+
+    Counted from the audit log rather than from a running total on the profile:
+    the log is written on every decision and cannot be edited, so a counter
+    that disagreed with it would be the thing that was wrong. Campaigns that
+    were approved and later deleted still count, which is correct — the point
+    is what our review found, not what survives.
+
+    **The record starts when the rule did.** Audit lines written before
+    `campaign.approve` carried a `brand_id` are invisible here, so no brand
+    arrives at the deploy already trusted — it has to earn it from now. That is
+    the safe direction: the other way round, a brand nobody had thought about
+    would silently gain a publish button overnight. Both halves start at zero
+    together, so a brand with a history of rejections is not penalised for a
+    record we can no longer read either.
+    """
+    rows = await db.audit_log.aggregate(
+        [
+            {"$match": {"brand_id": brand_oid,
+                        "action": {"$in": ["campaign.approve", "campaign.reject"]}}},
+            {"$group": {"_id": "$action", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=4)
+    counts = {r["_id"]: int(r["n"]) for r in rows}
+    return {
+        # Named `approvals`/`rejections` rather than `approved`/`rejected`:
+        # those two are the platform's old words for a verification status and
+        # a guard test bans them outright, for a good reason. These count
+        # decisions about campaigns, which is a different thing.
+        "approvals": counts.get("campaign.approve", 0),
+        "rejections": counts.get("campaign.reject", 0),
+    }
+
+
+async def _trust_block(profile: Optional[dict]) -> dict:
+    """What a screen says about it: the state, the count, and what is left.
+
+    One reader for the brand's own dashboard and the admin's brand page, so
+    "you need one more" and "they need one more" cannot disagree.
+    """
+    threshold = await trusted_brand_threshold()
+    counts = await _brand_review_record((profile or {}).get("user_id"))
+    return {
+        "trusted": await _brand_is_trusted(profile, threshold),
+        "approvals": counts["approvals"],
+        "rejections": counts["rejections"],
+        "threshold": threshold,
+        "revoked": _trust_revoked(profile),
+        "revoked_reason": (profile or {}).get("trust_revoked_reason"),
+        "remaining": (
+            max(0, threshold - counts["approvals"]) if not counts["rejections"] else None
+        ),
+    }
 
 
 _VERIFICATION_SETTINGS_ID = "verification_validity"
@@ -6989,6 +7149,7 @@ async def get_creator_dashboard(
 
     completeness = _profile_completeness(profile or {})
     invitations = await _creator_invitations(creator_oid)
+    held = await _creator_held_applications(creator_oid)
     suggestions = await _suggested_campaigns(
         profile or {}, {c["campaign_id"] for c in collabs}
     )
@@ -7002,6 +7163,12 @@ async def get_creator_dashboard(
         # that lives only in a WhatsApp message is one a creator cannot find
         # again once the message scrolls away.
         "invitations": invitations,
+        # Pitches taken on account while we check them. Beside applications
+        # for the same reason invitations are: from the creator's side it is
+        # one list of "briefs I have put my name to", and splitting it by
+        # whose queue the record happens to be in is our filing, not theirs.
+        "held_applications": held,
+        "verification_outstanding": _verification_outstanding(profile) if held else None,
         "collaborations": grouped,
         "upcoming": upcoming,
         "payments": payments,
@@ -7017,6 +7184,7 @@ async def get_creator_dashboard(
             # Only the ones still open: an answered invitation is history,
             # and a badge counting it would never clear.
             "invitations": sum(1 for i in invitations if i["open"]),
+            "held": len(held),
             "upcoming": len(upcoming),
             "payments": len(payments) + len(in_payment_collabs),
             "active": len(grouped["active"]),
@@ -7872,6 +8040,90 @@ async def _invitation_or_404(invitation_id: str, creator_oid):
     return invite
 
 
+async def _creator_held_applications(creator_oid) -> list:
+    """Pitches this creator has made that are waiting on their verification.
+
+    Held rows only. A released one is a real application and shows up in the
+    ordinary list — showing it twice would make one pitch look like two.
+    """
+    rows = await db.held_applications.find(
+        {"creator_id": creator_oid, "state": "held"}
+    ).sort("created_at", -1).to_list(length=100)
+    if not rows:
+        return []
+    campaign_ids = list({r["campaign_id"] for r in rows})
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find({"_id": {"$in": campaign_ids}}).to_list(
+            length=len(campaign_ids)
+        )
+    }
+    brand_map = await _load_brand_map(
+        [c["brand_id"] for c in campaigns.values() if c.get("brand_id")]
+    )
+    out = []
+    for row in rows:
+        campaign = campaigns.get(row["campaign_id"]) or {}
+        brand = brand_map.get(campaign.get("brand_id")) or {}
+        out.append(
+            _serialize_held(
+                row,
+                {**campaign,
+                 "brand_name": brand.get("business_name") or brand.get("name")},
+            )
+        )
+    return out
+
+
+@creator_router.get("/held-applications")
+async def list_held_applications(user: dict = Depends(require_roles("creator"))):
+    """The pitches waiting on us, and what is outstanding on them.
+
+    Also folded into the dashboard, which is one call by design — this exists
+    so the applications view can refresh just this list.
+    """
+    creator_oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+    return {
+        "held": await _creator_held_applications(creator_oid),
+        "outstanding": _verification_outstanding(profile),
+    }
+
+
+@creator_router.delete("/held-applications/{held_id}")
+async def cancel_held_application(
+    held_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Take a held pitch back before it goes in.
+
+    Theirs to cancel, for the same reason an application is withdrawable up to
+    acceptance: nobody has committed to them yet, so changing their mind costs
+    nobody anything. A 404 for somebody else's, never a 403.
+    """
+    try:
+        oid = ObjectId(held_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Not found")
+    now = datetime.now(timezone.utc)
+    row = await db.held_applications.find_one_and_update(
+        {"_id": oid, "creator_id": ObjectId(user["_id"]), "state": "held"},
+        {"$set": {"state": "withdrawn", "resolved_at": now, "updated_at": now,
+                  "reason": "You took this one back."}},
+        return_document=True,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    await audit(
+        user,
+        "application.held_withdrawn",
+        "campaign",
+        row["campaign_id"],
+        after={"creator_id": user["_id"]},
+    )
+    return {"id": held_id, "state": "withdrawn"}
+
+
 @creator_router.get("/invitations")
 async def list_creator_invitations(user: dict = Depends(require_roles("creator"))):
     """What this creator has been asked to do.
@@ -8054,6 +8306,7 @@ def _serialize_brand_campaign(
         # Never None: the owner's console prints one of two words on every row.
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
+        "requires_slot_confirmation": _requires_slot_confirmation(doc),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -8533,6 +8786,11 @@ async def _brand_profile_response(profile: dict) -> dict:
     # Keyed on user_id, the same id campaigns use for brand_id.
     documents = await _brand_documents(profile["user_id"])
     state = _brand_verification_state(profile)
+    # Whether their next brief waits on us, and what is left before it stops
+    # doing. Beside the verification block because it is the same question one
+    # step on: first "are we allowed to reach creators", then "do we still
+    # queue behind a review to do it".
+    out["trust"] = await _trust_block(profile)
     out["verification"] = {
         "state": state,
         # When the check runs out, folded into the block the verification
@@ -9136,6 +9394,12 @@ async def create_brand_campaign(
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
+        # **Default off, unlike the draft gate.** A booking on most briefs is
+        # the creator picking one of the manager's own published slots, and
+        # asking somebody to confirm that is asking them to agree with
+        # themselves. Where a venue really does have to check the day, the
+        # brand turns it on.
+        "requires_slot_confirmation": bool(payload.requires_slot_confirmation),
         # When the venue can actually take people. Empty means no restriction,
         # which is what a brand that skipped the question is saying.
         "restricted_days": _clean_restricted_days(payload.restricted_days),
@@ -9168,6 +9432,13 @@ async def create_brand_campaign(
     }
     if payload.status == CAMPAIGN_REVIEW_STATUS:
         doc["submitted_for_review_at"] = now
+        # **A brand that has earned it publishes on submission.** The check
+        # moves from before publication to after it: the campaign still
+        # appears in the admin queue, flagged for a spot check, but nobody is
+        # waiting on that flag. See `_brand_is_trusted`.
+        brand_profile = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
+        if await _brand_is_trusted(brand_profile):
+            doc.update(_auto_published_fields(doc, now))
     # Allocated here rather than at first read, so the brand can quote the
     # brief's number in the same breath as posting it.
     doc["reference"] = await _next_reference("campaign")
@@ -9181,6 +9452,20 @@ async def create_brand_campaign(
         after={"title": doc["title"], "status": doc["status"]},
         **_campaign_audit_context(doc),
     )
+    if doc.get("auto_published_at"):
+        # **Audited as its own action, and not as `campaign.approve`.** The
+        # trust count reads that line, and a brand approving its own campaigns
+        # into the count that decides whether it may approve its own campaigns
+        # is a loop. This says what happened: nobody reviewed it.
+        await audit(
+            _SYSTEM_ACTOR,
+            "campaign.auto_publish",
+            "campaign",
+            result.inserted_id,
+            after={"status": doc["status"], "trusted": True},
+            note="Published without review — the brand is trusted.",
+            **_campaign_audit_context(doc),
+        )
     return _serialize_brand_campaign(doc, 0)
 
 
@@ -12747,6 +13032,11 @@ async def _set_creator_verification(
             body="Your profile is approved — live briefs are open to you now.",
             link="/campaigns",
         )
+        # **And every pitch they made while waiting goes in, now.** This is the
+        # half that makes applying before verification worth anything: the
+        # creator does nothing, and the briefs they were right for a week ago
+        # have their application on them.
+        await _release_held_applications(oid, actor)
     else:
         await notify(
             oid,
@@ -12755,6 +13045,9 @@ async def _set_creator_verification(
             body=(reason or "Update your profile and we'll take another look."),
             link="/onboarding/creator",
         )
+        # And the held pitches come back off the table rather than sitting
+        # somewhere they will never move from.
+        await _withdraw_held_applications(oid, reason)
 
     user = await db.users.find_one({"_id": oid})
     return _serialize_admin_creator(result, user or {})
@@ -15715,9 +16008,24 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_
     Declared before /campaigns/{campaign_id}/... so the fixed path wins. Oldest
     first — a queue people jump is not a queue.
     """
+    # **Two kinds of row in one queue, and only one of them is blocking.**
+    # A submitted brief is waiting on a decision. A trusted brand's brief is
+    # already live and waiting on a look — the check moved to after
+    # publication, which is the whole trade. They belong on the same screen
+    # because it is the same person's job; they are told apart by
+    # `auto_published`, and the spot check is cleared rather than approved.
     docs = (
         await db.campaigns.find(
-            {"status": CAMPAIGN_REVIEW_STATUS, **_console_brand_query(user)}
+            {
+                "$and": [
+                    {"$or": [
+                        {"status": CAMPAIGN_REVIEW_STATUS},
+                        {"auto_published_at": {"$ne": None},
+                         "spot_checked_at": None},
+                    ]},
+                    _console_brand_query(user) or {},
+                ]
+            }
         )
         .sort("submitted_for_review_at", 1)
         .to_list(length=500)
@@ -15761,6 +16069,12 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_
             "created_at": _iso(d.get("created_at")),
             # Present when this is a resubmission of something we sent back.
             "previous_review_reason": d.get("review_reason"),
+            # **Live already, and here to be looked at rather than decided.**
+            # The row's actions differ: "looks fine" clears it, and rejecting
+            # it pulls a brief that creators can currently see.
+            "auto_published": bool(d.get("auto_published_at")),
+            "auto_published_at": _iso(d.get("auto_published_at")),
+            "status": d.get("status"),
         }
         for d in docs
     ]
@@ -15999,6 +16313,11 @@ async def approve_campaign(
         before={"status": CAMPAIGN_REVIEW_STATUS},
         after={"status": status},
         note=(payload.reason if payload else None),
+        # **The brand, on the line.** `_brand_review_record` counts these to
+        # decide whether a brand has earned its own publish button, and a
+        # decision that does not say which brand it was about is a decision
+        # that cannot be counted. It was missing here and on the rejection.
+        **_campaign_audit_context(updated),
     )
 
     title = updated.get("title") or "Your campaign"
@@ -16018,6 +16337,267 @@ async def approve_campaign(
     return {"id": campaign_id, "status": status, "notification": delivery}
 
 
+class TrustPayload(BaseModel):
+    """Why a brand is losing, or getting back, its own publish button."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+
+# --- Working a queue fifty rows at a time ------------------------------------
+#
+# Approving fifty creators one at a time is the heaviest process this operation
+# has: fifty dialogs, fifty confirmations, fifty page loads. The decisions are
+# individually considered — somebody has read the profiles — and then entering
+# them is an afternoon.
+#
+# **The bulk route is a loop over the single-record ones and nothing else.** It
+# is not a faster path that skips anything: every decision goes through the
+# same function a one-at-a-time click does, so each one is audited under its
+# own subject id and each person is notified individually. A bulk write that
+# stamped fifty rows in one `update_many` would be one audit line for fifty
+# decisions, which is a record nobody can answer a question from.
+
+def _detail_text(detail) -> str:
+    """An HTTPException detail as one sentence, whichever shape it came in.
+
+    The refusals in this codebase are sometimes a string and sometimes a
+    `{message, code}` block; a batch report that printed the dict at somebody
+    would be a batch report nobody reads.
+    """
+    if isinstance(detail, dict):
+        return str(detail.get("message") or detail.get("code") or "Refused")
+    return str(detail)
+
+
+BULK_KINDS = ("creators", "campaigns", "brands")
+# Which queues are the platform's rather than a brand's — the same split
+# `ADMIN_ONLY_EXPORTS` makes, for the same reason. A creator is somebody who
+# works across every brand, so deciding about one is not scoped work.
+BULK_ADMIN_ONLY = ("creators",)
+MAX_BULK = 100
+
+
+class BulkDecisionPayload(BaseModel):
+    """What to do, to whom, and why.
+
+    One reason for the whole batch, which is the honest shape: somebody
+    rejecting nine profiles in one action is rejecting them for one reason. A
+    per-row reason would be nine dialogs again.
+    """
+
+    ids: list[str] = Field(min_length=1, max_length=MAX_BULK)
+    action: Literal["approve", "reject"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+@admin_router.post("/bulk/{kind}")
+async def bulk_review(
+    kind: str,
+    payload: BulkDecisionPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Approve or reject a batch, one real decision at a time.
+
+    **The role is re-checked here by hand, and that is not belt and braces.**
+    Calling a route function directly skips FastAPI's dependency injection, so
+    the `require_roles("admin")` on `approve_creator` does *not* run when this
+    loop calls it. Without the check below, a `weare_team` member could reach
+    the creator directory's decisions through this door — which is precisely
+    the scope this console spends so much effort holding everywhere else.
+
+    Nothing aborts the batch. A row that has moved since the list was drawn is
+    reported against its own id and the other forty-nine still go through:
+    losing a whole afternoon's work to one stale row is worse than the stale
+    row.
+    """
+    if kind not in BULK_KINDS:
+        raise HTTPException(status_code=404, detail="Unknown queue")
+    if kind in BULK_ADMIN_ONLY and not is_all_access(user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    reason = (payload.reason or "").strip()
+    if payload.action == "reject" and not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Give a reason — everybody in this batch is told it.",
+        )
+
+    # Deduplicated, because a double-click on "select all" should not send the
+    # same decision twice, and the second one 409s in a way that reads as a
+    # failure.
+    ids, seen = [], set()
+    for raw in payload.ids:
+        if raw not in seen:
+            seen.add(raw)
+            ids.append(raw)
+
+    decision = DecisionPayload(reason=reason or None)
+    handler = {
+        ("creators", "approve"): approve_creator,
+        ("creators", "reject"): reject_creator,
+        ("campaigns", "approve"): approve_campaign,
+        ("campaigns", "reject"): reject_campaign,
+        ("brands", "approve"): verify_brand,
+        ("brands", "reject"): reject_brand,
+    }[(kind, payload.action)]
+
+    done, failed = [], []
+    for record_id in ids:
+        try:
+            await handler(record_id, decision, user)
+            done.append(record_id)
+        except HTTPException as err:
+            failed.append({"id": record_id, "error": _detail_text(err.detail)})
+        except Exception:  # noqa: BLE001 — one bad row must not end the batch
+            logger.exception("bulk %s %s failed on %s", payload.action, kind, record_id)
+            failed.append({"id": record_id, "error": "Something went wrong with this one."})
+
+    # **The batch itself is audited too, on top of the individual lines.** The
+    # per-record lines say what was decided; this one says it was decided in
+    # one action, which is the thing somebody reviewing the log later wants to
+    # know about fifty identical decisions one second apart.
+    await audit(
+        user,
+        f"bulk.{kind}_{payload.action}",
+        "bulk",
+        kind,
+        after={"requested": len(ids), "done": len(done), "failed": len(failed)},
+        note=reason or None,
+    )
+    return {"kind": kind, "action": payload.action,
+            "done": done, "failed": failed,
+            "requested": len(ids)}
+
+
+@admin_router.post("/campaigns/{campaign_id}/spot-check")
+async def spot_check_campaign(
+    campaign_id: str,
+    payload: DecisionPayload | None = None,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """"Looked at it, it's fine" — the after-the-fact half of trusted publish.
+
+    **Clearing a spot check is not approving a campaign**, and it deliberately
+    does not write `reviewed_at` or count toward the trust record. The brief
+    was published by the brand; this records that somebody read it afterwards,
+    which is the only thing that makes "flagged rather than blocking" mean
+    anything. If it is *not* fine, the reject route below pulls it.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    if not campaign.get("auto_published_at"):
+        raise HTTPException(
+            status_code=409,
+            detail="This one went through review — approve or reject it instead.",
+        )
+    now = datetime.now(timezone.utc)
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {"spot_checked_at": now,
+                  "spot_checked_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                  "updated_at": now}},
+    )
+    await audit(
+        user,
+        "campaign.spot_check",
+        "campaign",
+        campaign["_id"],
+        after={"spot_checked": True},
+        note=(payload.reason if payload else None),
+        **_campaign_audit_context(campaign),
+    )
+    return {"id": campaign_id, "spot_checked_at": _iso(now)}
+
+
+@admin_router.post("/brands/{user_id}/trust/revoke")
+async def revoke_brand_trust(
+    user_id: str,
+    payload: TrustPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Put this brand's campaigns back in front of a person.
+
+    **Admin-only, and it outlives the count.** Trust is otherwise arithmetic —
+    three clean approvals and it comes back — so a revocation that the count
+    could overturn would be a decision with an expiry date nobody chose.
+    `_trust_revoked` is checked before the count for exactly that reason.
+    """
+    oid = await _console_brand_or_404(user_id, user)
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {"$set": {"trust_revoked": True,
+                  "trust_revoked_reason": payload.reason.strip(),
+                  "trust_revoked_at": now,
+                  "trust_revoked_by_name": user.get("name"),
+                  "updated_at": now}},
+    )
+    await audit(user, "brand.trust_revoked", "brand", oid,
+                after={"trust_revoked": True}, note=payload.reason.strip()[:500],
+                brand_id=oid)
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    return await _trust_block(profile)
+
+
+@admin_router.post("/brands/{user_id}/trust/restore")
+async def restore_brand_trust(
+    user_id: str,
+    payload: TrustPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Lift a revocation. The count decides again from here.
+
+    Reasoned like the revocation, because "why is this brand trusted again" is
+    the question somebody asks after the second bad brief.
+    """
+    oid = await _console_brand_or_404(user_id, user)
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {"$set": {"trust_revoked": False, "updated_at": now},
+         "$unset": {"trust_revoked_reason": "", "trust_revoked_at": "",
+                    "trust_revoked_by_name": ""}},
+    )
+    await audit(user, "brand.trust_restored", "brand", oid,
+                after={"trust_revoked": False}, note=payload.reason.strip()[:500],
+                brand_id=oid)
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    return await _trust_block(profile)
+
+
+class TrustedApprovalsPayload(BaseModel):
+    approvals: int = Field(ge=_TRUSTED_MIN, le=_TRUSTED_MAX)
+
+
+@admin_router.get("/settings/trusted-brands")
+async def get_trusted_setting(user: dict = Depends(require_roles("admin"))):
+    return {"approvals": await trusted_brand_threshold(),
+            "default": TRUSTED_BRAND_APPROVALS,
+            "min": _TRUSTED_MIN, "max": _TRUSTED_MAX}
+
+
+@admin_router.put("/settings/trusted-brands")
+async def put_trusted_setting(
+    payload: TrustedApprovalsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Only what happens next.** Raising the bar does not un-trust a brand
+    mid-flight in any stored sense — the check is computed on every submission,
+    so the next brief simply goes back through review. Nothing already
+    published is pulled."""
+    before = await trusted_brand_threshold()
+    await db.platform_settings.update_one(
+        {"_id": _TRUSTED_SETTINGS_ID},
+        {"$set": {"approvals": int(payload.approvals),
+                  "updated_at": datetime.now(timezone.utc),
+                  "updated_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                  "updated_by_name": user.get("name")}},
+        upsert=True,
+    )
+    await audit(user, "settings.trusted_brands", "settings", _TRUSTED_SETTINGS_ID,
+                before={"approvals": before}, after={"approvals": int(payload.approvals)})
+    return await get_trusted_setting(user)
+
+
 @admin_router.post("/campaigns/{campaign_id}/reject")
 async def reject_campaign(
     campaign_id: str,
@@ -16029,6 +16609,13 @@ async def reject_campaign(
     It returns to `draft` rather than dying: the brand fixes what we asked
     about and submits again. The reason rides on the campaign so they are not
     guessing at what to change.
+
+    **This is also how a spot check goes wrong.** A trusted brand's brief is
+    already live, so rejecting one pulls it out of the feed — which is the
+    thing that makes "flagged rather than blocking" a real check and not a
+    formality. The precondition below accepts both shapes for that reason, and
+    creators who already applied keep their applications: the campaign is a
+    draft again, not deleted.
     """
     cid = (await _admin_campaign_or_404(campaign_id, user))["_id"]
 
@@ -16044,7 +16631,12 @@ async def reject_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     current = campaign.get("status")
-    if current != CAMPAIGN_REVIEW_STATUS:
+    # A brief a trusted brand published itself is live and un-spot-checked, and
+    # pulling it is the only thing that makes the spot check a check.
+    pulling_live = bool(campaign.get("auto_published_at")) and not campaign.get(
+        "spot_checked_at"
+    )
+    if current != CAMPAIGN_REVIEW_STATUS and not pulling_live:
         raise HTTPException(
             status_code=409,
             detail=(
@@ -16055,13 +16647,18 @@ async def reject_campaign(
 
     now = datetime.now(timezone.utc)
     updated = await db.campaigns.find_one_and_update(
-        {"_id": cid, "status": CAMPAIGN_REVIEW_STATUS},
+        # The precondition is still the status it was actually in, so two
+        # admins in the queue cannot both act on it.
+        {"_id": cid, "status": current},
         {
             "$set": {
                 **_state_stamp("draft", now, field="status"),
                 "review_reason": reason,
                 "reviewed_at": now,
                 "reviewed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+                # It has been looked at now, whatever the outcome — otherwise a
+                # pulled brief sits in the spot-check queue forever.
+                "spot_checked_at": now if pulling_live else campaign.get("spot_checked_at"),
             }
         },
         return_document=True,
@@ -16077,6 +16674,9 @@ async def reject_campaign(
         before={"status": CAMPAIGN_REVIEW_STATUS},
         after={"status": "draft"},
         note=reason,
+        # Counted by `_brand_review_record`, and a single one of these is what
+        # ends a brand's trusted status.
+        **_campaign_audit_context(updated),
     )
 
     title = updated.get("title") or "Your campaign"
@@ -16158,6 +16758,7 @@ _CAMPAIGN_BRIEF_FIELDS = (
     "execution_owner",
     "visibility",
     "requires_draft_approval",
+    "requires_slot_confirmation",
     "restricted_days",
     "shoot_windows",
     "venue_address",
@@ -17254,6 +17855,7 @@ async def get_admin_brand_detail(
         # the only way past the publish block — and the override's reason and
         # who granted it, because an override nobody can revisit is one that
         # quietly becomes permanent.
+        "trust": await _trust_block(profile),
         "invoices": (await _brand_overdue_invoices([oid])).get(oid),
         "invoice_override": {
             "active": bool(profile.get("invoice_override")),
@@ -20847,6 +21449,7 @@ async def admin_create_campaign(
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
+        "requires_slot_confirmation": bool(payload.requires_slot_confirmation),
         "restricted_days": _clean_restricted_days(payload.restricted_days),
         "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
         "event_date": payload.event_date,
@@ -23105,6 +23708,7 @@ async def reschedule_creator(
         raise HTTPException(status_code=404, detail="Slot not found")
 
     now = datetime.now(timezone.utc)
+
     claimed = await db.campaign_slots.find_one_and_update(
         {"_id": target_oid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
         {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
@@ -23774,6 +24378,11 @@ async def get_campaign(
     payload["application"] = None
     payload["can_apply"] = False
     payload["apply_blocked_reason"] = None
+    # Whether pitching here means "you're on the board" or "we'll put you on it
+    # when you're verified". Decided server-side like every other action, so
+    # the button's promise and the route's behaviour cannot diverge.
+    payload["apply_holds"] = False
+    payload["outstanding"] = None
     if user["role"] == "creator":
         # Decide eligibility server-side so the button and the API agree.
         profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
@@ -23781,10 +24390,26 @@ async def get_campaign(
         needed = int(doc.get("creators_needed") or 1)
         filled = (await _filled_counts_for([oid])).get(oid, 0)
 
-        if verification == "pending":
+        held = await db.held_applications.find_one(
+            {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "state": "held"}
+        )
+        if held:
+            payload["has_applied"] = True
+            payload["application"] = _serialize_held(held, doc)
+            payload["outstanding"] = _verification_outstanding(profile)
+        elif _may_hold_application(profile) and not _creator_block(
+            profile, await db.users.find_one({"_id": ObjectId(user["_id"])})
+        ):
+            # **Not blocked — held.** They can pitch; it waits with us rather
+            # than with them.
+            payload["can_apply"] = True
+            payload["apply_holds"] = True
+            payload["outstanding"] = _verification_outstanding(profile)
+        elif verification == "pending":
             payload["apply_blocked_reason"] = (
-                "Your profile is still with the WeAre team. You can pitch on briefs "
-                "as soon as it's approved."
+                "Finish your profile and submit it for review — you can pitch on "
+                "briefs from the moment you do, and we'll put your pitch in as "
+                "soon as you're verified."
             )
         elif verification == "rejected":
             payload["apply_blocked_reason"] = (
@@ -23862,6 +24487,367 @@ def _why_you_cannot_apply(profile: Optional[dict]) -> str:
     )
 
 
+# --- Applications taken before we have checked the creator -------------------
+#
+# Verification gated pitching, so a creator browsed, found something they were
+# right for, and hit a wall. They came back two days later to a brief that had
+# filled. The wait was ours and the cost was theirs.
+#
+# So the pitch is taken and **held**. A held application is deliberately *not*
+# a collaboration: it is on no applicant board, takes no seat, notifies no
+# brand and counts toward nothing, because until we have checked the creator we
+# have not agreed they may reach one.
+#
+# **Its own collection, for the reason invitations have one.** A new state on
+# `collaborations` would have to be excluded from forty-five existing reads —
+# boards, fill counts, exports, the reliability aggregation, the health checks
+# — and the one that got missed would be a creator we have not verified sitting
+# on a brand's shortlist. `campaign_invitations` is the same shape and the same
+# argument: not a collaboration until the creator pitches; not a collaboration
+# until we have checked them.
+#
+# Releasing goes through `_create_application`, exactly as accepting an
+# invitation does, so what lands on the board is an ordinary application in
+# every respect.
+
+HELD_APPLICATION_STATES = ("held", "released", "withdrawn", "declined")
+
+
+def _may_hold_application(profile: Optional[dict]) -> bool:
+    """Is this creator far enough along that we will take a pitch on account?
+
+    **Submitted for review, and nothing else.** Not a half-finished profile: a
+    brand reading a shortlist a week later should not find somebody who never
+    filled theirs in, and holding an application for a creator who has not
+    asked to be reviewed is holding it forever. Not a rejected one either —
+    they have an answer, and the answer was no.
+    """
+    profile = profile or {}
+    return bool(
+        profile.get("submitted_for_review_at")
+        and profile.get("verification_status") == "pending"
+    )
+
+
+def _serialize_held(row: dict, campaign: Optional[dict] = None) -> dict:
+    return {
+        "id": str(row["_id"]),
+        "campaign_id": str(row["campaign_id"]),
+        "campaign_title": (campaign or {}).get("title"),
+        "brand_name": (campaign or {}).get("brand_name"),
+        "cover_image_url": (campaign or {}).get("cover_image_url"),
+        "state": row.get("state"),
+        "held": row.get("state") == "held",
+        "pitch": row.get("pitch"),
+        "quoted_rate": row.get("quoted_rate"),
+        "reason": row.get("reason"),
+        "created_at": _iso(row.get("created_at")),
+        "resolved_at": _iso(row.get("resolved_at")),
+    }
+
+
+async def _hold_application(
+    campaign: dict,
+    user: dict,
+    profile: Optional[dict],
+    *,
+    pitch: str,
+    quoted_rate: float,
+) -> dict:
+    """Take the pitch now, put it on the campaign when we have checked them.
+
+    Refuses a second hold on the same brief the same way a duplicate
+    application is refused, so "apply" means the same thing to a creator
+    whichever side of verification they are on.
+
+    **The capacity check is deliberately not made here.** A held application
+    takes no seat, so refusing one because the campaign is currently full would
+    turn a brief that might yet open up into a door closed twice. It is made at
+    release, which is the moment it would actually take a place.
+    """
+    creator_oid = ObjectId(user["_id"])
+    existing = await db.held_applications.find_one(
+        {"campaign_id": campaign["_id"], "creator_id": creator_oid, "state": "held"}
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "You've already pitched for this one — it's waiting on your verification.",
+                "code": "already_held",
+            },
+        )
+
+    now = datetime.now(timezone.utc)
+    row = {
+        "campaign_id": campaign["_id"],
+        "creator_id": creator_oid,
+        "brand_id": campaign.get("brand_id"),
+        "pitch": pitch.strip(),
+        "quoted_rate": float(quoted_rate),
+        "state": "held",
+        "created_at": now,
+        "updated_at": now,
+    }
+    row["_id"] = (await db.held_applications.insert_one(row)).inserted_id
+    await audit(
+        user,
+        "application.held",
+        "campaign",
+        campaign["_id"],
+        after={"held": True, "creator_id": str(creator_oid)},
+        **_campaign_audit_context(campaign),
+    )
+    return {
+        **_serialize_held(row, campaign),
+        # What is actually outstanding, in the creator's own words rather than
+        # "pending" — the whole point is that they can see what to do about it.
+        "outstanding": _verification_outstanding(profile),
+    }
+
+
+def _verification_outstanding(profile: Optional[dict]) -> dict:
+    """What stands between this creator and their held pitches going in.
+
+    One reader, so the campaign page's refusal, the dashboard's banner and the
+    held row all say the same thing.
+    """
+    completeness = _profile_completeness(profile or {})
+    submitted = (profile or {}).get("submitted_for_review_at")
+    return {
+        "submitted_at": _iso(submitted),
+        "percent": completeness["percent"],
+        "missing": completeness["missing"],
+        "waiting_on": "weare" if submitted and not completeness["missing"] else "you",
+        "message": (
+            "Your profile is with the WeAre team. The moment you're verified this "
+            "goes onto the brand's list — you don't need to do anything else."
+            if submitted
+            else "Finish your profile and submit it, and this goes in automatically."
+        ),
+    }
+
+
+async def _release_held_applications(creator_oid, actor: dict) -> list:
+    """Put every held pitch onto its campaign, now that we have checked them.
+
+    Called from the verification decision, so a creator who applied to four
+    briefs while waiting is on all four the moment they are approved — which
+    is the entire point of taking the pitch early.
+
+    **A campaign that has since filled or closed is not an error.** It is the
+    ordinary outcome of having waited, and the honest thing is to tell them
+    rather than to fail the verification over it.
+    """
+    rows = await db.held_applications.find(
+        {"creator_id": creator_oid, "state": "held"}
+    ).to_list(length=100)
+    if not rows:
+        return []
+
+    profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+    account = await db.users.find_one({"_id": creator_oid})
+    creator = {**(account or {}), "_id": creator_oid,
+               "name": (profile or {}).get("name") or (account or {}).get("name")}
+
+    out = []
+    for row in rows:
+        campaign = await db.campaigns.find_one({"_id": row["campaign_id"]})
+        now = datetime.now(timezone.utc)
+        if not campaign or campaign.get("status") not in _LIVE_STATUSES:
+            await _resolve_held(row, "expired_campaign", now,
+                                "That brief closed while your profile was being checked.")
+            continue
+        try:
+            await _create_application(
+                campaign, creator,
+                pitch=row.get("pitch") or "", quoted_rate=row.get("quoted_rate") or 0,
+            )
+        except HTTPException as err:
+            # Full, or they somehow already have one. Either way the pitch does
+            # not land, and saying so is better than a row that silently
+            # vanished.
+            await _resolve_held(
+                row, "expired_campaign", now,
+                err.detail if isinstance(err.detail, str)
+                else "That brief was already full.",
+            )
+            continue
+        await db.held_applications.update_one(
+            {"_id": row["_id"]},
+            {"$set": {"state": "released", "resolved_at": now, "updated_at": now}},
+        )
+        await audit(
+            actor,
+            "application.released",
+            "campaign",
+            campaign["_id"],
+            after={"creator_id": str(creator_oid)},
+            note="Held pitch went in when the creator was verified.",
+            **_campaign_audit_context(campaign),
+        )
+        out.append(campaign)
+
+    if out:
+        titles = ", ".join(f"“{c.get('title')}”" for c in out[:3])
+        await notify(
+            creator_oid,
+            "held_applications_released",
+            title="Your pitches are in",
+            body=(
+                f"You're verified, so the {len(out)} brief"
+                f"{'' if len(out) == 1 else 's'} you pitched for went in: {titles}."
+            ),
+            link="/dashboard",
+        )
+    return out
+
+
+async def _resolve_held(row: dict, state: str, now: datetime, reason: str) -> None:
+    """Close a held pitch that is not going to land, with the reason on it."""
+    await db.held_applications.update_one(
+        {"_id": row["_id"]},
+        {"$set": {"state": "withdrawn" if state == "expired_campaign" else state,
+                  "reason": reason, "resolved_at": now, "updated_at": now}},
+    )
+    await notify(
+        row["creator_id"],
+        "held_application_withdrawn",
+        title="One of your pitches didn't go in",
+        body=reason,
+        link="/campaigns",
+    )
+
+
+async def _withdraw_held_applications(creator_oid, reason: Optional[str]) -> int:
+    """Rejected, so the pitches come back off the table.
+
+    Told plainly and once, rather than leaving rows that will never move — a
+    creator who fixes their profile and is verified later can pitch again, and
+    a stale held row would go in months after the brief closed.
+    """
+    now = datetime.now(timezone.utc)
+    rows = await db.held_applications.find(
+        {"creator_id": creator_oid, "state": "held"}
+    ).to_list(length=100)
+    if not rows:
+        return 0
+    await db.held_applications.update_many(
+        {"creator_id": creator_oid, "state": "held"},
+        {"$set": {"state": "declined",
+                  "reason": reason or "Your profile wasn't approved.",
+                  "resolved_at": now, "updated_at": now}},
+    )
+    await notify(
+        creator_oid,
+        "held_application_withdrawn",
+        title="Your pitches have been taken back",
+        body=(
+            f"{len(rows)} pitch{'' if len(rows) == 1 else 'es'} you made while waiting "
+            "won't go in, because your profile wasn't approved. "
+            + (reason or "Update it and submit again, and you can pitch afresh.")
+        ),
+        link="/onboarding/creator",
+    )
+    return len(rows)
+
+
+async def _create_application(
+    campaign: dict,
+    creator: dict,
+    *,
+    pitch: str,
+    quoted_rate: float,
+) -> dict:
+    """Put a real application on a campaign, and tell whoever runs it.
+
+    **One implementation, three callers**: a verified creator pitching, an
+    invitation being accepted, and a held application being released when its
+    creator is verified. A second copy would be a second definition of what an
+    application is — the capacity check, the duplicate refusal and the routing
+    are all part of that definition, not decoration around it.
+
+    The caller has already decided the creator may apply. This does not
+    re-check verification, because the release path runs at the exact moment
+    the profile flips and re-reading it would be a race with our own write.
+    """
+    oid = campaign["_id"]
+    creator_oid = ObjectId(creator["_id"]) if isinstance(creator.get("_id"), str) else creator["_id"]
+
+    # Don't take a pitch for a slot that's already gone.
+    needed = int(campaign.get("creators_needed") or 1)
+    filled = (await _filled_counts_for([oid])).get(oid, 0)
+    if filled >= needed:
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has all the creators it needs.",
+        )
+
+    now = datetime.now(timezone.utc)
+    try:
+        result = await db.collaborations.insert_one(
+            {
+                "campaign_id": oid,
+                "creator_id": creator_oid,
+                "reference": await _next_reference("collaboration"),
+                "pitch": pitch.strip(),
+                "quoted_rate": float(quoted_rate),
+                "agreed_amount": None,
+                "content_url": None,
+                "content_urls": [],
+                "scheduled_at": None,
+                **_state_stamp("applied", now),
+                "active": True,
+                "created_at": now,
+            }
+        )
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=409, detail="You've already applied to this campaign"
+        )
+
+    # Where the application goes is the whole point of execution_owner. This
+    # used to tell the brand's manager unconditionally, so a brand that had
+    # handed a campaign to us still got paged for every applicant and our own
+    # manager got nothing.
+    applicant_line = (
+        f"{creator.get('name') or 'A creator'} applied to “{campaign.get('title')}”."
+    )
+    if _weare_runs(campaign):
+        # Ours to action. `notify_campaign_manager` is silent when nobody is
+        # assigned yet — a campaign we own but have not staffed is a gap for
+        # the admin queue to show, not a booking to fail over.
+        await notify_weare_team(
+            campaign,
+            "new_applicant",
+            title="New applicant",
+            body=applicant_line,
+        )
+        # **The brand is not told.** They handed the campaign over; a raw
+        # application is not theirs to see yet, and a notification about one is
+        # the same information in a different envelope. They hear from us when
+        # there is a shortlisted creator and a number — see
+        # `_tell_brand_about_shortlist`.
+    else:
+        await notify_brand_manager(
+            campaign["brand_id"],
+            "brand_new_application",
+            title="New applicant",
+            body=applicant_line,
+            link=f"/brand/campaigns/{str(oid)}/applicants",
+        )
+
+    return {
+        "id": str(result.inserted_id),
+        "campaign_id": str(oid),
+        "state": "applied",
+        "held": False,
+        "pitch": pitch.strip(),
+        "quoted_rate": float(quoted_rate),
+        "created_at": _iso(now),
+    }
+
+
 @campaigns_router.post("/{campaign_id}/apply")
 async def apply_to_campaign(
     campaign_id: str,
@@ -23885,94 +24871,38 @@ async def apply_to_campaign(
     if not await _creator_may_see(campaign, creator_oid):
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    # Verification has to gate something, or the 48-hour review is decoration.
-    # Browsing stays open to everyone — a creator deciding whether this is worth
-    # finishing a profile for needs to see what is on offer — but pitching does
-    # not, and the check lives here rather than in the UI so it holds whatever
-    # the request came from.
     profile = await db.creator_profiles.find_one({"user_id": creator_oid})
-    if (profile or {}).get("verification_status") != "verified":
-        raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
+    account = await db.users.find_one({"_id": creator_oid})
+
     # Suspended, lapsed, or waiting on a re-check. **One reader, and it covers
     # the hole suspension had**: the block was written on the account and every
     # gate read the profile, so a suspended creator could pitch exactly as
     # before. All three refuse the *act*; work already accepted is untouched.
-    block = _creator_block(profile, await db.users.find_one({"_id": creator_oid}))
+    #
+    # Checked before the hold below, because none of the three is a wait — they
+    # are refusals, and holding an application for somebody who is suspended
+    # would be promising them something that is not coming.
+    block = _creator_block(profile, account)
     if block:
         raise HTTPException(status_code=403, detail=block)
 
-    # Don't take a pitch for a slot that's already gone.
-    needed = int(campaign.get("creators_needed") or 1)
-    filled = (await _filled_counts_for([oid])).get(oid, 0)
-    if filled >= needed:
-        raise HTTPException(
-            status_code=409,
-            detail="This campaign has all the creators it needs.",
-        )
+    # **Waiting on us is not a wall any more.** A creator who has finished
+    # their profile and submitted it used to browse, find something they were
+    # right for, and get told to come back later — by which time the brief was
+    # filled. The application is taken and held; see `_hold_application`.
+    if (profile or {}).get("verification_status") != "verified":
+        if _may_hold_application(profile):
+            return await _hold_application(
+                campaign, user, profile,
+                pitch=payload.pitch, quoted_rate=payload.quoted_rate,
+            )
+        raise HTTPException(status_code=403, detail=_why_you_cannot_apply(profile))
 
-    now = datetime.now(timezone.utc)
-    try:
-        result = await db.collaborations.insert_one(
-            {
-                "campaign_id": oid,
-                "creator_id": creator_oid,
-                "reference": await _next_reference("collaboration"),
-                "pitch": payload.pitch.strip(),
-                "quoted_rate": float(payload.quoted_rate),
-                "agreed_amount": None,
-                "content_url": None,
-                "content_urls": [],
-                "scheduled_at": None,
-                "state": "applied",
-                "active": True,
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-    except DuplicateKeyError:
-        raise HTTPException(
-            status_code=409, detail="You've already applied to this campaign"
-        )
-
-    # Where the application goes is the whole point of execution_owner. This
-    # used to tell the brand's manager unconditionally, so a brand that had
-    # handed a campaign to us still got paged for every applicant and our own
-    # manager got nothing.
-    applicant_line = (
-        f"{user.get('name') or 'A creator'} applied to “{campaign.get('title')}”."
+    return await _create_application(
+        campaign, {**(account or {}), "_id": creator_oid,
+                   "name": (profile or {}).get("name") or user.get("name")},
+        pitch=payload.pitch, quoted_rate=payload.quoted_rate,
     )
-    if _weare_runs(campaign):
-        # Ours to action. `notify_campaign_manager` is silent when nobody is
-        # assigned yet — a campaign we own but have not staffed is a gap for
-        # the admin queue to show, not a booking to fail over.
-        await notify_weare_team(
-            campaign,
-            "new_applicant",
-            title="New applicant",
-            body=applicant_line,
-        )
-        # **The brand is not told.** They handed the campaign over; a raw
-        # application is not theirs to see yet, and a notification about one is
-        # the same information in a different envelope. They hear from us when
-        # there is a shortlisted creator and a number — see
-        # `_tell_brand_about_shortlist`.
-    else:
-        await notify_brand_manager(
-            campaign["brand_id"],
-            "brand_new_application",
-            title="New applicant",
-            body=applicant_line,
-            link=f"/brand/campaigns/{campaign_id}/applicants",
-        )
-
-    return {
-        "id": str(result.inserted_id),
-        "campaign_id": campaign_id,
-        "state": "applied",
-        "pitch": payload.pitch.strip(),
-        "quoted_rate": float(payload.quoted_rate),
-        "created_at": _iso(now),
-    }
 
 
 # States from which a creator is actually on the campaign — what unlocks the
@@ -24025,6 +24955,8 @@ async def _claim_slot(
             ),
         )
 
+    needs_confirming = _requires_slot_confirmation(campaign)
+
     claimed = await db.campaign_slots.find_one_and_update(
         {"_id": soid, "$expr": {"$lt": ["$booked_count", "$capacity"]}},
         {"$inc": {"booked_count": 1}, "$set": {"updated_at": now}},
@@ -24044,7 +24976,14 @@ async def _claim_slot(
         # and `slot_confirmed_at` stays absent until the campaign's runner says
         # the time works. See `_slot_confirmed`.
         "slot_booked_at": now,
-        "slot_confirmed_at": None,
+        # **Stamped here when the campaign does not ask for a handshake**,
+        # rather than teaching every reader of `_slot_confirmed` about the
+        # campaign. Eight surfaces read that function and most of them do not
+        # have the campaign in hand; writing the answer at the one place that
+        # does keeps a single reader and makes the record honest — the runner
+        # agreed to this in advance by not requiring confirmation, and the
+        # timestamp says when the booking became one.
+        "slot_confirmed_at": None if needs_confirming else now,
         "slot_declined_reason": None,
         "updated_at": now,
     }
@@ -24078,41 +25017,71 @@ async def _claim_slot(
         before={"state": "commercial_agreed"},
         after={"state": "slot_booked", "slot_id": str(soid), "scheduled_at": _iso(when)},
     )
-    # **What the creator is told is that it is requested, not confirmed.** They
-    # arrange a day around this; "booked" when nobody has agreed the time is
-    # how somebody travels across Bengaluru to a shut venue.
-    await notify(
-        collab["creator_id"],
-        "slot_requested",
-        title="Slot requested",
-        body=f"{campaign.get('title')} — {_when_text(when)}. "
-        "We'll confirm it shortly.",
-        link=f"/campaigns/{str(campaign['_id'])}",
-    )
-    # And whoever runs the campaign has a decision to make, not a note to file.
     creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
     creator_name = (creator_profile or {}).get("name") or "A creator"
-    await notify_campaign_manager(
-        campaign,
-        "manager_slot_pending",
-        title="A slot needs confirming",
-        body=f"{creator_name} asked for "
-        f"{_when_text(when)} on {campaign.get('title')}.",
-    )
-    # And the brand, which has a table to hold whoever is running the day.
-    # `notify_brand_manager` no-ops when the campaign manager *is* the brand
-    # manager and has just been told, so nobody gets the same thing twice.
-    await _tell_brand_manager_unless_managed(
-        campaign,
-        "brand_slot_pending",
-        title="A slot needs confirming",
-        body=f"{creator_name} asked for {_when_text(when)} on "
-        f"“{campaign.get('title')}”.",
-    )
+
+    if needs_confirming:
+        # **What the creator is told is that it is requested, not confirmed.**
+        # They arrange a day around this; "booked" when nobody has agreed the
+        # time is how somebody travels across Bengaluru to a shut venue.
+        await notify(
+            collab["creator_id"],
+            "slot_requested",
+            title="Slot requested",
+            body=f"{campaign.get('title')} — {_when_text(when)}. "
+            "We'll confirm it shortly.",
+            link=f"/campaigns/{str(campaign['_id'])}",
+        )
+        # And whoever runs the campaign has a decision to make, not a note to
+        # file.
+        await notify_campaign_manager(
+            campaign,
+            "manager_slot_pending",
+            title="A slot needs confirming",
+            body=f"{creator_name} asked for "
+            f"{_when_text(when)} on {campaign.get('title')}.",
+        )
+        # And the brand, which has a table to hold whoever is running the day.
+        # `notify_brand_manager` no-ops when the campaign manager *is* the
+        # brand manager and has just been told, so nobody gets it twice.
+        await _tell_brand_manager_unless_managed(
+            campaign,
+            "brand_slot_pending",
+            title="A slot needs confirming",
+            body=f"{creator_name} asked for {_when_text(when)} on "
+            f"“{campaign.get('title')}”.",
+        )
+    else:
+        # **Settled, and said so.** Telling somebody "we'll confirm shortly"
+        # about a booking that is already confirmed is a message they wait on
+        # and a follow-up that never comes.
+        await notify(
+            collab["creator_id"],
+            "slot_confirmed",
+            title="You're booked",
+            body=f"{campaign.get('title')} — {_when_text(when)}. That's confirmed.",
+            link=f"/campaigns/{str(campaign['_id'])}",
+        )
+        # The runner is told rather than asked: it is their day being filled,
+        # and a diary entry is still worth having.
+        await notify_campaign_manager(
+            campaign,
+            "manager_slot_booked",
+            title="A slot was booked",
+            body=f"{creator_name} booked {_when_text(when)} on "
+            f"{campaign.get('title')}.",
+        )
+        await _tell_brand_manager_unless_managed(
+            campaign,
+            "brand_slot_booked",
+            title="A slot was booked",
+            body=f"{creator_name} booked {_when_text(when)} on "
+            f"“{campaign.get('title')}”.",
+        )
     return {
         "collaboration_id": str(collab["_id"]),
         "state": "slot_booked",
-        "slot_confirmed": False,
+        "slot_confirmed": not needs_confirming,
         "slot": _serialize_slot(claimed),
         "scheduled_at": _iso(when),
     }

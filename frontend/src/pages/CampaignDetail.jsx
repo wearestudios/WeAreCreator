@@ -72,6 +72,9 @@ const STATE_LABEL = {
     closed: "Paid",
     declined: "Not taken forward",
     cancelled: "Cancelled",
+    // Not a collaboration state — a pitch taken while we finish checking them.
+    // See `held_applications` on the server.
+    held: "Waiting on your verification",
 };
 
 const formatDate = (iso, opts) => {
@@ -283,8 +286,13 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
     );
 }
 
-function AppliedCard({ application }) {
+function AppliedCard({ application, outstanding }) {
     if (!application) return null;
+    // A held pitch is in, and the one thing somebody wants to know is whether
+    // they have to come back and do it again. `outstanding.message` is the
+    // server's answer — the same sentence the dashboard's held panel gives, so
+    // the two screens cannot describe the wait differently.
+    const held = application.held || application.state === "held";
     return (
         <div
             data-testid="applied-status-card"
@@ -293,14 +301,26 @@ function AppliedCard({ application }) {
             <div className="flex items-center gap-2 text-emerald-300">
                 <Check className="h-4 w-4" />
                 <span className="text-xs uppercase tracking-[0.2em]">
-                    Application submitted
+                    {held ? "Pitch received" : "Application submitted"}
                 </span>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-foreground/90">
-                {application.state === "applied"
+                {held
+                    ? outstanding?.message ||
+                      "We'll put this in front of the brand the moment your profile is verified."
+                    : application.state === "applied"
                     ? "Our team is reviewing your pitch before it goes to the brand. We'll message you on WhatsApp as it moves."
                     : "Your pitch is with the brand. We'll message you on WhatsApp as it moves."}
             </p>
+            {held && outstanding?.waiting_on === "you" && (
+                <Link
+                    to="/onboarding/creator"
+                    data-testid="applied-held-finish-link"
+                    className="mt-3 inline-block text-sm underline underline-offset-4 hover:no-underline"
+                >
+                    Finish your profile →
+                </Link>
+            )}
 
             <dl className="mt-5 space-y-3 border-t border-emerald-500/20 pt-4 text-sm">
                 <div>
@@ -406,10 +426,14 @@ export default function CampaignDetail() {
                       application: {
                           id: result.id,
                           state: result.state || "applied",
+                          // Carried through, or the optimistic card claims the
+                          // pitch is on the brand's board when it is held.
+                          held: result.held || result.state === "held",
                           pitch: result.pitch,
                           quoted_rate: result.quoted_rate,
                           created_at: result.created_at,
                       },
+                      outstanding: result.outstanding ?? c.outstanding,
                   }
                 : c,
         );
@@ -434,7 +458,12 @@ export default function CampaignDetail() {
             );
         }
         if (campaign.has_applied) {
-            return <AppliedCard application={campaign.application} />;
+            return (
+                <AppliedCard
+                    application={campaign.application}
+                    outstanding={campaign.outstanding}
+                />
+            );
         }
         // The server decides eligibility — verification, and whether slots remain.
         if (campaign.apply_blocked_reason) {
@@ -456,15 +485,31 @@ export default function CampaignDetail() {
             );
         }
         return (
-            <Button
-                data-testid="detail-apply-btn"
-                onClick={() => setDialogOpen(true)}
-                className="group h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
-            >
-                <Send className="mr-2 h-4 w-4" />
-                Apply
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-            </Button>
+            <div className="space-y-3">
+                {/* **Said before the button, not after it.** `apply_holds` is
+                    decided server-side, so what the button promises and what
+                    the route does cannot diverge — and somebody who finds out
+                    afterwards that their pitch is being held has been told the
+                    one thing they needed at the one moment it was no use. */}
+                {campaign.apply_holds && (
+                    <p
+                        data-testid="detail-apply-holds"
+                        className="rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm leading-relaxed text-ember-500/90"
+                    >
+                        You can pitch now. It waits with us and goes to the brand the
+                        moment you're verified — you won't need to send it again.
+                    </p>
+                )}
+                <Button
+                    data-testid="detail-apply-btn"
+                    onClick={() => setDialogOpen(true)}
+                    className="group h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                >
+                    <Send className="mr-2 h-4 w-4" />
+                    Apply
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                </Button>
+            </div>
         );
     }, [campaign, isCreator, user]);
 

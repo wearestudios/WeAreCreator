@@ -154,7 +154,9 @@ def test_a_new_record_is_numbered_when_it_is_made_not_when_it_is_read():
     it. Lazily numbering on read would mean two readers racing for one id."""
     for fn in (
         server.create_brand_campaign,
-        server.apply_to_campaign,
+        # The insert moved into the shared helper the three application
+        # paths go through; the reference is allocated with it.
+        server._create_application,
         server.verify_otp,
     ):
         assert "_next_reference(" in inspect.getsource(fn), (

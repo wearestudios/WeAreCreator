@@ -54,6 +54,12 @@ export function ConfirmDialog({
     confirmLabel = "Confirm",
     destructive = false,
     submitting = false,
+    // **A reason is required by default and optional where it is genuinely
+    // not needed.** Every single-record decision that reaches this dialog is
+    // a rejection or a removal, so demanding one is right — but bulk approve
+    // is the one case where insisting on a sentence would be asking somebody
+    // to justify agreeing with fifty profiles they have just read.
+    requireReason = true,
     extra = null,
     // **More than one field, for the handful of decisions that need it.**
     // Recording a payout has to capture the reference *and* what was withheld,
@@ -78,7 +84,7 @@ export function ConfirmDialog({
 
     const submit = (e) => {
         e.preventDefault();
-        if (reason.trim().length < MIN_REASON) {
+        if (requireReason && reason.trim().length < MIN_REASON) {
             setErr("Give a reason — it's shown in the audit log and to the person affected.");
             return;
         }

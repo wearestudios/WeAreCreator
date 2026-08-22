@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import PublishGate from "@/components/brand/PublishGate";
 import {
     Select,
     SelectContent,
@@ -87,6 +88,10 @@ export default function PostCampaign() {
     // brand-run brief: whoever is paying for the work should see it before
     // the creator's audience does. Off is a deliberate choice to make.
     const [requiresDraft, setRequiresDraft] = useState(true);
+    // **Off by default, unlike the draft gate.** On most briefs a booking is
+    // the creator picking one of the manager's own published slots, and asking
+    // somebody to confirm that is asking them to agree with themselves.
+    const [requiresSlotConfirmation, setRequiresSlotConfirmation] = useState(false);
     // When the venue can take people. Both default to "no restriction",
     // which is what most briefs mean.
     const [restrictedDays, setRestrictedDays] = useState([]);
@@ -139,6 +144,7 @@ export default function PostCampaign() {
         apply("execution_owner", setExecutionOwner);
         apply("visibility", setVisibility);
         apply("requires_draft_approval", setRequiresDraft, Boolean);
+        apply("requires_slot_confirmation", setRequiresSlotConfirmation, Boolean);
         apply("restricted_days", setRestrictedDays);
         apply("shoot_windows", setShootWindows);
         apply("category", setCategory);
@@ -198,6 +204,9 @@ export default function PostCampaign() {
                     // brief that doesn't review drafts would quietly turn the
                     // stage on for everybody already working it.
                     setRequiresDraft(Boolean(data.requires_draft_approval));
+                    setRequiresSlotConfirmation(
+                        Boolean(data.requires_slot_confirmation)
+                    );
                     setRestrictedDays(data.restricted_days || []);
                     setShootWindows(data.shoot_windows || []);
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
@@ -291,6 +300,7 @@ export default function PostCampaign() {
               }),
         visibility,
         requires_draft_approval: requiresDraft,
+        requires_slot_confirmation: requiresSlotConfirmation,
         restricted_days: restrictedDays,
         // Presets travel as a bare key; only a custom window carries times,
         // because the server owns what "lunch" means.
@@ -876,6 +886,50 @@ export default function PostCampaign() {
                                     </span>
                                 </span>
                             </label>
+
+                            {/* And the booking handshake, which is the same
+                                shape of question one step earlier. Off unless
+                                the venue really does have to check the day —
+                                see `_requires_slot_confirmation`. */}
+                            <label
+                                htmlFor="pc-slot-confirmation"
+                                className={
+                                    "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
+                                    (requiresSlotConfirmation
+                                        ? "border-ember-500 bg-ember-500/10"
+                                        : "border-white/10 bg-card/60 hover:border-white/25")
+                                }
+                            >
+                                <input
+                                    id="pc-slot-confirmation"
+                                    data-testid="pc-slot-confirmation"
+                                    type="checkbox"
+                                    checked={requiresSlotConfirmation}
+                                    onChange={(e) =>
+                                        setRequiresSlotConfirmation(e.target.checked)
+                                    }
+                                    className="mt-0.5 h-4 w-4 flex-none accent-ember-500"
+                                />
+                                <span className="min-w-0">
+                                    <span
+                                        className={
+                                            "block text-sm " +
+                                            (requiresSlotConfirmation
+                                                ? "text-ember-500"
+                                                : "text-foreground")
+                                        }
+                                    >
+                                        Confirm each booking yourself
+                                    </span>
+                                    <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                        Leave this off and a creator who books a slot
+                                        is booked. Turn it on where the venue has to
+                                        check the day first — you'll answer each
+                                        request, and they're told it's pending until
+                                        you do.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
 
                         <div className="grid gap-5 md:grid-cols-2">
@@ -1041,6 +1095,14 @@ export default function PostCampaign() {
                         </p>
                     )}
 
+                    {/* **Beside the button, not after it.** The refusal was
+                        always correct and always arrived as a toast, after the
+                        work, naming the state rather than the fix. */}
+                    <PublishGate
+                        verification={brandProfile?.verification}
+                        trust={brandProfile?.trust}
+                    />
+
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
                         {/* On a live campaign there's no draft to save back to. */}
                         {(!isEditing || existing?.status === "draft") && (
@@ -1068,7 +1130,16 @@ export default function PostCampaign() {
                         <Button
                             type="submit"
                             data-testid="pc-publish-btn"
-                            disabled={submitting || savingDraft}
+                            // Disabled rather than allowed-and-refused: the
+                            // explanation is on screen directly above it, so a
+                            // greyed button here is a fact somebody can read
+                            // rather than a dead end.
+                            disabled={
+                                submitting ||
+                                savingDraft ||
+                                (brandProfile?.verification &&
+                                    brandProfile.verification.state !== "verified")
+                            }
                             className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 md:ml-auto"
                         >
                             {submitting ? (

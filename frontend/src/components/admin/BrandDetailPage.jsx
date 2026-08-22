@@ -38,6 +38,8 @@ import BrandAvatar from "@/components/BrandAvatar";
 import BrandTeamPanel from "@/components/admin/BrandTeamPanel";
 import CancellationHistory from "@/components/admin/CancellationHistory";
 import BrandInvoices from "@/components/admin/BrandInvoices";
+import BrandDocuments from "@/components/admin/BrandDocuments";
+import BrandTrust from "@/components/admin/BrandTrust";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -329,55 +331,16 @@ export default function BrandDetailPage() {
 
                     <PerformanceRollup performance={data.performance} scope="brand" />
 
+                    {/* **Readable here, and decided here.** The endpoints
+                        for both existed for months with no caller, so
+                        verifying a brand meant judging a GST certificate by
+                        its filename. */}
                     <Section id="documents" title="Documents" count={data.documents.length}>
-                        {data.documents.length === 0 ? (
-                            <p
-                                data-testid={IDS.documentsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
-                            >
-                                Nothing uploaded. A brand needs at least one — GST certificate,
-                                business registration, FSSAI licence or shop &amp; establishment
-                                licence — before we'll look.
-                            </p>
-                        ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
-                                {data.documents.map((d) => (
-                                    <li
-                                        key={d.id}
-                                        data-testid={IDS.document(d.id)}
-                                        className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
-                                    >
-                                        <span className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-sm">
-                                            <FileText className="h-4 w-4 flex-none text-ember-500" />
-                                            <span className="min-w-0">
-                                                {d.doc_label}
-                                                <span className="block truncate text-sm text-muted-foreground">
-                                                    {d.original_name}
-                                                </span>
-                                            </span>
-                                        </span>
-                                        <span className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                                            {d.status}
-                                        </span>
-                                        <span className="w-32 flex-none text-sm text-muted-foreground">
-                                            {formatDate(d.uploaded_at)}
-                                        </span>
-                                        {/* The only route these are reachable
-                                            through: admin-only, audited, and
-                                            no-store. There is no public URL. */}
-                                        <a
-                                            href={`${API_BASE}/admin/brands/${id}/documents/${d.id}`}
-                                            target="_blank"
-                                            rel="noreferrer noopener"
-                                            className="inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
-                                        >
-                                            <ExternalLink className="h-3.5 w-3.5" />
-                                            Open
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <BrandDocuments
+                            brandId={id}
+                            documents={data.documents}
+                            onChanged={load}
+                        />
                     </Section>
 
                     <Section id="campaigns" title="Campaigns" count={data.campaigns.length}>
@@ -438,6 +401,18 @@ export default function BrandDetailPage() {
                         causes. Admin-only: a scoped console can see that a
                         brand is overdue, and letting somebody unblock the
                         brand whose campaigns they run is not a control. */}
+                    {/* Whether their briefs still queue behind a person, and
+                        the way to put them back in the queue. */}
+                    {allAccess && (
+                        <Section id="trust" title="Reviewing their campaigns">
+                            <BrandTrust
+                                userId={id}
+                                trust={data.trust}
+                                onChanged={load}
+                            />
+                        </Section>
+                    )}
+
                     {allAccess && (
                         <Section id="invoices" title="What they owe us">
                             <BrandInvoices

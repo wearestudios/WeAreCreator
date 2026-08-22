@@ -31,6 +31,7 @@ import { SafeSection } from "@/components/ErrorBoundary";
 import Hero from "@/components/creator/Hero";
 import Completeness from "@/components/creator/Completeness";
 import VerificationExpiry from "@/components/VerificationExpiry";
+import HeldApplications from "@/components/creator/HeldApplications";
 import ActiveCampaigns from "@/components/creator/ActiveCampaigns";
 import Suggested from "@/components/creator/Suggested";
 import Applications from "@/components/creator/Applications";
@@ -302,6 +303,18 @@ const CreatorHome = ({ user, justOnboarded }) => {
                                 </Reveal>
                             </SafeSection>
                         )}
+
+                        {/* **Above the live work, and outside the tabs.** A
+                            creator with held pitches has one question — do I
+                            have to do this again — and burying the answer in
+                            a drawer is answering it with "look for it". */}
+                        <SafeSection name="held" className="mt-10 md:mt-12">
+                            <HeldApplications
+                                held={data.held_applications}
+                                outstanding={data.verification_outstanding}
+                                onChanged={load}
+                            />
+                        </SafeSection>
 
                         {/* The live work stays outside the tabs, always. This
                             is the reason the page gets opened, and a venue

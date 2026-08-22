@@ -80,3 +80,59 @@ export const ADMIN_SETTINGS = {
 	input: (key) => `admin-setting-input-${key}`,
 	save: (key) => `admin-setting-save-${key}`,
 };
+
+// Verification papers, on the page where the decision is made.
+export const BRAND_DOCS = {
+	list: 'brand-documents',
+	empty: 'brand-documents-empty',
+	row: (id) => `brand-document-${id}`,
+	toggle: (id) => `brand-document-toggle-${id}`,
+	viewer: (id) => `brand-document-viewer-${id}`,
+	status: (id) => `brand-document-status-${id}`,
+	download: (id) => `brand-document-download-${id}`,
+	accept: (id) => `brand-document-accept-${id}`,
+	rejectOpen: (id) => `brand-document-reject-${id}`,
+	rejectNote: (id) => `brand-document-reject-note-${id}`,
+	rejectSubmit: (id) => `brand-document-reject-submit-${id}`,
+};
+
+// A brand that has stopped needing us to read every brief.
+export const TRUST = {
+	panel: 'brand-trust',
+	revoke: 'brand-trust-revoke',
+	restore: 'brand-trust-restore',
+	reason: 'brand-trust-reason',
+	submit: 'brand-trust-submit',
+	autoBadge: (id) => `campaign-auto-published-${id}`,
+	spotCheck: (id) => `campaign-spot-check-${id}`,
+};
+
+// Working a queue fifty rows at a time.
+export const BULK = {
+	bar: 'bulk-bar',
+	select: (id) => `bulk-select-${id}`,
+	selectAll: 'bulk-select-all',
+	approve: 'bulk-approve',
+	reject: 'bulk-reject',
+	dialog: 'bulk-dialog',
+	reason: 'bulk-reason',
+	confirm: 'bulk-confirm',
+	summary: 'bulk-summary',
+};
+
+// A pitch taken before we had checked the creator.
+export const HELD = {
+	panel: 'held-applications',
+	row: (id) => `held-application-${id}`,
+	cancel: (id) => `held-application-cancel-${id}`,
+	outstanding: 'held-outstanding',
+	notice: 'apply-holds-notice',
+};
+
+// Why a brief cannot go out yet, and when it stops waiting on us at all.
+export const BRAND_PUBLISH = {
+	gate: 'brand-publish-gate',
+	gateLink: 'brand-publish-gate-link',
+	trusted: 'brand-publish-trusted',
+	slotToggle: 'pc-slot-confirmation',
+};

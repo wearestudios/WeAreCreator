@@ -89,6 +89,9 @@ WIPED = (
     "campaign_questions",
     "campaign_templates",
     "collaborations",
+    # Pitches taken before a creator was verified. Their own collection
+    # rather than a state on `collaborations` — see `_hold_application`.
+    "held_applications",
     "collaboration_notes",
     "collaboration_ratings",
     "content_performance",

@@ -4922,7 +4922,7 @@ class TestBrandManagerNotifications:
     @pytest.mark.parametrize(
         "fn_name,call",
         [
-            ("apply_to_campaign", "notify_brand_manager"),
+            ("_create_application", "notify_brand_manager"),
             ("submit_collab_content", "notify_brand_manager"),
             ("_claim_slot", "_tell_brand_manager_unless_managed"),
             ("_tell_manager_a_seat_freed", "_tell_brand_manager_unless_managed"),

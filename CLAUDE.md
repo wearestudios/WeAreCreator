@@ -364,6 +364,60 @@ it takes:
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
 
+### Pitching while we are still checking you
+
+Verification used to gate pitching outright, so a creator browsed, found a
+brief they were right for, and hit a wall. They came back two days later to a
+campaign that had filled. The wait was ours and the cost was theirs.
+
+The pitch is now **taken and held**. `_may_hold_application` decides who
+qualifies — `submitted_for_review_at` set *and* `verification_status ==
+"pending"`, nothing looser: a half-finished profile means a brand finds
+somebody on its shortlist who never filled one in, and a rejected creator
+already has their answer.
+
+- **Its own collection (`held_applications`), not a new collaboration state.**
+  A twelfth state would have to be excluded from forty-five existing reads —
+  boards, fill counts, exports, the reliability aggregation, the health checks
+  — and the one that got missed would be an unchecked creator sitting on a
+  brand's shortlist. `campaign_invitations` is the same shape for the same
+  reason: not a collaboration until we have checked them.
+- **Releasing goes through `_create_application`**, extracted out of
+  `apply_to_campaign` so a released pitch is an ordinary application in every
+  respect — same capacity check, same duplicate refusal, same `execution_owner`
+  routing. A second implementation would be a second definition of what an
+  application is, and the source-reading tests that used to look inside
+  `apply_to_campaign` now point here.
+- **A held pitch takes no seat**, so `_hold_application` deliberately does not
+  check capacity: refusing one because the brief is full today closes a door
+  twice on a campaign that might yet open up. The check happens at release,
+  which is the moment it would actually take a place.
+- `_release_held_applications` runs on the verification decision, so somebody
+  who pitched for four briefs while waiting is on all four the moment they are
+  approved — the entire point of taking the pitch early. **A campaign that has
+  since filled or closed is not an error**: it is the ordinary outcome of
+  having waited, and the row is resolved with the reason on it and the creator
+  told, rather than failing the verification over it.
+- Rejection runs `_withdraw_held_applications` — the pitches come off the table
+  and the creator is told once, plainly. Leaving them would mean a stale row
+  going in months after the brief closed.
+- `_verification_outstanding` is the one reader for what is still in the way,
+  so the campaign page's refusal, the dashboard banner and the held row all say
+  the same thing. It distinguishes `waiting_on: "you"` from `"weare"`, which is
+  the difference between a job and a wait.
+- `components/creator/HeldApplications.jsx` leads with the reassurance rather
+  than the rows: the question somebody has is "do I need to do this again", and
+  the answer is at the top. Each row is theirs to take back, for the same
+  reason an application is withdrawable up to acceptance — nobody has committed
+  to them.
+- **The campaign page has to say it twice, and both are load-bearing.**
+  `apply_holds` renders above the button — being told afterwards that a pitch
+  is held is being told the one useful thing at the one moment it is no use —
+  and `AppliedCard` branches on `held` rather than printing "your pitch is with
+  the brand", which on a held row is simply false. Both flags are decided
+  server-side and shipped with no caller at first; a test now names them, the
+  same rule the manager's screens are held to.
+
 ## The creator's home
 
 `pages/Dashboard.jsx` + `components/creator/`. The rule the layout answers to:
@@ -630,12 +684,53 @@ shipped, whatever the tests say.
   form sends, so a field renamed on one side and not the other fails there
   rather than in somebody's onboarding.
 
+### Reading the papers
+
+`GET /admin/brands/{user_id}/documents/{id}` and the review route beside it
+existed for months **with no caller anywhere**. An admin deciding whether a
+business was real could see that a GST certificate had been uploaded and could
+not read it, so verification was a judgement made from a filename — and the
+per-document verdict ("this FSSAI scan is illegible, the other three are fine")
+had no button at all. `components/admin/BrandDocuments.jsx` is the panel, on the
+brand's own page where the decision is made.
+
+- **Fetched as an authenticated blob, never linked.** The obvious version is
+  `<iframe src={API_BASE + …}>` and it half works: the session cookie is
+  `SameSite=None`, so it rides along in production and silently does not on a
+  plain-http laptop, which is the worst kind of difference. Going through `api`
+  is the same auth every other call uses, it honours the route's
+  `Cache-Control: no-store` because the object URL dies with the panel, and the
+  bytes never sit at an address anybody can paste into a chat. The URL is held
+  in a ref as well as state so the cleanup revokes the current one.
+- **Inline, not in a dialog.** A reviewer is comparing the registered address on
+  the certificate with the one on the profile two sections up, and a modal
+  covers the thing being compared to.
+- **A 410 is the honest answer, not a failure.** The row is a tombstone and the
+  file went under the retention policy; "that couldn't be opened" would send
+  somebody looking for a bug.
+- **The note belongs to the rejection.** Accept and reject shared one box, so
+  accepting a document with a half-typed "the entity name doesn't match" still
+  in it recorded that sentence against an acceptance — a reviewer contradicting
+  themselves in the record. `reason` is sent only on `rejected`. Caught in a
+  browser, not by a test.
+
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
 publish, the creator directory and its filters, the applicant list, accept,
 decline, approve content, request changes. `_why_brand_is_blocked` gives the
 three states three different next steps; "not verified" on its own just
 generates a support email.
+
+**Drafting was always open and the wall was silent**, which is a different
+failure from being blocked: the brand filled the form, pressed publish, and got
+a toast — after the work, naming the state rather than the fix, gone in four
+seconds. `components/brand/PublishGate.jsx` renders the same three answers
+`_why_brand_is_blocked` gives, above the form rather than after it, with
+`missing_fields` listed out and a link to the page that collects them. The
+publish button is disabled and **Save draft is not**, which is the half worth
+protecting: writing the brief is not the part that has to wait on us. The
+component never works out for itself whether somebody may publish — the
+verification block is decided server-side like every other action here.
 
 **Ownership is checked before verification**, always:
 
@@ -647,6 +742,44 @@ generates a support email.
 
 The other order turns another brand's campaign from a 404 into a 403, which
 leaks which ids exist. A unit test pins the order for every gated endpoint.
+
+## Brands whose briefs stop queueing
+
+Reviewing a brand's first campaign is the point of the review. Reviewing its
+twelfth is data entry, and the brand waits a day for it. A brand that has had
+`TRUSTED_BRAND_APPROVALS` (3, stored and admin-editable via
+`trusted_brand_threshold()`) campaigns approved with **none ever rejected**
+publishes on submission; the brief lands in the queue *flagged* rather than
+blocking. The check moves from before publication to after it, and that trade
+is worth stating plainly: a bad brief from a trusted brand is live for as long
+as it takes somebody to notice. That is why one rejection ends it.
+
+- **Earned, and `_brand_is_trusted` wants all four**: verified, not revoked,
+  enough approvals, none rejected. The last is not a ratio — one brief we had
+  to send back is one we are glad we read, and "mostly fine" is not the
+  standard for skipping the read entirely.
+- **`_brand_review_record` counts out of the audit log**, not off a total on
+  the profile: the log is written on every decision and cannot be edited, so a
+  counter disagreeing with it would be the thing that was wrong. It needed
+  `**_campaign_audit_context(...)` added to `campaign.approve` / `campaign.reject`,
+  which had never carried a `brand_id`. **The record therefore starts when the
+  rule did** — nobody arrives at the deploy already trusted, and both halves
+  start at zero together so a brand with a history of rejections is not
+  penalised for a record we can no longer read either.
+- **`_auto_published_fields` writes no `reviewed_at`.** It uses the same
+  `upcoming`/`open` rule the human approval does, marks the row with
+  `auto_published_at` for the spot-check queue, and leaves the reviewed
+  timestamp absent on purpose: nobody reviewed it, and a timestamp saying
+  somebody did is exactly what an audit trail is supposed to be able to
+  disprove. `POST /admin/campaigns/{id}/spot-check` is the after-the-fact
+  read; rejecting an auto-published brief pulls it back off the feed.
+- **Revocation is separate from the count and outlives it** (`_trust_revoked`).
+  Re-earning trust by posting three more good briefs would give somebody's
+  deliberate decision an expiry date they did not choose; it stands until an
+  admin lifts it the same way, and both ends require a reason.
+- `_trust_block` is the one reader for the brand's own dashboard and the
+  admin's brand page, so "you need one more" and "they need one more" cannot
+  disagree. `components/admin/BrandTrust.jsx` is the panel.
 
 ## Finding a brief, and sending one on
 
@@ -1411,6 +1544,24 @@ Booking used to be one move: a creator picked a time and that was the
 arrangement, with nobody at the venue having agreed to it — so a creator turned
 up to a shoot nobody had planned for.
 
+**On most campaigns nobody was ever going to say no.** The handshake was built
+for the case it is right for — a venue that genuinely has to check the day
+before it holds a table — and then applied to every brief, which put a human
+decision in front of a booking the creator had made by picking one of the
+manager's *own* published slots. Confirming that is agreeing with yourself.
+`requires_slot_confirmation` is the per-campaign toggle and
+`_requires_slot_confirmation` is the one reader; **absent reads off**, which is
+a deliberate change of default and the safe direction — it cannot strand
+anybody, because a booking already sitting unconfirmed keeps its
+`slot_confirmed_at: None` and stays answerable.
+
+- **The answer is written at booking, not worked out by eight readers.**
+  `_slot_confirmed` has eight call sites, most without the campaign in hand, so
+  `_claim_slot` stamps `slot_confirmed_at` immediately when confirmation is off
+  and leaves it `None` when it is on. One reader stays one reader, and the
+  record says what actually happened rather than needing the campaign beside it
+  to be interpreted. The notification branches the same way — "you're booked"
+  where nothing is pending, "waiting on the venue" where something is.
 - **It is not a new state.** The ladder still reads `commercial_agreed →
   slot_booked`; what changed is that `slot_booked` carries `slot_confirmed_at`.
   Absent means booked and waiting, set means agreed. Nothing mid-flight is
@@ -1475,6 +1626,40 @@ registered address or its documents from the screen where they decide it.
 - **The approval actions live on the page too** — otherwise "open the full
   page" means losing the queue to read the record and going back to act on it.
   All three pages already had them; what was missing was the way there.
+
+### Fifty at a time
+
+Approving fifty creators one at a time is the heaviest process in this product.
+`POST /admin/bulk/{kind}` takes `creators`, `campaigns` or `brands` and loops
+the **real handlers** — `approve_creator`, `reject_campaign`, `verify_brand` and
+the rest — so a bulk decision is the same decision, with the same preconditions,
+the same notification and its own audit line.
+
+- **The role is re-checked by hand inside the loop, and that is not belt and
+  braces.** Calling a route function directly skips FastAPI's dependency
+  injection, so the `require_roles("admin")` on `approve_creator` does *not*
+  run when this loop calls it. Without the check, a `weare_team` member would
+  reach the global creator directory's decisions through this one door.
+  `BULK_ADMIN_ONLY` is the same split `ADMIN_ONLY_EXPORTS` makes, for the same
+  reason: a creator works across every brand, so deciding about one is not
+  scoped work.
+- **Nothing aborts the batch.** A row that moved since the list was drawn is
+  reported against its own id and the other forty-nine go through; losing an
+  afternoon's work to one stale row is worse than the stale row. Ids are
+  deduplicated first, so a double-click on "select all" does not 409 against
+  itself and read as a failure.
+- **One reason for the whole batch**, which is the honest shape: somebody
+  rejecting nine profiles in one action is rejecting them for one reason, and a
+  per-row reason is nine dialogs again. Approving needs none.
+- **The batch is audited on top of the individual lines**, not instead of them.
+  The per-record lines say what was decided; the `bulk.*` line says it was
+  decided in one action, which is what somebody reading fifty identical
+  decisions one second apart actually wants to know.
+- The UI is in the one shared `ReviewQueue` in `Reviews.jsx`, gated on a
+  config's `bulkKind`, with the selection cleared whenever the rows reload and
+  the bar absent — not disabled — until something is picked. `ConfirmDialog`
+  gained `requireReason`, defaulting true so every existing call site keeps its
+  strictness.
 
 ## Collaboration lifecycle
 

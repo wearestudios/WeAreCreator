@@ -93,7 +93,7 @@ def test_both_lists_refuse_a_value_that_is_not_an_owner(fn):
 
 
 def test_a_brand_run_campaign_notifies_the_brand_manager():
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     branch = source[source.index("if _weare_runs(campaign):") :]
     _, brand_branch = branch.split("else:", 1)
 
@@ -101,7 +101,7 @@ def test_a_brand_run_campaign_notifies_the_brand_manager():
 
 
 def test_a_weare_run_campaign_notifies_the_weare_team():
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     weare_branch = source[source.index("if _weare_runs(campaign):") : source.index("    else:")]
 
     assert "notify_weare_team" in weare_branch
@@ -118,7 +118,7 @@ def test_the_brand_is_not_told_about_a_raw_application_on_our_campaign():
     the job they asked us to do, and a notification about a raw application is
     that job leaking back to them in a different envelope.
     """
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     weare_branch = source[source.index("if _weare_runs(campaign):") : source.index("    else:")]
 
     assert "_tell_brand_manager_unless_managed" not in weare_branch
