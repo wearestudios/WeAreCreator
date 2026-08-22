@@ -3215,24 +3215,51 @@ full page reload, drains when the server recovers, and both check-ins reach the
 server. Breaking either rule — persistence, or 409-as-retryable — fails the
 suite.
 
-## Local test accounts
+## The demo data
 
-`backend/seed_personas.py` seeds one signed-in-able account per persona —
-verified creator, half-finished creator, creator awaiting review, verified
-brand manager, unverified brand manager, campaign manager — plus a campaign for
-the manager to manage. Idempotent, keyed on phone. See `PREVIEW.md` for the
-numbers.
+`backend/seed_demo.py` clears the database and fills it with an operation that
+has a history. It replaced `seed_personas.py`, which made seven accounts and
+one campaign — enough to sign in and not enough to look at: every list was
+empty, the health panel had nothing to be unhealthy about, the reliability band
+said "new" for everybody because nobody had ever finished anything, and you
+could not tell a screen that was working from one that was broken.
+
+Five brands across every verification state, twelve creators with full profiles
+and reliability earned from real rows, fifteen campaigns across every status,
+and collaborations at **every state in `COLLAB_STATE_ORDER` and all five
+terminal exits** — with the slots, invitations, questions, notes, ratings,
+performance readings, payments, invoices, one open dispute and one open
+takedown that hang off them. `test_seed_demo.py` runs the real script against
+mongomock and reads the result back: every join resolves, every rung has an
+occupant, no seeded phone number is outside the fake block, and no forbidden
+field reaches `_brand_visible_creator`.
 
 **A script, not an endpoint.** A route that mints pre-verified accounts with
 known phone numbers is a backdoor whether or not it is guarded, and it would sit
 in the route table in production one misconfiguration from reachable. A script
 cannot be called over the network.
 
-It refuses to run unless `_simulation_allowed()` — the same gate the OTP log
-uses. That is not an extra precaution but the honest condition: without
-simulation you cannot read the login code, so the accounts would be unusable
-anyway. Numbers are `+9199000000NN`, patterned so one in a production database
-is a self-announcing bug.
+**Three fences, and the third is the one that matters.**
+`_simulation_allowed()` is the same gate the OTP log uses — without simulation
+you cannot read a login code, so the accounts would be unusable anyway, and the
+gate and the usefulness are one fact. `_is_production()` is checked separately
+because the first returns true for an explicit `ALLOW_OTP_SIMULATION` whatever
+`APP_ENV` says; it reads an **unset** `APP_ENV` as production, which is the
+safe direction to guess in for a script whose first act is a delete. And then
+it prints what it is about to destroy and waits: the first two are about the
+environment, and a mistyped `DB_NAME` passes both. It names the collections it
+clears rather than dropping the database, so the list is reviewable in the diff.
+
+Numbers are `+9199000000NN`, patterned so one in a production database is a
+self-announcing bug — and a test walks every seeded account to hold that.
+
+**The fixture writes exactly what the app writes**, including leaving
+`no_show_reported` absent rather than `False` on a clean delivery. That matters
+when measuring: **mongomock's `$ne` does not treat a missing field as null**, so
+`_reliability_for` reports `on_time_rate` 0.0 under the mock for rows real
+MongoDB counts as on time. The seed stays honest and the test does that
+arithmetic itself — a fixture bent to suit a mock is a fixture that stops
+catching the bug it exists for.
 
 ## When something breaks
 

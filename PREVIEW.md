@@ -72,42 +72,76 @@ first if the database holds data you care about.
 
 ---
 
-## Test accounts, before AiSensy is live
+## Demo data, and the accounts that come with it
 
 Creators, brands and campaign managers sign in by WhatsApp OTP only, so until
-AiSensy is configured there is no way into any of those accounts. Seed one per
-persona:
+AiSensy is configured there is no way into any of those accounts. One script
+clears the database and fills it with a marketplace that has a history:
 
 ```bash
 cd backend
-ALLOW_OTP_SIMULATION=true python seed_personas.py
+ALLOW_OTP_SIMULATION=true APP_ENV=dev python seed_demo.py
 ```
 
-It prints the numbers. Sign in at `/login`, then read the code off the server
-log — simulation mode logs it instead of sending it:
+**It deletes everything first.** It says what it is about to destroy, per
+collection, and waits for you to type the database name — pass `--yes` to skip
+that in CI or a container, or `--keep` to seed without wiping. It refuses to
+run at all unless OTP simulation is on and `APP_ENV` is one of
+`dev|development|local|test`; an unset `APP_ENV` reads as production, which is
+the safe direction to guess in for a script whose first act is a delete.
+
+Sign in at `/login`, then read the code off the server log — simulation mode
+logs it instead of sending it:
 
 ```bash
 docker compose logs -f api | grep -i "simulation mode"
 ```
 
+### Creators
+
 | Number | Who |
 |---|---|
-| `+919900000001` | Verified creator — can apply, book, submit |
-| `+919900000002` | Half-finished profile — for the builder and the apply gate |
-| `+919900000003` | Awaiting review — sits in the admin creator queue |
-| `+919900000004` | Verified brand manager — can publish, invite, see applicants |
-| `+919900000005` | Unverified brand — for testing the verification gate |
-| `+919900000006` | WeAre campaign manager, with a campaign assigned |
-| `+919900000007` | WeAre team — the admin console scoped to one brand |
+| `+919900000001` | Ana Kulkarni — verified, strong record. The happy path. |
+| `+919900000002` | Bo Sharma — half-finished profile, for the builder and the apply gate |
+| `+919900000003` | Cal Mehta — awaiting review, sits in the admin creator queue |
+| `+919900000011` | Diya Fernandes — macro tier (128k), for the bands and the report |
+| `+919900000012` | Eshan Rai — micro, verified last week, no history: the `new` band |
+| `+919900000013` | Farida Qureshi — verification runs out in 25 days |
+| `+919900000014` | Gaurav Menon — verification lapsed; cannot apply until they confirm |
+| `+919900000015` | Hema Prakash — edited their bank details, so re-checked before new work |
+| `+919900000016` | Irfan Baig — three no-shows; raises the suspension prompt |
+| `+919900000017` | Jaya Anand — suspended, with a reason. History intact. |
+| `+919900000018` | Kabir Shetty — verified, mid-macro |
+| `+919900000019` | Lata Bhat — rejected, and has asked to be deleted |
+
+### Brands, and WeAre
+
+| Number | Who |
+|---|---|
+| `+919900000004` | Riya Nair — Thirdwave Coffee, verified, runs its own campaigns |
+| `+919900000005` | Sam Iyer — Copper & Clay, waiting on verification |
+| `+919900000008` | Nikhil Bose — Blume Skincare, verified, hands work to WeAre, **owes us an overdue invoice** so it cannot publish |
+| `+919900000009` | Aarti Desai — The Permit Room, rejected once then verified |
+| `+919900000010` | Farah Sheikh — The Loom Room, rejected |
+| `+919900000006` | Priya Rao — WeAre campaign manager: roster, daysheet, slot answers, check-in |
+| `+919900000007` | Devika Rao — WeAre team, console scoped to Thirdwave and Blume |
 
 Admin signs in separately at `/admin/login` with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 
+### What is waiting for you
+
+Seeded so that no screen is empty and every gate has something to fire on: a
+collaboration at every state in the ladder and all five exits, one open dispute
+freezing a payment, one takedown waiting on an answer and one already actioned,
+a booking held for a manager to confirm, an unanswered question on each kind of
+campaign, an invitation that lapsed and one still open, a draft abandoned for
+six weeks, a campaign four days from its start with two seats unsold, and one
+brand sixteen days past due on an invoice.
+
 The script is a script and not an endpoint on purpose: a route that mints
 pre-verified accounts with known numbers is a backdoor whether or not it is
-guarded, and it would sit in the route table in production. It refuses to run
-unless OTP simulation is permitted — which is the honest condition, because
-without simulation you could not read the code and the accounts would be
-unusable. **These numbers are fake and must never reach production.**
+guarded, and it would sit in the route table in production. **These numbers are
+fake and must never reach production.**
 
 ## What to click, and in what order
 
