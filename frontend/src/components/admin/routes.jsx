@@ -24,6 +24,12 @@ import AdminCreators from "@/components/admin/AdminCreators";
 import AdminCampaigns from "@/components/admin/AdminCampaigns";
 import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
+import AdminTeam from "@/components/admin/AdminTeam";
+import AdminDeletions from "@/components/admin/AdminDeletions";
+import PlatformSettings from "@/components/admin/PlatformSettings";
+import DisputeQueue from "@/components/admin/DisputeQueue";
+import RetentionPanel from "@/components/admin/RetentionPanel";
+import AdminDormant from "@/components/admin/AdminDormant";
 
 /**
  * The overview, with the operational panels above it.
@@ -85,13 +91,33 @@ export const BrandReviewsRoute = () => {
 };
 
 export const QueueRoute = () => {
-    const { reloadCounts, feePercent } = useAdminConsole();
-    return <ActionQueue onChanged={reloadCounts} feePercent={feePercent} />;
+    const { reloadCounts, feePercent, allAccess } = useAdminConsole();
+    return (
+        <ActionQueue
+            onChanged={reloadCounts}
+            feePercent={feePercent}
+            allAccess={allAccess}
+        />
+    );
 };
 
 export const CreatorsRoute = () => <AdminCreators />;
 
 export const AuditRoute = () => <AdminAudit />;
+
+/** Our own staff, and which brands each of them runs. Admin-only. */
+export const TeamRoute = () => <AdminTeam />;
+
+/** People asking to be forgotten. Admin-only, and irreversible. */
+export const DeletionsRoute = () => <AdminDeletions />;
+export const SettingsRoute = () => <PlatformSettings />;
+
+/** Frozen collaborations, worst-waiting first. Scoped like every list. */
+export const DisputesRoute = () => <DisputeQueue />;
+
+/** What we keep and for how long, from the same table the code enforces. */
+export const RetentionRoute = () => <RetentionPanel />;
+export const DormantRoute = () => <AdminDormant />;
 
 /**
  * The campaigns list, with "just this brand" in the URL.
@@ -103,7 +129,7 @@ export const AuditRoute = () => <AdminAudit />;
  */
 export const CampaignsRoute = () => {
     const [params, setParams] = useSearchParams();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
     const brandFilter = params.get("brand") || "";
 
     const clearBrand = () => {
@@ -118,16 +144,18 @@ export const CampaignsRoute = () => {
             brandFilter={brandFilter}
             onClearBrand={clearBrand}
             onChanged={reloadCounts}
+            allAccess={allAccess}
         />
     );
 };
 
 export const BrandsRoute = () => {
     const navigate = useNavigate();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
     return (
         <AdminBrands
             onChanged={reloadCounts}
+            allAccess={allAccess}
             onViewCampaigns={(brandId) =>
                 navigate(`/admin/campaigns?brand=${encodeURIComponent(brandId)}`)
             }

@@ -178,8 +178,21 @@ class TestAdminExportsMayCarryContact:
         assert 'f"export.{kind}"' in src
         assert '"includes_contact_details"' in src
 
-    def test_exports_are_admin_only(self):
-        assert 'require_roles("admin")' in inspect.getsource(server.admin_export)
+    def test_exports_are_console_only_and_scoped(self):
+        """WeAre's own staff export their brands' work; the narrowing is passed
+        into the builder rather than applied to the rows afterwards."""
+        src = inspect.getsource(server.admin_export)
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "brand_scope=_console_brand_ids(user)" in src
+
+    def test_the_platform_wide_exports_stay_with_admin(self):
+        """**Two of the six cannot be narrowed without becoming a different
+        document.** The creator roster is the global directory in CSV form and
+        the audit log is the whole platform's history — neither is a brand's
+        work, so neither is a scoped role's to download."""
+        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit"}
+        src = inspect.getsource(server.admin_export)
+        assert "kind in ADMIN_ONLY_EXPORTS and not is_all_access(user)" in src
 
     def test_exports_are_not_cached(self):
         # They carry phone numbers and payout figures.
@@ -218,6 +231,104 @@ class TestTheCsvFramingIsSafe:
         assert rows[1][1] == "line one\nline two"
 
 
+
+def _health_with_one_of_everything():
+    """Run the real health endpoint against a database holding one of each
+    problem it looks for, and return what it produced.
+
+    Seeded rather than mocked, because the rule being tested is about the rows
+    the handler actually builds — and the previous source-reading version of
+    this test passed while a row went out with no link, which is the failure it
+    existed to catch.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from bson import ObjectId
+    from mongomock_motor import AsyncMongoMockClient
+
+    now = datetime.now(timezone.utc)
+    long_ago = now - timedelta(days=45)
+
+    async def go():
+        db = AsyncMongoMockClient()["health"]
+        original = server.db
+        server.db = db
+        try:
+            brand_id, creator_id = ObjectId(), ObjectId()
+            soon = now + timedelta(days=2)
+            campaign_id = (
+                await db.campaigns.insert_one(
+                    {
+                        "brand_id": brand_id,
+                        "title": "Toit tasting",
+                        "status": "open",
+                        # Deliberately far more than the four collaborations
+                        # below, or the campaign is fully booked and the
+                        # underfilling check produces no rows to check.
+                        "creators_needed": 12,
+                        "event_date": soon,
+                        "state_since": long_ago,
+                    }
+                )
+            ).inserted_id
+            await db.campaigns.insert_one(
+                {
+                    "brand_id": brand_id,
+                    "title": "Waiting on us",
+                    "status": server.CAMPAIGN_REVIEW_STATUS,
+                    "submitted_for_review_at": long_ago,
+                }
+            )
+            await db.campaigns.insert_one(
+                {
+                    "brand_id": brand_id,
+                    "title": "Forgotten draft",
+                    "status": "draft",
+                    "updated_at": long_ago,
+                }
+            )
+            await db.brand_profiles.insert_one(
+                {
+                    "user_id": brand_id,
+                    "business_name": "Toit",
+                    "verified": False,
+                    "verification_state": "pending_verification",
+                    "submitted_for_verification_at": long_ago,
+                }
+            )
+            await db.creator_profiles.insert_one(
+                {
+                    "user_id": creator_id,
+                    "name": "Aditi Rao",
+                    "verification_status": "pending",
+                    "submitted_for_review_at": long_ago,
+                    "updated_at": long_ago,
+                    "created_at": long_ago,
+                }
+            )
+            for state in ("applied", "accepted", "attended", "draft_submitted", "content_approved"):
+                await db.collaborations.insert_one(
+                    {
+                        "campaign_id": campaign_id,
+                        "creator_id": creator_id,
+                        "state": state,
+                        "state_since": long_ago,
+                        "updated_at": long_ago,
+                        "created_at": long_ago,
+                        "content_overdue": state == "attended",
+                        "content_overdue_at": long_ago,
+                    }
+                )
+            await db.payments.insert_one(
+                {"collaboration_id": ObjectId(), "state": "pending", "created_at": long_ago}
+            )
+            return await server.admin_health(user={"_id": str(ObjectId()), "role": "admin"})
+        finally:
+            server.db = original
+
+    return asyncio.run(go())
+
+
 class TestHealthThresholds:
     def test_every_threshold_is_named(self):
         # Each of these is a judgement about how much slack the operation has,
@@ -239,11 +350,34 @@ class TestHealthThresholds:
 
     def test_every_health_row_links_to_the_thing_it_is_about(self):
         """A count tells you there is a problem and then makes you go and find
-        it. Every row carries an href — counted against the number of checks
-        rather than a magic number, so adding a check keeps the rule rather
-        than merely moving the number."""
-        src = inspect.getsource(server.admin_health)
-        assert src.count('"href":') == src.count('checks.append('), "one href per check"
+        it. Every row carries an href.
+
+        **Checked per block rather than by counting.** This used to assert
+        `src.count('"href":') == src.count('checks.append(')`, which was a
+        proxy that stopped working the moment a row carried more than one link
+        — the underfill rows now carry three actions beside their own href, and
+        the counting version failed on a change that made the panel strictly
+        more useful. Splitting on the append and requiring an href inside each
+        block tests the rule itself.
+        """
+        report = _health_with_one_of_everything()
+        assert len(report["checks"]) >= 8, "the health panel lost a check"
+        seen = 0
+        for check in report["checks"]:
+            for item in check["items"]:
+                seen += 1
+                assert item.get("href"), (
+                    f"a {check['key']} row names a problem with nowhere to go"
+                )
+        assert seen, "the fixture stopped producing rows, so this proves nothing"
+
+    def test_the_overdue_check_links_too(self):
+        """It is built in its own helper, so the rule above cannot see inside
+        it — and it is the check most likely to be the only place a stalled
+        record appears."""
+        src = inspect.getsource(server._overdue_check)
+        assert '"href": href' in src
+        assert src.count("href=f\"/admin/") >= 4, "not every kind of record links"
 
     def test_health_is_admin_only(self):
         assert 'require_roles("admin")' in inspect.getsource(server.admin_health)

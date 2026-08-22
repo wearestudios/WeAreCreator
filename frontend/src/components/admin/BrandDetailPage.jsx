@@ -35,6 +35,9 @@ import { CampaignLink } from "@/components/admin/links";
 import { PerformanceRollup } from "@/components/admin/Performance";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
 import BrandAvatar from "@/components/BrandAvatar";
+import BrandTeamPanel from "@/components/admin/BrandTeamPanel";
+import CancellationHistory from "@/components/admin/CancellationHistory";
+import BrandInvoices from "@/components/admin/BrandInvoices";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -46,7 +49,7 @@ const STATE_LABEL = {
 
 export default function BrandDetailPage() {
     const { id } = useParams();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
 
     const [data, setData] = useState(null);
     const [audit, setAudit] = useState(null);
@@ -67,6 +70,11 @@ export default function BrandDetailPage() {
     }, [id]);
 
     const loadAudit = useCallback(async () => {
+        // **The log itself stays admin-only.** A team member's own actions are
+        // recorded under their name like anybody else's; reading the platform's
+        // log is a different thing, and asking for it would only produce a 403
+        // and an empty panel that looked like nothing had ever happened.
+        if (!allAccess) return;
         try {
             // brand_id rather than subject: a brand's history lands on its
             // campaigns and collaborations as much as on the profile itself.
@@ -77,7 +85,7 @@ export default function BrandDetailPage() {
         } catch {
             setAudit([]);
         }
-    }, [id]);
+    }, [id, allAccess]);
 
     useEffect(() => {
         setData(null);
@@ -114,7 +122,7 @@ export default function BrandDetailPage() {
                 { key: "brands", label: "Brands", to: "/admin/brands" },
                 { key: "brand", label: brand?.business_name || "Brand" },
             ]}
-            kicker="Brand"
+            kicker={brand?.reference ? `Brand · ${brand.reference}` : "Brand"}
             title={brand?.business_name || "Brand"}
             avatar={brand && <BrandAvatar brand={brand} size="h-11 w-11" />}
             loading={!data && !error && !notFound}
@@ -136,6 +144,21 @@ export default function BrandDetailPage() {
                         >
                             {STATE_LABEL[brand.verification_state] || brand.verification_state}
                         </span>
+                        {/* **How many times they have come back.** A fourth
+                            attempt on the same business is a different
+                            conversation from a first, and a reviewer picking
+                            up the queue item cannot tell them apart without a
+                            count. Absent at zero, which is the ordinary case. */}
+                        {brand.verification_resubmissions > 0 && (
+                            <span
+                                data-testid={IDS.resubmissions}
+                                className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+                            >
+                                {brand.verification_resubmissions === 1
+                                    ? "Resubmitted once"
+                                    : `Resubmitted ${brand.verification_resubmissions} times`}
+                            </span>
+                        )}
                         {brand.category && <span>{brand.category}</span>}
                         {brand.areas?.length > 0 && <span>{brand.areas.join(", ")}</span>}
                         <span>Signed up {formatDate(brand.signed_up_at)}</span>
@@ -229,6 +252,19 @@ export default function BrandDetailPage() {
                                     </Field>
                                     <Field label="Business type">{brand.business_type}</Field>
                                     <Field label="GST number">{brand.gst_number}</Field>
+                                    {/* What we asked for last time. The current
+                                        refusal is cleared on a resubmission —
+                                        it is not a verdict on what they have
+                                        just sent — but the reviewer wants to
+                                        know what they were told to fix. */}
+                                    {brand.previous_verification_reason && (
+                                        <Field
+                                            label="Last time we asked for"
+                                            className="sm:col-span-2"
+                                        >
+                                            {brand.previous_verification_reason}
+                                        </Field>
+                                    )}
                                     <Field label="Registered address" className="sm:col-span-2">
                                         {brand.registered_address}
                                     </Field>
@@ -384,6 +420,40 @@ export default function BrandDetailPage() {
                         )}
                     </Section>
 
+                    {/* How often work has fallen over around this brand, and
+                        on whose call. A number that only lives in the audit log
+                        is a number nobody looks at before agreeing to the next
+                        campaign. Renders nothing when nothing has. */}
+                    {data.cancellations?.length > 0 && (
+                        <Section
+                            id="cancellations"
+                            title="Cancelled and withdrawn"
+                            count={data.cancellations.length}
+                        >
+                            <CancellationHistory rows={data.cancellations} showCreator />
+                        </Section>
+                    )}
+
+                    {/* Money owed to us, and the one way past the block it
+                        causes. Admin-only: a scoped console can see that a
+                        brand is overdue, and letting somebody unblock the
+                        brand whose campaigns they run is not a control. */}
+                    {allAccess && (
+                        <Section id="invoices" title="What they owe us">
+                            <BrandInvoices
+                                userId={id}
+                                owing={data.invoices}
+                                override={data.invoice_override}
+                                onChanged={load}
+                            />
+                        </Section>
+                    )}
+
+                    <Section id="team" title="Who at WeAre runs this">
+                        <BrandTeamPanel brandId={id} canAssign={allAccess} />
+                    </Section>
+
+                    {allAccess && (
                     <Section id="audit" title="Everything that happened" count={audit?.length}>
                         <AuditTrail
                             rows={audit}
@@ -391,6 +461,7 @@ export default function BrandDetailPage() {
                             emptyMessage="Nothing recorded against this brand yet."
                         />
                     </Section>
+                    )}
                 </>
             )}
 

@@ -4,11 +4,27 @@
 // moods. The declined list is deliberately quiet — a brand picking somebody
 // else is not a verdict on the creator, and a red row implying otherwise is
 // the fastest way to lose one. It ends with somewhere to go next.
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Hourglass } from "lucide-react";
+import { ArrowRight, Hourglass, X } from "lucide-react";
+import { api } from "@/lib/api";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import BrandAvatar from "@/components/BrandAvatar";
+import AgeBadge from "@/components/AgeBadge";
+import Shortfall from "@/components/Shortfall";
+import TakedownPanel from "@/components/TakedownPanel";
+import { SHORTFALL } from "@/constants/testIds";
+import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
     CAT_LABEL,
@@ -20,7 +36,12 @@ import {
     formatRupees,
 } from "./shared";
 
-const Row = ({ row, testid, muted }) => (
+// Up to acceptance, which is the same line the server draws. After that a
+// change of mind is a cancellation — there is a venue booked and a commitment
+// on both sides — and the button is absent rather than present and refused.
+const WITHDRAWABLE = new Set(["applied", "verified"]);
+
+const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
     <li
         data-testid={testid}
         className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
@@ -63,18 +84,152 @@ const Row = ({ row, testid, muted }) => (
                 {formatRupees(row.agreed_amount ?? row.quoted_rate)}
             </Money>
             <StatePill state={row.state} testid={IDS.state(row.id)} />
+            {/* **The age, and no verdict.** The server sends this row no SLA
+                target on purpose: an SLA is the standard WeAre holds itself
+                to internally, not a promise made to the creator, and telling
+                them "the brand is 4 days over" would turn one into the other.
+                How long they have been waiting is simply a fact, and a useful
+                one. */}
+            <AgeBadge ageing={row.ageing} testid={IDS.ageing(row.id)} />
+            {/* **Said to them, and not only to the brand.** A shortfall is a
+                judgement about the creator, and finding out from a smaller
+                payment than expected is the version of this that costs
+                somebody. */}
+            <Shortfall shortfall={row.shortfall} testid={SHORTFALL.block(row.id)} />
+            {/* **Here as well as on the live card**, because delivered work
+                keeps moving down this list: a takedown lands on a
+                collaboration that is `closed` as often as one still running,
+                and the card above only shows what is in flight. Renders
+                nothing when there is no request. */}
+            <TakedownPanel
+                collaborationId={row.id}
+                takedown={row.takedown}
+                canRespond={Boolean(row.can_respond_takedown)}
+                onChanged={onRefresh}
+            />
+            {onWithdraw && WITHDRAWABLE.has(row.state) && (
+                <button
+                    type="button"
+                    onClick={() => onWithdraw(row)}
+                    data-testid={IDS.withdraw(row.id)}
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                >
+                    <X className="h-3.5 w-3.5" />
+                    Withdraw
+                </button>
+            )}
         </div>
     </li>
 );
 
-export default function Applications({ applied, declined }) {
+/**
+ * Taking an application back.
+ *
+ * **The exit the creator did not have.** Every other way out was somebody
+ * else's move, so a creator who had changed their mind could only go quiet —
+ * and a brand then shortlisted somebody who was never going to turn up.
+ *
+ * The reason is required because it is the half that makes this actionable for
+ * whoever runs the campaign: "one of your three applicants is gone" is not
+ * something anybody can do anything with on its own.
+ */
+function WithdrawDialog({ row, onClose, onDone }) {
+    const [reason, setReason] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (row) {
+            setReason("");
+            setError("");
+        }
+    }, [row]);
+
+    const submit = async () => {
+        if (reason.trim().length < 3) {
+            setError("A line is enough — it goes to whoever is running the campaign.");
+            return;
+        }
+        setBusy(true);
+        try {
+            await api.post(`/creator/collaborations/${row.id}/withdraw`, {
+                reason: reason.trim(),
+            });
+            notifySuccess("Withdrawn — they've been told");
+            onClose();
+            await onDone?.();
+        } catch (err) {
+            notifyError(err, { fallback: "That couldn't be withdrawn." });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Dialog open={Boolean(row)} onOpenChange={(v) => !v && onClose()}>
+            <DialogContent data-testid={IDS.withdrawDialog} className="sm:max-w-md">
+                <DialogHeader className="text-left">
+                    <DialogTitle>Withdraw from {row?.campaign_title}?</DialogTitle>
+                    <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        {/* Said plainly, because a creator worrying that pulling
+                            out counts against them is a creator who goes quiet
+                            instead — which is the behaviour this replaces. */}
+                        This takes your pitch off their board. It doesn't count
+                        against you, and you can apply to anything else.
+                    </DialogDescription>
+                </DialogHeader>
+                <Textarea
+                    rows={3}
+                    maxLength={500}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    data-testid={IDS.withdrawReason}
+                    placeholder="e.g. I've got a clashing shoot that week"
+                    className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                />
+                {error && (
+                    <p data-testid={IDS.withdrawError} className="text-sm text-destructive">
+                        {error}
+                    </p>
+                )}
+                <DialogFooter className="gap-2">
+                    <Button variant="ghost" onClick={onClose} data-testid={IDS.withdrawCancel}>
+                        Keep it
+                    </Button>
+                    <Button onClick={submit} disabled={busy} data-testid={IDS.withdrawSubmit}>
+                        {busy ? "Withdrawing…" : "Withdraw"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+export default function Applications({ applied, declined, invitations, onChanged }) {
+    const [withdrawing, setWithdrawing] = useState(null);
     const waiting = applied || [];
     const notThisTime = declined || [];
+    // An open invitation is something to answer, so it counts as work in this
+    // view even though no application exists yet.
+    const open = (invitations || []).filter((i) => i.open);
     const total = waiting.length + notThisTime.length;
 
     return (
         <>
+            {/* Above the section heading, not under it: an invitation is not a
+                pitch, and "Pitched — waiting to hear back" printed over a row
+                the creator has not answered describes the wrong party as the
+                one being waited on. It renders nothing when there are none. */}
+            <Invitations invitations={invitations} onChanged={onChanged} />
+
+            <WithdrawDialog
+                row={withdrawing}
+                onClose={() => setWithdrawing(null)}
+                onDone={onChanged}
+            />
+
             <SectionHead
+                className={open.length > 0 ? "mt-10" : ""}
                 kicker="Pitched"
                 title="Waiting to hear back."
                 aside={
@@ -87,6 +242,10 @@ export default function Applications({ applied, declined }) {
             />
 
             <div className="mt-8 space-y-4">
+                {/* Shown whenever there are no pitches, invitation or not: the
+                    heading above says "Pitched", and a heading with nothing
+                    under it is a section that looks broken. It is also still
+                    true — being asked is not the same as having pitched. */}
                 {total === 0 ? (
                     <EmptyState
                         testid={IDS.empty}
@@ -111,7 +270,13 @@ export default function Applications({ applied, declined }) {
                                 className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
                             >
                                 {waiting.map((row) => (
-                                    <Row key={row.id} row={row} testid={IDS.row(row.id)} />
+                                    <Row
+                                        key={row.id}
+                                        row={row}
+                                        testid={IDS.row(row.id)}
+                                        onWithdraw={setWithdrawing}
+                                        onRefresh={onChanged}
+                                    />
                                 ))}
                             </ul>
                         )}
@@ -127,6 +292,7 @@ export default function Applications({ applied, declined }) {
                                             key={row.id}
                                             row={row}
                                             testid={IDS.declinedRow(row.id)}
+                                            onRefresh={onChanged}
                                             muted
                                         />
                                     ))}

@@ -30,3 +30,37 @@ export const CREATOR_PROFILE = {
 	payout: 'creator-profile-payout',
 	upi: 'creator-profile-upi',
 };
+
+// Asking to be forgotten — the DPDP Act's right to erasure, on the creator's
+// and the brand's own profile screens.
+export const ACCOUNT = {
+	deletionSection: 'account-deletion-section',
+	deletionOpen: 'account-deletion-open',
+	deletionDialog: 'account-deletion-dialog',
+	deletionReason: 'account-deletion-reason',
+	deletionSubmit: 'account-deletion-submit',
+	deletionCancel: 'account-deletion-cancel',
+	deletionBlocked: 'account-deletion-blocked',
+	deletionPending: 'account-deletion-pending',
+	deletionWithdraw: 'account-deletion-withdraw',
+};
+
+// The admin's erasure queue.
+export const ADMIN_SLA = {
+	page: 'admin-sla-page',
+	row: (key) => `admin-sla-row-${key}`,
+	input: (key) => `admin-sla-input-${key}`,
+	reset: (key) => `admin-sla-reset-${key}`,
+	save: 'admin-sla-save',
+};
+
+export const ADMIN_DELETIONS = {
+	page: 'admin-deletions-page',
+	row: (id) => `admin-deletion-row-${id}`,
+	erase: (id) => `admin-deletion-erase-${id}`,
+	decline: (id) => `admin-deletion-decline-${id}`,
+	blocked: (id) => `admin-deletion-blocked-${id}`,
+	note: 'admin-deletion-note',
+	confirm: 'admin-deletion-confirm',
+	empty: 'admin-deletions-empty',
+};

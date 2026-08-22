@@ -34,7 +34,14 @@ import {
     OverviewRoute,
     PerformanceRoute,
     QueueRoute,
+    DeletionsRoute,
+    SettingsRoute,
+    DormantRoute,
+    DisputesRoute,
+    RetentionRoute,
+    TeamRoute,
 } from "@/components/admin/routes";
+import { CONSOLE_ROLES } from "@/lib/consoleScope";
 import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
 import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
 import AdminBrandDetail from "@/components/admin/BrandDetailPage";
@@ -256,6 +263,36 @@ function App() {
                                 </ProtectedRoute>
                             }
                         />
+                        {/* One application, for the person running the shoot.
+                            The same component the admin and the brand read —
+                            and until this route existed there was no URL a
+                            campaign manager could open to see one at all,
+                            although `get_application` has always served them.
+                            That gap cost them the three things the server
+                            already lets them do: review a draft, answer a
+                            creator's question, and read the work notes.
+
+                            `slotBase` is the only thing that differs. The
+                            other actions are brand-owned transitions the
+                            server never offers a manager, so their buttons do
+                            not render here. */}
+                        <Route
+                            path="/manager/applications/:id"
+                            element={
+                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                    <ApplicationDetail
+                                        standalone
+                                        slotBase="/manager"
+                                        backTo="/manager"
+                                        backLabel="My campaigns"
+                                        crumbs={[
+                                            { label: "My campaigns", to: "/manager" },
+                                            { label: "Application" },
+                                        ]}
+                                    />
+                                </ProtectedRoute>
+                            }
+                        />
                         {/* The console is a layout, and everything under it is
                             its own address. `/admin/login` is declared above
                             this block and stays a separate page — it is the
@@ -263,7 +300,7 @@ function App() {
                         <Route
                             path="/admin"
                             element={
-                                <ProtectedRoute roles={["admin"]}>
+                                <ProtectedRoute roles={CONSOLE_ROLES}>
                                     <AdminConsole />
                                 </ProtectedRoute>
                             }
@@ -312,6 +349,12 @@ function App() {
                             <Route path="performance" element={<PerformanceRoute />} />
                             <Route path="health" element={<HealthRoute />} />
                             <Route path="audit" element={<AuditRoute />} />
+                            <Route path="team" element={<TeamRoute />} />
+                            <Route path="deletions" element={<DeletionsRoute />} />
+                            <Route path="settings" element={<SettingsRoute />} />
+                            <Route path="dormant" element={<DormantRoute />} />
+                            <Route path="disputes" element={<DisputesRoute />} />
+                            <Route path="retention" element={<RetentionRoute />} />
                             {/* A bad path under /admin lands on the console
                                 rather than the marketing site. */}
                             <Route path="*" element={<Navigate to="/admin" replace />} />

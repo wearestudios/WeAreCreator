@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { notifySuccess } from "@/lib/feedback";
+import { PAYOUT_METHODS } from "@/lib/payout";
 import { motion, useReducedMotion } from "framer-motion";
 import {
     ArrowRight,
@@ -262,8 +263,11 @@ export default function CreatorOnboarding() {
         location_place_id: null,
         base_rate: "",
         follower_count: "",
+        payout_method: "",
         payout_upi: "",
         payout_account_name: "",
+        payout_account_number: "",
+        payout_ifsc: "",
         pan: "",
         gstin: "",
     });
@@ -295,8 +299,11 @@ export default function CreatorOnboarding() {
             location_place_id: data.location_place_id || null,
             base_rate: data.base_rate ?? "",
             follower_count: data.follower_count ?? "",
+            payout_method: data.payout_method || "",
             payout_upi: data.payout_upi || "",
             payout_account_name: data.payout_account_name || "",
+            payout_account_number: data.payout_account_number || "",
+            payout_ifsc: data.payout_ifsc || "",
             pan: data.pan || "",
             gstin: data.gstin || "",
         });
@@ -404,8 +411,11 @@ export default function CreatorOnboarding() {
             location_place_id: form.location_place_id,
             base_rate: form.base_rate === "" ? null : Number(form.base_rate),
             follower_count: form.follower_count === "" ? null : Number(form.follower_count),
+            payout_method: form.payout_method || null,
             payout_upi: form.payout_upi.trim() || null,
             payout_account_name: form.payout_account_name.trim() || null,
+            payout_account_number: form.payout_account_number.trim() || null,
+            payout_ifsc: form.payout_ifsc.trim() || null,
             pan: form.pan.trim() || null,
             gstin: form.gstin.trim() || null,
         }),
@@ -922,33 +932,97 @@ export default function CreatorOnboarding() {
                             need them to submit your profile. Only the WeAre team ever
                             sees this — brands never do.
                         </p>
-                        <div className="grid gap-5 md:grid-cols-2">
-                            <Field id="payout-upi" label="UPI ID">
-                                <div className="relative mt-2">
-                                    <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        {/* **The method first, then only the fields it needs.**
+                            Showing both sets at once asks everybody to ignore
+                            half a form, and leaves a half-typed bank account
+                            sitting beside a UPI ID with nothing saying which
+                            one we should actually pay. */}
+                        <Field id="payout-method" label="How would you like to be paid?">
+                            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                                {PAYOUT_METHODS.map((m) => (
+                                    <button
+                                        key={m.value}
+                                        type="button"
+                                        aria-pressed={form.payout_method === m.value}
+                                        data-testid={IDS.payoutMethod(m.value)}
+                                        onClick={() => set("payout_method")(m.value)}
+                                        className={
+                                            "min-h-[3.5rem] rounded-md border px-4 py-3 text-left transition-colors duration-200 " +
+                                            (form.payout_method === m.value
+                                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                : "border-white/10 text-muted-foreground hover:border-white/20")
+                                        }
+                                    >
+                                        <span className="block text-sm">{m.label}</span>
+                                        <span className="mt-0.5 block text-xs opacity-70">
+                                            {m.hint}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </Field>
+
+                        {form.payout_method === "upi" && (
+                            <div className="grid gap-5 md:grid-cols-2">
+                                <Field id="payout-upi" label="UPI ID">
+                                    <div className="relative mt-2">
+                                        <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            id="payout-upi"
+                                            data-testid={IDS.upi}
+                                            value={form.payout_upi}
+                                            onChange={setText("payout_upi")}
+                                            maxLength={120}
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            placeholder="e.g. priya@okhdfcbank"
+                                        />
+                                    </div>
+                                </Field>
+                            </div>
+                        )}
+
+                        {form.payout_method === "bank" && (
+                            <div className="grid gap-5 md:grid-cols-2">
+                                <Field id="payout-name" label="Name on the account">
                                     <Input
-                                        id="payout-upi"
-                                        data-testid={IDS.upi}
-                                        value={form.payout_upi}
-                                        onChange={setText("payout_upi")}
-                                        maxLength={120}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                        placeholder="e.g. priya@okhdfcbank"
+                                        id="payout-name"
+                                        data-testid={IDS.payoutName}
+                                        value={form.payout_account_name}
+                                        onChange={setText("payout_account_name")}
+                                        maxLength={140}
+                                        className={inputClass}
+                                        placeholder="As it appears on your bank account"
                                     />
-                                </div>
-                            </Field>
-                            <Field id="payout-name" label="Name on the account">
-                                <Input
-                                    id="payout-name"
-                                    data-testid={IDS.payoutName}
-                                    value={form.payout_account_name}
-                                    onChange={setText("payout_account_name")}
-                                    maxLength={140}
-                                    className={inputClass}
-                                    placeholder="As it appears on your bank account"
-                                />
-                            </Field>
-                        </div>
+                                </Field>
+                                <Field id="payout-account" label="Account number">
+                                    <Input
+                                        id="payout-account"
+                                        inputMode="numeric"
+                                        data-testid={IDS.payoutAccount}
+                                        value={form.payout_account_number}
+                                        onChange={setText("payout_account_number")}
+                                        maxLength={20}
+                                        className={inputClass}
+                                        placeholder="From your passbook or statement"
+                                    />
+                                </Field>
+                                <Field
+                                    id="payout-ifsc"
+                                    label="IFSC"
+                                    hint="Eleven characters — it names your branch."
+                                >
+                                    <Input
+                                        id="payout-ifsc"
+                                        data-testid={IDS.payoutIfsc}
+                                        value={form.payout_ifsc}
+                                        onChange={(e) => set("payout_ifsc")(e.target.value.toUpperCase())}
+                                        maxLength={11}
+                                        className={inputClass + " uppercase"}
+                                        placeholder="HDFC0001234"
+                                    />
+                                </Field>
+                            </div>
+                        )}
                         <div className="grid gap-5 md:grid-cols-2">
                             <Field id="payout-pan" label="PAN" hint="Required for TDS on your payout.">
                                 <Input

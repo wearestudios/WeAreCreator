@@ -34,17 +34,23 @@ import {
 import { ListEmptyState } from "@/components/data/DenseView";
 import { CALENDAR as IDS } from "@/constants/testIds";
 import { STATE_META } from "@/components/admin/shared";
+import {
+    IST,
+    cellKey,
+    dayKey,
+    istCalendarDate,
+    todayKey as istTodayKey,
+} from "@/lib/time";
 
 const ALL = "__all__";
 const WEEKDAY_HEADS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** yyyy-mm-dd in local time. `toISOString` would bucket an evening shoot into
- *  the next day for everybody in IST, which is the bug this whole product
- *  keeps having to answer. */
-const dayKey = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate(),
-    ).padStart(2, "0")}`;
+// **Two keys, and they agree.** A booking arrives as a UTC instant and is
+// bucketed on the IST date it falls on (`dayKey`); a grid cell is pure
+// year/month/day arithmetic and is keyed from those parts (`cellKey`). Both
+// come from `lib/time.js`, and the month itself starts from the IST date —
+// otherwise a manager opening this at 01:00 IST from another zone is shown
+// last month while the bookings are in this one.
 
 const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
 const endOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
@@ -62,11 +68,11 @@ function gridDays(month) {
 const timeOf = (iso) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: IST });
 };
 
 const longDay = (d) =>
-    d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+    d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: IST });
 
 function EntryRow({ entry }) {
     const meta = STATE_META[entry.state] || {};
@@ -109,7 +115,7 @@ function EntryRow({ entry }) {
 
 export default function ShootCalendar() {
     const { user } = useAuth();
-    const [month, setMonth] = useState(() => startOfMonth(new Date()));
+    const [month, setMonth] = useState(() => startOfMonth(istCalendarDate()));
     const [campaign, setCampaign] = useState(ALL);
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
@@ -140,9 +146,8 @@ export default function ShootCalendar() {
     const byDay = useMemo(() => {
         const map = new Map();
         for (const e of data?.entries || []) {
-            const d = new Date(e.starts_at);
-            if (Number.isNaN(d.getTime())) continue;
-            const key = dayKey(d);
+            const key = dayKey(e.starts_at);
+            if (!key) continue;
             if (!map.has(key)) map.set(key, []);
             map.get(key).push(e);
         }
@@ -154,10 +159,11 @@ export default function ShootCalendar() {
         [byDay],
     );
 
-    const todayKey = dayKey(new Date());
+    const todayKey = istTodayKey();
     const monthLabel = month.toLocaleDateString("en-IN", {
         month: "long",
         year: "numeric",
+            timeZone: IST,
     });
 
     if (!user) return null;
@@ -211,7 +217,7 @@ export default function ShootCalendar() {
                             type="button"
                             variant="outline"
                             data-testid={IDS.today}
-                            onClick={() => setMonth(startOfMonth(new Date()))}
+                            onClick={() => setMonth(startOfMonth(istCalendarDate()))}
                             className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
                         >
                             Today
@@ -273,7 +279,7 @@ export default function ShootCalendar() {
                                     </div>
                                 ))}
                                 {gridDays(month).map((d) => {
-                                    const key = dayKey(d);
+                                    const key = cellKey(d);
                                     const rows = byDay.get(key) || [];
                                     const otherMonth = d.getMonth() !== month.getMonth();
                                     return (

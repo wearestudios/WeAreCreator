@@ -7,6 +7,7 @@
 import React from "react";
 
 import { TEXT } from "@/components/admin/console/tokens";
+import { IST, LOCALE } from "@/lib/time";
 
 /**
  * Rupees, in Indian grouping — 12,00,000 rather than 1,200,000.
@@ -38,12 +39,16 @@ export const count = (n) =>
 export const percent = (n) =>
     n == null || Number.isNaN(Number(n)) ? "—" : `${Number(n).toFixed(1)}%`;
 
-const ABSOLUTE = new Intl.DateTimeFormat("en-IN", {
+// **IST, not the reader's zone.** An audit line is a claim about when
+// something happened in Bengaluru; an admin opening the console from anywhere
+// else must read the same stamp as the person who made the entry.
+const ABSOLUTE = new Intl.DateTimeFormat(LOCALE, {
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: IST,
 });
 
 /** The full stamp, for the tooltip and for anywhere precision matters. */
@@ -59,6 +64,12 @@ export const absolute = (iso) => {
  * Relative is what a person actually reasons about when triaging a queue —
  * "this has been sitting two days" is the judgement, not the calendar date.
  * The exact stamp is a hover away, which is the right way round.
+ *
+ * **Deliberately not `timeAgo` from `lib/time.js`.** That one is the app's,
+ * and says "3h"; a console row is triage, so it says "3h ago" and keeps
+ * counting in days for a month rather than folding into weeks at a fortnight.
+ * Neither is a time *zone* question — an elapsed duration has none — so there
+ * is nothing here for the two to disagree about.
  */
 export const relative = (iso) => {
     if (!iso) return "—";

@@ -25,9 +25,15 @@ import {
     ChevronsRight,
     Inbox,
     LayoutDashboard,
+    MoonStar,
+    Archive,
+    Scale,
     ScrollText,
     Sparkles,
     Stethoscope,
+    Timer,
+    UserCog,
+    UserX,
     Users,
     X,
 } from "lucide-react";
@@ -35,6 +41,7 @@ import {
 import { CALM, DENSITY, FOCUS, TEXT } from "@/components/admin/console/tokens";
 import { readSavedFilters } from "@/components/admin/console/useListState";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
+import { isAllAccess } from "@/lib/consoleScope";
 
 const COLLAPSE_KEY = "weare.admin.sidebar";
 
@@ -47,6 +54,13 @@ const COLLAPSE_KEY = "weare.admin.sidebar";
  * Creators would just be how many creators exist, which is not news.
  *
  * `to` is relative to /admin, so the sidebar and the router cannot disagree.
+ *
+ * `adminOnly` marks the sections that are the *platform's* rather than a
+ * brand's — the global creator directory and its review queue, the
+ * platform-wide instruments, and the settings that hand out scope. They are
+ * admin-only on the server; this flag is what stops a team member being shown
+ * a door that answers 403. Everything unmarked is scoped to the caller's
+ * brands and reads correctly for both roles.
  */
 export const ADMIN_SECTIONS = [
     { key: "overview", to: "", label: "Overview", Icon: LayoutDashboard, end: true },
@@ -57,6 +71,7 @@ export const ADMIN_SECTIONS = [
         label: "Creator reviews",
         Icon: BadgeCheck,
         badge: "creators_to_review",
+        adminOnly: true,
     },
     {
         key: "campaign-reviews",
@@ -72,13 +87,74 @@ export const ADMIN_SECTIONS = [
         Icon: Building2,
         badge: "brands_to_verify",
     },
-    { key: "creators", to: "creators", label: "Creators", Icon: Users },
+    // **Its own section rather than a filter on the collaborations list.**
+    // Every open row here is a frozen collaboration and usually a payment not
+    // going out — the one queue where the cost of not looking is measured in
+    // days of somebody's income.
+    {
+        key: "disputes",
+        to: "disputes",
+        label: "Disputes",
+        Icon: Scale,
+        badge: "disputes_open",
+    },
+    { key: "creators", to: "creators", label: "Creators", Icon: Users, adminOnly: true },
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", to: "brands", label: "Brands", Icon: Building2 },
     { key: "performance", to: "performance", label: "Performance", Icon: Activity },
-    { key: "health", to: "health", label: "Health", Icon: Stethoscope, badge: "health_issues" },
-    { key: "audit", to: "audit", label: "Audit", Icon: ScrollText },
+    {
+        key: "health",
+        to: "health",
+        label: "Health",
+        Icon: Stethoscope,
+        badge: "health_issues",
+        adminOnly: true,
+    },
+    { key: "audit", to: "audit", label: "Audit", Icon: ScrollText, adminOnly: true },
+    { key: "team", to: "team", label: "Team", Icon: UserCog, adminOnly: true },
+    // A right being exercised against the whole company, not scoped work.
+    {
+        key: "deletions",
+        to: "deletions",
+        label: "Deletions",
+        Icon: UserX,
+        badge: "deletions_waiting",
+        adminOnly: true,
+    },
+    // Re-engagement, which is nobody's queue — it is the work that only gets
+    // done if somebody can see who to do it for.
+    { key: "dormant", to: "dormant", label: "Gone quiet", Icon: MoonStar },
+    // What we keep and for how long, served rather than only documented so
+    // the privacy page and the code cannot say different things.
+    {
+        key: "retention",
+        to: "retention",
+        label: "Retention",
+        Icon: Archive,
+        adminOnly: true,
+    },
+    // **The standard every other section is measured against**, so somebody
+    // whose queue is being measured is not the one who can move the line —
+    // and, since it grew the payment terms, somebody whose brand owes us
+    // money is not the one who can move that either.
+    {
+        key: "settings",
+        to: "settings",
+        label: "Settings",
+        Icon: Timer,
+        adminOnly: true,
+    },
 ];
+
+/**
+ * The sections this role may work in.
+ *
+ * One function, used by the rail and by the sheet, so a phone cannot find a
+ * different set of sections from a laptop — the rule that shape already held,
+ * now holding across roles as well.
+ */
+export const sectionsFor = (role) =>
+    isAllAccess(role) ? ADMIN_SECTIONS : ADMIN_SECTIONS.filter((s) => !s.adminOnly);
 
 /**
  * How many are waiting.
@@ -184,7 +260,7 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
  * sheet costs nothing until it is opened, says the words, and gives the list
  * underneath the whole width.
  */
-export function AdminNavSheet({ open, onOpenChange, counts }) {
+export function AdminNavSheet({ open, onOpenChange, counts, role }) {
     const [saved, setSaved] = useState(() => readSavedFilters());
 
     useEffect(() => {
@@ -214,7 +290,7 @@ export function AdminNavSheet({ open, onOpenChange, counts }) {
                         </Dialog.Close>
                     </div>
                     <div className="flex-1 overflow-y-auto py-2">
-                        {ADMIN_SECTIONS.map((section) => (
+                        {sectionsFor(role).map((section) => (
                             <SectionLink
                                 key={section.key}
                                 section={section}
@@ -232,7 +308,7 @@ export function AdminNavSheet({ open, onOpenChange, counts }) {
     );
 }
 
-export function AdminSidebar({ counts }) {
+export function AdminSidebar({ counts, role }) {
     const navigate = useNavigate();
     const [collapsed, setCollapsed] = useState(() => {
         try {
@@ -280,7 +356,7 @@ export function AdminSidebar({ counts }) {
             }`}
         >
             <div className="flex-1 overflow-y-auto py-2">
-                {ADMIN_SECTIONS.map((section) => (
+                {sectionsFor(role).map((section) => (
                     <SectionLink
                         key={section.key}
                         section={section}

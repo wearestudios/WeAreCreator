@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { WORK_NOTES } from "@/constants/testIds";
+import { IST } from "@/lib/time";
 
 const ROLE_LABEL = {
     brand: "Brand",
@@ -35,6 +36,7 @@ function formatWhen(iso) {
         month: "short",
         hour: "numeric",
         minute: "2-digit",
+            timeZone: IST,
     });
 }
 

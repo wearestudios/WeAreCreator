@@ -49,32 +49,15 @@ import {
     TEXT,
 } from "@/components/admin/console/tokens";
 import { ADMIN_TABLE as IDS } from "@/constants/testIds";
+import useWide from "@/lib/useWide";
 
 /** Rows past which the body is windowed. Below it, everything is in the DOM. */
 const VIRTUALISE_ABOVE = 150;
 
-/** Where the table starts. Tailwind's `md`, read once and shared. */
-const WIDE = "(min-width: 768px)";
-
-/**
- * True where there is room for a table.
- *
- * Read synchronously rather than defaulted, so neither form renders for a
- * frame before being replaced — a list that swaps shape on mount is a layout
- * shift, which is the thing this console measures itself on.
- */
-function useWide() {
-    const [wide, setWide] = useState(() =>
-        typeof window === "undefined" ? true : window.matchMedia(WIDE).matches,
-    );
-    useEffect(() => {
-        const mq = window.matchMedia(WIDE);
-        const on = () => setWide(mq.matches);
-        mq.addEventListener("change", on);
-        return () => mq.removeEventListener("change", on);
-    }, []);
-    return wide;
-}
+// Where the table starts, and whether there is room for one. Both live in
+// `lib/useWide.js` now — the application process flow asks the same question
+// on the creator's dashboard, and a component there importing out of the
+// console kit would be a dependency in the wrong direction.
 /** Rows rendered beyond the viewport, so a fast scroll does not show gaps. */
 const OVERSCAN = 8;
 

@@ -52,6 +52,7 @@ import VerificationDocuments, {
 } from "@/components/brand/VerificationDocuments";
 import { BRAND_LOGO, BRAND_PAGE, BRAND_VERIFICATION as IDS } from "@/constants/testIds";
 import AddressPicker from "@/components/AddressPicker";
+import VerificationExpiry from "@/components/VerificationExpiry";
 import { brandPageUrl } from "@/lib/brandPage";
 import { INDIAN_CITIES } from "@/lib/taxonomy";
 // Fallbacks only: the server ships these lists on the profile response, so a
@@ -69,20 +70,13 @@ import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
 } from "@/components/ImageUploadField";
-
-// The full set the server accepts (CATEGORY_LITERAL). This used to be four of
-// the eight, so a fashion, travel, wellness or real-estate brand had to file
-// itself as "Lifestyle" — and that is the word its public page then prints.
-const CATEGORY_OPTIONS = [
-    { value: "fnb", label: "F&B" },
-    { value: "hospitality", label: "Hospitality" },
-    { value: "retail", label: "Retail" },
-    { value: "real_estate", label: "Real estate" },
-    { value: "fashion", label: "Fashion" },
-    { value: "travel", label: "Travel" },
-    { value: "wellness", label: "Wellness" },
-    { value: "lifestyle", label: "Lifestyle" },
-];
+import { IST } from "@/lib/time";
+// The full set the server accepts (CATEGORY_LITERAL), from the one list. This
+// form used to name four of the eight, so a fashion, travel, wellness or
+// real-estate brand had to file itself as "Lifestyle" — and that is the word
+// its public page then prints.
+import { CATEGORY_OPTIONS } from "@/lib/categories";
+import DeleteAccount from "@/components/account/DeleteAccount";
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
@@ -186,6 +180,7 @@ function StateBanner({ state, reason, submittedAt }) {
                                 day: "2-digit",
                                 month: "short",
                                 year: "numeric",
+            timeZone: IST,
                             })}
                         </p>
                     )}
@@ -418,19 +413,48 @@ export default function BrandOnboarding() {
     // should fix it, and editing keeps working in every state but verified.
     const fieldsLocked = isVerified;
 
-    const onSave = async (e) => {
-        if (e) e.preventDefault();
+    /** Every required value as it stands on screen, keyed the way the server
+     *  names it. The checklist is filtered through this, because a list that
+     *  only reads the last save tells somebody who has just filled seven boxes
+     *  that seven boxes are empty. */
+    const liveValues = {
+        business_name: businessName,
+        legal_entity_name: legalName,
+        business_type: businessType,
+        category,
+        registered_address: registeredAddress,
+        contact_person_name: contactName,
+        contact_person_designation: contactDesignation,
+        contact_email: contactEmail,
+    };
+
+    /**
+     * Write what is on screen.
+     *
+     * One implementation, two callers: the Save button, and `Send for
+     * verification`, which has to persist the boxes before a route that reads
+     * the stored profile can judge them. Returns false when it refused, so
+     * the submit can stop rather than sending a half-filled profile.
+     */
+    const saveProfile = async ({ silent = false } = {}) => {
         setError("");
         if (!businessName.trim()) {
             touch("business_name");
-            return setError("Please enter your business name.");
+            setError("Please enter your business name.");
+            return false;
         }
-        if (!category) return setError("Please pick a category.");
-        if (areas.length === 0)
-            return setError("Add at least one area or city you operate in.");
+        if (!category) {
+            setError("Please pick a category.");
+            return false;
+        }
+        if (areas.length === 0) {
+            setError("Add at least one area or city you operate in.");
+            return false;
+        }
         if (emailProblem) {
             touch("contact_email");
-            return setError(emailProblem);
+            setError(emailProblem);
+            return false;
         }
         setSaving(true);
         try {
@@ -463,24 +487,40 @@ export default function BrandOnboarding() {
             });
             await refresh();
             setVerification(data?.verification || null);
-            notifySuccess("Brand profile saved");
-            if (firstRun.current) {
+            if (!silent) notifySuccess("Brand profile saved");
+            if (!silent && firstRun.current) {
                 navigate("/dashboard", {
                     replace: true,
                     state: { justOnboarded: true },
                 });
             }
+            return true;
         } catch (err) {
             setError(formatApiError(err));
+            return false;
         } finally {
             setSaving(false);
         }
+    };
+
+    const onSave = async (e) => {
+        if (e) e.preventDefault();
+        await saveProfile();
     };
 
     const onSubmitForVerification = async () => {
         setSubmitError("");
         setSubmitting(true);
         try {
+            // **Save what is on screen first.** The submit route judges the
+            // stored profile, so a person who filled the boxes and pressed the
+            // button they were looking at used to be told the boxes were
+            // empty. The Save button is two hundred pixels up the page in a
+            // different section; noticing it is not the price of submitting.
+            if (!(await saveProfile({ silent: true }))) {
+                setSubmitError("Fix the details above, then send it.");
+                return;
+            }
             // The route answers with the verification block itself.
             const { data } = await api.post("/brand/verification/submit");
             setVerification(data || null);
@@ -516,8 +556,23 @@ export default function BrandOnboarding() {
         );
     }
 
-    const missing = verification?.missing_fields || [];
-    const canSubmit = Boolean(verification?.can_submit) && !submitting;
+    // **The server names what is required; the screen knows what is in the
+    // boxes.** Keeping the labels from the server means the vocabulary stays
+    // one vocabulary; filtering on the live value means a field disappears
+    // from the list the moment it is filled rather than the moment it is
+    // saved. The two were the same thing only if you pressed Save between
+    // filling a box and looking down — which is exactly the trap this was.
+    const required = verification?.missing_fields || [];
+    const missing = required.filter((m) => !String(liveValues[m.field] ?? "").trim());
+    // Filled on screen, not yet on the server. `Send for verification` saves
+    // these first rather than refusing on their account.
+    const unsavedCount = required.length - missing.length;
+    const canSubmit =
+        missing.length === 0 &&
+        (verification?.document_count || 0) > 0 &&
+        !isVerified &&
+        !saving &&
+        !submitting;
 
     return (
         <div
@@ -558,11 +613,22 @@ export default function BrandOnboarding() {
                     <p className="mt-6 text-sm text-destructive">{loadError}</p>
                 )}
 
-                <div className="mt-10">
+                <div className="mt-10 space-y-4">
                     <StateBanner
                         state={state}
                         reason={verification?.verification_reason}
                         submittedAt={verification?.submitted_at}
+                    />
+                    {/* **Above the fields it is about**, like the rejection
+                        reason. A verified brand meets this and nothing else
+                        on the page has changed — the ask is a confirmation,
+                        not a resubmission, so it does not send them back
+                        through the documents. Renders nothing until the
+                        window opens. */}
+                    <VerificationExpiry
+                        verification={verification}
+                        kind="brand"
+                        onConfirmed={reloadVerification}
                     />
                 </div>
 
@@ -1234,6 +1300,21 @@ export default function BrandOnboarding() {
                             </div>
                         )}
 
+                        {/* Filled on screen, not yet on the server. Saying so
+                          * is the difference between "it ignored me" and "it
+                          * has them, it just hasn't written them down". */}
+                        {unsavedCount > 0 && (
+                            <p
+                                data-testid={IDS.unsavedNote}
+                                className="mt-4 text-sm text-muted-foreground"
+                            >
+                                {unsavedCount === 1
+                                    ? "One detail is filled in but not saved yet"
+                                    : `${unsavedCount} details are filled in but not saved yet`}
+                                {" — sending will save them."}
+                            </p>
+                        )}
+
                         {missing.length === 0 &&
                             (verification?.document_count || 0) === 0 && (
                                 <p
@@ -1277,6 +1358,13 @@ export default function BrandOnboarding() {
                         </Button>
                     </div>
                 )}
+
+                {/* Last on the page: a right that has to be reachable, not
+                    something to put in front of a brand halfway through
+                    getting verified. */}
+                <div className="mt-12">
+                    <DeleteAccount />
+                </div>
             </main>
         </div>
     );

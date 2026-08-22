@@ -354,7 +354,12 @@ def test_every_sidebar_section_has_a_route():
 def test_below_md_the_rows_are_a_list_rather_than_a_table():
     code = code_of(CONSOLE / "DataTable.jsx")
     assert "function MobileList(" in code
-    assert '"(min-width: 768px)"' in code
+    # The breakpoint moved to `lib/useWide.js` when the application process
+    # flow needed the same answer — one definition of "is there room", asked
+    # by both. The table still has to read it.
+    assert 'from "@/lib/useWide"' in code
+    hook = code_of(CONSOLE.parents[2] / "lib" / "useWide.js")
+    assert '"(min-width: 768px)"' in hook
     # The branch itself, not just the string: `if (!wide)` also appears in the
     # skeleton, so looking for it alone passed with the table forced on.
     # Checked, by forcing it and watching this test pass.
@@ -394,9 +399,12 @@ def test_the_icon_rail_is_not_the_phone_navigation():
 
 def test_the_rail_and_the_sheet_are_one_list():
     """A phone finding different sections from a laptop is the bug this
-    shape exists to prevent."""
+    shape exists to prevent — and now a *role* finding a different set from
+    another role too, which is why both forms go through `sectionsFor` rather
+    than filtering the list themselves."""
     code = code_of(CONSOLE / "Sidebar.jsx")
-    assert code.count("ADMIN_SECTIONS.map") == 2
+    assert code.count("sectionsFor(role).map") == 2
+    assert "ADMIN_SECTIONS.map" not in code, "one of the two forms is unfiltered"
     # The parenthesis matters: "function SectionLink" is a prefix of
     # "function SectionLinkAnythingElse", so the bare string passed a rename.
     assert "function SectionLink(" in code, "the row is written once"

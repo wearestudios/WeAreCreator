@@ -248,7 +248,17 @@ class TestWhoMayBeImpersonated:
             "brand",
             "brand_manager",
             "campaign_manager",
+            "weare_team",
         }
+
+    def test_a_scoped_console_is_impersonatable_and_an_unscoped_one_is_not(self):
+        """The distinction the list is drawn on. A `weare_team` member sees the
+        admin console with a scope around it, so looking through them shows an
+        admin something they cannot otherwise see; looking through another admin
+        shows them their own screen with somebody else's name on the audit
+        line."""
+        assert "weare_team" in server.IMPERSONATABLE_ROLES
+        assert "admin" not in server.IMPERSONATABLE_ROLES
 
     def test_starting_is_admin_only(self):
         import inspect

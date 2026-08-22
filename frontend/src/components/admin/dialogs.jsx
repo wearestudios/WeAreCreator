@@ -25,6 +25,11 @@ import {
     DEFAULT_COMPENSATION_TYPE,
     compensationType,
 } from "@/lib/compensation";
+import DeliverablePicker, {
+    emptyDeliverables,
+    fromDeliverableItems,
+    toDeliverableItems,
+} from "@/components/DeliverablePicker";
 import { formatRupees } from "./shared";
 
 // The server's ReasonPayload floor. Enforced here too so a three-character
@@ -50,16 +55,23 @@ export function ConfirmDialog({
     destructive = false,
     submitting = false,
     extra = null,
+    // **More than one field, for the handful of decisions that need it.**
+    // Recording a payout has to capture the reference *and* what was withheld,
+    // and a second dialog for the second field would be a second definition of
+    // marking a payment paid. `extra` stays for the single-field call sites;
+    // this is the same thing as a list.
+    extras = null,
     onSubmit,
 }) {
+    const fields = extras || (extra ? [extra] : []);
     const [reason, setReason] = useState("");
-    const [extraValue, setExtraValue] = useState("");
+    const [values, setValues] = useState({});
     const [err, setErr] = useState("");
 
     useEffect(() => {
         if (open) {
             setReason("");
-            setExtraValue("");
+            setValues({});
             setErr("");
         }
     }, [open]);
@@ -70,14 +82,23 @@ export function ConfirmDialog({
             setErr("Give a reason — it's shown in the audit log and to the person affected.");
             return;
         }
-        if (extra?.required && !extraValue.trim()) {
-            setErr(`${extra.label} is required.`);
+        const missing = fields.find((f) => f.required && !String(values[f.name] || "").trim());
+        if (missing) {
+            setErr(`${missing.label} is required.`);
             return;
         }
         setErr("");
         onSubmit({
             reason: reason.trim(),
-            ...(extra ? { [extra.name]: extraValue.trim() || null } : {}),
+            ...Object.fromEntries(
+                fields.map((f) => {
+                    const raw = String(values[f.name] ?? "").trim();
+                    if (!raw) return [f.name, null];
+                    // A number field sends a number: `"800"` in a currency
+                    // column is a string that sorts next to `"1,200"`.
+                    return [f.name, f.type === "number" ? Number(raw) : raw];
+                }),
+            ),
         });
     };
 
@@ -112,25 +133,38 @@ export function ConfirmDialog({
                 </DialogHeader>
 
                 <form onSubmit={submit} noValidate className="mt-4 space-y-5">
-                    {extra && (
-                        <div>
+                    {fields.map((f, i) => (
+                        <div key={f.name}>
                             <Label
-                                htmlFor="admin-confirm-extra"
+                                htmlFor={`admin-confirm-extra-${f.name}`}
                                 className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                             >
-                                {extra.label}
+                                {f.label}
                             </Label>
+                            {f.hint && (
+                                <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">
+                                    {f.hint}
+                                </p>
+                            )}
                             <Input
-                                id="admin-confirm-extra"
-                                data-testid={ADMIN_CONFIRM.extra}
-                                value={extraValue}
-                                onChange={(e) => setExtraValue(e.target.value)}
-                                maxLength={140}
-                                placeholder={extra.placeholder}
+                                id={`admin-confirm-extra-${f.name}`}
+                                // The first field keeps the id every existing
+                                // test and call site already writes against.
+                                data-testid={
+                                    i === 0 ? ADMIN_CONFIRM.extra : ADMIN_CONFIRM.extraField(f.name)
+                                }
+                                type={f.type || "text"}
+                                min={f.type === "number" ? "0" : undefined}
+                                value={values[f.name] ?? ""}
+                                onChange={(e) =>
+                                    setValues((v) => ({ ...v, [f.name]: e.target.value }))
+                                }
+                                maxLength={f.type === "number" ? undefined : 140}
+                                placeholder={f.placeholder}
                                 className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
                             />
                         </div>
-                    )}
+                    ))}
 
                     <div>
                         <Label
@@ -472,7 +506,10 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
     const [budget, setBudget] = useState("");
     const [compensation, setCompensation] = useState(DEFAULT_COMPENSATION_TYPE);
     const [needed, setNeeded] = useState("");
-    const [deliverables, setDeliverables] = useState("");
+    // The same structured picker the brand's form uses. An admin editing a
+    // brief and a brand posting one must produce the same shape, or the
+    // console becomes the way a campaign ends up with prose again.
+    const [deliverables, setDeliverables] = useState(emptyDeliverables());
     const [err, setErr] = useState("");
 
     useEffect(() => {
@@ -481,7 +518,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         setBudget(campaign.budget_per_creator != null ? String(campaign.budget_per_creator) : "");
         setCompensation(compensationType(campaign));
         setNeeded(campaign.creators_needed != null ? String(campaign.creators_needed) : "");
-        setDeliverables(campaign.deliverables || "");
+        setDeliverables(fromDeliverableItems(campaign.deliverable_items));
         setErr("");
     }, [open, campaign]);
 
@@ -489,8 +526,13 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         e.preventDefault();
         const changes = {};
         if (title.trim() && title.trim() !== campaign.title) changes.title = title.trim();
-        if (deliverables.trim() && deliverables.trim() !== campaign.deliverables) {
-            changes.deliverables = deliverables.trim();
+        // Sent only when it actually changed: the resolver refuses an empty
+        // ask, so posting the picker's state unconditionally would 422 every
+        // edit of a brief written before this field existed.
+        const items = toDeliverableItems(deliverables);
+        const wasItems = toDeliverableItems(fromDeliverableItems(campaign.deliverable_items));
+        if (items.length > 0 && JSON.stringify(items) !== JSON.stringify(wasItems)) {
+            changes.deliverable_items = items;
         }
         const b = Number(budget);
         if (budget !== "" && b !== campaign.budget_per_creator) {
@@ -560,18 +602,16 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         />
                     </div>
                     <div>
-                        <Label htmlFor="ce-deliv" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
                             Deliverables
                         </Label>
-                        <Textarea
-                            id="ce-deliv"
-                            data-testid={ADMIN_CAMPAIGN_EDIT.deliverables}
-                            value={deliverables}
-                            onChange={(e) => setDeliverables(e.target.value)}
-                            maxLength={1000}
-                            rows={2}
-                            className="mt-2 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
-                        />
+                        <div className="mt-2">
+                            <DeliverablePicker
+                                value={deliverables}
+                                onChange={setDeliverables}
+                                testid={ADMIN_CAMPAIGN_EDIT.deliverables}
+                            />
+                        </div>
                     </div>
                     <div>
                         <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">

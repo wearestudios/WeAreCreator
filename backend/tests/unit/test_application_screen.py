@@ -274,13 +274,20 @@ def _component(name):
 
 
 def test_the_screen_does_not_rebuild_the_state_machine():
-    """The steps come from the server. A second copy of the ladder in the
+    """The stages come from the server. A second copy of the ladder in the
     client is a second thing to keep in step, and drift shows up as a screen
-    confidently telling somebody the wrong thing."""
-    bar = _component("LifecycleBar.jsx")
+    confidently telling somebody the wrong thing.
 
-    assert "lifecycle.steps" in bar or "steps = []" in bar
-    assert "COLLAB_STATE_ORDER" not in bar
+    `LifecycleBar` — which drew the raw twelve states — is gone; the same rule
+    now belongs to `ProcessFlow`, which draws the eight the server groups them
+    into. Leaving the old bar beside it would be exactly the second copy this
+    is about.
+    """
+    flow = _component("ProcessFlow.jsx")
+
+    assert "process.stages" in flow or "stages = []" in flow
+    assert "COLLAB_STATE_ORDER" not in flow
+    assert not (FRONTEND / "components" / "application" / "LifecycleBar.jsx").exists()
 
 
 def test_the_screen_asks_the_server_which_fee_control_to_draw():
@@ -309,9 +316,15 @@ def test_the_screen_sends_no_amount_when_the_server_owns_it():
     assert "agreed_amount: Number(amount)" in detail
 
 
-def test_both_routes_render_the_one_component():
+def test_all_three_routes_render_the_one_component():
+    """Three now, not two. The campaign manager was the role the server had
+    always served an application to and no route reached — so the draft they
+    review, the thread they answer and the notes they read had no address.
+    Adding a *fourth* copy of this screen is what the count is guarding
+    against; adding a third caller of the one component is the point of it."""
     app_js = (FRONTEND / "App.js").read_text()
 
-    assert app_js.count("<ApplicationDetail") == 2
+    assert app_js.count("<ApplicationDetail") == 3
     assert "/brand/applications/:id" in app_js
     assert 'path="applications/:id"' in app_js
+    assert "/manager/applications/:id" in app_js

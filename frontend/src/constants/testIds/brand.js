@@ -80,6 +80,8 @@ export const BRAND_VERIFICATION = {
     rejectionReason: "brand-verification-rejection-reason",
     missingList: "brand-verification-missing",
     missingField: (field) => `brand-verification-missing-${field}`,
+    // Filled in the form, not yet written to the server.
+    unsavedNote: "brand-verification-unsaved",
 
     // Profile fields a reviewer needs before there is anything to review.
     field: (name) => `brand-verification-field-${name}`,

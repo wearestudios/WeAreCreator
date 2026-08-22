@@ -1,8 +1,13 @@
 // One campaign, as the manager running it needs it.
 //
-// Three tabs and a mode. Roster and slots are the planning views; day-of mode
-// takes over the screen when people are actually arriving, because the job
-// changes shape at that point — you stop reading and start tapping.
+// Four tabs and a mode. Roster, slots and the brief are the planning views;
+// day-of mode takes over the screen when people are actually arriving, because
+// the job changes shape at that point — you stop reading and start tapping.
+//
+// **Above all of it sits whatever is waiting on this manager.** Bookings need
+// a second half — the creator asks, the person holding the venue's diary
+// answers — and until `SlotAnswer` existed the notification saying so landed
+// on this page and found nothing. A call to action is not a tab.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
@@ -12,6 +17,7 @@ import {
     ChevronLeft,
     Download,
     MapPin,
+    BarChart3,
     Pencil,
     Phone,
     Plus,
@@ -29,6 +35,9 @@ import {
     MANAGER_VENUE as VENUE_IDS,
     SCHEDULING,
 } from "@/constants/testIds";
+import BriefPanel from "@/components/manager/BriefPanel";
+import PerformanceSheet from "@/components/manager/PerformanceSheet";
+import SlotAnswer from "@/components/manager/SlotAnswer";
 import BroadcastSheet from "@/components/manager/BroadcastSheet";
 import DayOfMode from "@/components/manager/DayOfMode";
 import SlotEditor from "@/components/manager/SlotEditor";
@@ -50,8 +59,26 @@ import {
 const TABS = [
     { key: "roster", label: "Roster" },
     { key: "slots", label: "Slots" },
+    // What the creators were actually asked for. It was on no manager screen
+    // at all, so "how many stories was it again?" was a phone call.
+    { key: "brief", label: "Brief" },
     { key: "venue", label: "Venue" },
 ];
+
+/**
+ * Is this campaign over?
+ *
+ * Only then does recording performance make sense — a post has to exist before
+ * it can have reach. Read off the collaboration's own state rather than the
+ * date, because a creator who publishes late is still the person whose numbers
+ * we want.
+ */
+const DELIVERED_STATES = new Set([
+    "content_submitted",
+    "content_approved",
+    "in_payment",
+    "closed",
+]);
 
 export default function ManagerCampaign() {
     const { id } = useParams();
@@ -69,6 +96,7 @@ export default function ManagerCampaign() {
     const [dayOf, setDayOf] = useState(() => params.get("mode") === "day-of");
     const [slotEditor, setSlotEditor] = useState(null);
     const [broadcast, setBroadcast] = useState(false);
+    const [performanceFor, setPerformanceFor] = useState(null);
     const [broadcastReport, setBroadcastReport] = useState(null);
     const [busy, setBusy] = useState(false);
 
@@ -226,8 +254,12 @@ export default function ManagerCampaign() {
                             </ManagerHeader>
                         </div>
 
-                        {/* The mode switch sits above everything: on the day it
-                            is the first and often only thing tapped. */}
+                        {/* Bookings nobody has answered, above everything. A
+                            creator is holding a seat on the strength of it. */}
+                        <SlotAnswer rows={roster.roster} onChanged={load} />
+
+                        {/* The mode switch: on the day it is the first and
+                            often only thing tapped. */}
                         <button
                             type="button"
                             onClick={() => setDayOf((v) => !v)}
@@ -291,7 +323,10 @@ export default function ManagerCampaign() {
 
                                 <div className="mt-6">
                                     {tab === "roster" && (
-                                        <RosterList rows={roster.roster} />
+                                        <RosterList
+                                            rows={roster.roster}
+                                            onRecord={setPerformanceFor}
+                                        />
                                     )}
                                     {tab === "slots" && (
                                         <SlotList
@@ -303,6 +338,7 @@ export default function ManagerCampaign() {
                                             onDelete={deleteSlot}
                                         />
                                     )}
+                                    {tab === "brief" && <BriefPanel campaign={roster} />}
                                     {tab === "venue" && <VenuePanel campaign={roster} />}
                                 </div>
 
@@ -346,6 +382,12 @@ export default function ManagerCampaign() {
                 onSubmit={saveSlot}
             />
 
+            <PerformanceSheet
+                row={performanceFor}
+                onClose={() => setPerformanceFor(null)}
+                onSaved={load}
+            />
+
             <BroadcastSheet
                 open={broadcast}
                 busy={busy}
@@ -361,7 +403,16 @@ export default function ManagerCampaign() {
     );
 }
 
-function RosterList({ rows }) {
+/**
+ * Everyone on this campaign, as a row you can act on.
+ *
+ * **The name opens the whole application.** Until `/manager/applications/:id`
+ * existed there was no URL a manager could open to see one — although the
+ * server has always served them one — which cost them the three things it
+ * already lets them do: review a draft, answer a creator's question, and read
+ * the work notes. The row is the summary; that page is the record.
+ */
+function RosterList({ rows, onRecord }) {
     if (!rows) return <RowListSkeleton rows={5} testid={ROSTER_IDS.skeleton} />;
     if (rows.length === 0) {
         return (
@@ -380,7 +431,7 @@ function RosterList({ rows }) {
                     className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5 grain-surface"
                 >
                     <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <span
                                 data-testid={ROSTER_IDS.rowTime(r.collaboration_id)}
                                 className="font-serif text-lg leading-none"
@@ -392,13 +443,27 @@ function RosterList({ rows }) {
                                 value={r.attendance}
                                 testid={ROSTER_IDS.rowStatus(r.collaboration_id)}
                             />
+                            {/* Held, but nobody has said yes. It looked
+                                identical to a settled booking here, on the one
+                                screen built to answer it. */}
+                            {r.slot_pending && (
+                                <span
+                                    data-testid={ROSTER_IDS.rowPending(r.collaboration_id)}
+                                    className="rounded border border-ember-500/40 bg-ember-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-ember-500"
+                                >
+                                    Waiting on you
+                                </span>
+                            )}
                         </div>
-                        <p
-                            data-testid={ROSTER_IDS.rowName(r.collaboration_id)}
-                            className="mt-1.5 truncate text-sm"
+                        <Link
+                            to={`/manager/applications/${r.collaboration_id}`}
+                            data-testid={ROSTER_IDS.rowOpen(r.collaboration_id)}
+                            className="mt-1.5 block truncate text-sm underline decoration-white/20 underline-offset-4 transition-colors duration-200 hover:text-ember-500"
                         >
-                            {r.name}
-                        </p>
+                            <span data-testid={ROSTER_IDS.rowName(r.collaboration_id)}>
+                                {r.name}
+                            </span>
+                        </Link>
                         {r.instagram_handle && (
                             <p
                                 data-testid={ROSTER_IDS.rowHandle(r.collaboration_id)}
@@ -408,6 +473,20 @@ function RosterList({ rows }) {
                             </p>
                         )}
                     </div>
+                    {/* Only once there is a post to have numbers about. Before
+                        that the button would be a form that cannot be filled
+                        in honestly. */}
+                    {DELIVERED_STATES.has(r.state) && (
+                        <button
+                            type="button"
+                            onClick={() => onRecord?.(r)}
+                            aria-label={`Record performance for ${r.name}`}
+                            data-testid={ROSTER_IDS.rowPerformance(r.collaboration_id)}
+                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500 ${TOUCH}`}
+                        >
+                            <BarChart3 className="h-5 w-5" />
+                        </button>
+                    )}
                     {r.phone && (
                         <a
                             href={`tel:${r.phone.replace(/\s+/g, "")}`}

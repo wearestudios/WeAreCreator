@@ -5,6 +5,7 @@
 // roster of forty.
 
 export const MANAGER_HOME = {
+	calendar: 'manager-home-calendar',
 	page: 'manager-home-page',
 	heading: 'manager-home-heading',
 	refresh: 'manager-home-refresh',
@@ -68,6 +69,42 @@ export const MANAGER_ROSTER = {
 	rowTime: (id) => `manager-roster-time-${id}`,
 	rowCall: (id) => `manager-roster-call-${id}`,
 	rowStatus: (id) => `manager-roster-status-${id}`,
+	rowOpen: (id) => `manager-roster-open-${id}`,
+	rowPending: (id) => `manager-roster-pending-${id}`,
+	rowPerformance: (id) => `manager-roster-performance-${id}`,
+};
+
+// The second half of the booking handshake, where the person holding the
+// venue's diary answers it.
+export const MANAGER_SLOT_ANSWER = {
+	band: 'manager-slot-answer-band',
+	row: (id) => `manager-slot-answer-row-${id}`,
+	confirm: (id) => `manager-slot-answer-confirm-${id}`,
+	decline: (id) => `manager-slot-answer-decline-${id}`,
+	sheet: 'manager-slot-answer-sheet',
+	reason: 'manager-slot-answer-reason',
+	error: 'manager-slot-answer-error',
+	submit: 'manager-slot-answer-submit',
+	cancel: 'manager-slot-answer-cancel',
+};
+
+// What the shoot is actually for — the brief and the counted deliverables.
+export const MANAGER_BRIEF = {
+	section: 'manager-brief-section',
+	text: 'manager-brief-text',
+	deliverables: 'manager-brief-deliverables',
+	fee: 'manager-brief-fee',
+	empty: 'manager-brief-empty',
+};
+
+// Recording what the published work did, days after the shoot.
+export const MANAGER_PERFORMANCE = {
+	sheet: 'manager-performance-sheet',
+	field: (key) => `manager-performance-${key}`,
+	note: 'manager-performance-note',
+	error: 'manager-performance-error',
+	submit: 'manager-performance-submit',
+	cancel: 'manager-performance-cancel',
 };
 
 export const MANAGER_SLOTS = {

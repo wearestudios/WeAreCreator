@@ -75,7 +75,12 @@ class TestVerificationStatusIsOneWord:
     def test_the_migration_covers_every_legacy_value(self):
         # Databases from either previous version have to land on "verified".
         assert 'for legacy in ("approved", "vetted"):' in self.SOURCE
-        assert '{"state": "vetted"}, {"$set": {"state": "verified"}}' in self.SOURCE
+        assert '{"state": "vetted"},' in self.SOURCE
+        assert '{"$set": {"state": "verified"}},' in self.SOURCE
+        # **And it does not stamp the clock.** A rename is not a transition;
+        # stamping would date every historical record to the deploy that ran
+        # the migration. See test_the_clock.py.
+        assert "clock-exempt:" in self.SOURCE
         assert '("vetting_status", "verification_status")' in self.SOURCE
 
 
@@ -214,8 +219,16 @@ class TestAdminActionQueue:
             assert state not in server.ADMIN_ACTION_STATES
 
     def test_the_admin_owned_steps_are_present(self):
-        for state in ("applied", "accepted", "commercial_agreed", "slot_booked"):
+        for state in ("applied", "accepted", "slot_booked"):
             assert state in server.ADMIN_ACTION_STATES
+
+    def test_waiting_for_a_booking_is_not_the_admins_desk(self):
+        """`commercial_agreed` used to be here, when an admin could book on a
+        creator's behalf. Booking is the creator's alone now — nobody else
+        chooses when somebody else's day goes — so an admin looking at this
+        queue can do nothing about it."""
+        assert "commercial_agreed" not in server.ADMIN_ACTION_STATES
+        assert "slot_booked" in server._CREATOR_OWNED_TRANSITIONS
 
     def test_terminal_states_need_no_action(self):
         for state in server.TERMINAL_COLLAB_STATES:
@@ -279,9 +292,21 @@ class TestPayoutReadiness:
 class _PayoutPayload:
     """Stand-in for the profile payload's payout fields."""
 
-    def __init__(self, upi=None, name=None, pan=None, gstin=None):
+    def __init__(
+        self,
+        upi=None,
+        name=None,
+        pan=None,
+        gstin=None,
+        method=None,
+        account=None,
+        ifsc=None,
+    ):
+        self.payout_method = method
         self.payout_upi = upi
         self.payout_account_name = name
+        self.payout_account_number = account
+        self.payout_ifsc = ifsc
         self.pan = pan
         self.gstin = gstin
 
@@ -298,11 +323,38 @@ class TestPayoutValidation:
     def test_blank_fields_are_allowed_and_stored_as_none(self):
         out = server._clean_payout_fields(_PayoutPayload())
         assert out == {
+            "payout_method": None,
             "payout_upi": None,
             "payout_account_name": None,
+            "payout_account_number": None,
+            "payout_ifsc": None,
             "pan": None,
             "gstin": None,
         }
+
+    def test_a_bank_account_is_normalised_off_the_passbook(self):
+        """An account number is read off paper and typed with spaces in it.
+        Refusing that is a form arguing with the document it is copied from."""
+        out = server._clean_payout_fields(
+            _PayoutPayload(method="bank", account="5010 0123 4567 89", ifsc="hdfc0001234")
+        )
+        assert out["payout_account_number"] == "501001234567 89".replace(" ", "")
+        assert out["payout_ifsc"] == "HDFC0001234"
+        assert out["payout_method"] == "bank"
+
+    @pytest.mark.parametrize("bad", ["12345678", "50100123456789012345", "5010ABC1234"])
+    def test_a_malformed_account_number_is_refused(self, bad):
+        with pytest.raises(HTTPException) as exc:
+            server._clean_payout_fields(_PayoutPayload(account=bad))
+        assert exc.value.status_code == 422
+
+    @pytest.mark.parametrize("bad", ["HDFC1001234", "HDF0001234", "HDFC000123"])
+    def test_a_malformed_ifsc_is_refused(self, bad):
+        """The zero in position five is reserved by RBI, which is what catches
+        a transposed digit."""
+        with pytest.raises(HTTPException) as exc:
+            server._clean_payout_fields(_PayoutPayload(ifsc=bad))
+        assert exc.value.status_code == 422
 
     @pytest.mark.parametrize("bad_upi", ["notaupi", "@bank", "priya@", "priya bank"])
     def test_malformed_upi_is_refused(self, bad_upi):
@@ -832,7 +884,14 @@ class TestInviteEndpointShape:
         assert "one_invite_per_creator" in source
         # The send lives in `_invite_creators`, shared by the admin route and
         # the brand manager's, so the guarantee holds for both callers.
-        assert "DuplicateKeyError" in source.split("def _invite_creators")[1][:6000]
+        #
+        # Read as the whole function rather than the first 6000 characters
+        # after its name: that window was a magic number that broke the day
+        # somebody added a guard above the insert, which is a change that made
+        # the code better and the test angrier.
+        import inspect
+
+        assert "DuplicateKeyError" in inspect.getsource(server._invite_creators)
 
 
 class TestNotificationRecordSplit:
@@ -964,12 +1023,29 @@ class TestModerationRoutes:
             "reinstate_creator",
         ],
     )
-    def test_the_new_detail_and_account_routes_are_admin_only(self, fn_name):
-        # The detail pages assemble contact numbers, documents and payouts in
-        # one response. Nothing here may be reachable by a brand or a manager.
+    def test_the_new_detail_and_account_routes_are_console_only(self, fn_name):
+        """The detail pages assemble contact numbers, documents and payouts in
+        one response. Nothing here may be reachable by a brand, a creator or a
+        campaign manager.
+
+        **The console answers to two roles now** — `admin` and `weare_team` —
+        and the three entity pages are among the scoped ones: a `weare_team`
+        member opens them for the brands they are assigned to and 404s on the
+        rest, which `_console_may_see_brand` enforces at the guard. Suspension
+        and reinstatement stay admin's alone: they are account decisions about
+        a creator, not work on a brand's campaign.
+        """
         import inspect
 
-        assert 'require_roles("admin")' in inspect.getsource(getattr(server, fn_name))
+        src = inspect.getsource(getattr(server, fn_name))
+        scoped = fn_name in (
+            "get_admin_campaign_detail",
+            "get_admin_brand_detail",
+            "get_admin_collaboration_detail",
+        )
+        expected = "require_roles(*CONSOLE_ROLES)" if scoped else 'require_roles("admin")'
+        assert expected in src
+        assert set(server.CONSOLE_ROLES) == {"admin", "weare_team"}
 
     def test_suspension_is_not_a_verification_decision(self):
         """Suspending an account must not touch the profile's verification.
@@ -1001,7 +1077,11 @@ class TestModerationRoutes:
         assert "db.audit_log.find" in src
         assert '"subject_type": "collaboration"' in src
 
-    def test_every_moderation_decision_is_guarded_by_the_admin_role(self):
+    def test_every_moderation_decision_is_guarded_by_the_console_roles(self):
+        """Reviewing a brand or a brief is console work, and WeAre's own staff
+        do it for the brands they are assigned to. What that does **not** open
+        is the platform: the scope is enforced inside each of these, and the
+        creator vetting queue is not among them."""
         import inspect
 
         for fn in (
@@ -1011,7 +1091,15 @@ class TestModerationRoutes:
             server.approve_campaign,
             server.reject_campaign,
         ):
-            assert 'require_roles("admin")' in inspect.getsource(fn)
+            src = inspect.getsource(fn)
+            assert "require_roles(*CONSOLE_ROLES)" in src
+            # And each of them narrows: a queue that took the new role without
+            # a scope would show one brand's staff every other brand's work.
+            assert (
+                "_console_brand_query" in src
+                or "_console_brand_or_404" in src
+                or "_admin_campaign_or_404(campaign_id, user)" in src
+            ), f"{fn.__name__} takes the console roles without scoping"
 
 
 class TestModerationNotifications:
@@ -1228,7 +1316,9 @@ class TestRefunds:
         import inspect
 
         src = inspect.getsource(server.refund_payment)
-        assert '"state": "cancelled"' in src
+        # Written through `_state_stamp`, which carries the clock with the
+        # state — a cancelled collaboration still records when it happened.
+        assert '_state_stamp("cancelled"' in src
         assert "collaborations.update_one" in src
 
     def test_a_settled_brand_invoice_is_flagged_not_quietly_voided(self):
@@ -1340,6 +1430,7 @@ class TestAuditCoverage:
                     "_resume_campaign",
                     "_invite_creators",
                     "_check_in_collaboration",
+                    "_duplicate_campaign",
                 )
             )
             if not delegates:
@@ -1779,7 +1870,11 @@ class TestCampaignManagerRole:
         import inspect
 
         src = inspect.getsource(server.assign_campaign_manager)
-        assert 'require_roles("admin")' in src
+        # Console work on a campaign, scoped by `_admin_campaign_or_404` — a
+        # `weare_team` member staffs their own brands' briefs and nobody
+        # else's.
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "_admin_campaign_or_404(campaign_id, user)" in src
         # The snapshot is the point: the brand and the creators see these, and
         # they must not change under them if the manager edits their account.
         for field in ("manager_name", "manager_phone", "manager_email"):
@@ -2027,6 +2122,9 @@ class TestManagerAudit:
                     "create_campaign_slot",
                     "_check_in_collaboration",
                     "_record_performance",
+                    # Both halves of the booking handshake audit inside the
+                    # one implementation the brand's routes share.
+                    "_answer_slot_request",
                 )
             ):
                 continue
@@ -2283,9 +2381,20 @@ class TestApplicantBuckets:
         assert "_ENGAGED_COLLAB_STATES" in active_block
         assert "_APPLICANT_APPROVED_STATES" not in active_block
 
-    def test_rejected_covers_both_exits(self):
+    def test_rejected_covers_every_exit(self):
+        """Four ways out now, not two. `withdrawn` is the creator's own and
+        `expired` is nobody's — an application on a brief that started before
+        anybody answered. A board that did not account for either would show
+        an applicant who has gone as still waiting on somebody.
+
+        The bucket is named "rejected" and means "ended without being taken
+        on", which is the question a board actually asks. The second assertion
+        is the one that matters: a fifth exit added without a bucket fails
+        here rather than vanishing off a screen.
+        """
         rejected = dict(server._APPLICANT_BUCKETS)["rejected"]
-        assert set(rejected) == {"declined", "cancelled"}
+        assert set(rejected) == {"declined", "cancelled", "withdrawn", "expired"}
+        assert set(rejected) | {"closed"} == set(server.TERMINAL_COLLAB_STATES)
 
     def test_completed_is_reported_separately_from_approved(self):
         # "How many finished" is a different question from "how many were
@@ -2301,11 +2410,13 @@ class TestApplicantBuckets:
 
 
 class TestDashboardEndpoint:
-    def test_it_is_admin_only(self):
+    def test_it_is_console_only_and_scoped(self):
         import inspect
 
         for fn in (server.admin_dashboard, server.admin_campaign_applicants):
-            assert 'require_roles("admin")' in inspect.getsource(fn)
+            src = inspect.getsource(fn)
+            assert "require_roles(*CONSOLE_ROLES)" in src
+            assert "_console_" in src or "_admin_campaign_or_404(campaign_id, user)" in src
 
     def test_it_takes_an_optional_campaign_scope(self):
         params = __import__("inspect").signature(server.admin_dashboard).parameters
@@ -3769,7 +3880,11 @@ class TestVerificationDocumentsAreNotPublic:
         import inspect
 
         src = inspect.getsource(server.download_brand_document)
-        assert 'require_roles("admin")' in inspect.getsource(server.download_brand_document)
+        # Console-only, and scoped: a brand's registered address and its
+        # directors' names are readable by the staff who work that brand, and
+        # by nobody else at all.
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "_console_brand_or_404(user_id, user)" in src
         # Both ids in the filter, so a document id can't be pulled out from
         # under a different brand.
         assert '{"_id": doc_oid, "brand_id": brand_oid}' in src
@@ -4212,6 +4327,13 @@ class TestBrandManagerRole:
         assert server._brand_scope({"_id": str(own), "brand_id": brand}) == brand
 
 
+# Fields that record *who acted*, where the login id is the right value.
+# Everything else that carries `user["_id"]` into a query is scoping by the
+# login, which is only correct while the login and the brand are one row — and
+# they are not.
+_ACTOR_FIELDS = ("agreed_by", "checked_in_by", "created_by")
+
+
 class TestBrandEndpointsAreScoped:
     """Every brand-facing query goes through `_brand_scope`.
 
@@ -4247,12 +4369,15 @@ class TestBrandEndpointsAreScoped:
         offenders = [
             f"{path} ({fn})"
             for path, fn, body in self._brand_blocks()
-            # `agreed_by`/`checked_in_by` record the actor, which really is the
-            # login. Everything else that filters is the brand.
+            # **Recording the actor is not scoping by them.** `agreed_by`,
+            # `created_by` and friends are "who did this", which really is the
+            # login; everything that *filters* must go through `_brand_scope`,
+            # because the login and the brand are not the same row. Named
+            # rather than pattern-matched, so a new field has to be a decision.
             if 'ObjectId(user["_id"])' in body
-            and not all(
-                marker in body
-                for marker in ('"agreed_by": ObjectId(user["_id"])',)
+            and not any(
+                f'"{actor_field}": ObjectId(user["_id"])' in body
+                for actor_field in _ACTOR_FIELDS
             )
         ]
         assert not offenders, f"brand endpoints scoping by login id: {offenders}"
@@ -4528,7 +4653,13 @@ class TestWorkNotes:
 
         src = inspect.getsource(server._note_readable_collab_or_404)
         assert 'role == "admin"' in src
-        assert "is_brand_side(user) and campaign.get(\"brand_id\") == _brand_scope(user)" in src
+        # The brand's door now has two locks: it owns the campaign, **and** the
+        # application is one we have finished shortlisting on a campaign it
+        # handed us. This is the second door onto an application, and a shield
+        # on only the other one would let a pasted id open everything.
+        assert "is_brand_side(user)" in src
+        assert 'campaign.get("brand_id") == _brand_scope(user)' in src
+        assert "_brand_sees_collab(campaign, collab)" in src
         assert 'role == "campaign_manager" and campaign.get("manager_id")' in src
         # Anything else falls through to the same 404 as a missing row.
         assert src.rstrip().endswith('raise HTTPException(status_code=404, detail="Application not found")')

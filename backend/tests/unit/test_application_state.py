@@ -129,13 +129,23 @@ def test_the_admin_board_returns_one_key_per_bucket():
 def test_the_campaign_page_reads_the_keys_the_server_sends():
     """This is the second bug: the page asked for active/completed/ended, which
     the server has never returned, so every group resolved to undefined and the
-    section rendered "nobody has applied yet" however many had."""
+    section rendered "nobody has applied yet" however many had.
+
+    "Sends" is the handler's whole answer, not just the collaboration buckets:
+    `invited` is a fifth group written beside them, because an invitation makes
+    no collaboration and a board that listed only those showed a campaign we
+    had asked six people to as empty.
+    """
     source = CAMPAIGN_DETAIL_PAGE.read_text()
     block = re.search(r"const GROUPS = \[(.*?)\];", source, re.S)
     assert block, "GROUPS not found in CampaignDetailPage.jsx"
 
     keys = set(re.findall(r'key:\s*"([a-z_]+)"', block.group(1)))
+
+    handler = Path(server.__file__).read_text()
+    handler = handler[handler.index("async def admin_campaign_applicants(") :][:6000]
     served = {name for name, _ in server._APPLICANT_BUCKETS}
+    served |= set(re.findall(r'groups\["([a-z_]+)"\]\s*=', handler))
 
     assert keys == served, f"page reads {sorted(keys)}, server sends {sorted(served)}"
 

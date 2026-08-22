@@ -14,6 +14,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { mediaUrl } from "@/lib/api";
+import { IST } from "@/lib/time";
 
 export const STATE_ORDER = [
     "applied",
@@ -30,9 +31,15 @@ export const STATE_ORDER = [
     "closed",
     "declined",
     "cancelled",
+    "withdrawn",
+    "expired",
 ];
 
 export const STATE_META = {
+    // Not a collaboration state — there is no collaboration yet. It is what an
+    // applicant board calls somebody we asked and who has not answered, and it
+    // is here because that row sits in the same list as the real ones.
+    invited: { label: "Invited", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
     verified: { label: "Verified", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
     accepted: { label: "Accepted", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
@@ -47,6 +54,11 @@ export const STATE_META = {
     closed: { label: "Closed", tone: "bg-white/5 text-muted-foreground border-white/15" },
     declined: { label: "Declined", tone: "bg-white/5 text-muted-foreground border-white/15" },
     cancelled: { label: "Cancelled", tone: "bg-red-500/10 text-red-300/80 border-red-500/25" },
+    // The creator's own exit, and nobody's. Neither is a rejection, so neither
+    // wears the red a decline does — a withdrawal happens before anybody is
+    // committed, and an expiry is a decision that never got made.
+    withdrawn: { label: "Withdrawn", tone: "bg-white/5 text-muted-foreground border-white/15" },
+    expired: { label: "No answer", tone: "bg-white/5 text-muted-foreground border-white/15" },
 };
 
 export const CAMPAIGN_STATUS_META = {
@@ -87,6 +99,7 @@ export const formatDate = (iso) => {
             day: "2-digit",
             month: "short",
             year: "numeric",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -101,39 +114,23 @@ export const formatDateTime = (iso) => {
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return iso;
     }
 };
 
-/**
- * How long something has been waiting, in the shortest true form. The queue is
- * read at a glance, and "3d" lands faster than a date does.
- */
-export const timeAgo = (iso) => {
-    if (!iso) return "—";
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return "—";
-    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.round(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.round(hours / 24);
-    if (days < 14) return `${days}d`;
-    return `${Math.round(days / 7)}w`;
-};
-
-// Anything older than this has been ignored rather than queued.
-export const STALE_AFTER_HOURS = 48;
-
-export const isStale = (iso) => {
-    if (!iso) return false;
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return false;
-    return Date.now() - then > STALE_AFTER_HOURS * 3600 * 1000;
-};
+// `isStale` and its flat 48 hours lived here, and it was a second definition
+// of "too long" — one that disagreed with every real target the moment there
+// were nine of them. It called a payment overdue on day three of seven and a
+// campaign review fine on day two of one.
+//
+// **The server decides now**, against SLA targets an admin can edit, and sends
+// the verdict on the record as its `ageing` block. `components/AgeBadge.jsx`
+// draws it. Do not reintroduce a threshold here: a copy of a policy in the
+// browser is a copy that drifts, and this one had already drifted before it
+// was noticed.
 
 export const formatCompact = (n) => {
     if (typeof n !== "number") return "—";

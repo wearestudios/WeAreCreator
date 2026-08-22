@@ -584,18 +584,19 @@ def test_the_accepted_types_come_from_the_signature_table():
 # --- The frontend half --------------------------------------------------------
 
 
-def test_the_creator_s_bar_grows_a_stage_only_where_a_draft_exists():
+def test_the_draft_review_stage_is_the_servers_answer_now():
+    """The creator's bar used to grow a seventh stage locally when a draft
+    existed. The eight-stage process flow makes that a server decision — the
+    same "Content review" box on every campaign, meaning the draft where there
+    is a gate and the live link where there is not — so there is nothing left
+    on the client to get wrong."""
+    assert server._stage_of("draft_submitted", {"requires_draft_approval": True}) == (
+        "content_review"
+    )
+    assert server._stage_of("content_submitted", {}) == "content_review"
+
     src = read("components", "creator", "shared.jsx")
-    assert "lifecycleFor" in src
-    assert "draft_submitted" in src and "draft_approved" in src
-
-
-def test_the_tracker_does_not_hardcode_six_columns():
-    """It was `grid-cols-6`. Seven stages in a six-column grid drops one off
-    the end of the rail."""
-    src = read("components", "creator", "ActiveCampaigns.jsx")
-    assert "grid-cols-6" not in src
-    assert "gridTemplateColumns" in src
+    assert "lifecycleFor" not in src.replace("`lifecycleFor`", "")
 
 
 def test_the_creator_can_send_either_a_file_or_a_link():
@@ -626,6 +627,11 @@ def test_the_post_form_offers_the_toggle_and_re_seeds_it_on_edit():
     assert "setRequiresDraft(Boolean(data.requires_draft_approval))" in src
 
 
-def test_the_lifecycle_bar_can_name_the_new_steps():
-    src = read("components", "application", "LifecycleBar.jsx")
-    assert "draft_submitted" in src and "draft_approved" in src
+def test_the_process_flow_has_a_place_for_a_draft():
+    """The bar that named `draft_submitted` and `draft_approved` directly is
+    gone. Both are the "Content review" stage now — a name a creator can read,
+    decided on the server so no screen has to know the two states exist."""
+    for state in ("draft_submitted", "draft_approved"):
+        assert server._stage_of(state, {"requires_draft_approval": True}) == (
+            "content_review"
+        )

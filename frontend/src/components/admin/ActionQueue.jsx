@@ -34,7 +34,9 @@ import { TimeAgo } from "./console/format";
 import { CALM, DENSITY, FOCUS, PANEL, ROW_H, TEXT } from "./console/tokens";
 import useListState from "./console/useListState";
 import useTableKeys from "./console/useTableKeys";
-import { formatRupees, isStale } from "./shared";
+import { formatRupees } from "./shared";
+import AgeBadge from "@/components/AgeBadge";
+import SuspensionPrompts from "./SuspensionPrompts";
 
 // Collaboration states where the next move is ours. Mirrors ADMIN_ACTION_STATES
 // on the server; anything else is waiting on the brand or the creator.
@@ -72,8 +74,10 @@ const KINDS = ["payment", "question", "collaboration", "campaign", "brand", "cre
 // default sort rather than a column somebody has to find.
 const DEFAULTS = { sort: { key: "kind", dir: "asc" } };
 
-export default function ActionQueue({ onChanged, feePercent }) {
+export default function ActionQueue({ onChanged, feePercent, allAccess = true }) {
     const [items, setItems] = useState(null);
+    // The band above the queue, loaded with it rather than beside it.
+    const [suspensions, setSuspensions] = useState(null);
     const [waiting, setWaiting] = useState([]);
     const [kind, setKind] = useState("");
     const [showWaiting, setShowWaiting] = useState(false);
@@ -90,17 +94,33 @@ export default function ActionQueue({ onChanged, feePercent }) {
     const load = useCallback(async () => {
         setItems(null);
         try {
-            const [brands, campaigns, creators, changed, board, questions] = await Promise.all([
+            // **The creator queues are the platform's, not a brand's.**
+            // Verifying a creator is a decision about somebody who applies
+            // everywhere, so it stays admin-only on the server — a team member
+            // is not asked for it, because one 403 in this `Promise.all` would
+            // empty a queue that is otherwise entirely theirs to work.
+            // Everything else here comes back already scoped.
+            const none = Promise.resolve({ data: [] });
+            const [brands, campaigns, creators, changed, board, questions, suspensions] =
+                await Promise.all([
                 api.get("/admin/brands/pending"),
                 api.get("/admin/campaigns/pending"),
-                api.get("/admin/creators/pending"),
+                allAccess ? api.get("/admin/creators/pending") : none,
                 // Verified creators who edited something material — still live
                 // to brands, still a decision waiting on us.
-                api.get("/admin/creators/changed"),
+                allAccess ? api.get("/admin/creators/changed") : none,
                 api.get("/admin/collaborations"),
                 // Threads whose last word is a creator's.
                 api.get("/questions/unanswered"),
+                // **Fetched here rather than by the band itself**, so it lands
+                // in the same commit as the rows underneath it. On its own
+                // fetch it appeared a beat later and pushed the whole queue
+                // down — measured at 0.055 CLS, all of it that one push. A
+                // band that renders nothing most of the time cannot reserve
+                // height, so the fix is to arrive at the same moment.
+                allAccess ? api.get("/admin/suspension-prompts") : Promise.resolve({ data: {} }),
             ]);
+            setSuspensions(suspensions.data || {});
 
             const rows = [];
 
@@ -109,6 +129,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     id: `question-${q.campaign_id}-${q.creator_id}`,
                     kind: "question",
                     since: q.asked_at,
+                    ageing: q.ageing,
                     primary: `“${q.body?.length > 120 ? q.body.slice(0, 120) + "…" : q.body}”`,
                     secondary: [q.creator_name, q.campaign_title, q.brand_name]
                         .filter(Boolean)
@@ -126,6 +147,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     id: `brand-${b.user_id}`,
                     kind: "brand",
                     since: b.signed_up_at || b.created_at,
+                    ageing: b.ageing,
                     primary: b.business_name || b.name || "Unnamed brand",
                     secondary: [b.category, b.email || b.phone].filter(Boolean).join(" · "),
                     note:
@@ -141,6 +163,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     id: `campaign-${c.id}`,
                     kind: "campaign",
                     since: c.submitted_for_review_at || c.created_at,
+                    ageing: c.ageing,
                     primary: c.title,
                     secondary: [
                         c.brand_name || "Unknown brand",
@@ -162,6 +185,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                     note: edited ? "Edited since approval — re-check what changed" : null,
                     kind: "creator",
                     since: c.created_at,
+                    ageing: c.ageing,
                     primary: c.name || "Unnamed creator",
                     secondary: [
                         c.instagram_handle ? `@${c.instagram_handle}` : null,
@@ -186,6 +210,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                             id: `payment-${row.payment.id}`,
                             kind: "payment",
                             since: row.updated_at || row.created_at,
+                            ageing: row.ageing,
                             primary: `₹${formatRupees(row.payment.creator_payout)} to ${
                                 row.creator?.name || "creator"
                             }`,
@@ -201,6 +226,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
                             id: `collab-${row.id}`,
                             kind: "collaboration",
                             since: row.updated_at || row.created_at,
+                            ageing: row.ageing,
                             primary: row.creator?.name || "Creator",
                             secondary: [row.campaign?.title, row.brand_name]
                                 .filter(Boolean)
@@ -234,7 +260,7 @@ export default function ActionQueue({ onChanged, feePercent }) {
             setItems([]);
             setWaiting([]);
         }
-    }, []);
+    }, [allAccess]);
 
     useEffect(() => {
         load();
@@ -310,18 +336,37 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 reasonLabel: "Note",
                 placeholder: "e.g. Paid in the 4pm batch",
                 confirmLabel: "Record payout",
-                extra: {
-                    name: "payment_reference",
-                    label: "Payment reference",
-                    placeholder: "UTR or transaction id",
-                    required: true,
-                },
+                // **The same two fields as the collaboration page.** This is
+                // the door most payouts actually go through — working the
+                // queue is the fast path — so a withholding field on the
+                // detail page alone would mean TDS was recordable in theory
+                // and unrecorded in practice.
+                extras: [
+                    {
+                        name: "payment_reference",
+                        label: "Payment reference",
+                        placeholder: "UTR or transaction id",
+                        required: true,
+                    },
+                    {
+                        name: "tds_amount",
+                        label: "TDS withheld",
+                        type: "number",
+                        hint: "Leave blank if none applies. The platform records what you enter — it doesn't work the rate out.",
+                        placeholder: "e.g. 800",
+                    },
+                ],
                 onSubmit: (body) =>
                     run(
                         item,
                         () =>
                             api.post(`/admin/payments/${raw.payment.id}/mark_paid`, {
                                 payment_reference: body.payment_reference,
+                                // A figure means it applies, blank means none
+                                // does; "nobody has looked" is the state the
+                                // payment is in before this dialog.
+                                tds_applicable: body.tds_amount != null,
+                                tds_amount: body.tds_amount,
                             }),
                         "Payout recorded — collaboration closed",
                     ),
@@ -488,30 +533,39 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 sortable: true,
                 numeric: true,
                 width: "w-28",
-                value: (i) => new Date(i.since || 0).getTime() || null,
-                cell: (i) => (
-                    <span
-                        data-testid={IDS.rowAge(i.id)}
-                        // Overdue is the one place a row changes colour: it is
-                        // a fact about this row, not a category of row. The
-                        // "!" is what fits in a 7rem column; the word is what
-                        // it means, and the phone has room for it.
-                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
-                        title={isStale(i.since) ? "Overdue" : undefined}
-                    >
-                        <TimeAgo iso={i.since} />
-                        {isStale(i.since) ? " !" : ""}
-                    </span>
-                ),
-                mobileCell: (i) => (
-                    <span
-                        data-testid={IDS.rowAge(i.id)}
-                        className={`whitespace-nowrap ${isStale(i.since) ? "text-ember-500" : ""}`}
-                    >
-                        <TimeAgo iso={i.since} />
-                        {isStale(i.since) ? " · overdue" : ""}
-                    </span>
-                ),
+                // **How much of its allowance this row has used**, which is
+                // the only figure that compares two different targets: 1.0 is
+                // exactly at the target, 5.0 is five times over. A payment
+                // eight days into a seven-day target has used 1.14; a campaign
+                // review five days into a one-day target has used 5.0, and it
+                // is the one to look at first. Sorting the raw age puts them
+                // the other way round.
+                //
+                // **One scale, not two.** The first version returned
+                // `1e12 + overdueHours` for overdue rows and a millisecond
+                // timestamp for the rest — and a timestamp is ~1.76e12, so
+                // every un-overdue row outranked every overdue one. Rows with
+                // no target cannot be measured against one, so they sort below
+                // everything that has one, ordered among themselves by age.
+                value: (i) => {
+                    const a = i.ageing;
+                    if (a?.sla_hours) return a.hours / a.sla_hours;
+                    const hours = (Date.now() - new Date(i.since || 0).getTime()) / 3600000;
+                    return Number.isFinite(hours) ? -1 / (hours + 1) : null;
+                },
+                cell: (i) =>
+                    // **The server's verdict, against the SLA an admin set.**
+                    // This used to be a flat 48 hours in the browser, which
+                    // disagreed with every one of the nine real targets — it
+                    // called a payment overdue on day three of seven and a
+                    // campaign review fine on day two of one.
+                    i.ageing ? (
+                        <AgeBadge ageing={i.ageing} testid={IDS.rowAge(i.id)} />
+                    ) : (
+                        <span data-testid={IDS.rowAge(i.id)} className="whitespace-nowrap">
+                            <TimeAgo iso={i.since} />
+                        </span>
+                    ),
             },
             {
                 key: "decision",
@@ -597,6 +651,14 @@ export default function ActionQueue({ onChanged, feePercent }) {
 
     return (
         <section data-testid={IDS.section}>
+            {/* **Above the queue, not in it.** A suspension is a decision
+                about a creator who works across every brand rather than a row
+                somebody approves, so it does not belong among the rows — and
+                it is admin's rather than a scoped console's for the same
+                reason the two creator queues are. It renders nothing when
+                nobody is over the line. */}
+            {allAccess && <SuspensionPrompts data={suspensions} />}
+
             <header className="mb-3">
                 <h1 className={TEXT.heading}>
                     {total === 0 && items ? "Nothing waiting on you." : "Waiting on you"}
@@ -762,8 +824,11 @@ export default function ActionQueue({ onChanged, feePercent }) {
                             </PeekField>
                         )}
                         <PeekField label="Waiting">
-                            <TimeAgo iso={peek.since} />
-                            {isStale(peek.since) ? " · overdue" : ""}
+                            {peek.ageing ? (
+                                <AgeBadge ageing={peek.ageing} />
+                            ) : (
+                                <TimeAgo iso={peek.since} />
+                            )}
                         </PeekField>
                         <PeekField label="Detail">{peek.secondary}</PeekField>
                         {peek.note && (
@@ -786,7 +851,14 @@ export default function ActionQueue({ onChanged, feePercent }) {
                 placeholder={confirm?.placeholder}
                 confirmLabel={confirm?.confirmLabel}
                 destructive={confirm?.destructive}
+                // **Both, because the configs above use both.** The reject
+                // paths carry a single `extra`; the payout carries `extras`.
+                // Forwarding only one silently drops every field of the other
+                // — which for the payout meant the reference field vanished
+                // and the server answered 422 on a field the form thought it
+                // was filling in.
                 extra={confirm?.extra}
+                extras={confirm?.extras}
                 onSubmit={(body) => confirm?.onSubmit(body)}
             />
 

@@ -13,6 +13,7 @@ import {
     Loader2,
     MapPin,
     MessageSquare,
+    PackageOpen,
     Send,
     Users,
     X,
@@ -21,6 +22,12 @@ import { Navbar } from "@/components/Navbar";
 import { SafeSection } from "@/components/ErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import ProcessFlow from "@/components/application/ProcessFlow";
+import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
+import Shortfall from "@/components/Shortfall";
+import CreatorLists from "@/components/CreatorLists";
+import { ReliabilityBadge } from "@/components/ReliabilityBadge";
+import { SHORTFALL } from "@/constants/testIds";
 import {
     ApplicantListSkeleton,
     ListEmptyState,
@@ -45,6 +52,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { IST } from "@/lib/time";
 
 const CAT_LABEL = {
     fnb: "F&B",
@@ -142,6 +150,7 @@ const formatDateTime = (iso) => {
             month: "short",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -154,6 +163,7 @@ const formatDate = (iso) => {
         return new Date(iso).toLocaleDateString("en-IN", {
             day: "2-digit",
             month: "short",
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -441,7 +451,16 @@ function ReasonDialog({
 // Applicant row
 // ---------------------------------------------------------------------------
 
-const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onApprove, onRequestChanges }) => {
+const ApplicantCard = ({
+    applicant: a,
+    budget,
+    busy,
+    onAccept,
+    onDecline,
+    onApprove,
+    onRequestChanges,
+    onAcceptPartial,
+}) => {
     const meta = STATE_META[a.state] || {};
     const c = a.creator || {};
     const overBudget =
@@ -476,7 +495,20 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                             {c.name || "Creator"}
                         </Link>
                         <StatePill state={a.state} />
+                        {a.reference && (
+                            <span
+                                data-testid={`applicant-reference-${a.id}`}
+                                className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-muted-foreground"
+                            >
+                                {a.reference}
+                            </span>
+                        )}
                     </div>
+
+                    {/* The same eight stages the creator and the admin read,
+                        so a phone call between the three of them is about one
+                        picture. */}
+                    <ProcessFlow process={a.process} className="mt-4" />
 
                     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                         {c.instagram_handle && (
@@ -638,6 +670,16 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                             Accept
                         </Button>
                     )}
+                    {/* What arrived against what was asked, when anybody has
+                        counted. Absent on a brief with no structured ask and
+                        on one nobody counted — unknown, not complete. */}
+                    {a.shortfall && (
+                        <Shortfall
+                            shortfall={a.shortfall}
+                            testid={SHORTFALL.block(a.id)}
+                            className="w-full"
+                        />
+                    )}
                     {a.can_review_content && (
                         <>
                             <Button
@@ -659,6 +701,24 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                                 <MessageSquare className="mr-1.5 h-4 w-4" />
                                 Ask for a change
                             </Button>
+                            {/* **The third answer, which did not exist.** Two
+                                of three stories delivered was neither
+                                complete nor failed, so it got settled over
+                                WhatsApp with a number nobody wrote down.
+                                Absent on a brief with no counted ask — there
+                                is nothing to be short of. */}
+                            {a.can_accept_partial && (
+                                <Button
+                                    data-testid={SHORTFALL.open}
+                                    disabled={busy}
+                                    variant="outline"
+                                    onClick={() => onAcceptPartial(a)}
+                                    className="rounded-full border-amber-400/40 bg-transparent text-amber-200 hover:bg-amber-400/10"
+                                >
+                                    <PackageOpen className="mr-1.5 h-4 w-4" />
+                                    Accept what arrived
+                                </Button>
+                            )}
                         </>
                     )}
                     {a.can_decline && (
@@ -676,6 +736,53 @@ const ApplicantCard = ({ applicant: a, budget, busy, onAccept, onDecline, onAppr
                 </div>
             )}
         </li>
+    );
+};
+
+/**
+ * Creators asked to this brief who have not answered.
+ *
+ * **Not applicants, so not a tab.** The tabs above filter collaborations by
+ * state, and an invitation has no collaboration — nothing to accept, decline
+ * or review. It sits between the board and the suggestions panel because that
+ * is the order of the question: who came, who we asked and haven't heard from,
+ * who else to ask.
+ *
+ * It renders nothing when nobody is waiting. A permanently empty box headed
+ * "Invited" reads as "invitations don't work".
+ */
+const InvitedStrip = ({ invited }) => {
+    const rows = invited || [];
+    if (rows.length === 0) return null;
+
+    return (
+        <section data-testid="applicants-invited" className="mt-10">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                Invited, waiting to hear back
+                <span className="ml-2 text-ember-500">{rows.length}</span>
+            </p>
+            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                {rows.map((i) => (
+                    <li
+                        key={i.invitation_id}
+                        data-testid={`applicants-invited-${i.invitation_id}`}
+                        className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
+                    >
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                            {i.name || "Creator"}
+                            {i.instagram_handle && (
+                                <span className="ml-2 text-muted-foreground">
+                                    @{i.instagram_handle}
+                                </span>
+                            )}
+                        </span>
+                        <span className="flex-none text-xs text-muted-foreground">
+                            invited {formatDate(i.created_at)}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </section>
     );
 };
 
@@ -973,11 +1080,18 @@ export default function BrandCampaignApplicants() {
                                     onRequestChanges={(x) =>
                                         setDialog({ kind: "changes", applicant: x })
                                     }
+                                    onAcceptPartial={(x) =>
+                                        setDialog({ kind: "partial", applicant: x })
+                                    }
                                 />
                             ))}
                         </ul>
                     )}
                 </div>
+                </SafeSection>
+
+                <SafeSection name="invited" label="Invitations couldn't load">
+                    <InvitedStrip invited={data.invited} />
                 </SafeSection>
 
                 {/* Applicants are who came to you. This is who to go and ask —
@@ -986,6 +1100,16 @@ export default function BrandCampaignApplicants() {
                     screen and the least essential to it. */}
                 <SafeSection name="suggested-creators" label="Suggestions couldn't load">
                     <SuggestedCreators campaignId={id} />
+                </SafeSection>
+
+                {/* People you already know are good. Beside the suggestions
+                    rather than instead of them: one is who to try, the other
+                    is who worked last time, and a brand filling a brief wants
+                    both on the same screen. */}
+                <SafeSection name="creator-lists" label="Your lists couldn't load">
+                    <div className="mt-10">
+                        <CreatorLists campaignId={id} onInvited={load} />
+                    </div>
                 </SafeSection>
 
                 {/* Creator questions on this campaign. The server 404s this
@@ -1022,6 +1146,22 @@ export default function BrandCampaignApplicants() {
                 busy={busyId === dialog.applicant?.id}
                 onConfirm={(reason) =>
                     act(dialog.applicant, "decline", { reason }, "Applicant declined")
+                }
+            />
+
+            <PartialDeliveryDialog
+                open={dialog.kind === "partial"}
+                onOpenChange={(v) => !v && closeDialog()}
+                campaign={campaign}
+                applicant={dialog.applicant}
+                busy={busyId === dialog.applicant?.id}
+                onConfirm={(body) =>
+                    act(
+                        dialog.applicant,
+                        "accept-partial",
+                        body,
+                        "Accepted, with the shortfall on the record",
+                    )
                 }
             />
 

@@ -326,10 +326,15 @@ class TestShowcase:
         assert "showcase" not in server.UpdateCampaignPayload.model_fields
         assert "showcase" not in server.PostCampaignPayload.model_fields
 
-    def test_it_is_admin_only(self):
+    def test_it_is_console_only_and_scoped(self):
+        """Which campaigns we put in front of a prospect is still not the
+        brand's to decide — and a `weare_team` member decides it only for the
+        brands they run."""
         import inspect
 
-        assert 'require_roles("admin")' in inspect.getsource(server.set_campaign_showcase)
+        src = inspect.getsource(server.set_campaign_showcase)
+        assert "require_roles(*CONSOLE_ROLES)" in src
+        assert "_admin_campaign_or_404(campaign_id, user)" in src
 
     def test_it_is_audited(self):
         import inspect

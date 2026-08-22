@@ -39,6 +39,7 @@ import {
     isToday,
     whenText,
 } from "@/components/manager/shared";
+import { startOfDay } from "@/lib/time";
 
 const byWhen = (a, b) => {
     const when = (c) => c.event_date || c.start_date || c.created_at || "";
@@ -63,8 +64,13 @@ function bucket(rows, now = new Date()) {
             const d = daysUntil(c, now);
             // No date at all counts as upcoming: a draft brief with no day yet
             // is still work coming, and hiding it in "past" would lose it.
+            // IST midnight, and not `now.setHours(0,0,0,0)`, which was wrong
+            // twice over: it is midnight wherever the laptop is rather than in
+            // Bengaluru, and it *mutates* `now` — so every campaign after the
+            // first one with an end date had its "is it today" and "how many
+            // days" answered against midnight instead of the current moment.
             const ended = c.end_date
-                ? new Date(c.end_date).getTime() < now.setHours(0, 0, 0, 0)
+                ? new Date(c.end_date).getTime() < startOfDay(now).getTime()
                 : d !== null && d < 0;
             (ended ? past : upcoming).push(c);
         }
@@ -284,6 +290,19 @@ export default function ManagerHome() {
                 <div className="mt-6">
                     <QueueBanner />
                 </div>
+
+                {/* The calendar is the same work seen by date, and it is the
+                    view somebody wants before agreeing to a Tuesday. It was in
+                    the navbar and nowhere on the page the manager actually
+                    lives on, which on a phone means behind the menu sheet. */}
+                <Link
+                    to="/calendar"
+                    data-testid={IDS.calendar}
+                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-white/10 text-sm text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                >
+                    <CalendarClock className="h-4 w-4" />
+                    Everything by date
+                </Link>
 
                 {error && (
                     <p

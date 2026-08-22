@@ -27,6 +27,7 @@ import {
 } from "@/constants/testIds";
 import { Panel, Section, Stat } from "@/components/admin/DetailPage";
 import { DateFilter, endOfDay, formatCompact } from "@/components/admin/shared";
+import { TEXT } from "@/components/admin/console/tokens";
 
 // How many rows of a check to show before folding the rest away. Six is about
 // what fits without the panel becoming the page.
@@ -141,12 +142,18 @@ function HealthCheck({ check }) {
 
             <ul className="divide-y divide-white/5">
                 {shown.map((item) => (
-                    <li key={item.id}>
-                        <Link
-                            to={item.href}
-                            data-testid={IDS.item(item.id)}
-                            className="group flex items-center gap-3 px-5 py-3 transition-colors duration-150 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
-                        >
+                    // **A stretched link, not a wrapping one.** A row can now
+                    // carry its own actions — "invite creators", "extend the
+                    // dates" — and an anchor inside an anchor is invalid
+                    // markup that browsers resolve by dropping one of them.
+                    // Same arrangement the campaign card uses, for the same
+                    // reason: the whole row is still clickable, and anything
+                    // interactive sits above the overlay on `relative z-10`.
+                    <li
+                        key={item.id}
+                        className="group relative px-5 py-3 transition-colors duration-150 hover:bg-white/[0.03]"
+                    >
+                        <div className="flex items-center gap-3">
                             <span
                                 aria-hidden="true"
                                 className={
@@ -157,13 +164,54 @@ function HealthCheck({ check }) {
                                 }
                             />
                             <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm">{item.label}</span>
+                                <Link
+                                    to={item.href}
+                                    data-testid={IDS.item(item.id)}
+                                    className="block truncate text-sm after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
+                                >
+                                    {item.label}
+                                </Link>
                                 <span className="block truncate text-sm text-muted-foreground">
                                     {item.detail}
                                 </span>
                             </span>
+                            {/* Days left and slots short as numbers, where the
+                                check sent them. A panel that says
+                                "underfilling" and makes you open the campaign
+                                to find out by how much costs a click per row
+                                to read. */}
+                            {item.slots_short > 0 && (
+                                <span
+                                    data-testid={IDS.shortfall(item.id)}
+                                    className={`flex-none rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 ${TEXT.meta} text-amber-200`}
+                                >
+                                    {item.slots_short} short
+                                    {item.days_left != null ? ` · ${item.days_left}d` : ""}
+                                </span>
+                            )}
                             <ArrowRight className="h-3.5 w-3.5 flex-none text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-ember-500" />
-                        </Link>
+                        </div>
+
+                        {/* **The ways out, not just the problem.** Naming
+                            something with nothing to do about it is how a
+                            health panel becomes a list people scroll past. */}
+                        {item.actions?.length > 0 && (
+                            <div className="relative z-10 mt-2 flex flex-wrap gap-2 pl-4.5">
+                                {item.actions.map((action) => (
+                                    <Link
+                                        key={action.href}
+                                        to={action.href}
+                                        data-testid={IDS.action(item.id, action.label)}
+                                        // `text-sm`, not the metadata step:
+                                        // these are things to press, and the
+                                        // console reserves 12px for facts.
+                                        className="rounded border border-white/10 px-2 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                    >
+                                        {action.label}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
                     </li>
                 ))}
             </ul>

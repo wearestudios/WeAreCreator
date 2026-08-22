@@ -9,16 +9,23 @@
 // cannot mean anything different from the buttons.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BadgeCheck, Building2, Search, XCircle } from "lucide-react";
+import { BadgeCheck, Building2, Plus, Search, XCircle } from "lucide-react";
 
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ADMIN_BRANDS as IDS, ADMIN_PEEK, ADMIN_TABLE as TABLE_IDS } from "@/constants/testIds";
+import {
+    ADMIN_BRANDS as IDS,
+    ADMIN_CREATE as CREATE_IDS,
+    ADMIN_PEEK,
+    ADMIN_TABLE as TABLE_IDS,
+} from "@/constants/testIds";
 import { FilterChips, ListEmptyState } from "@/components/data/DenseView";
 import BrandAvatar from "@/components/BrandAvatar";
 
 import { ConfirmDialog } from "./dialogs";
+import { CreateBrandDialog } from "./CreateDialogs";
 import DataTable, { sortRows } from "./console/DataTable";
 import PeekPanel, { PeekField } from "./console/PeekPanel";
 import SaveFilter from "./console/SaveFilter";
@@ -41,7 +48,8 @@ const brandStatus = (b) =>
 
 const DEFAULTS = { q: "", status: "", sort: { key: "business_name", dir: "asc" } };
 
-export default function AdminBrands({ onChanged, onViewCampaigns }) {
+export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = true }) {
+    const [creating, setCreating] = useState(false);
     const [data, setData] = useState(null);
     const [busyId, setBusyId] = useState(null);
     const [submitting, setSubmitting] = useState(false);
@@ -358,8 +366,30 @@ export default function AdminBrands({ onChanged, onViewCampaigns }) {
                             : "Loading…"}
                     </p>
                 </div>
-                <SaveFilter onSave={save} disabled={!filtered} savedNames={saved.map((s) => s.name)} />
+                <div className="flex items-center gap-2">
+                    {/* Only an admin: this mints a *verified* brand, which is
+                        a statement about a check somebody made. The server
+                        holds the line; the button is absent rather than
+                        present and refused. */}
+                    {allAccess && (
+                        <Button
+                            size="sm"
+                            data-testid={CREATE_IDS.brandOpen}
+                            onClick={() => setCreating(true)}
+                        >
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            New brand
+                        </Button>
+                    )}
+                    <SaveFilter onSave={save} disabled={!filtered} savedNames={saved.map((s) => s.name)} />
+                </div>
             </header>
+
+            <CreateBrandDialog
+                open={creating}
+                onOpenChange={setCreating}
+                onCreated={() => load()}
+            />
 
             <div
                 data-testid={TABLE_IDS.toolbar}

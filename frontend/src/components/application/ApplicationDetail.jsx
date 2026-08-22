@@ -24,6 +24,15 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { DetailShell, Field, Section, Stat } from "@/components/admin/DetailPage";
 import { BrandLink, CampaignLink, CreatorLink } from "@/components/admin/links";
 import WorkNotes from "@/components/brand/WorkNotes";
@@ -34,16 +43,38 @@ import { Navbar } from "@/components/Navbar";
 import { APPLICATION } from "@/constants/testIds";
 
 import DraftReview from "./DraftReview";
-import LifecycleBar from "./LifecycleBar";
+import AgeBadge from "@/components/AgeBadge";
+import Shortfall from "@/components/Shortfall";
+import RateCollaboration from "@/components/RateCollaboration";
+import DisputePanel from "@/components/DisputePanel";
+import TakedownPanel from "@/components/TakedownPanel";
+import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
+import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
+import ProcessFlow from "./ProcessFlow";
+import { IST } from "@/lib/time";
 
 const formatRupees = (n) =>
     typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—";
+
+/** "20 Aug, 7:00 pm" — a time somebody has to turn up at, so it carries one. */
+const formatDateTime = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: IST,
+    });
+};
 
 const formatDate = (iso) => {
     if (!iso) return "—";
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: IST });
 };
 
 /**
@@ -109,6 +140,18 @@ export default function ApplicationDetail({
     // the navbar and the <main> wrapper. The brand route stands on its own and
     // has to bring its own chrome, at the brand pages' width.
     standalone = false,
+    // **Where the booking handshake is answered.** `_answer_slot_request` is
+    // one implementation behind four routes — the brand's pair and the WeAre
+    // manager's — because which of them answers depends on `execution_owner`,
+    // and a booking that meant different things depending on who confirmed it
+    // would not be a confirmation. The *route* differs by caller, so the route
+    // is told rather than sniffed: this component still never asks what role
+    // is looking, which is the rule it has always held.
+    //
+    // Only the slot pair takes it. Accept, decline and the agreed amount are
+    // brand-owned transitions the server never offers a manager, so their
+    // buttons do not render for one and their paths stay `/brand`.
+    slotBase = "/brand",
 }) {
     const { id } = useParams();
     const [app, setApp] = useState(null);
@@ -116,6 +159,10 @@ export default function ApplicationDetail({
     const [notFound, setNotFound] = useState(false);
     const [busy, setBusy] = useState(null);
     const [amount, setAmount] = useState("");
+    // The reason a time was turned down. Required, because without it the
+    // creator picks the same impossible slot again.
+    const [decliningSlot, setDecliningSlot] = useState(false);
+    const [slotReason, setSlotReason] = useState("");
 
     const load = useCallback(async () => {
         try {
@@ -195,7 +242,7 @@ export default function ApplicationDetail({
             backTo={backTo}
             backLabel={backLabel}
             crumbs={crumbs}
-            kicker="Application"
+            kicker={app?.reference ? `Application · ${app.reference}` : "Application"}
             title={app?.creator?.name || "Application"}
             subtitle={app ? app.campaign?.title : undefined}
             loading={!app && !error && !notFound}
@@ -205,7 +252,40 @@ export default function ApplicationDetail({
         >
             {app && (
                 <div className="mt-8 space-y-8">
-                    <LifecycleBar lifecycle={app.lifecycle} />
+                    {/* One process, eight stages, the same on all three
+                        views of it. The server decides the stage and the
+                        voice; see ProcessFlow. */}
+                    <ProcessFlow process={app.lifecycle?.process} />
+
+                    {/* How long this has been where it is, under the flow that
+                        says where that is. The queue that opens onto this page
+                        says "9 days over"; a detail page that said nothing is
+                        one people stop trusting. It renders nothing on a state
+                        with no clock — a finished collaboration, or one waiting
+                        on a date rather than on a person. */}
+                    <AgeBadge ageing={app.ageing} testid={APPLICATION.ageing} />
+
+                    {/* **Above everything, because a freeze is the situation
+                        rather than a section.** Somebody opening a frozen
+                        collaboration and reading four panels before finding
+                        out why nothing will move is somebody who opens a
+                        support thread. Both panels decide what to offer from
+                        the server's `actions` — the screen never asks what
+                        role is looking, the same rule it holds everywhere
+                        else — and both render nothing when there is neither
+                        anything to say nor anything to offer. */}
+                    <DisputePanel
+                        collaborationId={id}
+                        dispute={app.dispute}
+                        actions={app.actions}
+                        onChanged={load}
+                    />
+                    <TakedownPanel
+                        collaborationId={id}
+                        takedown={app.takedown}
+                        canRequest={Boolean(app.actions?.can_request_takedown)}
+                        onChanged={load}
+                    />
 
                     <Section id="commercial" title="Commercial">
                         <div
@@ -275,6 +355,34 @@ export default function ApplicationDetail({
                             </div>
                         )}
                     </Section>
+
+                    {/* **What they are like to work with, before deciding.**
+                        The band comes on the creator block for everybody; the
+                        counts behind it arrive only for staff, so this panel
+                        is the record on an admin's screen and the badge alone
+                        on a brand's — decided by what the server sent, never
+                        by asking what role is looking. */}
+                    <Section id="reliability" title="Track record">
+                        <ReliabilityBadge
+                            reliability={app.creator?.reliability}
+                            testid={RELIABILITY.badge(app.creator?.user_id || "x")}
+                            className="mb-4"
+                        />
+                        {app.reliability !== undefined && (
+                            <ReliabilityPanel stats={app.reliability} testid={RELIABILITY.panel} />
+                        )}
+                    </Section>
+
+                    {/* What arrived against what was asked. Renders nothing
+                        where there is nothing counted to say. */}
+                    {app.shortfall && (
+                        <Section id="shortfall" title="Delivered">
+                            <Shortfall
+                                shortfall={app.shortfall}
+                                testid={SHORTFALL.block(id)}
+                            />
+                        </Section>
+                    )}
 
                     <Section id="creator" title="Creator">
                         <div
@@ -377,6 +485,56 @@ export default function ApplicationDetail({
                             </Field>
                         </div>
                     </Section>
+
+                    {/* The second half of the booking handshake. Offered only
+                        to whoever runs this campaign — the server decides —
+                        because a creator's chosen time is a request until the
+                        person holding the venue's diary says yes. */}
+                    {actions.can_confirm_slot && (
+                        <Section id="slot" title="Slot to confirm">
+                            <p
+                                data-testid={APPLICATION.slotPending}
+                                className="text-sm text-muted-foreground"
+                            >
+                                {app.creator?.name || "The creator"} asked for{" "}
+                                <span className="text-foreground">
+                                    {formatDateTime(app.scheduled_at)}
+                                </span>
+                                . Nothing is agreed until you say so.
+                            </p>
+                            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                                <Button
+                                    data-testid={APPLICATION.confirmSlot}
+                                    disabled={busy === "confirm-slot"}
+                                    className="min-h-[2.75rem]"
+                                    onClick={() =>
+                                        act(
+                                            "confirm-slot",
+                                            () =>
+                                                api.post(
+                                                    `${slotBase}/collaborations/${id}/slot/confirm`,
+                                                ),
+                                            "Slot confirmed — the creator has been told",
+                                        )
+                                    }
+                                >
+                                    {busy === "confirm-slot" && (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    )}
+                                    Confirm this time
+                                </Button>
+                                <Button
+                                    data-testid={APPLICATION.declineSlot}
+                                    variant="outline"
+                                    disabled={busy === "confirm-slot"}
+                                    className="min-h-[2.75rem]"
+                                    onClick={() => setDecliningSlot(true)}
+                                >
+                                    This time doesn't work
+                                </Button>
+                            </div>
+                        </Section>
+                    )}
 
                     {/* Every action that is currently legal, on the page rather
                         than behind a row menu. The server decided which; an
@@ -495,6 +653,12 @@ export default function ApplicationDetail({
                     {/* Open by default here, unlike on a list row: this whole
                         page is about one application, so the thread is the
                         thing you came to read rather than a detail to expand. */}
+                    {/* Rating opens when the collaboration closes, and the
+                        component renders nothing until then — a score given
+                        while the work is still in flight is leverage rather
+                        than a record. */}
+                    <RateCollaboration collabId={id} />
+
                     <Section id="notes" title="Work notes">
                         <WorkNotes
                             collaborationId={id}
@@ -505,6 +669,75 @@ export default function ApplicationDetail({
                     </Section>
                 </div>
             )}
+
+            {/* Turning a time down is destructive — the seat goes back on
+                sale — so it is confirmed, and the reason is required rather
+                than optional: it is the only thing that stops the creator
+                picking the same impossible slot again. */}
+            <Dialog
+                open={decliningSlot}
+                onOpenChange={(v) => {
+                    if (!v) {
+                        setDecliningSlot(false);
+                        setSlotReason("");
+                    }
+                }}
+            >
+                <DialogContent className="max-w-md rounded-md border border-white/10 bg-card">
+                    <DialogHeader className="text-left">
+                        <DialogTitle className="font-serif text-2xl leading-tight">
+                            That time doesn't work?
+                        </DialogTitle>
+                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                            The place goes back on sale and the creator is asked
+                            to pick another. Tell them why, or they'll pick the
+                            same one.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                        rows={3}
+                        value={slotReason}
+                        onChange={(e) => setSlotReason(e.target.value)}
+                        placeholder="e.g. the kitchen is closed that afternoon — anything after 6pm works"
+                        data-testid={APPLICATION.declineSlotReason}
+                        className="border-white/10 bg-background/60"
+                    />
+                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setDecliningSlot(false)}
+                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                        >
+                            Back
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={!slotReason.trim() || busy === "decline-slot"}
+                            data-testid={APPLICATION.declineSlotSubmit}
+                            onClick={() => {
+                                setDecliningSlot(false);
+                                act(
+                                    "decline-slot",
+                                    () =>
+                                        api.post(
+                                            `${slotBase}/collaborations/${id}/slot/decline`,
+                                            { reason: slotReason.trim() },
+                                        ),
+                                    "The creator has been asked to pick another time",
+                                );
+                                setSlotReason("");
+                            }}
+                            className="h-12 rounded-full px-6 sm:h-11"
+                        >
+                            {busy === "decline-slot" && (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            )}
+                            Ask for another time
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </DetailShell>
     );
 

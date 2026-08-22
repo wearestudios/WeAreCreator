@@ -18,6 +18,7 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DRAFT_REVIEW as IDS } from "@/constants/testIds";
+import { IST } from "@/lib/time";
 
 const STATUS = {
     draft_submitted: "Waiting for your review.",
@@ -33,6 +34,7 @@ const formatWhen = (iso) => {
         month: "short",
         hour: "numeric",
         minute: "2-digit",
+            timeZone: IST,
     });
 };
 

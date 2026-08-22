@@ -4,9 +4,10 @@ Two-sided marketplace connecting verified creators with brands running paid
 campaigns in Bengaluru. The product is Bengaluru-first — user-facing copy says
 Bengaluru, not "every city in India". The city field and the category list are
 deliberately open for later expansion, but don't write claims the operation
-can't back. Roles: `creator`, `brand_manager`, `admin`, `campaign_manager`
-(staff, assigned per campaign — sees only what they're assigned to). `brand` is
-the old name for `brand_manager` and both are still accepted — see below.
+can't back. Roles: `creator`, `brand_manager`, `admin`, `weare_team` (staff,
+the admin console scoped to assigned brands), `campaign_manager` (staff,
+assigned per campaign — sees only what they're assigned to). `brand` is the old
+name for `brand_manager` and both are still accepted — see below.
 
 - **Backend** — FastAPI + Motor (async MongoDB), entirely in `backend/server.py`.
   JWT in httpOnly cookies (`access_token` / `refresh_token`).
@@ -31,8 +32,9 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
 ```
 
 `get_current_user` decodes the cookie (or `Authorization: Bearer`) and returns the
-user document with `password_hash` stripped. Admins sign in with email + password;
-creators and brands use WhatsApp OTP only — `/auth/login` rejects non-admins.
+user document with `password_hash` stripped. **Staff sign in with email +
+password** — admin, `campaign_manager` and `weare_team`, which `/auth/login`
+holds as an allow-list; creators and brands use WhatsApp OTP only.
 
 Ownership is checked separately from role: `_own_campaign_or_404` and
 `_brand_collab_or_404` return 404 (not 403) for another brand's records.
@@ -226,6 +228,43 @@ has the creator as a party, and both are append-only for the same reason.
   `QuestionThreadsPanel` (all threads, admin campaign page and the brand
   applicant board; hides itself on the staff routes' 404 and renders nothing
   until somebody has asked).
+
+## Being asked
+
+An invitation used to exist only as a WhatsApp message and a row in
+`campaign_invitations`. **Every "who is on this campaign" view read
+`collaborations`**, and an invitation is not one until the creator pitches — so
+somebody who missed the message had no way to find out they had been asked, and
+a campaign we had invited six people to looked empty on both applicant boards.
+
+- `INVITATION_OPEN_STATES = ("sent", "send_failed")`; `_invitation_state` and
+  `_serialize_invitation` are the readers. **`open` is decided server-side** —
+  open state *and* a live campaign — so an invitation to a brief that has since
+  closed reads as history rather than offering an Accept that would 404.
+- `GET /creator/invitations` and the dashboard both call `_creator_invitations`;
+  the dashboard's `totals.invitations` counts only the open ones.
+- **Accepting goes through `apply_to_campaign`** — same verification gate, same
+  re-check gate, same capacity check, same duplicate refusal, same routing of
+  the notification. A second implementation would be a second definition of
+  what an application is. Declining writes no collaboration and is **not** a bar
+  on applying later. Either way it can only be answered once (409), and
+  somebody else's invitation is a 404, never a 403.
+- `_pending_invitations_for(campaign_oid, applied_creator_ids)` feeds both
+  boards — `groups["invited"]` on the admin's, `invited` + `totals.invited` on
+  the brand's — and excludes anyone who has since applied, who is on the board
+  under their own application. One of those boards is brand-facing, so the
+  creator half comes through `_brand_visible_creator` like every other brand
+  surface and the flat keys are read back off it.
+- The rows are **not applicants and are not counted as such**: `invited` is not
+  a collaboration state, is in no `_APPLICANT_BUCKETS` entry, and the admin
+  page's "Applicants" count skips it. `collaboration_id` is `None` — a made-up
+  id is an id somebody tries to act on.
+- Surfaces: `components/creator/Invitations.jsx` (above the pitches in the
+  applications view, carrying both answers on the row — Accept opens the same
+  short rate-and-pitch form the campaign page does, because an application with
+  no rate is one the brand cannot act on), the admin campaign page's "Invited,
+  not answered" group, and `InvitedStrip` on the brand's applicant board. Open
+  invitations count toward the dashboard's Applications tab badge.
 
 ## Suggesting creators
 
@@ -573,6 +612,23 @@ shipped, whatever the tests say.
 - A file that fails the local check is **queued as already-failed rather than
   dropped**, with the error on that file's own row. Dropping it silently is how
   somebody submits believing four documents went up.
+- **The counter says "1 document uploaded", not "1 of 12".** `max_documents` is
+  a ceiling, not a target, and the copy two lines above says any one of the four
+  kinds is enough — so a fraction reads as eleven more to find. The limit
+  appears only on the last couple of slots, which is when it is a fact somebody
+  needs.
+- **The "still needed" checklist filters the server's list by what is on
+  screen.** It used to be pure server state: it named what the *stored* profile
+  was missing and never looked at the form under it, so a brand filled every
+  box — Category included, two sections up the same page — and was told the
+  boxes were empty, with `Send for verification` greyed out and the Save button
+  that would have made the list agree 200px away in a different section. The
+  labels stay the server's, so there is still one vocabulary. And **`Send for
+  verification` saves first**, because the route judges the stored profile and
+  noticing a distant Save button is not the price of submitting.
+  `test_brand_checklist.py` drives the real `PUT` handler with the body the real
+  form sends, so a field renamed on one side and not the other fails there
+  rather than in somebody's onboarding.
 
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
@@ -1207,10 +1263,11 @@ it in half.
 422s on both brand write paths — `create_brand_campaign` and
 `update_brand_campaign`, the second because its update loop copies the payload
 generically and `compensation_type` would otherwise ride along with everything
-else. `PATCH /admin/campaigns/{id}` is the **only** route that accepts it, and
-deliberately does not call the guard; a unit test pins both halves. There is no
-admin campaign-*create* route, so in practice a barter brief is one an admin
-converted, which means somebody read it first.
+else. The **two** routes that accept it are `PATCH /admin/campaigns/{id}` and
+`POST /admin/campaigns`, both of which deliberately do not call the guard; a
+unit test pins every half. So a barter brief is one an admin either posted or
+converted — either way somebody at WeAre typed it, which is the property the
+restriction is actually about.
 
 The guard refuses two different things: writing `barter`, and rewriting the
 compensation of a campaign that already *is* barter — otherwise a brand could
@@ -1237,6 +1294,188 @@ refuses it with the actual reason instead.
   re-enable from devtools. `ALL_COMPENSATION_OPTIONS` is admin-only and is used
   by exactly one control, `CampaignEditDialog`.
 
+## What a brief asks for
+
+`deliverable_items` on a campaign: `[{type, quantity}]` over five formats
+(`DELIVERABLE_TYPES` — reel, story, static post, YouTube Short, video). It was
+a free-text box, and free text is what made it unanswerable: "1 reel + 3
+stories", "one reel, three stories", "reel x1, stories x3" and "a reel and a
+few stories" are four spellings of one brief, so nothing could count what a
+campaign asked for, a creator comparing two briefs was comparing prose, and "a
+few" is not a number anybody agreed to.
+
+- **`deliverables` stays, and is now derived rather than typed.**
+  `_deliverables_text` renders the items as "1 reel · 3 stories" and that is
+  what gets stored — because the campaign keyword search regexes it, the CSV
+  and the printable report print it, and `/c/{id}` renders it. Deriving means
+  one answer in two shapes that cannot disagree, and means **no campaign
+  written before this field has to be migrated to keep working**.
+- **`_deliverable_items(doc)` is the one reader and absent is `[]`** — not
+  "asked for nothing". An empty list is what tells every surface to fall back
+  to the sentence, which is all a pre-field brief has.
+- **`_resolve_deliverables(items, text, required)` is the only writer**, shared
+  by `create_brand_campaign`, `update_brand_campaign` and
+  `admin_update_campaign` — the same rule `_resolve_agreed_amount` holds for
+  the fee. Items win and the sentence is derived from them; a bare sentence is
+  accepted only when no items came with it (the shape a pre-field campaign
+  takes coming back through an edit) and **clears the structure**, so a brief's
+  words and its counted pieces can never describe different asks. The edit
+  handlers pop both keys out of the generic copy loop before resolving, for the
+  same reason `_refuse_brand_barter` exists.
+- `_clean_deliverables` merges duplicate rows (two "reel" rows are one ask with
+  a quantity) and orders by the vocabulary, so two campaigns wanting the same
+  thing read the same way round. Singulars and plurals are spelled out —
+  lowercasing "YouTube Short" to fit mid-sentence gives "youtube short", and a
+  proper noun is not a word a formatter gets to recase.
+- `lib/deliverables.js` mirrors the vocabulary and a unit test fails if they
+  drift. `components/Deliverables.jsx` is the one renderer — `DeliverableList`
+  (counted chips, falling back to the sentence) and `DeliverableSummary` (one
+  line, for a card) — and a test fails any surface still printing
+  `campaign.deliverables` directly.
+- `DeliverablePicker` is the one control, on the brand form and in the admin's
+  edit dialog. **Zero is how it says no**: there is no checkbox beside the
+  number, so a ticked row asking for nothing is a state it cannot reach. It
+  shows the sentence the campaign will carry as it is being built, which is
+  exactly the string the server derives.
+
+## Reference ids
+
+**An ObjectId is not something a person says out loud**, and every record here
+was addressed by one — in a URL, in a support thread, on a call with a brand —
+so "the campaign ending 4f2a" is what that turned into. `BRD-0012`, `CMP-0034`,
+`CRT-0108`, `COL-0456`: short, ordered, pronounceable, and narrow enough for a
+table column.
+
+- **A label, never a key.** Nothing looks a record up by one except search, and
+  every route still takes the ObjectId — a second identifier that can address a
+  record is a second thing to check permissions on.
+- `_next_reference(kind)` allocates from a counter document per kind under an
+  `$inc` upsert, so the sequence is decided inside the database. Counting rows
+  would hand out a duplicate the moment anything was deleted.
+- `_reference_of(doc)` is the one reader and **absent is `None`** — a record the
+  backfill has not reached has no number, and an invented one is worse than a
+  blank column because somebody would quote it. Every entity serializer emits
+  it; the creator's is on `_BRAND_VISIBLE_CREATOR_FIELDS` because it carries
+  nothing about the person and is what a brand and an admin quote at each other.
+- Startup migration 11 numbers everything **in `_id` order**, so `CMP-0001` is
+  the first brief this operation ever posted rather than whichever row the
+  migration reached first, then adds a unique sparse index.
+- `parse_reference` reads `"BRD-0012"`, `"brd12"` and `"crt 108"` alike — one
+  somebody has to spell exactly is one they retype three times. A typed
+  reference is answered **exactly** by `admin_global_search`, returning the one
+  record, and it is the only way to reach a *collaboration* from the palette:
+  nothing about one is a name, so there is nothing else to type.
+
+## The application process flow
+
+**Eight friendly stages over twelve internal states, and the states did not
+change.** `COLLAB_STATE_ORDER` is the machine — what transitions are checked
+against, what audit lines name, what a 409 is about — and it is unreadable:
+"commercial agreed", "draft approved" and "in payment" are twelve boxes
+describing our bookkeeping, and nobody can tell which one means "nearly done".
+
+Submitted → Verified → Negotiated → Scheduled → Attended → Content review →
+Content delivery → Payment. `_process_flow` groups; it decides nothing.
+
+- **A state missing from the mapping fails a test** rather than silently
+  rendering nothing. `_stage_of` is the one reader.
+- **Without a draft gate the two content stages shift by one**, and that is not
+  a fudge to keep the count at eight: with no gate the live link *is* the thing
+  being reviewed and approving it is the delivery being accepted, while with
+  the gate the draft is the review and the live post is the delivery. Both are
+  true of their own campaign; what would be false is drawing a "Content review"
+  stage on a campaign that reviews nothing.
+- **The picture is identical for all three and only the voice changes.** The
+  party who has to act reads an instruction ("Pick your slot"), everybody else
+  reads the wait ("Waiting for the creator to pick a slot"). The server knows
+  who called, so `ProcessFlow` never asks what role is looking — the same rule
+  the shared application screen holds, and a test greps for role checks in it.
+- `_process_owner` maps the table's `brand` steps through `execution_owner`: on
+  a weare-run brief they are ours, and telling a creator the brand is reviewing
+  their draft when our manager is would be a lie the screen tells twice a day.
+- **An exit is a banner, not a ninth box**, and a send-back is *this* stage
+  again with a reason — drawing it as a step backwards would lose the fact that
+  the work exists.
+- Below `md` the flow collapses to "Stage 4 of 8 · Scheduled", expandable.
+  Eight boxes on a 390px screen are eight illegible boxes. `useWide` moved to
+  `lib/useWide.js` for this — a component on the creator's dashboard importing
+  a hook out of the console kit is a dependency in the wrong direction.
+- **It replaced three disagreeing bars.** The creator's `LIFECYCLE` (six
+  stages), the console's raw ladder and the brand's state pill were three
+  answers to "where has this got to". The first is deleted, not left beside the
+  new one.
+
+## A booking is a request until somebody says yes
+
+Booking used to be one move: a creator picked a time and that was the
+arrangement, with nobody at the venue having agreed to it — so a creator turned
+up to a shoot nobody had planned for.
+
+- **It is not a new state.** The ladder still reads `commercial_agreed →
+  slot_booked`; what changed is that `slot_booked` carries `slot_confirmed_at`.
+  Absent means booked and waiting, set means agreed. Nothing mid-flight is
+  stranded and no transition check moved.
+- **`_slot_confirmed` reads absent as confirmed on a booking made before the
+  handshake existed** — those were agreed by the only mechanism there was,
+  nobody objecting, and reopening them all on deploy would put a decision in
+  front of every manager for shoots that already happened. `slot_booked_at` is
+  what tells the two apart.
+- **The seat is held from the moment of booking**, either way: a place somebody
+  is waiting on an answer for is not a place to sell twice.
+- **Nobody books on a creator's behalf.** `advance_collaboration` refuses
+  `slot_booked` outright now — it used to write the state and a time straight
+  onto the collaboration, which is an admin deciding when somebody else's day
+  is. `_CREATOR_OWNED_TRANSITIONS` names it, and `commercial_agreed` left
+  `ADMIN_ACTION_STATES` because there is nothing an admin can do there.
+- **`_answer_slot_request` is the one implementation** behind the brand's two
+  routes and the WeAre manager's two, because which of them answers depends on
+  `execution_owner` and a booking that meant different things depending on who
+  confirmed it would not be a confirmation. Confirming writes no state — only
+  the timestamp. Declining moves the collaboration back to `commercial_agreed`
+  **first** and releases the seat after, or a place is on sale while somebody
+  still holds it.
+- The creator is told either way (`slot_requested` on booking, then
+  `slot_confirmed` or `slot_declined`), and **the reason is required on a
+  decline** — without it they pick the same impossible time again.
+
+## What a brand sees on a campaign it handed to us
+
+**Handing a campaign to WeAre is handing over the shortlisting too.** That is
+what the brand is buying. The board used to show every application anyway, so
+the brand watched thirty unchecked pitches arrive, formed opinions about
+creators we had not checked, and was paged about each one.
+
+- **`agreed_at` is the line**, not a state: it is the moment somebody at WeAre
+  finished the job, it survives everything afterwards including a later
+  decline, and it is exactly what "with the agreed amount" means. Barter sets
+  it with no figure, which is right — the work was done, there is no money in
+  it. `_brand_sees_collab` and `_brand_visible_collab_query` are the readers.
+- **Every door carries it**, not just the board: `_brand_collab_or_404` *and*
+  `_note_readable_collab_or_404`. A shield on one of two doors is a shield on
+  neither — the board could hide a raw application while its id, pasted from
+  anywhere, opened the pitch and the creator. A 404, like every other ownership
+  refusal here.
+- Applications on a weare-run brief notify `notify_weare_team` and **not the
+  brand**. The brand hears once, at `_tell_brand_about_shortlist`, from both
+  fee routes — so which of the two settled the number cannot change whether the
+  brand finds out. `_awaiting_brand_counts` skips weare-run campaigns for the
+  same reason: a badge for work they cannot do.
+- **`advance_collaboration` allows the brand-owned transitions on a weare-run
+  campaign**, because the brand cannot reach the application to make them.
+  Refusing both would leave it stuck at `verified` with nobody able to move it.
+
+## Every review opens a full page
+
+A review queue row is a summary and its peek is a preview; neither carries what
+a decision needs. An admin verifying a brand could not see its GST number, its
+registered address or its documents from the screen where they decide it.
+
+- Every config in `Reviews.jsx` has an `href` to the entity's own page, the row
+  name is a link to it, and the peek carries "Open full page".
+- **The approval actions live on the page too** — otherwise "open the full
+  page" means losing the queue to read the record and going back to act on it.
+  All three pages already had them; what was missing was the way there.
+
 ## Collaboration lifecycle
 
 `COLLAB_STATE_ORDER` in `server.py` is the single source of truth:
@@ -1247,9 +1486,10 @@ applied → verified → accepted → commercial_agreed → slot_booked → atte
         → content_approved → in_payment → closed
 ```
 
-Plus two terminal exits that are **not** steps: `declined`, `cancelled`
-(`TERMINAL_COLLAB_STATES`). The bracketed pair is optional per campaign — see
-"The draft gate" below. Who moves each step matters:
+Plus four terminal exits that are **not** steps: `declined`, `cancelled`,
+`withdrawn` and `expired` (`TERMINAL_COLLAB_STATES`) — see "Taking it back, and
+calling it off" and "Expiry". The bracketed pair is optional per campaign — see "The draft gate" below.
+Who moves each step matters:
 
 - **Admin** — verification, fee, slot, attendance, payment (`/admin/collaborations/{id}/advance`)
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
@@ -1395,7 +1635,7 @@ the other.
   `_lifecycle_for` ships the whole ladder with the response. The status bar
   draws what it is given; rebuilding `COLLAB_STATE_ORDER` in the client would be
   a second copy of the state machine to keep in step.
-- An exit (`declined`, `cancelled`) is **the bar stopping, not an eleventh
+- An exit (`declined`, `cancelled`, `withdrawn`) is **the bar stopping, not an eleventh
   step** — it is said in words rather than drawn as a box.
 
 ### What a brief pays, at the fee step
@@ -1421,6 +1661,400 @@ not decide.
 After the fee, **the next action is the creator's** — they book, or on a
 `personal_table` they pick a time inside the window. Both notifications say so;
 neither quotes a rupee figure on a barter brief.
+
+## How a creator actually gets paid
+
+There was nowhere to record it, so every payment meant chasing an account
+number over WhatsApp and typing it into a bank portal from a chat window.
+`payout_method` is `upi` or `bank`, with `payout_upi` or the three bank fields
+(`payout_account_name`, `payout_account_number`, `payout_ifsc`) beside it.
+
+- **`_payout_method(profile)` reads absent-with-a-UPI-id as `"upi"`.** The
+  field is new and the UPI id is not, so the other reading would make every
+  currently payable creator unpayable the moment this deployed. Same
+  absent-reads-safe rule as `_compensation_type` and `_execution_owner`.
+- **`payout_missing` is the one definition of what is still needed and
+  `payout_ready` is `not payout_missing`** — one function, so the gate at
+  `in_payment`, the creator's own progress panel and the admin's payment row
+  cannot disagree about whether somebody can be paid. It names the fields in
+  words a person would use ("an IFSC code"), because "payout_ifsc" is not a
+  thing anybody can go and find.
+- **It is not part of completeness and not asked at signup.** A PAN must not be
+  the price of being looked at — the same reason `_profile_completeness` leaves
+  payout out — and this is required to reach `in_payment`, which is the moment
+  it is actually true.
+- `IFSC_RE` and `ACCOUNT_RE` refuse a shape that cannot be an IFSC or an
+  account number. A typo caught here is a form field; caught later it is a
+  failed transfer somebody has to unpick with a bank.
+- **Changing any of it re-triggers review.** Every payout field is in
+  `MATERIAL_PROFILE_FIELDS` — the account money goes to is exactly the kind of
+  change worth looking at again — and re-review is the existing
+  `pending_review` flag, never a downgrade.
+
+### Masked, and never brand-facing
+
+`mask_tail(value, keep=4)` is the only thing that shortens one of these, and
+`_masked_payout(profile)` is what an admin surface receives. `None` stays
+`None`: a masked blank would read as a number nobody can see rather than a
+number nobody has.
+
+- **Brands receive none of it, at any state.** The fields are in
+  `BRAND_FORBIDDEN_CREATOR_FIELDS` and off `_BRAND_VISIBLE_CREATOR_FIELDS`, so
+  the leak test that plants values and searches every brand response shape
+  covers them the way it covers the phone number and the map pin.
+- The UPI mask keeps the `@handle`, because that half is what tells two ids
+  apart when somebody is checking they are paying the right person, and it is
+  not the secret half.
+- The **payments export is the one place the real values may go** — the same
+  exception `EXPORTS_WITH_CONTACT` already carves out, for the same reason:
+  somebody is reconciling a bank statement, and a masked account number is
+  useless to them. `_payout_columns(snapshot, profile)` builds them, and **the
+  snapshot on the payment wins over the live profile**: what matters for
+  accounting is where the money actually went, not where it would go today.
+
+### PAN and withholding
+
+`pan` sits with the payout fields — admin-only, masked the same way, required
+before a first payout for the same tax reason it is collected at all.
+
+**Nothing here computes a tax rate.** `MarkPaidPayload` carries
+`tds_applicable` and `tds_amount` and records what the admin typed;
+`mark_payment_paid` stores both plus `net_paid`. A withholding rate depends on
+the payee's status and the section it falls under, and a rate hardcoded here
+would be wrong for somebody and silently wrong for everybody after the next
+budget.
+
+- **Three states, not two.** `None` is "nobody has said", `False` is "no
+  withholding", `True` carries an amount. The export prints blank, "no" and
+  "yes" — a `None` rendered as "no" is a claim we never made.
+- A `model_validator` refuses the incoherent pairs: `False` with an amount, and
+  `True` with none. Either one produces a payment record that contradicts
+  itself, which is the shape an accountant finds a year later.
+- **There are two mark-paid doors and both carry the fields.** The
+  collaboration page and the action queue, and the queue is the one most
+  payouts go through — working the queue is the fast path — so a withholding
+  field on the detail page alone is TDS recordable in theory and unrecorded in
+  practice. A test walks every `/mark_paid` caller under `components/admin/`.
+- `ConfirmDialog` takes `extra` (one field) or `extras` (several). A call site
+  that builds its config into state must forward **both**: the queue forwarded
+  only `extra`, so moving its payout config to the multi-field shape dropped
+  every field including the required reference, leaving a correct POST body
+  and an empty form. The `/mark_paid` test could not see that — the fields and
+  the submit handler are wired in different places — so a second test checks
+  the forwarding, and the browser is what caught it.
+
+## Taking it back, and calling it off
+
+Two exits that did not exist. Before them a creator who had changed their mind
+could only go quiet — and a brand then shortlisted somebody who was never going
+to turn up — while a cancellation after acceptance had no defined handling at
+all, so it happened over WhatsApp and left no record of who called it or how
+much notice anybody had.
+
+- **Withdrawal is the creator's, up to acceptance.**
+  `WITHDRAWABLE_COLLAB_STATES` is `("applied", "verified")`: after `accepted`
+  somebody has committed to them and taking it back unilaterally is a
+  cancellation, which is a different event with a different name. It writes the
+  terminal state `withdrawn`, captures the reason — required, because "one of
+  your three applicants is gone" is not something anybody can act on — and
+  notifies whoever runs the campaign through the same `execution_owner`
+  routing an application uses.
+- **`withdrawn` is a fourth terminal state, not a variant of `cancelled`.**
+  It is in `TERMINAL_COLLAB_STATES` and `COLLAB_GROUP_ENDED`, has its own
+  `_PROCESS_BANNERS` and `_NEXT_ACTION` entries, and the history panel prints
+  the two words differently: a withdrawal happens before anybody is committed
+  and is the creator's to make, so drawing it as a cancellation puts a black
+  mark where there is none.
+- **Cancellation records the notice, not a verdict on it.**
+  `_days_of_notice(campaign, collab)` is whole days in IST and **can be
+  negative** — a shoot cancelled after the fact is a real thing that happens
+  and rounding it to zero would hide it. Whether four days is enough is a
+  commercial judgement that differs by brand and by venue, so the panel reports
+  the number and leaves the judgement to whoever is reading.
+- `cancelled_by_id`/`_name`/`_role` are on the record because "the brand
+  cancelled" and "we cancelled" are different facts about the same row, and the
+  audit line alone does not travel with the collaboration.
+- **A kill fee keeps the payment row `pending`** rather than closing it — money
+  is owed, and a cancelled collaboration whose payment vanished is money nobody
+  chases. Where there is no payment row yet one is inserted, flagged
+  `is_kill_fee` and carrying the payout snapshot like any other. The creator is
+  told immediately and the message names the amount.
+- `_cancellation_history(creator_id=…| brand_ids=…)` feeds **one component on
+  two pages** (`CancellationHistory`). The same event is two questions — a
+  brand's page asks how often we pull out on people, a creator's asks how often
+  this happens around them — and two panels would answer them differently the
+  first time one was changed.
+
+## Rejection is not a dead end
+
+A rejected brand could read a WhatsApp message and then had nowhere to go: the
+profile stayed open to edit, and nothing turned a fixed profile back into a
+queue item.
+
+- The rejection reason is **on the brand's own onboarding page**, quoted, above
+  the fields it is about. Telling somebody they failed and not what to fix is
+  how a verification queue turns into a support thread.
+- Resubmitting goes through the **same** `POST /brand/verification/submit` —
+  same required set, same 409 naming what is absent. A second route would be a
+  second definition of what a submission is.
+- `verification_resubmissions` counts them and rides on the admin's brand page
+  and the review queue row. It is context, not a threshold: a third attempt
+  might be somebody who cannot read the form, and knowing that is what lets a
+  reviewer pick up the phone instead of rejecting again.
+
+## When the two sides disagree
+
+A brand rejecting delivered content, or refusing to pay for it, left the
+creator with nothing: the collaboration hung at `content_submitted` forever,
+the payment sat unmade, and the only recourse was a WhatsApp message to
+whoever answered. `dispute` on the collaboration is the recourse.
+
+- **Raising is for the parties and resolving is for the mediator, and the two
+  are never offered to the same person.** The creator and whoever runs the
+  campaign may raise one (`_disputable_collab_or_404`, `DISPUTABLE_STATES` —
+  `commercial_agreed` onwards, because `applied` is a pitch nobody answered
+  rather than an argument about money). An admin resolves it and cannot raise
+  one: a mediator who opened the case is not a mediator. A brand on a
+  weare-run brief is not the runner and gets a **404**, through
+  `_question_staff_may_see` — the same reader the draft review and the slot
+  handshake use.
+- **`_refuse_if_disputed` is the freeze, and it is on every door that moves a
+  collaboration** — accept, decline, the fee, approve, request changes,
+  accept-partial, advance, revert, submitting content, marking a payment paid,
+  and cancelling. A named list in `test_unhappy_paths.py` holds it, and
+  writing that test found three doors that were open: a creator could swap the
+  link a mediator was looking at, a payment could go out under a freeze, and
+  **a cancellation could end the argument by ending the arrangement** — which
+  is the exact move the freeze exists to stop. `cancelled` is one of the four
+  outcomes a mediator can choose; going through them is the only way to reach
+  it.
+- Notes and ratings are deliberately **not** frozen: the paper trail is what
+  the mediation gets decided on.
+- **`frozen` on the payment is a flag, not a state.** The payment's own states
+  say where it is in the payout process; frozen says nobody may move it, and
+  collapsing the two would mean a released payment forgetting it was ever
+  held.
+- `DISPUTE_RESOLUTIONS` is four, and `cancelled` is deliberately among them —
+  sometimes the honest answer is that the arrangement should not have
+  happened, and forcing a mediator to pick "release" or "refund" records the
+  decision as something it was not. `partial_release` demands an amount; every
+  outcome demands a note, including the obvious ones, because "released" with
+  no reasoning is a decision nobody can defend six months later and the party
+  it went against is the one who will ask.
+- Only the side that raised it may withdraw it. The other side making a
+  dispute go away would mean the freeze protected nobody.
+- Both parties are told at every step (`_tell_both_sides`), routed the way an
+  application is: the creator always, the runner through `execution_owner`.
+- Surfaces: **one `DisputePanel` on all three**, above everything on each —
+  a freeze is the situation rather than a section — on the shared application
+  screen, the creator's own card, and the admin collaboration page where the
+  mediation is actually done. It never asks what role is looking; `actions`
+  carries `can_raise_dispute` / `can_withdraw_dispute` /
+  `can_resolve_dispute`, and a test greps the component for role checks.
+  `DisputeQueue` is the console section, badged `disputes_open` — counted
+  separately from the collaboration states because a frozen row is still
+  sitting at `content_submitted` and would otherwise hide behind a number that
+  says somebody is reviewing content.
+
+### Taking a live post down
+
+`takedown` on the collaboration, `TAKEDOWN_REASONS` and a 48-hour window.
+Content that was factually wrong, off-brand or legally problematic had no path
+at all: the brand messaged whoever they had a number for, and nothing recorded
+what happened next.
+
+- **Only on work that is actually live** (`DELIVERED_COLLAB_STATES`). A draft
+  that needs changing is the review flow, and pointing somebody at the wrong
+  one costs a round trip — so the button is absent rather than present and
+  409ing.
+- **Deliberately not blocked by the dispute freeze.** A post that is legally
+  problematic has to be dealt with whether or not there is an argument about
+  the money; those are different questions.
+- **Both answers are recorded and neither is assumed.** A refusal requires a
+  note and compliance requires nothing: "I took it down" is complete on its
+  own, and "it's staying up" with nothing beside it is an answer nobody can
+  act on. A takedown that silently never happened and one the creator
+  explained they could not do are very different facts, and the second is what
+  stops somebody being marked down unfairly.
+- `overdue` is **derived on serialize, never stored** — the usual rule: a
+  stored flag needs a sweep, and a rule that depends on cron is true on
+  Tuesdays.
+- `TakedownPanel` is the one renderer, on the application screen, the
+  creator's live card **and their past pitches** — delivered work keeps moving
+  down that list, and a takedown lands on a `closed` collaboration as often as
+  a running one.
+
+## Checked once is not checked
+
+A business verified two years ago still read `verified`, because nothing ever
+expired. `VERIFICATION_VALIDITY_DAYS` (365, configurable) is how long a check
+stands for.
+
+- **A record with no `verified_at` never expires.** Every creator and brand
+  verified before the date was recorded would otherwise lapse on the morning
+  this deployed, locking out the whole existing directory to enforce a rule
+  nobody had been told about. They get asked the next time they are verified,
+  which is the first moment there is a date to count from. Same
+  absent-reads-safe rule as `_compensation_type` and `_execution_owner`.
+- **A lapse is not a rejection.** `verified` stays true and the history is
+  intact; what runs out is our confidence that it is still current, and the
+  fix is a confirmation rather than a resubmission. `_revalidate` stamps a
+  fresh `verified_at`, counts the confirmation, and **never writes
+  `verification_status`**.
+- It gates **new work only**: a lapsed brand cannot publish, a lapsed creator
+  cannot apply, and everything already running is untouched. That is a matter
+  of where the check is *not* — `_creator_block` never reaches into
+  `collaborations`, and a test asserts it.
+- **Told before it bites.** `_verification_ageing` carries `days_left`,
+  `expiring_soon` and `lapsed`, and `VerificationExpiry` renders the same
+  prompt on both profiles — on the creator's **dashboard**, not their profile
+  form, because the form is the one screen a verified creator has no reason to
+  open. It renders nothing outside the warning window.
+- A rejected record is not also lapsed: they are refused for being rejected,
+  and stacking a second reason on top tells them to fix the wrong thing.
+
+### Suspension that actually blocks
+
+`suspend_creator` wrote `users.status = "suspended"` and **every gate read
+`creator_profiles`**, so suspension blocked precisely nothing.
+`_creator_block(profile, account)` is the one reader now — suspended, then
+lapsed, then awaiting re-check, each with a code and a sentence — and it stays
+separate from `verification_status`, because rejecting a verified creator to
+remove them would erase the record that they were ever approved.
+
+**Repeated no-shows surface a prompt, never an action.**
+`_suspension_prompts` lists creators at or past `SUSPENSION_PROMPT_NO_SHOWS`
+(3) who are still in good standing, worst first, **with the denominator** —
+three no-shows out of four is a different account from three out of forty, and
+a row that omits the second number asks somebody to decide blind. It renders
+as a band above the admin action queue, links to the page where the decision
+and its required reason are made, and renders nothing when nobody is over the
+line. Suspending automatically on a count would take a decision about
+somebody's livelihood away from the person who can ring them up and ask.
+
+## How long we keep things
+
+`RETENTION_DAYS` is the table, and it is **served rather than only
+documented**: `GET /admin/retention` feeds the console's Retention section and
+`Legal.jsx` quotes the same numbers, so the privacy page and the code cannot
+say different things. Business documents a year after the verification
+decision, drafts ninety days after close, payment records and the audit log
+eight years, **and nothing personal at all after an erasure**.
+
+- `purge_expired_documents` takes the file and **leaves a tombstone** — the
+  row stays with `purged_at` and no name, because a missing row would read as
+  never having held a document at all. Every deletion is audited.
+- **A rejected brand's documents are deliberately left alone.** Whether we may
+  keep them is one of the open legal questions, and deleting on a guess is the
+  one move that cannot be undone if the answer comes back the other way.
+- **Flagged, never invented.** `needs_legal_review` travels with the response
+  and the panel says so on screen; the `NEEDS A LAWYER` block in `Legal.jsx`
+  names the table as the working answer and narrows the open questions to two:
+  how long a *rejected* business's papers may be held, and whether an audit
+  line naming a person is a record we must keep or personal data we must
+  erase. Where those two duties conflict the code keeps the line and erases
+  the name — somebody has to say whether that is right.
+
+## When a brand owes us money
+
+The moment was undefined. `brand_invoice_state` existed with four values and
+nothing ever moved it, so "past due" was not a thing this system could think.
+
+- **`brand_invoice_state` is the stored key** — `pending | sent | settled |
+  void`. Three readers asked for `invoice_state`, which no payment document
+  has ever had, so the export's invoice column and both admin payment payloads
+  were a blank that read as "nobody has invoiced this" for every invoice ever
+  issued. A test greps for the wrong spelling.
+- **Issuing stamps the date it falls due**, from `payment_terms_days()` (14,
+  configurable), and `_invoice_due_at` prefers the stored date — so shortening
+  the terms cannot retroactively make a brand late for an invoice it was told
+  it had a fortnight to settle. `void` is written only by the refund path and
+  is **not settable by hand**: typing it on a live invoice is how a debt
+  disappears with no record of who decided that.
+- `_brand_overdue_invoices` reaches the brand **through the campaign** —
+  there is no `brand_id` on a payment, the same join the erasure code had to
+  learn.
+- **Money owed stops new work, not work under way.** `_verified_brand_or_403`
+  refuses a publish; campaigns already running are untouched, because the
+  creators on them did nothing wrong and punishing them for the brand's
+  accounts payable is the one outcome worse than the debt.
+- **The override is admin-only and reasoned.** An invoice is overdue because a
+  brand is not paying, or because our own accounts sent it to the wrong
+  address — and blocking a good client over the second is worse than the
+  problem the block solves. `BrandInvoices` on the admin brand page shows what
+  is owing, the override with who granted it and why, and the way to put the
+  block back.
+
+### The operating numbers, in one place
+
+Four stored settings with an editor: the nine SLA targets, the verification
+validity, the payment terms and the reschedule limit. Three of them had a
+stored setting, an editor endpoint and **no form anywhere**, which is a number
+that needs a deploy to change with extra steps. `PlatformSettings` is the
+section; `NumberSetting` is one control rather than three near-copies.
+
+**The fixed-height half goes first and the variable-height half last.** The
+targets are one row per target and nothing in the browser knows how many that
+is until they load, so anything below them moves when they arrive — measured
+at 0.19 CLS, and no skeleton height can be right for a list whose length is
+itself a setting. The three single-line rows are a shape the page does know.
+
+### Measured after the bands went in
+
+Same method as everywhere else — API delayed 700ms, CLS read through the
+Performance Observer, at 390 and 1280:
+
+- Creator dashboard **0.0000** at both widths with the revalidation prompt,
+  the dispute panel and the takedown panel on it.
+- Admin disputes, retention and settings **0.0000**. Retention and the SLA
+  targets were 0.043 and 0.19 before their headings were moved out of the
+  loaded branch: a page's own name is not something it has to fetch, and a
+  fixed-height skeleton standing in for a list of unknown length is a shift
+  every time the guess is wrong.
+- The action queue is **0.0069**, from the suspension band arriving above the
+  header. It is fetched inside the queue's own `Promise.all` so it lands in
+  the same commit as the rows — that took it from 0.055 — and the remainder is
+  a band that renders nothing most of the time and therefore cannot reserve
+  height. Reserving one on every load to avoid it would be the worse trade.
+
+## Being forgotten
+
+`deletion_router` at `/account`, and the admin half at
+`/admin/deletion-requests`. The DPDP Act 2023 gives a person the right to
+erasure and until this existed the only way to exercise it was to email
+somebody and hope — in a product that holds a WhatsApp number, a home address,
+a map pin, a PAN and a bank account.
+
+- **A request, reviewed by a person.** `DELETION_STATES` is
+  `("requested", "erased", "declined", "withdrawn")` — deliberately **not**
+  "approved", both because the guard test bans that legacy word and because
+  "erased" is the accurate one: what the admin does is not grant permission,
+  it is carry it out.
+- **Blocked while work is in flight, and the block names the work.**
+  `_blocking_collaborations(user)` returns the live rows and the 409 carries
+  them as `work_in_flight`; "you have three collaborations open" is not
+  something anybody can act on, "the Toit tasting, waiting on your draft" is.
+  The list is **re-read at the moment of erasure**, never trusted from when the
+  request was made — work can start in between, and erasing then leaves a brand
+  with a booking against nobody.
+- **Erasing removes the person and keeps the arithmetic.** Every write is
+  `$unset` plus a tombstone, never a document delete, so collaborations,
+  amounts and audit lines still resolve their joins — they simply have nobody
+  in them. `_ERASE_CREATOR_PROFILE` / `_ERASE_BRAND_PROFILE` / `_ERASE_ACCOUNT`
+  are the field lists, the private uploads are removed from disk, and the
+  Instagram connection and its encrypted token go with them.
+- **Payments are reached through the collaborations, not by a `creator_id` on
+  the payment.** There isn't one — the first version of this queried for it,
+  matched nothing, and would have left every bank account and PAN sitting in
+  `payments` after an erasure that reported success.
+- The screen says what "deleted" actually means **before** anybody agrees to
+  it, because it does not mean everything vanishes. Somebody who finds that out
+  afterwards has met exactly the surprise the right exists to prevent.
+- A refusal **closes the dialog**, because the blocking list renders in the
+  panel behind it — leaving it up shows an unchanged form and a button that
+  did nothing, which is the one reading of a refusal worse than the refusal.
+- The reason is **optional**. Nobody has to justify leaving, and a required box
+  there is a toll on a right.
 
 ## Content performance
 
@@ -1492,6 +2126,377 @@ effect of adding an export.
 campaigns we put in front of a prospect is not theirs to decide. The list filter
 uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
 
+## Doing it again
+
+A brand's second campaign was as much work as its first. Every field went back
+in by hand, including the twelve that were identical — the category, the
+neighbourhood, the venue, the deliverables, the days the kitchen is closed. A
+café running a tasting every month retyped its own brief twelve times a year,
+and the twelfth was no faster than the first.
+
+Two shapes of one idea: **duplicating** is "again, like that one", **a
+template** is "this is how we always brief". They share `_CAMPAIGN_BRIEF_FIELDS`,
+because the thing they both copy is the brief rather than the instance of it —
+**one list, three readers** (duplicate, save-as-template, apply-template), or a
+field added to the form next month is carried by one and silently dropped by
+the other.
+
+- **The dates are the point of the exercise.** A duplicate that carried them
+  would brief a day that has passed. `_CAMPAIGN_NOT_COPIED` documents the
+  intent, and the test that *enforces* it is the one asserting the two tuples
+  do not overlap — `_brief_fields_of` is an allow-list, so adding a date there
+  to "carry a bit more" is what would break the rule, and that is what fails.
+- A copy is a **draft whoever makes it**: an admin can publish directly
+  elsewhere, but a duplicate is by definition unreviewed against dates it does
+  not yet have. It gets its own reference and remembers `duplicated_from`.
+- `manager_id` is never inherited. Assignment is a staffing decision made per
+  campaign, and carrying it would quietly assign somebody to work nobody told
+  them about.
+- **Applying a template is a form prefill, not a second creation path.** The
+  campaign is made by the ordinary `POST` with the ordinary validation behind
+  it; `POST /brand/campaign-templates/{id}/used` only moves a counter. Minting
+  one here would be a second idea of what a valid brief is.
+- A field absent from a template stays absent rather than becoming `None` —
+  "the template does not mention this" is not "the template says leave it
+  empty", and the other reading would blank a field on every campaign made
+  from a template saved before it existed.
+- The picker sits **above the form and only on a new brief**: below the fields
+  it is found after they are filled in, and on an edit it would mean
+  overwriting a live brief from a saved one. It renders nothing when a brand
+  has none.
+
+## What somebody is like to work with
+
+Quality signal never accumulated. A creator who was excellent on three shoots
+and one who no-showed twice read identically on the fourth brief, because the
+difference lived in whoever ran that campaign and left with them.
+
+`_reliability_for` is one aggregation: completed, on-time rate, no-shows, late
+deliveries, cancellations, withdrawals, reschedules, average draft revisions,
+partial deliveries, and the runner's rating. **Every count is already recorded
+by something that happened** — a manager pressing no-show at a venue, a grace
+period lapsing, a booking moving. Nothing here asks anybody to score something
+they were not already doing.
+
+- **An unknown rate is `None`, never zero.** A creator with no finished
+  campaigns has an unknown on-time rate, not a 0% one, and every surface draws
+  unknown as an em dash.
+- **Only the cancellations they caused** (`cancelled_by_role == "creator"`). A
+  brand pulling out of a shoot is not a fact about the creator, and counting it
+  against them would mark somebody for being let down.
+- Revisions are averaged over the drafts that existed, not over every
+  collaboration: a campaign with no draft gate has no revisions to have, and
+  folding those in as zeroes flatters whoever worked brand-run briefs.
+
+### The band, and who gets the counts
+
+**Brands get a band and never a number.** "2 no-shows" against forty campaigns
+is a good record read as a bad one, and a brand has no denominator to hand;
+`_reliability_band` does the interpreting once, on the server, where it is
+known. It is on `_BRAND_VISIBLE_CREATOR_FIELDS` as `reliability` and carries
+`band`, `label`, `blurb` and `enough_history` — nothing to divide.
+
+- **`new` is not a low band.** A creator on their first brief has no history,
+  which is the ordinary state of everybody the platform is trying to bring in.
+  Sorting them below somebody with one late delivery would make the directory a
+  ranking of who got here first. Below `RELIABILITY_MIN_SAMPLE` (3) nobody gets
+  a verdict, because one campaign delivered on time is not "consistently
+  delivers".
+- A surface that has not fetched the history **omits the key** rather than
+  sending an empty band: "we did not look" and "they have no history" are
+  different, and only one belongs on a card.
+- Admin, `weare_team` and the campaign manager get `reliability` as the full
+  block — on the creator's own page and inline on the application, which is
+  where the accept decision is actually made.
+
+### Ratings, both ways, and ours alone
+
+`collaboration_ratings`, one per (collaboration, side). The runner rates the
+creator; the creator rates the experience. **One score and an optional
+sentence** — a form asking separately about punctuality, quality and
+communication is one people abandon on the second field.
+
+- **Private to WeAre, and that is the decision to revisit rather than quietly
+  extend.** A public average on a profile turns a considered three into a
+  reputational act, and the first creator who loses work over one stops
+  applying. It is on no brand-facing shape and no public page.
+- **Only once the collaboration closes.** A score sitting on the record while
+  the person being scored still has to be worked with is leverage rather than a
+  record.
+- **Each side sees its own and never the other's.** A runner reading the
+  creator's score before writing their own is the anchoring problem collecting
+  both exists to avoid; staff see both, because acting on the signal is the job.
+- Which side somebody is on follows `execution_owner` through
+  `_question_staff_may_see`, so a weare-run brief is rated by our manager and a
+  brand-run one by the brand — in both cases the person who was there.
+- Changeable, unlike a work note: a note records what was said, a rating is a
+  current opinion, and one that cannot be revised after the payment landed late
+  describes a moment rather than the collaboration. Every version audits.
+- **It rides in on the existing `delivery` weight**, blended with the on-time
+  rate by `_reliability_signal`. A rating and an on-time rate measure the same
+  thing at different grains; a tenth weight would mean re-tuning a table that
+  sums to 100 and silently changing what everything else is worth. 3 out of 5
+  maps to exactly `_UNKNOWN_SIGNAL`, which is the honest relationship between
+  "they were fine" and "we do not know".
+
+## People you would ask again
+
+`creator_lists` — named lists for a brand or for WeAre, and `POST
+/brand/campaigns/{id}/invite-list/{id}` to ask all of them at once.
+
+- **A brand's lists belong to the brand, not the login**, so the manager
+  leaving does not take them. WeAre's belong to `_WEARE_LIST_OWNER` rather than
+  to whoever typed them: "creators who are good at launch nights" is
+  operational knowledge, not a personal note.
+- **Inviting a list goes through `_invite_creators`**, the same function the
+  one-at-a-time route uses — the verification gate, the duplicate refusal, the
+  per-creator results and the fact that a number is read and never returned are
+  all one implementation. Ownership is checked before verification, as
+  everywhere.
+- Members come through `_brand_visible_creator` on a brand surface: a saved
+  list is not a way around the contact rule.
+
+## Moving a booking, and how many times
+
+A creator handing a slot back and taking another is the reschedule this product
+actually has: nothing called it that, nothing counted it, and a creator could
+move five times while the venue rearranged its staffing around each one.
+
+- `reschedule_count` is `$inc`'d by **both** paths — the creator's cancel and
+  the runner's move. The runner's is usually made on the creator's behalf and
+  past their own limit, so a count recording only the allowed ones would
+  understate exactly the creator it exists to describe.
+- **The cap is on the creator and the runner is the override.**
+  `reschedule_limit()` (default 2, stored in `platform_settings`, admin-only to
+  change) refuses the creator's own move past the limit with a `code` and
+  points them at whoever runs the campaign, who can still do it from the
+  manager screen. A cap on both sides would be a cap with no way through it,
+  and "no" with no next step is how somebody just stops turning up.
+- Absent reads as zero moves: nothing recorded is nothing we can hold against
+  anybody.
+
+## When some of it arrives
+
+Two of three stories delivered was neither complete nor failed. The
+collaboration could be approved — paying in full for work that did not all
+happen — or sent back forever, paying nothing for work that mostly did. Both
+were happening over WhatsApp with a figure nobody wrote down.
+
+- **Counted against the structured ask**, which is what `deliverable_items`
+  exists for. `_delivery_shortfall` returns **`None`, not an empty shortfall**,
+  on a brief with no counted ask and on a collaboration nobody counted against:
+  an empty shortfall means "all of it arrived", and saying that about a
+  campaign nobody counted is a claim we cannot support.
+- **Not a new state.** `POST /brand/collaborations/{id}/accept-partial` lands
+  on `content_approved` exactly like a full approval, because what happens next
+  — payment — is the same. A ninth state would fork a ladder that works.
+- **The amount is typed, never computed.** Two of three stories is not
+  two-thirds of the value when the reel was the point, so `pro_rata_fraction`
+  travels as a suggestion beside an empty box and the recorded figure is the
+  one somebody agreed. Same rule the withholding field holds.
+- Accepting through this route and finding everything did arrive leaves an
+  **ordinary approval** behind — `partial_delivery` is set only when something
+  is actually missing, or a runner double-checking would put a flag on
+  somebody's reliability history for nothing.
+- Over-counting is clamped rather than refused: four stories where three were
+  asked is a miscount, not 133%, and losing the runner's note over it helps
+  nobody. The note is required.
+- The shortfall renders on every surface **including the creator's own row** —
+  they are the party it is a judgement about, and finding out from a smaller
+  payment than expected is the version of this that costs somebody.
+
+## Who has gone quiet
+
+`GET /admin/dormant` — verified brands with no campaign and verified creators
+with no collaboration in `DORMANT_AFTER_DAYS` (60), with the last activity
+date. The intelligence panel already counted these and named nobody, which is
+the difference between knowing there is a problem and being able to work it.
+
+- **Two lists, because the message is different**: a brand that has not briefed
+  in two months is a sales conversation, a creator who has not worked in two
+  months is a supply one, and mixing them gives one screen two jobs.
+- **Never active sorts first, not last.** A brand we verified and never heard
+  from again got stuck somewhere and nobody found out — the strongest signal on
+  the list rather than the weakest, which is the opposite of how an unknown
+  sorts in a data column.
+- Half-finished creators are not on it: they are unfinished rather than quiet,
+  and `nudge_stale_creator_profiles` already chases them.
+
+## The clock
+
+**Nothing in this system had one.** Every state waited indefinitely for a
+human: an application sat at `applied` until somebody read it, a draft at
+`draft_submitted` until somebody looked, a brand in the verification queue
+until somebody decided. None of that is wrong — these *are* decisions people
+make — but with nothing measuring the wait, a record that had stalled looked
+exactly like a record that was fine, and the first person to notice was
+whoever eventually rang up. So: every record knows when it entered the state
+it is in, every state has a target, and anything past its target is loud.
+
+- **`state_since` is the field and `_state_stamp` is the only writer.** There
+  is no single transition function here — states are written at more than
+  thirty call sites, each with its own `from_state` precondition — so the
+  stamp travels with the state rather than being applied centrally, and a
+  structural test fails any `$set` that writes one without the other.
+  `_state_stamp` takes the column name because the four clocked records do not
+  agree on it (`STATE_CLOCK_FIELDS`): a collaboration has `state`, a campaign
+  `status`, a brand `verification_state`, a creator `verification_status`.
+- **`updated_at` is deliberately not the clock.** It moves when anybody writes
+  anything — a note, a rate, a cover image — so a collaboration nobody has
+  advanced in a fortnight would read as touched five minutes ago, which is the
+  opposite of what an ageing display is for.
+- **`_state_since` falls back to `updated_at`, and the fallback understates the
+  age.** A row written before the field existed does not know when it last
+  moved; `updated_at` is at or after the real transition, so the age it yields
+  is a lower bound. That is the safe direction — an escalation that fires late
+  is a nuisance, one that fires on a record that is fine teaches everybody to
+  ignore the signal — and it self-corrects the first time the record moves.
+- **The startup migrations are exempt and say so.** `clock-exempt:` marks
+  them: a rename (`vetted` → `verified`) and a derivation
+  (`verification_state` from a boolean) are not transitions, and stamping
+  either would date every historical record to the deploy and make the whole
+  platform read as "waiting since this morning". Exempted **by marker, not by
+  line number** — a test that names a line breaks on the next import.
+
+### What "too long" means, and who says
+
+`SLA_DEFAULT_HOURS` holds the nine targets — creator and brand verification
+48h, campaign review 24h, application response 72h, commercial agreement 72h,
+slot booking 48h, draft review 48h, content submission 72h, payment 7 days.
+
+**They are defaults, not constants.** Every one is an operating decision that
+depends on how many people are working the queue this month, so a target that
+needs a deploy to change is one that never changes — it gets argued about and
+then lived with. `sla_targets()` lays stored overrides from `platform_settings`
+over the table; `GET`/`PUT /admin/settings/sla` is the editor, **admin-only and
+not `CONSOLE_ROLES`**, because somebody whose queue is being measured is the
+wrong person to be able to move the line. Overrides are partial, so adding a
+tenth target ships with a sensible number rather than being silently unset on
+every install that ever saved the form.
+
+- `_SLA_BY_COLLAB_STATE` maps a state to its target. **A state that is nobody's
+  delay is absent**: `slot_booked` waits on a date in the future rather than on
+  a person, and the terminal states are finished. Absent means "no clock",
+  never "zero".
+- **`_ageing_from` takes the instant, not the record**, because the clock does
+  not always start when the state changed. A creator profile has been `pending`
+  since the day they signed up; the wait somebody is answerable for starts at
+  `submitted_for_review_at`. Ageing that queue off the state would report a
+  fortnight of the creator's own half-finished profile as our delay, which is
+  the kind of wrong that makes an operator dismiss the panel.
+  `_creator_review_ageing`, `_brand_review_ageing` and `_campaign_review_ageing`
+  each return `None` for a record that is not waiting on us — a verified
+  creator is in no queue, and drawing a clock on them would invent one.
+- **Four tones, not two** (`SLA_TONES`): calm, due at half the target, overdue,
+  critical at double. "Fine" and "on fire" leaves nothing to say about the
+  record that is *about* to become a problem, which is the only one somebody
+  can still act on.
+
+### Who sees the verdict
+
+The age goes on every record. The *verdict* does not.
+
+- Admin and staff surfaces get the whole block. So does the **brand**, on its
+  own applicant board: where the wait is theirs, the target is a standard they
+  are being held to and being told is the point.
+- The **creator's own row carries the age and no target** (`_serialize_collab_row`
+  passes no SLA). An SLA is the standard this operation holds itself to
+  internally; it is not a promise made to the creator, and publishing "the
+  brand is 4 days over target" would turn one into the other. What to do about
+  it reaches them through the process flow's next action and, when it is theirs
+  to move, through a WhatsApp reminder.
+- `components/AgeBadge.jsx` is the one renderer, and it **draws what the server
+  sent and computes nothing** — a test greps it for date arithmetic. It renders
+  nothing without a block.
+- **The browser holds no second definition of "too long".** The console had one
+  — `isStale`, a flat 48 hours — and against nine real targets it was wrong in
+  both directions: it called a payment overdue on day three of seven and a
+  campaign review fine on day two of one. It is gone, and a test fails any
+  threshold constant that reappears under `components/`.
+- **Sorting is by the fraction of the allowance used**, `hours / sla_hours`, on
+  both the server's overdue list and the queue's age column. A payment eight
+  days into a seven-day target has used 1.14; a campaign review five days into
+  a one-day target has used 5.0, and it is the one to look at first. The first
+  version of the client-side key returned `1e12 + overdue_hours` for overdue
+  rows and a millisecond timestamp for the rest — and a timestamp is ~1.76e12,
+  so every un-overdue row outranked every overdue one. **Caught in a browser,
+  not by a test**, which is why the test now names the arithmetic.
+
+### Chasing, and letting things lapse
+
+`run_lifecycle_chasers()` is one pass on a loop (`LIFECYCLE_INTERVAL_SECONDS`,
+0 disables) and behind `POST /admin/jobs/lifecycle`. Five reminders, each to
+the party who can actually move the thing: book a slot, a shoot tomorrow,
+content due after attending, a draft nobody has reviewed, pitches nobody has
+answered.
+
+- **At most twice, and then never again.** Chasing somebody a third time about
+  the same row is how a WhatsApp channel stops being read, and this operation
+  runs entirely on that channel. A third would be nagging; the escalation is
+  the answer to somebody who has ignored two.
+- **The claim is the write**, exactly like the profile nudge, and it carries
+  the state as a precondition — which is what makes "stops once the state
+  advances" structural rather than remembered. `$lt` would skip a row that has
+  never been reminded, because Mongo's comparison operators skip missing
+  fields; `$not: {$gte: n}` matches it. Same absent-reads-safe trap as
+  everywhere else here.
+- **Escalation follows `execution_owner`** (`_escalate_to_whoever_runs_it`) —
+  the same routing a new application takes, reusing the readers rather than
+  writing a second rule. Weare-run goes to the WeAre team; brand-run goes to
+  the brand manager **and copies admin**, because an overdue record is an
+  operational fact about the platform as well as a job for the brand, and the
+  brand going quiet is exactly the case somebody here needs to know about.
+- Unanswered pitches are **one message per campaign, not per applicant**: five
+  pitches on one brief is one job, and five WhatsApps about it is five reasons
+  to mute us.
+- Jobs credit `_SYSTEM_ACTOR` in the audit log — named rather than blank,
+  because an audit line with no actor reads as a gap rather than as the system
+  acting. Its `_id` is absent, so `actor_id` lands as `None` and nobody can
+  mistake it for a person.
+
+### Late delivery
+
+**The SLA and the grace are two different things with two different
+consequences**, and collapsing them would be unfair to the creator. Passing the
+content target means we chase — somebody is waiting and a nudge is
+proportionate. Passing the target *and* `CONTENT_GRACE_HOURS` on top is what
+writes `content_overdue` on the record, escalates, and counts against on-time
+delivery in `_delivery_history`. A mark on somebody's reliability should not be
+the same event as a reminder.
+
+The flag is set once and never cleared: delivering eventually does not make a
+delivery not have been late, and this is the only signal a brand has about
+whether somebody turns work in.
+
+### Expiry
+
+- **Invitations carry a deadline** (`INVITATION_RESPONSE_DAYS`, 7). Without
+  one, an invitation is a brief the brand can never take off the table, and
+  "invited, not answered" counts people who decided nothing months ago.
+  `_invitation_lapsed` is **read on every serialize, not only swept** — the
+  sweep keeps the database tidy, but the reader is the enforcement, or an
+  Accept button's availability would depend on whether cron ran.
+  `respond_by` is stored so moving the constant later cannot retroactively
+  shorten an offer somebody is already holding, and derived from the send date
+  for rows written before the field.
+  `_refuse_unanswerable_invitation` is **one guard behind both answers**, or an
+  invitation would be declinable a fortnight after it lapsed but not
+  acceptable. The two refusals read differently: "you already answered" and
+  "the offer ran out" are different facts.
+- **`expired` is a fifth terminal state, and it is nobody's decision.** An
+  application on a brief that started and was never actioned is not declined
+  (nobody decided), not withdrawn (the creator did not take it back) and not
+  cancelled (there was nothing to cancel) — and on a creator's history,
+  "declined" and "nobody ever answered" are very different facts about them.
+  The creator is told, and told plainly that it was not about them. Only
+  campaigns that have actually begun; a brief that is merely old is still one
+  somebody might answer tomorrow.
+- **Drafts untouched for `DRAFT_STALE_DAYS` (30) are flagged, never tidied
+  away.** It is the brand's own unpublished work, and a platform that deletes
+  somebody's draft is one they stop trusting with a draft. `_draft_is_stale` is
+  derived rather than stored — a stored flag needs clearing on every edit, and
+  the edit that forgets is the bug.
+
 ## Health, activity and exports
 
 The overview leads with **what is going wrong**, then what the business is
@@ -1499,17 +2504,33 @@ doing, then its own numbers, then the exports. A campaign quietly underfilling
 four days before the shoot generates no notification and sits in no queue — it
 is discovered when the brand rings up, unless something looks for it.
 
-`GET /admin/health` runs seven checks: underfilling campaigns near their day,
+`GET /admin/health` runs nine checks. **The first is the catch-all**: every
+record whose own clock says it is past its target, worst first — see "The
+clock" above. A record can be missing from all eight of the others and still be
+four days over, and "never let an overdue record be invisible" is the promise
+that check keeps. Then: underfilling campaigns near their day,
 accepted creators with no slot, content overdue after attendance, drafts nobody
 has reviewed, payments sitting unpaid, brands waiting on our verification, and
-profiles that stalled. The draft one has the shortest fuse
+profiles that stalled, deliveries past the grace, and drafts nobody has
+touched in a month. The draft one has the shortest fuse
 (`DRAFT_REVIEW_OVERDUE_DAYS`, 2) because it is the only row where the delay is
 *ours*: the creator has done the work and cannot publish until somebody looks.
 Every threshold is a named constant (`FILL_WARNING_RATIO`, `PAYMENT_OVERDUE_DAYS`
 …) because each is a judgement about how much slack the operation has, and they
 travel back in the response so the panel quotes the server's numbers rather than
-a copy that drifts. **Every row carries an `href`** — a count tells you there is
-a problem and then makes you go and find it.
+a copy that drifts. **Every row carries an `href`** — a count tells you there
+is a problem and then makes you go and find it — and the underfilling rows
+carry **the numbers and the ways out**: how many slots short, how many days
+left, and links to invite creators, extend the dates or ask for fewer. Naming a
+problem with nothing to do about it is how a health panel becomes a list people
+scroll past.
+
+The row is a **stretched link, not a wrapping one**, because it now has its own
+actions and an anchor inside an anchor is invalid markup browsers resolve by
+dropping one of them — the same arrangement the campaign card uses. And **a
+check that sorted itself keeps its order**: the panel's default is severity
+then oldest-first, which is right for eight of the nine and actively wrong for
+the overdue list, so that one sets `presorted`.
 
 `GET /admin/intelligence` is four shapes and no more: campaigns posted per week
 by current status, fill-rate trend, repeat versus one-off brands, active versus
@@ -1549,9 +2570,10 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Eleven list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
-  `campaign-reviews`, `brand-reviews`, `creators`, `campaigns`, `brands`,
-  `performance`, `health`, `audit`) and four detail routes:
+- Seventeen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `disputes`, `creators`, `campaigns`,
+  `brands`, `performance`, `health`, `audit`, `team`, `deletions`, `dormant`,
+  `retention`, `settings`) and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under
@@ -1710,6 +2732,104 @@ plain text when the id is missing rather than a link to nowhere. Detail pages
 carry `crumbs` into `DetailShell`, which draws breadcrumbs above the back link —
 the crumbs say what you are inside, the back link is the one-tap way out.
 
+## The internal team, and the console with a scope around it
+
+WeAre runs campaigns for its own clients, and the people who do that are not
+admins: they need the console, and they need it to end at the brands they are
+on. `weare_team` is that role — **the same sidebar, action queue, review tabs,
+entity pages, collaboration actions and exports, filtered server-side to
+assigned brands.**
+
+`CONSOLE_ROLES = ("admin", "weare_team")` is spread into `require_roles` on
+every scoped console endpoint, exactly the way `BRAND_ROLES` is. `is_all_access`
+is the one place "everything" is decided, and it is only ever `admin`.
+
+- **`_console_brand_ids(user)` returns `None` for an admin and a list for
+  everybody else, and that distinction is load-bearing.** `None` means no
+  filter; a list — which may legitimately be empty, for somebody assigned
+  nothing yet — means those brands and no others. An empty list reading as "no
+  filter" would hand a new starter the whole platform on their first morning,
+  and a test drives every list handler with exactly that user.
+- `_console_brand_query`, `_console_campaign_query` and `_console_creator_ids`
+  are the readers every scoped query spreads. Collaborations, payments, slots
+  and question threads hang off a campaign rather than a brand, so the campaign
+  ids are resolved once per request instead of joining on every query.
+- **The scope is on the query, never on the rows.** Several of these lists sort
+  and then cap; filtering afterwards would silently shorten a scoped queue to
+  whatever survived somebody else's hundred.
+- **Every door is the same door.** `_admin_campaign_or_404`, `_collab_or_404`,
+  `_console_brand_or_404` and `_console_payment_or_404` take the caller and
+  apply the scope, and a **404 — never a 403**, because whether a brand we do
+  not work with exists is itself what the scope protects. A structural test
+  fails any console handler that resolves a path id without going through one;
+  it found five real gaps when it was written, the collaboration detail page
+  and all four collaboration actions, each of which resolved its own id inline.
+- **What stays admin-only**: the global creator directory and its review queue,
+  the platform-wide instruments (`/admin/metrics`, `/admin/health`,
+  `/admin/intelligence`), the audit log, the creator and audit exports
+  (`ADMIN_ONLY_EXPORTS`), and the settings that hand out scope. A scoped role
+  that could widen its own scope is not a scope, so `POST`/`DELETE
+  /admin/brands/{id}/team` are admin-only while the `GET` beside them is not.
+- Assignment is `$addToSet`/`$pull` on `assigned_brand_ids`, **from the brand's
+  own page** — that is where the decision is made. Accounts are created under
+  `/admin/team`; a team member can be on any number of brands.
+- Every action audits under their own name like an admin's. `weare_team` **is**
+  in `IMPERSONATABLE_ROLES`, for the reason `admin` is not: a scoped console is
+  a view an admin cannot otherwise see, so "why is that brand missing from my
+  list" is answered by looking.
+
+The frontend half is a courtesy on top, never the enforcement.
+`lib/consoleScope.js` mirrors the two roles with a drift test, `adminOnly` on a
+section in `Sidebar.jsx` keeps it out of `sectionsFor(role)` — which feeds the
+rail *and* the sheet, so a phone cannot find a different set from a laptop —
+and the action queue simply does not ask for the two creator queues, because
+one 403 inside its `Promise.all` would empty a queue that is otherwise entirely
+theirs to work. `BrandFilter` writes `?brand=<id>` to the URL rather than to
+state, so a narrowed console is a link somebody can send; it renders nothing
+for somebody on one brand. **No screen filters by brand itself** — a test greps
+the whole frontend for `assigned_brand_ids` and fails on a hit.
+
+## What an admin may create
+
+We are the operator as well as the platform. Some campaigns are ours to run,
+some briefs are barter, and some brands and creators arrive through a
+conversation rather than a signup form. Before `POST /admin/campaigns`,
+`/admin/brands` and `/admin/creators` an admin could review, edit, publish and
+close but never *create*, so an internal client had to be walked through a
+signup screen for an account nobody would ever log into.
+
+- **The campaign skips the review gate because we are the reviewer.**
+  `pending_review` is not in `AdminCreateCampaignPayload`'s statuses at all —
+  submitting a brief to ourselves and then approving it is a queue item that
+  exists to be dismissed. `execution_owner` defaults to `weare` (the brand's
+  own form defaults the other way for the same reason: the party posting is the
+  party running it), and a weare-run brief still gets `_NO_CAMPAIGN_MANAGER`.
+- **`_refuse_brand_barter` is deliberately not called** — the same asymmetry
+  `admin_update_campaign` holds. Adding the guard here would make a barter
+  brief impossible to *create*, leaving an edit as the only way to reach one. A
+  unit test pins both halves.
+- **Publishing still needs a verified brand**, the identical 409
+  `approve_campaign` raises: creators are never reachable by a brand nobody has
+  checked, and a new route is not a reason to lose that. A draft reaches
+  nobody, so a draft is fine.
+- **Admin-created brands and creators enter verified**, because verification is
+  a check that has already happened offline and this is the record of it — the
+  audit line names who made the call. The brand is otherwise identical to a
+  self-registered one, `brand_id` pointing at itself so `_brand_scope` reads it
+  without a special case; the creator's profile is a **stub, not a guess**, and
+  lands in no review queue for somebody to dismiss.
+- All three are **admin-only, not `CONSOLE_ROLES`**: minting a verified brand
+  is a statement about a check, and a scoped console could otherwise create the
+  brand it then gets assigned to.
+- The UI is `components/admin/CreateDialogs.jsx`, three dialogs opened from the
+  list each new row lands in. The campaign one carries what the payload
+  requires and no more — everything else is editable on the campaign's own page
+  a moment later, and a twenty-field dialog is a form somebody abandons. It is
+  the second control in the product that can set barter (`CampaignEditDialog`
+  is the other), and dates go out as instants the way the brand's form sends
+  them. `lib/categories.js` holds the category list, which until this was
+  written out twice and about to be a third time.
+
 ## View-as (impersonation)
 
 An admin sees the app exactly as one creator, brand manager or campaign manager
@@ -1755,6 +2875,59 @@ Admins get **admin navigation only**. `linksFor()` in `Navbar.jsx` returns from
 one branch per role; admin used to share the creator branch, which put the
 creator brief feed in staff navigation. The marketing strip renders only when
 nobody is signed in.
+
+## The portal is IST, the database is UTC
+
+**BSON has no time zone.** A value written as `datetime.now(timezone.utc)`
+comes back from Mongo *naive*, and `datetime.isoformat()` on a naive value
+emits no offset at all — so the same instant serialised two different ways
+depending on whether it had been round tripped through the database, and
+`new Date()` read the naive half as the reader's **local** time. That is 5½
+hours here, and it is why the notification panel said "6h ago" about something
+twenty minutes old. The relative-time arithmetic was always right; its input
+was wrong.
+
+Storage stays UTC. The API emits UTC *with its offset*. The conversion to IST
+happens once on the way to a screen, and once on the way to a phone.
+
+- **`_iso(value)` is the only way a datetime becomes a string.** It stamps a
+  naive value as UTC — which states a fact rather than guessing, since every
+  write goes through `datetime.now(timezone.utc)` — and leaves an aware one
+  alone. `_jsonable` routes through it too, so the audit log's raw before/after
+  blobs hold the same rule as the hand-written serializers. A unit test fails
+  any bare `.isoformat()` outside `_iso` (a `date` has no time and so no zone;
+  `.date().isoformat()` is exempt).
+- **`_when_text` is the only human-facing time this server writes** — the
+  WhatsApp messages telling a creator when to turn up. Formatting the stored
+  UTC directly said 2:00 pm for a 7:30 pm sitting: the same 5½ hours arriving
+  on a phone instead of on a screen. It goes through `_ist`, which reads a
+  naive value as UTC for the same reason `_iso` does.
+- `SHOOT_TZ` is a fixed +05:30 rather than a named zone, and that is correct:
+  IST has no daylight saving, so there is no rule to look up.
+- **`frontend/src/lib/time.js` is the only place the zone is named**, and every
+  formatter in it passes `timeZone: IST`. A unit test walks every `.js`/`.jsx`
+  under `src/` and fails a `toLocale*` call that carries date options without a
+  `timeZone`, fails a second file spelling out `"Asia/Kolkata"`, and fails a
+  file that formats dates without importing the zone. A manager opening the
+  daysheet from another country reads the same times as the person at the door.
+- **`dayKey` is how a day is bucketed**, via `en-CA` + the zone.
+  `toISOString().slice(0, 10)` is the *UTC* day, which moves every evening
+  shoot in India to the next date. `setHours(0, 0, 0, 0)` is banned for the
+  same reason plus a second one — it mutates the Date it is called on, which in
+  `ManagerHome`'s loop meant every campaign after the first with an end date
+  was measured against midnight rather than now. Both are pinned by tests.
+- **`TimeAgo` takes `iso`, not `value`.** Six call sites across four batches
+passed `value`, so every one rendered the component's own em-dash fallback
+where a relative time belonged — which looks exactly like "we have no date for
+this", the one reading that is never true on a row the server just stamped.
+Caught in a browser rather than by a test, which is why a test greps for it
+now.
+
+`timeAgo` lives in `lib/time.js` and nowhere else. The console keeps its own
+  `relative` in `admin/console/format.jsx` — "3h ago" where the app says "3h",
+  and days for a month rather than weeks after a fortnight — deliberately, and
+  with the reason in the file. A dead third copy in `admin/shared.jsx` is what
+  the test now stops coming back.
 
 ## Design system
 
@@ -1892,7 +3065,71 @@ gets recorded days later.
   the manager finds out about from a phone call: no slots, unbooked places,
   fewer creators than the brief asked for, no venue address on the day. It stays
   short deliberately; a list of eleven warnings is a list nobody reads standing
-  up.
+  up. **`slots_pending` is the one exception and is raised whatever the date**:
+  everything else there becomes a problem as the shoot approaches, while a
+  creator holding a seat nobody has answered is a problem the moment they book.
+- `shared.jsx` imports the zone helper as `startOfDay as istStartOfDay`, because
+  the wrapper beside it keeps the shorter name. Without that alias the wrapper
+  was a bare `ReferenceError`, thrown by `isToday` for every campaign in the
+  list — **the manager's entire home page fell through to the route boundary on
+  every render, and shipped that way.** Every test about this file read
+  functions out of it rather than rendering the page, and an imported function
+  still resolves its own module scope, so the missing name only bit at call
+  time.
+
+### Told about work you can do
+
+The manager's screens and the manager's *jobs* drifted apart. The `/manager`
+router grew endpoints, `notify_campaign_manager` grew events, and
+`_question_staff_may_see` grew a `campaign_manager` branch, while the frontend
+kept the three tabs it started with — so the role was **paged about work it had
+no way to do**. Five routes had no caller anywhere; the notification for one of
+them deep-linked to a page that showed neither the request nor a button.
+
+`test_manager_experience.py` holds the line now: **every route on the manager
+router must have a caller in the frontend**, and every new panel must be
+rendered by a screen. The second half matters as much as the first — deleting
+`<SlotAnswer />` from the campaign page left the route-has-a-caller check green,
+because the component file still held the only `slot/confirm` call in the
+repository. A caller with no mount is as unreachable as a route with no caller.
+
+- **`SlotAnswer` is the second half of the booking handshake**, a band above
+  everything on the campaign page rather than a tab: somebody is holding a seat
+  waiting on an answer, which is not a section you go and look in. It renders
+  nothing when nothing is waiting. `_roster_rows` emits `slot_pending` so a held
+  booking is told apart from a settled one, and `_pending_slot_counts_for` puts
+  the number on the home card.
+- **`/manager/applications/:id` mounts the shared `ApplicationDetail`** — the
+  third route onto one component, not a fourth copy of the screen.
+  `get_application` had always accepted a `campaign_manager` and no URL reached
+  it, which cost them the three things the server already lets them do: review a
+  draft, answer a creator's question, and read the work notes. `slotBase` is the
+  only prop that differs (`/manager` rather than `/brand`) — the component is
+  *told* where to post, the way it is told about `entityLinks`, and still never
+  asks what role is looking. The other actions are brand-owned transitions the
+  server never offers a manager, so their buttons do not render.
+- **`BriefPanel` is a tab, because no manager surface carried the brief at
+  all.** The person running the day could see who was coming, when and where,
+  and not one word of what the creators had been asked to produce. The roster
+  payload carries `brief`, `deliverable_items` and the fee *with its
+  compensation type beside it*; the panel renders through `DeliverableList` and
+  `formatCompensation` rather than growing a fourth spelling of either.
+- **`PerformanceSheet` records what the published work did**, from the roster
+  row, and only on a collaboration that has actually delivered — before that the
+  button opens a form nobody can fill in honestly. A blank field is omitted from
+  the payload rather than sent as zero: unknown and none are different, and
+  averaging the second is how a report starts lying.
+- **All three day-of actions now survive the venue's wifi.** Check-in already
+  queued; no-show and reschedule raised a Retry toast, which is the same manager
+  in the same basement being asked to do the network's job — and a reschedule
+  that silently failed is worse than a lost check-in, because the creator has
+  been told a time nobody recorded. `shouldRetry` is exported so the call site
+  and the flusher cannot disagree about what is worth keeping.
+- The roster payload also carries `start_date`/`end_date`, which
+  `ManagerCampaign` has always read off it. Without them the header said "Dates
+  not set" on every personal table and `SlotEditor` validated a new slot against
+  `undefined` — a test now walks the page for every `roster.*` it reads and
+  fails any the endpoint does not send.
 
 ### The calendar, and checking yourself in
 

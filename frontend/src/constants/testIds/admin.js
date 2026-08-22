@@ -77,6 +77,10 @@ export const ADMIN_HEALTH = {
 	checkCount: (key) => `admin-health-count-${key}`,
 	item: (id) => `admin-health-item-${id}`,
 	more: (key) => `admin-health-more-${key}`,
+	// A row's shortfall figures, and the ways out of the problem it names.
+	shortfall: (id) => `admin-health-short-${id}`,
+	action: (id, label) =>
+		`admin-health-action-${id}-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
 	total: 'admin-health-total',
 };
 
@@ -138,6 +142,7 @@ export const ADMIN_CREATOR_PAGE = {
 };
 
 export const ADMIN_BRAND_PAGE = {
+	resubmissions: 'admin-brand-page-resubmissions',
 	page: 'admin-brand-page',
 	manager: 'admin-brand-page-manager',
 	document: (id) => `admin-brand-page-document-${id}`,
@@ -204,6 +209,9 @@ export const ADMIN_REVIEWS = {
 	row: (id) => `admin-review-row-${id}`,
 	expand: (id) => `admin-review-expand-${id}`,
 	detail: (id) => `admin-review-detail-${id}`,
+	// The way to the whole record. A queue row is a summary and a peek is a
+	// preview; the decision needs the page.
+	open: (id) => `admin-review-open-${id}`,
 	approve: (id) => `admin-review-approve-${id}`,
 	reject: (id) => `admin-review-reject-${id}`,
 	instagram: (id) => `admin-review-instagram-${id}`,
@@ -367,6 +375,7 @@ export const ADMIN_AUDIT = {
 };
 
 export const ADMIN_CONFIRM = {
+	extraField: (name) => `admin-confirm-extra-${name}`,
 	dialog: 'admin-confirm-dialog',
 	title: 'admin-confirm-title',
 	reason: 'admin-confirm-reason',
@@ -439,4 +448,119 @@ export const ADMIN_PEEK = {
 export const ADMIN_SHORTCUTS = {
 	root: 'admin-shortcuts',
 	open: 'admin-shortcuts-open',
+};
+
+// --- Our own staff, and the brands they run ---------------------------------
+
+export const ADMIN_TEAM = {
+	page: 'admin-team-page',
+	row: (id) => `admin-team-row-${id}`,
+	create: 'admin-team-create',
+	name: 'admin-team-name',
+	email: 'admin-team-email',
+	password: 'admin-team-password',
+	phone: 'admin-team-phone',
+	submit: 'admin-team-submit',
+	empty: 'admin-team-empty',
+};
+
+// On the brand's own page: who at WeAre runs it.
+export const ADMIN_BRAND_TEAM = {
+	section: 'admin-brand-team',
+	member: (id) => `admin-brand-team-member-${id}`,
+	remove: (id) => `admin-brand-team-remove-${id}`,
+	picker: 'admin-brand-team-picker',
+	assign: 'admin-brand-team-assign',
+	empty: 'admin-brand-team-empty',
+};
+
+// Creating a record from the console: a brand, a creator, or a brief of ours.
+export const ADMIN_CREATE = {
+	brandOpen: 'admin-create-brand-open',
+	brandDialog: 'admin-create-brand-dialog',
+	brandName: 'admin-create-brand-name',
+	brandManager: 'admin-create-brand-manager',
+	brandDesignation: 'admin-create-brand-designation',
+	brandPhone: 'admin-create-brand-phone',
+	brandEmail: 'admin-create-brand-email',
+	brandCategory: 'admin-create-brand-category',
+	brandCity: 'admin-create-brand-city',
+
+	creatorOpen: 'admin-create-creator-open',
+	creatorDialog: 'admin-create-creator-dialog',
+	creatorName: 'admin-create-creator-name',
+	creatorPhone: 'admin-create-creator-phone',
+	creatorHandle: 'admin-create-creator-handle',
+	creatorCity: 'admin-create-creator-city',
+
+	campaignOpen: 'admin-create-campaign-open',
+	campaignDialog: 'admin-create-campaign-dialog',
+	campaignBrand: 'admin-create-campaign-brand',
+	campaignTitle: 'admin-create-campaign-title',
+	campaignBrief: 'admin-create-campaign-brief',
+	campaignDeliverables: 'admin-create-campaign-deliverables',
+	campaignCompensation: 'admin-create-campaign-compensation',
+	campaignBudget: 'admin-create-campaign-budget',
+	campaignExecution: 'admin-create-campaign-execution',
+	campaignCreatorsNeeded: 'admin-create-campaign-creators-needed',
+	campaignCategory: 'admin-create-campaign-category',
+	campaignArea: 'admin-create-campaign-area',
+	campaignType: 'admin-create-campaign-type',
+	campaignStatus: 'admin-create-campaign-status',
+	campaignEventDate: 'admin-create-campaign-event-date',
+	campaignStart: 'admin-create-campaign-start',
+	campaignEnd: 'admin-create-campaign-end',
+
+	submit: 'admin-create-submit',
+	cancel: 'admin-create-cancel',
+	error: 'admin-create-error',
+};
+
+// The scoped console's own chrome: which of your brands you are looking at.
+export const ADMIN_BRAND_FILTER = {
+	root: 'admin-brand-filter',
+	option: (id) => `admin-brand-filter-option-${id}`,
+	clear: 'admin-brand-filter-clear',
+};
+
+// Work that fell over, on the creator's page and the brand's.
+export const ADMIN_CANCELLATIONS = {
+	list: 'admin-cancellations-list',
+	row: (id) => `admin-cancellation-row-${id}`,
+	fee: (id) => `admin-cancellation-fee-${id}`,
+};
+
+// Who has gone quiet, and the two re-engagement lists.
+export const ADMIN_DORMANT = {
+	page: 'admin-dormant-page',
+	tab: (kind) => `admin-dormant-tab-${kind}`,
+	row: (id) => `admin-dormant-row-${id}`,
+	empty: 'admin-dormant-empty',
+	count: (kind) => `admin-dormant-count-${kind}`,
+};
+
+// Reusable briefs, and duplicating a past one.
+export const CAMPAIGN_TEMPLATES = {
+	picker: 'campaign-template-picker',
+	option: (id) => `campaign-template-${id}`,
+	use: (id) => `campaign-template-use-${id}`,
+	remove: (id) => `campaign-template-remove-${id}`,
+	save: 'campaign-template-save',
+	saveName: 'campaign-template-name',
+	saveSubmit: 'campaign-template-save-submit',
+	duplicate: (id) => `campaign-duplicate-${id}`,
+	empty: 'campaign-template-empty',
+};
+
+// Saved creator lists.
+export const CREATOR_LISTS = {
+	panel: 'creator-lists-panel',
+	row: (id) => `creator-list-${id}`,
+	create: 'creator-list-create',
+	name: 'creator-list-name',
+	submit: 'creator-list-submit',
+	invite: (id) => `creator-list-invite-${id}`,
+	remove: (id) => `creator-list-remove-${id}`,
+	add: (listId) => `creator-list-add-${listId}`,
+	empty: 'creator-lists-empty',
 };

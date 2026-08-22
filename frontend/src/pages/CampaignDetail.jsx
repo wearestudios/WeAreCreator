@@ -16,6 +16,8 @@ import {
     ShieldCheck,
     Users,
 } from "lucide-react";
+import { DeliverableList } from "@/components/Deliverables";
+import { deliverablesText } from "@/lib/deliverables";
 import { Navbar } from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import {
@@ -46,6 +48,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { IST } from "@/lib/time";
 
 const CAT_LABEL = {
     fnb: "F&B",
@@ -79,6 +82,7 @@ const formatDate = (iso, opts) => {
             month: "short",
             year: "numeric",
             ...opts,
+            timeZone: IST,
         });
     } catch {
         return iso;
@@ -576,7 +580,7 @@ export default function CampaignDetail() {
                         <ShareButton
                             campaignId={campaign.id}
                             title={campaign.title}
-                            summary={campaign.deliverables}
+                            summary={deliverablesText(campaign)}
                         />
                     )}
                     <ExecutionBadge campaign={campaign} audience="creator" />
@@ -611,12 +615,15 @@ export default function CampaignDetail() {
                             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                                 Deliverables
                             </p>
-                            <p
-                                data-testid="detail-deliverables"
-                                className="mt-4 whitespace-pre-line font-serif text-2xl leading-snug"
-                            >
-                                {campaign.deliverables}
-                            </p>
+                            {/* Counted pieces rather than a paragraph. A
+                                brief posted before the structured field
+                                existed still renders its sentence — see
+                                DeliverableList. */}
+                            <DeliverableList
+                                campaign={campaign}
+                                testid="detail-deliverables"
+                                className="mt-4"
+                            />
                         </section>
 
                         {/* When the venue can take people, said before the
