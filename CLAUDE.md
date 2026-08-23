@@ -3591,3 +3591,62 @@ the backend log, so it can't gate a PR.
 Build collaborations through `tests/pipeline.py` rather than by hand — it routes
 each step to whoever owns it. Do not change `addopts` in `pytest.ini`; serialize
 with `-n 0`.
+
+### Reading the source is not driving the code
+
+Much of `tests/unit/` asserts on the *shape* of a handler — that
+`mark_payment_paid` contains the string `_refuse_if_disputed`, that every
+console handler taking an id mentions one of the four scoped guards. That is
+the right instrument for the failure it is aimed at, which is a **new route
+written the old way**: a hand-written list is a list somebody forgets to add
+to, and a structural sweep catches the omission on the day it ships.
+
+It cannot catch a guard that is present and does nothing. Measured, not
+assumed: pointing `_refuse_if_disputed` at the wrong document inside
+`mark_payment_paid` leaves `test_unhappy_paths.py` green and pays out on a
+disputed collaboration.
+
+So the money and state paths carry a second layer that **drives the handler and
+reads the database back**, in three files:
+
+- `test_money_paths.py` — every payment state (pending, paid, refunded, kill
+  fee, void/settled invoices), the dispute freeze on every door that moves
+  money, all four mediation outcomes, cancellation notice and withdrawal.
+- `test_chasing_and_delivery.py` — all five reminder kinds through
+  `run_lifecycle_chasers`, the escalation routing, the SLA-versus-grace split,
+  then takedown, partial delivery, reliability and retention.
+- `test_scope_mutations.py` — what each of the four scoped roles cannot
+  *change* outside its scope, as opposed to what it cannot read.
+
+Three rules they hold themselves to, each learned by breaking the product and
+watching a test that should have failed stay green:
+
+- **Assert on stored state, not only on the exception.** A 409 raised after the
+  write is not a refusal. Every case reads the row back and checks it did not
+  move.
+- **Run the guard rather than grepping for it.** Calling a route function
+  directly skips its `Depends` entirely — the same trap `bulk_review` re-checks
+  by hand — so `guard_allows(fn, role)` pulls the real `require_roles`
+  dependency off the signature and calls it. A guard listing the wrong roles
+  fails; a string match would not.
+- **A test that cannot fail is worse than no test.** Two written here were
+  vacuous and were caught by break-testing, not by review: asking
+  `_reliability_for` about a creator with no rows returns no row at all, so the
+  `on_time_rate is None` branch was never reached; and `asyncio.gather` does
+  not interleave under mongomock, so a "concurrent double-pay" test was answered
+  entirely by the early read. The first now seeds two live collaborations; the
+  second stages the stale read directly, which is what the losing request
+  actually sees.
+
+Where a rule is genuinely covered elsewhere, the docstring says so rather than
+implying this test is the one holding it — the reminder claim's `state`
+precondition is `test_the_clock.py`'s, and the query-level version here is a
+different (also real) assertion.
+
+`pip install -r requirements-dev.txt` brings `pytest-cov`. Coverage is
+something to go and measure, not a number every run pays for, so it is not in
+`addopts`:
+
+```bash
+pytest tests/unit --cov=server --cov-report=term-missing
+```
