@@ -32,6 +32,12 @@ import {
     USAGE_RIGHTS,
     needsDuration,
 } from "@/lib/campaignTerms";
+import { BRIEF_DETAIL_FIELDS } from "@/lib/briefDetails";
+import BriefDetailsEditor, {
+    emptyBriefDetails,
+    fromBriefDetails,
+    toBriefDetails,
+} from "@/components/campaign/BriefDetailsEditor";
 import DeliverablePicker, {
     emptyDeliverables,
     fromDeliverableItems,
@@ -81,6 +87,9 @@ export default function PostCampaign() {
     // The structured ask, as `{reel: 1, story: 3}`. This was a free-text box;
     // see `lib/deliverables.js` for why it stopped being one.
     const [deliverables, setDeliverables] = useState(emptyDeliverables());
+    // The checkable half of the brief. Optional in every direction — a brand
+    // that fills none of it posts a perfectly good brief.
+    const [briefDetails, setBriefDetails] = useState(emptyBriefDetails());
     const [budget, setBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
@@ -178,6 +187,14 @@ export default function PostCampaign() {
         apply("venue_address", setVenueAddress);
         apply("venue_instructions", setVenueInstructions);
         apply("on_site_contact", setOnSiteContact);
+        // A brand that always asks for the same hashtag and always says the
+        // same don't is exactly the brand that saves a template. Applied one
+        // field at a time through the functional setter, so five `apply`
+        // calls in a row cannot each overwrite the last one's work from a
+        // stale copy of the object.
+        BRIEF_DETAIL_FIELDS.forEach((key) =>
+            apply(key, (val) => setBriefDetails((d) => ({ ...d, [key]: val }))),
+        );
         // Dates are deliberately untouched — see the note on the picker.
     };
     const [savingDraft, setSavingDraft] = useState(false);
@@ -212,6 +229,10 @@ export default function PostCampaign() {
                     // and starts empty, which is the honest state — its
                     // sentence is still on the campaign until this is saved.
                     setDeliverables(fromDeliverableItems(data.deliverable_items));
+                    // Re-seeded for the same reason the deliverables are: an
+                    // edit round trip that dropped these would blank a
+                    // brief's hashtags every time somebody fixed its title.
+                    setBriefDetails(fromBriefDetails(data.brief_details));
                     setBudget(
                         data.budget_per_creator == null
                             ? ""
@@ -356,6 +377,10 @@ export default function PostCampaign() {
         title: title.trim(),
         brief: brief.trim(),
         deliverable_items: toDeliverableItems(deliverables),
+        // Always every key. The server reads an omitted one as "leave it
+        // alone" and an empty list as "clear it", so a payload carrying only
+        // what was typed could add a hashtag and never remove one.
+        ...toBriefDetails(briefDetails),
         // Both omitted on a barter campaign: the field isn't rendered, so
         // Number("") would silently write the fee down to zero.
         ...(isBarter
@@ -934,9 +959,13 @@ export default function PostCampaign() {
                                 a hashtag, a handle to tag, a turnaround —
                                 belongs in the brief above, which is the field
                                 a creator reads before deciding. */}
+                            {/* The copy used to send tags to the brief box.
+                                They have their own fields now — a hashtag
+                                buried in a paragraph is one a creator reads
+                                once and a reviewer cannot check against. */}
                             <p className="mt-1 text-xs text-muted-foreground">
-                                How many of each. Tags, turnaround and anything
-                                else you want go in the brief.
+                                How many of each. Tags, do's and don'ts have
+                                their own fields below.
                             </p>
                             <div className="mt-3">
                                 <DeliverablePicker
@@ -946,6 +975,15 @@ export default function PostCampaign() {
                                 />
                             </div>
                         </div>
+                        {/* Directly under the deliverables, because it is the
+                            other half of "what are you asking for" — and
+                            collapsed, because a brief with none of it is a
+                            perfectly good brief and six empty boxes here read
+                            as six more things to do before posting. */}
+                        <BriefDetailsEditor
+                            value={briefDetails}
+                            onChange={setBriefDetails}
+                        />
                         <div>
                             {/* Optional, and said so: a brief with no picture
                                 still gets a generated cover, so this is never

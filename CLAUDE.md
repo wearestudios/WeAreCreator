@@ -1560,6 +1560,56 @@ few" is not a number anybody agreed to.
   shows the sentence the campaign will carry as it is being built, which is
   exactly the string the server derives.
 
+### The brief, in pieces somebody can tick off
+
+`brief` was one free-text box, and everything a brand actually cared about went
+into it as prose: tag us, don't film the queue, use this hashtag, don't mention
+the competitor, here's the logo. A creator read it once, shot the thing, and
+the mismatch surfaced at **draft review — after the shoot**, when the fix is a
+reshoot rather than a sentence.
+
+The narrative stays and six structured fields sit beside it, each a thing that
+can be *checked* rather than interpreted: `brief_dos`, `brief_donts`,
+`mandatory_hashtags`, `mandatory_mentions`, `caption_guidance`,
+`brand_assets`.
+
+- **Every one is optional and absent reads as "not stated".** `_brief_details`
+  returns only what is there, so a brief that named no don'ts has no "Don't"
+  heading — an empty one reads as a brand that had nothing to say about it,
+  which is a different claim from never being asked, and campaigns predate all
+  six. `hasBriefDetails` is the frontend half and the checklist renders
+  nothing below it, the rule `ShootWindowNote` already holds.
+- **`_resolve_brief_details` is the only writer**, shared by the brand's
+  create, the brand's edit and the admin's edit — the same rule
+  `_resolve_deliverables` holds. It takes only the keys that were sent, so an
+  omitted key means "leave it alone" and an explicit empty list means "clear
+  it"; collapsing those two would wipe a brief's hashtags every time somebody
+  changed its title. Both edit paths **pop the six out of the generic copy
+  loop** first, the same reason `_refuse_brand_barter` exists.
+- A hashtag is normalised to one spelling (`_BRIEF_SIGILS`): "weare",
+  "#weare" and "# weare" are the same instruction, and a creator comparing two
+  briefs should not be comparing punctuation. A sigil on its own is dropped
+  rather than stored bare.
+- **A brand asset must be an `http(s)` link.** It renders as an anchor a
+  creator clicks, so a `javascript:` in a field a brand types is the obvious
+  way to turn a brief into an attack. The label is what renders — a bare URL
+  in a list is a link somebody has to open to find out what it is — and falls
+  back to the URL when there is none.
+- **`BRIEF_DETAIL_FIELDS` is spread into `_CAMPAIGN_BRIEF_FIELDS`**, so a
+  duplicate and a template carry the structured half with the narrative one. A
+  brand that always asks for the same hashtag is exactly the brand that
+  duplicates a brief, and a copy that dropped these would be quietly weaker
+  than the thing it copied. The rule that keeps that safe is still the one
+  asserting the two tuples do not overlap.
+- Surfaces: `components/campaign/BriefChecklist.jsx` on **four** — the campaign
+  page (before applying), the creator's own row (while they are making it), the
+  shared application screen (where the draft is judged against it) and the
+  manager's brief panel (standing in the room). It never asks what role is
+  looking. `BriefDetailsEditor` is the one control, collapsed by default on the
+  post form: a brief with none of this is a perfectly good brief, and six empty
+  boxes above the deliverables read as six more things to do before posting.
+  `lib/briefDetails.js` mirrors the vocabulary and a test fails if they drift.
+
 ## Reference ids
 
 **An ObjectId is not something a person says out loud**, and every record here
@@ -1583,10 +1633,20 @@ table column.
   the first brief this operation ever posted rather than whichever row the
   migration reached first, then adds a unique sparse index.
 - `parse_reference` reads `"BRD-0012"`, `"brd12"` and `"crt 108"` alike — one
-  somebody has to spell exactly is one they retype three times. A typed
-  reference is answered **exactly** by `admin_global_search`, returning the one
-  record, and it is the only way to reach a *collaboration* from the palette:
-  nothing about one is a name, so there is nothing else to type.
+  somebody has to spell exactly is one they retype three times. It returns the
+  **canonical string**, not the raw number, so two spellings arrive at one
+  value before anything is looked up. A typed reference is answered **exactly**
+  by `admin_global_search`, returning the one record, and it is the only way to
+  reach a *collaboration* from the palette: nothing about one is a name, so
+  there is nothing else to type.
+- **Every entity list emits one, which took a second pass.** The creator list,
+  the brand list and the dormancy list carried `reference` from the start; the
+  campaign list and the **campaign review queue** did not, so campaign rows
+  were the one kind that stayed blank on a screen (`Reviews.jsx`) already built
+  to print it. A test now walks all of them. On the three console lists it is a
+  sortable `Ref` column, hidden below `lg` — a reference sorts by when the
+  record was created, which is the one ordering an ObjectId column could never
+  show, and on a phone the row is a stacked card where nobody scans for it.
 
 ## The application process flow
 
@@ -1845,6 +1905,65 @@ first sight of the content was after the creator's followers had had theirs and
 - A draft is **not** in `DELIVERED_COLLAB_STATES` — performance is measured on
   published content, and a draft has no reach — but both states are in
   `COLLAB_GROUP_ONGOING`, and `_roster_rows` counts them as having turned up.
+
+### Proof that a story ran
+
+**An Instagram story is gone in twenty-four hours.** A creator posts one,
+submits the link, and by the time anybody reviews it the URL answers with
+nothing — so a story deliverable was the one thing on this platform that could
+be asked for, delivered, and then not verified. The brand's options were to
+take somebody's word for it or to refuse work that had actually happened, and
+the screenshot everybody was already sending over WhatsApp was on nobody's
+record.
+
+`content_proofs` on the collaboration, through the same magic-byte-sniffed,
+privately stored upload the draft gate uses.
+
+- **Required exactly where the brief counted stories.** `_requires_story_proof`
+  reads `deliverable_items`, never the sentence: "a few stories" is the prose
+  that field exists to replace, and a requirement that fired on a guess would
+  block deliveries on the whole back catalogue the morning it deployed. Absent
+  structure reads as **no requirement**, the usual rule.
+- **On a stories-only brief the link becomes optional** (`_story_only_ask`).
+  Demanding a URL there means demanding a field whose value is known to be
+  useless, and a creator who cannot submit without one will paste something
+  that is not the work. Where anything else was asked for, the link stays
+  required. `content_url` is `None` rather than `urls[0]` on such a delivery —
+  the singular field had no guard and would have thrown.
+- **`_content_submission_refusal` is the one decider**, returning the sentence
+  rather than raising it (the shape `_scheduling_refusal` uses), so the submit
+  route and the `proof` block the form reads share it instead of one of them
+  being a second implementation. The form asks nothing for itself: `required`,
+  `link_optional` and the count all arrive from the server, and the creator's
+  primary button says "Send your screenshots" off the same flag.
+- **Private storage, for a stronger reason than the draft.** A story screenshot
+  routinely catches the viewer list, a DM notification or the insights panel,
+  none of which the creator meant to hand over. `PRIVATE_UPLOAD_DIR`, no path
+  in any serialiser, and the only ways out are the creator's own read and
+  `GET /collaborations/{id}/content-proof/{id}/file` — on the notes router,
+  because that door already answers "may this person read this collaboration"
+  for all three staff audiences with a 404 behind each. The reviewer's read is
+  audited; the creator's own is not, because a log line per thumbnail is noise
+  in the one place somebody goes looking for who saw what.
+- **The same doors as content submission**, deliberately (`_own_collab_for_proof`
+  reads `_content_submission_states`): a screenshot a creator cannot attach at
+  the moment they are submitting is a requirement with no way to satisfy it,
+  and one they can still swap after the work was accepted is evidence that
+  changes after the decision. `_refuse_if_disputed` is on both write paths.
+- Removing takes the file with it. A screenshot the creator withdrew is not a
+  record of anything, and keeping the bytes of somebody's private screen after
+  they asked for them to go is the opposite of what this storage is for.
+- `_safe_download_name` strips what a `Content-Disposition` header cannot
+  carry. The uploader's filename never touches the filesystem, but it is
+  echoed into a response header, and a quote or a newline in it is a header the
+  client parses differently from the one we sent.
+- Surfaces: `components/collab/StoryProof.jsx`, two halves of one file —
+  `StoryProofUpload` inside the creator's submit dialog and `StoryProofReview`
+  on the shared application screen. Both fetch each image as an **authenticated
+  blob**, never an `<img>` pointed at the backend: the cookie is
+  `SameSite=None`, so a bare URL rides along in production and silently does
+  not on a plain-http laptop. The 9:16 ratio is on the container, so a
+  screenshot that never arrives still occupies the space it claimed.
 
 ## Who runs a campaign
 
@@ -2682,6 +2801,21 @@ were happening over WhatsApp with a figure nobody wrote down.
 - The shortfall renders on every surface **including the creator's own row** —
   they are the party it is a judgement about, and finding out from a smaller
   payment than expected is the version of this that costs somebody.
+- **It shipped with a dead end and the flag was the tell.** `can_accept_partial`
+  was computed server-side, shipped on the shared `ApplicationDetail` payload,
+  and rendered by nothing — so an admin who opened an application waiting on
+  review could read the links and had no way to answer them; the decision
+  existed only on the brand's own applicant board. `can_review_content` was in
+  exactly the same state beside it, which is why the fix is a whole "Review the
+  delivery" section rather than one button: approve, accept what arrived, and
+  request a change. `PartialDeliveryDialog` and `DisclosureConfirmDialog` are
+  the brand board's own components — the second moved out of
+  `BrandCampaignApplicants.jsx` into `CampaignTerms.jsx` so both consoles ask
+  the disclosure question once rather than twice.
+- The dialog counts one row per counted deliverable and suggests a pro-rata
+  figure off the fee, so `get_application`'s campaign block carries
+  `deliverable_items`, `budget_per_creator` and `compensation_type` — never a
+  figure without its type, on any surface.
 
 ## Who has gone quiet
 
@@ -2902,6 +3036,26 @@ carry **the numbers and the ways out**: how many slots short, how many days
 left, and links to invite creators, extend the dates or ask for fewer. Naming a
 problem with nothing to do about it is how a health panel becomes a list people
 scroll past.
+
+**All three of those links were decoration for months.** They carried
+`?panel=suggested` and `?edit=dates` against a campaign page that read neither
+query string, so every "way out" landed on the same screen doing nothing —
+which is worse than offering none, because somebody clicks and concludes the
+tool is broken. They are `?action=invite` and `?action=edit` now, and
+`CampaignDetailPage` opens the matching dialog and then **deletes the param**
+(`{ replace: true }`): leaving it in the URL reopens the dialog on every
+reload, and a back button that re-opens a form is a back button that lies.
+"Extend the dates" also had nowhere to land — the console's only campaign edit
+form carried a title, a fee, a headcount and the deliverables and no date field
+anywhere — so `CampaignEditDialog` grew them, drawn from
+`lib/schedulingShape.js` so only the fields this campaign *type* has are
+offered and the server's `_SCHEDULING_BY_TYPE` refusal cannot be triggered by a
+form. An unknown type gets all three rather than none, the usual
+absent-reads-safe rule: campaigns predate types, and returning nothing would
+make every historical brief un-editable on the screen support uses to fix one.
+`localInputValue` / `fromLocalInput` in `lib/time.js` are the only place a
+`datetime-local` is read as IST — the input has no zone, so an admin editing
+from anywhere else would otherwise move the brief by five and a half hours.
 
 The row is a **stretched link, not a wrapping one**, because it now has its own
 actions and an anchor inside an anchor is invalid markup browsers resolve by

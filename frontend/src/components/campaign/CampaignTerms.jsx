@@ -12,12 +12,20 @@
 // `_required_disclosure`) — the components render what they are given and work
 // nothing out, so the brief, the application page and the frozen terms cannot
 // phrase the same grant three ways.
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Check, FileText, Loader2, Megaphone, ShieldCheck } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { TERMS as IDS } from "@/constants/testIds";
 import { formatDate } from "@/lib/time";
 
@@ -227,5 +235,80 @@ export function DisclosureChecks({ disclosure }) {
         </div>
     );
 }
+
+/**
+ * The second disclosure checkpoint: the live post, before it is signed off.
+ *
+ * **It lives here rather than on the brand's applicant board**, which is
+ * where it was written. `_refuse_unconfirmed_disclosure` is on
+ * `brand_approve_content`, so every console that can approve content has to
+ * ask this — and the shared application screen, which the admin and the
+ * manager open, would otherwise have had a second copy of the question or,
+ * worse, an Approve button the route refuses.
+ *
+ * The box arrives unticked and the confirm is disabled until it is not. A box
+ * that arrives ticked is a box nobody read, which is the one thing this
+ * checkpoint is for.
+ */
+export function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onConfirm }) {
+    const [ok, setOk] = useState(false);
+    useEffect(() => {
+        if (open) setOk(false);
+    }, [open]);
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent
+                data-testid="approve-content-dialog"
+                className="max-w-md rounded-md border border-white/10 bg-card"
+            >
+                <DialogHeader className="text-left">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        Approve the content
+                    </p>
+                    <DialogTitle className="mt-2 font-serif text-fluid-2xl leading-tight">
+                        One check before you sign this off
+                    </DialogTitle>
+                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                        Approving releases payment, and nobody looks at the post
+                        again afterwards.
+                    </DialogDescription>
+                </DialogHeader>
+                <label
+                    data-testid="approve-content-disclosure-check"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-white/10 bg-background/60 p-4 text-sm leading-relaxed"
+                >
+                    <input
+                        type="checkbox"
+                        checked={ok}
+                        onChange={(e) => setOk(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 flex-none accent-[color:var(--ember-500,#F05D14)]"
+                    />
+                    <span>
+                        I've checked the live post carries{" "}
+                        <span className="text-foreground">
+                            {label || "the required disclosure"}
+                        </span>
+                        , up front rather than in the comments.
+                    </span>
+                </label>
+                <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={onConfirm}
+                        disabled={!ok || busy}
+                        data-testid="approve-content-confirm"
+                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                    >
+                        {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                        Approve
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 
 export default TermsCard;

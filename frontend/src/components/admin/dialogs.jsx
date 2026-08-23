@@ -31,6 +31,11 @@ import DeliverablePicker, {
     toDeliverableItems,
 } from "@/components/DeliverablePicker";
 import { formatRupees } from "./shared";
+import { fromLocalInput, localInputValue } from "@/lib/time";
+import {
+    SCHEDULING_DATE_LABELS,
+    schedulingDateFields,
+} from "@/lib/schedulingShape";
 
 // The server's ReasonPayload floor. Enforced here too so a three-character
 // "no" is refused before it becomes a round trip.
@@ -509,6 +514,11 @@ export function AdvanceDialog({
  */
 export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, submitting }) {
     const [title, setTitle] = useState("");
+    // **The dates, which had no field anywhere in the console.** The health
+    // panel offers "Extend the dates" on an underfilling brief and the link
+    // landed on this page with nothing to open — the way out of the problem it
+    // names was the one thing an admin could not do here.
+    const [dates, setDates] = useState({});
     const [budget, setBudget] = useState("");
     const [compensation, setCompensation] = useState(DEFAULT_COMPENSATION_TYPE);
     const [needed, setNeeded] = useState("");
@@ -525,6 +535,14 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         setCompensation(compensationType(campaign));
         setNeeded(campaign.creators_needed != null ? String(campaign.creators_needed) : "");
         setDeliverables(fromDeliverableItems(campaign.deliverable_items));
+        // `datetime-local` wants "YYYY-MM-DDTHH:mm" in the *reader's* zone,
+        // and this operation reads in IST — `localInputValue` is the one place
+        // that conversion happens, for the reason `timeKey` exists.
+        setDates(
+            Object.fromEntries(
+                schedulingDateFields(campaign).map((f) => [f, localInputValue(campaign[f])]),
+            ),
+        );
         setErr("");
     }, [open, campaign]);
 
@@ -558,6 +576,21 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 return;
             }
             changes.creators_needed = n;
+        }
+        // Sent only where the value actually moved, so an edit of the title
+        // does not re-write a date to the same instant it already held — and,
+        // more to the point, does not send a field this campaign type refuses.
+        for (const field of schedulingDateFields(campaign)) {
+            const typed = (dates[field] || "").trim();
+            const was = localInputValue(campaign[field]);
+            if (typed === was) continue;
+            if (!typed) continue;
+            const iso = fromLocalInput(typed);
+            if (!iso) {
+                setErr("That date doesn't look right.");
+                return;
+            }
+            changes[field] = iso;
         }
         if (Object.keys(changes).length === 0) {
             setErr("Nothing has changed.");
@@ -702,6 +735,33 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 </p>
                             )}
                         </div>
+                    </div>
+
+                    {/* **Only the fields this type has.** The server refuses
+                        the rest outright (`_SCHEDULING_BY_TYPE`), so a form
+                        offering all three would produce a 422 the person
+                        filling it in could do nothing about. */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        {schedulingDateFields(campaign).map((field) => (
+                            <div key={field}>
+                                <Label
+                                    htmlFor={`ce-${field}`}
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    {SCHEDULING_DATE_LABELS[field]}
+                                </Label>
+                                <Input
+                                    id={`ce-${field}`}
+                                    data-testid={ADMIN_CAMPAIGN_EDIT.date(field)}
+                                    type="datetime-local"
+                                    value={dates[field] || ""}
+                                    onChange={(e) =>
+                                        setDates((d) => ({ ...d, [field]: e.target.value }))
+                                    }
+                                    className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                />
+                            </div>
+                        ))}
                     </div>
 
                     {err && (

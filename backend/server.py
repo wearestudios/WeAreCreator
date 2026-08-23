@@ -1539,6 +1539,333 @@ def _resolve_deliverables(items, text: Optional[str], required: bool) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# The brief, in pieces a creator can tick off
+# ---------------------------------------------------------------------------
+#
+# `brief` is one free-text box, and everything a brand actually cared about
+# went into it as prose: tag us, don't film the queue, use this hashtag, don't
+# mention the competitor, here's the logo. A creator read it once, shot the
+# thing, and the mismatch surfaced at draft review — **after the shoot**, when
+# the fix is a reshoot rather than a sentence.
+#
+# So the narrative stays and six structured fields sit beside it. Each is a
+# thing that can be *checked* rather than interpreted, which is the whole
+# point: a reviewer looking at a draft can go down the list, and a creator
+# writing a caption can go down the same one.
+#
+# **Every one of them is optional and absent reads as "not stated".** Campaigns
+# predate all six, and a brief with no hashtags is a brief with no hashtags —
+# not one whose brand forgot. `_brief_details` returns only what is there, so
+# an empty block renders nothing rather than six empty headings.
+MAX_BRIEF_LIST_ITEMS = 12
+MAX_BRIEF_LINE = 200
+
+# The list fields, and what each is called on screen. One table, because the
+# checklist, the form and the copier all have to agree about what a brief
+# carries — and a seventh field added here has to be added once.
+BRIEF_LIST_FIELDS = {
+    "brief_dos": "Do",
+    "brief_donts": "Don't",
+    "mandatory_hashtags": "Hashtags",
+    "mandatory_mentions": "Accounts to tag",
+}
+BRIEF_TEXT_FIELDS = {"caption_guidance": "Caption"}
+MAX_BRIEF_ASSETS = 8
+
+
+def _clean_brief_lines(value, *, sigil: Optional[str] = None) -> list:
+    """Trim, drop the blanks, dedupe, cap. Order is the brand's.
+
+    `sigil` normalises a hashtag or a handle to one spelling: somebody types
+    "weare", "#weare" and "# weare" across three briefs and a creator comparing
+    two of them is comparing punctuation. Stored **with** the mark, because
+    that is what has to appear in the post.
+    """
+    out = []
+    for raw in value or []:
+        if not isinstance(raw, str):
+            continue
+        line = " ".join(raw.split())[:MAX_BRIEF_LINE].strip()
+        if sigil:
+            line = line.lstrip("#@ ").strip()
+            if not line:
+                continue
+            line = f"{sigil}{line}"
+        if not line or line in out:
+            continue
+        out.append(line)
+        if len(out) >= MAX_BRIEF_LIST_ITEMS:
+            break
+    return out
+
+
+def _clean_brief_assets(value) -> list:
+    """Links to the logo, the pack shot, the font — label and URL.
+
+    A bare URL in a list is a link somebody has to open to find out what it is,
+    so the label is what renders and the URL is what it points at. Only http(s)
+    — a `javascript:` in a field a brand types and a creator clicks is the
+    obvious way to turn a brief into an attack.
+    """
+    out = []
+    for raw in value or []:
+        if not isinstance(raw, dict):
+            continue
+        url = " ".join(str(raw.get("url") or "").split())[:500].strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        label = " ".join(str(raw.get("label") or "").split())[:MAX_BRIEF_LINE].strip()
+        if any(row["url"] == url for row in out):
+            continue
+        out.append({"label": label or url, "url": url})
+        if len(out) >= MAX_BRIEF_ASSETS:
+            break
+    return out
+
+
+# Every structured field, in the order the checklist renders them. Named once
+# so `_brief_details`, `_resolve_brief_details` and `_CAMPAIGN_BRIEF_FIELDS`
+# cannot hold three different ideas of what a brief is.
+BRIEF_DETAIL_FIELDS = (
+    *BRIEF_LIST_FIELDS,
+    *BRIEF_TEXT_FIELDS,
+    "brand_assets",
+)
+
+
+def _brief_details(campaign: Optional[dict]) -> dict:
+    """The structured half of a brief, with the empty fields left out.
+
+    **Only what was stated.** A brief that named no don'ts has no "Don't"
+    heading — an empty one reads as a brand that had nothing to say about it,
+    which is a different claim from not being asked.
+    """
+    doc = campaign or {}
+    out = {}
+    for field in BRIEF_LIST_FIELDS:
+        rows = [r for r in (doc.get(field) or []) if isinstance(r, str) and r.strip()]
+        if rows:
+            out[field] = rows[:MAX_BRIEF_LIST_ITEMS]
+    for field in BRIEF_TEXT_FIELDS:
+        text = (doc.get(field) or "").strip() if isinstance(doc.get(field), str) else ""
+        if text:
+            out[field] = text
+    assets = _clean_brief_assets(doc.get("brand_assets"))
+    if assets:
+        out["brand_assets"] = assets
+    return out
+
+
+def _brief_checklist_count(campaign: Optional[dict]) -> int:
+    """How many checkable things this brief carries.
+
+    Feeds the "6 things to check" line the panel leads with, and is what tells
+    a surface whether to render the block at all.
+    """
+    details = _brief_details(campaign)
+    total = 0
+    for field in BRIEF_LIST_FIELDS:
+        total += len(details.get(field) or [])
+    total += 1 if details.get("caption_guidance") else 0
+    return total
+
+
+# Which sigil each list is normalised to. A hashtag typed as "weare" and one
+# typed as "#weare" are the same instruction; a creator comparing two briefs
+# should not be comparing punctuation.
+_BRIEF_SIGILS = {"mandatory_hashtags": "#", "mandatory_mentions": "@"}
+
+
+def _resolve_brief_details(supplied: dict) -> dict:
+    """What to write for the structured half. **The only writer**, shared by
+    the brand's create, the brand's edit and the admin's edit — the same rule
+    `_resolve_deliverables` holds, for the same reason.
+
+    Takes only the keys that were actually sent, so an omitted key means
+    "leave it alone" and an explicit empty list means "clear it". Those are
+    different edits, and collapsing them would wipe a brief's hashtags every
+    time somebody changed its title.
+    """
+    out = {}
+    for field in BRIEF_LIST_FIELDS:
+        if field in supplied:
+            out[field] = _clean_brief_lines(
+                supplied[field], sigil=_BRIEF_SIGILS.get(field)
+            )
+    for field in BRIEF_TEXT_FIELDS:
+        if field in supplied:
+            value = supplied[field]
+            out[field] = (value or "").strip()[:2000] or None if isinstance(value, str) else None
+    if "brand_assets" in supplied:
+        out["brand_assets"] = _clean_brief_assets(
+            [
+                row.model_dump() if hasattr(row, "model_dump") else row
+                for row in (supplied["brand_assets"] or [])
+            ]
+        )
+    return out
+
+
+def _brief_details_from(payload) -> dict:
+    """`_resolve_brief_details` off a pydantic payload, honouring
+    `model_fields_set` — the create path, where every key the brand sent is
+    meant and every key it did not is absent rather than empty."""
+    present = payload.model_fields_set
+    return _resolve_brief_details(
+        {f: getattr(payload, f, None) for f in BRIEF_DETAIL_FIELDS if f in present}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Proof that a story ran
+# ---------------------------------------------------------------------------
+#
+# **An Instagram story is gone in twenty-four hours.** A creator posts one,
+# submits the link, and by the time anybody reviews it the URL answers with
+# nothing — so a story deliverable was the one thing on this platform that
+# could be asked for, delivered, and then not verified. The brand's options
+# were to take somebody's word for it or to refuse work that had actually
+# happened.
+#
+# A screenshot is what everybody was already sending over WhatsApp. This puts
+# it on the record instead: the same magic-byte-sniffed, privately stored
+# upload the draft gate uses, attached to the collaboration.
+#
+# It is **private**, deliberately, and for a stronger reason than the draft:
+# a story screenshot routinely catches the viewer list, a DM notification or
+# the insights panel, none of which the creator meant to hand over.
+MAX_CONTENT_PROOFS = 12
+
+
+def _story_quantity(campaign: Optional[dict]) -> int:
+    """How many stories the brief counted, or zero.
+
+    Reads the structure, never the sentence: "a few stories" is exactly the
+    prose `deliverable_items` exists to replace, and guessing a number out of
+    it would put a hard requirement on a brief nobody counted.
+    """
+    for item in _deliverable_items(campaign):
+        if item.get("type") == "story":
+            return int(item.get("quantity") or 0)
+    return 0
+
+
+def _requires_story_proof(campaign: Optional[dict]) -> bool:
+    """Whether this brief cannot be delivered on a link alone.
+
+    Absent structure reads as **no requirement**, the usual rule: a campaign
+    written before `deliverable_items` has a sentence and nothing to count, and
+    a requirement that fires on a guess would block deliveries on the back
+    catalogue on the morning this deployed.
+    """
+    return _story_quantity(campaign) > 0
+
+
+def _story_only_ask(campaign: Optional[dict]) -> bool:
+    """Whether *everything* asked for is a story.
+
+    This is what makes a link optional. On a stories-only brief the URL is
+    dead before anybody reads it, so demanding one means demanding a field
+    whose value is known to be useless — and a creator who cannot submit
+    without it will paste something that is not the work.
+    """
+    items = _deliverable_items(campaign)
+    return bool(items) and all(i.get("type") == "story" for i in items)
+
+
+def _content_proofs(collab: Optional[dict]) -> list:
+    return [p for p in ((collab or {}).get("content_proofs") or []) if isinstance(p, dict)]
+
+
+def _serialize_proof(proof: dict) -> dict:
+    """What a screen reads about one proof. **Never the stored path** — the
+    bytes come out of the audited download route or not at all, the same rule
+    `_serialize_draft` and `_serialize_brand_document` hold."""
+    return {
+        "id": proof.get("id"),
+        "original_name": proof.get("original_name"),
+        "mime": proof.get("mime"),
+        "size": proof.get("size"),
+        "note": proof.get("note"),
+        "uploaded_at": _iso(proof.get("uploaded_at")),
+    }
+
+
+def _proof_block(campaign: Optional[dict], collab: Optional[dict]) -> dict:
+    """Everything a surface needs to draw the proof section, decided here.
+
+    `required` and `link_optional` are server-side for the same reason every
+    other action flag on this platform is: a client working out whether a
+    screenshot is needed would be a second copy of the rule, and the copy is
+    what drifts.
+    """
+    proofs = _content_proofs(collab)
+    return {
+        "required": _requires_story_proof(campaign),
+        "story_quantity": _story_quantity(campaign),
+        "link_optional": _story_only_ask(campaign),
+        "count": len(proofs),
+        "max": MAX_CONTENT_PROOFS,
+        "items": [_serialize_proof(p) for p in proofs],
+    }
+
+
+def _content_submission_states(campaign: Optional[dict]) -> tuple:
+    """Which states a delivery may be filed from, and why not otherwise.
+
+    Submitting is allowed from `attended`, and re-submitting from
+    `content_submitted` — a creator has to be able to fix a wrong link, or
+    answer a change request, without an admin unpicking the state by hand.
+
+    On a campaign that reviews drafts, `attended` is **not** one of the doors:
+    the whole stage exists so the brand sees the work before the creator's
+    audience does, and accepting a live link from `attended` would be the route
+    around it.
+
+    One reader, because the proof upload has to open exactly the same doors —
+    a screenshot the creator cannot attach at the moment they are submitting is
+    a requirement with no way to satisfy it.
+    """
+    if _requires_draft_approval(campaign):
+        return ("draft_approved", "content_submitted"), (
+            "This campaign reviews drafts before publication. Submit your draft "
+            "first — the live link goes in once it's approved."
+        )
+    return ("attended", "content_submitted"), (
+        "Content can be submitted once the collaboration is marked attended, "
+        "and changed any time before it's approved."
+    )
+
+
+def _content_submission_refusal(
+    campaign: Optional[dict], urls: list, proofs: list
+) -> Optional[dict]:
+    """Why this delivery cannot be accepted yet, or `None`.
+
+    **Returns the refusal rather than raising it**, the same shape
+    `_scheduling_refusal` and `_shoot_time_refusal` use, so the submit route
+    and the flag that decides whether the button is enabled can both read it
+    without one of them being a second implementation.
+    """
+    if _requires_story_proof(campaign) and not proofs:
+        n = _story_quantity(campaign)
+        return {
+            "message": (
+                f"This brief asks for {n} {'story' if n == 1 else 'stories'}, and a "
+                "story link is dead within a day. Add a screenshot of each one — "
+                "that is what gets reviewed."
+            ),
+            "code": "story_proof_required",
+        }
+    if not urls and not (_story_only_ask(campaign) and proofs):
+        return {
+            "message": "Add the link to your published content.",
+            "code": "content_url_required",
+        }
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Reference ids
 # ---------------------------------------------------------------------------
 #
@@ -1990,7 +2317,41 @@ class DeliverableItem(BaseModel):
     quantity: int = Field(ge=1, le=MAX_DELIVERABLE_QUANTITY)
 
 
-class PostCampaignPayload(BaseModel):
+class BriefAsset(BaseModel):
+    """A link to something the brand wants used — the logo, the pack shot, a
+    font. The label is what renders, because a bare URL in a list is a link
+    somebody has to open to find out what it is."""
+
+    label: Optional[str] = Field(default=None, max_length=MAX_BRIEF_LINE)
+    url: str = Field(min_length=1, max_length=500)
+
+
+class BriefDetailFields(BaseModel):
+    """The structured half of a brief, declared once and inherited by both
+    campaign payloads.
+
+    **Every one is optional on both**, and on the edit path an omitted key
+    means "leave it alone" while an explicit empty list means "clear it" —
+    `_resolve_brief_details` reads `model_fields_set` to tell those apart. Two
+    separate declarations is how a create form and an edit form end up
+    carrying different halves of a brief.
+    """
+
+    brief_dos: Optional[list[str]] = Field(default=None, max_length=MAX_BRIEF_LIST_ITEMS)
+    brief_donts: Optional[list[str]] = Field(default=None, max_length=MAX_BRIEF_LIST_ITEMS)
+    mandatory_hashtags: Optional[list[str]] = Field(
+        default=None, max_length=MAX_BRIEF_LIST_ITEMS
+    )
+    mandatory_mentions: Optional[list[str]] = Field(
+        default=None, max_length=MAX_BRIEF_LIST_ITEMS
+    )
+    caption_guidance: Optional[str] = Field(default=None, max_length=2000)
+    brand_assets: Optional[list[BriefAsset]] = Field(
+        default=None, max_length=MAX_BRIEF_ASSETS
+    )
+
+
+class PostCampaignPayload(BriefDetailFields):
     """Payload for a brand posting a new campaign."""
 
     title: str = Field(min_length=1, max_length=140)
@@ -2126,7 +2487,7 @@ class PostCampaignPayload(BaseModel):
         return self
 
 
-class UpdateCampaignPayload(BaseModel):
+class UpdateCampaignPayload(BriefDetailFields):
     """Payload for editing an existing campaign. Every field is optional so a
     brand can correct one thing without resubmitting the whole brief."""
 
@@ -3832,6 +4193,20 @@ async def _store_private_upload(
         "mime": mime,
         "size": written,
     }
+
+
+def _safe_download_name(original: Optional[str]) -> str:
+    """A filename fit to sit inside a `Content-Disposition` header.
+
+    The uploader's filename is kept as a label and never touches the
+    filesystem, so it has never needed sanitising — but it does get echoed
+    into a response header, and a quote or a newline in it is a header the
+    client parses differently from the one we meant to send.
+    """
+    cleaned = "".join(
+        c for c in (original or "") if c.isprintable() and c not in '"\\'
+    ).strip()
+    return cleaned[:120] or "file"
 
 
 def _private_upload_path(stored_name: Optional[str]) -> Optional[Path]:
@@ -6991,6 +7366,17 @@ def _serialize_collab_row(
         "brand_logo_url": brand_logo_url,
         "area": (campaign or {}).get("area"),
         "category": (campaign or {}).get("category"),
+        # **The checklist, on the creator's own row.** The whole point of
+        # structuring the brief is that it is checkable before the shoot, and
+        # the only surface a creator has for one of their applications is this
+        # card — a checklist that lived only on the reviewer's screen would
+        # reach them at draft review, which is after the fact.
+        "deliverable_items": _deliverable_items(campaign),
+        "brief_details": _brief_details(campaign),
+        # Whether a story screenshot is needed, how many are attached, and
+        # whether a link is still required. Decided here, like every other
+        # action flag, so the submit form cannot offer what the route refuses.
+        "proof": _proof_block(campaign, collab),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
         "agreed_at": _iso(collab.get("agreed_at")),
@@ -7590,10 +7976,11 @@ async def submit_collab_content(
         if u not in urls:
             urls.append(u)
 
-    if not urls:
-        raise HTTPException(
-            status_code=422, detail="At least one content URL is required"
-        )
+    # Whether a link is required at all depends on what the brief asked for —
+    # on a stories-only brief the URL is dead before anybody reads it, so
+    # demanding one means demanding a field whose value is known to be
+    # useless. `_content_submission_refusal` decides, below, once the campaign
+    # and the attached proof are both in hand.
     if len(urls) > 25:
         raise HTTPException(
             status_code=422, detail="Too many URLs (max 25)"
@@ -7614,35 +8001,29 @@ async def submit_collab_content(
     # over. The way to submit again is to withdraw the dispute.
     _refuse_if_disputed(collab)
 
-    # Submitting is allowed from `attended`, and re-submitting from
-    # `content_submitted` — a creator must be able to fix a wrong link, or
-    # respond to a change request, without an admin unpicking the state by hand.
-    #
-    # On a campaign that reviews drafts, `attended` is not one of the doors:
-    # the whole stage exists so the brand sees the work before the creator's
-    # audience does, and accepting a live link from `attended` would be the
-    # route around it.
-    if _requires_draft_approval(campaign):
-        allowed = ("draft_approved", "content_submitted")
-        refusal = (
-            "This campaign reviews drafts before publication. Submit your draft "
-            "first — the live link goes in once it's approved."
-        )
-    else:
-        allowed = ("attended", "content_submitted")
-        refusal = (
-            "Content can be submitted once the collaboration is marked attended, "
-            "and changed any time before it's approved."
-        )
+    allowed, refusal = _content_submission_states(campaign)
     if collab.get("state") not in allowed:
         raise HTTPException(status_code=400, detail=refusal)
+
+    # **A story is gone before anybody reviews it.** Where the brief counted
+    # stories, the screenshots are the delivery — so the refusal is here, on
+    # the act of submitting, and `_content_submission_refusal` is the one
+    # decider the creator's `proof` block reads too.
+    proofs = _content_proofs(collab)
+    stop = _content_submission_refusal(campaign, urls, proofs)
+    if stop:
+        raise HTTPException(status_code=422, detail=stop)
 
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
         {"_id": oid},
         {
             "$set": {
-                "content_url": urls[0],          # keep legacy field in sync
+                # Kept in sync for every reader still on the singular field.
+                # `None` where the delivery is screenshots only — a
+                # stories-only brief has no live link, which is the whole
+                # reason the proof exists.
+                "content_url": urls[0] if urls else None,
                 "content_urls": urls,
                 **_state_stamp("content_submitted", now),
                 # A fresh submission clears any outstanding change request.
@@ -7682,7 +8063,157 @@ async def submit_collab_content(
         "state": updated["state"],
         "content_url": updated.get("content_url"),
         "content_urls": updated.get("content_urls") or [],
+        "proof": _proof_block(campaign, updated),
     }
+
+
+# --- Story proof -------------------------------------------------------------
+#
+# The upload half of the rule stated at `_requires_story_proof`. Three routes
+# and no more: attach one, take one back off before the delivery is accepted,
+# and stream one to whoever is reviewing.
+
+
+async def _own_collab_for_proof(collab_id: str, user: dict) -> tuple:
+    """The creator's own collaboration, at a point where proof still matters.
+
+    **The same doors `_content_submission_states` opens**, deliberately: a
+    screenshot a creator cannot attach at the moment they are submitting is a
+    requirement with no way to satisfy it, and one they can still swap after
+    the work was accepted is evidence that changes after the decision.
+    """
+    try:
+        oid = ObjectId(collab_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    collab = await db.collaborations.find_one(
+        {"_id": oid, "creator_id": ObjectId(user["_id"])}
+    )
+    if not collab:
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    # Frozen means frozen. A dispute is usually *about* what was delivered, so
+    # swapping a screenshot while a mediator is looking at it is exactly the
+    # move the freeze exists to stop.
+    _refuse_if_disputed(collab)
+    allowed, refusal = _content_submission_states(campaign)
+    if collab.get("state") not in allowed:
+        raise HTTPException(status_code=409, detail=refusal)
+    return collab, campaign
+
+
+@creator_router.post("/collaborations/{collab_id}/content-proof")
+async def add_content_proof(
+    collab_id: str,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(default=None),
+    user: dict = Depends(require_roles("creator")),
+):
+    """Attach a screenshot of a published story.
+
+    **Private storage, and for a stronger reason than the draft.** A story
+    screenshot routinely catches the viewer list, a DM notification or the
+    insights panel — none of which the creator meant to hand over — so these
+    go to `PRIVATE_UPLOAD_DIR` and leave only through the audited route below.
+    """
+    collab, campaign = await _own_collab_for_proof(collab_id, user)
+    if len(_content_proofs(collab)) >= MAX_CONTENT_PROOFS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"That's {MAX_CONTENT_PROOFS} screenshots — remove one first.",
+        )
+    stored = await _store_private_upload(
+        file, prefix=f"proof-{collab_id}", sniffer=sniff_image_type, kind="Screenshots"
+    )
+    now = datetime.now(timezone.utc)
+    proof = {
+        # Ours and random, like the stored name: a screenshot addressed by its
+        # position in a list is one that changes identity when another is
+        # removed, and the remove button then points at the wrong file.
+        "id": _secrets.token_urlsafe(8),
+        **stored,
+        "note": (note or "").strip()[:300] or None,
+        "uploaded_at": now,
+    }
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"]},
+        {"$push": {"content_proofs": proof}, "$set": {"updated_at": now}},
+        return_document=True,
+    )
+    await audit(
+        user, "collaboration.add_proof", "collaboration", collab["_id"],
+        after={"proof_id": proof["id"], "mime": proof["mime"], "size": proof["size"]},
+        **_campaign_audit_context(campaign),
+    )
+    return _proof_block(campaign, updated)
+
+
+@creator_router.delete("/collaborations/{collab_id}/content-proof/{proof_id}")
+async def remove_content_proof(
+    collab_id: str,
+    proof_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Take one back off, up until the delivery is accepted.
+
+    The file goes with it. A screenshot the creator has withdrawn is not a
+    record of anything — nobody reviewed it and nothing was decided on it —
+    and keeping the bytes of somebody's private screen after they asked for
+    them to go is the opposite of what this storage is for.
+    """
+    collab, campaign = await _own_collab_for_proof(collab_id, user)
+    match = next((p for p in _content_proofs(collab) if p.get("id") == proof_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="That screenshot isn't here.")
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"]},
+        {
+            "$pull": {"content_proofs": {"id": proof_id}},
+            "$set": {"updated_at": datetime.now(timezone.utc)},
+        },
+        return_document=True,
+    )
+    _remove_private_upload(match.get("stored_name"))
+    await audit(
+        user, "collaboration.remove_proof", "collaboration", collab["_id"],
+        before={"proof_id": proof_id},
+        **_campaign_audit_context(campaign),
+    )
+    return _proof_block(campaign, updated)
+
+
+@creator_router.get("/collaborations/{collab_id}/content-proof/{proof_id}/file")
+async def read_own_content_proof(
+    collab_id: str,
+    proof_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The creator's own screenshot back. Not audited: looking at your own
+    upload is not an access worth recording, and a log line per thumbnail is
+    noise in the one place somebody goes looking for who saw what."""
+    collab = await _own_collab_or_404(collab_id, user)
+    return _stream_content_proof(collab, proof_id)
+
+
+def _stream_content_proof(collab: dict, proof_id: str):
+    """One proof's bytes. The only way they leave, for either audience."""
+    match = next((p for p in _content_proofs(collab) if p.get("id") == proof_id), None)
+    path = _private_upload_path((match or {}).get("stored_name"))
+    if not path:
+        raise HTTPException(status_code=404, detail="That screenshot isn't here.")
+    return FileResponse(
+        path,
+        media_type=match.get("mime") or "application/octet-stream",
+        headers={
+            # The same header the brand-document and draft routes carry: these
+            # bytes are somebody's private screen, and a copy in a shared
+            # browser cache is a copy nobody decided to make.
+            "Cache-Control": "no-store",
+            "Content-Disposition": (
+                f'inline; filename="{_safe_download_name(match.get("original_name"))}"'
+            ),
+        },
+    )
 
 
 # --- Creator-side slot booking ---------------------------------------------
@@ -8742,6 +9273,10 @@ def _serialize_brand_campaign(
         # brief posted before this existed, which is what says "read the
         # sentence" — every surface falls back to it.
         "deliverable_items": _deliverable_items(doc),
+        # The owner's shape too, because this is what the edit form reads back:
+        # a round-trip that dropped them would blank a brief's hashtags every
+        # time somebody fixed a typo in its title.
+        "brief_details": _brief_details(doc),
         "budget_per_creator": doc.get("budget_per_creator"),
         # Travels with the figure everywhere the figure goes. A number with no
         # word beside it is read as cash, which on a barter brief is a lie.
@@ -9823,6 +10358,10 @@ async def create_brand_campaign(
         # Structure plus the sentence derived from it, from one resolver the
         # edit route shares.
         **_resolve_deliverables(payload.deliverable_items, payload.deliverables, True),
+        # The checkable half of the brief — do's, don'ts, the tags that have to
+        # appear, what the caption should say, where the assets are. Same one
+        # writer as the edit routes.
+        **_brief_details_from(payload),
         "budget_per_creator": float(payload.budget_per_creator),
         "category": payload.category,
         "area": payload.area.strip(),
@@ -9989,6 +10528,12 @@ async def update_brand_campaign(
                 True,
             )
         )
+    # The structured half, popped out of the generic loop for the same reason
+    # the deliverables are: they need normalising (a hashtag typed without its
+    # hash, a link that is not a link) and the loop copies verbatim.
+    update.update(
+        _resolve_brief_details({f: update.pop(f) for f in BRIEF_DETAIL_FIELDS if f in update})
+    )
     _refuse_brand_barter(doc, update)
     _refuse_late_execution_handover(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
@@ -10360,6 +10905,9 @@ def _serialize_applicant(
         # and the admin's — because "approved" on a row that was two stories
         # short is the same word for two different outcomes.
         "shortfall": _delivery_shortfall(campaign, collab),
+        # Story screenshots, where the brief counted stories. The list
+        # only — the bytes come out of the audited route or not at all.
+        "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
         "pitch": collab.get("pitch"),
@@ -14932,18 +15480,25 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
                     # it.** Naming a problem with no way out of it is how a
                     # health panel becomes a list people scroll past: invite
                     # somebody, move the date, or ask for fewer.
+                    # **`?action=` opens the dialog, and the campaign page
+                    # reads it.** These carried `?panel=suggested` and
+                    # `?edit=dates` for months against a page that read
+                    # neither, so all three "ways out" landed on the same
+                    # screen doing nothing — a health panel whose actions are
+                    # decoration is worse than one with none, because somebody
+                    # clicks and concludes the tool is broken.
                     "actions": [
                         {
                             "label": "Invite creators",
-                            "href": f"/admin/campaigns/{c['_id']}?panel=suggested",
+                            "href": f"/admin/campaigns/{c['_id']}?action=invite",
                         },
                         {
                             "label": "Extend the dates",
-                            "href": f"/admin/campaigns/{c['_id']}?edit=dates",
+                            "href": f"/admin/campaigns/{c['_id']}?action=edit",
                         },
                         {
                             "label": "Ask for fewer",
-                            "href": f"/admin/campaigns/{c['_id']}?edit=creators_needed",
+                            "href": f"/admin/campaigns/{c['_id']}?action=edit",
                         },
                     ],
                 }
@@ -16445,6 +17000,11 @@ async def list_all_campaigns(
         campaigns.append(
             {
                 "id": str(d["_id"]),
+                # The name a person says out loud. Every other entity list has
+                # carried one since references shipped; this one did not, so
+                # the console's largest list was the one place an admin on the
+                # phone to a brand could not read the number back.
+                "reference": _reference_of(d),
                 "brand_id": str(d["brand_id"]),
                 "brand_name": brand.get("business_name") or brand.get("name"),
                 "brand_logo_url": brand.get("logo_url"),
@@ -16530,6 +17090,10 @@ async def list_campaigns_for_review(user: dict = Depends(require_roles(*CONSOLE_
     return [
         {
             "id": str(d["_id"]),
+            # The review row already had somewhere to render one — the queue
+            # prints `reference` when it is there — and this endpoint never
+            # sent it, so campaign rows were the one kind that stayed blank.
+            "reference": _reference_of(d),
             "brand_id": str(d["brand_id"]),
             "brand_name": (brand_map.get(d["brand_id"]) or {}).get("business_name")
             or (brand_map.get(d["brand_id"]) or {}).get("name"),
@@ -17232,6 +17796,11 @@ _CAMPAIGN_BRIEF_FIELDS = (
     "brief",
     "deliverable_items",
     "deliverables",
+    # The structured half travels with the narrative half. A café that always
+    # asks for the same hashtag and always says "don't film the queue" is
+    # exactly the brand that duplicates a brief, and dropping these would make
+    # a copy quietly weaker than the thing it copied.
+    *BRIEF_DETAIL_FIELDS,
     "budget_per_creator",
     "category",
     "area",
@@ -17609,6 +18178,10 @@ async def admin_update_campaign(
                 True,
             )
         )
+    # And the structured half, through the same one writer.
+    update.update(
+        _resolve_brief_details({f: update.pop(f) for f in BRIEF_DETAIL_FIELDS if f in update})
+    )
 
     # No _refuse_brand_barter here, and that is the whole point of the feature:
     # this route is the only way a campaign becomes barter. There is no admin
@@ -18635,6 +19208,9 @@ def _serialize_admin_collab(
         # and the admin's — because "approved" on a row that was two stories
         # short is the same word for two different outcomes.
         "shortfall": _delivery_shortfall(campaign, collab),
+        # Story screenshots, where the brief counted stories. The list
+        # only — the bytes come out of the audited route or not at all.
+        "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
         "pitch": collab.get("pitch"),
@@ -21919,6 +22495,7 @@ async def admin_create_campaign(
         "title": payload.title.strip(),
         "brief": payload.brief.strip(),
         **_resolve_deliverables(payload.deliverable_items, payload.deliverables, True),
+        **_brief_details_from(payload),
         "budget_per_creator": float(payload.budget_per_creator),
         "category": payload.category,
         "area": payload.area.strip(),
@@ -23675,6 +24252,10 @@ async def campaign_roster(
         "brief": campaign.get("brief"),
         "deliverables": campaign.get("deliverables"),
         "deliverable_items": _deliverable_items(campaign),
+        # The do's, don'ts and tags, on the screen of the person standing in
+        # the room while it is being shot — which is the last moment any of it
+        # can still be got right for free.
+        "brief_details": _brief_details(campaign),
         # The fee, and **the word for what kind of fee it is right after it** —
         # a barter shoot keeps whatever budget it was posted with, so a rupee
         # figure alone would read to the person running the day as money the
@@ -24402,6 +24983,11 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "required_disclosure": _required_disclosure(doc),
         "disclosure_label": _disclosure_text(doc),
         "usage": _usage_block(doc),
+        # The checkable half of the brief, on the shape the brief renders from.
+        # A do or a don't that only reaches the creator at draft review is one
+        # they find out about after the shoot, which is the whole reason these
+        # fields exist.
+        "brief_details": _brief_details(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign
@@ -26228,6 +26814,32 @@ async def add_collaboration_note(
     return _serialize_note(doc)
 
 
+@notes_router.get("/{collab_id}/content-proof/{proof_id}/file")
+async def read_content_proof(
+    collab_id: str,
+    proof_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Stream a story screenshot to whoever is reviewing the delivery.
+
+    **The only way these bytes leave**, and audited — the same arrangement the
+    draft download and the brand-document download have, for the same reason:
+    this is a picture of somebody's phone, and who opened it is worth knowing.
+
+    It rides on the notes router because the notes router's door is the one
+    that already answers "may this person read this collaboration" for all
+    three staff audiences, with a 404 behind each. A second door would be a
+    second answer.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    await audit(
+        user, "collaboration.proof_view", "collaboration", collab["_id"],
+        after={"proof_id": proof_id},
+        **_campaign_audit_context(campaign),
+    )
+    return _stream_content_proof(collab, proof_id)
+
+
 # ---------------------------------------------------------------------------
 # Ratings, both ways
 #
@@ -27984,6 +28596,9 @@ async def get_application(
         # counted deliverables, and on one nobody has counted against — which
         # is every collaboration finished before this existed.
         "shortfall": _delivery_shortfall(campaign, collab),
+        # Story screenshots, where the brief counted stories. The list
+        # only — the bytes come out of the audited route or not at all.
+        "proof": _proof_block(campaign, collab),
         # Frozen, and by whom. The same block for all three parties: a
         # mediation where the two sides see different accounts of what is being
         # mediated is not one.
@@ -28036,6 +28651,19 @@ async def get_application(
             "event_date": _iso(campaign.get("event_date")),
             "start_date": _iso(campaign.get("start_date")),
             "end_date": _iso(campaign.get("end_date")),
+            "deliverable_items": _deliverable_items(campaign),
+            # The brief's own fee, with the word beside it — what the partial
+            # dialog's pro-rata suggestion is a fraction *of*. Never a figure
+            # without its type, on any surface.
+            "budget_per_creator": campaign.get("budget_per_creator"),
+            "compensation_type": _compensation_type(campaign),
+            "disclosure_label": _disclosure_text(campaign),
+            # **The checklist a reviewer actually reviews against.** Before
+            # this, somebody looking at a draft had the campaign title and the
+            # deliverables sentence, and everything the brand had asked for
+            # about tags, captions and what not to film was three screens away
+            # in a free-text box.
+            "brief_details": _brief_details(campaign),
         },
         "payment": (
             {

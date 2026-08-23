@@ -10,7 +10,7 @@
 // at different rates and are refetched independently, so accepting one creator
 // does not re-download the audit log.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
     CalendarDays,
     IndianRupee,
@@ -97,6 +97,7 @@ const GROUPS = [
 
 export default function CampaignDetailPage() {
     const { id } = useParams();
+    const [params, setParams] = useSearchParams();
     const { reloadCounts, allAccess } = useAdminConsole();
 
     const [detail, setDetail] = useState(null);
@@ -107,6 +108,26 @@ export default function CampaignDetailPage() {
     const [notFound, setNotFound] = useState(false);
     const [busy, setBusy] = useState(null);
     const [dialog, setDialog] = useState({ kind: null });
+
+    // **The health panel's ways out land here.** An underfilling campaign's
+    // row offers "Invite creators", "Extend the dates" and "Ask for fewer";
+    // all three used to arrive as query strings nothing read, so every one of
+    // them opened this page and did nothing. The param is consumed rather than
+    // kept — leaving it in the URL would reopen the dialog on every reload,
+    // and a back button that re-opens a form is a back button that lies.
+    useEffect(() => {
+        const action = params.get("action");
+        if (!action) return;
+        if (action === "invite" || action === "edit") setDialog({ kind: action });
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("action");
+                return next;
+            },
+            { replace: true },
+        );
+    }, [params, setParams]);
 
     const loadDetail = useCallback(async () => {
         try {

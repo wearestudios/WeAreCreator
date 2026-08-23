@@ -185,3 +185,35 @@ export function daysFromToday(value) {
     const today = startOfDay(new Date());
     return Math.round((start.getTime() - today.getTime()) / 86400000);
 }
+
+/**
+ * A stored instant as the value a `<input type="datetime-local">` wants:
+ * `YYYY-MM-DDTHH:mm`, **in IST**.
+ *
+ * Built from `dayKey` and `timeKey` rather than from the Date's own local
+ * parts, for the reason both of those exist: the input has no zone, so
+ * whatever string goes in is read back as the reader's own clock — and an
+ * admin opening an edit form from anywhere but India would otherwise see a
+ * different evening from the one the venue agreed to.
+ */
+export function localInputValue(value) {
+    const day = dayKey(value);
+    const time = timeKey(value);
+    return day && time ? `${day}T${time}` : "";
+}
+
+/**
+ * The inverse: a `datetime-local` string read **as IST** and returned as an
+ * ISO instant.
+ *
+ * `new Date("2026-05-01T19:00")` is parsed in the browser's zone, which is the
+ * bug `localInputValue` exists to avoid, stated backwards. The offset is
+ * appended explicitly — IST has no daylight saving, so there is no rule to
+ * look up, which is the same reason `SHOOT_TZ` on the server is a fixed
+ * +05:30.
+ */
+export function fromLocalInput(value) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(value || ""))) return "";
+    const d = new Date(`${String(value).slice(0, 16)}:00+05:30`);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}

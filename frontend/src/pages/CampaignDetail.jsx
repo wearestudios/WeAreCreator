@@ -32,6 +32,7 @@ import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
 import ShootWindowNote from "@/components/campaign/ShootWindowNote";
 import { BriefTerms } from "@/components/campaign/CampaignTerms";
+import BriefChecklist from "@/components/campaign/BriefChecklist";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
 import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
@@ -671,6 +672,18 @@ export default function CampaignDetail() {
                                 className="mt-4"
                             />
                         </section>
+
+                        {/* **Before the apply button, and above the terms.**
+                            The checkable half of the brief — the do's, the
+                            don'ts, the tags that have to appear — used to be
+                            prose inside the paragraph above, where a creator
+                            read it once and found out at draft review that
+                            they had missed a line. Renders nothing when the
+                            brand stated none of it. */}
+                        <BriefChecklist
+                            details={campaign.brief_details}
+                            className="mt-12"
+                        />
 
                         {/* **Before the apply button, not after.** What the
                             post has to say and what the brand may do with it

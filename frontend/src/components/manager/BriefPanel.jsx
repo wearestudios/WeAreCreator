@@ -13,6 +13,8 @@ import React from "react";
 import { FileText } from "lucide-react";
 
 import { DeliverableList } from "@/components/Deliverables";
+import BriefChecklist from "@/components/campaign/BriefChecklist";
+import { hasBriefDetails } from "@/lib/briefDetails";
 import { formatCompensation } from "@/lib/compensation";
 import { MANAGER_BRIEF as IDS } from "@/constants/testIds";
 
@@ -23,7 +25,10 @@ export default function BriefPanel({ campaign }) {
     const items = campaign?.deliverable_items || [];
     const sentence = campaign?.deliverables;
 
-    if (!brief && items.length === 0 && !sentence) {
+    // The structured half counts as a brief too: a campaign with three don'ts
+    // and no paragraph has plenty for the manager to check against, and the
+    // empty state would say otherwise.
+    if (!brief && items.length === 0 && !sentence && !hasBriefDetails(campaign?.brief_details)) {
         return (
             <EmptyState testid={IDS.empty} Icon={FileText}>
                 This campaign has no brief on it yet. The brand writes one when they
@@ -61,6 +66,12 @@ export default function BriefPanel({ campaign }) {
                     per creator
                 </p>
             </div>
+
+            {/* The do's, don'ts and tags, on the screen of the person
+                standing in the room while it is being shot — the last moment
+                any of it can still be got right for free. Above the narrative
+                because it is the checkable half. */}
+            <BriefChecklist details={campaign.brief_details} />
 
             {brief && (
                 <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
