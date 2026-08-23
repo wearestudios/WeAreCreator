@@ -136,3 +136,22 @@ export const BRAND_PUBLISH = {
 	trusted: 'brand-publish-trusted',
 	slotToggle: 'pc-slot-confirmation',
 };
+
+// Disclosure, usage rights and the frozen terms — on the brief before a
+// creator applies, and on the application page for all three parties.
+export const TERMS = {
+	brief: 'campaign-brief-terms',
+	disclosure: 'campaign-required-disclosure',
+	usage: 'campaign-usage-rights',
+	card: 'collab-terms-card',
+	deliverables: 'collab-terms-deliverables',
+	dates: 'collab-terms-dates',
+	money: 'collab-terms-money',
+	termsUsage: 'collab-terms-usage',
+	termsDisclosure: 'collab-terms-disclosure',
+	cancellation: 'collab-terms-cancellation',
+	acceptBtn: 'collab-terms-accept',
+	accepted: 'collab-terms-accepted',
+	awaiting: 'collab-terms-awaiting',
+	checks: 'collab-disclosure-checks',
+};

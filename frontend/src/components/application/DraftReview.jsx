@@ -44,10 +44,22 @@ const formatSize = (bytes) => {
     return mb >= 1 ? `${mb.toFixed(1)}MB` : `${Math.round(bytes / 1024)}KB`;
 };
 
-export default function DraftReview({ collaborationId, draft, canReview, onDecided }) {
+export default function DraftReview({
+    collaborationId,
+    draft,
+    canReview,
+    onDecided,
+    // The label this campaign's content has to carry, decided server-side.
+    // Absent means no checkpoint is rendered — which never happens on a real
+    // campaign, since every brief here is a material connection.
+    disclosureLabel = null,
+}) {
     const [busy, setBusy] = useState(null);
     const [note, setNote] = useState("");
     const [asking, setAsking] = useState(false);
+    // **Starts false and the reviewer has to tick it.** A box that arrives
+    // ticked is a box nobody read.
+    const [disclosureOk, setDisclosureOk] = useState(false);
 
     if (!draft) return null;
 
@@ -147,15 +159,42 @@ export default function DraftReview({ collaborationId, draft, canReview, onDecid
 
             {canReview && (
                 <div className="space-y-3">
+                    {/* **The checkpoint, and the button waits on it.** ASCI
+                        liability sits with the advertiser, so "the creator
+                        said they'd add it" is not the record we want to be
+                        holding. The server refuses the approval without the
+                        confirmation; this is the form agreeing with it rather
+                        than deciding on its own. */}
+                    {disclosureLabel && (
+                        <label
+                            data-testid={IDS.disclosureCheck}
+                            className="flex cursor-pointer items-start gap-3 rounded-md border border-white/10 bg-card/60 p-4 text-sm leading-relaxed"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={disclosureOk}
+                                onChange={(e) => setDisclosureOk(e.target.checked)}
+                                className="mt-0.5 h-4 w-4 flex-none accent-[color:var(--ember-500,#F05D14)]"
+                            />
+                            <span>
+                                I've checked this draft carries{" "}
+                                <span className="text-foreground">{disclosureLabel}</span>,
+                                up front rather than in the comments.
+                            </span>
+                        </label>
+                    )}
                     <div className="flex flex-col gap-3 sm:flex-row">
                         <Button
                             data-testid={IDS.approve}
-                            disabled={busy === "approve"}
+                            disabled={busy === "approve" || !disclosureOk}
                             className="min-h-[2.75rem]"
                             onClick={() =>
                                 run(
                                     "approve",
-                                    () => api.post(`/drafts/${collaborationId}/approve`),
+                                    () =>
+                                        api.post(`/drafts/${collaborationId}/approve`, {
+                                            disclosure_confirmed: true,
+                                        }),
                                     "Draft approved — the creator can publish",
                                 )
                             }

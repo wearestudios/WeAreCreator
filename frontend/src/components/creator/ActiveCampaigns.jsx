@@ -35,6 +35,7 @@ import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
+import { TermsCard } from "@/components/campaign/CampaignTerms";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
@@ -230,6 +231,19 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     takedown={collab.takedown}
                     canRespond={Boolean(collab.can_respond_takedown)}
                     onChanged={onRefresh}
+                />
+                {/* **The creator's copy of what was agreed, and their one
+                    tap.** The shared application page is mounted at /admin,
+                    /brand and /manager and at no creator route, so a terms
+                    card that lived only there would be a card the one party
+                    who has to accept it can never reach — the acceptance
+                    would be an endpoint with no caller. This is their
+                    surface. */}
+                <TermsCard
+                    terms={collab.terms}
+                    collabId={collab.id}
+                    canAccept={Boolean(collab.can_accept_terms)}
+                    onAccepted={onRefresh}
                 />
             </div>
 

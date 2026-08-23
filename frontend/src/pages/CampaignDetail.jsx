@@ -31,6 +31,7 @@ import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
 import ShootWindowNote from "@/components/campaign/ShootWindowNote";
+import { BriefTerms } from "@/components/campaign/CampaignTerms";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
 import { VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
@@ -669,6 +670,31 @@ export default function CampaignDetail() {
                                 testid="detail-deliverables"
                                 className="mt-4"
                             />
+                        </section>
+
+                        {/* **Before the apply button, not after.** What the
+                            post has to say and what the brand may do with it
+                            afterwards are two of the three things that decide
+                            whether this work is worth doing — a creator who
+                            learns about a twelve-month paid-usage grant at
+                            delivery has already done the job. */}
+                        <section className="mt-12">
+                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                Terms
+                            </p>
+                            <div className="mt-4">
+                                <BriefTerms
+                                    disclosure={
+                                        campaign.disclosure_label
+                                            ? {
+                                                  code: campaign.required_disclosure,
+                                                  label: campaign.disclosure_label,
+                                              }
+                                            : null
+                                    }
+                                    usage={campaign.usage}
+                                />
+                            </div>
                         </section>
 
                         {/* When the venue can take people, said before the

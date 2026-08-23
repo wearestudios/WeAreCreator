@@ -396,7 +396,9 @@ class TestBrandManagerStopsAtItsOwnBrand:
                 {"_id": w.collab["theirs"]}, {"$set": {"state": "content_submitted"}}
             )
             err = await refuses(
-                server.brand_approve_content(str(w.collab["theirs"]), w.brand_mine)
+                server.brand_approve_content(
+                    str(w.collab["theirs"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w.brand_mine
+                )
             )
             return err, await w.db.collaborations.find_one({"_id": w.collab["theirs"]})
 

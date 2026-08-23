@@ -1639,6 +1639,183 @@ def _compensation_type(campaign: dict) -> str:
     return (campaign or {}).get("compensation_type") or DEFAULT_COMPENSATION_TYPE
 
 
+# ---------------------------------------------------------------------------
+# Disclosure
+#
+# ASCI's influencer guidelines require a disclosure label on content carrying a
+# **material connection** between advertiser and creator. The label has to be
+# up front, in the post itself rather than buried in comments, and it is the
+# advertiser who carries the liability — which is us and the brand, not only
+# the creator.
+#
+# **Barter is a material connection.** The requirement asked for this on paid
+# campaigns; restricting it there would have left exactly the arrangement that
+# most obviously needs it — a free stay, a meal, a product sent over — with no
+# disclosure at all. A gifted post is an ad. So `required_disclosure` is on
+# every campaign, defaulted rather than optional: a brief with the field blank
+# is a brief nobody decided about, and the default is the safe answer.
+# ---------------------------------------------------------------------------
+
+# The labels a brand can ask for. Free text is deliberately *not* the shape:
+# "pls mention us" is not a disclosure, and a reviewer confirming one has to
+# know what they are looking for.
+DISCLOSURE_LABELS = {
+    "paid_partnership": "Paid partnership label (platform tag)",
+    "ad": "#ad",
+    "sponsored": "#sponsored",
+    "collab": "#collab",
+    "gifted": "#gifted",
+}
+DisclosureLabel = Literal[
+    "paid_partnership", "ad", "sponsored", "collab", "gifted"
+]
+# What a campaign gets when nobody said. Not "none": there is no campaign on
+# this platform without a material connection, so the absence of a decision is
+# a decision to comply, not a decision to skip.
+DEFAULT_DISCLOSURE = "paid_partnership"
+
+
+def _required_disclosure(campaign: Optional[dict]) -> str:
+    """The label this campaign's content has to carry.
+
+    One reader, absent reads as the default — campaigns predate the field and
+    every one of them still needed a disclosure, so reading absent as "none"
+    would quietly exempt the entire back catalogue.
+    """
+    value = (campaign or {}).get("required_disclosure")
+    return value if value in DISCLOSURE_LABELS else DEFAULT_DISCLOSURE
+
+
+def _disclosure_text(campaign: Optional[dict]) -> str:
+    """The label as a person reads it, for a brief and for a checkbox."""
+    return DISCLOSURE_LABELS[_required_disclosure(campaign)]
+
+
+class DisclosureCheckPayload(BaseModel):
+    """The reviewer's confirmation that the disclosure is actually on the post.
+
+    **Required, and not defaulted to true.** A checkbox that arrives ticked is
+    a checkbox nobody read; the client has to send it, and the route refuses
+    the approval without it. ASCI liability sits with the advertiser — us and
+    the brand — so "the creator said they'd add it" is not the record we want
+    to be holding.
+    """
+
+    disclosure_confirmed: bool = False
+    note: Optional[str] = Field(default=None, max_length=1000)
+
+
+def _refuse_unconfirmed_disclosure(campaign: Optional[dict], confirmed: bool) -> None:
+    """Approving content without confirming the label is on it.
+
+    Both review points call this, so a campaign that gates drafts is checked
+    twice — at the draft and again at the live link — and one that does not is
+    still checked once, at the only review it has.
+    """
+    if confirmed:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "message": (
+                f"Confirm the post carries {_disclosure_text(campaign)} before "
+                "approving it."
+            ),
+            "code": "disclosure_unconfirmed",
+            "required_disclosure": _required_disclosure(campaign),
+            "label": _disclosure_text(campaign),
+        },
+    )
+
+
+def _disclosure_record(user: dict, campaign: Optional[dict], now: datetime) -> dict:
+    """What gets written down when somebody confirms it.
+
+    Who and when, not just a boolean: "the disclosure was confirmed" with
+    nobody's name on it is exactly the record that is no use in a complaint.
+    """
+    return {
+        "confirmed": True,
+        "confirmed_at": now,
+        "confirmed_by": ObjectId(user["_id"]) if user.get("_id") else None,
+        "confirmed_by_name": user.get("name"),
+        "required": _required_disclosure(campaign),
+        "label": _disclosure_text(campaign),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Usage rights
+#
+# What the brand may do with the content afterwards, which before this was
+# nowhere: a creator applied not knowing whether a reel would be reposted once
+# or run as a paid ad for a year, and the two are very different pieces of
+# work at very different prices. It is also the single most common thing to
+# argue about after delivery, which makes it the thing most worth writing down
+# before anybody starts.
+# ---------------------------------------------------------------------------
+
+USAGE_RIGHTS = {
+    "organic_only": "Organic repost only",
+    "paid_usage": "Paid usage for a set period",
+    "full_buyout": "Full buyout",
+}
+UsageRights = Literal["organic_only", "paid_usage", "full_buyout"]
+# The narrowest of the three. A campaign written before the field existed
+# granted nothing beyond a repost, because nothing broader was ever agreed —
+# reading absent as a buyout would retroactively hand over every piece of
+# content on the platform.
+DEFAULT_USAGE_RIGHTS = "organic_only"
+
+# `paid_usage` is the only one that means anything without a clock on it: a
+# repost is a moment and a buyout is forever, but "we may run this as an ad"
+# with no end date is a buyout wearing a smaller name.
+USAGE_NEEDS_DURATION = ("paid_usage",)
+
+
+def _usage_rights(campaign: Optional[dict]) -> str:
+    """What the brand may do with the content. One reader, absent reads
+    narrowest."""
+    value = (campaign or {}).get("usage_rights")
+    return value if value in USAGE_RIGHTS else DEFAULT_USAGE_RIGHTS
+
+
+def _usage_duration_days(campaign: Optional[dict]) -> Optional[int]:
+    """How long paid usage runs, or `None` where the question does not apply."""
+    if _usage_rights(campaign) not in USAGE_NEEDS_DURATION:
+        return None
+    days = (campaign or {}).get("usage_duration_days")
+    return int(days) if isinstance(days, (int, float)) and days > 0 else None
+
+
+def _usage_text(campaign: Optional[dict]) -> str:
+    """The grant in one line, built once so the brief, the application page
+    and the terms snapshot cannot phrase the same grant three ways."""
+    kind = _usage_rights(campaign)
+    label = USAGE_RIGHTS[kind]
+    days = _usage_duration_days(campaign)
+    if kind == "paid_usage":
+        if not days:
+            # The field is required with this option, so this is a campaign
+            # written before the rule. Saying "unspecified" is the honest
+            # reading and the one a mediator can act on.
+            return f"{label} — period not recorded"
+        months = round(days / 30)
+        span = f"{days} days" if days < 60 else f"about {months} months"
+        return f"{label} ({span})"
+    return label
+
+
+def _usage_block(campaign: Optional[dict]) -> dict:
+    """Everything a surface needs to render the grant, decided server-side."""
+    return {
+        "kind": _usage_rights(campaign),
+        "label": USAGE_RIGHTS[_usage_rights(campaign)],
+        "duration_days": _usage_duration_days(campaign),
+        "text": _usage_text(campaign),
+    }
+
+
 def _is_barter(campaign: dict) -> bool:
     return _compensation_type(campaign) == "barter"
 
@@ -1872,6 +2049,17 @@ class PostCampaignPayload(BaseModel):
     duration_minutes: Optional[int] = Field(default=None, ge=15, le=1440)
     # A group event's timetable. At least one, enforced below.
     sittings: Optional[list[EventSitting]] = None
+    # **What the content has to say, and what the brand may do with it.**
+    # Both default rather than being optional: a brief with either blank is a
+    # brief nobody decided about, and on these two the undecided answer is the
+    # one that protects the creator — disclose, and grant nothing beyond a
+    # repost.
+    required_disclosure: DisclosureLabel = DEFAULT_DISCLOSURE
+    usage_rights: UsageRights = DEFAULT_USAGE_RIGHTS
+    usage_duration_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    # A barter arrangement in prose is a barter arrangement nobody can hold
+    # anybody to. Admin-only in practice, because barter is.
+    barter_description: Optional[str] = Field(default=None, max_length=500)
     # Where creators actually show up. Optional at draft time — a brand can
     # brief before the venue is confirmed — but part of the campaign, not the
     # chat thread it would otherwise live in.
@@ -1881,6 +2069,27 @@ class PostCampaignPayload(BaseModel):
     # "open" is accepted by the schema only so the handler can explain why it is
     # refused. A brand saves a draft or submits for review; an admin publishes.
     status: Literal["draft", "pending_review", "open"] = "draft"
+
+    @model_validator(mode="after")
+    def _usage_grant_is_complete(self):
+        """A period is required exactly where it means something.
+
+        "We may run this as an ad" with no end date is a buyout wearing a
+        smaller name, and a creator reading the brief cannot tell the two
+        apart. The other way round, a duration on a repost-only grant is a
+        number that describes nothing and would show up on the brief as though
+        it did.
+        """
+        needs = self.usage_rights in USAGE_NEEDS_DURATION
+        if needs and self.usage_duration_days is None:
+            raise ValueError(
+                "Paid usage runs for a set period — say how many days."
+            )
+        if not needs and self.usage_duration_days is not None:
+            raise ValueError(
+                f"“{USAGE_RIGHTS[self.usage_rights]}” has no period. Leave it out."
+            )
+        return self
 
     @model_validator(mode="after")
     def _scheduling_matches_the_type(self):
@@ -6809,6 +7018,13 @@ def _serialize_collab_row(
         == "creator",
         "can_respond_takedown": (collab.get("takedown") or {}).get("state")
         == "requested",
+        # **The frozen terms and the creator's one tap.** The shared
+        # application page is mounted at no creator route, so this row is the
+        # only surface the party who has to accept them can reach. `None`
+        # before acceptance and on every collaboration predating the snapshot.
+        "terms": _serialize_terms(collab),
+        "can_accept_terms": bool(collab.get("terms"))
+        and not (collab.get("terms") or {}).get("accepted_at"),
         "created_at": _iso(collab.get("created_at")),
     }
 
@@ -7583,6 +7799,59 @@ async def list_creator_slots(
         "invitation_note": (invitation or {}).get("note"),
         "slots": slots,
     }
+
+
+@creator_router.post("/collaborations/{collab_id}/accept-terms")
+async def creator_accept_terms(
+    collab_id: str,
+    user: dict = Depends(require_roles("creator")),
+):
+    """The creator agrees to the frozen terms.
+
+    **One tap and a timestamp**, deliberately: this is an acknowledgement that
+    they read what was put in front of them, not a negotiation. Anything they
+    want to change is a conversation with whoever runs the campaign, and the
+    terms are reissued by nobody — a snapshot that could be renegotiated into
+    a new snapshot is a draft.
+
+    Accepting twice is not an error and does not move the timestamp. Somebody
+    tapping again on a slow connection must not end up with a later
+    acknowledgement than the one they actually made.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    if not collab.get("terms"):
+        raise HTTPException(
+            status_code=409,
+            detail="There are no terms on this one yet — they're issued when a brand takes you on.",
+        )
+    if collab["terms"].get("accepted_at"):
+        return {"id": collab_id, "terms": _serialize_terms(collab)}
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        # The precondition is what makes a double tap a no-op rather than a
+        # second, later acknowledgement overwriting the first.
+        {"_id": collab["_id"], "terms.accepted_at": None},
+        {"$set": {
+            "terms.accepted_at": now,
+            "terms.accepted_by": ObjectId(user["_id"]),
+        }},
+        return_document=True,
+    )
+    if not updated:
+        fresh = await db.collaborations.find_one({"_id": collab["_id"]})
+        return {"id": collab_id, "terms": _serialize_terms(fresh)}
+
+    await audit(
+        user,
+        "collaboration.accept_terms",
+        "collaboration",
+        collab["_id"],
+        after={"accepted_at": _iso(now)},
+        note="Creator acknowledged the agreed terms.",
+        campaign_id=collab.get("campaign_id"),
+    )
+    return {"id": collab_id, "terms": _serialize_terms(updated)}
 
 
 @creator_router.post("/collaborations/{collab_id}/book-slot")
@@ -8453,6 +8722,15 @@ def _serialize_brand_campaign(
         # refuses it on the other two types, so absent here means the same
         # thing it means on the form.
         "duration_minutes": doc.get("duration_minutes"),
+        # **Both on every campaign shape, including the creator's.** These are
+        # the two things somebody has to know *before* deciding whether to
+        # apply: what the post must say, and what happens to it afterwards.
+        # Shipping them only to the owner would put them in front of the one
+        # party who already knew.
+        "required_disclosure": _required_disclosure(doc),
+        "disclosure_label": _disclosure_text(doc),
+        "usage": _usage_block(doc),
+        "barter_description": doc.get("barter_description"),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -9581,6 +9859,13 @@ async def create_brand_campaign(
         # Launch only. The payload validator has already refused it on the
         # other two types, so this lands as `None` there without a branch.
         "duration_minutes": payload.duration_minutes,
+        # What the content must say, and what may be done with it afterwards.
+        # Both are on every campaign — a gifted post is an ad, so barter needs
+        # the disclosure as much as a paid brief does.
+        "required_disclosure": payload.required_disclosure,
+        "usage_rights": payload.usage_rights,
+        "usage_duration_days": payload.usage_duration_days,
+        "barter_description": (payload.barter_description or "").strip() or None,
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -10426,6 +10711,11 @@ async def brand_accept_applicant(
         **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(campaign["_id"])
+    # **Frozen here, because this is the moment both sides have committed** —
+    # and because the fee lands in the same write above, the first moment
+    # every term is actually known. Everything in it can change afterwards on
+    # the campaign it was copied from; that is the point.
+    await _issue_terms_snapshot({**collab, "agreed_amount": amount}, campaign)
     await notify(
         collab["creator_id"],
         "application_accepted",
@@ -10499,10 +10789,17 @@ async def brand_decline_applicant(
 @brand_router.post("/collaborations/{collab_id}/approve_content")
 async def brand_approve_content(
     collab_id: str,
+    payload: DisclosureCheckPayload,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Sign off the work. This is the step the landing page promises and the
-    thing that should release payment."""
+    thing that should release payment.
+
+    **The second disclosure checkpoint, and on a campaign with no draft gate
+    the only one.** This is the live post, so the confirmation here is about
+    something a regulator could actually go and look at — which is why it is
+    recorded with a name and a time rather than as a boolean.
+    """
     collab, campaign = await _brand_collab_or_404(collab_id, user)
     _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
@@ -10511,11 +10808,16 @@ async def brand_approve_content(
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
         )
+    _refuse_unconfirmed_disclosure(campaign, payload.disclosure_confirmed)
 
     now = datetime.now(timezone.utc)
     result = await db.collaborations.update_one(
         {"_id": collab["_id"], "state": "content_submitted"},
-        {"$set": {**_state_stamp("content_approved", now), "revision_note": None}},
+        {"$set": {
+            **_state_stamp("content_approved", now),
+            "revision_note": None,
+            "content_disclosure_check": _disclosure_record(user, campaign, now),
+        }},
     )
     if result.modified_count == 0:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
@@ -10526,7 +10828,9 @@ async def brand_approve_content(
         "collaboration",
         collab["_id"],
         before={"state": "content_submitted"},
-        after={"state": "content_approved"},
+        after={"state": "content_approved",
+               "disclosure_confirmed": _required_disclosure(campaign)},
+        note=f"Disclosure confirmed: {_disclosure_text(campaign)}.",
         **_campaign_audit_context(campaign),
     )
     await notify(
@@ -21638,6 +21942,13 @@ async def admin_create_campaign(
         # Launch only. The payload validator has already refused it on the
         # other two types, so this lands as `None` there without a branch.
         "duration_minutes": payload.duration_minutes,
+        # What the content must say, and what may be done with it afterwards.
+        # Both are on every campaign — a gifted post is an ad, so barter needs
+        # the disclosure as much as a paid brief does.
+        "required_disclosure": payload.required_disclosure,
+        "usage_rights": payload.usage_rights,
+        "usage_duration_days": payload.usage_duration_days,
+        "barter_description": (payload.barter_description or "").strip() or None,
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -24083,6 +24394,14 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         # the person most affected by "Saturdays only, evenings".
         "restricted_days": sorted(_restricted_days(doc)),
         "shoot_windows": _shoot_windows(doc),
+        # **On the creator's shape, which is the one the brief renders.** These
+        # two are what somebody has to know *before* deciding whether to apply:
+        # what the post must say, and what happens to it afterwards. They were
+        # added to the owner's serializer first and only the owner's, which put
+        # them in front of the one party who already knew.
+        "required_disclosure": _required_disclosure(doc),
+        "disclosure_label": _disclosure_text(doc),
+        "usage": _usage_block(doc),
         "category": doc.get("category"),
         "area": doc.get("area"),
         # Never null: a filter chip has to print a word, and every campaign
@@ -24191,6 +24510,155 @@ async def _filled_counts_for(campaign_ids: list) -> dict:
         ]
     ).to_list(length=len(unique))
     return {r["_id"]: r["n"] for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# The terms both sides agreed, frozen
+#
+# Every term of a collaboration lived somewhere that could change underneath
+# it. The deliverables are on the campaign and the brand can edit the campaign.
+# The usage rights are on the campaign. The fee is on the collaboration and
+# gets rewritten by a partial acceptance. The cancellation terms are a constant
+# in this file that we can change in a deploy.
+#
+# So when a creator and a brand disagreed three weeks later, mediation had
+# nothing to read: the record showed what the campaign says *now*, and both
+# sides remembered a different version of what it said then. That is the whole
+# argument for this — not paperwork, but the ability to answer "what did they
+# actually agree to" with something other than two accounts of a WhatsApp
+# thread.
+#
+# **Written once and never rewritten.** `_issue_terms_snapshot` is a
+# `$setOnInsert`-shaped write: if a snapshot exists it is left exactly as it
+# is, whatever has happened to the campaign since. A snapshot that tracked the
+# campaign would be a copy of the campaign, which is the thing that was already
+# no use.
+# ---------------------------------------------------------------------------
+
+# What we owe each other if it is called off. A constant rather than a per-brand
+# term, because it is the platform's policy and the same for everybody; frozen
+# into the snapshot so a later change to the policy cannot be applied backwards
+# to an arrangement made under the old one.
+CANCELLATION_TERMS = (
+    "Either side can cancel before the shoot. The notice given is recorded on "
+    "the collaboration, and a kill fee is agreed case by case rather than by a "
+    "fixed schedule. A creator can withdraw freely up to the moment they are "
+    "accepted; after that it is a cancellation. Work already delivered is paid "
+    "for."
+)
+
+
+def _terms_money(campaign: Optional[dict], collab: Optional[dict]) -> dict:
+    """What this collaboration pays, in the shape the snapshot records it.
+
+    **An amount or a barter description, never a zero.** `0` on a barter row
+    reads as "agreed, nothing" on every surface that shows money, which is the
+    one reading that is definitely wrong.
+    """
+    kind = _compensation_type(campaign)
+    if kind == "barter":
+        return {
+            "compensation_type": "barter",
+            "agreed_amount": None,
+            "description": (campaign or {}).get("barter_description")
+            or "Barter — no fee. What is provided is set out in the brief.",
+        }
+    amount = (collab or {}).get("agreed_amount")
+    return {
+        "compensation_type": kind,
+        "agreed_amount": round(float(amount), 2) if amount is not None else None,
+        "description": (
+            f"₹{float(amount):,.0f} for the deliverables below"
+            if amount is not None
+            else "Fee not recorded"
+        ),
+    }
+
+
+def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
+    """The terms as they stand right now, ready to be frozen.
+
+    Pure and DB-free so the same function can build a snapshot and render a
+    preview — a creator being asked to accept terms should be reading the same
+    object that gets stored, not a summary of it.
+    """
+    campaign = campaign or {}
+    return {
+        "campaign_title": campaign.get("title"),
+        "brand_name": campaign.get("brand_name"),
+        "deliverables": _deliverables_text(_deliverable_items(campaign))
+        or campaign.get("deliverables"),
+        "deliverable_items": _deliverable_items(campaign),
+        # Whichever dates this campaign type has — see `_SCHEDULING_BY_TYPE`.
+        "event_date": _iso(campaign.get("event_date")),
+        "start_date": _iso(campaign.get("start_date")),
+        "end_date": _iso(campaign.get("end_date")),
+        "scheduled_at": _iso((collab or {}).get("scheduled_at")),
+        "money": _terms_money(campaign, collab),
+        "usage": _usage_block(campaign),
+        "disclosure": {
+            "code": _required_disclosure(campaign),
+            "label": _disclosure_text(campaign),
+        },
+        "cancellation_terms": CANCELLATION_TERMS,
+    }
+
+
+def _serialize_disclosure_check(row: Optional[dict]) -> Optional[dict]:
+    """One reviewer's confirmation, or `None` if that stage has not run.
+
+    **`None` rather than `{"confirmed": False}`.** Not-yet-reviewed and
+    reviewed-and-not-present are different facts, and only the second is a
+    problem — a screen that drew a red cross on every draft nobody had looked
+    at yet would train people to ignore it.
+    """
+    if not row:
+        return None
+    return {
+        "confirmed": bool(row.get("confirmed")),
+        "confirmed_at": _iso(row.get("confirmed_at")),
+        "confirmed_by_name": row.get("confirmed_by_name"),
+        "label": row.get("label"),
+    }
+
+
+def _serialize_terms(collab: Optional[dict]) -> Optional[dict]:
+    """The frozen terms plus whether the creator has accepted them."""
+    row = (collab or {}).get("terms")
+    if not row:
+        return None
+    return {
+        **{k: v for k, v in row.items() if k not in ("accepted_by",)},
+        "issued_at": _iso(row.get("issued_at")),
+        "accepted_at": _iso(row.get("accepted_at")),
+        "accepted": bool(row.get("accepted_at")),
+    }
+
+
+async def _issue_terms_snapshot(collab: dict, campaign: Optional[dict]) -> Optional[dict]:
+    """Freeze the terms onto a collaboration, once.
+
+    Called at acceptance, which is the moment both sides have committed and —
+    because `brand_accept_applicant` records the fee in the same write — the
+    first moment every term is actually known.
+
+    **Idempotent by precondition, not by checking first.** The filter carries
+    `terms: {"$exists": False}`, so two accepts racing produce one snapshot and
+    a re-run cannot overwrite what a creator has already accepted. Checking
+    and then writing would leave exactly the window this is protecting
+    against.
+    """
+    terms = {
+        **_build_terms(campaign, collab),
+        "issued_at": datetime.now(timezone.utc),
+        "accepted_at": None,
+        "accepted_by": None,
+    }
+    await db.collaborations.update_one(
+        {"_id": collab["_id"], "terms": {"$exists": False}},
+        {"$set": {"terms": terms}},
+    )
+    return terms
 
 
 async def _sync_event_sittings(
@@ -26154,6 +26622,12 @@ async def list_disputes(
                 "payment_frozen": bool(
                     (payments.get(r["_id"]) or {}).get("frozen")
                 ),
+                # **What mediation reads instead of two memories.** The whole
+                # point of freezing the terms at acceptance is that this row
+                # can carry them: the campaign has been editable throughout,
+                # so quoting it back at somebody proves nothing about what
+                # they agreed to.
+                "terms": _serialize_terms(r),
                 "dispute": _serialize_dispute(r),
                 "href": f"/admin/collaborations/{r['_id']}",
             }
@@ -27326,9 +27800,19 @@ async def download_draft_file(
 @drafts_router.post("/{collab_id}/approve")
 async def approve_draft(
     collab_id: str,
+    payload: DisclosureCheckPayload,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
 ):
+    """Approve a draft — and confirm, on the record, that it discloses.
+
+    **The first of two checkpoints.** A draft is the last moment the label can
+    be added at no cost to anybody; after this the creator publishes, and
+    asking for a disclosure then means asking them to edit or delete a live
+    post. That is why the check is here as well as at the live link rather
+    than only at the end.
+    """
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    _refuse_unconfirmed_disclosure(campaign, payload.disclosure_confirmed)
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": "draft_submitted"},
@@ -27337,6 +27821,7 @@ async def approve_draft(
             "draft_approved_at": now,
             "draft_approved_by": ObjectId(user["_id"]),
             "draft_revision_note": None,
+            "draft_disclosure_check": _disclosure_record(user, campaign, now),
         }},
         return_document=True,
     )
@@ -27347,7 +27832,10 @@ async def approve_draft(
 
     await audit(
         user, "collaboration.approve_draft", "collaboration", collab["_id"],
-        before={"state": "draft_submitted"}, after={"state": "draft_approved"},
+        before={"state": "draft_submitted"},
+        after={"state": "draft_approved",
+               "disclosure_confirmed": _required_disclosure(campaign)},
+        note=f"Disclosure confirmed: {_disclosure_text(campaign)}.",
         **_campaign_audit_context(campaign),
     )
     await notify(
@@ -27501,6 +27989,27 @@ async def get_application(
         # mediated is not one.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # **What both sides actually agreed, frozen at acceptance.** The same
+        # block for all three parties, for the same reason the dispute block
+        # is: a mediation where each side reads its own version of the terms is
+        # the argument rather than the resolution. `None` before acceptance and
+        # on every collaboration that predates the snapshot.
+        "terms": _serialize_terms(collab),
+        # Read off the campaign rather than the snapshot, so an application
+        # that has not reached acceptance still shows the current grant.
+        "usage": _usage_block(campaign),
+        "disclosure": {
+            "code": _required_disclosure(campaign),
+            "label": _disclosure_text(campaign),
+            # Who signed off that it was actually on the post, at each of the
+            # two review points. Absent means that stage has not been reviewed.
+            "draft_check": _serialize_disclosure_check(
+                collab.get("draft_disclosure_check")
+            ),
+            "content_check": _serialize_disclosure_check(
+                collab.get("content_disclosure_check")
+            ),
+        },
         # Whether this caller may open the creator's question thread — false
         # for a brand on a weare-run campaign, where the conversation is
         # between the creator and our team. Decided here so the shared screen
@@ -27604,6 +28113,13 @@ async def get_application(
             # a round trip.
             "can_request_takedown": state in DELIVERED_COLLAB_STATES
             and (collab.get("takedown") or {}).get("state") != "requested",
+            # **The creator's, and only while it is unaccepted.** Decided here
+            # rather than in the component for the same reason every other
+            # action on this screen is: one page serves three roles, and a
+            # button that appears for the wrong one is a 404 somebody presses.
+            "can_accept_terms": (user or {}).get("role") == "creator"
+            and bool(collab.get("terms"))
+            and not (collab.get("terms") or {}).get("accepted_at"),
         },
     }
 

@@ -48,6 +48,10 @@ import Shortfall from "@/components/Shortfall";
 import RateCollaboration from "@/components/RateCollaboration";
 import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
+import {
+    DisclosureChecks,
+    TermsCard,
+} from "@/components/campaign/CampaignTerms";
 import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
@@ -286,6 +290,24 @@ export default function ApplicationDetail({
                         canRequest={Boolean(app.actions?.can_request_takedown)}
                         onChanged={load}
                     />
+
+                    {/* **What both sides agreed, and who confirmed the post
+                        discloses.** Above the commercial block because it is
+                        the record everything below it is measured against —
+                        and the same card for all three parties, like the
+                        dispute panel, because a mediation where each side
+                        reads its own version of the terms is the argument
+                        rather than the resolution.
+
+                        `can_accept_terms` is decided server-side; this never
+                        asks what role is looking. */}
+                    <TermsCard
+                        terms={app.terms}
+                        collabId={id}
+                        canAccept={Boolean(app.actions?.can_accept_terms)}
+                        onAccepted={load}
+                    />
+                    <DisclosureChecks disclosure={app.disclosure} />
 
                     <Section id="commercial" title="Commercial">
                         <div
@@ -630,6 +652,7 @@ export default function ApplicationDetail({
                                 collaborationId={id}
                                 draft={app.draft}
                                 canReview={actions.can_review_draft}
+                                disclosureLabel={app.disclosure?.label}
                                 onDecided={load}
                             />
                         </Section>

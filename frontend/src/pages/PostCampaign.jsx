@@ -25,6 +25,13 @@ import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
+import {
+    DEFAULT_DISCLOSURE,
+    DEFAULT_USAGE_RIGHTS,
+    DISCLOSURE_LABELS,
+    USAGE_RIGHTS,
+    needsDuration,
+} from "@/lib/campaignTerms";
 import DeliverablePicker, {
     emptyDeliverables,
     fromDeliverableItems,
@@ -120,6 +127,13 @@ export default function PostCampaign() {
     // campaign is created.
     const [coverUrl, setCoverUrl] = useState(null);
     const [pendingCover, setPendingCover] = useState(null);
+    // **Both default rather than starting blank.** Every brief here is a
+    // material connection, so the undecided answer on disclosure is "disclose";
+    // and a brief that never mentioned usage granted nothing beyond a repost,
+    // so that is what the picker opens on.
+    const [requiredDisclosure, setRequiredDisclosure] = useState(DEFAULT_DISCLOSURE);
+    const [usageRights, setUsageRights] = useState(DEFAULT_USAGE_RIGHTS);
+    const [usageDuration, setUsageDuration] = useState("");
     const [venueAddress, setVenueAddress] = useState("");
     const [venueInstructions, setVenueInstructions] = useState("");
     const [onSiteContact, setOnSiteContact] = useState("");
@@ -253,6 +267,15 @@ export default function PostCampaign() {
                     // instructions and the on-site contact, which are the
                     // three things a creator needs to turn up.
                     setCoverUrl(data.cover_image_url || null);
+                    setRequiredDisclosure(
+                        data.required_disclosure || DEFAULT_DISCLOSURE,
+                    );
+                    setUsageRights(data.usage?.kind || DEFAULT_USAGE_RIGHTS);
+                    setUsageDuration(
+                        data.usage?.duration_days != null
+                            ? String(data.usage.duration_days)
+                            : "",
+                    );
                     setVenueAddress(data.venue_address || "");
                     setVenueInstructions(data.venue_instructions || "");
                     setOnSiteContact(data.on_site_contact || "");
@@ -302,6 +325,8 @@ export default function PostCampaign() {
             if (!Number.isFinite(budgetNum) || budgetNum < 0)
                 return "Please enter a valid budget per creator.";
         }
+        if (needsDuration(usageRights) && !Number(usageDuration))
+            return "Paid usage runs for a set period — say how many days.";
         if (!category) return "Please pick a category.";
         if (!area) return "Please pick an area.";
         const needed = Number(creatorsNeeded);
@@ -370,6 +395,13 @@ export default function PostCampaign() {
                           capacity: Math.max(1, Number(r.capacity) || 1),
                       })),
               }
+            : {}),
+        required_disclosure: requiredDisclosure,
+        usage_rights: usageRights,
+        // The server refuses a period on a grant that has none, so this is
+        // omitted rather than sent as null on the other two.
+        ...(needsDuration(usageRights)
+            ? { usage_duration_days: Number(usageDuration) || null }
             : {}),
         category,
         area,
@@ -758,6 +790,90 @@ export default function PostCampaign() {
                                 )}
                             </div>
                         )}
+
+                        {/* **What the post has to say, and what happens to
+                            it afterwards.** Sits with the brief rather than in
+                            a settings drawer: these are two of the three
+                            things that decide whether a creator takes the job,
+                            and a usage grant discovered at delivery is a
+                            renegotiation nobody has leverage in. */}
+                        <div className="grid gap-5 md:grid-cols-2">
+                            <div>
+                                <Label
+                                    htmlFor="pc-disclosure"
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    Disclosure the post must carry
+                                </Label>
+                                <select
+                                    id="pc-disclosure"
+                                    data-testid="pc-disclosure"
+                                    value={requiredDisclosure}
+                                    onChange={(e) => setRequiredDisclosure(e.target.value)}
+                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                >
+                                    {Object.entries(DISCLOSURE_LABELS).map(([k, label]) => (
+                                        <option key={k} value={k}>
+                                            {label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Required on every brief — a gifted post is an ad too.
+                                    Confirmed again at review before anything is approved.
+                                </p>
+                            </div>
+
+                            <div>
+                                <Label
+                                    htmlFor="pc-usage"
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    What you may do with the content
+                                </Label>
+                                <select
+                                    id="pc-usage"
+                                    data-testid="pc-usage"
+                                    value={usageRights}
+                                    onChange={(e) => {
+                                        setUsageRights(e.target.value);
+                                        if (!needsDuration(e.target.value)) setUsageDuration("");
+                                    }}
+                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                >
+                                    {Object.entries(USAGE_RIGHTS).map(([k, label]) => (
+                                        <option key={k} value={k}>
+                                            {label}
+                                        </option>
+                                    ))}
+                                </select>
+                                {/* The period appears only where it means
+                                    something. Open-ended paid usage is a
+                                    buyout under a smaller name, so the server
+                                    refuses it and the form asks. */}
+                                {needsDuration(usageRights) && (
+                                    <div className="mt-3">
+                                        <Label
+                                            htmlFor="pc-usage-days"
+                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                        >
+                                            For how many days
+                                        </Label>
+                                        <Input
+                                            id="pc-usage-days"
+                                            data-testid="pc-usage-days"
+                                            type="number"
+                                            min={1}
+                                            max={3650}
+                                            placeholder="e.g. 90"
+                                            value={usageDuration}
+                                            onChange={(e) => setUsageDuration(e.target.value)}
+                                            className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
                         {/* **Personal table only**, because it is the only
                             type where the creator picks the time — and so the

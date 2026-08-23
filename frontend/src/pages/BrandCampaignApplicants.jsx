@@ -333,6 +333,76 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
     );
 }
 
+/**
+ * Sign off the content, having confirmed it discloses.
+ *
+ * **The checkbox starts unticked and the button waits on it.** ASCI liability
+ * sits with the advertiser, so a record saying "approved" with nothing beside
+ * it about the label is the record we would be holding in a complaint. The
+ * server refuses the approval without the confirmation; this is the form
+ * agreeing rather than deciding.
+ */
+function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onConfirm }) {
+    const [ok, setOk] = useState(false);
+    useEffect(() => {
+        if (open) setOk(false);
+    }, [open]);
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent
+                data-testid="approve-content-dialog"
+                className="max-w-md rounded-md border border-white/10 bg-card"
+            >
+                <DialogHeader className="text-left">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        Approve the content
+                    </p>
+                    <DialogTitle className="mt-2 font-serif text-fluid-2xl leading-tight">
+                        One check before you sign this off
+                    </DialogTitle>
+                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                        Approving releases payment, and nobody looks at the post
+                        again afterwards.
+                    </DialogDescription>
+                </DialogHeader>
+                <label
+                    data-testid="approve-content-disclosure-check"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-white/10 bg-background/60 p-4 text-sm leading-relaxed"
+                >
+                    <input
+                        type="checkbox"
+                        checked={ok}
+                        onChange={(e) => setOk(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 flex-none accent-[color:var(--ember-500,#F05D14)]"
+                    />
+                    <span>
+                        I've checked the live post carries{" "}
+                        <span className="text-foreground">
+                            {label || "the required disclosure"}
+                        </span>
+                        , up front rather than in the comments.
+                    </span>
+                </label>
+                <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={onConfirm}
+                        disabled={!ok || busy}
+                        data-testid="approve-content-confirm"
+                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                    >
+                        {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                        Approve
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+
 function ReasonDialog({
     open,
     onOpenChange,
@@ -1075,7 +1145,7 @@ export default function BrandCampaignApplicants() {
                                     onAccept={(x) => setDialog({ kind: "accept", applicant: x })}
                                     onDecline={(x) => setDialog({ kind: "decline", applicant: x })}
                                     onApprove={(x) =>
-                                        act(x, "approve_content", null, "Content approved")
+                                        setDialog({ kind: "approve", applicant: x })
                                     }
                                     onRequestChanges={(x) =>
                                         setDialog({ kind: "changes", applicant: x })
@@ -1161,6 +1231,27 @@ export default function BrandCampaignApplicants() {
                         "accept-partial",
                         body,
                         "Accepted, with the shortfall on the record",
+                    )
+                }
+            />
+
+            {/* **The second disclosure checkpoint.** Approving used to be one
+                tap straight from the row; the label has to be confirmed
+                against the live post before that, because this is the moment
+                the work is signed off and after it nobody looks again. The
+                server refuses the approval without the confirmation — this
+                dialog is the form agreeing with it. */}
+            <DisclosureConfirmDialog
+                open={dialog.kind === "approve"}
+                onOpenChange={(v) => !v && closeDialog()}
+                label={campaign?.disclosure_label}
+                busy={busyId === dialog.applicant?.id}
+                onConfirm={() =>
+                    act(
+                        dialog.applicant,
+                        "approve_content",
+                        { disclosure_confirmed: true },
+                        "Content approved",
                     )
                 }
             />

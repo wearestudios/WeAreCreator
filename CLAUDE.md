@@ -2076,6 +2076,110 @@ queue item.
   might be somebody who cannot read the form, and knowing that is what lets a
   reviewer pick up the phone instead of rejecting again.
 
+## Disclosure, usage rights, and what was agreed
+
+Three facts both sides needed that lived only in somebody's memory. All three
+are on the campaign, all three reach the creator **before** they apply, and the
+third is frozen the moment a brand takes somebody on.
+
+### The label the post has to carry
+
+ASCI requires a disclosure on content carrying a material connection, and the
+liability sits with the **advertiser** — us and the brand, not only the
+creator. `required_disclosure` is one of five values (`DISCLOSURE_LABELS`);
+`_required_disclosure` is the one reader and **absent reads as the default,
+never as "none"** — campaigns predate the field and every one of them still
+needed a label, so the other reading would quietly exempt the back catalogue.
+
+- **It is on every campaign, including barter.** The requirement asked for this
+  on *paid* campaigns; restricting it there would leave the arrangement that
+  most obviously needs it — a free stay, a meal, a product sent over — with no
+  disclosure at all. A gifted post is an ad, and the material-connection test
+  does not care whether money moved.
+- **Free text is deliberately not the shape.** "Pls mention us" is not a
+  disclosure, and a reviewer confirming one has to know what they are looking
+  for. An unrecognised value falls back to the default rather than rendering
+  itself.
+- **Two checkpoints, and the approval waits on both.**
+  `_refuse_unconfirmed_disclosure` is on `approve_draft` and on
+  `brand_approve_content`, so a campaign with a draft gate is checked twice —
+  once when the label can still be added for free, and once against the live
+  post a regulator could go and look at. A campaign without the gate is still
+  checked at the only review it has.
+- **`DisclosureCheckPayload.disclosure_confirmed` defaults to `False`.** A box
+  that arrives ticked is a box nobody read, and the client has to send it.
+- `_disclosure_record` writes **who and when**, not a boolean: "the disclosure
+  was confirmed" with nobody's name on it is exactly the record that is no use
+  in a complaint. `_serialize_disclosure_check` returns `None` for a stage
+  nobody has reviewed — not-yet-reviewed and reviewed-and-absent are different
+  facts, and a red cross on every unreviewed draft is a warning people learn to
+  ignore.
+
+### What the brand may do with it afterwards
+
+`usage_rights` is `organic_only | paid_usage | full_buyout`, with
+`usage_duration_days` where it applies. Before this a creator applied not
+knowing whether a reel would be reposted once or run as a paid ad for a year —
+very different pieces of work at very different prices, and the single most
+common thing to argue about after delivery.
+
+- **Absent grants the narrowest thing.** A campaign written before the field
+  granted nothing beyond a repost, because nothing broader was ever agreed;
+  reading absent as a buyout would retroactively hand over every piece of
+  content on the platform.
+- **A period is required exactly where it means something.** Open-ended paid
+  usage is a buyout wearing a smaller name and a creator cannot tell the two
+  apart, so `paid_usage` demands a duration and the other two refuse one.
+  `_usage_duration_days` drops a stray value on a grant that has none.
+- `_usage_text` builds the sentence once, so the brief, the application page
+  and the frozen terms cannot phrase the same grant three ways. A stored
+  `paid_usage` with no period says "period not recorded" — the honest reading
+  of a campaign written before the rule, and the one a mediator can act on.
+- `lib/campaignTerms.js` mirrors both vocabularies and a unit test fails if
+  they drift, the same arrangement `followerTiers.js` and `shootWindows.js`
+  use.
+
+### The terms, frozen
+
+Every term lived somewhere that could change underneath it: deliverables and
+usage on the campaign the brand can edit, the fee on a collaboration a partial
+acceptance rewrites, the cancellation policy in a constant we change in a
+deploy. So when two sides disagreed three weeks later, mediation had nothing to
+read — the record showed what the campaign says *now*.
+
+`_issue_terms_snapshot` writes `terms` onto the collaboration at acceptance,
+which is both the moment both sides commit and — because
+`brand_accept_applicant` records the fee in the same write — the first moment
+every term is known.
+
+- **Written once and never rewritten.** The filter carries
+  `terms: {"$exists": False}`, so two accepts racing produce one snapshot and a
+  re-run cannot overwrite what a creator has already accepted. A snapshot that
+  tracked the campaign would be a copy of the campaign, which is the thing that
+  was already no use.
+- `_build_terms` is pure and DB-free, so the same function builds the snapshot
+  and could render a preview — somebody being asked to accept terms should read
+  the object that gets stored, not a summary of it.
+- **An amount or a barter description, never a zero.** `_terms_money` returns
+  `None` and a sentence on a barter brief; `0` reads as "agreed, nothing" on
+  every surface that shows money.
+- `CANCELLATION_TERMS` is frozen in too, so a later change to the policy cannot
+  be applied backwards to an arrangement made under the old one.
+- **The creator's acceptance is one tap and a timestamp**, and accepting twice
+  does not move it: the precondition is `terms.accepted_at: None`, so a second
+  tap on a slow connection cannot end up as a later acknowledgement than the
+  one they actually made. `accepted_by` is an internal join and never
+  serialised.
+- **`_serialize_terms` rides on the dispute queue**, which is the whole point:
+  mediation reads the record rather than two memories.
+
+**The surface nearly shipped wrong.** The shared `ApplicationDetail` is mounted
+at `/admin`, `/brand` and `/manager` and at *no creator route*, so a terms card
+living only there would have been a card the one party who has to accept it can
+never open. It is on `components/creator/ActiveCampaigns.jsx` as well, and
+`_serialize_collab_row` carries `terms` and `can_accept_terms`. Found in a
+browser; a test names both now.
+
 ## When the two sides disagree
 
 A brand rejecting delivered content, or refusing to pay for it, left the
