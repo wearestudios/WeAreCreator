@@ -386,7 +386,7 @@ class TestReleasingIt:
         assert block["message"]
 
     def test_the_panel_is_mounted_and_says_they_need_do_nothing(self):
-        page = no_comments(FRONTEND / "pages/Dashboard.jsx")
+        page = no_comments(FRONTEND / "pages/CreatorHome.jsx")
         assert "<HeldApplications" in page
         panel = no_comments(FRONTEND / "components/creator/HeldApplications.jsx")
         assert "/creator/held-applications/" in panel

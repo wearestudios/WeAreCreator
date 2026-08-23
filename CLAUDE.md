@@ -3793,6 +3793,102 @@ MongoDB counts as on time. The seed stays honest and the test does that
 arithmetic itself — a fixture bent to suit a mock is a fixture that stops
 catching the bug it exists for.
 
+## One bundle, five audiences
+
+The frontend shipped as a **single file**: every creator on mobile data
+downloaded the admin console, the brand console and the manager screens — three
+surfaces they will never open — before their own dashboard could paint. The
+audience is a mid-range Android phone on Indian mobile data, which is precisely
+where that is not a rounding error.
+
+`App.js` now loads each surface with `React.lazy`, and **the chunk names are
+what enforce the boundary**: webpack groups every import sharing a name into
+one file, so opening the console is one request rather than one per section and
+moving between its seventeen sections never suspends. A per-page split would
+trade a bundle nobody needs for a waterfall everybody feels.
+
+- Six audience chunks — `marketing`, `auth`, `creator`, `brand`, `manager`,
+  `admin` — plus `campaigns`, `application`, `calendar` and `dashboard`, which
+  are **named apart because more than one audience reads them**. Putting
+  `ApplicationDetail` in any one console's chunk would make the other two
+  download that console to reach a screen all three share.
+- **`/dashboard` is two surfaces behind one path**, so it has a chunk of its
+  own holding nothing but the dispatch, and both branches are lazy. Naming that
+  file `creator` made a brand manager download the creator app to reach the
+  file that decides they are not one; leaving `CreatorHome` inside it did the
+  same in reverse. `pages/CreatorHome.jsx` is that extraction — the same
+  component, in a file of its own.
+- **Nothing is eager except the shell**: the router, the auth context, the two
+  error boundaries and `ProtectedRoute`. `Landing`, `Login` and `Signup` were
+  kept eager first on the reasoning that they are the front door — and
+  measurement said otherwise. Splitting Landing took 54KB off the shell for one
+  extra request on the one page that needs it; splitting the auth screens took
+  another 35KB, which is far more than "two small forms" suggested. The rule
+  that survived is to measure rather than to reason about it.
+
+### What it cost, and what it bought
+
+Measured in a browser, per route, as the gzip of every JS file the page was
+actually made to fetch — shared chunks included, so these are what somebody
+downloads rather than what one chunk weighs.
+
+| Surface | Before | After |
+| --- | --- | --- |
+| Landing | 432.5 KB | 193.4 KB (−55%) |
+| Login / Signup | 432.5 KB | 162.8 KB (−62%) |
+| Marketing pages, 404, legal | 432.5 KB | 213.5 KB (−51%) |
+| Creator dashboard | 432.5 KB | 276.1 KB (−36%) |
+| Creator brief feed | 432.5 KB | 226.6 KB (−48%) |
+| Brand console | 432.5 KB | 289.8 KB (−33%) |
+| Campaign manager | 432.5 KB | 182.8 KB (−58%) |
+| Admin console | 432.5 KB | 275.5 KB (−36%) |
+
+The entry bundle went from **441 KB gzip to 128 KB**. Nothing regressed: all 44
+screenshots — 22 routes at 390 and 1280 — are **byte-identical** before and
+after, and CLS is unchanged on every one except `/for-brands` at 390, which
+improved from 0.0233 to 0 because the page now arrives in one pass rather than
+two.
+
+### While it is loading, and when it never arrives
+
+`components/RouteFallback.jsx` is the Suspense fallback, and it is **not a
+guess at the page underneath**. Marketing pages carry `MarketingNavbar`, the app
+carries `Navbar`, the console has a sidebar — drawing one would draw the wrong
+one about half the time, and a header that appears and is then replaced by a
+different header is worse than one that arrives once. What it does match is the
+ground: the same `min-h-screen bg-background grain-page` every page sits on, a
+reserved `h-16` bar, and skeletons rather than a spinner, which is the rule the
+whole product already holds. `LoadingAnnouncement` is the one thing not
+`aria-hidden`, so a screen reader hears "loading" rather than a list of empty
+boxes.
+
+**`React.lazy` does not retry**, and that is the trap this needed most.
+It memoises the promise *including its rejection*, so a chunk that failed to
+arrive fails forever — remounting the boundary re-throws the same error and
+never re-requests the file, which makes an ordinary "Try again" button a lie.
+
+- `retryImport` in `lib/lazyRoute.js` makes the second attempt itself, once,
+  after a short pause — the shape of a chunk that lost a race with a lift. A
+  transient failure never reaches a fallback at all; verified by failing the
+  first request and watching the manager screen simply load.
+- A second failure is **tagged** (`isChunkError`), not matched on a message,
+  though webpack's own `ChunkLoadError` is recognised too because a prefetch
+  can raise one this module never wrapped. A copy edit to a browser's error
+  string must not decide which fallback somebody sees.
+- `ErrorBoundary` answers it **before** it looks at its own variant, because a
+  chunk can fail under the route boundary or a section one and the honest
+  answer is the same: "This part didn't finish downloading", and a **reload**.
+  Not a soft remount — the failed import is memoised, and after a deploy the
+  file this tab wants is genuinely gone, which only a fresh `index.html` fixes.
+- Suspense sits **inside** `RouteBoundary` and outside `Routes`. Outside the
+  boundary, a rejected chunk would reach the root one and take the
+  impersonation banner down with it — and an admin must never be left acting as
+  somebody else with nothing on screen saying so.
+
+`test_code_splitting.py` holds all of it, and the failure it exists for is a
+route added the old way: one static `import` in `App.js` reads like every other
+line in the file and silently pulls a whole surface back into the shell.
+
 ## When something breaks
 
 Three layers, in `components/ErrorBoundary.jsx`, `lib/errorLog.js` and

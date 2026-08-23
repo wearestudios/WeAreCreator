@@ -444,7 +444,7 @@ def test_the_creators_applications_view_carries_the_accept_and_the_decline():
 
 
 def test_the_applications_tab_counts_open_invitations():
-    src = no_comments(FRONTEND / "src" / "pages" / "Dashboard.jsx")
+    src = no_comments(FRONTEND / "src" / "pages" / "CreatorHome.jsx")
     block = src[src.index("const applicationsCount") :][:320]
     assert "invitations" in block, "the tab badge ignores unanswered invitations"
 

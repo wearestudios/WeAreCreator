@@ -73,13 +73,13 @@ def test_active_work_never_goes_behind_a_tab():
     """The tabs hold what a creator consults; the live work is why the page
     gets opened, and a venue address in a drawer is a creator lost on a
     footpath. Structurally: ActiveCampaigns mounts before the Tabs block."""
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
 
     assert src.index("<ActiveCampaigns") < src.index("<Tabs ")
 
 
 def test_the_drawers_are_tabs_not_a_stack():
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
 
     for drawer in ('value="suggested"', 'value="applications"', 'value="earnings"'):
         assert drawer in src
@@ -89,7 +89,7 @@ def test_the_drawers_are_tabs_not_a_stack():
 def test_each_drawer_keeps_its_own_error_boundary():
     """A bad earnings row must not blank the suggestions next to it — the rule
     the stacked layout already lived by, carried into the tabs."""
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
     tabs = src[src.index("<Tabs ") :]
 
     assert tabs.count("SafeSection") >= 3
@@ -98,20 +98,20 @@ def test_each_drawer_keeps_its_own_error_boundary():
 def test_the_tab_strip_scrolls_rather_than_wraps():
     """Three labels with counts at 390px: wrapping stacks the strip and eats
     the fold this redesign exists to protect."""
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
 
     assert "overflow-x-auto" in src
 
 
 def test_status_banners_stay_outside_the_tabs():
     """A blocked account is not a section, it is the situation."""
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
 
     assert src.index("<StatusBanners") < src.index("<Tabs ")
 
 
 def test_the_completeness_nudge_stays_outside_too():
-    src = read("pages", "Dashboard.jsx")
+    src = read("pages", "CreatorHome.jsx")
 
     assert src.index("<Completeness") < src.index("<Tabs ")
 
