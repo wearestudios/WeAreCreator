@@ -29,6 +29,7 @@ import { isPrivate } from "@/lib/visibility";
 import ExecutionBadge from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import BrandName from "@/components/BrandName";
+import { HERO_EYEBROW } from "@/lib/siteNav";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -423,7 +424,7 @@ export default function Campaigns() {
                     <div className="md:col-span-8">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
-                            Vol. 01 · Bengaluru · Influencer studio
+                            {HERO_EYEBROW}
                         </p>
                         <h1
                             data-testid="campaigns-heading"

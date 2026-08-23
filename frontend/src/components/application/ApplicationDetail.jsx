@@ -698,7 +698,7 @@ export default function ApplicationDetail({
                         rows={3}
                         value={slotReason}
                         onChange={(e) => setSlotReason(e.target.value)}
-                        placeholder="e.g. the kitchen is closed that afternoon — anything after 6pm works"
+                        placeholder="e.g. we're shut that afternoon — anything after 6pm works"
                         data-testid={APPLICATION.declineSlotReason}
                         className="border-white/10 bg-background/60"
                     />

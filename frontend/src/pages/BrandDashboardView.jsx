@@ -315,8 +315,14 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                     <>
                         <header data-testid="brand-header" className="grid gap-6 md:grid-cols-12 md:items-end">
                             <div className="md:col-span-8">
+                                {/* The brand's own city, the same rule the
+                                    creator's header follows: a hardcoded one
+                                    is wrong for everybody it is not about, and
+                                    this screen already knows the answer. */}
                                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                    Brand · Bengaluru
+                                    {data?.profile?.city
+                                        ? `Brand · ${data.profile.city}`
+                                        : "Brand"}
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"

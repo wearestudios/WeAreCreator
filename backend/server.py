@@ -946,6 +946,112 @@ class BrandProfileUpdate(BaseModel):
 CampaignType = Literal["launch", "group_event", "personal_table"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
 
+# ---------------------------------------------------------------------------
+# Which scheduling fields each type actually has
+#
+# Every campaign used to carry every scheduling field, and the form asked for
+# all of them whatever you picked. So a launch — one evening, everybody arrives
+# at once — was asked which weekdays don't work and which hours of the day are
+# possible, questions with no answer for a thing that happens once. Brands
+# filled them in anyway, because a form that asks looks like a form that needs
+# an answer, and the result was a restriction nobody meant sitting on a brief
+# that could never be booked against it.
+#
+# Three types, three shapes:
+#
+# - **launch** — a day and a time, everybody at once. Optionally how long it
+#   runs. Nothing else: there are no sittings to divide and no window to
+#   restrict, because the whole thing is one moment.
+# - **group_event** — a day, split into one or more fixed sittings the manager
+#   runs to a timetable. `duration_minutes` is meaningless here; each sitting
+#   carries its own end.
+# - **personal_table** — the only type where the *creator* picks the time, and
+#   therefore the only one where "not Mondays" and "lunchtimes only" are
+#   answerable. It is the reason those two fields exist.
+#
+# `_SCHEDULING_BY_TYPE` is the one reader, so the create payload, the edit
+# path and the admin path cannot disagree about what a type may carry — and a
+# fourth type added later has to declare its shape rather than silently
+# inheriting everything.
+_SCHEDULING_BY_TYPE = {
+    "launch": {
+        "required": ("event_date",),
+        "allowed": ("event_date", "duration_minutes"),
+    },
+    "group_event": {
+        "required": ("event_date", "sittings"),
+        "allowed": ("event_date", "sittings"),
+    },
+    "personal_table": {
+        "required": ("start_date", "end_date"),
+        "allowed": ("start_date", "end_date", "restricted_days", "shoot_windows"),
+    },
+}
+
+# Everything the table governs. Named once so the validator can work out what
+# is *not* allowed by subtraction rather than by a second hand-written list
+# that drifts from the first.
+_SCHEDULING_FIELDS = (
+    "event_date",
+    "duration_minutes",
+    "sittings",
+    "start_date",
+    "end_date",
+    "restricted_days",
+    "shoot_windows",
+)
+
+# What a person calls each one, for a refusal somebody can act on. "shoot
+# windows is not allowed on a launch" is a field name; "the hours that work"
+# is the thing they ticked.
+_SCHEDULING_LABELS = {
+    "event_date": "the date",
+    "duration_minutes": "how long it runs",
+    "sittings": "the sittings",
+    "start_date": "the opening date",
+    "end_date": "the closing date",
+    "restricted_days": "the days that don't work",
+    "shoot_windows": "the hours that work",
+}
+
+
+def _scheduling_refusal(campaign_type: Optional[str], present: set) -> Optional[str]:
+    """What is wrong with this combination of scheduling fields, if anything.
+
+    **Returns the sentence rather than raising**, the same shape
+    `_shoot_time_refusal` uses, because two callers want it differently: the
+    payload validator turns it into a 422 and the edit path folds it into its
+    own error. One decider either way.
+
+    `present` is the set of scheduling fields the caller actually supplied
+    with a value — not the ones the model has attributes for, which is every
+    one of them.
+    """
+    shape = _SCHEDULING_BY_TYPE.get(campaign_type or "")
+    if not shape:
+        # A type we do not know is not a type we can check the shape of.
+        # Campaigns written before types existed take this branch and are left
+        # alone, the usual absent-reads-safe rule.
+        return None
+
+    missing = [f for f in shape["required"] if f not in present]
+    if missing:
+        names = ", ".join(_SCHEDULING_LABELS[f] for f in missing)
+        return (
+            f"A {campaign_type.replace('_', ' ')} needs {names}."
+            if len(missing) == 1
+            else f"A {campaign_type.replace('_', ' ')} needs {names}."
+        )
+
+    extra = [f for f in _SCHEDULING_FIELDS if f in present and f not in shape["allowed"]]
+    if extra:
+        names = ", ".join(_SCHEDULING_LABELS[f] for f in extra)
+        return (
+            f"A {campaign_type.replace('_', ' ')} has no {names}. "
+            "Leave it out."
+        )
+    return None
+
 
 # ---------------------------------------------------------------------------
 # When a shoot may happen
@@ -1041,6 +1147,30 @@ def _parse_hhmm(value) -> Optional[int]:
 
 def _hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+class EventSitting(BaseModel):
+    """One fixed sitting on a group event's day.
+
+    The brand sets these at post time rather than leaving them to the manager,
+    because on a group event the timetable *is* the brief — "three sittings,
+    six creators each" is what the brand is buying and what a creator is
+    deciding whether they can make.
+
+    Materialised into `campaign_slots` by `_sync_event_sittings`, so booking,
+    capacity and the whole handshake are the machinery that already exists
+    rather than a second one beside it.
+    """
+
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    capacity: int = Field(default=1, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _runs_forward(self):
+        if self.ends_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("A sitting has to end after it starts.")
+        return self
 
 
 class ShootWindow(BaseModel):
@@ -1736,6 +1866,12 @@ class PostCampaignPayload(BaseModel):
     event_date: Optional[datetime] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    # A launch is one moment, so `event_date` carries the start *time* as well
+    # as the day, and this is how long it runs. Optional because plenty of
+    # launches genuinely run until they run out.
+    duration_minutes: Optional[int] = Field(default=None, ge=15, le=1440)
+    # A group event's timetable. At least one, enforced below.
+    sittings: Optional[list[EventSitting]] = None
     # Where creators actually show up. Optional at draft time — a brand can
     # brief before the venue is confirmed — but part of the campaign, not the
     # chat thread it would otherwise live in.
@@ -1747,31 +1883,37 @@ class PostCampaignPayload(BaseModel):
     status: Literal["draft", "pending_review", "open"] = "draft"
 
     @model_validator(mode="after")
-    def _dates_match_the_type(self):
-        if self.campaign_type in EVENT_CAMPAIGN_TYPES:
-            if self.event_date is None:
-                raise ValueError(
-                    f"A {self.campaign_type.replace('_', ' ')} happens on a day — "
-                    "event_date is required."
-                )
-            if self.start_date is not None or self.end_date is not None:
-                raise ValueError(
-                    "An event campaign has an event_date, not a start/end window. "
-                    "Leave start_date and end_date out."
-                )
-        else:  # personal_table
-            if self.start_date is None or self.end_date is None:
-                raise ValueError(
-                    "A personal table runs over a window — start_date and "
-                    "end_date are both required."
-                )
-            if self.event_date is not None:
-                raise ValueError(
-                    "A personal table has a booking window, not an event_date. "
-                    "Leave event_date out."
-                )
+    def _scheduling_matches_the_type(self):
+        """**Every invalid combination refused here, not just the dates.**
+
+        This used to check only `event_date` against `start_date`/`end_date`,
+        so a launch could carry restricted weekdays and preferred hour windows
+        — fields with no meaning for a thing that happens once, which the form
+        asked for anyway and brands duly filled in. The rule now runs off
+        `_SCHEDULING_BY_TYPE`, so the shapes are declared in one table rather
+        than spelled out in branches here.
+        """
+        present = {
+            f
+            for f in _SCHEDULING_FIELDS
+            if getattr(self, f, None) not in (None, [], ())
+        }
+        refusal = _scheduling_refusal(self.campaign_type, present)
+        if refusal:
+            raise ValueError(refusal)
+
+        if self.campaign_type == "personal_table":
             if self.end_date < self.start_date:
                 raise ValueError("End date cannot be before start date")
+        if self.campaign_type == "group_event":
+            # The timetable has to be on the day the brief names, or a creator
+            # reads one date and turns up to another.
+            day = _as_utc(self.event_date)
+            for sitting in self.sittings or []:
+                if _as_utc(sitting.starts_at).date() != day.date():
+                    raise ValueError(
+                        "Every sitting has to be on the event's own date."
+                    )
         return self
 
 
@@ -8307,6 +8449,10 @@ def _serialize_brand_campaign(
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
         "requires_slot_confirmation": _requires_slot_confirmation(doc),
+        # Launch only, and `None` everywhere else — the payload validator
+        # refuses it on the other two types, so absent here means the same
+        # thing it means on the form.
+        "duration_minutes": doc.get("duration_minutes"),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -8539,12 +8685,37 @@ async def _brand_manager_contact(brand_oid) -> dict:
 
 
 def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
-    """An edit must not hand a campaign the other type's date fields.
+    """An edit must not hand a campaign scheduling fields its type has no use for.
 
-    Creation validates the combination; without this, a PATCH could quietly give
-    a launch a booking window or a personal table an event day.
+    Creation validates the combination through `_scheduling_refusal`; without
+    this, a PATCH could quietly give a launch a booking window, a personal
+    table an event day, or — the case this missed for as long as it existed —
+    a one-off event a set of restricted weekdays and preferred hour windows,
+    which is the shape the form was producing on every campaign.
+
+    **The same table decides both**, so the create route and the edit route
+    cannot drift about what a type may carry.
     """
     ctype = campaign.get("campaign_type")
+
+    # Anything not allowed on this type, whatever it is. Checked first because
+    # it is the general rule; the date-specific refusals below say more useful
+    # things about the two fields people actually get wrong.
+    shape = _SCHEDULING_BY_TYPE.get(ctype or "")
+    if shape:
+        offered = {
+            f
+            for f in _SCHEDULING_FIELDS
+            if f in update and update[f] not in (None, [], ())
+        }
+        extra = [f for f in _SCHEDULING_FIELDS if f in offered and f not in shape["allowed"]]
+        if extra:
+            names = ", ".join(_SCHEDULING_LABELS[f] for f in extra)
+            raise HTTPException(
+                status_code=422,
+                detail=f"A {ctype.replace('_', ' ')} has no {names}. Leave it out.",
+            )
+
     if ctype in EVENT_CAMPAIGN_TYPES:
         if update.get("start_date") is not None or update.get("end_date") is not None:
             raise HTTPException(
@@ -9407,6 +9578,9 @@ async def create_brand_campaign(
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
+        # Launch only. The payload validator has already refused it on the
+        # other two types, so this lands as `None` there without a branch.
+        "duration_minutes": payload.duration_minutes,
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -9444,6 +9618,12 @@ async def create_brand_campaign(
     doc["reference"] = await _next_reference("campaign")
     result = await db.campaigns.insert_one(doc)
     doc["_id"] = result.inserted_id
+    # A group event's timetable becomes real slots straight away. On a draft
+    # they reach nobody — a creator cannot see the campaign — so there is no
+    # reason to defer them to publication, and one good reason not to: a brand
+    # previewing its own brief should see the sittings it just typed.
+    if payload.campaign_type == "group_event":
+        await _sync_event_sittings(result.inserted_id, payload.sittings, user)
     await audit(
         user,
         "campaign.create",
@@ -21455,6 +21635,9 @@ async def admin_create_campaign(
         "event_date": payload.event_date,
         "start_date": payload.start_date,
         "end_date": payload.end_date,
+        # Launch only. The payload validator has already refused it on the
+        # other two types, so this lands as `None` there without a branch.
+        "duration_minutes": payload.duration_minutes,
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -21475,6 +21658,12 @@ async def admin_create_campaign(
     doc["reference"] = await _next_reference("campaign")
     result = await db.campaigns.insert_one(doc)
     doc["_id"] = result.inserted_id
+    # A group event's timetable becomes real slots straight away. On a draft
+    # they reach nobody — a creator cannot see the campaign — so there is no
+    # reason to defer them to publication, and one good reason not to: a brand
+    # previewing its own brief should see the sittings it just typed.
+    if payload.campaign_type == "group_event":
+        await _sync_event_sittings(result.inserted_id, payload.sittings, user)
     # `campaign.create`, not a second action name: the log is asked "when was
     # this brief created", and the actor already says by whom.
     await audit(
@@ -24004,6 +24193,62 @@ async def _filled_counts_for(campaign_ids: list) -> dict:
     return {r["_id"]: r["n"] for r in rows}
 
 
+async def _sync_event_sittings(
+    campaign_oid: ObjectId, sittings, actor: Optional[dict] = None
+) -> int:
+    """Turn a group event's timetable into bookable slots.
+
+    **Into `campaign_slots`, not a second collection.** A sitting is a slot —
+    it has a time, a capacity and people booking into it — so giving it its
+    own shape would mean a second implementation of booking, capacity and the
+    confirmation handshake, and the two would disagree the first time one was
+    changed.
+
+    Rewrites rather than merges, because the brand is editing a timetable and
+    a merge would leave yesterday's 4pm sitting sitting there beside the new
+    one. **Slots with somebody already in them are kept**, for the reason a
+    brief going private does not evict the creators already on it: a booking
+    is an arrangement with a person, and a form save is not the place to break
+    one. A kept slot the brand meant to remove is a conversation with the
+    manager; a silently cancelled booking is a creator turning up to nothing.
+    """
+    existing = await db.campaign_slots.find({"campaign_id": campaign_oid}).to_list(
+        length=500
+    )
+    booked = [s for s in existing if int(s.get("booked_count") or 0) > 0]
+    booked_ids = {s["_id"] for s in booked}
+    removable = [s["_id"] for s in existing if s["_id"] not in booked_ids]
+    if removable:
+        await db.campaign_slots.delete_many({"_id": {"$in": removable}})
+
+    now = datetime.now(timezone.utc)
+    held = {_as_utc(s.get("starts_at")) for s in booked}
+    fresh = []
+    for sitting in sittings or []:
+        starts = _as_utc(sitting.starts_at)
+        # A sitting somebody already holds a seat in is the row that survived
+        # above; writing a second one at the same time would double the places.
+        if starts in held:
+            continue
+        fresh.append(
+            {
+                "campaign_id": campaign_oid,
+                "starts_at": starts,
+                "ends_at": _as_utc(sitting.ends_at),
+                "capacity": int(sitting.capacity),
+                "booked_count": 0,
+                "created_by": (
+                    ObjectId(actor["_id"]) if (actor or {}).get("_id") else None
+                ),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    if fresh:
+        await db.campaign_slots.insert_many(fresh)
+    return len(fresh)
+
+
 async def _sync_campaign_fill(campaign_id: ObjectId) -> None:
     """Close a campaign to new applications once it has the creators it asked
     for, and reopen it if a slot frees up again."""
@@ -24372,6 +24617,28 @@ async def get_campaign(
 
     brand_map = await _load_brand_map([doc["brand_id"]])
     payload = _serialize_campaign(doc, brand_map.get(doc["brand_id"]))
+
+    # A group event's timetable, read back off the slots it was written into,
+    # so the edit form can re-seed rather than default. Without this, opening a
+    # group event for any edit and saving would leave the brand looking at an
+    # empty sittings row — the same trap the venue fields fell into, where a
+    # field the form sends but never loads is a field an edit silently clears.
+    # **Owner-side only.** A creator sees the slots through the picker, which
+    # is where booking happens; a second copy on the brief would be a second
+    # answer to what times exist.
+    if doc.get("campaign_type") == "group_event" and (
+        is_brand_side(user) or user["role"] == "admin"
+    ):
+        payload["sittings"] = [
+            {
+                "starts_at": _iso(row.get("starts_at")),
+                "capacity": int(row.get("capacity") or 1),
+                "booked_count": int(row.get("booked_count") or 0),
+            }
+            for row in await db.campaign_slots.find({"campaign_id": oid})
+            .sort("starts_at", 1)
+            .to_list(length=200)
+        ]
 
     # Whether the current creator has already applied.
     payload["has_applied"] = False
@@ -28274,26 +28541,56 @@ FOOTER_COLUMNS = (
 MARKETING_CONTACT = "creators@wearemonk.in"
 
 
+# The three figures the strip shows, and the floor each has to clear.
+#
+# **All three or none, which is a change from a floor per figure.** The old
+# rule returned whichever figures passed their own floor, and on real data that
+# meant the strip rendered as "7 cities" and nothing else — a single number
+# with no denominator, which reads as the one statistic we could find rather
+# than as proof. Worse, the honest reading of a partial strip is the one a
+# visitor actually makes: if the creators figure is missing, it is missing
+# because it is small.
+#
+# So the gate is on the set. "12 creators · 2 campaigns" is worse than silence,
+# and a strip that cannot yet say all three has nothing to say.
+PROOF_FLOORS = {
+    # Cities with at least one verified creator in them. Two is not a
+    # footprint, and "1 city" is a sentence that argues against itself.
+    "cities": 3,
+    "creators": 10,
+    # Briefs somebody can apply to *today*. Deliberately the live count and
+    # not a lifetime total: a visitor reading this is deciding whether it is
+    # worth signing up, and what they want to know is whether there is work on
+    # right now. The trade is that it moves — see `_platform_proof`.
+    "campaigns": 5,
+}
+
+
 async def _platform_proof() -> dict:
-    """Real numbers for the proof strip, or nothing.
+    """Real numbers for the proof strip, or nothing at all.
 
     **Every figure is counted, never written down.** A hardcoded "500+
     creators" is a claim that was true on the day somebody typed it, on the
     pages whose whole job is to be believed by a stranger.
 
-    Each is returned only when it is worth saying out loud. A strip reading
-    "3 creators" is not proof, it is a reason to close the tab — and the
-    honest move at that size is silence rather than rounding up.
+    **Returns `{}` unless every figure clears its floor**, and the whole strip
+    disappears with it — see `PROOF_FLOORS`.
+
+    The live campaign count is the volatile one: a quiet fortnight takes the
+    whole strip off the marketing pages and a new brief brings it back. That
+    is the deliberate trade — the alternative is a lifetime total, which stays
+    comfortably large forever and stops describing anything. Silence on a
+    quiet week is the honest version of the same page.
     """
     creators = await db.creator_profiles.count_documents(
         {"verification_status": "verified"}
     )
-    # Campaigns that actually happened — somebody shot something. A count of
-    # posted briefs would include every draft anybody abandoned.
+    # Open right now, which is what "briefs you could apply to" means.
+    # `PUBLIC_CAMPAIGN_QUERY` keeps invite-only briefs out of a public figure —
+    # a count a stranger cannot go and look at is not proof to them.
     campaigns = await db.campaigns.count_documents(
-        {"status": {"$in": ["in_progress", "completed", "closed"]}}
+        {"status": {"$in": list(LIVE_CAMPAIGN_STATUSES)}, **PUBLIC_CAMPAIGN_QUERY}
     )
-    brands = await db.brand_profiles.count_documents({"verified": True})
     # Cities with a verified creator in them. `_canonical_city` is why this can
     # be counted at all: free-text city would make "Bengaluru", "bangalore" and
     # "BLR" three rows and one place.
@@ -28306,18 +28603,11 @@ async def _platform_proof() -> dict:
             if c
         ]
     )
-    out = {}
-    if creators >= 10:
-        out["creators"] = creators
-    if campaigns >= 5:
-        out["campaigns"] = campaigns
-    if brands >= 5:
-        out["brands"] = brands
-    # Two is not a footprint, and "1 city" is a sentence that argues against
-    # itself. Three is the floor at which the figure says anything.
-    if cities >= 3:
-        out["cities"] = cities
-    return out
+
+    counted = {"cities": cities, "creators": creators, "campaigns": campaigns}
+    if any(counted[k] < floor for k, floor in PROOF_FLOORS.items()):
+        return {}
+    return counted
 
 
 

@@ -1,9 +1,19 @@
 // When a shoot may happen, as the brand sets it.
 //
-// Two questions, and both are opt-in: most briefs have no restriction and a
-// form that insists on an answer gets a made-up one. Days first, because "not
-// Mondays" is the thing a venue says without being asked; windows second,
-// because they only matter once you know which days.
+// **Only on a personal table**, which is the only type where the creator
+// picks the time — see `_SCHEDULING_BY_TYPE` on the server. On a launch or a
+// group event these two questions have no answer, and asking them anyway got
+// them filled in: a form that asks looks like a form that needs an answer.
+//
+// Two questions, and both are opt-in even here: most briefs have no
+// restriction and a form that insists on one gets a made-up one. Days first,
+// because "not Mondays" is the thing somebody says without being asked;
+// windows second, because they only matter once you know which days.
+//
+// **The copy names no industry.** It read "the kitchen, the floor or the
+// light" and "your venue is closed", which is a food-and-drink brief
+// describing itself — accurate for a café and faintly baffling to a gym, a
+// showroom or a studio, on a platform that takes every category.
 //
 // Presets carry their own times and the client never sends them — the server
 // resolves "lunch" from its own table, so a preset whose hours we retune later
@@ -124,7 +134,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                     className="mt-2 text-xs leading-relaxed text-muted-foreground"
                 >
                     {shut.size === 0
-                        ? "Any day works. Tap the ones your venue is closed or too busy."
+                        ? "Any day works. Tap the ones you can't take anybody."
                         : `Creators can be booked on ${open.join(", ")}.`}
                 </p>
             </div>
@@ -228,8 +238,8 @@ export default function ShootPreferences({ days, windows, onChange }) {
                 )}
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                     {picked.length === 0
-                        ? "Any time of day works. Pick windows if the kitchen, the floor or the light only allow some."
-                        : "Slots can only be created inside these windows, so a manager can't book a shoot over your busiest hour."}
+                        ? "Any time of day works. Pick windows if only some hours suit you."
+                        : "Slots can only be created inside these windows, so nobody books a shoot across your busiest hour."}
                 </p>
             </div>
         </div>

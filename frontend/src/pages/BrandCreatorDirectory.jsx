@@ -298,7 +298,7 @@ export default function BrandCreatorDirectory() {
                     <div className="md:col-span-8">
                         <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
                             <span className="h-px w-8 bg-ember-500" />
-                            Creator directory · Bengaluru
+                            Creator directory
                         </p>
                         <h1
                             data-testid="directory-heading"

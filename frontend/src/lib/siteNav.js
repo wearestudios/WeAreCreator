@@ -84,3 +84,29 @@ export const MARKETING_PATHS = [
 /** The year the copyright line prints. Read at render, not hardcoded — a
  *  stale year is the cheapest possible signal that a site is unmaintained. */
 export const copyrightYear = () => new Date().getFullYear();
+
+/**
+ * The line above the headline, in one place.
+ *
+ * It read "Vol. 01 · Bengaluru · Influencer studio", inlined separately on the
+ * home page and the brief feed — so it was two strings that had to be edited
+ * together and were not. Three problems in eight words:
+ *
+ * - **"Vol. 01" is a magazine's furniture.** It implies a second volume that
+ *   does not exist and tells a first-time visitor nothing about what the site
+ *   is or whether it is for them.
+ * - **The city contradicted the product.** Signup is open and creators join
+ *   from anywhere; an eyebrow on every page naming one city tells everybody
+ *   else they are in the wrong place before they have read a word.
+ * - **"Influencer studio" describes us, not the offer.** The visitor's
+ *   question is what they get, not what we are.
+ *
+ * **It does not say "nationwide" either**, and that is deliberate rather than
+ * timid: "every city", "pan-India", "across India" and "nationwide" are in
+ * `_FORBIDDEN_MARKETING_PHRASES` on the server, because the network really is
+ * deepest in Bengaluru and a claim the operation cannot back is worse than the
+ * city it replaces. Dropping the geography fixes the contradiction without
+ * inventing a bigger one. Where depth is genuinely the point, the pages say it
+ * in a sentence that can be defended — see the positioning note in CLAUDE.md.
+ */
+export const HERO_EYEBROW = "Paid briefs · Verified creators";

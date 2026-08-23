@@ -825,12 +825,67 @@ what they say. The "Live pool" masthead figure is gone — it summed
   category with no live brief in it is a filter whose only outcome is an empty
   list.
 
+### Three types, three shapes of schedule
+
+`_SCHEDULING_BY_TYPE` is the one table saying which scheduling fields each
+campaign type carries. Every campaign used to carry every field and the form
+asked for all of them whatever you picked — so a **launch**, one evening with
+everybody arriving at once, was asked which weekdays don't work and which hours
+of the day are possible. Brands answered, because a form that asks looks like a
+form that needs an answer, and the result was a restriction nobody meant on a
+brief that could never be booked against it.
+
+- **launch** — a day, a start time and optionally how long it runs.
+  `event_date` carries the hour, because the day and the time are one
+  arrangement; `duration_minutes` is the only extra.
+- **group_event** — a day and **one or more sittings**, required. On this type
+  the timetable *is* the brief: "three sittings, six creators each" is what
+  the brand is buying and what a creator is deciding whether they can make.
+  `_sync_event_sittings` materialises them into `campaign_slots`, so booking,
+  capacity and the confirmation handshake are the machinery that already
+  exists. It rewrites rather than merges, but **keeps a sitting somebody has
+  already booked** — a brand editing a timetable is editing a plan, and a form
+  save is not the place to break an arrangement with a person.
+- **personal_table** — a window, and the only type with `restricted_days` and
+  `shoot_windows`, because it is the only one where the *creator* picks the
+  time and therefore the only one where those two questions have an answer.
+
+Enforced in `_scheduling_refusal`, which **returns the sentence rather than
+raising** (the same shape `_shoot_time_refusal` uses) so the create validator
+and the edit path can both use it. The edit path is the one that mattered:
+`_refuse_dates_foreign_to_type` checked the two date fields and let restricted
+days through on any type, which is the shape of every "validated on create
+only" bug. The refusal names the control on the screen — "the hours that work",
+not `shoot_windows` — via `_SCHEDULING_LABELS`.
+
+**An unknown type is not checked rather than refused.** Campaigns predate
+types, and a shape check that refused them would turn every historical brief
+into an un-editable record on deploy — the usual absent-reads-safe rule.
+
+`PostCampaign` renders only the fields the type has, and `timeKey` in
+`lib/time.js` reads a stored instant back as `HH:mm` **in IST**: a launch at
+19:00 in Bengaluru is 13:30 UTC, so any other reading moves the brief by five
+and a half hours every time somebody opens the edit form. Same trap `dayKey`
+exists to close.
+
 ### When a shoot may happen
 
 A venue's Monday is not its Saturday and its 11am is not its 8pm. Two fields on
-a campaign say so: `restricted_days` (weekday indexes the venue is out) and
-`shoot_windows` (the hours that work). Before them the only place a brand could
-say "not during service" was the brief, which nothing reads.
+a **personal table** say so: `restricted_days` (weekday indexes it is out) and
+`shoot_windows` (the hours that work) — see the type table above for why those
+two live on that type alone. Before them the only place a brand could say "not
+during service" was the brief, which nothing reads.
+
+**The copy names no industry.** It read "the kitchen, the floor or the light"
+and "your venue is closed", which is a food-and-drink brief describing itself:
+accurate for a café and faintly baffling to a gym, a showroom or a games
+studio, on a platform whose taxonomy is fifteen groups precisely because it
+takes every category. The same habit had reached the niches box ("cafe,
+brunch"), the tagline example (a coffee roastery, in Bengaluru), the campaign
+title example and the slot-decline note. `test_form_neutrality.py` sweeps the
+shared forms for both the food words and a city named in a placeholder —
+placeholders rather than whole files, because `INDIAN_CITIES` legitimately
+contains "Bengaluru" and a city *list* is not a city *assumption*.
 
 - **Every weekday and hour comparison happens in IST** (`SHOOT_TZ`). Slots are
   stored in UTC and a 19:00 Bengaluru sitting is the *next day* in UTC, so
@@ -955,12 +1010,46 @@ self-serve/managed choice **as an option, never as a fee they are locked into**.
   get past. Everything else that used to be below home has its own page, and
   the live brief feed went to `/campaigns`, which is a better version of it.
 - **Every proof figure is counted, never written down.** `_platform_proof`
-  queries verified creators, campaigns that reached `in_progress` or beyond,
-  verified brands and distinct cities; `GET /public/proof` serves them and
-  `ProofStrip` draws them. Each appears only above a floor — 10, 5, 5 and 3 —
-  and the strip renders nothing when there is nothing worth saying, because "3
-  creators" is not proof, it is a reason to close the tab. Home carried a
-  hardcoded "500+" until this replaced it.
+  serves three — cities with a verified creator in them, verified creators,
+  and briefs **open right now** — through `GET /public/proof`, drawn by
+  `ProofStrip`. Home carried a hardcoded "500+" until this replaced it.
+- **`PROOF_FLOORS` gates the set, not each figure.** The floors were once per
+  figure and whichever passed was drawn, which on real data rendered "7
+  cities" alone: a single number with no denominator, read as the one
+  statistic we could find — and the reader's inference about the missing ones
+  is correct. So it is all three or none, and "12 creators · 2 campaigns" is
+  worse than silence.
+- **The campaign figure is the live count, and it moves.** A quiet fortnight
+  takes the whole strip off the marketing pages and a new brief brings it
+  back. That is the trade: the alternative is a lifetime total, which stays
+  comfortably large forever and stops describing anything a visitor can go and
+  check. Invite-only briefs are excluded through `PUBLIC_CAMPAIGN_QUERY` for
+  the same reason — a number a stranger cannot verify is not proof to them.
+
+### The eyebrow above the headline
+
+`HERO_EYEBROW` in `lib/siteNav.js`, and it is one constant because it was two
+strings. Home and the brief feed each inlined "Vol. 01 · Bengaluru · Influencer
+studio" separately, so they had to be edited together and were not.
+
+- **"Vol. 01" is a magazine's furniture** — it implies a second volume that
+  does not exist and tells a first-time visitor nothing.
+- **The city contradicted the product.** Signup is open; an eyebrow on every
+  page naming one city tells everybody else they are in the wrong place before
+  they have read a word.
+- **It does not say "nationwide" either**, and that is the interesting half:
+  "every city", "pan-India", "across India" and "nationwide" are in
+  `_FORBIDDEN_MARKETING_PHRASES`, because the network really is deepest in
+  Bengaluru and a claim the operation cannot back is worse than the city it
+  replaces. Dropping the geography fixes the contradiction without inventing a
+  bigger one.
+
+The same rule reaches past the marketing pages, which is where it was actually
+failing. `Login.jsx` had its own bare "Bengaluru" — added as a fix for the
+older "Every city that matters" overclaim, and still wrong on the screen
+somebody signs in from anywhere. And two dashboards printed "Creator ·
+Bengaluru" and "Brand · Bengaluru" to people whose city the page already had in
+hand; both read the record now. `test_form_neutrality.py` sweeps for all of it.
 
 ### Why they are not server-rendered
 

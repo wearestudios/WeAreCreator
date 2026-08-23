@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { notifySuccess } from "@/lib/feedback";
 import { useAuth } from "@/context/AuthContext";
 import OtpForm from "@/components/OtpForm";
+import { HERO_EYEBROW } from "@/lib/siteNav";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 
 export default function Login() {
@@ -33,12 +34,19 @@ export default function Login() {
                         WeAre <span className="text-ember-500">Creators</span>
                     </Link>
                     <div className="max-w-md">
-                        {/* Was "Every city that matters", which is the exact
-                            geography overclaim banned everywhere else on the
-                            site — the marketing pages are tested for it and
-                            this screen sat outside those tests. The network is
-                            deepest in Bengaluru and that is what we say. */}
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Bengaluru</p>
+                        {/* Two corrections, in order. It said "Every city
+                            that matters" — the exact geography overclaim
+                            banned everywhere else on the site, which this
+                            screen sat outside the tests for. That was replaced
+                            with "Bengaluru", which was true and still wrong
+                            here: this is the screen somebody signs in from
+                            anywhere, and naming one city on it says the
+                            product is not for them. It carries the shared
+                            eyebrow now, which makes no geographic claim in
+                            either direction. */}
+                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                            {HERO_EYEBROW}
+                        </p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
                             Paid briefs, rates agreed in writing, and a report at the
                             end.

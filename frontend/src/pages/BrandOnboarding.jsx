@@ -724,7 +724,7 @@ export default function BrandOnboarding() {
                                 value={tagline}
                                 onChange={(e) => setTagline(e.target.value)}
                                 className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="Third-wave coffee roastery, six cafés across Bengaluru"
+                                placeholder="Independent running store, two shops and a weekly club run"
                             />
                             {/* This is the line that goes on every campaign
                                 card you post. A card carrying only a name
@@ -1046,7 +1046,7 @@ export default function BrandOnboarding() {
                                     className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
                                     placeholder={
                                         areas.length === 0
-                                            ? "e.g. Bengaluru — press Enter"
+                                            ? "Add a city — press Enter"
                                             : "Add another…"
                                     }
                                 />

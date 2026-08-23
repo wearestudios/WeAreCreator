@@ -67,8 +67,14 @@ export default function Hero({ user, profile, earnings }) {
             className="grid gap-6 md:grid-cols-12 md:items-start md:gap-8"
         >
             <div className="md:col-span-7">
+                {/* **Their city, not ours.** This said "Bengaluru" to every
+                    creator on the platform, including the ones who had just
+                    told us in the profile form that they are somewhere else —
+                    a hardcoded city on the one screen that knows the real
+                    answer. Absent falls back to the role alone rather than
+                    guessing. */}
                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                    Creator · Bengaluru
+                    {profile?.city ? `Creator · ${profile.city}` : "Creator"}
                 </p>
 
                 {/* The photo is the anchor of the page — creators are the

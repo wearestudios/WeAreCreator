@@ -19,7 +19,7 @@ import { api, formatApiError } from "@/lib/api";
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import { EXECUTION_OPTIONS } from "@/lib/execution";
-import { dayKey } from "@/lib/time";
+import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
@@ -92,8 +92,11 @@ export default function PostCampaign() {
     // the creator picking one of the manager's own published slots, and asking
     // somebody to confirm that is asking them to agree with themselves.
     const [requiresSlotConfirmation, setRequiresSlotConfirmation] = useState(false);
-    // When the venue can take people. Both default to "no restriction",
-    // which is what most briefs mean.
+    // **Personal table only.** These two ask which weekdays are out and which
+    // hours suit, which are questions only worth asking when the *creator*
+    // picks the time. They used to render on every type, so a launch — one
+    // evening, everybody at once — was asked both, and brands answered
+    // because a form that asks looks like a form that needs an answer.
     const [restrictedDays, setRestrictedDays] = useState([]);
     const [shootWindows, setShootWindows] = useState([]);
     const [category, setCategory] = useState("");
@@ -102,6 +105,13 @@ export default function PostCampaign() {
     // The type decides which date fields exist — see the server's validator.
     const [campaignType, setCampaignType] = useState("personal_table");
     const [eventDate, setEventDate] = useState("");
+    // Launch: the day is not enough — "everybody at once" needs the hour they
+    // all arrive at. Duration is optional; plenty of launches run until they
+    // run out.
+    const [eventTime, setEventTime] = useState("");
+    const [durationMinutes, setDurationMinutes] = useState("");
+    // Group event: the timetable, which on this type *is* the brief.
+    const [sittings, setSittings] = useState([{ time: "", capacity: "4" }]);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     // The cover, which has two lives. On an existing campaign it uploads
@@ -212,6 +222,29 @@ export default function PostCampaign() {
                     setCreatorsNeeded(String(data.creators_needed ?? 1));
                     setCampaignType(data.campaign_type || "personal_table");
                     setEventDate(toDateInput(data.event_date));
+                    // **Re-seeded, or an edit rewrites the schedule.** The
+                    // same trap the venue fields fell into: `buildPayload`
+                    // sends these for the type, so a form that loaded without
+                    // them would save a launch back with no start time and a
+                    // group event with an empty timetable.
+                    setEventTime(
+                        data.campaign_type === "launch" ? timeKey(data.event_date) : "",
+                    );
+                    setDurationMinutes(
+                        data.duration_minutes != null ? String(data.duration_minutes) : "",
+                    );
+                    if (data.campaign_type === "group_event") {
+                        const rows = (data.sittings || []).map((r) => ({
+                            time: timeKey(r.starts_at),
+                            capacity: String(r.capacity ?? 4),
+                            // A sitting somebody already holds a seat in
+                            // survives a rewrite server-side; saying so here
+                            // stops a brand deleting a row and wondering why
+                            // it came back.
+                            booked: Number(r.booked_count || 0),
+                        }));
+                        setSittings(rows.length ? rows : [{ time: "", capacity: "4" }]);
+                    }
                     setStartDate(toDateInput(data.start_date));
                     setEndDate(toDateInput(data.end_date));
                     // These three were never loaded, and buildPayload sends
@@ -281,6 +314,15 @@ export default function PostCampaign() {
                 return "End date cannot be before the start date.";
         } else if (!eventDate) {
             return "Pick the day the event happens.";
+        } else if (campaignType === "launch" && !eventTime) {
+            // Everybody arrives at once, so the hour is the arrangement.
+            return "Pick the time it starts.";
+        } else if (campaignType === "group_event") {
+            const filled = sittings.filter((r) => r.time);
+            if (!filled.length)
+                return "A group event runs in sittings — add at least one time.";
+            if (new Set(filled.map((r) => r.time)).size !== filled.length)
+                return "Two sittings can't start at the same time.";
         }
         return null;
     };
@@ -301,19 +343,48 @@ export default function PostCampaign() {
         visibility,
         requires_draft_approval: requiresDraft,
         requires_slot_confirmation: requiresSlotConfirmation,
-        restricted_days: restrictedDays,
-        // Presets travel as a bare key; only a custom window carries times,
-        // because the server owns what "lunch" means.
-        shoot_windows: shootWindows.map((w) =>
-            w.key === "custom" ? { key: "custom", start: w.start, end: w.end } : { key: w.key },
-        ),
+        // **Only the fields this type has.** The server refuses the rest
+        // outright (`_SCHEDULING_BY_TYPE`), so sending them on the wrong type
+        // is a 422 rather than a field quietly stored and never read.
+        ...(campaignType === "personal_table"
+            ? {
+                  restricted_days: restrictedDays,
+                  // Presets travel as a bare key; only a custom window carries
+                  // times, because the server owns what "lunch" means.
+                  shoot_windows: shootWindows.map((w) =>
+                      w.key === "custom"
+                          ? { key: "custom", start: w.start, end: w.end }
+                          : { key: w.key },
+                  ),
+              }
+            : {}),
+        ...(campaignType === "launch" && durationMinutes
+            ? { duration_minutes: Number(durationMinutes) }
+            : {}),
+        ...(campaignType === "group_event"
+            ? {
+                  sittings: sittings
+                      .filter((r) => r.time)
+                      .map((r) => ({
+                          starts_at: new Date(`${eventDate}T${r.time}`).toISOString(),
+                          capacity: Math.max(1, Number(r.capacity) || 1),
+                      })),
+              }
+            : {}),
         category,
         area,
         creators_needed: Math.max(1, Number(creatorsNeeded) || 1),
         campaign_type: campaignType,
+        // A launch's `event_date` carries the start time, because the day and
+        // the hour are one arrangement. A group event's is the day; its
+        // sittings carry the times.
         event_date:
             campaignType !== "personal_table" && eventDate
-                ? new Date(eventDate).toISOString()
+                ? new Date(
+                      campaignType === "launch" && eventTime
+                          ? `${eventDate}T${eventTime}`
+                          : eventDate,
+                  ).toISOString()
                 : null,
         start_date:
             campaignType === "personal_table" && startDate
@@ -560,40 +631,150 @@ export default function PostCampaign() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="md:max-w-xs">
-                                <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                    Which day
-                                </Label>
-                                <div className="relative mt-2">
-                                    <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        id="pc-event"
-                                        data-testid="pc-event-input"
-                                        type="date"
-                                        value={eventDate}
-                                        onChange={(e) => setEventDate(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
-                                    />
+                            <div className="space-y-5">
+                                <div className="grid gap-5 md:grid-cols-3">
+                                    <div>
+                                        <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                            Which day
+                                        </Label>
+                                        <div className="relative mt-2">
+                                            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                            <Input
+                                                id="pc-event"
+                                                data-testid="pc-event-input"
+                                                type="date"
+                                                value={eventDate}
+                                                onChange={(e) => setEventDate(e.target.value)}
+                                                className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* A launch is one moment, so the hour is
+                                        part of the arrangement rather than
+                                        something a manager fills in later. */}
+                                    {campaignType === "launch" && (
+                                        <>
+                                            <div>
+                                                <Label htmlFor="pc-event-time" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                                    Starts at
+                                                </Label>
+                                                <Input
+                                                    id="pc-event-time"
+                                                    data-testid="pc-event-time-input"
+                                                    type="time"
+                                                    value={eventTime}
+                                                    onChange={(e) => setEventTime(e.target.value)}
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="pc-duration" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                                    Runs for (optional)
+                                                </Label>
+                                                <Input
+                                                    id="pc-duration"
+                                                    data-testid="pc-duration-input"
+                                                    type="number"
+                                                    min={15}
+                                                    max={1440}
+                                                    step={15}
+                                                    placeholder="Minutes"
+                                                    value={durationMinutes}
+                                                    onChange={(e) => setDurationMinutes(e.target.value)}
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
-                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                                    Your campaign manager sets the individual time slots once
-                                    the brief is approved.
-                                </p>
+
+                                {/* **The timetable is the brief on this
+                                    type.** "Three sittings, six creators
+                                    each" is what the brand is buying and what
+                                    a creator is deciding whether they can
+                                    make, so it is set here rather than left
+                                    to the manager after approval. */}
+                                {campaignType === "group_event" && (
+                                    <div data-testid="pc-sittings">
+                                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                            Sittings
+                                        </Label>
+                                        <div className="mt-2 space-y-2">
+                                            {sittings.map((row, i) => (
+                                                <div key={i} className="flex flex-wrap items-center gap-2">
+                                                    <Input
+                                                        type="time"
+                                                        aria-label={`Sitting ${i + 1} time`}
+                                                        data-testid={`pc-sitting-time-${i}`}
+                                                        value={row.time}
+                                                        onChange={(e) => {
+                                                            const next = [...sittings];
+                                                            next[i] = { ...next[i], time: e.target.value };
+                                                            setSittings(next);
+                                                        }}
+                                                        className="h-11 w-36 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    />
+                                                    <Input
+                                                        type="number"
+                                                        min={1}
+                                                        aria-label={`Sitting ${i + 1} places`}
+                                                        data-testid={`pc-sitting-capacity-${i}`}
+                                                        value={row.capacity}
+                                                        onChange={(e) => {
+                                                            const next = [...sittings];
+                                                            next[i] = { ...next[i], capacity: e.target.value };
+                                                            setSittings(next);
+                                                        }}
+                                                        className="h-11 w-24 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    />
+                                                    <span className="text-xs text-muted-foreground">places</span>
+                                                    {sittings.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            data-testid={`pc-sitting-remove-${i}`}
+                                                            onClick={() =>
+                                                                setSittings(sittings.filter((_, j) => j !== i))
+                                                            }
+                                                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            data-testid="pc-sitting-add"
+                                            onClick={() =>
+                                                setSittings([...sittings, { time: "", capacity: "4" }])
+                                            }
+                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:text-ember-400 sm:min-h-0"
+                                        >
+                                            Add a sitting
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {/* Which days and hours the venue can actually take
-                            people. Sits with the dates because it is the same
-                            question at a finer grain — and because a manager
-                            setting slots reads both together. */}
-                        <ShootPreferences
-                            days={restrictedDays}
-                            windows={shootWindows}
-                            onChange={({ days, windows }) => {
-                                setRestrictedDays(days);
-                                setShootWindows(windows);
-                            }}
-                        />
+                        {/* **Personal table only**, because it is the only
+                            type where the creator picks the time — and so the
+                            only one where "not Mondays" and "afternoons only"
+                            are answerable. The server refuses these two on the
+                            other types outright, so this is the form agreeing
+                            with the API rather than deciding on its own. */}
+                        {campaignType === "personal_table" && (
+                            <ShootPreferences
+                                days={restrictedDays}
+                                windows={shootWindows}
+                                onChange={({ days, windows }) => {
+                                    setRestrictedDays(days);
+                                    setShootWindows(windows);
+                                }}
+                            />
+                        )}
                     </section>
 
                     <section className="space-y-5">
@@ -611,7 +792,7 @@ export default function PostCampaign() {
                                 onChange={(e) => setTitle(e.target.value)}
                                 maxLength={140}
                                 className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="e.g. Weekend brunch reel — new menu launch"
+                                placeholder="e.g. Two reels for the spring range"
                             />
                         </div>
                         <div>

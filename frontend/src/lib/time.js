@@ -117,6 +117,30 @@ export function dayKey(value) {
     return d.toLocaleDateString("en-CA", { timeZone: IST });
 }
 
+/**
+ * The IST time of day a timestamp falls at, as `HH:mm`.
+ *
+ * The counterpart to `dayKey`, and it exists for the same reason: what a
+ * `<input type="time">` needs back is the hour the *venue* sees, and reading
+ * it off the stored instant any other way gives whichever hour the reader's
+ * own browser is in. A launch at 19:00 in Bengaluru is 13:30 in UTC, so a
+ * round trip through the wrong zone moves the brief by five and a half hours
+ * every time somebody opens the edit form.
+ *
+ * `hourCycle: "h23"` because an `<input type="time">` value is 24-hour and
+ * `hour12: false` alone still yields "24:00" at midnight in some engines.
+ */
+export function timeKey(value) {
+    const d = parse(value);
+    if (!d) return "";
+    return d.toLocaleTimeString("en-GB", {
+        timeZone: IST,
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+    });
+}
+
 /** Today, in IST, as `YYYY-MM-DD`. */
 export const todayKey = () => dayKey(new Date());
 

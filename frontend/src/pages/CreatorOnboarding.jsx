@@ -730,7 +730,7 @@ export default function CreatorOnboarding() {
                             inputId={IDS.nichesInput}
                             chipId={IDS.nicheChip}
                             suggestId={IDS.nicheSuggest}
-                            placeholder="e.g. cafe, brunch — press Enter"
+                            placeholder="e.g. streetwear, home workouts — press Enter"
                         />
                     </Section>
 
@@ -875,7 +875,7 @@ export default function CreatorOnboarding() {
                                 rows={5}
                                 maxLength={1500}
                                 className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
-                                placeholder="I shoot food and travel around Bengaluru — mostly cafes, weekend trips and the odd hotel review…"
+                                placeholder="What you make, who watches it, and the kind of work you want more of…"
                             />
                             <p className="mt-1.5 text-right text-xs text-muted-foreground">
                                 {(form.about || "").length}/1500

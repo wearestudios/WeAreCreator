@@ -1553,8 +1553,17 @@ class TestCampaignTypes:
 
     @pytest.mark.parametrize("ctype", ["launch", "group_event"])
     def test_an_event_campaign_takes_one_day(self, ctype):
+        # A group event's day is a timetable, so it carries at least one
+        # sitting — see `_SCHEDULING_BY_TYPE`.
+        extra = (
+            {"sittings": [{"starts_at": "2026-09-01T12:00:00Z", "capacity": 4}]}
+            if ctype == "group_event"
+            else {}
+        )
         payload = server.PostCampaignPayload(
-            **_campaign_body(campaign_type=ctype, event_date="2026-09-01T10:00:00Z")
+            **_campaign_body(
+                campaign_type=ctype, event_date="2026-09-01T10:00:00Z", **extra
+            )
         )
         assert payload.event_date is not None
         assert payload.start_date is None and payload.end_date is None

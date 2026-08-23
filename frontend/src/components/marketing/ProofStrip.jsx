@@ -4,11 +4,13 @@
 // typed it, on the pages whose whole job is to be believed by a stranger. So
 // the figures come from `GET /public/proof`, which counts them.
 //
-// **Each appears only above a floor, and the whole strip disappears when there
-// is nothing worth saying.** A strip reading "3 creators" is not proof, it is
-// a reason to close the tab, and the honest move at that size is silence
-// rather than rounding up. The floors live on the server so every surface
-// agrees about what counts as sayable.
+// **Three figures, and it is all of them or none.** The floors live on the
+// server (`PROOF_FLOORS`) so every surface agrees about what counts as
+// sayable, and the gate is on the set rather than on each figure: the old
+// per-figure rule rendered "7 cities" alone on real data, which reads as the
+// one statistic we could find. A visitor makes the obvious inference about the
+// missing ones, and they are right to. "12 creators · 2 campaigns" is worse
+// than silence.
 //
 // It renders nothing if the request fails. A proof strip that says "—" is
 // worse than no proof strip.
@@ -34,13 +36,15 @@ import { MARKETING as IDS } from "@/constants/testIds";
 
 const LABEL = {
     creators: "verified creators",
-    campaigns: "campaigns run",
+    // "Open briefs", not "campaigns run": the server counts what is live right
+    // now, and a label saying otherwise would describe a different number.
+    campaigns: "open briefs",
     cities: "cities",
-    brands: "verified brands",
 };
 
-// The order they read in, not the order the API happens to return.
-const ORDER = ["creators", "campaigns", "cities", "brands"];
+// The order they read in, not the order the API happens to return. Three, and
+// the server sends all three or none — see `PROOF_FLOORS`.
+const ORDER = ["creators", "campaigns", "cities"];
 
 // Measured against the rendered strip, at both widths, because the figures
 // wrap: one row above `md` (148px) and two below it (200px). A single value

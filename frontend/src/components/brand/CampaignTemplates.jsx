@@ -186,7 +186,7 @@ export function SaveAsTemplate({ campaignId, defaultName = "" }) {
             <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Monthly tasting"
+                placeholder="e.g. Monthly in-store shoot"
                 maxLength={80}
                 data-testid={IDS.saveName}
                 className="h-10 w-56 border-white/10 bg-background/60"
