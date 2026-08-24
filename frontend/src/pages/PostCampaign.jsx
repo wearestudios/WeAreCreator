@@ -18,7 +18,7 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
-import { EXECUTION_OPTIONS } from "@/lib/execution";
+import { EXECUTION_OPTIONS, weareRunReason } from "@/lib/execution";
 import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
@@ -336,6 +336,17 @@ export default function PostCampaign() {
     // was never shown.
     const isBarter = compensationType === "barter";
 
+    // Whether this brief is ours to run whatever the picker says, and why. The
+    // threshold comes from the server on `GET /brand/profile` — it is an
+    // operating decision an admin can change, and a copy of the number here
+    // would be a form arguing with the route it posts to. Absent, the reader
+    // simply never fires the size rule; the launch rule needs no number.
+    const weareRun = weareRunReason({
+        campaignType,
+        creatorsNeeded,
+        threshold: brandProfile?.execution?.large_campaign_threshold,
+    });
+
     const validateBase = () => {
         if (!title.trim()) return "Please enter a campaign title.";
         if (!brief.trim()) return "Please add a brief.";
@@ -388,7 +399,12 @@ export default function PostCampaign() {
             : {
                   budget_per_creator: Number(budget),
                   compensation_type: compensationType,
-                  execution_owner: executionOwner,
+                  // **Agreeing with the rule rather than being overridden by
+                  // it.** The create path would force `weare` anyway, but the
+                  // edit path refuses a write that takes such a campaign back
+                  // — so a form that kept sending the picker's old value would
+                  // 422 the whole save on a field it is no longer showing.
+                  execution_owner: weareRun ? "weare" : executionOwner,
               }),
         visibility,
         requires_draft_approval: requiresDraft,
@@ -1083,11 +1099,31 @@ export default function PostCampaign() {
                         {/* Who runs it. Asked here, next to how it pays,
                             because the two together are what a brand is
                             actually deciding when it posts: what this costs
-                            and how much of it they do themselves. */}
+                            and how much of it they do themselves.
+
+                            **Except on the two shapes that are ours by rule.**
+                            A launch and a brief for more than the threshold
+                            come to our team whatever is picked, and the server
+                            forces it — so the picker is *replaced* by the
+                            reason rather than left up with a choice that would
+                            be quietly overridden. Said as the offer it is: a
+                            manager on the campaign where it matters, not a
+                            control taken away. */}
                         <div>
                             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                                 Who runs it
                             </p>
+                            {weareRun ? (
+                                <div
+                                    data-testid={EXECUTION.weareRun}
+                                    className="mt-3 rounded-md border border-ember-500/40 bg-ember-500/10 p-5"
+                                >
+                                    <p className="text-sm text-ember-500">{weareRun.title}</p>
+                                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                        {weareRun.line}
+                                    </p>
+                                </div>
+                            ) : (
                             <div
                                 data-testid={EXECUTION.picker}
                                 role="radiogroup"
@@ -1126,6 +1162,7 @@ export default function PostCampaign() {
                                     );
                                 })}
                             </div>
+                            )}
                         </div>
 
                         <div>

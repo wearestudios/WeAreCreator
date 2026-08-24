@@ -43,7 +43,7 @@ _SURFACES = {
     "auth": ("Login", "Signup", "AdminLogin"),
     "creator": ("CreatorHome", "CreatorOnboarding", "CreatorProfile", "SelfCheckIn",
                 "InstagramCallback"),
-    "brand": ("BrandOnboarding", "PostCampaign", "BrandCreatorDirectory",
+    "brand": ("BrandOnboarding", "PostCampaign",
               "BrandCampaignApplicants", "BrandDashboardView"),
     "manager": ("ManagerHome", "ManagerCampaign"),
     "admin": ("AdminConsole", "admin/routes", "admin/CampaignDetailPage",

@@ -154,8 +154,8 @@ work email. That person is the `brand_manager`.
 ## Creator data a brand may see
 
 `_brand_visible_creator` is the **only** projection of a creator on any
-brand-facing surface — the directory, the applicant board, the suggestions panel
-and the notes header all go through it. It is an allow-list
+brand-facing surface — the applicant board, the suggestions panel, the notes
+header and the closed-campaign export all go through it. It is an allow-list
 (`_BRAND_VISIBLE_CREATOR_FIELDS`): name, photo, Instagram and YouTube handles
 with their public stats, follower count and its provenance, engagement rate,
 city, niches, genres, platforms, base rate, verification status.
@@ -173,6 +173,38 @@ integration test does the same against live HTTP. The WeAre manager's roster and
 daysheet still carry phone numbers — that is the job of the person at the door —
 and stay behind the staff role. The brand's roster passes
 `reveal_contact=False`, which omits the key rather than nulling it.
+
+### There is no roster to browse
+
+`GET /brand/creators` and `/brand/creators/filters` paged through **every
+verified creator on the platform**, filterable by niche, city and follower
+range, from a "Creators" link in the navbar on every brand screen. That is a
+database of people the brand has no relationship with, presented as something
+to shop through — and the allow-list was governing what a brand saw about each
+of them while nothing governed *which* of them a brand saw at all.
+
+Both endpoints are gone, along with `pages/BrandCreatorDirectory.jsx`, its
+route and both links. A brand reaches creators through **its own briefs**:
+
+- the applicant board, for people who pitched;
+- the invited strip, for people it asked;
+- `GET /brand/campaigns/{id}/suggested-creators` — the curated half, and the
+  deliberate replacement. Ranked against **one campaign** with the reasons
+  shipped, so it is a shortlist for a brief rather than a directory with a
+  search box; anyone who has already applied or been invited is excluded.
+
+**`weare_team` gains nothing here, which is the deliberate reading of "keeps
+directory access".** They never had `/brand/creators` — its guard was
+`require_roles(*BRAND_ROLES, "admin")` — and they already reach creators
+scoped through `_console_creator_ids`. Widening a staff role's surface as a
+side effect of a lockdown is the opposite of what the lockdown is for. The
+global creator directory and its review queue stay admin-only, as they were.
+
+The marketing copy moved with it: `/for-brands` step two said applicants
+arrive "ranked alongside verified creators who fit", which described a roster.
+It reads "beside creators matched to your brief" now — the same length, since
+the page sits exactly on its 250-word budget and the test that holds it counts
+every double-quoted string in the `COPY` block, comments included.
 
 ## Work notes
 
@@ -2008,6 +2040,50 @@ wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote
 are one component rather than a pill per console, because the point of the field
 is that the admin, the brand and the creator agree about it.
 
+### The two shapes that are ours whatever the brand picks
+
+A **launch** and a brief for more than `large_campaign_threshold()` creators
+(15, stored and admin-editable) are `weare` however the picker was set. Both
+are about the shape of the work rather than about the brand: a launch is one
+evening with no second attempt, and twenty creators is twenty bookings, twenty
+briefings and twenty people through a door on the same night.
+
+- **`_weare_run_reason(campaign_type, creators_needed, threshold)` is the one
+  decider**, and it is pure — it takes the two facts rather than a document,
+  so create (which has a payload), edit (a document with an update laid over
+  it) and the form's own explanation ask the same question. Returns
+  `(code, sentence)` or `None`, the `_scheduling_refusal` shape.
+- **The sentence is the offer, not the refusal.** A brand is not losing a
+  campaign, it is getting a manager on the one where it matters, and both
+  sentences end by saying they still post it and approve the work. The form
+  **replaces the picker with it** rather than leaving a choice the server is
+  about to override.
+- **More than fifteen is sixteen.** An off-by-one moves every fifteen-creator
+  brief onto our desk, so the comparison is `>` and a test pins both sides.
+  An absent or unparseable headcount reads as *not* large — the usual
+  absent-reads-safe rule.
+- **Crossing the line on an edit hands it over**, writing `execution_owner`,
+  `weare_run_reason` and `_execution_manager_fields` in one write, auditing
+  `campaign.execution_handover`, and telling the brand **and**
+  `notify_weare_team` — which falls back to every admin when nothing is
+  assigned, exactly the state a fresh handover leaves behind. Editing back
+  under the line returns it: the rule is about the work, and a brief cut to
+  four creators is a four-creator brief again.
+- **A brand cannot take one back** (`_refuse_late_execution_handover`, 409
+  with `weare_run_launch` / `weare_run_large`), and that check comes *before*
+  the draft-status question because it is the stronger of the two — this one
+  has no editable window at all. An admin is not held to it, the same
+  asymmetry `_refuse_brand_barter` has.
+- The threshold rides on `GET /brand/profile` as `execution.large_campaign_
+  threshold`, and `weareRunReason` in `lib/execution.js` **takes it rather
+  than knowing it** — a number the form hardcodes is a form arguing with the
+  route it posts to the day an admin changes it. `GET`/`PUT
+  /admin/settings/large-campaign` is the editor, **admin-only**: a brand that
+  could raise the threshold could opt itself out of the rule.
+- The form posts `weareRun ? "weare" : executionOwner`. Sending the picker's
+  old value would fail the whole save on the edit path over a field the form
+  is no longer showing.
+
 ## One application, on its own screen
 
 `components/application/ApplicationDetail.jsx`, rendered at **two routes off one
@@ -3093,6 +3169,42 @@ real output**, not by reading the source for a key name. Source-reading catches
 the mistake somebody makes on purpose; running it catches the one where a phone
 number arrives through a `**spread` from a document nobody remembered had one.
 Planting a leak in `_build_campaign_report` fails the suite — checked.
+
+### The brand's own copy of a finished campaign
+
+`GET /brand/campaigns/{id}/export` — one CSV, per creator: name and handles,
+what the brief asked for and what arrived, the live links, the date they were
+at the venue, the fee or the barter description, and the usage rights, with the
+campaign's totals underneath. Everything a brand needed after the fact lived
+only on our screens, so reconciling an invoice or writing up a quarter meant
+reading a web page and retyping it.
+
+- **Only once it is over** (`_CLOSED_CAMPAIGN_STATUSES`, a 409 with
+  `campaign_not_closed`). The delivery columns are the point of the file and
+  they are still being filled in until then; the button is absent rather than
+  present and refusing.
+- **Ownership before verification**, as everywhere — another brand's campaign
+  is a 404, never a 403.
+- **`accepted` is the line, not `applied`.** `_BRAND_EXPORT_STATES` is
+  everybody who was taken on: a brand forwarding this to its own finance team
+  should not be forwarding a list of the creators it turned down.
+- **Every creator goes through `_brand_visible_creator`**, so the PII
+  exclusion is a property of the projection rather than of the ten column
+  names somebody happened to pick. `test_access_and_execution.py` plants a
+  phone, an email, an address, a map pin, a UPI id, an account number, an IFSC
+  and a PAN in the input and searches the real bytes; the break that a column
+  reaching past the projection to the raw profile fails it was checked.
+- A date, not an instant — this goes to a client, and an ISO timestamp in a
+  cell is us showing our working. Barter carries **no total**, because `0` in
+  a money column reads as a campaign that cost nothing rather than one that
+  was never priced.
+- Audited as `campaign.export` with `includes_contact_details: False`, and
+  `Cache-Control: no-store`.
+- **Fetched as an authenticated blob, never linked** — the lesson
+  `BrandDocuments` already learned: the cookie is `SameSite=None`, so a bare
+  `href` at the API rides along in production and silently does not on a
+  plain-http laptop. A refusal arrives as a Blob too, so the handler reads the
+  bytes back before formatting the message.
 
 ## The admin console
 

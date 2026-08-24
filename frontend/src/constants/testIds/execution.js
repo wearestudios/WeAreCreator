@@ -9,4 +9,9 @@ export const EXECUTION = {
 	filterOption: (value) => `execution-filter-${value}`,
 	picker: 'execution-picker',
 	pickerOption: (value) => `execution-picker-${value}`,
+	// What stands where the picker would be on a brief that is ours by rule —
+	// a launch, or one for more than the threshold. It replaces the picker
+	// rather than sitting beside it: a choice the server is about to override
+	// is not a choice.
+	weareRun: 'execution-weare-run',
 };

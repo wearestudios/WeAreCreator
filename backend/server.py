@@ -2948,6 +2948,24 @@ DELIVERED_COLLAB_STATES = (
 )
 COLLAB_GROUP_ENDED = ("declined", "cancelled", "withdrawn", "expired")
 
+# What the brand's close-out export lists: everybody who was **taken on**,
+# which is a wider set than everybody who delivered. A creator who was accepted
+# and then cancelled is part of what happened on that campaign and belongs on
+# the record; somebody who applied and was turned down is not, and a report
+# forwarded to a finance team should not carry a list of people the brand
+# declined. `accepted` is the line, for the same reason `agreed_at` is the line
+# on the applicant board.
+_BRAND_EXPORT_STATES = (
+    "accepted",
+    "commercial_agreed",
+    "slot_booked",
+    "attended",
+    "draft_submitted",
+    "draft_approved",
+    *DELIVERED_COLLAB_STATES,
+    "cancelled",
+)
+
 # States where the next move is the admin's. Deliberately not derived from
 # _BRAND_OWNED_TRANSITIONS: `attended` and `content_submitted` are waiting on the
 # creator and the brand respectively, even though the advance endpoint would
@@ -3774,6 +3792,10 @@ NOTIFY_EVENTS = {
     "brand_creator_cancelled": "A creator dropped off your campaign",
     "brand_creator_no_show": "A creator didn't turn up",
     "brand_campaign_updated": "WeAre changed something on your campaign",
+    # A brief that crossed into WeAre-run territory. Sent to the brand, whose
+    # dashboard just lost its buttons, and to us, because the campaign is now
+    # ours and nobody is staffed on it.
+    "campaign_handed_to_weare": "This campaign is now run by the WeAre team",
     # The question channel, both directions. Who receives campaign_question
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
@@ -9598,7 +9620,93 @@ def _refuse_brand_barter(campaign: Optional[dict], update: dict) -> None:
 _EXECUTION_SETTLED_STATUSES = ("draft", CAMPAIGN_REVIEW_STATUS)
 
 
-def _refuse_late_execution_handover(campaign: Optional[dict], update: dict) -> None:
+# ---------------------------------------------------------------------------
+# Campaigns a brand may not run itself
+# ---------------------------------------------------------------------------
+#
+# `execution_owner` defaults to the brand, because posting a brief means
+# running it unless you say otherwise. Two kinds of campaign are the exception,
+# and both for the same reason: they are the ones where a brand running it
+# alone is how the day goes wrong.
+#
+# - **A launch** is one evening, everybody arrives at once, and there is no
+#   second attempt. The scheduling table already says as much — it is the type
+#   with a single instant rather than a window.
+# - **A big campaign** is a logistics problem before it is a creative one.
+#   Sixteen creators is sixteen bookings, sixteen briefings and sixteen people
+#   at a door.
+#
+# **The brand still posts it and still pays for it.** What it does not do is
+# self-manage it, and the copy says so as the offer it is rather than as a
+# refusal: our team runs these.
+LAUNCH_IS_WEARE_RUN = True
+LARGE_CAMPAIGN_CREATORS_DEFAULT = 15
+_LARGE_CAMPAIGN_SETTINGS_ID = "large_campaign_threshold"
+LARGE_CAMPAIGN_CREATORS_MAX = 100
+
+
+async def large_campaign_threshold() -> int:
+    """Above how many creators a campaign becomes ours to run.
+
+    Stored rather than constant, for the reason the SLA targets and the
+    reschedule limit are: what the operation can staff depends on the
+    operation, and a number that needs a deploy to change is one that never
+    changes. Never raises — a settings read that fails falls back to the
+    default rather than taking down the post form.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _LARGE_CAMPAIGN_SETTINGS_ID})
+    except Exception as exc:
+        logger.error("could not read the large-campaign threshold: %s", exc)
+        return LARGE_CAMPAIGN_CREATORS_DEFAULT
+    try:
+        value = int((doc or {}).get("creators"))
+    except (TypeError, ValueError):
+        return LARGE_CAMPAIGN_CREATORS_DEFAULT
+    return value if 1 <= value <= LARGE_CAMPAIGN_CREATORS_MAX else (
+        LARGE_CAMPAIGN_CREATORS_DEFAULT
+    )
+
+
+def _weare_run_reason(campaign_type: Optional[str], creators_needed, threshold: int):
+    """Why this campaign is ours to run, or `None` if it is not.
+
+    **A pure reader taking the two facts rather than a document**, so the
+    create path (which has a payload), the edit path (which has a document and
+    an update on top of it) and the form's own explanation can all ask the same
+    question. A second copy of this rule is a second answer to "who runs it",
+    and the two would differ on exactly the campaign somebody is arguing about.
+
+    Returns `(code, sentence)`. The sentence is what the brand reads, and it is
+    written as the offer rather than as a refusal: they are not losing control
+    of a campaign, they are getting a manager on the one where it matters.
+    """
+    if campaign_type == "launch":
+        return (
+            "launch",
+            "A launch is one evening and there is no second attempt, so our "
+            "team runs it — booking the creators, briefing them and standing "
+            "at the door on the night. You post it and approve the work as "
+            "usual.",
+        )
+    try:
+        needed = int(creators_needed or 0)
+    except (TypeError, ValueError):
+        needed = 0
+    if needed > threshold:
+        return (
+            "large",
+            f"Briefs for more than {threshold} creators are run by our team — "
+            f"{needed} creators is {needed} bookings, {needed} briefings and "
+            f"{needed} people to get through a door. You post it and approve "
+            "the work as usual.",
+        )
+    return None
+
+
+def _refuse_late_execution_handover(
+    campaign: Optional[dict], update: dict, threshold: int
+) -> None:
     """Keep a brand from changing who runs a campaign after it has gone out.
 
     Changing it silently reroutes every future application away from whoever
@@ -9613,6 +9721,23 @@ def _refuse_late_execution_handover(campaign: Optional[dict], update: dict) -> N
         return
     if update["execution_owner"] == _execution_owner(campaign):
         return  # not a change; re-sending the same value is not an edit
+    # **A campaign that is ours by rule cannot be taken back**, at any status
+    # and however new the draft. The rule is about the shape of the work — a
+    # launch is still one evening, twenty creators are still twenty bookings —
+    # so "it is only a draft" changes nothing about it. Checked before the
+    # status question because it is the stronger of the two: this one has no
+    # editable window at all.
+    if update["execution_owner"] != "weare":
+        reason = _weare_run_reason(
+            campaign.get("campaign_type"),
+            campaign.get("creators_needed"),
+            threshold,
+        )
+        if reason:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": reason[1], "code": f"weare_run_{reason[0]}"},
+            )
     if campaign.get("status") not in _EXECUTION_SETTLED_STATUSES:
         raise HTTPException(
             status_code=409,
@@ -9805,6 +9930,14 @@ async def _brand_profile_response(profile: dict) -> dict:
     out["uploads"] = {
         "max_image_bytes": max_upload_bytes(),
         "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
+    }
+    # **Which briefs are ours to run, from the server.** The post form has to
+    # explain the rule *before* the brand picks a type or types a headcount —
+    # after the fact it is a surprise, and a form that worked the threshold out
+    # for itself would be a second copy of a number an admin can change.
+    out["execution"] = {
+        "large_campaign_threshold": await large_campaign_threshold(),
+        "launch_is_weare_run": LAUNCH_IS_WEARE_RUN,
     }
     # The three option lists, from the server rather than copied into the
     # form. A dropdown offering a value the API refuses is a dead control, and
@@ -10350,6 +10483,17 @@ async def create_brand_campaign(
     # the refusal explains itself — see _refuse_brand_barter.
     _refuse_brand_barter(None, {"compensation_type": payload.compensation_type})
 
+    # **Forced rather than refused.** A launch, or a brief for more creators
+    # than we let a brand coordinate alone, is ours to run — so the campaign is
+    # created with `weare` and the brand is told why, rather than being handed
+    # a 422 about a field the form does not even offer on those two shapes.
+    # `_weare_run_reason` is the one decider; the form asks it too, so what the
+    # brand read before posting and what the server did cannot differ.
+    weare_run = _weare_run_reason(
+        payload.campaign_type, payload.creators_needed, await large_campaign_threshold()
+    )
+    resolved_execution_owner = "weare" if weare_run else payload.execution_owner
+
     now = datetime.now(timezone.utc)
     doc = {
         "brand_id": _brand_scope(user),
@@ -10371,14 +10515,18 @@ async def create_brand_campaign(
         "creators_needed": int(payload.creators_needed),
         "campaign_type": payload.campaign_type,
         "compensation_type": payload.compensation_type,
-        "execution_owner": payload.execution_owner,
+        "execution_owner": resolved_execution_owner,
+        # Why, when it was not the brand's choice. Stored so the campaign can
+        # say it on every screen afterwards rather than only in the toast the
+        # brand saw once at post time.
+        "weare_run_reason": weare_run[0] if weare_run else None,
         "visibility": payload.visibility,
         # Defaults on for a brand running its own campaign and off when they
         # have handed execution to us — our own managers are the reviewers
         # either way, and a gate we impose on ourselves by default is process
         # for its own sake. Either can be set explicitly.
         "requires_draft_approval": (
-            payload.execution_owner != "weare"
+            resolved_execution_owner != "weare"
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
@@ -10421,7 +10569,7 @@ async def create_brand_campaign(
         # "who am I dealing with" either way.
         **(
             _NO_CAMPAIGN_MANAGER
-            if payload.execution_owner == "weare"
+            if resolved_execution_owner == "weare"
             else await _brand_manager_contact(_brand_scope(user))
         ),
         "status": payload.status,
@@ -10535,7 +10683,12 @@ async def update_brand_campaign(
         _resolve_brief_details({f: update.pop(f) for f in BRIEF_DETAIL_FIELDS if f in update})
     )
     _refuse_brand_barter(doc, update)
-    _refuse_late_execution_handover(doc, update)
+    # Read once and used twice: the guard below asks whether this campaign is
+    # already ours by rule, and the block further down asks whether this edit
+    # makes it so. Two reads could disagree if the setting changed between
+    # them, which is a race whose only possible outcome is confusion.
+    threshold = await large_campaign_threshold()
+    _refuse_late_execution_handover(doc, update, threshold)
     _refuse_dates_foreign_to_type(doc, update)
     # Handing execution over moves the manager with it, or the two fields
     # disagree and applications go to the wrong inbox.
@@ -10557,6 +10710,34 @@ async def update_brand_campaign(
                 detail=f"{filled} creator(s) are already confirmed on this campaign.",
             )
 
+    # **Crossing the line hands the campaign over rather than refusing the
+    # edit.** A brand raising a brief from twelve creators to twenty is doing
+    # the ordinary thing; the only question is who runs the result, and the
+    # answer is us. Asked of the campaign *as it will be* — the update laid
+    # over the document — so an edit to either the type or the headcount is
+    # read the same way, by the same function the create path uses.
+    after_edit = {**doc, **update}
+    weare_run = _weare_run_reason(
+        after_edit.get("campaign_type"), after_edit.get("creators_needed"), threshold
+    )
+    handed_over = False
+    if weare_run and _execution_owner(after_edit) != "weare":
+        update["execution_owner"] = "weare"
+        update["weare_run_reason"] = weare_run[0]
+        # The two must never disagree: leaving the brand's own person on as
+        # campaign manager would route every application straight back to the
+        # brand we have just taken the work off.
+        update.update(await _execution_manager_fields(doc, "weare"))
+        handed_over = True
+    elif weare_run:
+        # Already ours; keep the reason current if the *why* changed.
+        update["weare_run_reason"] = weare_run[0]
+    elif doc.get("weare_run_reason"):
+        # Edited back under the line, and it was only ours because of the rule
+        # — so it goes back to the brand rather than staying ours by accident
+        # of a number they have since corrected.
+        update["weare_run_reason"] = None
+
     update["updated_at"] = datetime.now(timezone.utc)
     updated = await db.campaigns.find_one_and_update(
         {"_id": doc["_id"]}, {"$set": update}, return_document=True
@@ -10571,6 +10752,45 @@ async def update_brand_campaign(
         **_campaign_audit_context(doc),
     )
     await _sync_campaign_fill(doc["_id"])
+
+    if handed_over:
+        # **Both sides are told, because both have something to do.** The brand
+        # is losing a dashboard they were using; we are gaining a campaign
+        # nobody is staffed on. A silent reassignment is how a brief ends up in
+        # a queue with no manager and a brand wondering where its buttons went.
+        await audit(
+            user,
+            "campaign.execution_handover",
+            "campaign",
+            doc["_id"],
+            before={"execution_owner": _execution_owner(doc)},
+            after={
+                "execution_owner": "weare",
+                "reason": weare_run[0],
+            },
+            note=weare_run[1][:500],
+            **_campaign_audit_context(doc),
+        )
+        await notify_brand_manager(
+            doc.get("brand_id"),
+            "campaign_handed_to_weare",
+            title="We're running this one",
+            body=f"“{updated.get('title')}” — {weare_run[1]}",
+            link=f"/brand/campaigns/{doc['_id']}/applicants",
+        )
+        # **`notify_weare_team` on a campaign with no manager is every
+        # admin**, which is exactly the state a handover leaves behind — the
+        # same reader an application on an unstaffed weare-run brief uses,
+        # rather than a second way of saying "tell somebody here".
+        await notify_weare_team(
+            updated,
+            "campaign_handed_to_weare",
+            title="A campaign needs a manager",
+            body=(
+                f"“{updated.get('title')}” is now WeAre-run "
+                f"({weare_run[0]}) and has nobody assigned to it."
+            ),
+        )
 
     counts = await _applicant_counts_for([doc["_id"]])
     filled_map = await _filled_counts_for([doc["_id"]])
@@ -10703,6 +10923,67 @@ async def close_brand_campaign(
         )
 
     return {"id": campaign_id, "status": "closed", "applications_closed": len(stale)}
+
+
+@brand_router.get("/campaigns/{campaign_id}/export")
+async def export_brand_campaign(
+    campaign_id: str,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+):
+    """The finished campaign, as a spreadsheet the brand keeps.
+
+    Everything a brand needs after the fact lived only on our screens: who
+    delivered, what they delivered, where it is, what it cost. A brand
+    reconciling an invoice or writing up a quarter had to read a web page and
+    retype it.
+
+    **Only once it is over.** A CSV of a running campaign is a snapshot that
+    disagrees with itself by the afternoon, and the columns it exists for —
+    delivered, attended, live links — are the ones still being filled in. So it
+    is gated on the campaign actually having ended rather than merely being
+    old.
+
+    **It carries no way to reach anybody**, at any state. Every creator on it
+    goes through `_brand_visible_creator`, which is the allow-list every other
+    brand surface uses — the exclusion is structural rather than a list of
+    columns somebody remembered to leave out. `test_access_and_execution.py`
+    plants a phone number, an email, an address and payout details in the
+    input and searches the bytes that come back.
+    """
+    # Ownership before verification, always: the other order turns another
+    # brand's campaign from a 404 into a 403 and leaks which ids exist.
+    doc = await _own_campaign_or_404(campaign_id, user)
+    if doc.get("status") not in _CLOSED_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "The report is ready once the campaign closes — "
+                    "until then the delivery columns are still being filled in."
+                ),
+                "code": "campaign_not_closed",
+                "status": doc.get("status"),
+            },
+        )
+    body = await _build_brand_campaign_export(doc)
+    await audit(
+        user,
+        "campaign.export",
+        "campaign",
+        doc["_id"],
+        after={"format": "csv", "includes_contact_details": False},
+        **_campaign_audit_context(doc),
+    )
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{_stamp(_reference_of(doc) or "campaign")}"'
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @brand_router.delete("/campaigns/{campaign_id}")
@@ -11623,84 +11904,34 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
     }
 
 
-# --- Creator directory (brand-facing) --------------------------------------
-
-def _serialize_directory_creator(profile: dict) -> dict:
-    """Public projection of a creator profile for the brand-side directory.
-
-    Now the same projection as everywhere else a brand sees a creator. It used
-    to be its own hand-written dict that happened to omit the contact fields —
-    correct, but by coincidence rather than by construction, and the applicant
-    board sitting next to it made the opposite choice.
-    """
-    return _brand_visible_creator(profile)
-
-
-@brand_router.get("/creators")
-async def brand_directory(
-    city: Optional[str] = None,
-    niche: Optional[str] = None,
-    min_followers: Optional[int] = None,
-    q: Optional[str] = None,
-    sort: Optional[str] = None,  # "newest" | "followers_desc" | "rate_asc"
-    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
-):
-    """Browse verified creators with optional city/niche/keyword filters."""
-    # Creators are never reachable by a brand we have not checked.
-    await _verified_brand_or_403(user)
-    query: dict = {"verification_status": "verified"}
-    if city:
-        query["city"] = city
-    if niche:
-        # Case-insensitive membership match in the niches array.
-        query["niches"] = {"$regex": f"^{re.escape(niche)}$", "$options": "i"}
-    if min_followers is not None:
-        query["follower_count"] = {"$gte": min_followers}
-    if q:
-        # Cap length + escape user input before feeding it to a case-insensitive regex.
-        term = re.escape(q.strip()[:120])
-        query["$or"] = [
-            {"name": {"$regex": term, "$options": "i"}},
-            {"instagram_handle": {"$regex": term, "$options": "i"}},
-            {"niches": {"$regex": term, "$options": "i"}},
-        ]
-
-    sort_spec: list = [("created_at", -1)]
-    if sort == "followers_desc":
-        sort_spec = [("follower_count", -1), ("created_at", -1)]
-    elif sort == "rate_asc":
-        sort_spec = [("base_rate", 1), ("created_at", -1)]
-
-    docs = await db.creator_profiles.find(query).sort(sort_spec).to_list(length=300)
-    return [_serialize_directory_creator(d) for d in docs]
-
-
-@brand_router.get("/creators/filters")
-async def brand_directory_filters(
-    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
-):
-    """Distinct filter options across verified creators."""
-    # Creators are never reachable by a brand we have not checked.
-    await _verified_brand_or_403(user)
-    base = {"verification_status": "verified"}
-    cities_raw = await db.creator_profiles.distinct("city", base)
-    niches_flat: list[str] = []
-    async for doc in db.creator_profiles.find(base, {"niches": 1}):
-        for n in doc.get("niches") or []:
-            niches_flat.append(n)
-    # Deduplicate case-insensitively, keep original casing of first occurrence.
-    seen: set[str] = set()
-    niches: list[str] = []
-    for n in niches_flat:
-        key = n.lower().strip()
-        if key and key not in seen:
-            seen.add(key)
-            niches.append(n)
-    return {
-        "cities": sorted([c for c in cities_raw if c]),
-        "niches": sorted(niches, key=str.lower),
-        "total": await db.creator_profiles.count_documents(base),
-    }
+# --- Creators a brand may see -----------------------------------------------
+#
+# **There is no brand-facing creator directory, and that is the rule rather
+# than an omission.** `GET /brand/creators` and `/brand/creators/filters` used
+# to serve a browsable, filterable roster of every verified creator to any
+# verified brand — name, handle, follower count, engagement rate, city, base
+# rate — which is a copy of the supply side handed to anyone who completes a
+# signup form and passes a business check.
+#
+# A brand now only ever meets a creator **through its own work**: somebody who
+# applied to one of its briefs, somebody it invited, or somebody it is working
+# with. Those three doors are `_brand_collab_or_404`, the applicant board and
+# the invitation rows, and every one of them already runs the creator through
+# `_brand_visible_creator`, which is unchanged and still decides which fields
+# they see.
+#
+# The one place a brand sees a creator it has not met is
+# `GET /brand/campaigns/{id}/suggested-creators` — ranked against *one* brief,
+# with the reasons attached, so that inviting somebody is still possible. That
+# is the deliberate replacement: curated matching against a brief rather than a
+# directory to browse, and it is what the brand-facing copy now promises. A
+# structural test fails any brand route that grows an unscoped creator list.
+#
+# Staff keep what they had. Admins have the whole roster at
+# `GET /admin/creators`; a `weare_team` member reaches creators through the
+# work exactly as before, scoped by `_console_creator_ids` — "creators reach
+# them through the work, not through a directory", which is the same sentence
+# this section now makes true of brands too.
 
 
 # --- Suggesting creators for a brief ---------------------------------------
@@ -15078,6 +15309,150 @@ async def _build_campaign_report(campaign: dict) -> dict:
         ),
         "generated_at": _iso(datetime.now(timezone.utc)),
     }
+
+
+# ---------------------------------------------------------------------------
+# What the brand gets when the campaign is over
+# ---------------------------------------------------------------------------
+#
+# The admin report above answers "what did this achieve" — reach, engagements,
+# cost per thousand. This answers the other question a brand asks at the end,
+# which is **"what did I actually get, from whom, and what did it cost"**: the
+# delivery record, per creator, in a spreadsheet somebody can file.
+#
+# Two different questions, so two builders rather than one with a mode. What
+# they share is the line that matters: **every creator goes through
+# `_brand_visible_creator`**, so the columns are drawn from the allow-list
+# rather than hand-picked off a profile. A phone number cannot appear here by
+# somebody adding a field, because the field is not in the projection this
+# reads from. `test_access_and_execution.py` plants contact values in the
+# input and searches the real output.
+BRAND_EXPORT_COLUMNS = (
+    "Creator",
+    "Instagram",
+    "YouTube",
+    "Deliverables agreed",
+    "Deliverables delivered",
+    "Live content",
+    "Attended",
+    "Fee",
+    "Usage rights",
+    "Status",
+)
+
+
+def _brand_export_row(campaign: dict, collab: dict, creator: dict) -> list:
+    """One creator's line. `creator` is already `_brand_visible_creator`."""
+    delivered = _delivered_counts(collab)
+    # What arrived, in the same words the ask is written in, so the two columns
+    # can be read against each other rather than translated.
+    delivered_text = (
+        _deliverables_text([{"type": k, "quantity": v} for k, v in delivered.items()])
+        if delivered
+        else ""
+    )
+    urls = collab.get("content_urls") or (
+        [collab["content_url"]] if collab.get("content_url") else []
+    )
+    # The instant they were actually at the venue, not the slot they held: a
+    # booking somebody did not turn up to is not an attendance, and the two
+    # differ on exactly the collaboration a brand is asking about.
+    attended = collab.get("checked_in_at") or (
+        collab.get("scheduled_at") if collab.get("state") in DELIVERED_COLLAB_STATES else None
+    )
+    money = _terms_money(campaign, collab)
+    return [
+        creator.get("name") or "",
+        f"@{creator['instagram_handle']}" if creator.get("instagram_handle") else "",
+        creator.get("youtube_url") or "",
+        campaign.get("deliverables") or "",
+        delivered_text,
+        " ".join(urls),
+        # A date, not a timestamp. This goes to a client, and an ISO instant in
+        # a spreadsheet cell is us showing our working.
+        (_iso(attended) or "")[:10],
+        # **The barter description where there is no fee**, never a zero: `0`
+        # in a money column reads as "agreed, nothing".
+        money.get("description") or "",
+        _usage_text(campaign),
+        collab.get("state") or "",
+    ]
+
+
+async def _build_brand_campaign_export(campaign: dict) -> str:
+    """The closed campaign, as a CSV a brand can file.
+
+    Everybody who was **taken on**, not everybody who applied: a record of what
+    happened has no room for the people it did not happen with, and a brand
+    forwarding this to its own finance team should not be forwarding a list of
+    creators it turned down.
+    """
+    cid = campaign["_id"]
+    collabs = await db.collaborations.find(
+        {"campaign_id": cid, "state": {"$in": list(_BRAND_EXPORT_STATES)}}
+    ).to_list(length=500)
+    creator_ids = [c["creator_id"] for c in collabs]
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find(
+            {"user_id": {"$in": creator_ids}}
+        ).to_list(length=len(creator_ids) or 1)
+    }
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": creator_ids}}).to_list(
+            length=len(creator_ids) or 1
+        )
+    }
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Campaign", campaign.get("title") or ""])
+    w.writerow(["Reference", _reference_of(campaign) or ""])
+    w.writerow([
+        "Dates",
+        " to ".join(
+            [(_iso(d) or "")[:10] for d in
+             (campaign.get("start_date"), campaign.get("end_date")) if d]
+        )
+        or (_iso(campaign.get("event_date")) or "")[:10],
+    ])
+    w.writerow(["Deliverables asked for", campaign.get("deliverables") or ""])
+    w.writerow(["Usage rights", _usage_text(campaign)])
+    w.writerow(["Disclosure", _disclosure_text(campaign)])
+    w.writerow([])
+
+    rows = []
+    total_fee = 0.0
+    delivered_total = 0
+    for c in sorted(collabs, key=lambda c: str(c.get("_id"))):
+        creator = _brand_visible_creator(
+            profiles.get(c["creator_id"]) or {}, accounts.get(c["creator_id"])
+        )
+        rows.append(_brand_export_row(campaign, c, creator))
+        amount = _terms_money(campaign, c).get("amount")
+        if isinstance(amount, (int, float)):
+            total_fee += float(amount)
+        delivered_total += sum(_delivered_counts(c).values())
+
+    w.writerow(list(BRAND_EXPORT_COLUMNS))
+    for row in rows:
+        w.writerow(row)
+
+    w.writerow([])
+    w.writerow(["Creators on the campaign", len(rows)])
+    w.writerow([
+        "Creators who delivered",
+        sum(1 for c in collabs if c.get("state") in DELIVERED_COLLAB_STATES),
+    ])
+    w.writerow(["Pieces of content delivered", delivered_total or ""])
+    # **Barter carries no total.** Summing zeros into "₹0" would read as a
+    # campaign that cost nothing rather than one that was never priced.
+    w.writerow([
+        "Total agreed (INR)",
+        "" if _compensation_type(campaign) == "barter" else round(total_fee, 2),
+    ])
+    return buf.getvalue()
 
 
 def _report_csv(report: dict) -> str:
@@ -20680,6 +21055,18 @@ async def put_sla_settings(
     return await get_sla_settings(user)
 
 
+class LargeCampaignThresholdPayload(BaseModel):
+    """Above how many creators a brief becomes ours to run.
+
+    The floor is one rather than zero: zero would mean every campaign is
+    WeAre-run, which is not a threshold, it is turning self-serve off — a
+    decision with its own consequences that should not be reachable by typing
+    a number into a settings box.
+    """
+
+    creators: int = Field(ge=1, le=LARGE_CAMPAIGN_CREATORS_MAX)
+
+
 class RescheduleLimitPayload(BaseModel):
     """Zero is a real answer — "no self-service moves at all" — so the floor is
     zero rather than one."""
@@ -20912,6 +21299,52 @@ async def put_reschedule_limit(
         after={"limit": int(payload.limit)},
     )
     return await get_reschedule_limit(user)
+
+
+@admin_router.get("/settings/large-campaign")
+async def get_large_campaign_threshold(user: dict = Depends(require_roles("admin"))):
+    return {
+        "creators": await large_campaign_threshold(),
+        "default": LARGE_CAMPAIGN_CREATORS_DEFAULT,
+        "max": LARGE_CAMPAIGN_CREATORS_MAX,
+    }
+
+
+@admin_router.put("/settings/large-campaign")
+async def put_large_campaign_threshold(
+    payload: LargeCampaignThresholdPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Admin-only, like every other operating number here.** How many
+    creators this operation can let a brand coordinate alone is a judgement
+    about our own staffing, and somebody whose week gets busier when it moves
+    is the wrong person to be able to move it."""
+    before = await large_campaign_threshold()
+    await db.platform_settings.update_one(
+        {"_id": _LARGE_CAMPAIGN_SETTINGS_ID},
+        {
+            "$set": {
+                "creators": int(payload.creators),
+                "updated_at": datetime.now(timezone.utc),
+                "updated_by": ObjectId(user["_id"]),
+                "updated_by_name": user.get("name"),
+            }
+        },
+        upsert=True,
+    )
+    await audit(
+        user,
+        "settings.large_campaign_threshold",
+        "settings",
+        _LARGE_CAMPAIGN_SETTINGS_ID,
+        before={"creators": before},
+        after={"creators": int(payload.creators)},
+    )
+    # **Campaigns already posted are left where they are.** Lowering the
+    # threshold does not sweep somebody's live brief out of their dashboard
+    # mid-campaign; the rule applies at the next write, which is the same
+    # promise `_invoice_due_at` makes about payment terms.
+    return await get_large_campaign_threshold(user)
 
 
 @admin_router.get("/dormant")

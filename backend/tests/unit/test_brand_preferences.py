@@ -301,20 +301,15 @@ def test_the_frontend_content_types_and_bands_match_too():
         assert f'value: "{key}", label: "{label}"' in src
 
 
-def test_the_directory_filter_uses_the_tiers_not_its_own_buckets():
-    """It used to offer 10k+/50k+/100k+/500k+ — a fourth vocabulary for the
-    same axis, on the screen right next to the ranking that used a different
-    one."""
-    src = read("pages", "BrandCreatorDirectory.jsx")
-    assert "FOLLOWER_TIERS.map" in src
-    assert '"500k+ followers"' not in src
+def test_the_brand_has_no_creator_directory_to_filter():
+    """There were two tests here about the directory's follower filter — it
+    used to offer 10k+/50k+/100k+/500k+, a fourth vocabulary for the same axis.
 
-
-def test_the_directory_filter_sends_a_ceiling_as_well_as_a_floor():
-    """A tier has both. Sending only the floor made "Micro" return every macro
-    creator too, which is the opposite of what the filter is for."""
-    src = read("pages", "BrandCreatorDirectory.jsx")
-    assert "params.max_followers = bucket.max" in src
+    The directory itself is gone: a brand may see the creators on its own
+    briefs and never a browsable roster, so there is no page for that filter to
+    be wrong on. The vocabulary rule it was holding still applies to the
+    suggestions panel, which is the test directly below."""
+    assert not (FRONTEND / "pages" / "BrandCreatorDirectory.jsx").exists()
 
 
 def test_the_suggestions_filter_picks_a_tier_rather_than_typing_numbers():

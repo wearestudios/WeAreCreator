@@ -85,9 +85,11 @@ const BrandOnboarding = load(() =>
     import(/* webpackChunkName: "brand" */ "@/pages/BrandOnboarding"),
 );
 const PostCampaign = load(() => import(/* webpackChunkName: "brand" */ "@/pages/PostCampaign"));
-const BrandCreatorDirectory = load(() =>
-    import(/* webpackChunkName: "brand" */ "@/pages/BrandCreatorDirectory"),
-);
+// There is no brand creator directory, deliberately — see `_brand_visible_creator`
+// and the "Creators a brand may see" block in `server.py`. A brand reaches
+// creators through its own briefs: the applicant board, its invitations, and
+// the per-brief suggestions panel. The route was removed along with the two
+// endpoints behind it, so a bookmark lands on the 404 rather than an empty page.
 const BrandCampaignApplicants = load(() =>
     import(/* webpackChunkName: "brand" */ "@/pages/BrandCampaignApplicants"),
 );
@@ -321,14 +323,6 @@ function App() {
                                         backLabel="Dashboard"
                                         standalone
                                     />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/brand/creators"
-                            element={
-                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
-                                    <BrandCreatorDirectory />
                                 </ProtectedRoute>
                             }
                         />
