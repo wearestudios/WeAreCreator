@@ -262,8 +262,26 @@ def test_there_is_a_read_only_profile_page():
 
     assert page.is_file()
     source = page.read_text()
-    # It reads; it does not write.
-    assert "api.put" not in source and "api.post" not in source
+    # It reads; it does not write — **with exactly one exception, and the
+    # exception is consent.**
+    #
+    # The rule exists so this page cannot drift into being a second editor
+    # competing with the builder, and that protection is worth keeping whole.
+    # But withdrawing permission to be published on a public homepage is not a
+    # sitting: somebody who wants off wants off now, and sending them to a
+    # builder to scroll to a section and press Save is three chances to give up
+    # on a decision they have already made.
+    #
+    # So the narrow form of the same rule: no POSTs at all, and the single PUT
+    # may carry `homepage_opt_in` and nothing else. A second field appearing in
+    # that body is the drift this was guarding against, and it fails here.
+    assert "api.post" not in source
+    puts = re.findall(r"api\.put\(([^;]*?)\);", source, re.S)
+    assert len(puts) <= 1, f"one write at most on a read-only page: {puts}"
+    for call in puts:
+        assert '"/creator/profile"' in call, call
+        for field in re.findall(r"(\w+):", call):
+            assert field == "homepage_opt_in", f"only consent is writable here: {field}"
 
 
 def test_the_profile_page_links_to_editing_rather_than_being_the_editor():

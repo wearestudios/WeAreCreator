@@ -33,6 +33,13 @@ export const STICKY_BAR = {
 // Error boundaries. The page fallback is the one a test asserts is NOT on
 // screen; the section ids let a test target one broken panel while checking
 // its neighbours still rendered.
+// The shapes on screen while a route's chunk is on the wire, and the answer
+// when it never arrives.
+export const ROUTE_FALLBACK = {
+	root: 'route-fallback',
+	announce: 'route-fallback-loading',
+};
+
 export const ERROR_BOUNDARY = {
     page: 'error-boundary-page',
     pageReload: 'error-boundary-reload',
@@ -41,4 +48,8 @@ export const ERROR_BOUNDARY = {
     section: (name) => `error-boundary-section-${name}`,
     sectionRetryAny: 'error-boundary-section-retry',
     sectionRetry: (name) => `error-boundary-section-retry-${name}`,
+    // A chunk that did not arrive is its own answer: a reload really does fix
+    // it, where "try again" on a render crash usually does not.
+    chunk: 'error-boundary-chunk',
+    chunkRetry: 'error-boundary-chunk-retry',
 };

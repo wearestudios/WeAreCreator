@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
+import { notifyError, notifySuccess } from "@/lib/feedback";
+import { Switch } from "@/components/ui/switch";
 import { payoutMethodLabel } from "@/lib/payout";
 import DeleteAccount from "@/components/account/DeleteAccount";
 import { Navbar } from "@/components/Navbar";
@@ -65,6 +67,74 @@ const Section = ({ title, children, testid }) => (
         </div>
     </section>
 );
+
+/**
+ * Consent to being featured on the homepage, withdrawable in one tap.
+ *
+ * **Optimistic, with a rollback.** The switch moves under the finger and the
+ * request follows; if it fails the switch goes back and says so. The other
+ * order — waiting on the network before the control moves — is what makes a
+ * toggle feel broken on the connection this product is actually used on.
+ *
+ * `PUT /creator/profile` writes only the keys it is sent, so a body carrying
+ * one boolean touches one field. That is the whole reason this can be its own
+ * control rather than a form.
+ */
+function FeaturingToggle({ value, onSaved }) {
+    const [on, setOn] = useState(Boolean(value));
+    const [saving, setSaving] = useState(false);
+
+    // The server is the truth: a save elsewhere, or a reload, resets this.
+    useEffect(() => setOn(Boolean(value)), [value]);
+
+    const change = async (next) => {
+        setOn(next);
+        setSaving(true);
+        try {
+            await api.put("/creator/profile", { homepage_opt_in: next });
+            onSaved?.(next);
+            notifySuccess(
+                next
+                    ? "You'll appear on the homepage"
+                    : "Taken off the homepage",
+            );
+        } catch (err) {
+            setOn(!next);
+            notifyError(err, { fallback: "That didn't save." });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <label
+            htmlFor={IDS.homepageOptIn}
+            className="flex cursor-pointer items-start gap-4"
+        >
+            <Switch
+                id={IDS.homepageOptIn}
+                data-testid={IDS.homepageOptIn}
+                checked={on}
+                disabled={saving}
+                onCheckedChange={change}
+                className="mt-0.5 data-[state=checked]:bg-ember-500"
+            />
+            <span className="text-sm">
+                <span className="block text-foreground">
+                    Show my profile on the WeAre Creators homepage.
+                </span>
+                <span
+                    data-testid={IDS.homepageOptInState}
+                    className="mt-1.5 block text-xs leading-relaxed text-muted-foreground"
+                >
+                    {on
+                        ? "Your name, photo, Instagram handle, city and what you cover can appear on our homepage — never your number, your rate or your follower count. Turn this off and you come off straight away."
+                        : "You are not shown on the homepage. Turn this on and you may appear alongside other creators — name, photo, handle, city and what you cover, and nothing else."}
+                </span>
+            </span>
+        </label>
+    );
+}
 
 export default function CreatorProfile() {
     const [profile, setProfile] = useState(null);
@@ -363,6 +433,24 @@ export default function CreatorProfile() {
                                 Changing any of these means we'll re-check your profile
                                 before you can pitch on something new.
                             </p>
+                        </Section>
+
+                        {/* **The one control on an otherwise read-only page,
+                            and consent is why.** Everything else here is shown
+                            and edited in the builder, because editing a bio is
+                            a sitting. Withdrawing permission to be published
+                            is not: somebody who wants off the homepage wants
+                            off it now, and making them open a builder, scroll
+                            to a section and press Save is three chances to
+                            give up on a decision they already made. It saves
+                            on the switch. */}
+                        <Section title="Being featured" testid={IDS.featuring}>
+                            <FeaturingToggle
+                                value={profile.homepage_opt_in}
+                                onSaved={(next) =>
+                                    setProfile((p) => ({ ...p, homepage_opt_in: next }))
+                                }
+                            />
                         </Section>
 
                         {/* Last on the page, deliberately: it is a right that

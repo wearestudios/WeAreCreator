@@ -16,10 +16,19 @@
 //               thing it replaced, with a Try again that re-mounts just that
 //               subtree. The rest of the page keeps working, which is the
 //               whole point of putting one here.
+//
+// And one case that is neither, decided by the error rather than by the call
+// site: a **chunk that never arrived**. Since the app was split by route, a
+// page can fail before any of its code has run — the network dropped, or a
+// deploy replaced the hashed file this tab was still asking for. "Something on
+// our side broke" is wrong about both, and a soft Try again cannot fix either,
+// because `React.lazy` memoises the rejection and will not re-request the
+// file. So that one says what happened and reloads.
 import React from "react";
-import { AlertTriangle, Home, RotateCw } from "lucide-react";
+import { AlertTriangle, CloudOff, Home, RotateCw } from "lucide-react";
 
 import { logError } from "@/lib/errorLog";
+import { isChunkError } from "@/lib/lazyRoute";
 import { ERROR_BOUNDARY as IDS } from "@/constants/testIds";
 
 export default class ErrorBoundary extends React.Component {
@@ -63,6 +72,59 @@ export default class ErrorBoundary extends React.Component {
 
         if (!error) {
             return <React.Fragment key={this.state.resetKey}>{children}</React.Fragment>;
+        }
+
+        // **Decided by the error, not by which boundary caught it.** A chunk
+        // can fail under the route boundary or under a section one, and the
+        // honest answer is the same in both places.
+        if (isChunkError(error)) {
+            return (
+                <div
+                    data-testid={IDS.chunk}
+                    className="grid min-h-screen place-items-center bg-background px-6 text-foreground grain-page"
+                >
+                    <div className="w-full max-w-lg">
+                        <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <CloudOff className="h-4 w-4" />
+                            Connection
+                        </p>
+                        <h1 className="mt-5 font-serif text-fluid-4xl leading-tight tracking-tight">
+                            This part didn't finish downloading.
+                        </h1>
+                        <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
+                            The app loads each section as you open it, and this
+                            one didn't arrive — usually a dropped connection, or
+                            an update that landed while this tab was open.
+                            Nothing you'd saved is affected.
+                        </p>
+
+                        <div className="mt-9 flex flex-col-reverse gap-3 sm:flex-row">
+                            <a
+                                href="/"
+                                data-testid={IDS.pageHome}
+                                className="inline-flex h-12 min-h-[2.75rem] items-center justify-center gap-2 rounded-full border border-white/15 px-6 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-white/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            >
+                                <Home className="h-4 w-4" />
+                                Go to the home page
+                            </a>
+                            {/* A real reload, not a remount. The failed import
+                                is memoised, so re-rendering asks nobody for
+                                anything; and after a deploy the file this tab
+                                wants is genuinely gone, which only a fresh
+                                index.html can fix. */}
+                            <button
+                                type="button"
+                                onClick={() => window.location.reload()}
+                                data-testid={IDS.chunkRetry}
+                                className="inline-flex h-12 min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-full bg-ember-500 px-6 text-xs uppercase tracking-[0.15em] text-black transition-colors duration-200 hover:bg-ember-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            >
+                                <RotateCw className="h-4 w-4" />
+                                Try again
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         if (variant === "page") {

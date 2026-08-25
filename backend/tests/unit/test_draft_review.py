@@ -239,7 +239,7 @@ def test_both_submit_routes_go_through_one_recorder():
 def test_the_brand_approves_its_own_brand_run_draft():
     w = _world()
     asyncio.run(_link(w, w["collab"]))
-    out = asyncio.run(server.approve_draft(str(w["collab"]), w["brand"]))
+    out = asyncio.run(server.approve_draft(str(w["collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["brand"]))
 
     assert out["state"] == "draft_approved"
     assert out["approved_at"]
@@ -251,24 +251,24 @@ def test_the_brand_never_reviews_a_weare_run_draft():
     w = _world()
     asyncio.run(_link(w, w["weare_collab"]))
 
-    assert _status(server.approve_draft(str(w["weare_collab"]), w["brand"])) == 404
+    assert _status(server.approve_draft(str(w["weare_collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["brand"])) == 404
     assert _status(server.read_draft(str(w["weare_collab"]), w["brand"])) == 404
     assert asyncio.run(
-        server.approve_draft(str(w["weare_collab"]), w["manager"])
+        server.approve_draft(str(w["weare_collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["manager"])
     )["state"] == "draft_approved"
 
 
 def test_another_brand_gets_a_404_not_a_403():
     w = _world()
     asyncio.run(_link(w, w["collab"]))
-    assert _status(server.approve_draft(str(w["collab"]), w["rival"])) == 404
+    assert _status(server.approve_draft(str(w["collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["rival"])) == 404
 
 
 def test_an_admin_reviews_either_kind():
     w = _world()
     asyncio.run(_link(w, w["weare_collab"]))
     assert asyncio.run(
-        server.approve_draft(str(w["weare_collab"]), w["admin"])
+        server.approve_draft(str(w["weare_collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["admin"])
     )["state"] == "draft_approved"
 
 
@@ -282,7 +282,7 @@ def test_approving_nothing_is_refused():
     yes to — and inventing `draft_approved` would let the creator skip the
     stage entirely."""
     w = _world()
-    assert _status(server.approve_draft(str(w["collab"]), w["brand"])) == 409
+    assert _status(server.approve_draft(str(w["collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["brand"])) == 409
 
 
 # --- Requesting changes -------------------------------------------------------
@@ -356,7 +356,7 @@ def test_a_live_link_is_refused_before_the_draft_is_approved():
 def test_a_live_link_is_accepted_once_the_draft_is_approved():
     w = _world()
     asyncio.run(_link(w, w["collab"]))
-    asyncio.run(server.approve_draft(str(w["collab"]), w["brand"]))
+    asyncio.run(server.approve_draft(str(w["collab"]), server.DisclosureCheckPayload(disclosure_confirmed=True), w["brand"]))
     out = asyncio.run(_submit_content(w, w["collab"]))
 
     assert out["state"] == "content_submitted"

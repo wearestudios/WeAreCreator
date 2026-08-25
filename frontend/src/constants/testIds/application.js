@@ -70,6 +70,16 @@ export const APPLICATION = {
 	approveProfile: 'application-approve-profile',
 	accept: 'application-accept',
 	decline: 'application-decline',
+
+	// Reviewing the delivery. `can_review_content` and `can_accept_partial`
+	// shipped on this payload with nothing rendering either, so an admin
+	// could open an application waiting on review and had no way to answer it.
+	review: 'application-review',
+	approveContent: 'application-approve-content',
+	requestChanges: 'application-request-changes',
+	acceptPartial: 'application-accept-partial',
+	changesReason: 'application-changes-reason',
+	changesSubmit: 'application-changes-submit',
 	agreeCommercial: 'application-agree-commercial',
 	advance: 'application-advance',
 };

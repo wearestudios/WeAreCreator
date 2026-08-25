@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
 import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
+import { DisclosureConfirmDialog } from "@/components/campaign/CampaignTerms";
 import Shortfall from "@/components/Shortfall";
 import CreatorLists from "@/components/CreatorLists";
 import { ReliabilityBadge } from "@/components/ReliabilityBadge";
@@ -333,6 +334,15 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
     );
 }
 
+/**
+ * Sign off the content, having confirmed it discloses.
+ *
+ * **The checkbox starts unticked and the button waits on it.** ASCI liability
+ * sits with the advertiser, so a record saying "approved" with nothing beside
+ * it about the label is the record we would be holding in a complaint. The
+ * server refuses the approval without the confirmation; this is the form
+ * agreeing rather than deciding.
+ */
 function ReasonDialog({
     open,
     onOpenChange,
@@ -1075,7 +1085,7 @@ export default function BrandCampaignApplicants() {
                                     onAccept={(x) => setDialog({ kind: "accept", applicant: x })}
                                     onDecline={(x) => setDialog({ kind: "decline", applicant: x })}
                                     onApprove={(x) =>
-                                        act(x, "approve_content", null, "Content approved")
+                                        setDialog({ kind: "approve", applicant: x })
                                     }
                                     onRequestChanges={(x) =>
                                         setDialog({ kind: "changes", applicant: x })
@@ -1161,6 +1171,27 @@ export default function BrandCampaignApplicants() {
                         "accept-partial",
                         body,
                         "Accepted, with the shortfall on the record",
+                    )
+                }
+            />
+
+            {/* **The second disclosure checkpoint.** Approving used to be one
+                tap straight from the row; the label has to be confirmed
+                against the live post before that, because this is the moment
+                the work is signed off and after it nobody looks again. The
+                server refuses the approval without the confirmation — this
+                dialog is the form agreeing with it. */}
+            <DisclosureConfirmDialog
+                open={dialog.kind === "approve"}
+                onOpenChange={(v) => !v && closeDialog()}
+                label={campaign?.disclosure_label}
+                busy={busyId === dialog.applicant?.id}
+                onConfirm={() =>
+                    act(
+                        dialog.applicant,
+                        "approve_content",
+                        { disclosure_confirmed: true },
+                        "Content approved",
                     )
                 }
             />

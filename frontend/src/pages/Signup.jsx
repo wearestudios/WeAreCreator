@@ -100,8 +100,8 @@ export default function Signup() {
         <div data-testid="signup-page" className="grid min-h-screen grid-cols-1 md:grid-cols-2">
             <div className="relative hidden md:block">
                 <PlaceholderImage
-                    // PLACEHOLDER IMAGE: Creator setting up a shot at a Bengaluru cafe, portrait crop for the auth aside.
-                    note="Creator setting up a shot at a Bengaluru cafe, portrait crop for the auth aside"
+                    // PLACEHOLDER IMAGE: Creator setting up a shot on location, portrait crop for the auth aside.
+                    note="Creator setting up a shot on location, portrait crop for the auth aside"
                     fill
                     className="opacity-60"
                 />

@@ -493,17 +493,15 @@ def test_the_proof_strip_shows_nothing_rather_than_an_unconvincing_number():
     assert ".catch(() => {})" in strip
 
 
-def test_the_floors_are_enforced_where_the_figures_are_counted():
-    src = server.inspect.getsource(server._platform_proof) if hasattr(server, "inspect") else None
-    import inspect as _inspect
-
-    src = _inspect.getsource(server._platform_proof)
-    assert "creators >= 10" in src
-    assert "campaigns >= 5" in src
-    assert "cities >= 3" in src
+def test_the_floors_are_a_table_rather_than_three_inline_comparisons():
+    """One table, so the strip's rule can be read rather than reconstructed
+    from three `if`s — and so a fourth figure cannot be added without a floor
+    for it."""
+    assert set(server.PROOF_FLOORS) == {"cities", "creators", "campaigns"}
+    assert all(v >= 1 for v in server.PROOF_FLOORS.values())
 
 
-def _proof_db(*, creators=0, campaigns=0, brands=0, cities=()):
+def _proof_db(*, creators=0, campaigns=0, cities=(), campaign_status="open"):
     db = AsyncMongoMockClient()["proof"]
 
     async def build():
@@ -516,58 +514,90 @@ def _proof_db(*, creators=0, campaigns=0, brands=0, cities=()):
                 }
             )
         for _ in range(campaigns):
-            await db.campaigns.insert_one({"status": "completed"})
-        for _ in range(brands):
-            await db.brand_profiles.insert_one({"user_id": ObjectId(), "verified": True})
+            await db.campaigns.insert_one(
+                {"status": campaign_status, "visibility": "public"}
+            )
 
     asyncio.get_event_loop().run_until_complete(build())
     return db
 
 
-def test_a_figure_below_its_floor_is_not_returned(monkeypatch):
-    db = _proof_db(creators=4, campaigns=2, brands=1)
+def _proof(db, monkeypatch):
     monkeypatch.setattr(server, "db", db)
-    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
-    assert out == {}
+    return asyncio.get_event_loop().run_until_complete(server._platform_proof())
 
 
-def test_the_figures_appear_once_there_is_enough_behind_them(monkeypatch):
-    db = _proof_db(
-        creators=12,
-        campaigns=7,
-        brands=6,
-        cities=("Bengaluru", "Mumbai", "Pune"),
+def test_nothing_at_all_below_the_floors(monkeypatch):
+    assert _proof(_proof_db(creators=4, campaigns=2), monkeypatch) == {}
+
+
+def test_all_three_appear_once_every_one_of_them_clears(monkeypatch):
+    out = _proof(
+        _proof_db(creators=12, campaigns=7, cities=("Bengaluru", "Mumbai", "Pune")),
+        monkeypatch,
     )
-    monkeypatch.setattr(server, "db", db)
-    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
-    assert out["creators"] == 12
-    assert out["campaigns"] == 7
-    assert out["brands"] == 6
-    assert out["cities"] == 3
+    assert out == {"cities": 3, "creators": 12, "campaigns": 7}
 
 
-def test_one_city_is_not_a_footprint(monkeypatch):
-    """"1 city" is a sentence that argues against itself, and this product is
-    Bengaluru-first by design rather than by accident."""
-    db = _proof_db(creators=12, campaigns=7, cities=("Bengaluru",))
-    monkeypatch.setattr(server, "db", db)
-    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
-    assert "cities" not in out
+@pytest.mark.parametrize(
+    "short,kwargs",
+    [
+        ("creators", dict(creators=9, campaigns=7,
+                          cities=("Bengaluru", "Mumbai", "Pune"))),
+        ("campaigns", dict(creators=12, campaigns=4,
+                           cities=("Bengaluru", "Mumbai", "Pune"))),
+        ("cities", dict(creators=12, campaigns=7, cities=("Bengaluru", "Mumbai"))),
+    ],
+)
+def test_one_figure_short_takes_the_whole_strip_with_it(short, kwargs, monkeypatch):
+    """**All three or none**, which is the change. The old rule returned
+    whichever figures passed their own floor, so real data rendered "7 cities"
+    alone — a single number with no denominator, which reads as the one
+    statistic we could find. A visitor draws the obvious conclusion about the
+    missing ones and is right to.
+
+    Parametrised over which figure is short, because a gate that only checks
+    the first one is the version somebody writes by accident.
+    """
+    assert _proof(_proof_db(**kwargs), monkeypatch) == {}, short
 
 
-def test_a_draft_nobody_ever_ran_is_not_a_campaign_run(monkeypatch):
-    """"Campaigns run" counts campaigns that reached `in_progress` or beyond.
-    A count of posted briefs would be a count of abandoned drafts."""
+def test_a_draft_nobody_ever_published_is_not_an_open_brief(monkeypatch):
+    """The figure is briefs somebody could apply to today. Counting drafts
+    would count everything anybody abandoned."""
+    db = _proof_db(
+        creators=12, campaigns=20, cities=("Bengaluru", "Mumbai", "Pune"),
+        campaign_status="draft",
+    )
+    assert _proof(db, monkeypatch) == {}
+
+
+def test_a_finished_campaign_is_not_an_open_brief(monkeypatch):
+    """It counts what is live, not a lifetime total — so a page that says
+    "open briefs" is describing something a visitor can go and look at."""
+    db = _proof_db(
+        creators=12, campaigns=20, cities=("Bengaluru", "Mumbai", "Pune"),
+        campaign_status="completed",
+    )
+    assert _proof(db, monkeypatch) == {}
+
+
+def test_an_invite_only_brief_is_not_counted_in_a_public_figure(monkeypatch):
+    """A private brief's page 404s to a stranger. Counting it in the number we
+    ask them to believe would be a figure they cannot check."""
     db = AsyncMongoMockClient()["proof"]
 
     async def build():
+        for i, city in enumerate(["Bengaluru", "Mumbai", "Pune"] * 4):
+            await db.creator_profiles.insert_one(
+                {"user_id": ObjectId(), "verification_status": "verified",
+                 "city": city}
+            )
         for _ in range(20):
-            await db.campaigns.insert_one({"status": "draft"})
+            await db.campaigns.insert_one({"status": "open", "visibility": "private"})
 
     asyncio.get_event_loop().run_until_complete(build())
-    monkeypatch.setattr(server, "db", db)
-    out = asyncio.get_event_loop().run_until_complete(server._platform_proof())
-    assert "campaigns" not in out
+    assert _proof(db, monkeypatch) == {}
 
 
 # --- Claims we can stand behind -----------------------------------------------

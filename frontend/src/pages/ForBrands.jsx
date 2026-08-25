@@ -60,8 +60,18 @@ const COPY = {
             line: "What you want made, the budget, and the hours your venue can take people.",
         },
         {
+            // **Not a directory to browse.** A brand sees the creators on its
+            // own brief — the ones who applied, the ones it invited — plus the
+            // shortlist we rank against what it asked for. This line used to
+            // say applicants arrive ranked alongside verified creators who
+            // fit, which read as a roster to shop through: never what a brand
+            // could reach, and now not even what exists.
+            //
+            // Keep quotation marks out of this block — the word-budget test
+            // regexes every double-quoted string inside COPY, so a quoted
+            // phrase in a comment is charged to the page.
             label: "Pick your creators",
-            line: "Applicants arrive with their rate, ranked alongside verified creators who fit.",
+            line: "Applicants arrive with their rate, beside creators matched to your brief.",
         },
         {
             label: "They shoot",

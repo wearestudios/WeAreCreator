@@ -154,8 +154,8 @@ work email. That person is the `brand_manager`.
 ## Creator data a brand may see
 
 `_brand_visible_creator` is the **only** projection of a creator on any
-brand-facing surface — the directory, the applicant board, the suggestions panel
-and the notes header all go through it. It is an allow-list
+brand-facing surface — the applicant board, the suggestions panel, the notes
+header and the closed-campaign export all go through it. It is an allow-list
 (`_BRAND_VISIBLE_CREATOR_FIELDS`): name, photo, Instagram and YouTube handles
 with their public stats, follower count and its provenance, engagement rate,
 city, niches, genres, platforms, base rate, verification status.
@@ -173,6 +173,38 @@ integration test does the same against live HTTP. The WeAre manager's roster and
 daysheet still carry phone numbers — that is the job of the person at the door —
 and stay behind the staff role. The brand's roster passes
 `reveal_contact=False`, which omits the key rather than nulling it.
+
+### There is no roster to browse
+
+`GET /brand/creators` and `/brand/creators/filters` paged through **every
+verified creator on the platform**, filterable by niche, city and follower
+range, from a "Creators" link in the navbar on every brand screen. That is a
+database of people the brand has no relationship with, presented as something
+to shop through — and the allow-list was governing what a brand saw about each
+of them while nothing governed *which* of them a brand saw at all.
+
+Both endpoints are gone, along with `pages/BrandCreatorDirectory.jsx`, its
+route and both links. A brand reaches creators through **its own briefs**:
+
+- the applicant board, for people who pitched;
+- the invited strip, for people it asked;
+- `GET /brand/campaigns/{id}/suggested-creators` — the curated half, and the
+  deliberate replacement. Ranked against **one campaign** with the reasons
+  shipped, so it is a shortlist for a brief rather than a directory with a
+  search box; anyone who has already applied or been invited is excluded.
+
+**`weare_team` gains nothing here, which is the deliberate reading of "keeps
+directory access".** They never had `/brand/creators` — its guard was
+`require_roles(*BRAND_ROLES, "admin")` — and they already reach creators
+scoped through `_console_creator_ids`. Widening a staff role's surface as a
+side effect of a lockdown is the opposite of what the lockdown is for. The
+global creator directory and its review queue stay admin-only, as they were.
+
+The marketing copy moved with it: `/for-brands` step two said applicants
+arrive "ranked alongside verified creators who fit", which described a roster.
+It reads "beside creators matched to your brief" now — the same length, since
+the page sits exactly on its 250-word budget and the test that holds it counts
+every double-quoted string in the `COPY` block, comments included.
 
 ## Work notes
 
@@ -363,6 +395,60 @@ it takes:
   while it's absent, before the send. Driven by a startup asyncio loop
   (`PROFILE_NUDGE_INTERVAL_SECONDS`, `0` disables) and by
   `POST /admin/jobs/creator-nudges`.
+
+### Pitching while we are still checking you
+
+Verification used to gate pitching outright, so a creator browsed, found a
+brief they were right for, and hit a wall. They came back two days later to a
+campaign that had filled. The wait was ours and the cost was theirs.
+
+The pitch is now **taken and held**. `_may_hold_application` decides who
+qualifies — `submitted_for_review_at` set *and* `verification_status ==
+"pending"`, nothing looser: a half-finished profile means a brand finds
+somebody on its shortlist who never filled one in, and a rejected creator
+already has their answer.
+
+- **Its own collection (`held_applications`), not a new collaboration state.**
+  A twelfth state would have to be excluded from forty-five existing reads —
+  boards, fill counts, exports, the reliability aggregation, the health checks
+  — and the one that got missed would be an unchecked creator sitting on a
+  brand's shortlist. `campaign_invitations` is the same shape for the same
+  reason: not a collaboration until we have checked them.
+- **Releasing goes through `_create_application`**, extracted out of
+  `apply_to_campaign` so a released pitch is an ordinary application in every
+  respect — same capacity check, same duplicate refusal, same `execution_owner`
+  routing. A second implementation would be a second definition of what an
+  application is, and the source-reading tests that used to look inside
+  `apply_to_campaign` now point here.
+- **A held pitch takes no seat**, so `_hold_application` deliberately does not
+  check capacity: refusing one because the brief is full today closes a door
+  twice on a campaign that might yet open up. The check happens at release,
+  which is the moment it would actually take a place.
+- `_release_held_applications` runs on the verification decision, so somebody
+  who pitched for four briefs while waiting is on all four the moment they are
+  approved — the entire point of taking the pitch early. **A campaign that has
+  since filled or closed is not an error**: it is the ordinary outcome of
+  having waited, and the row is resolved with the reason on it and the creator
+  told, rather than failing the verification over it.
+- Rejection runs `_withdraw_held_applications` — the pitches come off the table
+  and the creator is told once, plainly. Leaving them would mean a stale row
+  going in months after the brief closed.
+- `_verification_outstanding` is the one reader for what is still in the way,
+  so the campaign page's refusal, the dashboard banner and the held row all say
+  the same thing. It distinguishes `waiting_on: "you"` from `"weare"`, which is
+  the difference between a job and a wait.
+- `components/creator/HeldApplications.jsx` leads with the reassurance rather
+  than the rows: the question somebody has is "do I need to do this again", and
+  the answer is at the top. Each row is theirs to take back, for the same
+  reason an application is withdrawable up to acceptance — nobody has committed
+  to them.
+- **The campaign page has to say it twice, and both are load-bearing.**
+  `apply_holds` renders above the button — being told afterwards that a pitch
+  is held is being told the one useful thing at the one moment it is no use —
+  and `AppliedCard` branches on `held` rather than printing "your pitch is with
+  the brand", which on a held row is simply false. Both flags are decided
+  server-side and shipped with no caller at first; a test now names them, the
+  same rule the manager's screens are held to.
 
 ## The creator's home
 
@@ -630,12 +716,53 @@ shipped, whatever the tests say.
   form sends, so a field renamed on one side and not the other fails there
   rather than in somebody's onboarding.
 
+### Reading the papers
+
+`GET /admin/brands/{user_id}/documents/{id}` and the review route beside it
+existed for months **with no caller anywhere**. An admin deciding whether a
+business was real could see that a GST certificate had been uploaded and could
+not read it, so verification was a judgement made from a filename — and the
+per-document verdict ("this FSSAI scan is illegible, the other three are fine")
+had no button at all. `components/admin/BrandDocuments.jsx` is the panel, on the
+brand's own page where the decision is made.
+
+- **Fetched as an authenticated blob, never linked.** The obvious version is
+  `<iframe src={API_BASE + …}>` and it half works: the session cookie is
+  `SameSite=None`, so it rides along in production and silently does not on a
+  plain-http laptop, which is the worst kind of difference. Going through `api`
+  is the same auth every other call uses, it honours the route's
+  `Cache-Control: no-store` because the object URL dies with the panel, and the
+  bytes never sit at an address anybody can paste into a chat. The URL is held
+  in a ref as well as state so the cleanup revokes the current one.
+- **Inline, not in a dialog.** A reviewer is comparing the registered address on
+  the certificate with the one on the profile two sections up, and a modal
+  covers the thing being compared to.
+- **A 410 is the honest answer, not a failure.** The row is a tombstone and the
+  file went under the retention policy; "that couldn't be opened" would send
+  somebody looking for a bug.
+- **The note belongs to the rejection.** Accept and reject shared one box, so
+  accepting a document with a half-typed "the entity name doesn't match" still
+  in it recorded that sentence against an acceptance — a reviewer contradicting
+  themselves in the record. `reason` is sent only on `rejected`. Caught in a
+  browser, not by a test.
+
 The gate is `_verified_brand_or_403`. An unverified brand may draft campaigns
 and edit its own profile; anything that *reaches a creator* is behind it —
 publish, the creator directory and its filters, the applicant list, accept,
 decline, approve content, request changes. `_why_brand_is_blocked` gives the
 three states three different next steps; "not verified" on its own just
 generates a support email.
+
+**Drafting was always open and the wall was silent**, which is a different
+failure from being blocked: the brand filled the form, pressed publish, and got
+a toast — after the work, naming the state rather than the fix, gone in four
+seconds. `components/brand/PublishGate.jsx` renders the same three answers
+`_why_brand_is_blocked` gives, above the form rather than after it, with
+`missing_fields` listed out and a link to the page that collects them. The
+publish button is disabled and **Save draft is not**, which is the half worth
+protecting: writing the brief is not the part that has to wait on us. The
+component never works out for itself whether somebody may publish — the
+verification block is decided server-side like every other action here.
 
 **Ownership is checked before verification**, always:
 
@@ -647,6 +774,44 @@ generates a support email.
 
 The other order turns another brand's campaign from a 404 into a 403, which
 leaks which ids exist. A unit test pins the order for every gated endpoint.
+
+## Brands whose briefs stop queueing
+
+Reviewing a brand's first campaign is the point of the review. Reviewing its
+twelfth is data entry, and the brand waits a day for it. A brand that has had
+`TRUSTED_BRAND_APPROVALS` (3, stored and admin-editable via
+`trusted_brand_threshold()`) campaigns approved with **none ever rejected**
+publishes on submission; the brief lands in the queue *flagged* rather than
+blocking. The check moves from before publication to after it, and that trade
+is worth stating plainly: a bad brief from a trusted brand is live for as long
+as it takes somebody to notice. That is why one rejection ends it.
+
+- **Earned, and `_brand_is_trusted` wants all four**: verified, not revoked,
+  enough approvals, none rejected. The last is not a ratio — one brief we had
+  to send back is one we are glad we read, and "mostly fine" is not the
+  standard for skipping the read entirely.
+- **`_brand_review_record` counts out of the audit log**, not off a total on
+  the profile: the log is written on every decision and cannot be edited, so a
+  counter disagreeing with it would be the thing that was wrong. It needed
+  `**_campaign_audit_context(...)` added to `campaign.approve` / `campaign.reject`,
+  which had never carried a `brand_id`. **The record therefore starts when the
+  rule did** — nobody arrives at the deploy already trusted, and both halves
+  start at zero together so a brand with a history of rejections is not
+  penalised for a record we can no longer read either.
+- **`_auto_published_fields` writes no `reviewed_at`.** It uses the same
+  `upcoming`/`open` rule the human approval does, marks the row with
+  `auto_published_at` for the spot-check queue, and leaves the reviewed
+  timestamp absent on purpose: nobody reviewed it, and a timestamp saying
+  somebody did is exactly what an audit trail is supposed to be able to
+  disprove. `POST /admin/campaigns/{id}/spot-check` is the after-the-fact
+  read; rejecting an auto-published brief pulls it back off the feed.
+- **Revocation is separate from the count and outlives it** (`_trust_revoked`).
+  Re-earning trust by posting three more good briefs would give somebody's
+  deliberate decision an expiry date they did not choose; it stands until an
+  admin lifts it the same way, and both ends require a reason.
+- `_trust_block` is the one reader for the brand's own dashboard and the
+  admin's brand page, so "you need one more" and "they need one more" cannot
+  disagree. `components/admin/BrandTrust.jsx` is the panel.
 
 ## Finding a brief, and sending one on
 
@@ -692,12 +857,67 @@ what they say. The "Live pool" masthead figure is gone — it summed
   category with no live brief in it is a filter whose only outcome is an empty
   list.
 
+### Three types, three shapes of schedule
+
+`_SCHEDULING_BY_TYPE` is the one table saying which scheduling fields each
+campaign type carries. Every campaign used to carry every field and the form
+asked for all of them whatever you picked — so a **launch**, one evening with
+everybody arriving at once, was asked which weekdays don't work and which hours
+of the day are possible. Brands answered, because a form that asks looks like a
+form that needs an answer, and the result was a restriction nobody meant on a
+brief that could never be booked against it.
+
+- **launch** — a day, a start time and optionally how long it runs.
+  `event_date` carries the hour, because the day and the time are one
+  arrangement; `duration_minutes` is the only extra.
+- **group_event** — a day and **one or more sittings**, required. On this type
+  the timetable *is* the brief: "three sittings, six creators each" is what
+  the brand is buying and what a creator is deciding whether they can make.
+  `_sync_event_sittings` materialises them into `campaign_slots`, so booking,
+  capacity and the confirmation handshake are the machinery that already
+  exists. It rewrites rather than merges, but **keeps a sitting somebody has
+  already booked** — a brand editing a timetable is editing a plan, and a form
+  save is not the place to break an arrangement with a person.
+- **personal_table** — a window, and the only type with `restricted_days` and
+  `shoot_windows`, because it is the only one where the *creator* picks the
+  time and therefore the only one where those two questions have an answer.
+
+Enforced in `_scheduling_refusal`, which **returns the sentence rather than
+raising** (the same shape `_shoot_time_refusal` uses) so the create validator
+and the edit path can both use it. The edit path is the one that mattered:
+`_refuse_dates_foreign_to_type` checked the two date fields and let restricted
+days through on any type, which is the shape of every "validated on create
+only" bug. The refusal names the control on the screen — "the hours that work",
+not `shoot_windows` — via `_SCHEDULING_LABELS`.
+
+**An unknown type is not checked rather than refused.** Campaigns predate
+types, and a shape check that refused them would turn every historical brief
+into an un-editable record on deploy — the usual absent-reads-safe rule.
+
+`PostCampaign` renders only the fields the type has, and `timeKey` in
+`lib/time.js` reads a stored instant back as `HH:mm` **in IST**: a launch at
+19:00 in Bengaluru is 13:30 UTC, so any other reading moves the brief by five
+and a half hours every time somebody opens the edit form. Same trap `dayKey`
+exists to close.
+
 ### When a shoot may happen
 
 A venue's Monday is not its Saturday and its 11am is not its 8pm. Two fields on
-a campaign say so: `restricted_days` (weekday indexes the venue is out) and
-`shoot_windows` (the hours that work). Before them the only place a brand could
-say "not during service" was the brief, which nothing reads.
+a **personal table** say so: `restricted_days` (weekday indexes it is out) and
+`shoot_windows` (the hours that work) — see the type table above for why those
+two live on that type alone. Before them the only place a brand could say "not
+during service" was the brief, which nothing reads.
+
+**The copy names no industry.** It read "the kitchen, the floor or the light"
+and "your venue is closed", which is a food-and-drink brief describing itself:
+accurate for a café and faintly baffling to a gym, a showroom or a games
+studio, on a platform whose taxonomy is fifteen groups precisely because it
+takes every category. The same habit had reached the niches box ("cafe,
+brunch"), the tagline example (a coffee roastery, in Bengaluru), the campaign
+title example and the slot-decline note. `test_form_neutrality.py` sweeps the
+shared forms for both the food words and a city named in a placeholder —
+placeholders rather than whole files, because `INDIAN_CITIES` legitimately
+contains "Bengaluru" and a city *list* is not a city *assumption*.
 
 - **Every weekday and hour comparison happens in IST** (`SHOOT_TZ`). Slots are
   stored in UTC and a 19:00 Bengaluru sitting is the *next day* in UTC, so
@@ -822,12 +1042,46 @@ self-serve/managed choice **as an option, never as a fee they are locked into**.
   get past. Everything else that used to be below home has its own page, and
   the live brief feed went to `/campaigns`, which is a better version of it.
 - **Every proof figure is counted, never written down.** `_platform_proof`
-  queries verified creators, campaigns that reached `in_progress` or beyond,
-  verified brands and distinct cities; `GET /public/proof` serves them and
-  `ProofStrip` draws them. Each appears only above a floor — 10, 5, 5 and 3 —
-  and the strip renders nothing when there is nothing worth saying, because "3
-  creators" is not proof, it is a reason to close the tab. Home carried a
-  hardcoded "500+" until this replaced it.
+  serves three — cities with a verified creator in them, verified creators,
+  and briefs **open right now** — through `GET /public/proof`, drawn by
+  `ProofStrip`. Home carried a hardcoded "500+" until this replaced it.
+- **`PROOF_FLOORS` gates the set, not each figure.** The floors were once per
+  figure and whichever passed was drawn, which on real data rendered "7
+  cities" alone: a single number with no denominator, read as the one
+  statistic we could find — and the reader's inference about the missing ones
+  is correct. So it is all three or none, and "12 creators · 2 campaigns" is
+  worse than silence.
+- **The campaign figure is the live count, and it moves.** A quiet fortnight
+  takes the whole strip off the marketing pages and a new brief brings it
+  back. That is the trade: the alternative is a lifetime total, which stays
+  comfortably large forever and stops describing anything a visitor can go and
+  check. Invite-only briefs are excluded through `PUBLIC_CAMPAIGN_QUERY` for
+  the same reason — a number a stranger cannot verify is not proof to them.
+
+### The eyebrow above the headline
+
+`HERO_EYEBROW` in `lib/siteNav.js`, and it is one constant because it was two
+strings. Home and the brief feed each inlined "Vol. 01 · Bengaluru · Influencer
+studio" separately, so they had to be edited together and were not.
+
+- **"Vol. 01" is a magazine's furniture** — it implies a second volume that
+  does not exist and tells a first-time visitor nothing.
+- **The city contradicted the product.** Signup is open; an eyebrow on every
+  page naming one city tells everybody else they are in the wrong place before
+  they have read a word.
+- **It does not say "nationwide" either**, and that is the interesting half:
+  "every city", "pan-India", "across India" and "nationwide" are in
+  `_FORBIDDEN_MARKETING_PHRASES`, because the network really is deepest in
+  Bengaluru and a claim the operation cannot back is worse than the city it
+  replaces. Dropping the geography fixes the contradiction without inventing a
+  bigger one.
+
+The same rule reaches past the marketing pages, which is where it was actually
+failing. `Login.jsx` had its own bare "Bengaluru" — added as a fix for the
+older "Every city that matters" overclaim, and still wrong on the screen
+somebody signs in from anywhere. And two dashboards printed "Creator ·
+Bengaluru" and "Brand · Bengaluru" to people whose city the page already had in
+hand; both read the record now. `test_form_neutrality.py` sweeps for all of it.
 
 ### Why they are not server-rendered
 
@@ -1338,6 +1592,56 @@ few" is not a number anybody agreed to.
   shows the sentence the campaign will carry as it is being built, which is
   exactly the string the server derives.
 
+### The brief, in pieces somebody can tick off
+
+`brief` was one free-text box, and everything a brand actually cared about went
+into it as prose: tag us, don't film the queue, use this hashtag, don't mention
+the competitor, here's the logo. A creator read it once, shot the thing, and
+the mismatch surfaced at **draft review — after the shoot**, when the fix is a
+reshoot rather than a sentence.
+
+The narrative stays and six structured fields sit beside it, each a thing that
+can be *checked* rather than interpreted: `brief_dos`, `brief_donts`,
+`mandatory_hashtags`, `mandatory_mentions`, `caption_guidance`,
+`brand_assets`.
+
+- **Every one is optional and absent reads as "not stated".** `_brief_details`
+  returns only what is there, so a brief that named no don'ts has no "Don't"
+  heading — an empty one reads as a brand that had nothing to say about it,
+  which is a different claim from never being asked, and campaigns predate all
+  six. `hasBriefDetails` is the frontend half and the checklist renders
+  nothing below it, the rule `ShootWindowNote` already holds.
+- **`_resolve_brief_details` is the only writer**, shared by the brand's
+  create, the brand's edit and the admin's edit — the same rule
+  `_resolve_deliverables` holds. It takes only the keys that were sent, so an
+  omitted key means "leave it alone" and an explicit empty list means "clear
+  it"; collapsing those two would wipe a brief's hashtags every time somebody
+  changed its title. Both edit paths **pop the six out of the generic copy
+  loop** first, the same reason `_refuse_brand_barter` exists.
+- A hashtag is normalised to one spelling (`_BRIEF_SIGILS`): "weare",
+  "#weare" and "# weare" are the same instruction, and a creator comparing two
+  briefs should not be comparing punctuation. A sigil on its own is dropped
+  rather than stored bare.
+- **A brand asset must be an `http(s)` link.** It renders as an anchor a
+  creator clicks, so a `javascript:` in a field a brand types is the obvious
+  way to turn a brief into an attack. The label is what renders — a bare URL
+  in a list is a link somebody has to open to find out what it is — and falls
+  back to the URL when there is none.
+- **`BRIEF_DETAIL_FIELDS` is spread into `_CAMPAIGN_BRIEF_FIELDS`**, so a
+  duplicate and a template carry the structured half with the narrative one. A
+  brand that always asks for the same hashtag is exactly the brand that
+  duplicates a brief, and a copy that dropped these would be quietly weaker
+  than the thing it copied. The rule that keeps that safe is still the one
+  asserting the two tuples do not overlap.
+- Surfaces: `components/campaign/BriefChecklist.jsx` on **four** — the campaign
+  page (before applying), the creator's own row (while they are making it), the
+  shared application screen (where the draft is judged against it) and the
+  manager's brief panel (standing in the room). It never asks what role is
+  looking. `BriefDetailsEditor` is the one control, collapsed by default on the
+  post form: a brief with none of this is a perfectly good brief, and six empty
+  boxes above the deliverables read as six more things to do before posting.
+  `lib/briefDetails.js` mirrors the vocabulary and a test fails if they drift.
+
 ## Reference ids
 
 **An ObjectId is not something a person says out loud**, and every record here
@@ -1361,10 +1665,20 @@ table column.
   the first brief this operation ever posted rather than whichever row the
   migration reached first, then adds a unique sparse index.
 - `parse_reference` reads `"BRD-0012"`, `"brd12"` and `"crt 108"` alike — one
-  somebody has to spell exactly is one they retype three times. A typed
-  reference is answered **exactly** by `admin_global_search`, returning the one
-  record, and it is the only way to reach a *collaboration* from the palette:
-  nothing about one is a name, so there is nothing else to type.
+  somebody has to spell exactly is one they retype three times. It returns the
+  **canonical string**, not the raw number, so two spellings arrive at one
+  value before anything is looked up. A typed reference is answered **exactly**
+  by `admin_global_search`, returning the one record, and it is the only way to
+  reach a *collaboration* from the palette: nothing about one is a name, so
+  there is nothing else to type.
+- **Every entity list emits one, which took a second pass.** The creator list,
+  the brand list and the dormancy list carried `reference` from the start; the
+  campaign list and the **campaign review queue** did not, so campaign rows
+  were the one kind that stayed blank on a screen (`Reviews.jsx`) already built
+  to print it. A test now walks all of them. On the three console lists it is a
+  sortable `Ref` column, hidden below `lg` — a reference sorts by when the
+  record was created, which is the one ordering an ObjectId column could never
+  show, and on a phone the row is a stacked card where nobody scans for it.
 
 ## The application process flow
 
@@ -1411,6 +1725,24 @@ Booking used to be one move: a creator picked a time and that was the
 arrangement, with nobody at the venue having agreed to it — so a creator turned
 up to a shoot nobody had planned for.
 
+**On most campaigns nobody was ever going to say no.** The handshake was built
+for the case it is right for — a venue that genuinely has to check the day
+before it holds a table — and then applied to every brief, which put a human
+decision in front of a booking the creator had made by picking one of the
+manager's *own* published slots. Confirming that is agreeing with yourself.
+`requires_slot_confirmation` is the per-campaign toggle and
+`_requires_slot_confirmation` is the one reader; **absent reads off**, which is
+a deliberate change of default and the safe direction — it cannot strand
+anybody, because a booking already sitting unconfirmed keeps its
+`slot_confirmed_at: None` and stays answerable.
+
+- **The answer is written at booking, not worked out by eight readers.**
+  `_slot_confirmed` has eight call sites, most without the campaign in hand, so
+  `_claim_slot` stamps `slot_confirmed_at` immediately when confirmation is off
+  and leaves it `None` when it is on. One reader stays one reader, and the
+  record says what actually happened rather than needing the campaign beside it
+  to be interpreted. The notification branches the same way — "you're booked"
+  where nothing is pending, "waiting on the venue" where something is.
 - **It is not a new state.** The ladder still reads `commercial_agreed →
   slot_booked`; what changed is that `slot_booked` carries `slot_confirmed_at`.
   Absent means booked and waiting, set means agreed. Nothing mid-flight is
@@ -1475,6 +1807,40 @@ registered address or its documents from the screen where they decide it.
 - **The approval actions live on the page too** — otherwise "open the full
   page" means losing the queue to read the record and going back to act on it.
   All three pages already had them; what was missing was the way there.
+
+### Fifty at a time
+
+Approving fifty creators one at a time is the heaviest process in this product.
+`POST /admin/bulk/{kind}` takes `creators`, `campaigns` or `brands` and loops
+the **real handlers** — `approve_creator`, `reject_campaign`, `verify_brand` and
+the rest — so a bulk decision is the same decision, with the same preconditions,
+the same notification and its own audit line.
+
+- **The role is re-checked by hand inside the loop, and that is not belt and
+  braces.** Calling a route function directly skips FastAPI's dependency
+  injection, so the `require_roles("admin")` on `approve_creator` does *not*
+  run when this loop calls it. Without the check, a `weare_team` member would
+  reach the global creator directory's decisions through this one door.
+  `BULK_ADMIN_ONLY` is the same split `ADMIN_ONLY_EXPORTS` makes, for the same
+  reason: a creator works across every brand, so deciding about one is not
+  scoped work.
+- **Nothing aborts the batch.** A row that moved since the list was drawn is
+  reported against its own id and the other forty-nine go through; losing an
+  afternoon's work to one stale row is worse than the stale row. Ids are
+  deduplicated first, so a double-click on "select all" does not 409 against
+  itself and read as a failure.
+- **One reason for the whole batch**, which is the honest shape: somebody
+  rejecting nine profiles in one action is rejecting them for one reason, and a
+  per-row reason is nine dialogs again. Approving needs none.
+- **The batch is audited on top of the individual lines**, not instead of them.
+  The per-record lines say what was decided; the `bulk.*` line says it was
+  decided in one action, which is what somebody reading fifty identical
+  decisions one second apart actually wants to know.
+- The UI is in the one shared `ReviewQueue` in `Reviews.jsx`, gated on a
+  config's `bulkKind`, with the selection cleared whenever the rows reload and
+  the bar absent — not disabled — until something is picked. `ConfirmDialog`
+  gained `requireReason`, defaulting true so every existing call site keeps its
+  strictness.
 
 ## Collaboration lifecycle
 
@@ -1572,6 +1938,65 @@ first sight of the content was after the creator's followers had had theirs and
   published content, and a draft has no reach — but both states are in
   `COLLAB_GROUP_ONGOING`, and `_roster_rows` counts them as having turned up.
 
+### Proof that a story ran
+
+**An Instagram story is gone in twenty-four hours.** A creator posts one,
+submits the link, and by the time anybody reviews it the URL answers with
+nothing — so a story deliverable was the one thing on this platform that could
+be asked for, delivered, and then not verified. The brand's options were to
+take somebody's word for it or to refuse work that had actually happened, and
+the screenshot everybody was already sending over WhatsApp was on nobody's
+record.
+
+`content_proofs` on the collaboration, through the same magic-byte-sniffed,
+privately stored upload the draft gate uses.
+
+- **Required exactly where the brief counted stories.** `_requires_story_proof`
+  reads `deliverable_items`, never the sentence: "a few stories" is the prose
+  that field exists to replace, and a requirement that fired on a guess would
+  block deliveries on the whole back catalogue the morning it deployed. Absent
+  structure reads as **no requirement**, the usual rule.
+- **On a stories-only brief the link becomes optional** (`_story_only_ask`).
+  Demanding a URL there means demanding a field whose value is known to be
+  useless, and a creator who cannot submit without one will paste something
+  that is not the work. Where anything else was asked for, the link stays
+  required. `content_url` is `None` rather than `urls[0]` on such a delivery —
+  the singular field had no guard and would have thrown.
+- **`_content_submission_refusal` is the one decider**, returning the sentence
+  rather than raising it (the shape `_scheduling_refusal` uses), so the submit
+  route and the `proof` block the form reads share it instead of one of them
+  being a second implementation. The form asks nothing for itself: `required`,
+  `link_optional` and the count all arrive from the server, and the creator's
+  primary button says "Send your screenshots" off the same flag.
+- **Private storage, for a stronger reason than the draft.** A story screenshot
+  routinely catches the viewer list, a DM notification or the insights panel,
+  none of which the creator meant to hand over. `PRIVATE_UPLOAD_DIR`, no path
+  in any serialiser, and the only ways out are the creator's own read and
+  `GET /collaborations/{id}/content-proof/{id}/file` — on the notes router,
+  because that door already answers "may this person read this collaboration"
+  for all three staff audiences with a 404 behind each. The reviewer's read is
+  audited; the creator's own is not, because a log line per thumbnail is noise
+  in the one place somebody goes looking for who saw what.
+- **The same doors as content submission**, deliberately (`_own_collab_for_proof`
+  reads `_content_submission_states`): a screenshot a creator cannot attach at
+  the moment they are submitting is a requirement with no way to satisfy it,
+  and one they can still swap after the work was accepted is evidence that
+  changes after the decision. `_refuse_if_disputed` is on both write paths.
+- Removing takes the file with it. A screenshot the creator withdrew is not a
+  record of anything, and keeping the bytes of somebody's private screen after
+  they asked for them to go is the opposite of what this storage is for.
+- `_safe_download_name` strips what a `Content-Disposition` header cannot
+  carry. The uploader's filename never touches the filesystem, but it is
+  echoed into a response header, and a quote or a newline in it is a header the
+  client parses differently from the one we sent.
+- Surfaces: `components/collab/StoryProof.jsx`, two halves of one file —
+  `StoryProofUpload` inside the creator's submit dialog and `StoryProofReview`
+  on the shared application screen. Both fetch each image as an **authenticated
+  blob**, never an `<img>` pointed at the backend: the cookie is
+  `SameSite=None`, so a bare URL rides along in production and silently does
+  not on a plain-http laptop. The 9:16 ratio is on the container, so a
+  screenshot that never arrives still occupies the space it claimed.
+
 ## Who runs a campaign
 
 `execution_owner` on a campaign, `brand` or `weare`. It is what applications
@@ -1614,6 +2039,50 @@ applicant and no WeAre manager was told at all.
 wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote`
 are one component rather than a pill per console, because the point of the field
 is that the admin, the brand and the creator agree about it.
+
+### The two shapes that are ours whatever the brand picks
+
+A **launch** and a brief for more than `large_campaign_threshold()` creators
+(15, stored and admin-editable) are `weare` however the picker was set. Both
+are about the shape of the work rather than about the brand: a launch is one
+evening with no second attempt, and twenty creators is twenty bookings, twenty
+briefings and twenty people through a door on the same night.
+
+- **`_weare_run_reason(campaign_type, creators_needed, threshold)` is the one
+  decider**, and it is pure — it takes the two facts rather than a document,
+  so create (which has a payload), edit (a document with an update laid over
+  it) and the form's own explanation ask the same question. Returns
+  `(code, sentence)` or `None`, the `_scheduling_refusal` shape.
+- **The sentence is the offer, not the refusal.** A brand is not losing a
+  campaign, it is getting a manager on the one where it matters, and both
+  sentences end by saying they still post it and approve the work. The form
+  **replaces the picker with it** rather than leaving a choice the server is
+  about to override.
+- **More than fifteen is sixteen.** An off-by-one moves every fifteen-creator
+  brief onto our desk, so the comparison is `>` and a test pins both sides.
+  An absent or unparseable headcount reads as *not* large — the usual
+  absent-reads-safe rule.
+- **Crossing the line on an edit hands it over**, writing `execution_owner`,
+  `weare_run_reason` and `_execution_manager_fields` in one write, auditing
+  `campaign.execution_handover`, and telling the brand **and**
+  `notify_weare_team` — which falls back to every admin when nothing is
+  assigned, exactly the state a fresh handover leaves behind. Editing back
+  under the line returns it: the rule is about the work, and a brief cut to
+  four creators is a four-creator brief again.
+- **A brand cannot take one back** (`_refuse_late_execution_handover`, 409
+  with `weare_run_launch` / `weare_run_large`), and that check comes *before*
+  the draft-status question because it is the stronger of the two — this one
+  has no editable window at all. An admin is not held to it, the same
+  asymmetry `_refuse_brand_barter` has.
+- The threshold rides on `GET /brand/profile` as `execution.large_campaign_
+  threshold`, and `weareRunReason` in `lib/execution.js` **takes it rather
+  than knowing it** — a number the form hardcodes is a form arguing with the
+  route it posts to the day an admin changes it. `GET`/`PUT
+  /admin/settings/large-campaign` is the editor, **admin-only**: a brand that
+  could raise the threshold could opt itself out of the rule.
+- The form posts `weareRun ? "weare" : executionOwner`. Sending the picker's
+  old value would fail the whole save on the edit path over a field the form
+  is no longer showing.
 
 ## One application, on its own screen
 
@@ -1801,6 +2270,110 @@ queue item.
   and the review queue row. It is context, not a threshold: a third attempt
   might be somebody who cannot read the form, and knowing that is what lets a
   reviewer pick up the phone instead of rejecting again.
+
+## Disclosure, usage rights, and what was agreed
+
+Three facts both sides needed that lived only in somebody's memory. All three
+are on the campaign, all three reach the creator **before** they apply, and the
+third is frozen the moment a brand takes somebody on.
+
+### The label the post has to carry
+
+ASCI requires a disclosure on content carrying a material connection, and the
+liability sits with the **advertiser** — us and the brand, not only the
+creator. `required_disclosure` is one of five values (`DISCLOSURE_LABELS`);
+`_required_disclosure` is the one reader and **absent reads as the default,
+never as "none"** — campaigns predate the field and every one of them still
+needed a label, so the other reading would quietly exempt the back catalogue.
+
+- **It is on every campaign, including barter.** The requirement asked for this
+  on *paid* campaigns; restricting it there would leave the arrangement that
+  most obviously needs it — a free stay, a meal, a product sent over — with no
+  disclosure at all. A gifted post is an ad, and the material-connection test
+  does not care whether money moved.
+- **Free text is deliberately not the shape.** "Pls mention us" is not a
+  disclosure, and a reviewer confirming one has to know what they are looking
+  for. An unrecognised value falls back to the default rather than rendering
+  itself.
+- **Two checkpoints, and the approval waits on both.**
+  `_refuse_unconfirmed_disclosure` is on `approve_draft` and on
+  `brand_approve_content`, so a campaign with a draft gate is checked twice —
+  once when the label can still be added for free, and once against the live
+  post a regulator could go and look at. A campaign without the gate is still
+  checked at the only review it has.
+- **`DisclosureCheckPayload.disclosure_confirmed` defaults to `False`.** A box
+  that arrives ticked is a box nobody read, and the client has to send it.
+- `_disclosure_record` writes **who and when**, not a boolean: "the disclosure
+  was confirmed" with nobody's name on it is exactly the record that is no use
+  in a complaint. `_serialize_disclosure_check` returns `None` for a stage
+  nobody has reviewed — not-yet-reviewed and reviewed-and-absent are different
+  facts, and a red cross on every unreviewed draft is a warning people learn to
+  ignore.
+
+### What the brand may do with it afterwards
+
+`usage_rights` is `organic_only | paid_usage | full_buyout`, with
+`usage_duration_days` where it applies. Before this a creator applied not
+knowing whether a reel would be reposted once or run as a paid ad for a year —
+very different pieces of work at very different prices, and the single most
+common thing to argue about after delivery.
+
+- **Absent grants the narrowest thing.** A campaign written before the field
+  granted nothing beyond a repost, because nothing broader was ever agreed;
+  reading absent as a buyout would retroactively hand over every piece of
+  content on the platform.
+- **A period is required exactly where it means something.** Open-ended paid
+  usage is a buyout wearing a smaller name and a creator cannot tell the two
+  apart, so `paid_usage` demands a duration and the other two refuse one.
+  `_usage_duration_days` drops a stray value on a grant that has none.
+- `_usage_text` builds the sentence once, so the brief, the application page
+  and the frozen terms cannot phrase the same grant three ways. A stored
+  `paid_usage` with no period says "period not recorded" — the honest reading
+  of a campaign written before the rule, and the one a mediator can act on.
+- `lib/campaignTerms.js` mirrors both vocabularies and a unit test fails if
+  they drift, the same arrangement `followerTiers.js` and `shootWindows.js`
+  use.
+
+### The terms, frozen
+
+Every term lived somewhere that could change underneath it: deliverables and
+usage on the campaign the brand can edit, the fee on a collaboration a partial
+acceptance rewrites, the cancellation policy in a constant we change in a
+deploy. So when two sides disagreed three weeks later, mediation had nothing to
+read — the record showed what the campaign says *now*.
+
+`_issue_terms_snapshot` writes `terms` onto the collaboration at acceptance,
+which is both the moment both sides commit and — because
+`brand_accept_applicant` records the fee in the same write — the first moment
+every term is known.
+
+- **Written once and never rewritten.** The filter carries
+  `terms: {"$exists": False}`, so two accepts racing produce one snapshot and a
+  re-run cannot overwrite what a creator has already accepted. A snapshot that
+  tracked the campaign would be a copy of the campaign, which is the thing that
+  was already no use.
+- `_build_terms` is pure and DB-free, so the same function builds the snapshot
+  and could render a preview — somebody being asked to accept terms should read
+  the object that gets stored, not a summary of it.
+- **An amount or a barter description, never a zero.** `_terms_money` returns
+  `None` and a sentence on a barter brief; `0` reads as "agreed, nothing" on
+  every surface that shows money.
+- `CANCELLATION_TERMS` is frozen in too, so a later change to the policy cannot
+  be applied backwards to an arrangement made under the old one.
+- **The creator's acceptance is one tap and a timestamp**, and accepting twice
+  does not move it: the precondition is `terms.accepted_at: None`, so a second
+  tap on a slow connection cannot end up as a later acknowledgement than the
+  one they actually made. `accepted_by` is an internal join and never
+  serialised.
+- **`_serialize_terms` rides on the dispute queue**, which is the whole point:
+  mediation reads the record rather than two memories.
+
+**The surface nearly shipped wrong.** The shared `ApplicationDetail` is mounted
+at `/admin`, `/brand` and `/manager` and at *no creator route*, so a terms card
+living only there would have been a card the one party who has to accept it can
+never open. It is on `components/creator/ActiveCampaigns.jsx` as well, and
+`_serialize_collab_row` carries `terms` and `can_accept_terms`. Found in a
+browser; a test names both now.
 
 ## When the two sides disagree
 
@@ -2239,6 +2812,84 @@ communication is one people abandon on the second field.
   maps to exactly `_UNKNOWN_SIGNAL`, which is the honest relationship between
   "they were fine" and "we do not know".
 
+### Featured on the homepage
+
+A row of creators on `/`, drawn from `GET /public/leaderboard`. The whole
+design sits on three decisions.
+
+**It ranks on professionalism and never on money.**
+`score_creator_standing` is one pure function with `CREATOR_STANDING_WEIGHTS`
+summing to 100 as the only knob — the same arrangement `score_creator_for_
+campaign` uses, and the components ship with every result. Four signals:
+campaigns finished (30, saturating at `STANDING_VOLUME_SATURATION`), on-time
+delivery (30), average published performance (20), and what the runners
+thought minus the commitments missed (20). **No signal reads a fee, a rate or
+a payout**, and a test walks the function's source for every spelling of each
+— because a public ordering by earnings is a public ordering by who charged
+most, which walks into every rate negotiation the platform exists to keep
+clean. Engagement rate, never reach on its own: otherwise it is a
+follower-count leaderboard wearing another name. `STANDING_TARGET_ENGAGEMENT`
+is a **percentage**, like every other `engagement_rate` here — a fraction
+would be a second meaning for one key name, wrong by a factor of a hundred and
+reading perfectly.
+
+**Consent is required and withdrawal is immediate.** `homepage_opt_in` is off
+unless the creator says otherwise, absent reads as off, and it is asked in the
+builder and again on their own profile — where it is the **one control on an
+otherwise read-only page**, because somebody who wants off wants off now and a
+builder is three chances to give up. `_leaderboard_eligible` is the reader
+(consent, verified, `_creator_block`, active within `STANDING_ACTIVE_DAYS`) and
+is **re-run on every request** rather than baked into the cache: the cache
+holds an ordering, and each creator in it is looked up again and dropped if
+they are no longer eligible. That is what makes "removed immediately" true
+rather than true-by-tomorrow. Erasure `$unset`s the flag with everything else,
+or a tombstone would be a name we removed and a permission we kept.
+
+**Below the floor the section is absent, not short.** `leaderboard_settings()`
+holds the minimum (6) and the size (8), stored and admin-only — lowering the
+floor is a decision about what the platform will say about itself in public.
+One withdrawal can take the whole row down, and that is correct: the floor is
+about whether the claim is worth making.
+
+- **The homepage never computes it.** `refresh_creator_leaderboard` runs daily
+  (`LEADERBOARD_REFRESH_INTERVAL_SECONDS`, `0` disables, plus
+  `POST /admin/jobs/leaderboard`) and writes `leaderboard_cache` — **its own
+  collection, not `platform_settings`**, which holds what an operator typed and
+  is one bad `_id` away from being overwritten by a nightly job. The public
+  reader touches no collaboration and no performance row.
+- **`_public_creator_card` is a second, narrower allow-list than
+  `_brand_visible_creator`.** Reusing the brand one was the obvious move and
+  would have published a follower count, an engagement rate and a base rate.
+  Name, photo, handle, city, two niches, campaigns finished, reliability band —
+  and **no rank and no score**, because a visible ordinal is a public statement
+  that somebody is eighth and the person it is worst for is whoever is last.
+  There is deliberately no allow-list *tuple* beside it: one was written first,
+  governed nothing, and a break-test pointing it at the brand projection left
+  the suite green.
+- **The cards are not links.** The rule is to link through to a public creator
+  page where one exists and to leave them inert otherwise — and this product
+  has no public creator page. `/profile` is the creator's own, behind auth and
+  behind the creator role, so linking there would put every visitor on a
+  sign-in screen from a section written for strangers.
+- `components/marketing/CreatorLeaderboard.jsx` takes the floating-card
+  treatment: a static tilt, the quiet hover, and `CARD_SHADOW` **imported from
+  `FloatingCards`** rather than written a second time — the marketing site's
+  one `box-shadow` exception stays one place to read. Monogram where there is
+  no photograph, the 4:5 ratio on the container so a missing image still holds
+  its space, and `loading="lazy"`.
+- **Fetched only when it is nearly on screen**, via an IntersectionObserver
+  with a 600px margin, so a visitor who never scrolls never pays for it.
+  Measured: the section contributes **0.0000 CLS** at 390 and 1280 — the
+  0.0837 the harness reports on home is `CampaignFilm`, identical with the row
+  present and withheld. The reserved shape is a skeleton in the same grid
+  rather than a pixel height, because the cards are 4:5 and the section's
+  height tracks the column width continuously (1,149px at 768 → 1,409px at
+  1280); the heading is *not* skeletoned, since it is static copy and grey
+  bars reserve a different height from it — 136px of error on a phone. It
+  renders only once the request is in flight: earlier, and a visitor who never
+  scrolls gets a permanent section-shaped hole, which is what a browser check
+  caught.
+
 ## People you would ask again
 
 `creator_lists` — named lists for a brand or for WeAre, and `POST
@@ -2304,6 +2955,21 @@ were happening over WhatsApp with a figure nobody wrote down.
 - The shortfall renders on every surface **including the creator's own row** —
   they are the party it is a judgement about, and finding out from a smaller
   payment than expected is the version of this that costs somebody.
+- **It shipped with a dead end and the flag was the tell.** `can_accept_partial`
+  was computed server-side, shipped on the shared `ApplicationDetail` payload,
+  and rendered by nothing — so an admin who opened an application waiting on
+  review could read the links and had no way to answer them; the decision
+  existed only on the brand's own applicant board. `can_review_content` was in
+  exactly the same state beside it, which is why the fix is a whole "Review the
+  delivery" section rather than one button: approve, accept what arrived, and
+  request a change. `PartialDeliveryDialog` and `DisclosureConfirmDialog` are
+  the brand board's own components — the second moved out of
+  `BrandCampaignApplicants.jsx` into `CampaignTerms.jsx` so both consoles ask
+  the disclosure question once rather than twice.
+- The dialog counts one row per counted deliverable and suggests a pro-rata
+  figure off the fee, so `get_application`'s campaign block carries
+  `deliverable_items`, `budget_per_creator` and `compensation_type` — never a
+  figure without its type, on any surface.
 
 ## Who has gone quiet
 
@@ -2525,6 +3191,26 @@ left, and links to invite creators, extend the dates or ask for fewer. Naming a
 problem with nothing to do about it is how a health panel becomes a list people
 scroll past.
 
+**All three of those links were decoration for months.** They carried
+`?panel=suggested` and `?edit=dates` against a campaign page that read neither
+query string, so every "way out" landed on the same screen doing nothing —
+which is worse than offering none, because somebody clicks and concludes the
+tool is broken. They are `?action=invite` and `?action=edit` now, and
+`CampaignDetailPage` opens the matching dialog and then **deletes the param**
+(`{ replace: true }`): leaving it in the URL reopens the dialog on every
+reload, and a back button that re-opens a form is a back button that lies.
+"Extend the dates" also had nowhere to land — the console's only campaign edit
+form carried a title, a fee, a headcount and the deliverables and no date field
+anywhere — so `CampaignEditDialog` grew them, drawn from
+`lib/schedulingShape.js` so only the fields this campaign *type* has are
+offered and the server's `_SCHEDULING_BY_TYPE` refusal cannot be triggered by a
+form. An unknown type gets all three rather than none, the usual
+absent-reads-safe rule: campaigns predate types, and returning nothing would
+make every historical brief un-editable on the screen support uses to fix one.
+`localInputValue` / `fromLocalInput` in `lib/time.js` are the only place a
+`datetime-local` is read as IST — the input has no zone, so an admin editing
+from anywhere else would otherwise move the brief by five and a half hours.
+
 The row is a **stretched link, not a wrapping one**, because it now has its own
 actions and an anchor inside an anchor is invalid markup browsers resolve by
 dropping one of them — the same arrangement the campaign card uses. And **a
@@ -2561,6 +3247,42 @@ real output**, not by reading the source for a key name. Source-reading catches
 the mistake somebody makes on purpose; running it catches the one where a phone
 number arrives through a `**spread` from a document nobody remembered had one.
 Planting a leak in `_build_campaign_report` fails the suite — checked.
+
+### The brand's own copy of a finished campaign
+
+`GET /brand/campaigns/{id}/export` — one CSV, per creator: name and handles,
+what the brief asked for and what arrived, the live links, the date they were
+at the venue, the fee or the barter description, and the usage rights, with the
+campaign's totals underneath. Everything a brand needed after the fact lived
+only on our screens, so reconciling an invoice or writing up a quarter meant
+reading a web page and retyping it.
+
+- **Only once it is over** (`_CLOSED_CAMPAIGN_STATUSES`, a 409 with
+  `campaign_not_closed`). The delivery columns are the point of the file and
+  they are still being filled in until then; the button is absent rather than
+  present and refusing.
+- **Ownership before verification**, as everywhere — another brand's campaign
+  is a 404, never a 403.
+- **`accepted` is the line, not `applied`.** `_BRAND_EXPORT_STATES` is
+  everybody who was taken on: a brand forwarding this to its own finance team
+  should not be forwarding a list of the creators it turned down.
+- **Every creator goes through `_brand_visible_creator`**, so the PII
+  exclusion is a property of the projection rather than of the ten column
+  names somebody happened to pick. `test_access_and_execution.py` plants a
+  phone, an email, an address, a map pin, a UPI id, an account number, an IFSC
+  and a PAN in the input and searches the real bytes; the break that a column
+  reaching past the projection to the raw profile fails it was checked.
+- A date, not an instant — this goes to a client, and an ISO timestamp in a
+  cell is us showing our working. Barter carries **no total**, because `0` in
+  a money column reads as a campaign that cost nothing rather than one that
+  was never priced.
+- Audited as `campaign.export` with `includes_contact_details: False`, and
+  `Cache-Control: no-store`.
+- **Fetched as an authenticated blob, never linked** — the lesson
+  `BrandDocuments` already learned: the cookie is `SameSite=None`, so a bare
+  `href` at the API rides along in production and silently does not on a
+  plain-http laptop. A refusal arrives as a Blob too, so the handler reads the
+  bytes back before formatting the message.
 
 ## The admin console
 
@@ -3261,6 +3983,102 @@ MongoDB counts as on time. The seed stays honest and the test does that
 arithmetic itself — a fixture bent to suit a mock is a fixture that stops
 catching the bug it exists for.
 
+## One bundle, five audiences
+
+The frontend shipped as a **single file**: every creator on mobile data
+downloaded the admin console, the brand console and the manager screens — three
+surfaces they will never open — before their own dashboard could paint. The
+audience is a mid-range Android phone on Indian mobile data, which is precisely
+where that is not a rounding error.
+
+`App.js` now loads each surface with `React.lazy`, and **the chunk names are
+what enforce the boundary**: webpack groups every import sharing a name into
+one file, so opening the console is one request rather than one per section and
+moving between its seventeen sections never suspends. A per-page split would
+trade a bundle nobody needs for a waterfall everybody feels.
+
+- Six audience chunks — `marketing`, `auth`, `creator`, `brand`, `manager`,
+  `admin` — plus `campaigns`, `application`, `calendar` and `dashboard`, which
+  are **named apart because more than one audience reads them**. Putting
+  `ApplicationDetail` in any one console's chunk would make the other two
+  download that console to reach a screen all three share.
+- **`/dashboard` is two surfaces behind one path**, so it has a chunk of its
+  own holding nothing but the dispatch, and both branches are lazy. Naming that
+  file `creator` made a brand manager download the creator app to reach the
+  file that decides they are not one; leaving `CreatorHome` inside it did the
+  same in reverse. `pages/CreatorHome.jsx` is that extraction — the same
+  component, in a file of its own.
+- **Nothing is eager except the shell**: the router, the auth context, the two
+  error boundaries and `ProtectedRoute`. `Landing`, `Login` and `Signup` were
+  kept eager first on the reasoning that they are the front door — and
+  measurement said otherwise. Splitting Landing took 54KB off the shell for one
+  extra request on the one page that needs it; splitting the auth screens took
+  another 35KB, which is far more than "two small forms" suggested. The rule
+  that survived is to measure rather than to reason about it.
+
+### What it cost, and what it bought
+
+Measured in a browser, per route, as the gzip of every JS file the page was
+actually made to fetch — shared chunks included, so these are what somebody
+downloads rather than what one chunk weighs.
+
+| Surface | Before | After |
+| --- | --- | --- |
+| Landing | 432.5 KB | 193.4 KB (−55%) |
+| Login / Signup | 432.5 KB | 162.8 KB (−62%) |
+| Marketing pages, 404, legal | 432.5 KB | 213.5 KB (−51%) |
+| Creator dashboard | 432.5 KB | 276.1 KB (−36%) |
+| Creator brief feed | 432.5 KB | 226.6 KB (−48%) |
+| Brand console | 432.5 KB | 289.8 KB (−33%) |
+| Campaign manager | 432.5 KB | 182.8 KB (−58%) |
+| Admin console | 432.5 KB | 275.5 KB (−36%) |
+
+The entry bundle went from **441 KB gzip to 128 KB**. Nothing regressed: all 44
+screenshots — 22 routes at 390 and 1280 — are **byte-identical** before and
+after, and CLS is unchanged on every one except `/for-brands` at 390, which
+improved from 0.0233 to 0 because the page now arrives in one pass rather than
+two.
+
+### While it is loading, and when it never arrives
+
+`components/RouteFallback.jsx` is the Suspense fallback, and it is **not a
+guess at the page underneath**. Marketing pages carry `MarketingNavbar`, the app
+carries `Navbar`, the console has a sidebar — drawing one would draw the wrong
+one about half the time, and a header that appears and is then replaced by a
+different header is worse than one that arrives once. What it does match is the
+ground: the same `min-h-screen bg-background grain-page` every page sits on, a
+reserved `h-16` bar, and skeletons rather than a spinner, which is the rule the
+whole product already holds. `LoadingAnnouncement` is the one thing not
+`aria-hidden`, so a screen reader hears "loading" rather than a list of empty
+boxes.
+
+**`React.lazy` does not retry**, and that is the trap this needed most.
+It memoises the promise *including its rejection*, so a chunk that failed to
+arrive fails forever — remounting the boundary re-throws the same error and
+never re-requests the file, which makes an ordinary "Try again" button a lie.
+
+- `retryImport` in `lib/lazyRoute.js` makes the second attempt itself, once,
+  after a short pause — the shape of a chunk that lost a race with a lift. A
+  transient failure never reaches a fallback at all; verified by failing the
+  first request and watching the manager screen simply load.
+- A second failure is **tagged** (`isChunkError`), not matched on a message,
+  though webpack's own `ChunkLoadError` is recognised too because a prefetch
+  can raise one this module never wrapped. A copy edit to a browser's error
+  string must not decide which fallback somebody sees.
+- `ErrorBoundary` answers it **before** it looks at its own variant, because a
+  chunk can fail under the route boundary or a section one and the honest
+  answer is the same: "This part didn't finish downloading", and a **reload**.
+  Not a soft remount — the failed import is memoised, and after a deploy the
+  file this tab wants is genuinely gone, which only a fresh `index.html` fixes.
+- Suspense sits **inside** `RouteBoundary` and outside `Routes`. Outside the
+  boundary, a rejected chunk would reach the root one and take the
+  impersonation banner down with it — and an admin must never be left acting as
+  somebody else with nothing on screen saying so.
+
+`test_code_splitting.py` holds all of it, and the failure it exists for is a
+route added the old way: one static `import` in `App.js` reads like every other
+line in the file and silently pulls a whole surface back into the shell.
+
 ## When something breaks
 
 Three layers, in `components/ErrorBoundary.jsx`, `lib/errorLog.js` and
@@ -3406,3 +4224,62 @@ the backend log, so it can't gate a PR.
 Build collaborations through `tests/pipeline.py` rather than by hand — it routes
 each step to whoever owns it. Do not change `addopts` in `pytest.ini`; serialize
 with `-n 0`.
+
+### Reading the source is not driving the code
+
+Much of `tests/unit/` asserts on the *shape* of a handler — that
+`mark_payment_paid` contains the string `_refuse_if_disputed`, that every
+console handler taking an id mentions one of the four scoped guards. That is
+the right instrument for the failure it is aimed at, which is a **new route
+written the old way**: a hand-written list is a list somebody forgets to add
+to, and a structural sweep catches the omission on the day it ships.
+
+It cannot catch a guard that is present and does nothing. Measured, not
+assumed: pointing `_refuse_if_disputed` at the wrong document inside
+`mark_payment_paid` leaves `test_unhappy_paths.py` green and pays out on a
+disputed collaboration.
+
+So the money and state paths carry a second layer that **drives the handler and
+reads the database back**, in three files:
+
+- `test_money_paths.py` — every payment state (pending, paid, refunded, kill
+  fee, void/settled invoices), the dispute freeze on every door that moves
+  money, all four mediation outcomes, cancellation notice and withdrawal.
+- `test_chasing_and_delivery.py` — all five reminder kinds through
+  `run_lifecycle_chasers`, the escalation routing, the SLA-versus-grace split,
+  then takedown, partial delivery, reliability and retention.
+- `test_scope_mutations.py` — what each of the four scoped roles cannot
+  *change* outside its scope, as opposed to what it cannot read.
+
+Three rules they hold themselves to, each learned by breaking the product and
+watching a test that should have failed stay green:
+
+- **Assert on stored state, not only on the exception.** A 409 raised after the
+  write is not a refusal. Every case reads the row back and checks it did not
+  move.
+- **Run the guard rather than grepping for it.** Calling a route function
+  directly skips its `Depends` entirely — the same trap `bulk_review` re-checks
+  by hand — so `guard_allows(fn, role)` pulls the real `require_roles`
+  dependency off the signature and calls it. A guard listing the wrong roles
+  fails; a string match would not.
+- **A test that cannot fail is worse than no test.** Two written here were
+  vacuous and were caught by break-testing, not by review: asking
+  `_reliability_for` about a creator with no rows returns no row at all, so the
+  `on_time_rate is None` branch was never reached; and `asyncio.gather` does
+  not interleave under mongomock, so a "concurrent double-pay" test was answered
+  entirely by the early read. The first now seeds two live collaborations; the
+  second stages the stale read directly, which is what the losing request
+  actually sees.
+
+Where a rule is genuinely covered elsewhere, the docstring says so rather than
+implying this test is the one holding it — the reminder claim's `state`
+precondition is `test_the_clock.py`'s, and the query-level version here is a
+different (also real) assertion.
+
+`pip install -r requirements-dev.txt` brings `pytest-cov`. Coverage is
+something to go and measure, not a number every run pays for, so it is not in
+`addopts`:
+
+```bash
+pytest tests/unit --cov=server --cov-report=term-missing
+```

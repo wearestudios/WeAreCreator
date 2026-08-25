@@ -63,6 +63,46 @@ export const EXECUTION_OPTIONS = [
     },
 ];
 
+/**
+ * Whether this brief is ours to run whatever the brand picks, and why.
+ *
+ * Mirrors `_weare_run_reason` in `server.py` — a unit test fails if the two
+ * drift. Two shapes of campaign come to us by rule:
+ *
+ * - **a launch**, which is one evening with no second attempt;
+ * - **more than `threshold` creators**, which is that many bookings, briefings
+ *   and people through a door.
+ *
+ * The threshold is the server's, carried on `GET /brand/profile` as
+ * `execution.large_campaign_threshold` — it is an operating decision an admin
+ * can change, so a copy of the number here would be a form arguing with the
+ * route it posts to.
+ *
+ * **This decides nothing.** The server forces `execution_owner` either way and
+ * refuses an edit that would take it back; what this is for is saying so on
+ * the form, at the moment the brand picks the type or types the headcount,
+ * rather than letting them choose and then quietly overriding them.
+ */
+export const weareRunReason = ({ campaignType, creatorsNeeded, threshold }) => {
+    if (campaignType === "launch") {
+        return {
+            code: "launch",
+            title: "We run launches",
+            line: "A launch is one evening and there is no second attempt, so our team runs it — booking the creators, briefing them and standing at the door on the night. You post it and approve the work as usual.",
+        };
+    }
+    const needed = Number(creatorsNeeded) || 0;
+    const limit = Number(threshold) || 0;
+    if (limit > 0 && needed > limit) {
+        return {
+            code: "large",
+            title: "We run this one",
+            line: `Briefs for more than ${limit} creators are run by our team — ${needed} creators is ${needed} bookings, ${needed} briefings and ${needed} people to get through a door. You post it and approve the work as usual.`,
+        };
+    }
+    return null;
+};
+
 /** Filter options for the campaign lists, with the "no filter" entry first. */
 export const EXECUTION_FILTERS = [
     { value: "all", label: "Anyone" },

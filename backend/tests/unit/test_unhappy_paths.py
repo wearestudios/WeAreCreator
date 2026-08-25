@@ -973,7 +973,7 @@ class TestEveryRouteHasACaller:
                 "components/creator/ActiveCampaigns.jsx",
                 "components/creator/Applications.jsx",
             ),
-            "VerificationExpiry": ("pages/Dashboard.jsx", "pages/BrandOnboarding.jsx"),
+            "VerificationExpiry": ("pages/CreatorHome.jsx", "pages/BrandOnboarding.jsx"),
             "SuspensionPrompts": ("components/admin/ActionQueue.jsx",),
             "BrandInvoices": ("components/admin/BrandDetailPage.jsx",),
         }

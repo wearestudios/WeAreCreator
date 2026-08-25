@@ -93,7 +93,7 @@ def test_both_lists_refuse_a_value_that_is_not_an_owner(fn):
 
 
 def test_a_brand_run_campaign_notifies_the_brand_manager():
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     branch = source[source.index("if _weare_runs(campaign):") :]
     _, brand_branch = branch.split("else:", 1)
 
@@ -101,7 +101,7 @@ def test_a_brand_run_campaign_notifies_the_brand_manager():
 
 
 def test_a_weare_run_campaign_notifies_the_weare_team():
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     weare_branch = source[source.index("if _weare_runs(campaign):") : source.index("    else:")]
 
     assert "notify_weare_team" in weare_branch
@@ -118,7 +118,7 @@ def test_the_brand_is_not_told_about_a_raw_application_on_our_campaign():
     the job they asked us to do, and a notification about a raw application is
     that job leaking back to them in a different envelope.
     """
-    source = inspect.getsource(server.apply_to_campaign)
+    source = inspect.getsource(server._create_application)
     weare_branch = source[source.index("if _weare_runs(campaign):") : source.index("    else:")]
 
     assert "_tell_brand_manager_unless_managed" not in weare_branch
@@ -164,7 +164,7 @@ def test_a_weare_campaign_is_created_with_no_brand_manager_on_it():
     source = inspect.getsource(server.create_brand_campaign)
 
     assert "_NO_CAMPAIGN_MANAGER" in source
-    assert 'payload.execution_owner == "weare"' in source
+    assert 'resolved_execution_owner == "weare"' in source
 
 
 def test_the_blank_manager_covers_every_field_the_real_one_writes():
@@ -197,7 +197,9 @@ def test_changing_the_owner_moves_the_manager_with_it():
 @pytest.mark.parametrize("status", ["draft", server.CAMPAIGN_REVIEW_STATUS])
 def test_a_brand_may_hand_over_a_draft(status):
     server._refuse_late_execution_handover(
-        campaign(status=status, execution_owner="brand"), {"execution_owner": "weare"}
+        campaign(status=status, execution_owner="brand"),
+        {"execution_owner": "weare"},
+        server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
     )  # does not raise
 
 
@@ -207,7 +209,9 @@ def test_a_brand_may_not_change_it_once_it_is_live(status):
     been working the campaign would stop being told about it."""
     with pytest.raises(HTTPException) as err:
         server._refuse_late_execution_handover(
-            campaign(status=status, execution_owner="brand"), {"execution_owner": "weare"}
+            campaign(status=status, execution_owner="brand"),
+            {"execution_owner": "weare"},
+            server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
         )
 
     assert err.value.status_code == 409
@@ -216,7 +220,9 @@ def test_a_brand_may_not_change_it_once_it_is_live(status):
 def test_resending_the_same_owner_is_not_a_change():
     """A form that round-trips every field must not trip the guard."""
     server._refuse_late_execution_handover(
-        campaign(status="open", execution_owner="brand"), {"execution_owner": "brand"}
+        campaign(status="open", execution_owner="brand"),
+        {"execution_owner": "brand"},
+        server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
     )  # does not raise
 
 
@@ -270,6 +276,12 @@ def test_it_is_read_through_the_reader_everywhere_it_is_emitted():
         "_execution_owner(c)",
         "_execution_owner(campaign)",
         "payload.execution_owner",
+        # The brand's create path, where a launch or a brief above the
+        # threshold is forced to `weare` before anything is written. Named
+        # rather than allowing a bare `execution_owner`, so the allow-list
+        # still says *which* expression may be stored — see
+        # `_weare_run_reason`.
+        "resolved_execution_owner",
         '"weare"',
         # The backfill's `$set`, which writes the literal default rather than
         # reading it — that is what a backfill is for.
@@ -302,10 +314,18 @@ def test_the_frontend_defaults_the_same_way():
 
 
 def test_the_post_form_offers_the_choice():
+    """And sends what it offered — except on the two shapes that are ours by
+    rule, where it sends what the server is going to store anyway.
+
+    The picker used to post `executionOwner` unconditionally. Since a launch
+    and a brief for more than the threshold are WeAre-run whatever is picked,
+    that would have posted `brand` on a campaign the edit route refuses to
+    hand back, failing the whole save over a field the form no longer shows.
+    See `_weare_run_reason` and `weareRunReason`."""
     source = (FRONTEND / "pages" / "PostCampaign.jsx").read_text()
 
     assert "EXECUTION_OPTIONS" in source
-    assert "execution_owner: executionOwner" in source
+    assert 'execution_owner: weareRun ? "weare" : executionOwner' in source
 
 
 def test_the_creator_is_shown_who_runs_it():

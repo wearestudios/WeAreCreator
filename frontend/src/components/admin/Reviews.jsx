@@ -17,7 +17,7 @@
 // beside the list and leaves the queue exactly where it was.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { notifyError } from "@/lib/feedback";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     Building2,
     CheckCircle2,
@@ -27,7 +27,8 @@ import {
     XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { ADMIN_PEEK, ADMIN_REVIEWS as IDS } from "@/constants/testIds";
+import { ADMIN_PEEK, ADMIN_REVIEWS as IDS, BULK } from "@/constants/testIds";
+import { Button } from "@/components/ui/button";
 import { ListEmptyState } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
 import { useOptimisticList } from "./useOptimistic";
@@ -57,6 +58,11 @@ const DEFAULTS = { sort: { key: "since", dir: "asc" } };
 function ReviewQueue({ config, onChanged }) {
     const { rows: raw, setRows, removeOptimistically, isBusy } = useOptimisticList(null);
     const [confirm, setConfirm] = useState(null);
+    // Ids ticked for a bulk decision. A Set because the only two
+    // questions asked of it are "is this one in" and "how many".
+    const [selected, setSelected] = useState(new Set());
+    const [bulk, setBulk] = useState(null);
+    const [bulkBusy, setBulkBusy] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [focused, setFocused] = useState(-1);
     const [peekId, setPeekId] = useState(null);
@@ -118,6 +124,35 @@ function ReviewQueue({ config, onChanged }) {
 
     const columns = useMemo(
         () => [
+            // **Selection is a column, not a mode.** A separate "select" state
+            // that has to be turned on is a step between somebody and the
+            // fifty decisions they came here to enter.
+            ...(config.bulkKind
+                ? [{
+                      key: "select",
+                      header: "",
+                      width: "w-10",
+                      cell: (r) => {
+                          const id = config.idOf(r);
+                          return (
+                              <input
+                                  type="checkbox"
+                                  checked={selected.has(id)}
+                                  aria-label={`Select ${config.primary(r)}`}
+                                  data-testid={BULK.select(id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => {
+                                      const next = new Set(selected);
+                                      if (e.target.checked) next.add(id);
+                                      else next.delete(id);
+                                      setSelected(next);
+                                  }}
+                                  className="h-4 w-4 accent-[#F05D14]"
+                              />
+                          );
+                      },
+                  }]
+                : []),
             {
                 key: "primary",
                 mobile: "primary",
@@ -201,10 +236,17 @@ function ReviewQueue({ config, onChanged }) {
                 },
             },
         ],
-        [config, approve, reject, isBusy],
+        [config, approve, reject, isBusy, selected],
     );
 
     const rows = useMemo(() => sortRows(raw || [], columns, sort), [raw, columns, sort]);
+
+    // **Cleared whenever the list changes.** A selection that survives a
+    // reload is a set of ids that may no longer be on screen, and acting on
+    // one of those is the bulk version of pressing a button you cannot see.
+    useEffect(() => {
+        setSelected(new Set());
+    }, [raw]);
     const peek = useMemo(
         () => rows.find((r) => config.idOf(r) === peekId) || null,
         [rows, peekId, config],
@@ -229,6 +271,40 @@ function ReviewQueue({ config, onChanged }) {
         enabled: !confirm,
     });
 
+    /**
+     * Send the batch, then reload rather than patching the list.
+     *
+     * **Partial success is the normal case, not an error.** A row that moved
+     * since the list was drawn comes back in `failed` and the rest still went
+     * through; reporting "it failed" over one stale row would be a lie about
+     * forty-nine real decisions.
+     */
+    const runBulk = async (body) => {
+        setBulkBusy(true);
+        try {
+            const { data } = await api.post(`/admin/bulk/${config.bulkKind}`, {
+                ids: [...selected],
+                action: bulk,
+                reason: (body?.reason || "").trim() || null,
+            });
+            const done = data.done?.length || 0;
+            const failed = data.failed?.length || 0;
+            notifySuccess(
+                failed
+                    ? `${done} done, ${failed} couldn't be — ${data.failed[0].error}`
+                    : `${done} ${bulk === "approve" ? "approved" : "rejected"}`
+            );
+            setSelected(new Set());
+            setBulk(null);
+            await load();
+            onChanged?.();
+        } catch (err) {
+            notifyError(err, { fallback: "That batch couldn't be sent." });
+        } finally {
+            setBulkBusy(false);
+        }
+    };
+
     const count = raw?.length ?? 0;
 
     return (
@@ -249,6 +325,52 @@ function ReviewQueue({ config, onChanged }) {
                 >
                     {config.note}
                 </p>
+            )}
+
+            {/* **Only when something is picked.** A permanently visible bulk
+                bar is chrome above every queue for the one visit in ten where
+                it is used, and it pushes the rows down on a phone. */}
+            {config.bulkKind && selected.size > 0 && (
+                <div
+                    data-testid={BULK.bar}
+                    className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-ember-500/30 bg-ember-500/10 px-3 py-2"
+                >
+                    <span className={`${TEXT.body} text-ember-500`}>
+                        {selected.size} selected
+                    </span>
+                    <Button
+                        size="sm"
+                        onClick={() => setBulk("approve")}
+                        data-testid={BULK.approve}
+                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                    >
+                        {config.approveLabel} all
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBulk("reject")}
+                        data-testid={BULK.reject}
+                        className="min-h-[2.75rem] border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 sm:min-h-0"
+                    >
+                        {config.rejectLabel} all
+                    </Button>
+                    <button
+                        type="button"
+                        onClick={() => setSelected(new Set())}
+                        className={`${TEXT.meta} text-muted-foreground underline-offset-4 hover:underline`}
+                    >
+                        Clear
+                    </button>
+                    <button
+                        type="button"
+                        data-testid={BULK.selectAll}
+                        onClick={() => setSelected(new Set(rows.map(config.idOf)))}
+                        className={`${TEXT.meta} text-muted-foreground underline-offset-4 hover:underline`}
+                    >
+                        Select all {rows.length}
+                    </button>
+                </div>
             )}
 
             <DataTable
@@ -322,6 +444,33 @@ function ReviewQueue({ config, onChanged }) {
                 )}
             </PeekPanel>
 
+            {/* **The summary is the point of the confirmation.** "Are you
+                sure?" over fifty records is a question nobody can answer;
+                naming the number and the outcome is. The reason is required
+                on a rejection, exactly as it is one at a time, and everybody
+                in the batch is told the same one. */}
+            <ConfirmDialog
+                open={Boolean(bulk)}
+                onOpenChange={(v) => !v && setBulk(null)}
+                submitting={bulkBusy}
+                destructive={bulk === "reject"}
+                kicker={bulk === "reject" ? config.rejectKicker : "Confirm"}
+                title={
+                    bulk === "reject"
+                        ? `${config.rejectLabel} ${selected.size}?`
+                        : `${config.approveLabel} ${selected.size}?`
+                }
+                description={
+                    bulk === "reject"
+                        ? `All ${selected.size} are told the same reason, and each decision is recorded separately.`
+                        : `All ${selected.size} go through one at a time, each one recorded and each person told.`
+                }
+                requireReason={bulk === "reject"}
+                placeholder="What should they all know?"
+                confirmLabel={bulk === "reject" ? config.rejectLabel : config.approveLabel}
+                onSubmit={runBulk}
+            />
+
             <ConfirmDialog
                 open={Boolean(confirm)}
                 onOpenChange={(v) => !v && setConfirm(null)}
@@ -346,6 +495,9 @@ export function CreatorReviews({ onChanged }) {
             onChanged={onChanged}
             config={{
                 kind: "creators",
+                // Which bulk queue this is. Absent would mean no
+                // selection column at all — see the columns above.
+                bulkKind: "creators",
                 endpoint: "/admin/creators/pending",
                 kicker: "Creator reviews",
                 title: "Pending creator approvals",
@@ -459,6 +611,9 @@ export function CampaignReviews({ onChanged }) {
             onChanged={onChanged}
             config={{
                 kind: "campaigns",
+                // Which bulk queue this is. Absent would mean no
+                // selection column at all — see the columns above.
+                bulkKind: "campaigns",
                 endpoint: "/admin/campaigns/pending",
                 kicker: "Campaign reviews",
                 title: "Briefs waiting to go live",
@@ -578,6 +733,9 @@ export function BrandReviews({ onChanged }) {
             onChanged={onChanged}
             config={{
                 kind: "brands",
+                // Which bulk queue this is. Absent would mean no
+                // selection column at all — see the columns above.
+                bulkKind: "brands",
                 endpoint: "/admin/brands/pending",
                 // Somebody we already refused is not waiting on us.
                 filter: (r) => r.verification_state !== "rejected",

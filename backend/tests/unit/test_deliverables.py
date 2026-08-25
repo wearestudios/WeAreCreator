@@ -262,6 +262,16 @@ BRIEF = {
     "creators_needed": 2,
     "campaign_type": "group_event",
     "event_date": datetime.now(timezone.utc) + timedelta(days=10),
+    # A group event is a day split into sittings, and at least one is
+    # required — see `_SCHEDULING_BY_TYPE`.
+    "sittings": [
+        {
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=10)).replace(
+                hour=12, minute=0, second=0, microsecond=0
+            ),
+            "capacity": 4,
+        }
+    ],
 }
 
 

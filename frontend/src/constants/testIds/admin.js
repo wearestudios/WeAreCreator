@@ -326,6 +326,9 @@ export const ADMIN_CAMPAIGN_EDIT = {
 	compensationOption: (value) => `admin-campaign-edit-compensation-${value}`,
 	creatorsNeeded: 'admin-campaign-edit-creators-needed',
 	deliverables: 'admin-campaign-edit-deliverables',
+	// The dates, by campaign type — the health panel's "extend the dates"
+	// action had nowhere to land until these existed.
+	date: (field) => `admin-campaign-edit-${field.replace(/_/g, '-')}`,
 	error: 'admin-campaign-edit-error',
 	submit: 'admin-campaign-edit-submit',
 	cancel: 'admin-campaign-edit-cancel',

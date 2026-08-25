@@ -1,8 +1,16 @@
-// Submitting published links.
+// Submitting published links, and the screenshots that stand in for the ones
+// that will not still be there.
 //
 // Several URLs rather than one, because a deliverable is usually a reel plus
 // a story set plus a carousel, and making a creator pick which one "counts"
 // only produces a follow-up message.
+//
+// **Whether a link is required at all is the server's answer, not this
+// form's.** On a stories-only brief the URL is dead before anybody reads it,
+// so `proof.link_optional` says the screenshots are the delivery — and a
+// client that decided otherwise would demand a field whose value is known to
+// be useless, which is how somebody ends up pasting something that is not the
+// work.
 import React, { useEffect, useState } from "react";
 import { notifySuccess } from "@/lib/feedback";
 import { Link as LinkIcon, Loader2, Plus as PlusIcon, Send, X as XIcon } from "lucide-react";
@@ -20,14 +28,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, formatApiError } from "@/lib/api";
 import { CREATOR_SUBMIT_CONTENT as IDS } from "@/constants/testIds";
+import { StoryProofUpload } from "@/components/collab/StoryProof";
 
 export default function SubmitContentDialog({ open, onOpenChange, collab, onSubmitted }) {
     const [urls, setUrls] = useState([""]);
     const [err, setErr] = useState("");
     const [busy, setBusy] = useState(false);
+    // The server's block, re-read after every upload and removal so the
+    // refusal below and the route agree about what is attached.
+    const [proof, setProof] = useState(null);
 
     useEffect(() => {
         if (!open) return;
+        setProof(collab?.proof || null);
         const initial =
             collab?.content_urls && collab.content_urls.length > 0
                 ? [...collab.content_urls]
@@ -56,7 +69,16 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
             }
             if (!clean.includes(u)) clean.push(u);
         }
-        if (clean.length === 0) {
+        const proofCount = (proof?.items || []).length;
+        if (proof?.required && proofCount === 0) {
+            setErr(
+                "Add a screenshot of each story first — a story link is dead " +
+                    "within a day, so that is what gets reviewed."
+            );
+            return;
+        }
+        // A link is required unless the screenshots *are* the delivery.
+        if (clean.length === 0 && !(proof?.link_optional && proofCount > 0)) {
             setErr("Paste at least one link to your published post or reel.");
             return;
         }
@@ -139,6 +161,16 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                             </div>
                         ))}
                     </div>
+
+                    {/* Below the links rather than above them: the link is
+                        what most briefs want, and a screenshot picker at the
+                        top of the form reads as the main event on a brief
+                        where it is not required at all. */}
+                    <StoryProofUpload
+                        collabId={collab?.id}
+                        proof={proof}
+                        onChanged={setProof}
+                    />
 
                     <button
                         type="button"

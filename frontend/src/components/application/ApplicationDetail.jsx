@@ -48,6 +48,14 @@ import Shortfall from "@/components/Shortfall";
 import RateCollaboration from "@/components/RateCollaboration";
 import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
+import {
+    DisclosureChecks,
+    DisclosureConfirmDialog,
+    TermsCard,
+} from "@/components/campaign/CampaignTerms";
+import BriefChecklist from "@/components/campaign/BriefChecklist";
+import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
+import { StoryProofReview } from "@/components/collab/StoryProof";
 import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
@@ -158,6 +166,10 @@ export default function ApplicationDetail({
     const [error, setError] = useState("");
     const [notFound, setNotFound] = useState(false);
     const [busy, setBusy] = useState(null);
+    // Which review dialog is open: "approve", "partial", "changes" or null.
+    // One value rather than three booleans, so two cannot be open at once.
+    const [reviewing, setReviewing] = useState(null);
+    const [changesReason, setChangesReason] = useState("");
     const [amount, setAmount] = useState("");
     // The reason a time was turned down. Required, because without it the
     // creator picks the same impossible slot again.
@@ -286,6 +298,24 @@ export default function ApplicationDetail({
                         canRequest={Boolean(app.actions?.can_request_takedown)}
                         onChanged={load}
                     />
+
+                    {/* **What both sides agreed, and who confirmed the post
+                        discloses.** Above the commercial block because it is
+                        the record everything below it is measured against —
+                        and the same card for all three parties, like the
+                        dispute panel, because a mediation where each side
+                        reads its own version of the terms is the argument
+                        rather than the resolution.
+
+                        `can_accept_terms` is decided server-side; this never
+                        asks what role is looking. */}
+                    <TermsCard
+                        terms={app.terms}
+                        collabId={id}
+                        canAccept={Boolean(app.actions?.can_accept_terms)}
+                        onAccepted={load}
+                    />
+                    <DisclosureChecks disclosure={app.disclosure} />
 
                     <Section id="commercial" title="Commercial">
                         <div
@@ -620,6 +650,76 @@ export default function ApplicationDetail({
                         </Section>
                     )}
 
+                    {/* **Reviewing the delivery, which had no buttons here at
+                        all.** `can_review_content` and `can_accept_partial`
+                        were both computed server-side and shipped on this
+                        payload with nothing rendering either, so an admin who
+                        opened an application waiting on review could read the
+                        links and had no way to answer them — the decision
+                        existed only on the brand's own applicant board. */}
+                    {(actions.can_review_content || actions.can_accept_partial) && (
+                        <Section id="review" title="Review the delivery">
+                            {/* The screenshots, where the brief counted
+                                stories: by review time the story links are
+                                dead, so this is the delivery. */}
+                            <StoryProofReview collabId={id} proof={app.proof} />
+                            <div
+                                data-testid={APPLICATION.review}
+                                className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap"
+                            >
+                                {actions.can_review_content && (
+                                    <Button
+                                        data-testid={APPLICATION.approveContent}
+                                        disabled={busy === "approve_content"}
+                                        className="min-h-[2.75rem]"
+                                        onClick={() => setReviewing("approve")}
+                                    >
+                                        Approve the content
+                                    </Button>
+                                )}
+                                {/* **Only where there is a counted ask to be
+                                    short of.** The server refuses a partial on
+                                    a brief with no `deliverable_items`, so the
+                                    button is absent rather than present and
+                                    409ing. */}
+                                {actions.can_accept_partial && (
+                                    <Button
+                                        variant="outline"
+                                        data-testid={APPLICATION.acceptPartial}
+                                        disabled={busy === "partial"}
+                                        className="min-h-[2.75rem]"
+                                        onClick={() => setReviewing("partial")}
+                                    >
+                                        Accept what arrived
+                                    </Button>
+                                )}
+                                {actions.can_review_content && (
+                                    <Button
+                                        variant="outline"
+                                        data-testid={APPLICATION.requestChanges}
+                                        disabled={busy === "changes"}
+                                        className="min-h-[2.75rem]"
+                                        onClick={() => {
+                                            setChangesReason("");
+                                            setReviewing("changes");
+                                        }}
+                                    >
+                                        Request a change
+                                    </Button>
+                                )}
+                            </div>
+                        </Section>
+                    )}
+
+                    {/* The brief's checkable half, on the screen where the
+                        work is judged against it. Renders nothing on a brief
+                        that stated none of it. */}
+                    <BriefChecklist
+                        details={app.campaign?.brief_details}
+                        title="What the brief asked for"
+                        className="mb-6"
+                    />
+
                     {/* The draft, where the campaign reviews one. `draft` is
                         null — not an empty object — on a campaign that
                         doesn't, so the panel is absent rather than a section
@@ -630,6 +730,7 @@ export default function ApplicationDetail({
                                 collaborationId={id}
                                 draft={app.draft}
                                 canReview={actions.can_review_draft}
+                                disclosureLabel={app.disclosure?.label}
                                 onDecided={load}
                             />
                         </Section>
@@ -698,7 +799,7 @@ export default function ApplicationDetail({
                         rows={3}
                         value={slotReason}
                         onChange={(e) => setSlotReason(e.target.value)}
-                        placeholder="e.g. the kitchen is closed that afternoon — anything after 6pm works"
+                        placeholder="e.g. we're shut that afternoon — anything after 6pm works"
                         data-testid={APPLICATION.declineSlotReason}
                         className="border-white/10 bg-background/60"
                     />
@@ -734,6 +835,112 @@ export default function ApplicationDetail({
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             )}
                             Ask for another time
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* **One implementation of the disclosure checkpoint**, shared
+                with the brand's applicant board. The server refuses the
+                approval without the confirmation; this dialog is the form
+                agreeing with it rather than a second copy of the rule. */}
+            <DisclosureConfirmDialog
+                open={reviewing === "approve"}
+                onOpenChange={(v) => !v && setReviewing(null)}
+                label={app?.disclosure?.label || app?.campaign?.disclosure_label}
+                busy={busy === "approve_content"}
+                onConfirm={() => {
+                    setReviewing(null);
+                    act(
+                        "approve_content",
+                        () =>
+                            api.post(`/brand/collaborations/${id}/approve_content`, {
+                                disclosure_confirmed: true,
+                            }),
+                        "Content approved",
+                    );
+                }}
+            />
+
+            {/* The same dialog the brand's board opens, given the same
+                campaign shape — `deliverable_items`, the fee and its type all
+                ride on the application payload's campaign block. */}
+            <PartialDeliveryDialog
+                open={reviewing === "partial"}
+                onOpenChange={(v) => !v && setReviewing(null)}
+                campaign={app?.campaign}
+                applicant={{ id }}
+                busy={busy === "partial"}
+                onConfirm={(body) => {
+                    setReviewing(null);
+                    act(
+                        "partial",
+                        () =>
+                            api.post(
+                                `/brand/collaborations/${id}/accept-partial`,
+                                body,
+                            ),
+                        "Accepted, with the shortfall on the record",
+                    );
+                }}
+            />
+
+            <Dialog
+                open={reviewing === "changes"}
+                onOpenChange={(v) => !v && setReviewing(null)}
+            >
+                <DialogContent className="max-w-md rounded-md border border-white/10 bg-card">
+                    <DialogHeader className="text-left">
+                        <DialogTitle className="font-serif text-2xl leading-tight">
+                            What needs to change?
+                        </DialogTitle>
+                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                            The creator gets this note and can resubmit without
+                            starting over.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Textarea
+                        rows={3}
+                        value={changesReason}
+                        onChange={(e) => setChangesReason(e.target.value)}
+                        placeholder="e.g. could you add the venue tag to the reel caption?"
+                        data-testid={APPLICATION.changesReason}
+                        className="border-white/10 bg-background/60"
+                    />
+                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setReviewing(null)}
+                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                        >
+                            Back
+                        </Button>
+                        {/* Required, not optional: "please change it" with
+                            nothing beside it is a round trip the creator
+                            cannot act on. */}
+                        <Button
+                            type="button"
+                            disabled={!changesReason.trim() || busy === "changes"}
+                            data-testid={APPLICATION.changesSubmit}
+                            onClick={() => {
+                                setReviewing(null);
+                                act(
+                                    "changes",
+                                    () =>
+                                        api.post(
+                                            `/brand/collaborations/${id}/request_changes`,
+                                            { reason: changesReason.trim() },
+                                        ),
+                                    "Change request sent",
+                                );
+                            }}
+                            className="h-12 rounded-full px-6 sm:h-11"
+                        >
+                            {busy === "changes" && (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            )}
+                            Send request
                         </Button>
                     </DialogFooter>
                 </DialogContent>

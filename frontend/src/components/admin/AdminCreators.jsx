@@ -142,6 +142,24 @@ export default function AdminCreators() {
                 ),
             },
             {
+                // **The name a person says out loud.** Sortable because a
+                // reference sorts by when the record was created, which is the
+                // one ordering an ObjectId column could never show. Hidden
+                // below `lg`: on a phone the row is a stacked card and the
+                // reference is not what somebody scans for.
+                key: "reference",
+                header: "Ref",
+                width: "w-24",
+                hideBelow: true,
+                sortable: true,
+                value: (r) => r.reference || "",
+                cell: (r) => (
+                    <span className={`${TEXT.meta} text-muted-foreground`}>
+                        {r.reference || "—"}
+                    </span>
+                ),
+            },
+            {
                 key: "verification_status",
                 mobile: "meta",
                 header: "Status",

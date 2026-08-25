@@ -1,4 +1,5 @@
 import "@/App.css";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TOAST_DURATION } from "@/lib/feedback";
@@ -6,63 +7,153 @@ import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import RouteFallback from "@/components/RouteFallback";
+import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
 import { installOfflineQueue } from "@/lib/offlineQueue";
-import Landing from "@/pages/Landing";
-import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
-import AdminLogin from "@/pages/AdminLogin";
-import Dashboard from "@/pages/Dashboard";
-import ShootCalendar from "@/pages/ShootCalendar";
-import SelfCheckIn from "@/pages/SelfCheckIn";
-import InstagramCallback from "@/pages/InstagramCallback";
-import CreatorOnboarding from "@/pages/CreatorOnboarding";
-import BrandOnboarding from "@/pages/BrandOnboarding";
-import PostCampaign from "@/pages/PostCampaign";
-import Campaigns from "@/pages/Campaigns";
-import CampaignDetail from "@/pages/CampaignDetail";
-import AdminConsole from "@/pages/AdminConsole";
-import {
-    AuditRoute,
-    BrandReviewsRoute,
-    BrandsRoute,
-    CampaignReviewsRoute,
-    CampaignsRoute,
-    CreatorReviewsRoute,
-    CreatorsRoute,
-    HealthRoute,
-    OverviewRoute,
-    PerformanceRoute,
-    QueueRoute,
-    DeletionsRoute,
-    SettingsRoute,
-    DormantRoute,
-    DisputesRoute,
-    RetentionRoute,
-    TeamRoute,
-} from "@/components/admin/routes";
 import { CONSOLE_ROLES } from "@/lib/consoleScope";
-import AdminCampaignDetail from "@/components/admin/CampaignDetailPage";
-import AdminCreatorDetail from "@/components/admin/CreatorDetailPage";
-import AdminBrandDetail from "@/components/admin/BrandDetailPage";
-import AdminCollaborationDetail from "@/components/admin/CollaborationDetailPage";
-import ApplicationDetail from "@/components/application/ApplicationDetail";
-import CreatorProfile from "@/pages/CreatorProfile";
-import ManagerHome from "@/pages/ManagerHome";
-import ManagerCampaign from "@/pages/ManagerCampaign";
-import BrandCreatorDirectory from "@/pages/BrandCreatorDirectory";
-import BrandCampaignApplicants from "@/pages/BrandCampaignApplicants";
-import { Terms, Privacy } from "@/pages/Legal";
-// The marketing site. Four pages plus home, all ordinary routes: they were
-// server-rendered by the backend and reached with real anchors, which is why
-// /how-it-works and /why-weare could not exist at all and why the two audience
-// pages bounced off the catch-all whenever the deploy rewrites were not
-// repointed. See components/marketing/PageMeta.jsx for what that trade costs.
-import ForBrands from "@/pages/ForBrands";
-import ForCreators from "@/pages/ForCreators";
-import HowItWorks from "@/pages/HowItWorks";
-import WhyWeAre from "@/pages/WhyWeAre";
-import NotFound from "@/pages/NotFound";
+
+// ---------------------------------------------------------------------------
+// The surfaces, and where each one's code lives
+// ---------------------------------------------------------------------------
+//
+// **This app shipped as one file.** Every creator on mobile data downloaded
+// the admin console, the brand console and the manager screens — three
+// surfaces they will never see — before their own dashboard could paint. The
+// audience is a mid-range Android phone on Indian mobile data, which is
+// precisely where that is not a rounding error.
+//
+// The split is **by audience, not by page**, and the chunk names below are what
+// enforce it: webpack groups every import sharing a name into one file, so
+// opening the console is one request rather than one per section, and moving
+// between sections inside it never suspends. A per-page split would trade a
+// bundle nobody needs for a waterfall everybody feels.
+//
+// What deliberately stays in the main bundle: the router, the auth context, the
+// two error boundaries, `ProtectedRoute` — and `Landing`, `Login` and `Signup`.
+// Those three are the front door. Splitting them buys nothing (an anonymous
+// visitor needs the landing page *now*, so its chunk would be fetched
+// immediately anyway) and costs a second round trip on the one page where the
+// first paint is the whole impression.
+//
+// Anything imported by two chunks — `ApplicationDetail`, the shared UI kit, the
+// campaign pages — webpack hoists into a shared chunk of its own rather than
+// duplicating. That is why `application` and `campaigns` are named separately
+// below: all three consoles read one application through one component, and
+// naming it says so.
+const load = (importer) => lazy(() => retryImport(importer));
+
+// The front door.
+const Landing = load(() => import(/* webpackChunkName: "landing" */ "@/pages/Landing"));
+const Login = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Login"));
+const Signup = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Signup"));
+const AdminLogin = load(() => import(/* webpackChunkName: "auth" */ "@/pages/AdminLogin"));
+
+// The rest of the marketing site, plus the two legal pages and the 404. Read
+// once by somebody who is not signed in, and never again.
+const ForBrands = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForBrands"));
+const ForCreators = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForCreators"));
+const HowItWorks = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/HowItWorks"));
+const WhyWeAre = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/WhyWeAre"));
+const NotFound = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/NotFound"));
+const Terms = load(() =>
+    import(/* webpackChunkName: "marketing" */ "@/pages/Legal").then((m) => ({ default: m.Terms })),
+);
+const Privacy = load(() =>
+    import(/* webpackChunkName: "marketing" */ "@/pages/Legal").then((m) => ({ default: m.Privacy })),
+);
+
+// `/dashboard` is two surfaces behind one path, so the dispatcher gets a chunk
+// of its own — naming it `creator` made a brand manager download the creator
+// app to reach the file that decides they are not one. See Dashboard.jsx.
+const Dashboard = load(() => import(/* webpackChunkName: "dashboard" */ "@/pages/Dashboard"));
+
+// The creator's own app.
+const CreatorOnboarding = load(() =>
+    import(/* webpackChunkName: "creator" */ "@/pages/CreatorOnboarding"),
+);
+const CreatorProfile = load(() =>
+    import(/* webpackChunkName: "creator" */ "@/pages/CreatorProfile"),
+);
+const SelfCheckIn = load(() => import(/* webpackChunkName: "creator" */ "@/pages/SelfCheckIn"));
+const InstagramCallback = load(() =>
+    import(/* webpackChunkName: "creator" */ "@/pages/InstagramCallback"),
+);
+
+// The brand console.
+const BrandOnboarding = load(() =>
+    import(/* webpackChunkName: "brand" */ "@/pages/BrandOnboarding"),
+);
+const PostCampaign = load(() => import(/* webpackChunkName: "brand" */ "@/pages/PostCampaign"));
+// There is no brand creator directory, deliberately — see `_brand_visible_creator`
+// and the "Creators a brand may see" block in `server.py`. A brand reaches
+// creators through its own briefs: the applicant board, its invitations, and
+// the per-brief suggestions panel. The route was removed along with the two
+// endpoints behind it, so a bookmark lands on the 404 rather than an empty page.
+const BrandCampaignApplicants = load(() =>
+    import(/* webpackChunkName: "brand" */ "@/pages/BrandCampaignApplicants"),
+);
+
+// The person running the shoot.
+const ManagerHome = load(() => import(/* webpackChunkName: "manager" */ "@/pages/ManagerHome"));
+const ManagerCampaign = load(() =>
+    import(/* webpackChunkName: "manager" */ "@/pages/ManagerCampaign"),
+);
+
+// The brief feed and one brief, read by creators, brands and admins alike.
+const Campaigns = load(() => import(/* webpackChunkName: "campaigns" */ "@/pages/Campaigns"));
+const CampaignDetail = load(() =>
+    import(/* webpackChunkName: "campaigns" */ "@/pages/CampaignDetail"),
+);
+// One application, at three routes off one component.
+const ApplicationDetail = load(() =>
+    import(/* webpackChunkName: "application" */ "@/components/application/ApplicationDetail"),
+);
+// One page, three scopes — the endpoint decides what each role sees.
+const ShootCalendar = load(() =>
+    import(/* webpackChunkName: "calendar" */ "@/pages/ShootCalendar"),
+);
+
+// The admin console: the layout, its seventeen sections and its four detail
+// pages, all one chunk. **Grouped rather than split further** because moving
+// between sections is what an admin does all afternoon, and a chunk boundary
+// there would put a fallback under the sidebar forty times an hour.
+const AdminConsole = load(() => import(/* webpackChunkName: "admin" */ "@/pages/AdminConsole"));
+const adminRoute = (key) =>
+    load(() =>
+        import(/* webpackChunkName: "admin" */ "@/components/admin/routes").then((m) => ({
+            default: m[key],
+        })),
+    );
+const OverviewRoute = adminRoute("OverviewRoute");
+const CreatorReviewsRoute = adminRoute("CreatorReviewsRoute");
+const CampaignReviewsRoute = adminRoute("CampaignReviewsRoute");
+const BrandReviewsRoute = adminRoute("BrandReviewsRoute");
+const QueueRoute = adminRoute("QueueRoute");
+const CampaignsRoute = adminRoute("CampaignsRoute");
+const CreatorsRoute = adminRoute("CreatorsRoute");
+const BrandsRoute = adminRoute("BrandsRoute");
+const PerformanceRoute = adminRoute("PerformanceRoute");
+const HealthRoute = adminRoute("HealthRoute");
+const AuditRoute = adminRoute("AuditRoute");
+const TeamRoute = adminRoute("TeamRoute");
+const DeletionsRoute = adminRoute("DeletionsRoute");
+const SettingsRoute = adminRoute("SettingsRoute");
+const DormantRoute = adminRoute("DormantRoute");
+const DisputesRoute = adminRoute("DisputesRoute");
+const RetentionRoute = adminRoute("RetentionRoute");
+const AdminCampaignDetail = load(() =>
+    import(/* webpackChunkName: "admin" */ "@/components/admin/CampaignDetailPage"),
+);
+const AdminCreatorDetail = load(() =>
+    import(/* webpackChunkName: "admin" */ "@/components/admin/CreatorDetailPage"),
+);
+const AdminBrandDetail = load(() =>
+    import(/* webpackChunkName: "admin" */ "@/components/admin/BrandDetailPage"),
+);
+const AdminCollaborationDetail = load(() =>
+    import(/* webpackChunkName: "admin" */ "@/components/admin/CollaborationDetailPage"),
+);
 
 // Attached at module load rather than in an effect, so a rejection thrown
 // while the first render is still in flight is already covered.
@@ -107,6 +198,18 @@ function App() {
                         you are in it. */}
                     <ImpersonationBanner />
                     <RouteBoundary>
+                    {/* **Inside the route boundary, not outside it.** A chunk
+                        that never arrives rejects through Suspense, and the
+                        boundary above is what turns that into a page saying so
+                        with a reload on it rather than a blank screen. Outside,
+                        the rejection would reach the root boundary and take the
+                        impersonation banner down with it.
+
+                        One Suspense for every route rather than one each: the
+                        fallback replaces the whole page either way, and a
+                        boundary per route is a boundary somebody forgets on the
+                        route they add next month. */}
+                    <Suspense fallback={<RouteFallback />}>
                     <Routes>
                         <Route path="/" element={<Landing />} />
                         <Route path="/login" element={<Login />} />
@@ -220,14 +323,6 @@ function App() {
                                         backLabel="Dashboard"
                                         standalone
                                     />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/brand/creators"
-                            element={
-                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
-                                    <BrandCreatorDirectory />
                                 </ProtectedRoute>
                             }
                         />
@@ -366,6 +461,7 @@ function App() {
                             the link having worked. */}
                         <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </Suspense>
                     </RouteBoundary>
                 </BrowserRouter>
                 {/* One position for every toast in the app.

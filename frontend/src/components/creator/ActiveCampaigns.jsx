@@ -35,6 +35,8 @@ import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
+import { TermsCard } from "@/components/campaign/CampaignTerms";
+import BriefChecklist from "@/components/campaign/BriefChecklist";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
@@ -117,7 +119,17 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
-                    {next.action === "resubmit_content" ? "Update your links" : "Upload your content link"}
+                    {/* **"Upload your content link" is a lie on a brief whose
+                        ask is all stories** — there the link is dead before
+                        anybody reads it and the screenshots are the delivery,
+                        so the button says what is actually being asked for.
+                        `link_optional` is the server's answer, like every
+                        other flag on this card. */}
+                    {next.action === "resubmit_content"
+                        ? "Update what you delivered"
+                        : collab.proof?.link_optional
+                        ? "Send your screenshots"
+                        : "Upload your content link"}
                 </Button>
             );
         }
@@ -230,6 +242,29 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     takedown={collab.takedown}
                     canRespond={Boolean(collab.can_respond_takedown)}
                     onChanged={onRefresh}
+                />
+                {/* **The creator's copy of what was agreed, and their one
+                    tap.** The shared application page is mounted at /admin,
+                    /brand and /manager and at no creator route, so a terms
+                    card that lived only there would be a card the one party
+                    who has to accept it can never reach — the acceptance
+                    would be an endpoint with no caller. This is their
+                    surface. */}
+                <TermsCard
+                    terms={collab.terms}
+                    collabId={collab.id}
+                    canAccept={Boolean(collab.can_accept_terms)}
+                    onAccepted={onRefresh}
+                />
+
+                {/* **The checklist, while there is still time to act on it.**
+                    A creator's only surface for one of their applications is
+                    this card, so a checklist that lived on the reviewer's
+                    screen alone would reach them at draft review — which is
+                    after the shoot, when the fix is a reshoot. */}
+                <BriefChecklist
+                    details={collab.brief_details}
+                    title="What this brief asks for"
                 />
             </div>
 

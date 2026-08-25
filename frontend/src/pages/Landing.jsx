@@ -24,9 +24,11 @@ import PageMeta from "@/components/marketing/PageMeta";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
+import { HERO_EYEBROW } from "@/lib/siteNav";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
+import CreatorLeaderboard from "@/components/marketing/CreatorLeaderboard";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -106,7 +108,7 @@ function Hero() {
                         className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                     >
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500" />
-                        Bengaluru · Influencer studio
+                        {HERO_EYEBROW}
                     </p>
                 </Reveal>
 
@@ -222,6 +224,12 @@ export default function Landing() {
             <CampaignFilm title={COPY.filmTitle} />
 
             <Problem />
+
+            {/* The creators, with their permission. Below the fold and
+                fetched only when it gets close — a marketing page must not
+                pay for this on the critical path — and absent entirely when
+                too few have opted in to be worth claiming. */}
+            <CreatorLeaderboard />
 
             {/* The family handshake. Full-bleed studio coral, white poster
                 type, a black block — the one place the studio palette appears

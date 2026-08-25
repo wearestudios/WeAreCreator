@@ -28,6 +28,9 @@ export const CREATOR_PROFILE = {
 	location: 'creator-profile-location',
 	address: 'creator-profile-address',
 	payout: 'creator-profile-payout',
+	featuring: 'creator-profile-featuring',
+	homepageOptIn: 'creator-profile-homepage-opt-in',
+	homepageOptInState: 'creator-profile-homepage-state',
 	upi: 'creator-profile-upi',
 };
 

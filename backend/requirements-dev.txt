@@ -16,6 +16,10 @@ requests>=2.31.0          # the integration suite in tests/ drives the API over 
 mongomock-motor>=0.0.29   # drives the real endpoint functions against an in-memory
                           # Mongo in tests/unit — the visibility and leak tests *run*
                           # the handlers rather than reading their source
+pytest-cov>=5.0.0         # `pytest tests/unit --cov=server` — used to find which
+                          # branches of the money and state paths nothing exercises.
+                          # Not in addopts: coverage is a thing you go and measure,
+                          # not a number every run has to pay for
 
 # --- Formatting and static checks ---
 black>=24.1.1

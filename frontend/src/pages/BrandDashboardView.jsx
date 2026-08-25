@@ -12,6 +12,7 @@ import {
     CalendarDays,
     Compass,
     Copy,
+    Download,
     Eye,
     IndianRupee,
     Loader2,
@@ -172,6 +173,9 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
     const [busyId, setBusyId] = useState(null);
+    // Which row's report is being built, so its own button says so rather than
+    // every row going quiet at once.
+    const [exporting, setExporting] = useState(null);
     const [confirm, setConfirm] = useState({ kind: null, campaign: null });
     // Pausing needs a reason the server insists on, so it gets its own dialog
     // rather than the yes/no AlertDialog the other two share.
@@ -274,6 +278,58 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
             "Back on the feed",
         );
 
+    /**
+     * The finished campaign, as a file the brand keeps.
+     *
+     * **Fetched as an authenticated blob rather than linked**, the lesson
+     * `BrandDocuments` already learned: the session cookie is `SameSite=None`,
+     * so a bare `href` at the API rides along in production and silently does
+     * not on a plain-http laptop — the worst kind of difference. Going through
+     * `api` is the same auth every other call here uses, and it honours the
+     * route's `Cache-Control: no-store` because the object URL dies with the
+     * click.
+     *
+     * Not through `runAction`: that one reloads the dashboard on success, and
+     * nothing about downloading a file changes what is on the page.
+     */
+    const exportCampaign = async (c) => {
+        setExporting(c.id);
+        try {
+            const { data: blob } = await api.get(
+                `/brand/campaigns/${c.id}/export`,
+                { responseType: "blob" },
+            );
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${c.reference || "campaign"}-report.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            notifySuccess("Report downloaded");
+        } catch (err) {
+            // **A refusal arrives as a Blob here, not as JSON.** `responseType`
+            // applies to the error body too, so `formatApiError` would find no
+            // `detail` and fall back to a generic sentence on a 409 that has a
+            // perfectly good one. Read the bytes back first.
+            let detail = null;
+            const body = err?.response?.data;
+            if (body instanceof Blob) {
+                try {
+                    detail = JSON.parse(await body.text())?.detail;
+                } catch {
+                    /* not JSON — the generic message is the honest answer */
+                }
+            }
+            notifyError(detail?.message || detail || err, {
+                fallback: "That report couldn't be built.",
+            });
+        } finally {
+            setExporting(null);
+        }
+    };
+
     const profileMissing =
         data && (!data.profile || !data.profile.business_name);
     const businessName =
@@ -315,8 +371,14 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                     <>
                         <header data-testid="brand-header" className="grid gap-6 md:grid-cols-12 md:items-end">
                             <div className="md:col-span-8">
+                                {/* The brand's own city, the same rule the
+                                    creator's header follows: a hardcoded one
+                                    is wrong for everybody it is not about, and
+                                    this screen already knows the answer. */}
                                 <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
-                                    Brand · Bengaluru
+                                    {data?.profile?.city
+                                        ? `Brand · ${data.profile.city}`
+                                        : "Brand"}
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
@@ -351,14 +413,11 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         Edit brand
                                     </Button>
                                 </Link>
-                                <Link to="/brand/creators" data-testid="brand-header-browse-creators-btn">
-                                    <Button
-                                        variant="outline"
-                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
-                                    >
-                                        Browse creators
-                                    </Button>
-                                </Link>
+                                {/* "Browse creators" was here and is gone with
+                                    the directory behind it. Creators are
+                                    matched to a brief rather than shopped for,
+                                    so the way to them starts with the brief —
+                                    which is the button beside this one. */}
                                 <Link to="/campaigns/new" data-testid="brand-header-post-btn">
                                     <Button className="group rounded-full bg-ember-500 text-black hover:bg-ember-400">
                                         <Plus className="mr-1 h-4 w-4" />
@@ -802,6 +861,29 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             >
                                                                 <XCircle className="mr-1.5 h-3.5 w-3.5" />
                                                                 Close
+                                                            </Button>
+                                                        )}
+
+                                                        {/* **Only once it is over.** The delivery
+                                                            columns are the point of the file and
+                                                            they are still being filled in until
+                                                            then, so the button is absent rather
+                                                            than present and 409ing. */}
+                                                        {["closed", "completed"].includes(
+                                                            c.status,
+                                                        ) && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                disabled={exporting === c.id}
+                                                                data-testid={`brand-campaign-export-${c.id}`}
+                                                                onClick={() => exportCampaign(c)}
+                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                            >
+                                                                <Download className="mr-1.5 h-3.5 w-3.5" />
+                                                                {exporting === c.id
+                                                                    ? "Preparing…"
+                                                                    : "Export report"}
                                                             </Button>
                                                         )}
 

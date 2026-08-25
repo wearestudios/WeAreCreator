@@ -59,8 +59,11 @@ const linksFor = (role) => {
         ];
     }
     if (isBrandSide(role)) {
+        // No "Creators" link: there is no browsable roster for a brand. The
+        // creators a brand may see are the ones on its own briefs, so they are
+        // reached from a campaign — the applicant board and the suggestions
+        // panel — rather than from the navigation.
         return [
-            { to: "/brand/creators", label: "Creators", testId: "nav-brand-creators" },
             { to: "/calendar", label: "Calendar", testId: "nav-calendar" },
             { to: "/campaigns/new", label: "Post a campaign", testId: "nav-post-campaign" },
             { to: homePathFor(role), label: "Dashboard", testId: "nav-dashboard" },

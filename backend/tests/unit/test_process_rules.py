@@ -1553,8 +1553,17 @@ class TestCampaignTypes:
 
     @pytest.mark.parametrize("ctype", ["launch", "group_event"])
     def test_an_event_campaign_takes_one_day(self, ctype):
+        # A group event's day is a timetable, so it carries at least one
+        # sitting — see `_SCHEDULING_BY_TYPE`.
+        extra = (
+            {"sittings": [{"starts_at": "2026-09-01T12:00:00Z", "capacity": 4}]}
+            if ctype == "group_event"
+            else {}
+        )
         payload = server.PostCampaignPayload(
-            **_campaign_body(campaign_type=ctype, event_date="2026-09-01T10:00:00Z")
+            **_campaign_body(
+                campaign_type=ctype, event_date="2026-09-01T10:00:00Z", **extra
+            )
         )
         assert payload.event_date is not None
         assert payload.start_date is None and payload.end_date is None
@@ -3760,8 +3769,11 @@ class TestVerifiedFollowerCount:
     def test_the_brand_surfaces_all_go_through_that_one_projection(self):
         import inspect
 
+        # `_serialize_directory_creator` used to be the third of these. The
+        # brand-facing directory it served is gone — see
+        # `test_access_and_execution.py` — so the projection it wrapped is now
+        # reached only through the two surfaces a brand actually has.
         for fn in (
-            server._serialize_directory_creator,
             server._serialize_applicant,
             server._suggest_creators_for_campaign,
         ):
@@ -4092,8 +4104,11 @@ class TestUnverifiedBrandsCannotReachCreators:
         "brand_decline_applicant",
         "brand_approve_content",
         "brand_request_changes",
-        "brand_directory",
-        "brand_directory_filters",
+        # `brand_directory` and `brand_directory_filters` were here. They are
+        # not gated any more — they do not exist. A brand meets a creator
+        # through its own work or through the suggestions on one of its own
+        # briefs, both of which are on this list by another name.
+        "brand_suggested_creators",
         "publish_brand_campaign",
     ]
 
@@ -4112,11 +4127,15 @@ class TestUnverifiedBrandsCannotReachCreators:
         for fn in (server.update_brand_profile, server.get_brand_profile):
             assert "_verified_brand_or_403" not in inspect.getsource(fn)
 
-    def test_the_directory_is_gated_before_it_queries(self):
+    def test_the_suggestions_are_gated_before_they_query(self):
+        """The one surface where a brand sees a creator it has not met, so the
+        check has to happen before anything is read rather than after."""
         import inspect
 
-        src = inspect.getsource(server.brand_directory)
-        assert src.index("_verified_brand_or_403") < src.index("db.creator_profiles")
+        src = inspect.getsource(server.brand_suggested_creators)
+        assert src.index("_verified_brand_or_403") < src.index(
+            "_suggest_creators_for_campaign"
+        )
 
     @pytest.mark.parametrize(
         "fn_name,lookup",
@@ -4546,7 +4565,6 @@ class TestCreatorDataMinimisation:
     def _brand_payloads(self):
         """One of every brand-facing shape that carries a creator."""
         rows = [
-            ("directory", server._serialize_directory_creator(self.PROFILE)),
             ("brand_visible", server._brand_visible_creator(self.PROFILE, self.ACCOUNT)),
         ]
         for state in server.COLLAB_STATE_ORDER + ["declined", "cancelled"]:
@@ -4922,7 +4940,7 @@ class TestBrandManagerNotifications:
     @pytest.mark.parametrize(
         "fn_name,call",
         [
-            ("apply_to_campaign", "notify_brand_manager"),
+            ("_create_application", "notify_brand_manager"),
             ("submit_collab_content", "notify_brand_manager"),
             ("_claim_slot", "_tell_brand_manager_unless_managed"),
             ("_tell_manager_a_seat_freed", "_tell_brand_manager_unless_managed"),

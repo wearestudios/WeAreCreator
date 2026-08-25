@@ -87,7 +87,20 @@ const CARDS = [
     },
 ];
 
-const SHADOW = "shadow-[0_28px_70px_-24px_rgba(0,0,0,0.85)]";
+/**
+ * The one `box-shadow` the marketing site has, and the one place it is
+ * spelled.
+ *
+ * Exported so the leaderboard's tilted cards can take the same exception
+ * without writing a second literal: the design foundations reserve shadows for
+ * what genuinely floats, a tilted card is the inline element that really does,
+ * and "the exception is written down where it is taken" only stays true while
+ * there is one place to read. A test fails any other marketing file that grows
+ * a `shadow-*` class of its own, which importing this does not.
+ */
+export const CARD_SHADOW = "shadow-[0_28px_70px_-24px_rgba(0,0,0,0.85)]";
+
+const SHADOW = CARD_SHADOW;
 
 function Card({ card, progress, reduced }) {
     // Hooks cannot be called conditionally, so the transform is always built

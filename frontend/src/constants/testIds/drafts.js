@@ -28,6 +28,8 @@ export const DRAFT_REVIEW = {
 	revisions: 'draft-review-revisions',
 	revisionNote: 'draft-review-revision-note',
 	approve: 'draft-review-approve',
+	// The ASCI checkpoint the approval waits on.
+	disclosureCheck: 'draft-review-disclosure-check',
 	requestChanges: 'draft-review-request-changes',
 	changeNote: 'draft-review-change-note',
 	changeSubmit: 'draft-review-change-submit',
