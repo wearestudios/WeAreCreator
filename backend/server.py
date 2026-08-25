@@ -646,6 +646,17 @@ class CreatorProfileUpdate(BaseModel):
     payout_ifsc: Optional[str] = Field(default=None, max_length=11)
     pan: Optional[str] = Field(default=None, max_length=10)
     gstin: Optional[str] = Field(default=None, max_length=15)
+    # **Consent to being featured publicly, and it is theirs to give.**
+    #
+    # Off unless the creator says otherwise: everything else on this form is
+    # shown to brands they chose to work with, and the homepage is shown to
+    # everybody. Being on it is a good thing to be offered and a bad thing to
+    # be opted into.
+    #
+    # `Optional[bool]` rather than `bool`, so an absent key still means "leave
+    # it alone" like every other field here — a builder saving one step must
+    # not silently switch this off because that step did not carry it.
+    homepage_opt_in: Optional[bool] = None
 
 
 PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
@@ -6058,6 +6069,10 @@ def _serialize_creator_profile(doc: dict) -> dict:
         "payout_ifsc": doc.get("payout_ifsc"),
         "pan": doc.get("pan"),
         "gstin": doc.get("gstin"),
+        # Their answer to being featured on the homepage. Absent reads as
+        # **off** — consent is given, never assumed, so every profile written
+        # before this field existed is one nobody has asked yet.
+        "homepage_opt_in": bool(doc.get("homepage_opt_in", False)),
         "payout_ready": payout_ready(doc),
         # Named, so the dashboard can say what is still needed rather than
         # showing a disabled state with no explanation.
@@ -7228,6 +7243,14 @@ async def update_creator_profile(
         update["platforms"] = list(dict.fromkeys(payload.platforms))
     if "base_rate" in sent:
         update["base_rate"] = payload.base_rate
+    if "homepage_opt_in" in sent:
+        # Consent, stored as the plain boolean it is. **Deliberately not in
+        # `MATERIAL_PROFILE_FIELDS`**: putting somebody back in a verification
+        # queue for changing their mind about being featured would make the
+        # toggle expensive to use, which is the opposite of what a consent
+        # control should be. Turning it off is free and takes effect on the
+        # next read — see `_leaderboard_eligible`.
+        update["homepage_opt_in"] = bool(payload.homepage_opt_in)
     if "follower_count" in sent:
         # While Instagram is connected the live figure wins, and what they
         # type goes to the self-reported field instead. Otherwise saving any
@@ -12448,6 +12471,542 @@ def _reliability_signal(stats: Optional[dict]) -> Optional[float]:
     if not parts:
         return None
     return round(sum(parts) / len(parts), 3)
+
+
+# ---------------------------------------------------------------------------
+# Standing: who the homepage features
+# ---------------------------------------------------------------------------
+#
+# A public leaderboard is a strong claim to make about a person, so what it
+# ranks on is the whole design decision.
+#
+# **It ranks on professionalism and results, and never on money.** No signal
+# here reads `agreed_amount`, `base_rate`, `creator_payout` or any other
+# figure, and `test_leaderboard.py` walks this function's source for every one
+# of those names. Two reasons, and the second is the one that bites: a public
+# ordering by earnings is a public ordering by who charged most, which walks
+# straight into every rate negotiation the platform exists to keep clean —
+# a brand reading "top creator" as "expensive" and a creator reading their own
+# position as a price signal. And the amounts are private in the first place.
+#
+# What it does rank on is what somebody would actually want to know about
+# working with a person: how much they have finished, whether they turn up and
+# post on time, how the published work performed, and what the people who ran
+# those campaigns thought.
+CREATOR_STANDING_WEIGHTS = {
+    # Volume, saturating — see the note on `_saturating` below.
+    "delivered": 30,
+    # The single strongest professionalism signal we hold.
+    "on_time": 30,
+    # Results, where they were captured. Never reach on its own: a creator with
+    # a large audience would outrank a smaller one who did better work with it,
+    # which is the follower-count leaderboard wearing another name.
+    "performance": 20,
+    # What the runner thought, plus the absence of no-shows and cancellations.
+    "standing": 20,
+}
+
+# Where volume stops earning. Above this a campaign is worth nothing extra, so
+# the top of the board is not simply whoever has been here longest — a creator
+# on their eighth campaign can outrank one on their fortieth by doing the work
+# better, which is the whole point of ranking on professionalism.
+STANDING_VOLUME_SATURATION = 8
+
+# The engagement rate that scores full marks. A rate above this is excellent
+# rather than twice as excellent, so the signal saturates like volume does.
+#
+# **A percentage, because that is what `engagement_rate` means everywhere else
+# in this file** — `_engagement_rate_from` multiplies by 100, and every surface
+# that draws one prints a percent sign. A fraction here would be a second
+# meaning for one key name, which is the kind of thing that reads correctly and
+# is wrong by a factor of a hundred.
+STANDING_TARGET_ENGAGEMENT = 6.0
+
+# Where an unmeasured signal sits. **Never zero** — the same rule
+# `score_creator_for_campaign` holds: a creator whose posts nobody recorded a
+# reading for has an unknown performance, not a bad one, and scoring unknowns
+# at zero would bury everybody the platform has not instrumented.
+_STANDING_UNKNOWN = 0.5
+
+
+def _saturating(value: Optional[float], ceiling: float) -> float:
+    """A count or a rate onto 0–1, flattening at `ceiling`."""
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if ceiling <= 0:
+        return 0.0
+    return min(1.0, max(0.0, number / ceiling))
+
+
+def score_creator_standing(
+    stats: Optional[dict], performance: Optional[dict] = None
+) -> dict:
+    """How this creator has worked, as one 0–100 number and its parts.
+
+    **The whole score is here.** One pure function, no database, no hidden
+    term, `CREATOR_STANDING_WEIGHTS` the only tuning knob and summing to 100 —
+    the same arrangement `score_creator_for_campaign` uses, for the same
+    reason: a ranking somebody can be surprised by is a ranking nobody can
+    defend, and the components ship with every result so the reasoning is
+    readable rather than reconstructed.
+
+    `stats` is a `_reliability_for` row. `performance` is a
+    `_creator_performance_for` row and may be absent entirely.
+
+    **Nothing in here is money.** See the block above.
+
+    Returns `{"score", "components", "unknown_signals"}`. `unknown_signals`
+    names what we could not measure, so a caller can say so rather than
+    letting a midpoint pass for a measurement.
+    """
+    stats = stats or {}
+    performance = performance or {}
+    parts: dict = {}
+    unknown: list = []
+
+    # --- Volume, saturating -------------------------------------------------
+    completed = int(stats.get("completed") or 0)
+    parts["delivered"] = _saturating(completed, STANDING_VOLUME_SATURATION)
+
+    # --- Turning up and posting on time -------------------------------------
+    on_time_rate = stats.get("on_time_rate")
+    if on_time_rate is None:
+        parts["on_time"] = _STANDING_UNKNOWN
+        unknown.append("on_time")
+    else:
+        parts["on_time"] = max(0.0, min(1.0, float(on_time_rate)))
+
+    # --- What the published work did ----------------------------------------
+    #
+    # Engagement rate rather than reach, and engagement rate is already
+    # engagements over reach — so a post that reached a hundred thousand people
+    # and moved none of them does not outrank one that reached five thousand
+    # and moved them all. Reach is in the input only as the denominator that
+    # rate is computed against.
+    rate = performance.get("engagement_rate")
+    if rate is None:
+        parts["performance"] = _STANDING_UNKNOWN
+        unknown.append("performance")
+    else:
+        parts["performance"] = _saturating(rate, STANDING_TARGET_ENGAGEMENT)
+
+    # --- What the people who ran those campaigns thought ---------------------
+    #
+    # The rating where there is one, and a deduction for the commitments that
+    # were missed. Both halves are optional and the whole signal is unknown
+    # only when neither exists.
+    standing_parts = []
+    rating = stats.get("rating_avg")
+    if rating is not None:
+        standing_parts.append(
+            (float(rating) - RATING_MIN) / (RATING_MAX - RATING_MIN)
+        )
+    if completed:
+        # Only what they caused: a brand pulling out of a shoot is not a fact
+        # about the creator, which is why `_reliability_for` counts creator
+        # cancellations separately in the first place.
+        missed = int(stats.get("no_shows") or 0) + int(stats.get("cancellations") or 0)
+        standing_parts.append(max(0.0, 1.0 - (missed / completed)))
+    if standing_parts:
+        parts["standing"] = sum(standing_parts) / len(standing_parts)
+    else:
+        parts["standing"] = _STANDING_UNKNOWN
+        unknown.append("standing")
+
+    total = sum(
+        parts[key] * weight for key, weight in CREATOR_STANDING_WEIGHTS.items()
+    )
+    return {
+        "score": round(total, 2),
+        "components": {
+            key: round(parts[key] * weight, 2)
+            for key, weight in CREATOR_STANDING_WEIGHTS.items()
+        },
+        "unknown_signals": unknown,
+    }
+
+
+async def _creator_performance_for(creator_ids: list) -> dict:
+    """Average published performance per creator, in one round trip.
+
+    Reached through `collaborations`, because a `content_performance` row keys
+    on the collaboration and carries no `creator_id` — the same join the
+    erasure code and the brand-overdue code both had to learn.
+
+    **An unknown metric stays unknown.** `_rollup_performance` and every
+    surface that draws these hold the rule that a post with no saves and a post
+    whose saves we could not read are different things; averaging the second as
+    a zero makes a creator look worse than they were. So a creator with no
+    readings at all is simply absent from this map, which
+    `score_creator_standing` reads as unknown rather than as bad.
+    """
+    ids = [i for i in (creator_ids or []) if i is not None]
+    if not ids:
+        return {}
+    collabs = await db.collaborations.find(
+        {"creator_id": {"$in": ids}}, {"_id": 1, "creator_id": 1}
+    ).to_list(length=5000)
+    if not collabs:
+        return {}
+    owner = {c["_id"]: c["creator_id"] for c in collabs}
+    readings = await db.content_performance.find(
+        {"collaboration_id": {"$in": list(owner)}}
+    ).to_list(length=5000)
+
+    gathered: dict = {}
+    for row in readings:
+        creator_oid = owner.get(row.get("collaboration_id"))
+        if creator_oid is None:
+            continue
+        reach = row.get("reach")
+        engagements = _engagements(row)
+        if not isinstance(reach, (int, float)) or reach <= 0 or engagements is None:
+            # No denominator or no numerator, so no rate. Counting the post
+            # anyway would put a zero into an average meant to describe the
+            # posts we actually measured — the rule `_engagements` already
+            # holds by returning `None` rather than `0`.
+            continue
+        bucket = gathered.setdefault(creator_oid, {"reach": 0.0, "engagements": 0.0, "posts": 0})
+        bucket["reach"] += float(reach)
+        bucket["engagements"] += float(engagements)
+        bucket["posts"] += 1
+
+    out = {}
+    for creator_oid, bucket in gathered.items():
+        if not bucket["posts"] or bucket["reach"] <= 0:
+            continue
+        out[creator_oid] = {
+            # **Total engagements over total reach, not the mean of the
+            # per-post rates** — the same arithmetic `_rollup_performance`
+            # uses, and for the same reason: the mean lets one tiny post with
+            # a freak rate move the number. A percentage, like every other
+            # `engagement_rate` here.
+            "engagement_rate": round(bucket["engagements"] / bucket["reach"] * 100, 2),
+            "posts_measured": bucket["posts"],
+        }
+    return out
+
+
+# --- Who is eligible to be featured, and the cache the homepage reads --------
+
+# How long since a creator last moved a collaboration before they stop being
+# "active". A homepage full of people who left is a homepage describing last
+# year, and it is unfair to the ones still here.
+STANDING_ACTIVE_DAYS = 180
+
+# How many finished campaigns before there is anything to say. Below this a
+# score is one campaign's luck, and the same reasoning `RELIABILITY_MIN_SAMPLE`
+# holds applies harder in public.
+STANDING_MIN_CAMPAIGNS = 2
+
+# The honesty floor and the size of the row, both stored so an operator can
+# move them without a deploy. **Below the floor the section is absent, not
+# short** — four faces under a heading that says "top creators" advertises a
+# platform with four creators on it, which is worse for everybody on the row
+# than saying nothing.
+LEADERBOARD_MIN_DEFAULT = 6
+LEADERBOARD_SIZE_DEFAULT = 8
+LEADERBOARD_MAX = 24
+_LEADERBOARD_SETTINGS_ID = "creator_leaderboard"
+
+
+async def leaderboard_settings() -> dict:
+    """The floor and the size. Stored, and never raises.
+
+    A settings read that fails must not take down the homepage, so this falls
+    back to the defaults exactly the way `large_campaign_threshold` does.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _LEADERBOARD_SETTINGS_ID})
+    except Exception as exc:  # pragma: no cover - defensive, logged
+        logger.error("could not read the leaderboard settings: %s", exc)
+        doc = None
+    doc = doc or {}
+
+    def _read(key, default):
+        try:
+            value = int(doc.get(key))
+        except (TypeError, ValueError):
+            return default
+        return value if 1 <= value <= LEADERBOARD_MAX else default
+
+    return {
+        "minimum": _read("minimum", LEADERBOARD_MIN_DEFAULT),
+        "size": _read("size", LEADERBOARD_SIZE_DEFAULT),
+    }
+
+
+def _leaderboard_eligible(profile: Optional[dict], account: Optional[dict]) -> bool:
+    """Whether this creator may appear on the homepage at all.
+
+    **Consent first, and it is the only one of these that is not about us.**
+    A creator who has not opted in is not a candidate we rejected; they are
+    somebody we never had permission to feature, and the check is first here
+    so that reading the function reads in that order too.
+
+    Then: verified, in good standing (`_creator_block` — suspended, lapsed or
+    awaiting a re-check all disqualify), and active recently.
+
+    **Read live on every request**, not baked into the cache. That is what
+    makes "a creator turning it off is removed immediately" true rather than
+    true-by-tomorrow — see `_public_leaderboard`.
+    """
+    profile = profile or {}
+    if not profile.get("homepage_opt_in"):
+        return False
+    if profile.get("verification_status") != "verified":
+        return False
+    if _creator_block(profile, account):
+        return False
+    return True
+
+
+def _recently_active(stats: Optional[dict], now: Optional[datetime] = None) -> bool:
+    """Whether this creator has moved anything lately.
+
+    Absent reads as **not** active, which is the opposite of the usual
+    absent-is-safe rule and is deliberate: everywhere else absent means "we
+    have not measured this yet, so do not penalise them", and here the whole
+    claim being made is that these are people currently doing the work. A
+    creator with no recorded activity at all has no such claim behind them.
+    """
+    # `_reliability_for` emits this through `_iso`, so it is a string carrying
+    # its offset — which is the whole reason `_iso` exists, and why parsing it
+    # back cannot land in the reader's local zone.
+    raw = (stats or {}).get("last_active_at")
+    if not raw:
+        return False
+    try:
+        last = _as_utc(datetime.fromisoformat(str(raw)))
+    except ValueError:
+        return False
+    if last is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return (now - last).days <= STANDING_ACTIVE_DAYS
+
+
+async def refresh_creator_leaderboard() -> dict:
+    """Recompute the ranking and store it. Daily is plenty.
+
+    **The homepage never runs this.** It is the front door on mobile data, and
+    the work here is an aggregation over every collaboration and every
+    performance reading on the platform — fine once a day, absurd once a
+    visit. `_public_leaderboard` reads what this leaves behind.
+
+    Driven by a startup loop (`LEADERBOARD_REFRESH_INTERVAL_SECONDS`, `0`
+    disables) and by `POST /admin/jobs/leaderboard`, the same arrangement the
+    nudge and lifecycle jobs use — so a deployment with its own scheduler can
+    turn the loop off rather than have two things doing it.
+    """
+    now = datetime.now(timezone.utc)
+    # Only the opted-in are even scored. Ranking people who never consented
+    # and then filtering at the end would mean holding a ranking of everybody,
+    # which is the thing we are declining to build.
+    profiles = await db.creator_profiles.find(
+        {"homepage_opt_in": True, "verification_status": "verified"}
+    ).to_list(length=2000)
+    if not profiles:
+        await _store_leaderboard([], now)
+        return {"considered": 0, "ranked": 0}
+
+    ids = [p["user_id"] for p in profiles]
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids))
+    }
+    stats = await _reliability_for(ids)
+    performance = await _creator_performance_for(ids)
+
+    ranked = []
+    for profile in profiles:
+        oid = profile["user_id"]
+        if not _leaderboard_eligible(profile, accounts.get(oid)):
+            continue
+        row = stats.get(oid) or {}
+        if int(row.get("completed") or 0) < STANDING_MIN_CAMPAIGNS:
+            continue
+        if not _recently_active(row, now):
+            continue
+        scored = score_creator_standing(row, performance.get(oid))
+        ranked.append(
+            {
+                "user_id": oid,
+                "score": scored["score"],
+                "components": scored["components"],
+                "unknown_signals": scored["unknown_signals"],
+                # The professional signal the card shows. Stored beside the
+                # score because it is what a reader sees, and a cache that
+                # held only the ordering would make the page re-derive it.
+                "completed": int(row.get("completed") or 0),
+                "reliability": _reliability_band(row),
+            }
+        )
+
+    # **`_id` as the tiebreak**, not name: two creators on identical scores is
+    # ordinary, and an alphabetical tiebreak would put the same person on top
+    # every day forever. Sorting on the id at least makes it arbitrary rather
+    # than a second, invisible ranking rule.
+    ranked.sort(key=lambda r: (-r["score"], str(r["user_id"])))
+    ranked = ranked[:LEADERBOARD_MAX]
+    await _store_leaderboard(ranked, now)
+    return {"considered": len(profiles), "ranked": len(ranked)}
+
+
+async def _store_leaderboard(ranked: list, now: datetime) -> None:
+    """The computed ranking, in its own collection.
+
+    **Not in `platform_settings`.** That collection holds what an operator
+    typed — the SLA targets, the reschedule limit, this feature's own floor —
+    and a job that rewrites a document in it every night is one bad `_id` away
+    from overwriting one of those. A cache and a setting have different owners,
+    different lifetimes and different consequences when they are wrong.
+    """
+    await db.leaderboard_cache.update_one(
+        {"_id": "current"},
+        {"$set": {"ranked": ranked, "computed_at": now}},
+        upsert=True,
+    )
+
+
+# What a stranger on the homepage sees of a creator, and nothing else.
+#
+# **A second, narrower allow-list than `_brand_visible_creator`**, and the
+# narrowness is the point. That one is the projection for somebody the creator
+# has a relationship with — it carries follower counts, engagement rate and a
+# base rate, all of which are fine for a brand reading an application and none
+# of which belong on a public page:
+#
+#   - a **follower count** turns the row into an audience-size ranking, which
+#     is exactly the leaderboard this one is designed not to be;
+#   - a **base rate** is a price, published, next to a position — every reason
+#     the ranking refuses to touch money applies twice as hard to printing the
+#     number itself;
+#   - an **engagement rate** is a working figure a brand negotiates against,
+#     not a thing to broadcast.
+#
+# Reusing the brand projection would have been the obvious move and would have
+# shipped all three. `PUBLIC_CREATOR_CARD_FORBIDDEN` names what must never
+# appear and a leak test plants values and searches the rendered payload.
+#
+# **There is deliberately no allow-list tuple beside that.** One was written
+# first and it governed nothing — `_public_creator_card` names its keys inline,
+# so the tuple was a list of field names that looked like a rule and enforced
+# none of it. A break-test changing it to the brand projection left the suite
+# green, which is what a decorative constant does: it reads as the answer and
+# is not. The enforcement is the explicit `return {...}` below, and the test
+# that plants values in the input and searches the output.
+PUBLIC_CREATOR_CARD_FORBIDDEN = (
+    # Reaching somebody
+    "phone", "whatsapp", "email", "address", "full_address",
+    "location_lat", "location_lng", "location_place_id",
+    # Money, in every spelling this codebase has for it
+    "base_rate", "agreed_amount", "creator_payout", "lifetime_earned", "earnings",
+    "payout_upi", "payout_account_name", "payout_account_number", "payout_ifsc",
+    "pan", "gstin",
+    # Audience size, and the score itself
+    "follower_count", "follower_count_self_reported", "engagement_rate",
+    "score", "rank", "position",
+)
+
+# How many niches a card carries. Two, because one is thin and three wraps to a
+# second line on a 390px card — and because "what they do" is a label here, not
+# a filterable taxonomy.
+PUBLIC_CARD_NICHES = 2
+
+
+def _public_creator_card(profile: dict, entry: dict) -> dict:
+    """One creator, as the homepage draws them.
+
+    Built by naming every key, never by copying a document and deleting from
+    it: a field added to `creator_profiles` next month must not appear on a
+    public page because nobody remembered to exclude it.
+
+    **No rank and no score.** `entry` carries both and neither is emitted —
+    a visible ordinal is a public statement that somebody is eighth, and the
+    person it is worst for is whoever is last. What travels instead is the
+    professional signal: how many campaigns they have finished, and the
+    reliability band, which is the same interpreted-once verdict a brand gets.
+    """
+    niches = [n for n in (profile.get("niches") or []) if n][:PUBLIC_CARD_NICHES]
+    return {
+        "id": str(profile["user_id"]),
+        "name": profile.get("name"),
+        "city": profile.get("city"),
+        "instagram_handle": profile.get("instagram_handle"),
+        "profile_image_url": profile.get("profile_image_url"),
+        "niches": niches,
+        # The signal, in place of a position.
+        "campaigns_completed": int(entry.get("completed") or 0),
+        "reliability": entry.get("reliability") or _reliability_band(None),
+    }
+
+
+async def _public_leaderboard() -> dict:
+    """The featured creators, or nothing at all.
+
+    Two properties this has to hold at once, and they pull against each other:
+
+    **Fast.** This is the front door on mobile data, so the ranking is read
+    from the cache `refresh_creator_leaderboard` leaves behind rather than
+    computed here. Nothing in this function touches `collaborations` or
+    `content_performance`.
+
+    **Immediate on withdrawal.** Consent is not something to honour by
+    tomorrow, so opt-in is re-read live: the cache holds an *ordering*, and
+    every creator in it is looked up again by id and dropped if they are no
+    longer eligible. That is one indexed query over a handful of ids — the
+    expensive half is the ranking, not the lookup — and it means a creator who
+    switches the toggle off is gone from the next page load rather than from
+    the next nightly pass.
+
+    **Returns `{}` below the floor**, and the section disappears with it. The
+    same all-or-nothing shape `_platform_proof` uses, for the same reason: a
+    thin row is worse for the people on it than no row.
+    """
+    settings = await leaderboard_settings()
+    cached = await db.leaderboard_cache.find_one({"_id": "current"})
+    entries = (cached or {}).get("ranked") or []
+    if not entries:
+        return {}
+
+    ids = [e["user_id"] for e in entries if e.get("user_id") is not None]
+    if not ids:
+        return {}
+    profiles = {
+        p["user_id"]: p
+        for p in await db.creator_profiles.find({"user_id": {"$in": ids}}).to_list(
+            length=len(ids)
+        )
+    }
+    accounts = {
+        u["_id"]: u
+        for u in await db.users.find({"_id": {"$in": ids}}).to_list(length=len(ids))
+    }
+
+    cards = []
+    for entry in entries:
+        profile = profiles.get(entry.get("user_id"))
+        if not profile:
+            # Erased, or deleted between the ranking and now. A tombstone is
+            # not somebody to feature.
+            continue
+        if not _leaderboard_eligible(profile, accounts.get(entry["user_id"])):
+            continue
+        cards.append(_public_creator_card(profile, entry))
+        if len(cards) >= settings["size"]:
+            break
+
+    if len(cards) < settings["minimum"]:
+        return {}
+    return {
+        "creators": cards,
+        # So the page can say when this was worked out rather than implying it
+        # is live. It is a day old by design.
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
 
 
 async def _delivery_history(creator_ids: list) -> dict:
@@ -22352,6 +22911,12 @@ _ERASE_CREATOR_PROFILE = (
     "location_place_id", "profile_image_url",
     "payout_method", "payout_upi", "payout_account_name",
     "payout_account_number", "payout_ifsc", "pan", "gstin",
+    # Consent to being featured publicly. Erasing it rather than leaving it
+    # set is the difference between a tombstone and a tombstone that is still
+    # a candidate for the homepage — `_leaderboard_eligible` reads this key,
+    # and an erased row with it still `True` would be a name we removed and a
+    # permission we kept.
+    "homepage_opt_in",
 )
 _ERASE_BRAND_PROFILE = (
     "contact_person_name", "contact_person_designation", "contact_email",
@@ -23956,6 +24521,42 @@ def _lifecycle_interval_seconds() -> int:
         return 3600
 
 
+async def _leaderboard_loop():
+    """Recompute the homepage ranking on a timer.
+
+    **Once on start, then on the interval.** The other loops sleep first
+    because nothing depends on them having run; this one is what a public
+    section renders from, and a fresh deployment with an empty cache would
+    show nothing until the first tick — which for a daily interval is a day of
+    an empty homepage section.
+    """
+    interval = _leaderboard_interval_seconds()
+    while True:
+        try:
+            await refresh_creator_leaderboard()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("leaderboard refresh failed: %s", exc)
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+
+
+def _leaderboard_interval_seconds() -> int:
+    """How often the homepage ranking is recomputed. Zero disables it.
+
+    Daily by default. The inputs move slowly — a campaign finishing, a
+    performance reading landing — so anything faster spends an aggregation
+    over the whole platform to change nothing.
+    """
+    try:
+        return max(0, int(os.environ.get("LEADERBOARD_REFRESH_INTERVAL_SECONDS", "86400")))
+    except ValueError:
+        return 86400
+
+
 # ---------------------------------------------------------------------------
 # Scheduled jobs: keep Instagram tokens alive and the stats current
 # ---------------------------------------------------------------------------
@@ -24137,6 +24738,75 @@ async def run_lifecycle_job(user: dict = Depends(require_roles("admin"))):
     report = await run_lifecycle_chasers()
     await audit(user, "job.lifecycle", "job", "lifecycle", after=report)
     return report
+
+
+@admin_router.post("/jobs/leaderboard")
+async def run_leaderboard_job(user: dict = Depends(require_roles("admin"))):
+    """Recompute the homepage ranking now.
+
+    Same function the timer calls. Worth having by hand because the row is a
+    public statement: after tuning the weights, or after suspending somebody,
+    an operator should be able to make the page agree without waiting a day.
+    """
+    report = await refresh_creator_leaderboard()
+    await audit(user, "job.leaderboard", "job", "leaderboard", after=report)
+    return report
+
+
+class LeaderboardSettingsPayload(BaseModel):
+    """The floor and the size, both optional so one can be changed alone."""
+
+    minimum: Optional[int] = Field(default=None, ge=1, le=LEADERBOARD_MAX)
+    size: Optional[int] = Field(default=None, ge=1, le=LEADERBOARD_MAX)
+
+
+@admin_router.get("/settings/leaderboard")
+async def get_leaderboard_settings(user: dict = Depends(require_roles("admin"))):
+    settings = await leaderboard_settings()
+    cached = await db.leaderboard_cache.find_one({"_id": "current"})
+    return {
+        **settings,
+        "defaults": {
+            "minimum": LEADERBOARD_MIN_DEFAULT,
+            "size": LEADERBOARD_SIZE_DEFAULT,
+        },
+        "maximum": LEADERBOARD_MAX,
+        # What the last pass actually produced, so the two numbers above can be
+        # judged against something rather than set blind.
+        "ranked": len((cached or {}).get("ranked") or []),
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
+
+
+@admin_router.put("/settings/leaderboard")
+async def set_leaderboard_settings(
+    payload: LeaderboardSettingsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Move the floor or the size.
+
+    **Admin-only, not `CONSOLE_ROLES`.** The floor is the honesty rule — how
+    few featured creators is too few to be worth claiming — and lowering it is
+    a decision about what the platform is willing to say about itself in
+    public, not scoped work.
+    """
+    sent = payload.model_fields_set
+    update = {k: getattr(payload, k) for k in ("minimum", "size") if k in sent}
+    if not update:
+        raise HTTPException(status_code=422, detail="Nothing to change.")
+    before = await leaderboard_settings()
+    await db.platform_settings.update_one(
+        {"_id": _LEADERBOARD_SETTINGS_ID}, {"$set": update}, upsert=True
+    )
+    await audit(
+        user,
+        "settings.leaderboard",
+        "settings",
+        _LEADERBOARD_SETTINGS_ID,
+        before=before,
+        after=update,
+    )
+    return await leaderboard_settings()
 
 
 api_router.include_router(admin_router)
@@ -27040,6 +27710,25 @@ async def platform_proof():
     404s with no error anywhere.
     """
     return await _platform_proof()
+
+
+@public_router.get("/leaderboard")
+async def public_leaderboard():
+    """The creators featured on the homepage, or `{}`.
+
+    Unauthenticated, like the page that reads it, and carrying nothing that
+    could reach anybody — see `_public_creator_card`, which is its own
+    allow-list rather than the brand one.
+
+    Read from a cache. **Never compute here**: this is the front door on
+    mobile data, and the ranking is an aggregation over every collaboration on
+    the platform. `refresh_creator_leaderboard` does that work daily.
+
+    Declared above `include_router` for the reason `/proof` documents: that
+    call copies the routes it can see, so a `@public_router.get` written below
+    it registers nothing and 404s with no error anywhere.
+    """
+    return await _public_leaderboard()
 
 
 api_router.include_router(public_router)
@@ -30319,6 +31008,11 @@ async def _startup():
     await db.creator_profiles.create_index(
         [("verification_status", 1), ("submitted_for_review_at", 1)]
     )
+    # The leaderboard refresh reads exactly this pair, and it is the one query
+    # that would otherwise scan every creator on the platform.
+    await db.creator_profiles.create_index(
+        [("homepage_opt_in", 1), ("verification_status", 1)]
+    )
     await db.creator_profiles.create_index(
         [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
     )
@@ -30715,6 +31409,18 @@ async def _startup():
             MAX_REMINDERS,
         )
 
+    # The homepage ranking. Same shape as the two above — zero turns it off
+    # for a deployment driving POST /admin/jobs/leaderboard from its own
+    # scheduler — and it runs once immediately so a fresh box does not serve
+    # an empty section for a day.
+    if _leaderboard_interval_seconds() > 0:
+        app.state.leaderboard_task = asyncio.create_task(_leaderboard_loop())
+        logger.info(
+            "Creator leaderboard on: every %ds, %d needed before it renders",
+            _leaderboard_interval_seconds(),
+            LEADERBOARD_MIN_DEFAULT,
+        )
+
     # Instagram token renewal and stats caching. Off when the Meta app isn't
     # configured yet, which is the normal state during app review — the rest
     # of the product carries on with self-reported numbers.
@@ -31045,7 +31751,7 @@ async def _seed_demo_campaigns() -> None:
 
 @app.on_event("shutdown")
 async def _shutdown():
-    for name in ("nudge_task", "lifecycle_task", "instagram_task"):
+    for name in ("nudge_task", "lifecycle_task", "instagram_task", "leaderboard_task"):
         task = getattr(app.state, name, None)
         if task:
             task.cancel()

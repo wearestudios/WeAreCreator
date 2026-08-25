@@ -28,6 +28,7 @@ import { HERO_EYEBROW } from "@/lib/siteNav";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
+import CreatorLeaderboard from "@/components/marketing/CreatorLeaderboard";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -223,6 +224,12 @@ export default function Landing() {
             <CampaignFilm title={COPY.filmTitle} />
 
             <Problem />
+
+            {/* The creators, with their permission. Below the fold and
+                fetched only when it gets close — a marketing page must not
+                pay for this on the critical path — and absent entirely when
+                too few have opted in to be worth claiming. */}
+            <CreatorLeaderboard />
 
             {/* The family handshake. Full-bleed studio coral, white poster
                 type, a black block — the one place the studio palette appears

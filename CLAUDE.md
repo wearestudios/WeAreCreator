@@ -2812,6 +2812,84 @@ communication is one people abandon on the second field.
   maps to exactly `_UNKNOWN_SIGNAL`, which is the honest relationship between
   "they were fine" and "we do not know".
 
+### Featured on the homepage
+
+A row of creators on `/`, drawn from `GET /public/leaderboard`. The whole
+design sits on three decisions.
+
+**It ranks on professionalism and never on money.**
+`score_creator_standing` is one pure function with `CREATOR_STANDING_WEIGHTS`
+summing to 100 as the only knob — the same arrangement `score_creator_for_
+campaign` uses, and the components ship with every result. Four signals:
+campaigns finished (30, saturating at `STANDING_VOLUME_SATURATION`), on-time
+delivery (30), average published performance (20), and what the runners
+thought minus the commitments missed (20). **No signal reads a fee, a rate or
+a payout**, and a test walks the function's source for every spelling of each
+— because a public ordering by earnings is a public ordering by who charged
+most, which walks into every rate negotiation the platform exists to keep
+clean. Engagement rate, never reach on its own: otherwise it is a
+follower-count leaderboard wearing another name. `STANDING_TARGET_ENGAGEMENT`
+is a **percentage**, like every other `engagement_rate` here — a fraction
+would be a second meaning for one key name, wrong by a factor of a hundred and
+reading perfectly.
+
+**Consent is required and withdrawal is immediate.** `homepage_opt_in` is off
+unless the creator says otherwise, absent reads as off, and it is asked in the
+builder and again on their own profile — where it is the **one control on an
+otherwise read-only page**, because somebody who wants off wants off now and a
+builder is three chances to give up. `_leaderboard_eligible` is the reader
+(consent, verified, `_creator_block`, active within `STANDING_ACTIVE_DAYS`) and
+is **re-run on every request** rather than baked into the cache: the cache
+holds an ordering, and each creator in it is looked up again and dropped if
+they are no longer eligible. That is what makes "removed immediately" true
+rather than true-by-tomorrow. Erasure `$unset`s the flag with everything else,
+or a tombstone would be a name we removed and a permission we kept.
+
+**Below the floor the section is absent, not short.** `leaderboard_settings()`
+holds the minimum (6) and the size (8), stored and admin-only — lowering the
+floor is a decision about what the platform will say about itself in public.
+One withdrawal can take the whole row down, and that is correct: the floor is
+about whether the claim is worth making.
+
+- **The homepage never computes it.** `refresh_creator_leaderboard` runs daily
+  (`LEADERBOARD_REFRESH_INTERVAL_SECONDS`, `0` disables, plus
+  `POST /admin/jobs/leaderboard`) and writes `leaderboard_cache` — **its own
+  collection, not `platform_settings`**, which holds what an operator typed and
+  is one bad `_id` away from being overwritten by a nightly job. The public
+  reader touches no collaboration and no performance row.
+- **`_public_creator_card` is a second, narrower allow-list than
+  `_brand_visible_creator`.** Reusing the brand one was the obvious move and
+  would have published a follower count, an engagement rate and a base rate.
+  Name, photo, handle, city, two niches, campaigns finished, reliability band —
+  and **no rank and no score**, because a visible ordinal is a public statement
+  that somebody is eighth and the person it is worst for is whoever is last.
+  There is deliberately no allow-list *tuple* beside it: one was written first,
+  governed nothing, and a break-test pointing it at the brand projection left
+  the suite green.
+- **The cards are not links.** The rule is to link through to a public creator
+  page where one exists and to leave them inert otherwise — and this product
+  has no public creator page. `/profile` is the creator's own, behind auth and
+  behind the creator role, so linking there would put every visitor on a
+  sign-in screen from a section written for strangers.
+- `components/marketing/CreatorLeaderboard.jsx` takes the floating-card
+  treatment: a static tilt, the quiet hover, and `CARD_SHADOW` **imported from
+  `FloatingCards`** rather than written a second time — the marketing site's
+  one `box-shadow` exception stays one place to read. Monogram where there is
+  no photograph, the 4:5 ratio on the container so a missing image still holds
+  its space, and `loading="lazy"`.
+- **Fetched only when it is nearly on screen**, via an IntersectionObserver
+  with a 600px margin, so a visitor who never scrolls never pays for it.
+  Measured: the section contributes **0.0000 CLS** at 390 and 1280 — the
+  0.0837 the harness reports on home is `CampaignFilm`, identical with the row
+  present and withheld. The reserved shape is a skeleton in the same grid
+  rather than a pixel height, because the cards are 4:5 and the section's
+  height tracks the column width continuously (1,149px at 768 → 1,409px at
+  1280); the heading is *not* skeletoned, since it is static copy and grey
+  bars reserve a different height from it — 136px of error on a phone. It
+  renders only once the request is in flight: earlier, and a visitor who never
+  scrolls gets a permanent section-shaped hole, which is what a browser check
+  caught.
+
 ## People you would ask again
 
 `creator_lists` — named lists for a brand or for WeAre, and `POST

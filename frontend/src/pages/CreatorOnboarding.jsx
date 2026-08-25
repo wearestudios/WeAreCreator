@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navbar } from "@/components/Navbar";
 import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
@@ -258,6 +259,11 @@ export default function CreatorOnboarding() {
         youtube_url: "",
         facebook_url: "",
         about: "",
+        // Consent to being featured on the homepage. **Off**, and the default
+        // is the whole point: everything else on this form is shown to brands
+        // the creator chose to work with, and the homepage is shown to
+        // everybody.
+        homepage_opt_in: false,
         location_lat: null,
         location_lng: null,
         location_place_id: null,
@@ -294,6 +300,7 @@ export default function CreatorOnboarding() {
             youtube_url: data.youtube_url || "",
             facebook_url: data.facebook_url || "",
             about: data.about || "",
+            homepage_opt_in: Boolean(data.homepage_opt_in),
             location_lat: data.location_lat ?? null,
             location_lng: data.location_lng ?? null,
             location_place_id: data.location_place_id || null,
@@ -404,6 +411,7 @@ export default function CreatorOnboarding() {
             youtube_url: form.youtube_url.trim() || null,
             facebook_url: form.facebook_url.trim() || null,
             about: form.about.trim() || null,
+            homepage_opt_in: form.homepage_opt_in,
             // Sent as a set. A coordinate without its pair is a point in the
             // sea; the picker only ever writes them together.
             location_lat: form.location_lat,
@@ -881,6 +889,44 @@ export default function CreatorOnboarding() {
                                 {(form.about || "").length}/1500
                             </p>
                         </Field>
+                    </Section>
+
+                    {/* Consent to being featured publicly.
+                        **Off unless they say otherwise**, and said in the
+                        plainest sentence available — a consent control that
+                        needs interpreting is one somebody agrees to without
+                        knowing what they agreed to. The second line says what
+                        appears and what does not, because "your profile" on a
+                        page like this could mean anything and the thing
+                        people worry about is their number. */}
+                    <Section
+                        id="featuring"
+                        title="Being featured"
+                        note="Your choice, and reversible"
+                    >
+                        <label
+                            htmlFor={IDS.homepageOptIn}
+                            className="flex cursor-pointer items-start gap-4 rounded-lg border border-white/10 bg-card/60 p-5"
+                        >
+                            <Switch
+                                id={IDS.homepageOptIn}
+                                data-testid={IDS.homepageOptIn}
+                                checked={form.homepage_opt_in}
+                                onCheckedChange={set("homepage_opt_in")}
+                                className="mt-0.5 data-[state=checked]:bg-ember-500"
+                            />
+                            <span className="text-sm">
+                                <span className="block text-foreground">
+                                    Show my profile on the WeAre Creators homepage.
+                                </span>
+                                <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                    Your name, photo, Instagram handle, city and what you
+                                    cover — never your number, your rate or your follower
+                                    count. Turn it off any time and you come off straight
+                                    away.
+                                </span>
+                            </span>
+                        </label>
                     </Section>
 
                     <Section id="rates" title="Your rate">

@@ -190,6 +190,12 @@ export const CREATOR_ONBOARDING = {
 	baseRate: 'onboarding-base-rate-input',
 	followers: 'onboarding-followers-input',
 
+	// Consent to being featured on the homepage. Off unless the creator says
+	// otherwise, and reachable from both the builder and the read-only
+	// profile — a consent control somebody can only find once is one they
+	// cannot withdraw.
+	homepageOptIn: 'onboarding-homepage-opt-in',
+
 	photoPreview: 'onboarding-photo-preview',
 	photoInput: 'onboarding-photo-input',
 	photoUpload: 'onboarding-photo-upload-btn',

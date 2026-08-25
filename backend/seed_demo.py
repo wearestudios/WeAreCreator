@@ -95,6 +95,11 @@ WIPED = (
     "collaboration_notes",
     "collaboration_ratings",
     "content_performance",
+    # The computed homepage ranking. A cache rather than a record, so a reset
+    # should leave it empty and let the next pass rebuild it from the seeded
+    # rows — keeping it would put yesterday's creators on a homepage whose
+    # database no longer has them.
+    "leaderboard_cache",
     "creator_lists",
     "payments",
     "deletion_requests",
@@ -557,6 +562,16 @@ async def seed_creators(now: datetime) -> dict:
                 "payout_ifsc": "HDFC0001234",
                 "pan": f"AAAP{c['key'][0].upper()}{random.randint(1000, 9999)}A",
             })
+        # Consent to being featured on the homepage. **On for the verified
+        # ones and off for everybody else**, which is what makes the section
+        # render against the demo dataset at all — a feature that is invisible
+        # in the demo is one nobody notices has broken.
+        #
+        # Deliberately not on for all of them: the suspended and the
+        # half-finished personas exist to show the gates, and having them
+        # opted in but excluded is what proves `_leaderboard_eligible` is
+        # doing something rather than the opt-in doing all the work.
+        doc["homepage_opt_in"] = c["state"] in ("verified", "suspended")
         await server.db.creator_profiles.insert_one(doc)
         out[c["key"]] = {"user_id": uid, **c}
     return out

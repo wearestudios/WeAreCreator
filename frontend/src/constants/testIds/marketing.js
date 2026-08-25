@@ -28,6 +28,20 @@ export const MARKETING = {
 	floatingCards: 'marketing-floating-cards',
 	floatingCard: (key) => `marketing-floating-card-${key}`,
 
+	// The creators featured on the homepage. `section` is absent entirely
+	// below the floor — a test asserting it is *not* there is asserting the
+	// honesty rule, so it needs an id that can be looked for and missed.
+	leaderboard: 'marketing-leaderboard',
+	// The shape held open while the request is in flight. **A different id
+	// from the real section on purpose**: a test asserting the section is
+	// absent below the floor must not be satisfied by the skeleton that
+	// stands in for it before anybody knows.
+	leaderboardSkeleton: 'marketing-leaderboard-skeleton',
+	leaderboardCard: (id) => `marketing-leaderboard-card-${id}`,
+	leaderboardName: (id) => `marketing-leaderboard-name-${id}`,
+	leaderboardSignal: (id) => `marketing-leaderboard-signal-${id}`,
+	leaderboardMonogram: (id) => `marketing-leaderboard-monogram-${id}`,
+
 	// The family handshake — the one place the studio palette appears.
 	handshake: 'marketing-handshake',
 	handshakeCta: 'marketing-handshake-cta',
