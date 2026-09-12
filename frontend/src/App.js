@@ -141,6 +141,7 @@ const DeletionsRoute = adminRoute("DeletionsRoute");
 const SettingsRoute = adminRoute("SettingsRoute");
 const DormantRoute = adminRoute("DormantRoute");
 const DisputesRoute = adminRoute("DisputesRoute");
+const CircumventionRoute = adminRoute("CircumventionRoute");
 const RetentionRoute = adminRoute("RetentionRoute");
 const AdminCampaignDetail = load(() =>
     import(/* webpackChunkName: "admin" */ "@/components/admin/CampaignDetailPage"),
@@ -449,6 +450,7 @@ function App() {
                             <Route path="settings" element={<SettingsRoute />} />
                             <Route path="dormant" element={<DormantRoute />} />
                             <Route path="disputes" element={<DisputesRoute />} />
+                            <Route path="circumvention" element={<CircumventionRoute />} />
                             <Route path="retention" element={<RetentionRoute />} />
                             {/* A bad path under /admin lands on the console
                                 rather than the marketing site. */}

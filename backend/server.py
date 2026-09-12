@@ -2378,6 +2378,14 @@ class PostCampaignPayload(BriefDetailFields):
     # looks like on the way back in through the admin's edit dialog.
     deliverables: Optional[str] = Field(default=None, min_length=1, max_length=1000)
     budget_per_creator: float = Field(ge=0)
+    # What the brand has put behind the whole brief, against which agreed
+    # amounts draw down. **Optional, and absent means no cap** — campaigns
+    # predate it and a brand may genuinely not want one, so the other reading
+    # would hard-block every brief on the platform. Deliberately not derived
+    # from `budget_per_creator * creators_needed`: that product is what the
+    # brief would cost if every place filled at the list price, and a
+    # negotiated brief is precisely the one where it will not.
+    total_budget: Optional[float] = Field(default=None, ge=0)
     category: CATEGORY_LITERAL
     area: str = Field(min_length=1, max_length=80)
     creators_needed: int = Field(ge=1, le=100)
@@ -2509,6 +2517,11 @@ class UpdateCampaignPayload(BriefDetailFields):
     deliverable_items: Optional[list[DeliverableItem]] = None
     deliverables: Optional[str] = Field(default=None, min_length=1, max_length=1000)
     budget_per_creator: Optional[float] = Field(default=None, ge=0)
+    # Raisable and lowerable at any time. Lowering it below what is already
+    # committed is deliberately **not** refused: that is a brand discovering
+    # it has overspent, and the honest thing is to show it the overspend
+    # rather than to refuse the edit that admits it.
+    total_budget: Optional[float] = Field(default=None, ge=0)
     category: Optional[CATEGORY_LITERAL] = None
     area: Optional[str] = Field(default=None, min_length=1, max_length=80)
     city: Optional[str] = Field(default=None, max_length=80)
@@ -2680,6 +2693,11 @@ class AgreedAmountPayload(BaseModel):
     # against the campaign, not by this model, which cannot see it.
     agreed_amount: Optional[float] = Field(default=None, ge=0)
     note: Optional[str] = Field(default=None, max_length=1000)
+    # **Admin-only, and it costs a reason.** The point of a cap is that going
+    # over it is a decision somebody made and can be asked about afterwards;
+    # a brand overriding its own cap would be a cap that refuses nothing.
+    # Honoured by `_refuse_over_budget`, which audits it.
+    budget_override_reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class DocumentReviewPayload(BaseModel):
@@ -2696,6 +2714,11 @@ class BrandAcceptPayload(BaseModel):
     # Lets the brand accept at a number other than the creator's quote.
     agreed_amount: Optional[float] = Field(default=None, ge=0)
     note: Optional[str] = Field(default=None, max_length=500)
+    # **Admin-only, and it costs a reason.** The point of a cap is that going
+    # over it is a decision somebody made and can be asked about afterwards;
+    # a brand overriding its own cap would be a cap that refuses nothing.
+    # Honoured by `_refuse_over_budget`, which audits it.
+    budget_override_reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class ScheduleSlotPayload(BaseModel):
@@ -2958,6 +2981,30 @@ DELIVERED_COLLAB_STATES = (
     "closed",
 )
 COLLAB_GROUP_ENDED = ("declined", "cancelled", "withdrawn", "expired")
+
+# ---------------------------------------------------------------------------
+# What a campaign has already spent
+# ---------------------------------------------------------------------------
+#
+# `total_budget` is the money the brand has put behind a brief. Committed is
+# what has been promised out of it, remaining is what is left, and both are
+# **derived from the collaborations rather than kept as a running total** —
+# which is the whole reason a cancellation releases its amount "immediately"
+# without anything having to remember to give it back. A stored counter would
+# need decrementing at five exits and would be wrong the first time one of
+# them was missed.
+#
+# **The line is acceptance, not `commercial_agreed`.** The requirement said
+# the later state, and the later state is the wrong one: `brand_accept_applicant`
+# records the fee in the same write that sets `accepted`, so a campaign could
+# take on ten creators at ₹20,000 each and every one of them would pass a
+# check against a budget nothing had drawn down yet. These two groups are
+# exactly "accepted or beyond, minus the exits", which is what a commitment is.
+_COMMITTED_COLLAB_STATES = (*COLLAB_GROUP_ONGOING, *COLLAB_GROUP_COMPLETED)
+
+# Loud at four fifths. Early enough that a brand can still top up or take one
+# fewer creator, late enough that it is not noise on the second acceptance.
+BUDGET_WARNING_RATIO = 0.8
 
 # What the brand's close-out export lists: everybody who was **taken on**,
 # which is a wider set than everybody who delivered. A creator who was accepted
@@ -3807,6 +3854,13 @@ NOTIFY_EVENTS = {
     # dashboard just lost its buttons, and to us, because the campaign is now
     # ours and nobody is staffed on it.
     "campaign_handed_to_weare": "This campaign is now run by the WeAre team",
+    # The budget, at four fifths. Sent once per brief and to whoever runs it —
+    # early enough that topping up or taking one fewer creator is still a
+    # choice, rather than arriving as a refusal at the eleventh acceptance.
+    "campaign_budget_warning": "This brief is nearly at its budget",
+    # A collaboration flagged as having gone off-platform. To every admin,
+    # because it is a decision about an account rather than about a campaign.
+    "circumvention_reported": "A collaboration was flagged as off-platform",
     # The question channel, both directions. Who receives campaign_question
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
@@ -7968,6 +8022,13 @@ async def get_creator_dashboard(
             "campaigns_completed": campaigns_completed,
         },
         "suggested_campaigns": suggestions,
+        # **What this platform is doing for them, on their own home page.**
+        # The circumvention rule has a consequence attached and this is the
+        # other half of it — a creator weighing up a direct offer is weighing
+        # it against exactly this list, and until now nothing had written it
+        # down. Shipped as data rather than typed into the component so the
+        # wording and the terms it mirrors stay in one file.
+        "platform_protections": [dict(p) for p in PLATFORM_PROTECTIONS],
         "totals": {
             "applications": len(applications),
             # Only the ones still open: an answered invitation is history,
@@ -9280,7 +9341,11 @@ def _serialize_brand_profile(doc: dict) -> dict:
 
 
 def _serialize_brand_campaign(
-    doc: dict, applicant_count: int, filled: int = 0, awaiting: int = 0
+    doc: dict,
+    applicant_count: int,
+    filled: int = 0,
+    awaiting: int = 0,
+    budget: Optional[dict] = None,
 ) -> dict:
     status = doc.get("status")
     needed = int(doc.get("creators_needed") or 1)
@@ -9326,6 +9391,13 @@ def _serialize_brand_campaign(
         # Travels with the figure everywhere the figure goes. A number with no
         # word beside it is read as cash, which on a barter brief is a lie.
         "compensation_type": _compensation_type(doc),
+        # What the brief has to spend, as typed. The derived block beside it
+        # is what a screen draws; this is what the edit form reads back.
+        "total_budget": doc.get("total_budget"),
+        # **`None` on a brief with no cap, and on a caller that did not look.**
+        # Those are the same answer for a screen — draw nothing — and keeping
+        # them one value is why no panel has to decide which it is looking at.
+        "budget": budget,
         # Case-study material. Ours to decide, not the brand's — see
         # set_campaign_showcase.
         "showcase": bool(doc.get("showcase")),
@@ -10530,6 +10602,13 @@ async def create_brand_campaign(
         # writer as the edit routes.
         **_brief_details_from(payload),
         "budget_per_creator": float(payload.budget_per_creator),
+        # The cap on the whole brief, or `None` for none. Stored as given: a
+        # brand that set no total has not set one to zero.
+        "total_budget": (
+            round(float(payload.total_budget), 2)
+            if payload.total_budget is not None
+            else None
+        ),
         "category": payload.category,
         "area": payload.area.strip(),
         # Through the same canonicaliser the creator's city goes through, so a
@@ -10667,7 +10746,13 @@ async def update_brand_campaign(
     fields = payload.model_dump(exclude_unset=True)
     update: dict = {}
     for key, value in fields.items():
-        if value is None and key not in ("start_date", "end_date"):
+        # An explicit `null` clears these three; every other key reads
+        # `None` as "leave it alone". `total_budget` is on the list
+        # because a cap typed by mistake has to be removable — a brand
+        # that could only ever lower it would be stuck with a number it
+        # never meant, and `0` is a different claim ("this brief has no
+        # money behind it") rather than a way of saying no cap.
+        if value is None and key not in ("start_date", "end_date", "total_budget"):
             continue
         if isinstance(value, str):
             value = value.strip()
@@ -10823,6 +10908,7 @@ async def update_brand_campaign(
         counts.get(doc["_id"], 0),
         filled_map.get(doc["_id"], 0),
         awaiting.get(doc["_id"], 0),
+        await _campaign_budget(updated),
     )
 
 
@@ -11329,6 +11415,11 @@ async def list_campaign_applicants(
             "status": campaign.get("status"),
             "budget_per_creator": campaign.get("budget_per_creator"),
             "compensation_type": _compensation_type(campaign),
+            # **What is left, on the screen where creators are approved.** This
+            # is the board with the Accept button on it, so it is the one
+            # place the remaining budget has to be legible before somebody
+            # commits the next few thousand of it — not afterwards, in a 409.
+            "budget": await _campaign_budget(campaign),
             # Says whether this board is the brand's own work or a copy of
             # what our team is handling for them.
             "execution_owner": _execution_owner(campaign),
@@ -11535,6 +11626,14 @@ async def brand_accept_applicant(
             status_code=422, detail="Set the fee you're accepting at."
         )
 
+    # **Checked here and not only at `commercial_agreed`.** This write records
+    # the fee in the same breath as the acceptance, so it is the moment the
+    # money is actually committed on a brand-run brief — a cap enforced one
+    # state later would let every acceptance through.
+    await _refuse_over_budget(
+        campaign, amount, user, payload.budget_override_reason, collab["_id"]
+    )
+
     now = datetime.now(timezone.utc)
     result = await db.collaborations.update_one(
         {"_id": collab["_id"], "state": "verified"},  # precondition, not a blind write
@@ -11563,6 +11662,7 @@ async def brand_accept_applicant(
         **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(campaign["_id"])
+    await _warn_if_budget_tight(campaign)
     # **Frozen here, because this is the moment both sides have committed** —
     # and because the fee lands in the same write above, the first moment
     # every term is actually known. Everything in it can change afterwards on
@@ -11766,6 +11866,12 @@ async def accept_partial_delivery(
     shortfall = _delivery_shortfall(campaign, {"delivered_items": delivered, "partial_delivery": True})
     # The fee, through the same resolver every other fee goes through, so a
     # barter brief still records no amount rather than a zero.
+    #
+    # **Deliberately not behind the budget cap**, unlike the three doors that
+    # agree a fee. The cap governs taking on new commitments; this is a runner
+    # settling one that already happened, at a figure that in practice goes
+    # *down*. Refusing it would leave a delivered collaboration with no way to
+    # be recorded, which is a worse outcome than a brief a few thousand over.
     amount = _resolve_agreed_amount(campaign, payload.agreed_amount)
 
     updated = await db.collaborations.find_one_and_update(
@@ -11894,12 +12000,15 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
     count_map = await _applicant_counts_for(ids)
     filled_map = await _filled_counts_for(ids)
     awaiting_map = await _awaiting_brand_counts(ids)
+    # One aggregation for the whole list, not one per row.
+    budget_map = await _budgets_for(campaigns)
     campaign_rows = [
         _serialize_brand_campaign(
             c,
             count_map.get(c["_id"], 0),
             filled_map.get(c["_id"], 0),
             awaiting_map.get(c["_id"], 0),
+            budget_map.get(c["_id"]),
         )
         for c in campaigns
     ]
@@ -12414,6 +12523,22 @@ async def _reliability_for(creator_ids: list) -> dict:
         ).to_list(length=len(ids))
     }
 
+    # **A confirmed circumvention belongs on the record, not only in a
+    # suspension.** A suspension can be lifted and then there is nothing left
+    # saying it happened; a reliability block that could not say so would be
+    # the one question an admin has about a returning account going
+    # unanswered. Counted rather than flagged, because a second confirmed
+    # report is a different fact from a first.
+    circumvented = {
+        r["_id"]: int(r.get("n") or 0)
+        for r in await db.circumvention_reports.aggregate(
+            [
+                {"$match": {"creator_id": {"$in": ids}, "state": "confirmed"}},
+                {"$group": {"_id": "$creator_id", "n": {"$sum": 1}}},
+            ]
+        ).to_list(length=len(ids))
+    }
+
     out = {}
     for row in rows:
         completed = int(row.get("completed") or 0)
@@ -12442,6 +12567,11 @@ async def _reliability_for(creator_ids: list) -> dict:
             "rating_count": int(rating.get("n") or 0),
             "enough_history": completed >= RELIABILITY_MIN_SAMPLE,
             "last_active_at": _iso(row.get("last_active_at")),
+            # Confirmed off-platform deals. Zero on everybody, which is the
+            # honest default here rather than the usual unknown-is-`None`:
+            # nothing confirmed really does mean none confirmed, because the
+            # only way the number moves is an admin deciding it should.
+            "circumvention_confirmed": circumvented.get(row["_id"], 0),
         }
     return out
 
@@ -12755,6 +12885,17 @@ def _leaderboard_eligible(profile: Optional[dict], account: Optional[dict]) -> b
     """
     profile = profile or {}
     if not profile.get("homepage_opt_in"):
+        return False
+    # **Permanent, and read off the profile rather than the account status.**
+    # A suspension can be lifted — sometimes it should be, because the rest of
+    # somebody's record is good and they are worth having back — and the
+    # leaderboard is a claim this platform makes about people in public. A
+    # confirmed circumvention is the one thing that disqualifies somebody from
+    # being held up as an example, whatever happens to their account
+    # afterwards. Checked before `_creator_block` so that reading this
+    # function reads in that order: consent, then the one permanent bar, then
+    # the temporary ones.
+    if profile.get("circumvention_confirmed_at"):
         return False
     if profile.get("verification_status") != "verified":
         return False
@@ -13568,6 +13709,13 @@ async def brand_record_agreed_amount(
     # This used to take any float, which meant barter was unreachable here too
     # and a fixed fee could be quietly rewritten per creator.
     amount = _resolve_agreed_amount(campaign, payload.agreed_amount)
+    # The brief's own cap. `collab["_id"]` is excluded from the committed sum
+    # so re-recording a fee on a row that already carries one is checked
+    # against what it would become rather than against itself twice — without
+    # it, correcting ₹30,000 down to ₹20,000 could be refused.
+    await _refuse_over_budget(
+        campaign, amount, user, payload.budget_override_reason, collab["_id"]
+    )
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": state},  # precondition, never a blind write
@@ -13614,6 +13762,7 @@ async def brand_record_agreed_amount(
                 "created_at": now,
             }
         )
+    await _warn_if_budget_tight(campaign)
     # And the brand, on a campaign they handed to us: this is the first they
     # hear of this creator, and it comes with the number already agreed.
     await _tell_brand_about_shortlist(campaign, collab, amount)
@@ -14229,6 +14378,11 @@ class AdvanceCollabPayload(BaseModel):
     from_state: Optional[str] = None
     # Required only when the NEXT state is 'commercial_agreed'.
     agreed_amount: Optional[float] = Field(default=None, ge=0)
+    # **Admin-only, and it costs a reason.** The point of a cap is that going
+    # over it is a decision somebody made and can be asked about afterwards;
+    # a brand overriding its own cap would be a cap that refuses nothing.
+    # Honoured by `_refuse_over_budget`, which audits it.
+    budget_override_reason: Optional[str] = Field(default=None, max_length=500)
     # Optional override when the NEXT state is 'in_payment'; otherwise the fee
     # comes from central config.
     platform_fee: Optional[float] = Field(default=None, ge=0)
@@ -14926,14 +15080,26 @@ async def suspend_creator(
     if account.get("status") == "suspended":
         raise HTTPException(status_code=409, detail="This account is already suspended.")
 
-    reason = payload.reason.strip()
+    return await _suspend_creator_account(account, payload.reason.strip(), user)
+
+
+async def _suspend_creator_account(account: dict, reason: str, actor: dict) -> dict:
+    """Put an account on hold. The one implementation, for the one act.
+
+    Extracted so the circumvention flow suspends through **this** rather than
+    through a second write of its own: a suspension recorded two ways is two
+    definitions of what being suspended means, and the one that gets missed is
+    the one the gates read. `_creator_block` reads `status` and nothing else,
+    so anything that does not come through here does not block anybody.
+    """
+    oid = account["_id"]
     await db.users.update_one(
         {"_id": oid},
         {"$set": {"status": "suspended", "suspended_at": datetime.now(timezone.utc),
                   "suspension_reason": reason}},
     )
     await audit(
-        user,
+        actor,
         "creator.suspend",
         "user",
         oid,
@@ -14948,7 +15114,7 @@ async def suspend_creator(
         body=reason,
         link="/dashboard",
     )
-    return {"user_id": user_id, "status": "suspended", "reason": reason}
+    return {"user_id": str(oid), "status": "suspended", "reason": reason}
 
 
 @admin_router.post("/creators/{user_id}/reinstate")
@@ -14995,6 +15161,205 @@ async def reinstate_creator(
         link="/campaigns",
     )
     return {"user_id": user_id, "status": "active", "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# Work that went off-platform
+# ---------------------------------------------------------------------------
+#
+# A creator who takes a brand introduced here off the platform costs the
+# operation the fee it runs on — and costs themselves the protections the
+# platform is. So the rule exists (`CIRCUMVENTION_TERMS`), and this is how it
+# is applied: **somebody reports, an admin decides, and the two are never the
+# same person.**
+#
+# **Deliberately no automatic detection.** There is no message scanning and no
+# heuristic on a shoot that happened without a booking: both would be wrong
+# often, and being wrong here means removing somebody's income over an
+# inference. A named person raising a concern with evidence, answered by a
+# named person, is a record that survives being challenged. That is the whole
+# mechanism.
+#
+# **And deliberately nothing on the brand's side.** A brand that leaves loses
+# very little, policing it would mean reading their messages, and the one
+# thing that would definitely follow is that the paying side stops trusting
+# the platform with its campaigns.
+
+
+class CircumventionDecisionPayload(BaseModel):
+    """Confirm or dismiss a flagged collaboration.
+
+    A note is required either way. A confirmation ends an account and a
+    dismissal clears somebody who was accused of something — neither is a
+    decision anybody should be able to make without saying why, and the
+    dismissal is the one most likely to be asked about later, because nothing
+    visible happens as a result of it.
+    """
+
+    note: str = Field(min_length=5, max_length=2000)
+
+
+@admin_router.get("/circumvention-reports")
+async def list_circumvention_reports(
+    state: Optional[Literal["open", "confirmed", "dismissed"]] = "open",
+    limit: int = 100,
+    user: dict = Depends(require_roles("admin")),
+):
+    """The review queue. **Admin-only, not `CONSOLE_ROLES`.**
+
+    A creator works across every brand, so deciding whether one keeps their
+    account is not scoped work — the same line `ADMIN_ONLY_EXPORTS` and the
+    global creator directory draw.
+    """
+    query = {} if state is None else {"state": state}
+    rows = (
+        await db.circumvention_reports.find(query)
+        .sort("created_at", -1)
+        .to_list(length=max(1, min(int(limit or 100), 500)))
+    )
+    return {
+        "reports": [_serialize_circumvention_report(r) for r in rows],
+        "open": await db.circumvention_reports.count_documents({"state": "open"}),
+    }
+
+
+@admin_router.post("/circumvention-reports/{report_id}/confirm")
+async def confirm_circumvention(
+    report_id: str,
+    payload: CircumventionDecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Uphold the report: suspend the creator, and record why.
+
+    **Through `_suspend_creator_account`, not a write of its own.** A second
+    way of suspending somebody would be a second definition of what suspended
+    means, and `_creator_block` — which is what actually stops them applying —
+    reads only what that function writes.
+
+    **History is preserved, nothing is deleted.** The collaborations stay, the
+    ratings stay, the payments stay. What changes is a flag on the profile and
+    the account's status; a record that was quietly removed is one nobody can
+    check the decision against afterwards.
+    """
+    oid = _as_oid(report_id)
+    report = await db.circumvention_reports.find_one({"_id": oid}) if oid else None
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.get("state") != "open":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This report has already been {report.get('state')}.",
+        )
+
+    note = payload.note.strip()
+    now = datetime.now(timezone.utc)
+    decided = await db.circumvention_reports.find_one_and_update(
+        {"_id": oid, "state": "open"},  # precondition, never a blind write
+        {
+            "$set": {
+                "state": "confirmed",
+                "decided_at": now,
+                "decided_by_id": ObjectId(user["_id"]),
+                "decided_by_name": user.get("name"),
+                "decision_note": note,
+            }
+        },
+        return_document=True,
+    )
+    if not decided:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    # **The flag is on the profile and outlives the suspension.** A
+    # reinstatement lifts the hold; it does not make the thing not have
+    # happened, and the leaderboard exclusion reads this rather than the
+    # account status for exactly that reason.
+    await db.creator_profiles.update_one(
+        {"user_id": report["creator_id"]},
+        {
+            "$set": {
+                "circumvention_confirmed_at": now,
+                "circumvention_report_id": oid,
+                "circumvention_note": note,
+            }
+        },
+    )
+
+    account = await db.users.find_one({"_id": report["creator_id"], "role": "creator"})
+    suspended = None
+    if account and account.get("status") != "suspended":
+        suspended = await _suspend_creator_account(
+            account,
+            # The recorded reason names the rule, so the creator reads what
+            # this was about rather than "your account is on hold".
+            f"Work on “{report.get('campaign_title')}” was taken off the "
+            f"platform. {note}",
+            user,
+        )
+
+    await audit(
+        user,
+        "creator.circumvention_confirmed",
+        "user",
+        report["creator_id"],
+        before={"state": "open"},
+        after={"state": "confirmed", "report_id": str(oid)},
+        note=note,
+    )
+    return {
+        **_serialize_circumvention_report(decided),
+        "suspended": bool(suspended),
+    }
+
+
+@admin_router.post("/circumvention-reports/{report_id}/dismiss")
+async def dismiss_circumvention(
+    report_id: str,
+    payload: CircumventionDecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Close the report without acting on it. Nothing happens to the creator.
+
+    Audited like the confirmation, because "we looked and it was nothing" is a
+    finding — and because a queue where dismissals leave no trace is one where
+    the same complaint can be raised every week until somebody upholds it.
+    """
+    oid = _as_oid(report_id)
+    report = await db.circumvention_reports.find_one({"_id": oid}) if oid else None
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if report.get("state") != "open":
+        raise HTTPException(
+            status_code=409,
+            detail=f"This report has already been {report.get('state')}.",
+        )
+
+    note = payload.note.strip()
+    decided = await db.circumvention_reports.find_one_and_update(
+        {"_id": oid, "state": "open"},
+        {
+            "$set": {
+                "state": "dismissed",
+                "decided_at": datetime.now(timezone.utc),
+                "decided_by_id": ObjectId(user["_id"]),
+                "decided_by_name": user.get("name"),
+                "decision_note": note,
+            }
+        },
+        return_document=True,
+    )
+    if not decided:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+
+    await audit(
+        user,
+        "creator.circumvention_dismissed",
+        "user",
+        report["creator_id"],
+        before={"state": "open"},
+        after={"state": "dismissed", "report_id": str(oid)},
+        note=note,
+    )
+    return _serialize_circumvention_report(decided)
 
 
 # ---------------------------------------------------------------------------
@@ -18205,7 +18570,9 @@ async def get_admin_campaign_detail(
     return {
         "performance": performance,
         "campaign": {
-            **_serialize_brand_campaign(campaign, 0, filled, 0),
+            **_serialize_brand_campaign(
+                campaign, 0, filled, 0, await _campaign_budget(campaign)
+            ),
             # The brand's own serializer stops at the manager's name and phone,
             # which is right for the brand. An admin assigns the manager, so
             # the id has to come back or the picker can't show the current one.
@@ -19112,7 +19479,13 @@ async def admin_update_campaign(
     fields = payload.model_dump(exclude_unset=True)
     update: dict = {}
     for key, value in fields.items():
-        if value is None and key not in ("start_date", "end_date"):
+        # An explicit `null` clears these three; every other key reads
+        # `None` as "leave it alone". `total_budget` is on the list
+        # because a cap typed by mistake has to be removable — a brand
+        # that could only ever lower it would be stuck with a number it
+        # never meant, and `0` is a different claim ("this brief has no
+        # money behind it") rather than a way of saying no cap.
+        if value is None and key not in ("start_date", "end_date", "total_budget"):
             continue
         if isinstance(value, str):
             value = value.strip()
@@ -20494,6 +20867,14 @@ async def advance_collaboration(
         if not campaign:
             raise HTTPException(status_code=404, detail="Campaign not found")
         resolved = _resolve_agreed_amount(campaign, payload.agreed_amount)
+        # The brief's cap, on the third and last door money goes through. An
+        # admin may pass it with a reason; `weare_team` reaches this route and
+        # may not, which is the same split `ADMIN_ONLY_EXPORTS` makes — a
+        # scoped role deciding to overspend a brand's budget is a decision
+        # about somebody else's money.
+        await _refuse_over_budget(
+            campaign, resolved, user, payload.budget_override_reason, collab["_id"]
+        )
         if resolved is not None:
             update["agreed_amount"] = resolved
         update["agreed_at"] = now
@@ -20594,6 +20975,7 @@ async def advance_collaboration(
         # turns "agreed" into somebody booking a slot. A barter brief has no
         # amount to quote, and inventing ₹0 here would read as an insult.
         agreed_value = update.get("agreed_amount")
+        await _warn_if_budget_tight(campaign)
         # Same as the brand's own fee route: on a weare-run campaign this is
         # the moment the brand meets the creator.
         await _tell_brand_about_shortlist(campaign, collab, agreed_value)
@@ -22397,6 +22779,13 @@ async def admin_dashboard(
         "disputes_open": await db.collaborations.count_documents(
             {"dispute.state": "open", **collab_scope}
         ),
+        # **Unscoped, because the section is.** The queue is admin-only and a
+        # `weare_team` sidebar never renders this badge — scoping the count to
+        # assigned brands would be answering a question nobody with a narrower
+        # console can ask, and would understate it for the one who can.
+        "circumvention_open": await db.circumvention_reports.count_documents(
+            {"state": "open"}
+        ),
     }
 
     # --- the per-campaign summary -----------------------------------------
@@ -23513,6 +23902,13 @@ async def admin_create_campaign(
         **_resolve_deliverables(payload.deliverable_items, payload.deliverables, True),
         **_brief_details_from(payload),
         "budget_per_creator": float(payload.budget_per_creator),
+        # The cap on the whole brief, or `None` for none. Stored as given: a
+        # brand that set no total has not set one to zero.
+        "total_budget": (
+            round(float(payload.total_budget), 2)
+            if payload.total_budget is not None
+            else None
+        ),
         "category": payload.category,
         "area": payload.area.strip(),
         "city": _canonical_city(payload.city) or DEFAULT_CAMPAIGN_CITY,
@@ -25383,6 +25779,10 @@ async def campaign_roster(
         # creator is owed.
         "budget_per_creator": campaign.get("budget_per_creator"),
         "compensation_type": _compensation_type(campaign),
+        # The manager is the runner on a weare-run brief and is therefore the
+        # one agreeing fees against this cap, so they read the same three
+        # figures the brand and the admin do.
+        "budget": await _campaign_budget(campaign),
         "execution_owner": _execution_owner(campaign),
         "venue_address": campaign.get("venue_address"),
         "venue_instructions": campaign.get("venue_instructions"),
@@ -26219,6 +26619,258 @@ async def _filled_counts_for(campaign_ids: list) -> dict:
     return {r["_id"]: r["n"] for r in rows}
 
 
+async def _committed_amounts_for(campaign_ids: list) -> dict:
+    """What each campaign has already promised out of its budget.
+
+    **Barter is excluded from the sum rather than counted as zero**, and the
+    two are not the same thing: a barter collaboration has no `agreed_amount`
+    at all (`_resolve_agreed_amount` returns `None` on purpose, because `0`
+    reads as "agreed, nothing" on every surface that shows money), so adding
+    it in would put a row in the denominator of "how much of the budget is
+    spoken for" that was never going to spend any of it. The match therefore
+    asks for an amount that exists, which excludes barter by being true of it.
+
+    Returns `{campaign_oid: (total, count)}`, absent for a campaign with
+    nothing committed — absent meaning nothing rather than zero only matters
+    to the caller, which reads it as `(0.0, 0)` either way.
+    """
+    if not campaign_ids:
+        return {}
+    unique = list({cid for cid in campaign_ids})
+    rows = await db.collaborations.aggregate(
+        [
+            {
+                "$match": {
+                    "campaign_id": {"$in": unique},
+                    "state": {"$in": list(_COMMITTED_COLLAB_STATES)},
+                    "agreed_amount": {"$ne": None, "$exists": True},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$campaign_id",
+                    "total": {"$sum": "$agreed_amount"},
+                    "n": {"$sum": 1},
+                }
+            },
+        ]
+    ).to_list(length=len(unique))
+    return {r["_id"]: (round(float(r.get("total") or 0), 2), int(r.get("n") or 0)) for r in rows}
+
+
+def _budget_of(
+    campaign: Optional[dict], committed: float = 0.0, counted: int = 0
+) -> Optional[dict]:
+    """Total, committed and remaining on one brief — or `None` for no cap.
+
+    **Absent `total_budget` means unlimited, not zero.** Campaigns predate the
+    field and a brand may deliberately not set one, so the other reading would
+    hard-block every brief on the platform the morning this deployed. Every
+    caller treats `None` as "there is no budget to check" — the usual
+    absent-reads-safe rule.
+
+    Pure, and takes the sum rather than reading it, so a list of forty
+    campaigns is one aggregation and not forty — `_campaign_budget` is the
+    one-brief wrapper that does the reading.
+    """
+    total = (campaign or {}).get("total_budget")
+    if total is None:
+        return None
+    total = round(float(total), 2)
+    committed = round(float(committed or 0), 2)
+    remaining = round(total - committed, 2)
+    # A total of zero is a legitimate thing to set — "this brief is barter or
+    # it is nothing" — and dividing by it is not. It reads as fully committed,
+    # which is what a zero budget means.
+    ratio = round(committed / total, 4) if total > 0 else 1.0
+    return {
+        "total": total,
+        "committed": round(committed, 2),
+        "remaining": remaining,
+        "ratio": ratio,
+        "collaborations_counted": counted,
+        # Two flags rather than one number for the screens, so a panel drawing
+        # the warning and a route refusing the write cannot disagree about
+        # where either line sits.
+        "warning": ratio >= BUDGET_WARNING_RATIO and remaining > 0,
+        "exhausted": remaining <= 0,
+        "warning_ratio": BUDGET_WARNING_RATIO,
+    }
+
+
+async def _budgets_for(campaigns: list) -> dict:
+    """`{campaign_oid: budget block}` for a list, in one round trip.
+
+    Only for the campaigns that actually have a cap — a brief with no
+    `total_budget` gets no key rather than a block of zeroes, so a caller
+    reading `.get(id)` lands on `None`, which is what "no cap" is spelled as
+    everywhere else here.
+    """
+    capped = [c for c in (campaigns or []) if c.get("total_budget") is not None]
+    if not capped:
+        return {}
+    sums = await _committed_amounts_for([c["_id"] for c in capped])
+    return {
+        c["_id"]: _budget_of(c, *sums.get(c["_id"], (0.0, 0)))
+        for c in capped
+    }
+
+
+async def _campaign_budget(
+    campaign: Optional[dict], exclude: Optional[ObjectId] = None
+) -> Optional[dict]:
+    """One brief's budget, read from the database.
+
+    `exclude` drops one collaboration from the sum, which is what a *re-check*
+    of an amount already recorded needs: both fee routes can be asked to
+    settle a figure on a row that already carries one, and counting the old
+    number against the new one would refuse a correction that lowers it.
+    """
+    if (campaign or {}).get("total_budget") is None:
+        return None
+    committed, counted = (await _committed_amounts_for([campaign["_id"]])).get(
+        campaign["_id"], (0.0, 0)
+    )
+    if exclude is not None:
+        prior = await db.collaborations.find_one(
+            {
+                "_id": exclude,
+                "state": {"$in": list(_COMMITTED_COLLAB_STATES)},
+                "agreed_amount": {"$ne": None, "$exists": True},
+            },
+            {"agreed_amount": 1},
+        )
+        if prior:
+            committed = round(committed - float(prior.get("agreed_amount") or 0), 2)
+            counted -= 1
+    return _budget_of(campaign, committed, counted)
+
+
+def _budget_refusal(budget: Optional[dict], amount) -> Optional[str]:
+    """Why this amount will not fit, or `None`.
+
+    **Returns the sentence rather than raising it**, the shape
+    `_scheduling_refusal` and `_content_submission_refusal` use, because one
+    caller labels instead of refusing: the approval screens want to say "₹4,000
+    over" beside a button rather than find out by pressing it.
+
+    The shortfall is in the message because "over budget" is not something
+    anybody can act on and "₹4,000 over the ₹50,000 on this brief" is — it is
+    the difference between topping up and taking one fewer creator.
+    """
+    if not budget or amount is None:
+        return None
+    amount = round(float(amount), 2)
+    if amount <= budget["remaining"]:
+        return None
+    short = round(amount - budget["remaining"], 2)
+    return (
+        f"That would put this brief ₹{short:,.0f} over its budget. "
+        f"₹{budget['total']:,.0f} was set for the campaign, ₹{budget['committed']:,.0f} "
+        f"is already committed and ₹{budget['remaining']:,.0f} is left."
+    )
+
+
+async def _refuse_over_budget(
+    campaign: Optional[dict],
+    amount,
+    user: Optional[dict],
+    override_reason: Optional[str] = None,
+    collab_id: Optional[ObjectId] = None,
+) -> Optional[dict]:
+    """The gate every fee write goes through. Returns the budget, or refuses.
+
+    **An admin can go over and nobody else can**, and the override costs a
+    reason that lands in the audit log — the point of a cap is that exceeding
+    it is a decision somebody made and can be asked about, not something that
+    quietly happened. A brand overriding its own cap would be a cap that
+    refuses nothing.
+    """
+    budget = await _campaign_budget(campaign, exclude=collab_id)
+    refusal = _budget_refusal(budget, amount)
+    if not refusal:
+        return budget
+    reason = (override_reason or "").strip()
+    if (user or {}).get("role") == "admin" and reason:
+        await audit(
+            user,
+            "campaign.budget_override",
+            "campaign",
+            campaign["_id"],
+            before={"committed": budget["committed"], "remaining": budget["remaining"]},
+            after={"amount": round(float(amount), 2)},
+            note=reason,
+            **_campaign_audit_context(campaign),
+        )
+        return budget
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "message": refusal,
+            "code": "over_budget",
+            "shortfall": round(round(float(amount), 2) - budget["remaining"], 2),
+            **{k: budget[k] for k in ("total", "committed", "remaining")},
+            # So the admin console can offer the override and nobody else's
+            # screen can — decided server-side like every other action here.
+            "override_available": (user or {}).get("role") == "admin",
+        },
+    )
+
+
+async def _warn_if_budget_tight(campaign: Optional[dict]) -> None:
+    """Tell whoever runs this brief that it is nearly spent. Once.
+
+    **The claim is the write**, the same arrangement the profile nudge and the
+    lifecycle chasers use: the stamp is set under a filter that only matches
+    while it is absent, so two acceptances landing together send one message
+    rather than two. Crossing back under the line by cancelling somebody does
+    not re-arm it — a brand that has already been told its budget is tight
+    does not need telling again the next time it edges over.
+    """
+    budget = await _campaign_budget(campaign)
+    if not budget or not (budget["warning"] or budget["exhausted"]):
+        return
+    claimed = await db.campaigns.update_one(
+        {"_id": campaign["_id"], "budget_warning_sent_at": {"$exists": False}},
+        {"$set": {"budget_warning_sent_at": datetime.now(timezone.utc)}},
+    )
+    if claimed.modified_count == 0:
+        return
+    title = campaign.get("title")
+    body = (
+        f"“{title}” has ₹{budget['remaining']:,.0f} left of ₹{budget['total']:,.0f}. "
+        f"₹{budget['committed']:,.0f} is committed across "
+        f"{budget['collaborations_counted']} creator"
+        f"{'' if budget['collaborations_counted'] == 1 else 's'}."
+    )
+    # **The runner is told, and so is the brand, because it is the brand's
+    # money.** Routed exactly the way a new application is: weare-run reaches
+    # the assigned manager (or every admin when unstaffed) and the brand hears
+    # too unless the two are the same person, which is the arrangement
+    # `_tell_brand_manager_unless_managed` exists for.
+    if _weare_runs(campaign):
+        await notify_weare_team(
+            campaign,
+            "campaign_budget_warning",
+            title="This brief is nearly at its budget",
+            body=body,
+        )
+        await _tell_brand_manager_unless_managed(
+            campaign,
+            "campaign_budget_warning",
+            title="This brief is nearly at its budget",
+            body=body,
+        )
+        return
+    await notify_brand_manager(
+        campaign.get("brand_id"),
+        "campaign_budget_warning",
+        title="This brief is nearly at its budget",
+        body=body,
+        link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
+    )
+
+
 # ---------------------------------------------------------------------------
 # The terms both sides agreed, frozen
 #
@@ -26252,6 +26904,110 @@ CANCELLATION_TERMS = (
     "fixed schedule. A creator can withdraw freely up to the moment they are "
     "accepted; after that it is a cancellation. Work already delivered is paid "
     "for."
+)
+
+# ---------------------------------------------------------------------------
+# Keeping the work on the platform
+# ---------------------------------------------------------------------------
+#
+# **Said in one place, in plain words, and shown twice.** This is the clause
+# with the heaviest consequence attached to it, so burying it is not an option
+# — a rule somebody only meets when it is applied to them is a rule they can
+# fairly say they never agreed to. It is read at signup, before an account
+# exists, and frozen into the terms snapshot at acceptance, which is the
+# moment the introduction actually happens.
+#
+# Written as what it is, not as legalese: a creator has to be able to tell
+# from reading it whether the thing they are about to do is the thing that
+# gets them removed.
+CIRCUMVENTION_TERMS = (
+    "Work introduced through WeAre Creators stays on WeAre Creators. If a "
+    "brand you met through a brief here asks you to arrange payment or "
+    "scheduling directly with them, outside the platform, say no and tell us. "
+    "Taking a collaboration off-platform means losing your account — and with "
+    "it the paid briefs, the fee agreed in writing before you shoot, the "
+    "payment protection, the dispute cover and the delivery record you have "
+    "built up. This is the one rule here that ends an account."
+)
+
+# What somebody flagging a suspected off-platform deal is actually reporting.
+# A short list rather than free text, because the reason is what the review
+# queue sorts and counts on; the evidence note beside it is where the detail
+# goes. `other` exists so nothing has to be forced into the wrong box.
+CIRCUMVENTION_REASONS = (
+    "direct_payment",
+    "direct_scheduling",
+    "asked_to_go_offline",
+    "brand_reports_it",
+    "other",
+)
+CircumventionReason = Literal[
+    "direct_payment",
+    "direct_scheduling",
+    "asked_to_go_offline",
+    "brand_reports_it",
+    "other",
+]
+CIRCUMVENTION_REASON_LABELS = {
+    "direct_payment": "Payment arranged directly with the brand",
+    "direct_scheduling": "Shoot arranged directly with the brand",
+    "asked_to_go_offline": "Asked the brand to take it off the platform",
+    "brand_reports_it": "The brand told us it went off-platform",
+    "other": "Something else",
+}
+
+# A report is a question, never a verdict. `open` is somebody asking us to
+# look; the other two are the answer, and only one of them does anything to
+# anybody.
+CIRCUMVENTION_STATES = ("open", "confirmed", "dismissed")
+
+# **What a creator gets by staying, said on their own screens.** The clause
+# above is the consequence; this is the same fact from the other end, and it
+# is the half that actually keeps people — a creator weighing up a direct
+# offer is weighing it against this list, whether or not anybody has written
+# it down for them. Framed as what is theirs, never as what we would take.
+PLATFORM_PROTECTIONS = (
+    {
+        "key": "fee_in_writing",
+        "title": "Your fee, agreed before you shoot",
+        "detail": (
+            "The number is recorded against the collaboration with a name and "
+            "a date on it, so there is nothing to argue about afterwards."
+        ),
+    },
+    {
+        "key": "payment_protection",
+        "title": "Payment follows approved delivery",
+        "detail": (
+            "Once your content is approved the payment is ours to chase, not "
+            "yours. You keep 100% of the fee — it sits on the brand."
+        ),
+    },
+    {
+        "key": "dispute_cover",
+        "title": "Somebody neutral if it goes wrong",
+        "detail": (
+            "If a brand refuses delivered work or the money stalls, you can "
+            "raise a dispute and a person here decides it. The record — every "
+            "note, every date — is what it gets decided on."
+        ),
+    },
+    {
+        "key": "reliability_record",
+        "title": "A delivery record that travels",
+        "detail": (
+            "Every brief you finish on time builds a record brands can see. "
+            "It is why the next brief comes, and it only exists here."
+        ),
+    },
+    {
+        "key": "brief_flow",
+        "title": "Briefs that keep arriving",
+        "detail": (
+            "Paid work from checked brands, ranked against your profile, "
+            "without you chasing any of it."
+        ),
+    },
 )
 
 
@@ -26308,6 +27064,13 @@ def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
             "label": _disclosure_text(campaign),
         },
         "cancellation_terms": CANCELLATION_TERMS,
+        # **In the snapshot, not only at signup.** Acceptance is the moment
+        # the introduction actually happens — the creator now has a brand's
+        # name and a shoot date — so it is the moment the rule becomes
+        # relevant rather than abstract. Frozen with everything else, so a
+        # later rewording cannot be applied backwards to somebody who agreed
+        # to different words.
+        "platform_terms": CIRCUMVENTION_TERMS,
     }
 
 
@@ -27952,6 +28715,124 @@ async def add_collaboration_note(
         **_campaign_audit_context(campaign),
     )
     return _serialize_note(doc)
+
+
+class CircumventionReportPayload(BaseModel):
+    """A suspected off-platform deal, raised for somebody here to look at.
+
+    **The evidence note is required and is not a formality.** A report with
+    only a reason code is one nobody can act on — the admin reading it has to
+    decide whether a creator loses their account, and "direct_payment" on its
+    own is not a thing anybody can weigh. What was said, where, and when is.
+    """
+
+    reason: CircumventionReason
+    evidence: str = Field(min_length=10, max_length=2000)
+
+
+def _serialize_circumvention_report(row: dict) -> dict:
+    return {
+        "id": str(row["_id"]),
+        "collaboration_id": str(row["collaboration_id"]),
+        "campaign_id": str(row["campaign_id"]),
+        "campaign_title": row.get("campaign_title"),
+        "creator_id": str(row["creator_id"]),
+        "creator_name": row.get("creator_name"),
+        "reason": row.get("reason"),
+        "reason_label": CIRCUMVENTION_REASON_LABELS.get(row.get("reason")),
+        "evidence": row.get("evidence"),
+        "state": row.get("state") or "open",
+        "reported_by_name": row.get("reported_by_name"),
+        "reported_by_role": row.get("reported_by_role"),
+        "created_at": _iso(row.get("created_at")),
+        # How it was answered, and by whom. A confirmation costs somebody their
+        # account, so "who decided that" is not an optional column.
+        "decided_at": _iso(row.get("decided_at")),
+        "decided_by_name": row.get("decided_by_name"),
+        "decision_note": row.get("decision_note"),
+    }
+
+
+@notes_router.post("/{collab_id}/circumvention-report")
+async def report_circumvention(
+    collab_id: str,
+    payload: CircumventionReportPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """Flag a collaboration as having gone off-platform.
+
+    **It creates a review item and penalises nobody.** That separation is the
+    whole design: the people who notice this are the brand and the campaign
+    manager, who are also the people with a reason to be annoyed about
+    something else entirely, and a flag that suspended an account on its own
+    would make a bad week for a creator into the end of their livelihood. So
+    this writes a row, tells the admins, and stops.
+
+    On the notes router, because that door already answers "may this person
+    read this collaboration" for exactly the three audiences who could know —
+    the brand on its own brief, the assigned manager, and an admin — with a
+    404 behind each. The creator's own role is not on it, which is correct:
+    reporting yourself is not a flow, and being able to read the report about
+    you before anybody has looked at it is not one either.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+
+    # One open report per collaboration. A second is the same complaint again,
+    # and two rows in the queue about one thing is how a queue stops being a
+    # list of decisions to make.
+    existing = await db.circumvention_reports.find_one(
+        {"collaboration_id": collab["_id"], "state": "open"}
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="This collaboration is already flagged and waiting on a review.",
+        )
+
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
+    now = datetime.now(timezone.utc)
+    doc = {
+        "collaboration_id": collab["_id"],
+        "campaign_id": campaign["_id"],
+        "campaign_title": campaign.get("title"),
+        "brand_id": campaign.get("brand_id"),
+        "creator_id": collab["creator_id"],
+        "creator_name": (profile or {}).get("name"),
+        "reason": payload.reason,
+        "evidence": payload.evidence.strip(),
+        "state": "open",
+        "reported_by_id": ObjectId(user["_id"]),
+        "reported_by_name": user.get("name"),
+        "reported_by_role": user.get("role"),
+        "created_at": now,
+    }
+    result = await db.circumvention_reports.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+    await audit(
+        user,
+        "collaboration.circumvention_report",
+        "collaboration",
+        collab["_id"],
+        after={"report_id": str(result.inserted_id), "reason": payload.reason},
+        note=doc["evidence"][:500],
+        **_campaign_audit_context(campaign),
+    )
+    # Every admin, and not the campaign's manager: this is a decision about a
+    # creator's account, which is platform-wide work rather than scoped work —
+    # the same split `ADMIN_ONLY_EXPORTS` and `BULK_ADMIN_ONLY` make.
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            "circumvention_reported",
+            title="A collaboration was flagged as off-platform",
+            body=(
+                f"{doc['creator_name'] or 'A creator'} on “{campaign.get('title')}” — "
+                f"{CIRCUMVENTION_REASON_LABELS.get(payload.reason)}."
+            ),
+            link="/admin/circumvention",
+        )
+    return _serialize_circumvention_report(doc)
 
 
 @notes_router.get("/{collab_id}/content-proof/{proof_id}/file")
@@ -29693,6 +30574,13 @@ async def get_application(
     reliability_stats = (await _reliability_for([collab["creator_id"]])).get(
         collab["creator_id"]
     )
+    # Whether somebody has already flagged this one. Read here rather than in
+    # the component, like every other action on this screen.
+    circumvention_open = bool(
+        await db.circumvention_reports.find_one(
+            {"collaboration_id": collab["_id"], "state": "open"}
+        )
+    )
 
     return {
         "id": str(collab["_id"]),
@@ -29744,6 +30632,9 @@ async def get_application(
         # mediated is not one.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Whether a flag is already sitting with an admin. The panel says so
+        # rather than offering a button that would 409.
+        "circumvention_open": circumvention_open,
         # **What both sides actually agreed, frozen at acceptance.** The same
         # block for all three parties, for the same reason the dispute block
         # is: a mediation where each side reads its own version of the terms is
@@ -29797,6 +30688,11 @@ async def get_application(
             # without its type, on any surface.
             "budget_per_creator": campaign.get("budget_per_creator"),
             "compensation_type": _compensation_type(campaign),
+            # **The remaining budget, on the screen where the fee is typed.**
+            # `exclude` is this collaboration, so a row that already carries an
+            # agreed amount shows what is left *without* its own figure — which
+            # is what somebody correcting that figure needs to see.
+            "budget": await _campaign_budget(campaign, exclude=collab["_id"]),
             "disclosure_label": _disclosure_text(campaign),
             # **The checklist a reviewer actually reviews against.** Before
             # this, somebody looking at a draft had the campaign title and the
@@ -29888,6 +30784,13 @@ async def get_application(
             "can_accept_terms": (user or {}).get("role") == "creator"
             and bool(collab.get("terms"))
             and not (collab.get("terms") or {}).get("accepted_at"),
+            # **Flagging a suspected off-platform deal.** For whoever was
+            # there — the brand on its own brief, the assigned manager, an
+            # admin — and never for the creator, who is the subject of it.
+            # Absent once a report is open, because a second report about the
+            # same collaboration is the same complaint again.
+            "can_report_circumvention": (user or {}).get("role") != "creator"
+            and not circumvention_open,
         },
     }
 

@@ -48,6 +48,10 @@ import Shortfall from "@/components/Shortfall";
 import RateCollaboration from "@/components/RateCollaboration";
 import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
+import BudgetMeter from "@/components/campaign/BudgetMeter";
+import CircumventionReport from "@/components/application/CircumventionReport";
+import { budgetApplies, budgetOf, formatMoney, overBudgetBy } from "@/lib/budget";
+import { BUDGET } from "@/constants/testIds";
 import {
     DisclosureChecks,
     DisclosureConfirmDialog,
@@ -229,6 +233,15 @@ export default function ApplicationDetail({
         [commercial, amount],
     );
 
+    // **Labelled, not disabled.** The server is the one that refuses, and an
+    // admin may legitimately go over with a reason — a button this screen had
+    // greyed out would be a client deciding something the API is willing to
+    // do. So it says what will happen and lets the press produce the answer.
+    const overBudget = useMemo(
+        () => overBudgetBy(budgetOf(app?.campaign), amount),
+        [app, amount],
+    );
+
     // One endpoint for both consoles. /brand/collaborations/{id}/agreed-amount
     // takes BRAND_ROLES *and* admin, records the figure and moves the
     // collaboration to commercial_agreed in one write — so the shared
@@ -354,6 +367,19 @@ export default function ApplicationDetail({
                             />
                         </div>
 
+                        {/* **What is left, where the fee is typed.** The
+                            server sends it excluding this collaboration's own
+                            figure, so somebody correcting an amount reads what
+                            is available to them rather than a number their own
+                            row is already inside. */}
+                        {budgetApplies(app.campaign) && (
+                            <BudgetMeter
+                                budget={app.campaign.budget}
+                                className="mt-6 max-w-md"
+                                compact
+                            />
+                        )}
+
                         {actions.can_agree_commercial && (
                             <div className="mt-6 max-w-md space-y-3">
                                 <CommercialInput
@@ -362,6 +388,21 @@ export default function ApplicationDetail({
                                     onChange={setAmount}
                                     disabled={busy === "agree"}
                                 />
+                                {/* Said before the button, not in the 409 it
+                                    would otherwise produce. The shortfall is
+                                    the actionable half — it is the difference
+                                    between topping the brief up and agreeing a
+                                    lower number. */}
+                                {overBudget !== null && (
+                                    <p
+                                        data-testid={BUDGET.warning}
+                                        className="text-xs text-amber-300"
+                                    >
+                                        That is {formatMoney(overBudget)} more than this
+                                        brief has left. Raise the campaign budget, or agree
+                                        a lower figure.
+                                    </p>
+                                )}
                                 <Button
                                     data-testid={APPLICATION.agreeCommercial}
                                     onClick={agreeCommercial}
@@ -768,6 +809,22 @@ export default function ApplicationDetail({
                             defaultOpen
                         />
                     </Section>
+
+                    {/* **Last, and deliberately.** Flagging a collaboration as
+                        having gone off-platform is not part of running it —
+                        it is the thing you do after everything above has
+                        stopped making sense. Putting it beside Accept would
+                        make an accusation a routine button. */}
+                    {(actions.can_report_circumvention || app.circumvention_open) && (
+                        <Section id="circumvention" title="Off-platform">
+                            <CircumventionReport
+                                collabId={id}
+                                actions={actions}
+                                open={app.circumvention_open}
+                                onReported={load}
+                            />
+                        </Section>
+                    )}
                 </div>
             )}
 

@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, Mail } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { CIRCUMVENTION } from "@/constants/testIds";
+import { CIRCUMVENTION_TERMS } from "@/lib/platformTerms";
 
 /**
  * Terms and privacy.
@@ -178,6 +180,24 @@ export function Terms() {
                 <p>
                     A brief may be public or invite-only. An invite-only brief is visible
                     only to creators who were invited to it.
+                </p>
+                {/* **The consequence is stated, and it is the real one.** This
+                    is the heaviest term on the platform, so it is written as
+                    what happens rather than as a prohibition — a creator has
+                    to be able to tell from reading it whether the thing they
+                    are about to do is the thing that ends their account.
+                    Mirrors `CIRCUMVENTION_TERMS`, which is the same wording
+                    read at signup and frozen into the terms at acceptance. */}
+                <p data-testid={CIRCUMVENTION.terms}>{CIRCUMVENTION_TERMS}</p>
+                <p>
+                    We do not read messages to look for this and there is no automatic
+                    detection. A brand, a campaign manager or someone here can flag a
+                    collaboration as having gone off-platform, saying what they saw; that
+                    raises a review and does nothing on its own. Somebody at WeAre reads
+                    it and decides, and both the decision and the reason are recorded.
+                    Where it is upheld the account is suspended — collaborations,
+                    ratings and payment records are kept, not deleted — and the
+                    confirmation stays on the record afterwards.
                 </p>
             </Section>
 

@@ -40,6 +40,8 @@ import { WorkNotes } from "@/components/brand/WorkNotes";
 import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { formatCompensation, isBarter } from "@/lib/compensation";
+import BudgetMeter from "@/components/campaign/BudgetMeter";
+import { budgetApplies } from "@/lib/budget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -990,6 +992,16 @@ export default function BrandCampaignApplicants() {
                         <span>{CAT_LABEL[campaign.category] || campaign.category}</span>
                     )}
                 </div>
+
+                {/* **Above the decision, not beside it.** This is the board
+                    with the Accept button on it, so what is left has to be
+                    legible before somebody commits the next few thousand of
+                    it — finding out afterwards, in a 409, is finding out too
+                    late to have chosen differently. Absent on a brief with no
+                    cap and on a barter one, where nothing draws down. */}
+                {budgetApplies(campaign) && (
+                    <BudgetMeter budget={campaign.budget} className="mt-8 max-w-xl" />
+                )}
 
                 {totals.awaiting_you > 0 && (
                     <div

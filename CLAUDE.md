@@ -1503,6 +1503,136 @@ it in half.
   been removed outright, which is also why the number improved again.
 
 
+## What a brief has left to spend
+
+`total_budget` on a campaign — what the brand put behind the whole brief —
+against which agreed fees draw down. Before it, the only number on a campaign
+was `budget_per_creator`, so "have we spent what we said we would" was a
+question somebody answered with a calculator and a list.
+
+- **Committed is derived, never stored.** `_committed_amounts_for` sums
+  `agreed_amount` over `_COMMITTED_COLLAB_STATES`, and that is the whole
+  release mechanism: a cancellation, a withdrawal, a decline or an expiry
+  drops the row out of the set, so the money comes back **immediately**
+  without anything having to remember to give it back. A running total would
+  need decrementing at five exits and would be wrong the first time one was
+  missed. `_budget_of` is the pure reader (so a list of forty campaigns is one
+  aggregation, through `_budgets_for`) and `_campaign_budget` the one-brief
+  wrapper.
+- **The line is acceptance, not `commercial_agreed`.** The requirement said
+  the later state and the later state is wrong: `brand_accept_applicant`
+  records the fee in the same write that sets `accepted`, so a cap counting
+  only `commercial_agreed` would let ten acceptances through against a budget
+  nothing had drawn down. `_COMMITTED_COLLAB_STATES` is
+  `COLLAB_GROUP_ONGOING + COLLAB_GROUP_COMPLETED` — exactly "accepted or
+  beyond, minus the exits" — and `closed` stays in it, because money that has
+  been paid is money the budget spent.
+- **Barter is excluded, not counted as zero**, and the two differ.
+  `_resolve_agreed_amount` returns `None` on a barter brief on purpose, so the
+  aggregation asks for an amount that *exists* and excludes barter by being
+  true of it. Counting such a row at zero would put something in the
+  denominator of "how much is spoken for" that was never going to spend any of
+  it; `collaborations_counted` is what tells the two apart in a test.
+- **Absent `total_budget` is unlimited, not zero** — the usual
+  absent-reads-safe rule, and the other reading would hard-block every brief
+  on the platform the morning it deployed. An explicit `null` on the edit path
+  clears a cap, because one typed by mistake has to be removable and `0` is a
+  different claim.
+- **Warned at four fifths, blocked at the whole.** `BUDGET_WARNING_RATIO`
+  (0.8); `warning` and `exhausted` are two flags rather than one number so a
+  panel and a route cannot disagree, and they are mutually exclusive.
+  `_warn_if_budget_tight` **claims the stamp as the write**
+  (`budget_warning_sent_at`, under a filter that only matches while it is
+  absent), so two acceptances landing together send one message. Routed like a
+  new application: weare-run reaches the assigned manager or every admin, and
+  the brand hears either way because it is the brand's money.
+- **`_refuse_over_budget` is the one gate, on all three doors that agree a
+  fee** — `brand_accept_applicant`, `brand_record_agreed_amount` and
+  `advance_collaboration`. A cap on two of three is a cap on none.
+  `_budget_refusal` **returns the sentence rather than raising** (the
+  `_scheduling_refusal` shape) because one caller labels instead of refusing:
+  the application screen says "₹22,000 more than this brief has left" beside
+  the box rather than letting somebody find out by pressing the button.
+  `exclude` drops the row's own figure from the sum, or correcting a fee
+  *downwards* on a full brief would be refused.
+- **The override is admin-only and costs a reason**, audited as
+  `campaign.budget_override` with the figures at the moment of the decision. A
+  brand able to lift its own cap would be a cap that refuses nothing;
+  `weare_team` reaches `advance_collaboration` and may not override, the same
+  split `ADMIN_ONLY_EXPORTS` makes.
+- **`accept_partial` is deliberately not gated.** It settles a collaboration
+  that already happened, at a figure that in practice goes down; refusing it
+  would leave a delivered collaboration with no way to be recorded.
+- Surfaces: `BudgetMeter` on four — the brand's applicant board (the screen
+  with the Accept button, so it is above the decision rather than after it),
+  the admin campaign page, the manager's brief panel and the shared
+  application screen. `lib/budget.js` formats and **recomputes no threshold**:
+  the block carries `warning`, `exhausted` and `warning_ratio`, and a test
+  fails a second definition of "nearly spent" under `lib/` — the lesson
+  `isStale` taught the console.
+
+## Work that goes off-platform
+
+A creator who takes a brand introduced here off the platform costs the
+operation the fee it runs on, and costs themselves the protections the
+platform *is*. Enforcement is creator-side because that is where it works:
+creators depend on continuous brief flow. **There is deliberately nothing on
+the brand's side** — a brand that leaves loses little, policing it would mean
+reading their messages, and the one certain outcome is that the paying side
+stops trusting us with its campaigns.
+
+- **`CIRCUMVENTION_TERMS` is the clause, in one place, read three times**: on
+  the signup screen before an account exists, frozen into the terms snapshot
+  at acceptance (`platform_terms`) — which is the moment the introduction
+  actually happens — and on the terms page. Burying it behind a link would
+  make it a rule somebody only meets when it is applied to them, which is a
+  rule they can fairly say they never agreed to. Mirrored in
+  `lib/platformTerms.js` with a drift test, because the signup screen renders
+  before there is anything to fetch.
+- **No detection, ever.** No message scanning, no heuristic on a shoot that
+  happened without a booking. Both would be wrong often, about somebody's
+  income. A named person reports with evidence and a named person decides;
+  `test_budget_and_circumvention.py` pins the absence.
+- `POST /collaborations/{id}/circumvention-report` sits on the **notes
+  router**, whose door already answers "may this person read this
+  collaboration" for exactly the three audiences who could know — the brand on
+  its own brief, the assigned manager, an admin — with a 404 behind each. The
+  creator's role is not on it: reporting yourself is not a flow, and reading
+  the report about you before anybody has looked at it is not one either. The
+  evidence note is **required**, because a reason code alone is not something
+  anybody can weigh when the decision is whether somebody loses their account.
+- **A report creates a review item and penalises nobody.** That separation is
+  the design: the people who notice this are also people who might be annoyed
+  about something else, and a flag that suspended an account on its own would
+  turn a bad week into the end of a livelihood. One open report per
+  collaboration; every admin is told, because it is a decision about an
+  account rather than about a campaign.
+- `GET`/`POST /admin/circumvention-reports[/{id}/confirm|dismiss]` is the
+  queue, **admin-only and not `CONSOLE_ROLES`** — a creator works across every
+  brand. Both decisions demand a note and both audit; the dismissal is the one
+  most likely to be asked about later, because nothing visible happens as a
+  result of it.
+- **Confirming suspends through `_suspend_creator_account`**, extracted out of
+  `suspend_creator` so there is one implementation — `_creator_block` reads
+  `status` and nothing else, so anything not going through that function
+  blocks nobody. It never writes `verification_status`, for the reason
+  suspension has always been separate from rejection. **History is preserved:
+  collaborations, ratings and payments all stay.**
+- **`circumvention_confirmed_at` on the profile outlives the suspension.** The
+  leaderboard exclusion reads *that*, not the account status, so reinstating
+  somebody gives them their account back and not the homepage — which is the
+  honest reading of "permanently". `_reliability_for` carries
+  `circumvention_confirmed` as a count (a second is a different fact from a
+  first); brands get the band and never the number, as with every other count
+  there.
+- **The positive half is load-bearing.** `PLATFORM_PROTECTIONS` rides on the
+  creator dashboard and renders as `PlatformProtections` — fee in writing,
+  payment protection, dispute cover, the delivery record, the brief flow.
+  Retention, not a threat: a test fails the panel for containing "suspend",
+  "remove", "off-platform" or "ban". A creator weighing up a direct offer is
+  weighing it against exactly this list, and until now nobody had written it
+  down.
+
 ## What a brief pays
 
 `compensation_type` on a campaign, one of three (`CompensationType`):
@@ -3331,10 +3461,10 @@ The URL is the state. It used to be one route with a `useState` tab, which made
 every screen unaddressable — no deep link, no back button, and a reload always
 landed on Overview.
 
-- Seventeen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
-  `campaign-reviews`, `brand-reviews`, `disputes`, `creators`, `campaigns`,
-  `brands`, `performance`, `health`, `audit`, `team`, `deletions`, `dormant`,
-  `retention`, `settings`) and four detail routes:
+- Eighteen list routes off the sidebar (`""` index, `queue`, `creator-reviews`,
+  `campaign-reviews`, `brand-reviews`, `disputes`, `circumvention`, `creators`,
+  `campaigns`, `brands`, `performance`, `health`, `audit`, `team`, `deletions`,
+  `dormant`, `retention`, `settings`) and four detail routes:
   `/admin/campaigns/:id`, `/creators/:id`, `/brands/:id`,
   `/collaborations/:id`. `ADMIN_SECTIONS` in `components/admin/console/Sidebar.jsx`
   is both the navigation and the route table, re-exported as `ADMIN_TABS` under

@@ -94,6 +94,9 @@ WIPED = (
     "held_applications",
     "collaboration_notes",
     "collaboration_ratings",
+    # Flagged off-platform deals. Wiped like everything else: a report naming
+    # a creator who no longer exists is a queue item nobody can act on.
+    "circumvention_reports",
     "content_performance",
     # The computed homepage ranking. A cache rather than a record, so a reset
     # should leave it empty and let the next pass rebuild it from the seeded

@@ -17,7 +17,12 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { ADMIN_ADVANCE, ADMIN_CAMPAIGN_EDIT, ADMIN_CONFIRM } from "@/constants/testIds";
+import {
+    ADMIN_ADVANCE,
+    ADMIN_CAMPAIGN_EDIT,
+    ADMIN_CONFIRM,
+    BUDGET,
+} from "@/constants/testIds";
 // The full list, barter included — this is the admin surface, and the only one
 // that gets it. The brand form imports BRAND_COMPENSATION_OPTIONS instead.
 import {
@@ -520,6 +525,9 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
     // names was the one thing an admin could not do here.
     const [dates, setDates] = useState({});
     const [budget, setBudget] = useState("");
+    // The cap on the whole brief. `""` means no cap, and clearing a cap that
+    // was set has to travel as an explicit null — see the diff below.
+    const [totalBudget, setTotalBudget] = useState("");
     const [compensation, setCompensation] = useState(DEFAULT_COMPENSATION_TYPE);
     const [needed, setNeeded] = useState("");
     // The same structured picker the brand's form uses. An admin editing a
@@ -532,6 +540,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
         if (!open || !campaign) return;
         setTitle(campaign.title || "");
         setBudget(campaign.budget_per_creator != null ? String(campaign.budget_per_creator) : "");
+        setTotalBudget(campaign.total_budget != null ? String(campaign.total_budget) : "");
         setCompensation(compensationType(campaign));
         setNeeded(campaign.creators_needed != null ? String(campaign.creators_needed) : "");
         setDeliverables(fromDeliverableItems(campaign.deliverable_items));
@@ -565,6 +574,18 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 return;
             }
             changes.budget_per_creator = b;
+        }
+        // **Cleared sends `null`, not nothing.** The edit handler reads an
+        // omitted key as "leave it alone" and a null as "clear it", so a cap
+        // set by mistake could otherwise only ever be lowered.
+        const cleared = String(totalBudget).trim() === "";
+        const t = cleared ? null : Number(totalBudget);
+        if (t !== (campaign.total_budget ?? null)) {
+            if (!cleared && (!Number.isFinite(t) || t < 0)) {
+                setErr("Enter a valid total budget.");
+                return;
+            }
+            changes.total_budget = t;
         }
         if (compensation !== compensationType(campaign)) {
             changes.compensation_type = compensation;
@@ -736,6 +757,39 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             )}
                         </div>
                     </div>
+
+                    {/* The cap on the whole brief. **"Extend the dates" was
+                        not the only way out this dialog was missing** — a
+                        brief blocked at its budget is fixed here or not at
+                        all, and the health panel's own suggestion is to raise
+                        it. Lowering it below what is committed is allowed on
+                        purpose: that is a brand discovering it has overspent,
+                        and refusing the edit would only hide it. */}
+                    {compensation !== "barter" && (
+                        <div className="max-w-xs">
+                            <Label
+                                htmlFor="ce-total-budget"
+                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            >
+                                Total campaign budget
+                            </Label>
+                            <Input
+                                id="ce-total-budget"
+                                data-testid={BUDGET.input}
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                step="1000"
+                                value={totalBudget}
+                                onChange={(e) => setTotalBudget(e.target.value)}
+                                placeholder="No cap"
+                                className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            />
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                Agreed fees draw down against this. Empty means no cap.
+                            </p>
+                        </div>
+                    )}
 
                     {/* **Only the fields this type has.** The server refuses
                         the rest outright (`_SCHEDULING_BY_TYPE`), so a form

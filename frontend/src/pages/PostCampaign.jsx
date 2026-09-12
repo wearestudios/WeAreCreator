@@ -21,7 +21,7 @@ import { CATEGORY_OPTIONS } from "@/lib/categories";
 import { EXECUTION_OPTIONS, weareRunReason } from "@/lib/execution";
 import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
-import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
+import { BUDGET, COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
@@ -91,6 +91,9 @@ export default function PostCampaign() {
     // that fills none of it posts a perfectly good brief.
     const [briefDetails, setBriefDetails] = useState(emptyBriefDetails());
     const [budget, setBudget] = useState("");
+    // The cap on the whole brief. Empty string is "no cap" — the payload
+    // turns it into `null`, which is what the server reads as unlimited.
+    const [totalBudget, setTotalBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
     // Defaults to the brand running it: posting a brief means running it
@@ -173,6 +176,7 @@ export default function PostCampaign() {
             ...Object.fromEntries(items.map((i) => [i.type, i.quantity])),
         }));
         apply("budget_per_creator", setBudget, String);
+        apply("total_budget", setTotalBudget, String);
         apply("compensation_type", setCompensationType);
         apply("execution_owner", setExecutionOwner);
         apply("visibility", setVisibility);
@@ -237,6 +241,12 @@ export default function PostCampaign() {
                         data.budget_per_creator == null
                             ? ""
                             : String(data.budget_per_creator),
+                    );
+                    // Re-seeded like everything else here: a round trip that
+                    // dropped it would clear a brand's cap every time somebody
+                    // fixed a typo in the title.
+                    setTotalBudget(
+                        data.total_budget == null ? "" : String(data.total_budget),
                     );
                     setCategory(data.category || "");
                     setArea(data.area || "");
@@ -398,6 +408,12 @@ export default function PostCampaign() {
             ? {}
             : {
                   budget_per_creator: Number(budget),
+                  // **Explicitly `null` when cleared, never omitted.** The
+                  // edit handler reads an omitted key as "leave it alone" and
+                  // a null as "clear it", so a brand removing a cap it set by
+                  // mistake needs the null to actually travel.
+                  total_budget:
+                      String(totalBudget).trim() === "" ? null : Number(totalBudget),
                   compensation_type: compensationType,
                   // **Agreeing with the rule rather than being overridden by
                   // it.** The create path would force `weare` anyway, but the
@@ -1358,6 +1374,45 @@ export default function PostCampaign() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* **The cap on the whole brief, and it is optional.**
+                          * Deliberately not prefilled with fee × headcount:
+                          * that product is what the brief would cost if every
+                          * place filled at the list price, and on a negotiated
+                          * brief — the one this most exists for — it will not.
+                          * A number the form guessed is a number nobody chose.
+                          * Absent on a barter brief, where nothing draws down. */}
+                        {!isBarter && (
+                            <div className="max-w-sm">
+                                <Label
+                                    htmlFor="pc-total-budget"
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    Total campaign budget (optional)
+                                </Label>
+                                <div className="relative mt-2">
+                                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="pc-total-budget"
+                                        data-testid={BUDGET.input}
+                                        type="number"
+                                        inputMode="numeric"
+                                        min="0"
+                                        step="1000"
+                                        value={totalBudget}
+                                        onChange={(e) => setTotalBudget(e.target.value)}
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        placeholder="e.g. 80000"
+                                    />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Agreed fees draw down against this as creators are
+                                    taken on, and we stop you going past it. Somebody who
+                                    cancels or withdraws releases theirs. Leave it empty
+                                    for no cap.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>

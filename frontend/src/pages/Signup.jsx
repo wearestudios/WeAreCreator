@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { SIGNUP } from "@/constants/testIds";
+import { CIRCUMVENTION, SIGNUP } from "@/constants/testIds";
+import { CIRCUMVENTION_TERMS } from "@/lib/platformTerms";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { notifySuccess } from "@/lib/feedback";
 import { Camera, Building2 } from "lucide-react";
@@ -376,6 +377,29 @@ export default function Signup() {
                                             )}
                                         </div>
                                     </div>
+                                )}
+                                {/* **The one rule that ends an account, above
+                                    the box that agrees to it.** It is the
+                                    heaviest consequence on this platform, so
+                                    burying it behind a link to /terms would
+                                    make it a rule somebody only meets when it
+                                    is applied to them — which is a rule they
+                                    can fairly say they never read. Creators
+                                    only: a brand leaving loses very little
+                                    and nothing here is enforced against them.
+                                    Mirrored from `CIRCUMVENTION_TERMS`, with
+                                    a drift test, because this screen renders
+                                    before any account exists to fetch for. */}
+                                {!isBrand && (
+                                    <p
+                                        data-testid={CIRCUMVENTION.terms}
+                                        className="rounded-lg border border-white/10 bg-card p-4 text-xs leading-relaxed text-muted-foreground"
+                                    >
+                                        <span className="mb-1.5 block text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                                            One rule worth reading
+                                        </span>
+                                        {CIRCUMVENTION_TERMS}
+                                    </p>
                                 )}
                                 <label
                                     htmlFor="accept-terms"

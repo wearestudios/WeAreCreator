@@ -26,6 +26,8 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
+import BudgetMeter from "@/components/campaign/BudgetMeter";
+import { budgetApplies } from "@/lib/budget";
 import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import { DeliverableList } from "@/components/Deliverables";
@@ -404,6 +406,14 @@ export default function CampaignDetailPage() {
                             value={`₹${formatRupees(detail.totals.committed)}`}
                         />
                     </div>
+
+                    {/* The cap, on the page where an admin agrees a fee and
+                        can override it. Same component the brand and the
+                        manager read, so "how much is left" cannot have three
+                        answers. Absent on a brief with no cap. */}
+                    {budgetApplies(campaign) && (
+                        <BudgetMeter budget={campaign.budget} className="max-w-xl" />
+                    )}
 
                     <div className="grid gap-8 lg:grid-cols-3">
                         <Section id="brief" title="The brief" className="lg:col-span-2">
