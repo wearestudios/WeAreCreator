@@ -16,6 +16,8 @@ import { DeliverableList } from "@/components/Deliverables";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
 import { hasBriefDetails } from "@/lib/briefDetails";
 import { formatCompensation } from "@/lib/compensation";
+import BudgetMeter from "@/components/campaign/BudgetMeter";
+import { budgetApplies } from "@/lib/budget";
 import { MANAGER_BRIEF as IDS } from "@/constants/testIds";
 
 import { EmptyState } from "./shared";
@@ -66,6 +68,11 @@ export default function BriefPanel({ campaign }) {
                     per creator
                 </p>
             </div>
+
+            {/* The cap, because on a weare-run brief the manager is the runner
+                and therefore the one agreeing fees against it. Same component
+                and same figures the brand and the admin read. */}
+            {budgetApplies(campaign) && <BudgetMeter budget={campaign.budget} />}
 
             {/* The do's, don'ts and tags, on the screen of the person
                 standing in the room while it is being shot — the last moment

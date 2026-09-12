@@ -28,6 +28,7 @@ import {
     MoonStar,
     Archive,
     Scale,
+    ShieldAlert,
     ScrollText,
     Sparkles,
     Stethoscope,
@@ -97,6 +98,17 @@ export const ADMIN_SECTIONS = [
         label: "Disputes",
         Icon: Scale,
         badge: "disputes_open",
+    },
+    // **Admin-only, like the creator queues beside it.** A creator works
+    // across every brand, so deciding whether one keeps their account is not
+    // scoped work — the same line `ADMIN_ONLY_EXPORTS` draws.
+    {
+        key: "circumvention",
+        to: "circumvention",
+        label: "Off-platform",
+        Icon: ShieldAlert,
+        badge: "circumvention_open",
+        adminOnly: true,
     },
     { key: "creators", to: "creators", label: "Creators", Icon: Users, adminOnly: true },
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },

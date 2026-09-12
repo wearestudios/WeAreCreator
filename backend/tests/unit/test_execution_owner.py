@@ -191,38 +191,43 @@ def test_changing_the_owner_moves_the_manager_with_it():
     assert blanked == server._NO_CAMPAIGN_MANAGER
 
 
-# --- A brand may only change it before the brief goes out --------------------
+# --- A brand may not change it at all ----------------------------------------
+#
+# This used to be a *window*: a brand could hand a campaign over, or take one
+# back, while the brief was still a draft or in review, and
+# `_refuse_late_execution_handover` closed the window once it went live. Every
+# brand-posted brief is WeAre-run now, so there is no choice to make at any
+# status, and that guard is gone rather than left in front of inputs that can
+# no longer reach it.
 
 
-@pytest.mark.parametrize("status", ["draft", server.CAMPAIGN_REVIEW_STATUS])
-def test_a_brand_may_hand_over_a_draft(status):
-    server._refuse_late_execution_handover(
-        campaign(status=status, execution_owner="brand"),
-        {"execution_owner": "weare"},
-        server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
-    )  # does not raise
-
-
-@pytest.mark.parametrize("status", ["open", "upcoming", "in_progress", "paused"])
-def test_a_brand_may_not_change_it_once_it_is_live(status):
-    """Creators applied knowing who they would be dealing with, and whoever has
-    been working the campaign would stop being told about it."""
+@pytest.mark.parametrize("status", ["draft", server.CAMPAIGN_REVIEW_STATUS, "open", "paused"])
+def test_a_brand_may_not_change_who_runs_it_at_any_status(status):
+    """Including a draft, which is where the old rule allowed it."""
     with pytest.raises(HTTPException) as err:
-        server._refuse_late_execution_handover(
-            campaign(status=status, execution_owner="brand"),
-            {"execution_owner": "weare"},
-            server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
+        server._refuse_brand_execution_choice(
+            campaign(status=status, execution_owner="weare"),
+            {"execution_owner": "brand"},
         )
 
     assert err.value.status_code == 409
+    assert err.value.detail["code"] == "managed_by_weare"
+    # The refusal is the offer, not a rule quoted back: a brand reading this
+    # should hear what it is getting rather than what it may not do.
+    assert "runs every campaign" in err.value.detail["message"]
 
 
 def test_resending_the_same_owner_is_not_a_change():
     """A form that round-trips every field must not trip the guard."""
-    server._refuse_late_execution_handover(
-        campaign(status="open", execution_owner="brand"),
-        {"execution_owner": "brand"},
-        server.LARGE_CAMPAIGN_CREATORS_DEFAULT,
+    server._refuse_brand_execution_choice(
+        campaign(status="open", execution_owner="weare"),
+        {"execution_owner": "weare"},
+    )  # does not raise
+
+
+def test_an_edit_that_never_mentions_it_is_not_a_change():
+    server._refuse_brand_execution_choice(
+        campaign(status="open", execution_owner="weare"), {"title": "New title"}
     )  # does not raise
 
 
@@ -232,15 +237,23 @@ def test_the_guard_is_wired_into_the_brand_edit():
     hole `compensation_type` had."""
     source = inspect.getsource(server.update_brand_campaign)
 
-    assert "_refuse_late_execution_handover" in source
+    assert "_refuse_brand_execution_choice" in source
     assert "_execution_manager_fields" in source
 
 
 def test_the_admin_route_is_not_subject_to_the_guard():
-    """An admin moving a campaign is a conversation that has happened."""
+    """An admin moving a campaign is a conversation that has happened, and is
+    the only way a campaign becomes brand-executed at all."""
     source = inspect.getsource(server.admin_update_campaign)
 
-    assert "_refuse_late_execution_handover" not in source
+    assert "_refuse_brand_execution_choice" not in source
+
+
+def test_the_dead_guard_is_actually_gone():
+    """Not merely unused — removed. A guard nothing can reach is the shape
+    this codebase keeps finding bugs in, so leaving it beside a live one to
+    'document the old rule' is the thing not to do."""
+    assert not hasattr(server, "_refuse_late_execution_handover")
 
 
 # --- Every view is told ------------------------------------------------------
@@ -313,19 +326,21 @@ def test_the_frontend_defaults_the_same_way():
     assert f'DEFAULT_EXECUTION_OWNER = "{server.DEFAULT_EXECUTION_OWNER}"' in source
 
 
-def test_the_post_form_offers_the_choice():
-    """And sends what it offered — except on the two shapes that are ours by
-    rule, where it sends what the server is going to store anyway.
+def test_the_post_form_offers_no_choice_and_sends_no_value():
+    """**There is nothing left to pick.**
 
-    The picker used to post `executionOwner` unconditionally. Since a launch
-    and a brief for more than the threshold are WeAre-run whatever is picked,
-    that would have posted `brand` on a campaign the edit route refuses to
-    hand back, failing the whole save over a field the form no longer shows.
-    See `_weare_run_reason` and `weareRunReason`."""
+    This test used to assert the opposite: that the form showed the two
+    options and posted what was chosen. Every brand-posted brief is WeAre-run
+    now, so a picker would be a choice the server is about to override — and
+    posting the field would be noise on create and a 409 on edit.
+
+    What survives is the shape: the form shows the *reason* where there is a
+    specific one (a launch, a large brief) and the general offer otherwise."""
     source = (FRONTEND / "pages" / "PostCampaign.jsx").read_text()
 
-    assert "EXECUTION_OPTIONS" in source
-    assert 'execution_owner: weareRun ? "weare" : executionOwner' in source
+    assert "EXECUTION_OPTIONS" not in source
+    assert "execution_owner:" not in source
+    assert "weareRun ? weareRun.line" in source
 
 
 def test_the_creator_is_shown_who_runs_it():

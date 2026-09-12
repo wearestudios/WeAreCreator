@@ -26,7 +26,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { TERMS as IDS } from "@/constants/testIds";
+import { CIRCUMVENTION, TERMS as IDS } from "@/constants/testIds";
 import { formatDate } from "@/lib/time";
 
 /**
@@ -166,6 +166,18 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
                 <Line label="If it's called off" testId={IDS.cancellation}>
                     {terms.cancellation_terms}
                 </Line>
+                {/* **In the terms the creator is being asked to accept, not
+                    only on the signup screen they read once.** Acceptance is
+                    the moment the introduction actually happens — the creator
+                    now has a brand's name and a date — so it is the moment
+                    this stops being abstract. Absent on a snapshot written
+                    before the clause existed, which is the usual rule: those
+                    creators agreed to what was in front of them. */}
+                {terms.platform_terms && (
+                    <Line label="Keeping it here" testId={CIRCUMVENTION.terms}>
+                        {terms.platform_terms}
+                    </Line>
+                )}
             </div>
 
             {terms.accepted ? (

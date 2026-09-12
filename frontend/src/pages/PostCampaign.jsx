@@ -18,10 +18,10 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
-import { EXECUTION_OPTIONS, weareRunReason } from "@/lib/execution";
+import { MANAGED_NOTE, REFUND_TERMS, weareRunReason } from "@/lib/execution";
 import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
-import { COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
+import { BUDGET, COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
@@ -91,12 +91,14 @@ export default function PostCampaign() {
     // that fills none of it posts a perfectly good brief.
     const [briefDetails, setBriefDetails] = useState(emptyBriefDetails());
     const [budget, setBudget] = useState("");
+    // The cap on the whole brief. Empty string is "no cap" — the payload
+    // turns it into `null`, which is what the server reads as unlimited.
+    const [totalBudget, setTotalBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
     // Defaults to the brand running it: posting a brief means running it
     // unless you say otherwise, and a campaign quietly landing in the WeAre
     // queue is work nobody agreed to. Mirrors DEFAULT_EXECUTION_OWNER.
-    const [executionOwner, setExecutionOwner] = useState("brand");
     // Public unless the brand says otherwise — an invite-only brief that
     // nobody meant to hide is merely unfindable, which is worse than wrong.
     const [visibility, setVisibility] = useState("public");
@@ -173,8 +175,8 @@ export default function PostCampaign() {
             ...Object.fromEntries(items.map((i) => [i.type, i.quantity])),
         }));
         apply("budget_per_creator", setBudget, String);
+        apply("total_budget", setTotalBudget, String);
         apply("compensation_type", setCompensationType);
-        apply("execution_owner", setExecutionOwner);
         apply("visibility", setVisibility);
         apply("requires_draft_approval", setRequiresDraft, Boolean);
         apply("requires_slot_confirmation", setRequiresSlotConfirmation, Boolean);
@@ -238,12 +240,17 @@ export default function PostCampaign() {
                             ? ""
                             : String(data.budget_per_creator),
                     );
+                    // Re-seeded like everything else here: a round trip that
+                    // dropped it would clear a brand's cap every time somebody
+                    // fixed a typo in the title.
+                    setTotalBudget(
+                        data.total_budget == null ? "" : String(data.total_budget),
+                    );
                     setCategory(data.category || "");
                     setArea(data.area || "");
                     // A campaign WeAre set to barter keeps that value here so
                     // the form never round-trips it back to "fixed".
                     setCompensationType(data.compensation_type || "fixed");
-                    setExecutionOwner(data.execution_owner || "brand");
                     setVisibility(data.visibility === "private" ? "private" : "public");
                     // Re-seeded rather than defaulted, or fixing a typo on a
                     // brief that doesn't review drafts would quietly turn the
@@ -398,13 +405,17 @@ export default function PostCampaign() {
             ? {}
             : {
                   budget_per_creator: Number(budget),
+                  // **Explicitly `null` when cleared, never omitted.** The
+                  // edit handler reads an omitted key as "leave it alone" and
+                  // a null as "clear it", so a brand removing a cap it set by
+                  // mistake needs the null to actually travel.
+                  total_budget:
+                      String(totalBudget).trim() === "" ? null : Number(totalBudget),
                   compensation_type: compensationType,
-                  // **Agreeing with the rule rather than being overridden by
-                  // it.** The create path would force `weare` anyway, but the
-                  // edit path refuses a write that takes such a campaign back
-                  // — so a form that kept sending the picker's old value would
-                  // 422 the whole save on a field it is no longer showing.
-                  execution_owner: weareRun ? "weare" : executionOwner,
+                  // **The field is not sent at all.** The create path
+                  // ignores it and the edit path refuses any change, so a
+                  // form still posting a value would at best be noise and at
+                  // worst a 409 on a field it no longer shows.
               }),
         visibility,
         requires_draft_approval: requiresDraft,
@@ -1096,73 +1107,47 @@ export default function PostCampaign() {
                             </div>
                         )}
 
-                        {/* Who runs it. Asked here, next to how it pays,
-                            because the two together are what a brand is
-                            actually deciding when it posts: what this costs
-                            and how much of it they do themselves.
+                        {/* **Who runs it is no longer a question, so this is
+                            no longer a picker.** It was two buttons — run it
+                            yourself, or hand it to us — and the product is
+                            managed-only now: our team runs every campaign
+                            posted here, end to end.
 
-                            **Except on the two shapes that are ours by rule.**
-                            A launch and a brief for more than the threshold
-                            come to our team whatever is picked, and the server
-                            forces it — so the picker is *replaced* by the
-                            reason rather than left up with a choice that would
-                            be quietly overridden. Said as the offer it is: a
-                            manager on the campaign where it matters, not a
-                            control taken away. */}
+                            Said as the offer rather than as a rule, because
+                            that is what it is. A brand is not losing a
+                            control; it is getting shortlisting, fee
+                            negotiation, booking and delivery chasing off its
+                            desk. The refund promise sits underneath for the
+                            same reason — both are what the brand is being
+                            asked to trust at exactly this moment, and the
+                            form is where they have to read them.
+
+                            The wording is the server's (`managed_note` and
+                            `refund_terms` come back on the create response
+                            from the same two constants), so what the brand
+                            reads before the button and what it is told after
+                            cannot drift. `weareRun` still carries the
+                            *specific* sentence on a launch or a large brief:
+                            both are ours, and only one of them has something
+                            particular to say about why. */}
                         <div>
                             <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
                                 Who runs it
                             </p>
-                            {weareRun ? (
-                                <div
-                                    data-testid={EXECUTION.weareRun}
-                                    className="mt-3 rounded-md border border-ember-500/40 bg-ember-500/10 p-5"
-                                >
-                                    <p className="text-sm text-ember-500">{weareRun.title}</p>
-                                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                                        {weareRun.line}
-                                    </p>
-                                </div>
-                            ) : (
                             <div
-                                data-testid={EXECUTION.picker}
-                                role="radiogroup"
-                                aria-label="Who runs this campaign"
-                                className="mt-3 grid gap-3 sm:grid-cols-2"
+                                data-testid={EXECUTION.weareRun}
+                                className="mt-3 rounded-md border border-ember-500/40 bg-ember-500/10 p-5"
                             >
-                                {EXECUTION_OPTIONS.map((opt) => {
-                                    const on = executionOwner === opt.value;
-                                    return (
-                                        <button
-                                            key={opt.value}
-                                            type="button"
-                                            role="radio"
-                                            aria-checked={on}
-                                            data-testid={EXECUTION.pickerOption(opt.value)}
-                                            onClick={() => setExecutionOwner(opt.value)}
-                                            className={
-                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
-                                                (on
-                                                    ? "border-ember-500 bg-ember-500/10"
-                                                    : "border-white/10 bg-card/60 hover:border-white/25")
-                                            }
-                                        >
-                                            <span
-                                                className={
-                                                    "block text-sm " +
-                                                    (on ? "text-ember-500" : "text-foreground")
-                                                }
-                                            >
-                                                {opt.label}
-                                            </span>
-                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
-                                                {opt.hint}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
+                                <p className="text-sm text-ember-500">
+                                    {weareRun ? weareRun.title : "Our team runs this campaign"}
+                                </p>
+                                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                    {weareRun ? weareRun.line : MANAGED_NOTE}
+                                </p>
+                                <p className="mt-3 border-t border-ember-500/20 pt-3 text-xs leading-relaxed text-muted-foreground">
+                                    {REFUND_TERMS}
+                                </p>
                             </div>
-                            )}
                         </div>
 
                         <div>
@@ -1358,6 +1343,45 @@ export default function PostCampaign() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* **The cap on the whole brief, and it is optional.**
+                          * Deliberately not prefilled with fee × headcount:
+                          * that product is what the brief would cost if every
+                          * place filled at the list price, and on a negotiated
+                          * brief — the one this most exists for — it will not.
+                          * A number the form guessed is a number nobody chose.
+                          * Absent on a barter brief, where nothing draws down. */}
+                        {!isBarter && (
+                            <div className="max-w-sm">
+                                <Label
+                                    htmlFor="pc-total-budget"
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    Total campaign budget (optional)
+                                </Label>
+                                <div className="relative mt-2">
+                                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        id="pc-total-budget"
+                                        data-testid={BUDGET.input}
+                                        type="number"
+                                        inputMode="numeric"
+                                        min="0"
+                                        step="1000"
+                                        value={totalBudget}
+                                        onChange={(e) => setTotalBudget(e.target.value)}
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        placeholder="e.g. 80000"
+                                    />
+                                </div>
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    Agreed fees draw down against this as creators are
+                                    taken on, and we stop you going past it. Somebody who
+                                    cancels or withdraws releases theirs. Leave it empty
+                                    for no cap.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>

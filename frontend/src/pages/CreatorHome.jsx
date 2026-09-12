@@ -41,6 +41,7 @@ import ActiveCampaigns from "@/components/creator/ActiveCampaigns";
 import Suggested from "@/components/creator/Suggested";
 import Applications from "@/components/creator/Applications";
 import Earnings from "@/components/creator/Earnings";
+import PlatformProtections from "@/components/creator/PlatformProtections";
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -401,6 +402,20 @@ export default function CreatorHome({ user, justOnboarded }) {
                                         </SafeSection>
                                     </TabsContent>
                                 </Tabs>
+                            </Reveal>
+                        </SafeSection>
+
+                        {/* **Below the tabs, and outside them.** It is not
+                            something a creator acts on, so it has no business
+                            competing with the live work — but it is also not
+                            something to go looking for in a drawer, because
+                            the moment it matters is the moment somebody is
+                            deciding whether to answer a brand's DM. */}
+                        <SafeSection name="protections" className="mt-12 md:mt-16">
+                            <Reveal index={4}>
+                                <PlatformProtections
+                                    protections={data.platform_protections}
+                                />
                             </Reveal>
                         </SafeSection>
 

@@ -26,6 +26,10 @@ import {
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
+import BudgetMeter from "@/components/campaign/BudgetMeter";
+import CreatorLists from "@/components/CreatorLists";
+import CommercialTerms from "@/components/admin/CommercialTerms";
+import { budgetApplies } from "@/lib/budget";
 import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import { DeliverableList } from "@/components/Deliverables";
@@ -405,6 +409,14 @@ export default function CampaignDetailPage() {
                         />
                     </div>
 
+                    {/* The cap, on the page where an admin agrees a fee and
+                        can override it. Same component the brand and the
+                        manager read, so "how much is left" cannot have three
+                        answers. Absent on a brief with no cap. */}
+                    {budgetApplies(campaign) && (
+                        <BudgetMeter budget={campaign.budget} className="max-w-xl" />
+                    )}
+
                     <div className="grid gap-8 lg:grid-cols-3">
                         <Section id="brief" title="The brief" className="lg:col-span-2">
                             <Panel className="space-y-6">
@@ -747,6 +759,33 @@ export default function CampaignDetailPage() {
                                     ))}
                             </div>
                         )}
+                    </Section>
+
+                    {/* **People we would ask again, on the screen of the
+                        people who now do the asking.** This panel was on the
+                        brand's applicant board, where its only action —
+                        inviting everybody on a list at once — is no longer
+                        something a brand may do. Moved rather than deleted:
+                        the lists are operational knowledge ("creators who are
+                        good at launch nights") and inviting from one is a real
+                        job, it is simply ours. */}
+                    {/* **What we charge, and what comes back.** The rate for
+                        this brief (overriding the brand's), the flat fee for
+                        running it, and — once it has closed short — the refund
+                        reckoning with the sentence explaining it. All three
+                        used to be an environment variable and two things
+                        nobody recorded. */}
+                    <Section id="commercial" title="Commercial terms">
+                        <CommercialTerms
+                            campaign={campaign}
+                            refund={detail.refund}
+                            commission={detail.commission_effective}
+                            onSaved={loadDetail}
+                        />
+                    </Section>
+
+                    <Section id="lists" title="Invite from a list">
+                        <CreatorLists campaignId={id} onInvited={loadApplicants} />
                     </Section>
 
                     <Section id="payments" title="Payments" count={detail.payments.length}>

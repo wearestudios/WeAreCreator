@@ -561,11 +561,22 @@ class TestCreatorLists:
         assert "await _invite_creators(" in src
         assert "campaign_invitations.insert_one" not in src
 
-    def test_ownership_is_checked_before_verification(self):
-        """The other order turns another brand's campaign from a 404 into a
-        403, which leaks which ids exist."""
+    def test_inviting_a_list_is_staff_only_and_the_campaign_is_resolved_first(self):
+        """**A brand can no longer invite its own saved list.** Reaching out
+        to a creator is ours, and a saved list was the one remaining way a
+        brand could send a message to people it had picked.
+
+        The ordering rule survives with the guards swapped: the campaign is
+        resolved through the console's scoped door before anything is checked
+        about the brand on it, so a `weare_team` member pasting an id for a
+        brand they are not assigned to gets a 404 rather than a refusal that
+        confirms the campaign exists."""
         src = inspect.getsource(server.invite_creator_list)
-        assert src.index("_own_campaign_or_404") < src.index("_verified_brand_or_403")
+        assert "BRAND_ROLES" not in src
+        assert 'require_roles("admin", "weare_team")' in src
+        assert src.index("_admin_campaign_or_404") < src.index(
+            "_campaign_brand_verified_or_409"
+        )
 
     def test_somebody_elses_list_is_a_404(self):
         assert 'status_code=404' in inspect.getsource(server._own_creator_list_or_404)
@@ -712,7 +723,12 @@ class TestEveryRouteHasACaller:
         mounts = {
             "CampaignTemplates": ("pages/PostCampaign.jsx",),
             "SaveAsTemplate": ("pages/BrandDashboardView.jsx",),
-            "CreatorLists": ("pages/BrandCampaignApplicants.jsx",),
+            # **Moved off the brand board.** Its only action is inviting
+            # everybody on a list at once, and inviting is staff-only now — a
+            # panel of names with a dead button is the directory this product
+            # does not have. The lists themselves are untouched; we ask from
+            # them, on the campaign page where the decision is made.
+            "CreatorLists": ("components/admin/CampaignDetailPage.jsx",),
             "PartialDeliveryDialog": ("pages/BrandCampaignApplicants.jsx",),
             "RateCollaboration": ("components/application/ApplicationDetail.jsx",),
             "ReliabilityPanel": (

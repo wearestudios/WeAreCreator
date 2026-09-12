@@ -28,6 +28,7 @@ import AdminTeam from "@/components/admin/AdminTeam";
 import AdminDeletions from "@/components/admin/AdminDeletions";
 import PlatformSettings from "@/components/admin/PlatformSettings";
 import DisputeQueue from "@/components/admin/DisputeQueue";
+import CircumventionQueue from "@/components/admin/CircumventionQueue";
 import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
 
@@ -114,6 +115,10 @@ export const SettingsRoute = () => <PlatformSettings />;
 
 /** Frozen collaborations, worst-waiting first. Scoped like every list. */
 export const DisputesRoute = () => <DisputeQueue />;
+
+/** Collaborations flagged as having gone off-platform. Admin-only: a
+ *  creator works across every brand, so their account is not scoped work. */
+export const CircumventionRoute = () => <CircumventionQueue />;
 
 /** What we keep and for how long, from the same table the code enforces. */
 export const RetentionRoute = () => <RetentionPanel />;
