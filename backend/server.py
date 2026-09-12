@@ -16240,11 +16240,19 @@ def _days_ahead(n: int) -> datetime:
 async def _overdue_check(targets: dict, now: datetime) -> dict:
     """Every record past its SLA, whatever kind it is, worst first.
 
-    **The order is how far over, not how old.** A creator verification two days
-    past a 48-hour target is a worse failure than a payment two days past a
-    seven-day one — the second is nearly on time. Sorting by age would put them
-    the other way round and quietly train whoever works this list to do the
-    least urgent thing first.
+    **The order is the fraction of the allowance used, not how old and not how
+    many hours over.** A creator verification two days past a 48-hour target is
+    a worse failure than a payment two days past a seven-day one — the second
+    is nearly on time. Sorting by age would put them the other way round and
+    quietly train whoever works this list to do the least urgent thing first.
+
+    Sorting by *absolute* hours over is the subtler version of the same
+    mistake, and is what this did: those two records are both exactly 48 hours
+    over, so they tied, and a payment a week past a seven-day target outranked
+    a brief four days past a one-day one. `hours / sla_hours` is the reading
+    the frontend queue has always used (`ActionQueue.jsx`), so the panel and
+    the queue were ordering the same records differently. Neither was caught
+    because no fixture distinguished the two keys until one was written to.
 
     Every row carries who is being waited on, because half of these are our
     delay and half are somebody else's, and the action is different: one is
@@ -16264,6 +16272,11 @@ async def _overdue_check(targets: dict, now: datetime) -> dict:
                 "severity": "critical" if ageing["tone"] == "critical" else "warning",
                 "at": ageing["since"],
                 "overdue_hours": ageing["overdue_hours"],
+                # Both halves of the fraction the rows are ordered on, so the
+                # panel can show the reasoning rather than a bare position —
+                # and so the sort below reads what it sorts by.
+                "hours": ageing["hours"],
+                "sla_hours": ageing["sla_hours"],
                 "sla_key": ageing["sla_key"],
                 "waiting_on": waiting_on,
             }
@@ -16336,7 +16349,12 @@ async def _overdue_check(targets: dict, now: datetime) -> dict:
             waiting_on="admin",
         )
 
-    rows.sort(key=lambda r: -r["overdue_hours"])
+    # The fraction of the allowance used, which is the same key
+    # `ActionQueue.jsx` sorts its age column on. `sla_hours` is always set on a
+    # row that got here — `_add` keeps only rows whose ageing block came back
+    # overdue, and a block with no target can never be — but the `or 1` keeps a
+    # future caller from dividing by zero rather than trusting that forever.
+    rows.sort(key=lambda r: -(r["hours"] / (r["sla_hours"] or 1)))
     return {
         "key": "overdue",
         "presorted": True,

@@ -3088,6 +3088,45 @@ The age goes on every record. The *verdict* does not.
   so every un-overdue row outranked every overdue one. **Caught in a browser,
   not by a test**, which is why the test now names the arithmetic.
 
+  The server's half was wrong in the subtler direction and this document
+  described it correctly while the code did not: `_overdue_check` sorted on
+  **absolute hours over** (`-r["overdue_hours"]`), so the panel and the queue
+  ordered the same records differently, and the function's own docstring
+  example — two days past a 48-hour target being worse than two days past a
+  seven-day one — *tied* under its own sort. Neither the existing test nor
+  this file caught it, because every fixture written until
+  `test_sla_surfacing.py` happened to give the same order under both keys. The
+  row now carries `hours` and `sla_hours` so the sort reads what it sorts by,
+  and the fixture is built so age, absolute-hours-over and the fraction each
+  give a different answer.
+
+### Driven to the screens, not read for the call
+
+`test_sla_surfacing.py` is the second layer over the clock, the same split the
+money paths have. `test_the_clock.py` holds the stamp, the arithmetic, the
+targets and the chasers; what it asserted about the two screens was
+`inspect.getsource` — that `admin_health` calls `_overdue_check`, that
+`_overdue_check` mentions the four ageing readers, that the queue handlers
+mention theirs. **Every one of those strings survives the reader being handed
+the wrong document**, or the targets never arriving, or `overdue` never coming
+back true. So these seed a record genuinely past its target, call the real
+handler, and read the response back — with a not-overdue control beside each,
+because a test that cannot tell "the check works" from "the check returns
+nothing ever" passes on a deleted function.
+
+Two things it found that review had not: the sort above, and that the rule
+"a creator who never submitted is in no queue" is enforced **twice** —
+`_AWAITING_REVIEW_QUERY` keeps them out of the panel's query, so
+`_creator_review_ageing` is never reached for that row and breaking the reader
+left the panel test green while every other caller started ageing somebody's
+own half-finished form as our delay. Both halves are pinned now.
+
+One trap for anyone writing more of these: **`sla_targets()` caches in a module
+global for 30 seconds**, so a test that stores an override and immediately
+calls a handler reads what the previous test left behind — across a fresh mock
+database, which looks exactly like the override being dropped on the way to the
+row. The file's `run()` helper clears `_SLA_CACHE` either side of every test.
+
 ### Chasing, and letting things lapse
 
 `run_lifecycle_chasers()` is one pass on a loop (`LIFECYCLE_INTERVAL_SECONDS`,
