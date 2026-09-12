@@ -844,14 +844,35 @@ class TestAdminCreation:
             server.AdminCreateCampaignPayload.model_fields["status"].annotation.__args__
         )
 
-    def test_it_is_ours_to_run_unless_told_otherwise(self, world):
-        """The brand's own form defaults the other way, for the same reason:
-        posting a brief means running it, and here the party posting is us."""
+    def test_it_is_ours_to_run_from_both_doors_now(self, world):
+        """**Both payloads default to `weare`, and they used to differ.**
+
+        The brand's form defaulted to `brand` on the reasoning that posting a
+        brief meant running it. The product is managed-only now, so the two
+        agree — and the agreement is worth pinning, because a default that
+        drifted back would put a brand-run campaign on the platform with no
+        manager assigned and nobody told.
+
+        The *reader's* default is the one that must stay `brand`, and it is
+        checked below: it is what an absent value means on the thousands of
+        campaigns written before the field existed.
+        """
         assert (
             server.AdminCreateCampaignPayload.model_fields["execution_owner"].default
             == "weare"
         )
-        assert server.PostCampaignPayload.model_fields["execution_owner"].default == "brand"
+        assert (
+            server.PostCampaignPayload.model_fields["execution_owner"].default
+            == "weare"
+        )
+
+    def test_the_readers_default_is_still_brand(self, world):
+        """The migration promise, and the one thing changing the creation
+        default must not touch. Flipping this would hand every historical
+        brief to a WeAre manager who was never told about it."""
+        assert server.DEFAULT_EXECUTION_OWNER == "brand"
+        assert server._execution_owner({}) == "brand"
+        assert server._execution_owner({"title": "written before the field"}) == "brand"
 
     def test_a_weare_run_brief_waits_for_a_real_manager(self, world):
         """Stamping the brand's own person would route applications straight

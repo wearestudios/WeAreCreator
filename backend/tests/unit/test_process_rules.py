@@ -1431,6 +1431,9 @@ class TestAuditCoverage:
                     "_invite_creators",
                     "_check_in_collaboration",
                     "_duplicate_campaign",
+                    # Writes the `*.commission` line with the old rate and the
+                    # new one, for both the brand's rate and a campaign's.
+                    "_record_commission_change",
                 )
             )
             if not delegates:
@@ -4165,16 +4168,25 @@ class TestUnverifiedBrandsCannotReachCreators:
         assert "revealed" not in src
         assert "_brand_visible_creator(" in src
 
-    def test_the_brand_invite_route_is_behind_verification(self):
-        # A brand *can* now invite a named creator — but only its own campaign,
-        # and only once we have checked the business is real. The message goes
-        # out through us; the number never comes back.
+    def test_the_invite_route_is_staff_only_and_behind_verification(self):
+        # **A brand can no longer invite anybody.** Reaching out to a creator
+        # is outreach, which is ours — the asking half of the roster that went
+        # when `GET /brand/creators` did. What survives from the old rule is
+        # the verification half, pointed at the right party: the *brand on the
+        # campaign* has to be checked, whoever is pressing the button, because
+        # creators are never reachable through a business nobody has read.
         import inspect
 
-        src = inspect.getsource(server.brand_invite_creators)
-        assert "_own_campaign_or_404" in src
-        assert "_verified_brand_or_403" in src
-        assert src.index("_own_campaign_or_404") < src.index("_verified_brand_or_403")
+        src = inspect.getsource(server.weare_invite_creators)
+        assert "BRAND_ROLES" not in src
+        assert 'require_roles("admin", "weare_team")' in src
+        # The console's scoped door, not the brand's: `_own_campaign_or_404`
+        # resolves the *caller's* brand and would 404 every staff member.
+        assert "_admin_campaign_or_404" in src
+        assert "_campaign_brand_verified_or_409" in src
+        assert src.index("_admin_campaign_or_404") < src.index(
+            "_campaign_brand_verified_or_409"
+        )
 
     def test_the_refusal_says_which_of_the_three_states_they_are_in(self):
         never = server._why_brand_is_blocked({})
@@ -4401,13 +4413,36 @@ class TestBrandEndpointsAreScoped:
         ]
         assert not offenders, f"brand endpoints scoping by login id: {offenders}"
 
+    # Two routes live under `/brand` and are deliberately closed to brands.
+    # **Inviting a creator is outreach, and outreach is ours** — the asking half
+    # of exactly the roster that went when `GET /brand/creators` did. The path
+    # stays where the console already calls it; the guard is what changed.
+    # Named here rather than pattern-matched, so a third one is a decision
+    # somebody makes on purpose rather than a guard quietly loosening.
+    STAFF_ONLY_BRAND_PATHS = {
+        "/campaigns/{campaign_id}/invite",
+        "/campaigns/{campaign_id}/invite-list/{list_id}",
+    }
+
     def test_every_brand_endpoint_accepts_both_role_names(self):
         offenders = [
             f"{path} ({fn})"
             for path, fn, body in self._brand_blocks()
-            if "require_roles(*BRAND_ROLES" not in body
+            if path not in self.STAFF_ONLY_BRAND_PATHS
+            and "require_roles(*BRAND_ROLES" not in body
         ]
         assert not offenders, f"brand endpoints not using BRAND_ROLES: {offenders}"
+
+    def test_the_staff_only_exceptions_really_are_closed_to_brands(self):
+        # The other half of the exception above, and the half that matters: an
+        # allow-list that only *excuses* a route would pass just as happily if
+        # somebody put the brand roles back on one.
+        blocks = {path: body for path, _fn, body in self._brand_blocks()}
+        for path in self.STAFF_ONLY_BRAND_PATHS:
+            body = blocks.get(path)
+            assert body is not None, f"{path} is gone — drop it from the list"
+            assert "BRAND_ROLES" not in body, f"{path} is open to brands again"
+            assert 'require_roles("admin", "weare_team")' in body, path
 
     def test_a_brand_manager_cannot_reach_the_weare_manager_router(self):
         # Campaigns now default their manager to the brand's own person, so
@@ -4435,7 +4470,6 @@ class TestBrandManagerPowers:
         [
             "brand_pause_campaign",
             "brand_resume_campaign",
-            "brand_invite_creators",
             "brand_record_agreed_amount",
             "brand_check_in_creator",
             "brand_campaign_roster",
@@ -4451,7 +4485,6 @@ class TestBrandManagerPowers:
     @pytest.mark.parametrize(
         "fn_name",
         [
-            "brand_invite_creators",
             "brand_record_agreed_amount",
             "brand_check_in_creator",
             "brand_campaign_roster",
@@ -4493,7 +4526,7 @@ class TestBrandManagerPowers:
 
         assert "_pause_campaign(" in inspect.getsource(server.brand_pause_campaign)
         assert "_resume_campaign(" in inspect.getsource(server.brand_resume_campaign)
-        assert "_invite_creators(" in inspect.getsource(server.brand_invite_creators)
+        assert "_invite_creators(" in inspect.getsource(server.weare_invite_creators)
         assert "_check_in_collaboration(" in inspect.getsource(server.brand_check_in_creator)
 
     def test_the_campaign_defaults_its_manager_to_the_brands_person(self):

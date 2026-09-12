@@ -19,6 +19,7 @@ export * from './brand';
 export * from './brief';
 export * from './budget';
 export * from './calendar';
+export * from './commercial';
 export * from './compliance';
 export * from './dense';
 export * from './drafts';

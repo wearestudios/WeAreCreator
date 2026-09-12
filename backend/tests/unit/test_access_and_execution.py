@@ -308,17 +308,49 @@ class TestTheRuleIsEnforcedOnCreation:
 
         run(body)
 
-    def test_an_ordinary_brief_still_belongs_to_the_brand(self):
-        """The rule must not quietly take everything: posting a brief means
-        running it unless you say otherwise."""
+    def test_an_ordinary_brief_is_ours_too_and_the_payload_cannot_say_otherwise(self):
+        """**The rule now does take everything, and that is the product.**
+
+        This test used to assert the opposite — that a plain three-creator
+        brief stayed the brand's — because posting a brief meant running it
+        unless you said so. The offer changed: WeAre runs every campaign
+        posted here end to end. What survives is the shape of the check, and
+        the important half is the second assertion: a client that still sends
+        `execution_owner="brand"` is **ignored rather than obeyed**, so a
+        cached form cannot quietly opt a brand out.
+        """
         async def body(db):
             user, _ = await _brand_scene(db)
             out = await server.create_brand_campaign(
                 _payload(creators_needed=3, execution_owner="brand"), user
             )
             doc = await db.campaigns.find_one({"_id": ObjectId(out["id"])})
-            assert doc["execution_owner"] == "brand"
-            assert doc.get("weare_run_reason") is None
+            assert doc["execution_owner"] == "weare"
+            # `managed` rather than a shape code: nothing about *this* brief is
+            # the reason, which is what the form has to explain.
+            assert doc["weare_run_reason"] == server.MANAGED_BY_DEFAULT_REASON
+
+        run(body)
+
+    def test_the_shape_rules_still_name_themselves(self):
+        """A launch is ours for a reason a brand can read, and it is not the
+        same reason an ordinary brief is. Both are WeAre-run; only one of them
+        has something specific to say about itself, and collapsing the two
+        would lose the sentence the form shows on a launch."""
+        async def body(db):
+            user, _ = await _brand_scene(db)
+            out = await server.create_brand_campaign(
+                _payload(
+                    campaign_type="launch",
+                    event_date=_now(),
+                    start_date=None,
+                    end_date=None,
+                    creators_needed=3,
+                ),
+                user,
+            )
+            doc = await db.campaigns.find_one({"_id": ObjectId(out["id"])})
+            assert doc["weare_run_reason"] == "launch"
 
         run(body)
 
@@ -361,6 +393,15 @@ class TestTheRuleIsEnforcedOnEdit:
         async def body(db):
             user, _ = await _brand_scene(db, threshold=5)
             out = await server.create_brand_campaign(_payload(creators_needed=3), user)
+            # **An admin has handed this one back**, which is now the only way
+            # a brand-run campaign exists at all: a brief posted by a brand is
+            # WeAre-run from the moment it is written, so there would otherwise
+            # be nothing here to hand over and this test would pass on a
+            # deleted feature. The rule still matters on exactly these rows.
+            await db.campaigns.update_one(
+                {"_id": ObjectId(out["id"])},
+                {"$set": {"execution_owner": "brand", "weare_run_reason": None}},
+            )
             await server.update_brand_campaign(
                 out["id"], server.UpdateCampaignPayload(creators_needed=20), user
             )
@@ -410,7 +451,13 @@ class TestTheRuleIsEnforcedOnEdit:
             # 409, not 422: the payload is well formed, the campaign's shape
             # is what refuses it.
             assert err.value.status_code == 409
-            assert err.value.detail["code"] == "weare_run_launch"
+            # **`managed_by_weare`, not `weare_run_launch`.** Both were true;
+            # the first is the one that answers the question. A brand may not
+            # change who runs *any* campaign, so telling them this particular
+            # brief is a launch would imply an ordinary one could be taken
+            # back. The launch and headcount rules still decide what an
+            # *admin* may hand over.
+            assert err.value.detail["code"] == "managed_by_weare"
             # **Read the row back.** A refusal raised after the write is not a
             # refusal.
             doc = await db.campaigns.find_one({"_id": ObjectId(cid)})
@@ -429,7 +476,7 @@ class TestTheRuleIsEnforcedOnEdit:
                     server.UpdateCampaignPayload(execution_owner="brand"),
                     user,
                 )
-            assert err.value.detail["code"] == "weare_run_large"
+            assert err.value.detail["code"] == "managed_by_weare"
             doc = await db.campaigns.find_one({"_id": ObjectId(cid)})
             assert doc["execution_owner"] == "weare"
 
@@ -440,7 +487,7 @@ class TestTheRuleIsEnforcedOnEdit:
         the same asymmetry `_refuse_brand_barter` has, and for the same reason:
         the rule is a default for brands, not a fact about the database."""
         src = inspect.getsource(server.admin_update_campaign)
-        assert "_refuse_late_execution_handover" not in src
+        assert "_refuse_brand_execution_choice" not in src
 
     def test_the_form_is_told_the_threshold_rather_than_keeping_a_copy(self):
         """A number the form hardcodes is a form arguing with the route it
@@ -455,16 +502,22 @@ class TestTheRuleIsEnforcedOnEdit:
         assert "threshold" in js
         assert f"= {server.LARGE_CAMPAIGN_CREATORS_DEFAULT}" not in js
 
-    def test_the_form_replaces_the_picker_rather_than_offering_a_dead_choice(self):
+    def test_the_form_shows_the_specific_reason_where_there_is_one(self):
+        """**The picker is gone entirely**, so there is no dead choice left to
+        replace — every brand-posted brief is ours. What still matters is that
+        a launch is told *why it in particular* is ours rather than the
+        general sentence: "we run launches" and "we run everything" are
+        different offers, and collapsing them would lose the one that answers
+        a brand's actual question about this brief."""
         form = (FRONTEND / "pages" / "PostCampaign.jsx").read_text()
         # The derivation itself, not merely the identifier: `const weareRun =
         # null && weareRunReason(...)` mentions it and answers nothing.
         assert "const weareRun = weareRunReason({" in form
-        assert "{weareRun ? (" in form
         assert "EXECUTION.weareRun" in form
-        # And it sends the value the server is going to store, or the edit path
-        # refuses the whole save over a field the form no longer shows.
-        assert 'weareRun ? "weare" : executionOwner' in form
+        assert "weareRun ? weareRun.line" in form
+        # And nothing is posted: the create path ignores the field and the
+        # edit path refuses it.
+        assert "execution_owner:" not in form
 
 
 # --- 4. The closed campaign, as a file the brand keeps -------------------------

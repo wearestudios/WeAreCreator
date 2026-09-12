@@ -1633,6 +1633,127 @@ stops trusting us with its campaigns.
   weighing it against exactly this list, and until now nobody had written it
   down.
 
+## What we charge, and what comes back
+
+Three commercial facts that were an environment variable and two things
+nobody recorded.
+
+### The rate, negotiated rather than deployed
+
+The margin was one `PLATFORM_FEE_PERCENT` for everybody, so agreeing
+different terms with a client meant a deploy — which in practice meant not
+agreeing them. Three levels, narrowest first: the **campaign**, then the
+**brand**, then the global default. `_resolve_commission` is the one decider
+and returns `{"percent", "source"}`, because "15%" and "15%, because nobody
+has agreed anything else" are different facts and only one is worth a call.
+
+- **`None` and `0` are different answers and both are real.** A brand we
+  charge nothing is on 0%; one nobody has negotiated with is on whatever the
+  default is today. Collapsing them would either invent a discount or quietly
+  re-price a free account the next time the default moved. `_commission_of`
+  holds that line and reads an unparseable value as absent — the safe
+  direction, since it is what the brand was paying before somebody typed
+  something unreadable.
+- **A payment freezes the resolved rate at creation and never re-resolves.**
+  That is the whole reason resolution is a function rather than a lookup at
+  the point of use: renegotiating terms must not restate last month's
+  invoices. `fee_percent` and `fee_percent_source` are stored on the payment,
+  `_payment_fee_percent` is the reader for anything recomputing against an
+  existing one, and a payment written before the field falls back to the
+  global default — which is what it was charged at, there being only one rate
+  then.
+- The one recomputation is a mediated **partial release**, which used to
+  reach for today's global rate. It reads the stored one now — and while
+  fixing that, the same line was found deducting the fee from the creator's
+  payout, alone among every payment on the platform. Creators keep 100%; the
+  margin is charged to the brand on top.
+- `PUT /admin/brands/{id}/commission` is **admin-only** (what we charge a
+  client is the relationship) and `PUT /admin/campaigns/{id}/commission` is
+  `CONSOLE_ROLES` (a launch carrying its own terms is scoped work). Both cost
+  a **reason in either direction, clearing included** — "why is this brand on
+  8%" and "why did it stop being 8%" are both asked later — and
+  `_record_commission_change` writes the audit line with the **old value and
+  the new one**, because "set to 8" cannot say whether that was a discount.
+- A brand **reads** the rate applied to its campaigns and has nowhere to
+  write one: it is on every invoice they pay, so hiding it would be coy, and
+  `BrandProfileUpdate` has no such key for the generic copy loop to let
+  through.
+
+### The campaign fee, and the conditional refund
+
+`campaign_fee` is the flat charge for running a brief — separate from the
+creators' fees and from the commission on them. Staff set it; the brand never
+does.
+
+**The rule, in one question: had the brand accepted everybody we shortlisted,
+would the brief have filled?** If yes, the shortfall was their decision and
+the fee stands. If no, we did not find enough people and it comes back.
+
+- That generalises the two cases the policy names and answers the middle,
+  which a rule written only from the ends could not. Rejecting none of five
+  on an eight-creator brief is refundable; rejecting all five on a
+  five-creator brief is not; rejecting four of ten on an eight-creator brief
+  forfeits, because ten were there to take.
+- `_refund_reckoning` is **pure** and takes the four counts, so the rule can
+  be read and tested without a database — the same arrangement
+  `_weare_run_reason` uses. `_refund_counts_for` gathers them, and
+  **shortlisted is `agreed_at`**, the same line `_brand_sees_collab` draws, so
+  what we counted and what the brand actually saw cannot disagree. Rejected is
+  shortlisted *and* declined: somebody we never put forward is not somebody
+  they turned down.
+- **Derived on read, never stored** — the counts move as the campaign does.
+  What *is* stored is the admin's decision, and `_refund_assessment` keeps the
+  computation beside it so an override is visible as one. The two halves speak
+  different vocabularies on purpose (`eligible`/`forfeited` is a verdict,
+  `refunded`/`declined` is a decision) and `_REFUND_AGREES` is the one place
+  they are lined up — comparing the strings made every decision read as an
+  override, which would have buried the few that are.
+- **Nothing refunds automatically.** `_raise_refund_decision` tells every
+  admin on close, once, claimed under a filter — and reads `matched_count`
+  rather than `modified_count`, because "did the filter match" is the claim
+  and mongomock reports the latter as 0 for a replaced timestamp, which made
+  the obvious test unable to fail.
+- **Absent `campaign_fee` means there is nothing to refund**, not a refund of
+  zero, or every brief that ever closed would put a decision in front of
+  somebody. The usual absent-reads-safe rule.
+- `REFUND_POLICY_TERMS` is stated at creation and frozen into the terms
+  snapshot, so it reads as a trust signal rather than a surprise — a refund
+  policy somebody meets during an argument is not a policy. The decision
+  lands on the campaign, on every payment for it, and in the payments export.
+
+## Inviting is ours, and so is the shortlist
+
+Two endpoints let a verified brand invite creators. They are staff-only now
+(`require_roles("admin", "weare_team")`) — **reaching out to a creator is the
+asking half of the roster that went when `GET /brand/creators` did.** They
+keep their `/brand/...` paths, which is what the console already calls; what
+changed is who may call them, and they go through `_admin_campaign_or_404`
+(the scoped door) with `_campaign_brand_verified_or_409` instead of the
+caller-shaped guards — `_brand_scope` on staff resolves to their own user id,
+which owns no brand profile, so the old pair would have refused every staff
+invite while looking correct.
+
+On the brand's board the saved-lists panel is **gone** (its only action was
+inviting) and the suggestions panel **stays with `canInvite={false}`** — it is
+the curated half, ranked against one brief with the reasons shipped, and a
+brand receiving curation is the offer rather than a contradiction of it.
+`CreatorLists` moved to the admin campaign page, beside the invite it feeds.
+
+**The shortlist gate needed two fixes to be true end to end.**
+`_brand_sees_collab` / `_brand_visible_collab_query` were on the board and on
+`_brand_collab_or_404`, and missing from two places:
+
+- `_applicant_counts_for` counted every application regardless, so a brand
+  read "31 applicants" on a card and opened a board with three on it. The
+  missing twenty-eight are precisely the unchecked pitches handing a campaign
+  to us is meant to spare them, and a count is a perfectly good way to leak
+  that they exist. `_brand_applicant_counts_for` is the brand's counter — one
+  aggregation over a mixed list, because a dashboard holds both kinds.
+- The close-out export filtered on `_BRAND_EXPORT_STATES`, which includes
+  `cancelled` — and a collaboration can be cancelled straight out of
+  `applied`. The states are a proxy for "was taken on"; the gate is the actual
+  rule, and both are applied now.
+
 ## What a brief pays
 
 `compensation_type` on a campaign, one of three (`CompensationType`):
@@ -2135,11 +2256,32 @@ application went to the brand's manager whether or not the brand had asked us
 to run the campaign, so a brand that handed one over still got paged for every
 applicant and no WeAre manager was told at all.
 
-- `_execution_owner(campaign)` is the only reader — pure, DB-free, and an
-  absent or unrecognised value reads as `brand`. Every surface showing this has
-  to print one of two words, so it never travels as `None`. A brand picks at
-  post time (`PostCampaignPayload`, defaulting to `brand`: posting a brief means
-  running it unless you say otherwise).
+- **The product is managed-only, so a brand no longer picks.** Every
+  brand-posted brief is `weare`: `NEW_CAMPAIGN_EXECUTION_OWNER` is the create
+  default, `create_brand_campaign` ignores whatever the payload carried, and
+  `_refuse_brand_execution_choice` refuses any change on the edit path with
+  `managed_by_weare`. Only `PATCH /admin/campaigns/{id}` can make a campaign
+  brand-run, and it skips every guard here. `_refuse_late_execution_handover`
+  — which used to allow the change while the brief was a draft — is **gone
+  rather than kept**: with the absolute guard in front of it no input could
+  reach its branches, and a guard that cannot fire is the shape this codebase
+  keeps finding bugs in.
+- **`DEFAULT_EXECUTION_OWNER` is the *reader's* default and stays `brand`.**
+  It is what an absent value means on the thousands of campaigns written
+  before the field existed, so flipping it would hand every historical brief
+  to a WeAre manager who was never told. The creation default and the reader
+  default differing is deliberate — the same split `requires_draft_approval`
+  makes, for the same reason: one is a policy for new work and the other is a
+  promise to old work. `_execution_owner(campaign)` is the only reader — pure,
+  DB-free, never `None`, because every surface has to print one of two words.
+- `weare_run_reason` is now always set on a brand-posted brief:
+  `MANAGED_BY_DEFAULT_REASON` (`managed`) where it is simply the product, and
+  the specific code where the *shape* of the work is why. Both are ours;
+  only one has something particular to say, and the form shows the specific
+  sentence where there is one — "we run launches" and "we run everything" are
+  different offers. `MANAGED_BY_DEFAULT_SENTENCE` and `REFUND_POLICY_TERMS`
+  ride on the create response and are mirrored in `lib/execution.js` with a
+  drift test, because the form renders both *before* a campaign exists.
 - **It never disagrees with `manager_id`.** Assigning a WeAre manager sets
   `execution_owner: "weare"` in the same write — there is no such thing as one
   of our managers running a campaign the console calls brand-run. Going the
@@ -2153,13 +2295,12 @@ applicant and no WeAre manager was told at all.
   `_tell_brand_manager_unless_managed`, which is being informed rather than
   being asked to act. `brand` tells the brand's manager, as before. Admins see
   and act on everything either way; none of the admin endpoints are scoped by it.
-- A brand may change it **only while the brief is a draft or in review**
-  (`_refuse_late_execution_handover`). After that, creators have applied knowing
-  who they would be dealing with, and switching would silently stop telling
-  whoever has been working it. An admin can still move it; `PATCH
-  /admin/campaigns/{id}` deliberately does not call the guard — the same shape
-  as `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
-  the payload generically, so an unguarded field rides along with everything else.
+- A brand may not change it **at any status**, which is stronger than the
+  windowed rule it replaced. The guard is `_refuse_brand_execution_choice`,
+  and the admin route deliberately does not call it — the same shape as
+  `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
+  the payload generically, so an unguarded field rides along with everything
+  else.
 - Filtering for `brand` is `{"$ne": "weare"}`, not an equality test — campaigns
   predate the field. The startup backfill fills them in (deriving `weare` from a
   WeAre `manager_id`), but a filter that only works after a migration has run

@@ -109,3 +109,23 @@ export const EXECUTION_FILTERS = [
     { value: "brand", label: "Brand-run" },
     { value: "weare", label: "WeAre-run" },
 ];
+
+// **The offer, mirrored from the server so the form and the create response
+// cannot say different things.** Mirrors `MANAGED_BY_DEFAULT_SENTENCE` and
+// `REFUND_POLICY_TERMS` in `backend/server.py`; a unit test fails if they
+// drift — the same arrangement `followerTiers.js` and `platformTerms.js` use.
+//
+// The form has to render both *before* a campaign exists, so there is nothing
+// to fetch them from at the moment they matter most.
+
+export const MANAGED_NOTE =
+    "Our team runs this campaign end to end — shortlisting creators, agreeing " +
+    "their fees, booking the shoot and chasing delivery. You write the brief, " +
+    "approve the work and pay once. Nothing here needs managing by you.";
+
+export const REFUND_TERMS =
+    "If we don't fill your campaign, the campaign fee is refundable. The one " +
+    "exception is creators you turn down: where we shortlisted enough people " +
+    "and the brief would have filled had you taken them, the fee stands — the " +
+    "shortfall was a decision rather than a delivery. Either way a person here " +
+    "reviews it when the campaign closes and tells you the outcome.";

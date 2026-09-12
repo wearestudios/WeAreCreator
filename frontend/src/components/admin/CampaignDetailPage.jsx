@@ -27,6 +27,8 @@ import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { formatCompensation, isBarter, compensationLabel } from "@/lib/compensation";
 import BudgetMeter from "@/components/campaign/BudgetMeter";
+import CreatorLists from "@/components/CreatorLists";
+import CommercialTerms from "@/components/admin/CommercialTerms";
 import { budgetApplies } from "@/lib/budget";
 import { isPrivate, visibilityLabel } from "@/lib/visibility";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
@@ -757,6 +759,33 @@ export default function CampaignDetailPage() {
                                     ))}
                             </div>
                         )}
+                    </Section>
+
+                    {/* **People we would ask again, on the screen of the
+                        people who now do the asking.** This panel was on the
+                        brand's applicant board, where its only action —
+                        inviting everybody on a list at once — is no longer
+                        something a brand may do. Moved rather than deleted:
+                        the lists are operational knowledge ("creators who are
+                        good at launch nights") and inviting from one is a real
+                        job, it is simply ours. */}
+                    {/* **What we charge, and what comes back.** The rate for
+                        this brief (overriding the brand's), the flat fee for
+                        running it, and — once it has closed short — the refund
+                        reckoning with the sentence explaining it. All three
+                        used to be an environment variable and two things
+                        nobody recorded. */}
+                    <Section id="commercial" title="Commercial terms">
+                        <CommercialTerms
+                            campaign={campaign}
+                            refund={detail.refund}
+                            commission={detail.commission_effective}
+                            onSaved={loadDetail}
+                        />
+                    </Section>
+
+                    <Section id="lists" title="Invite from a list">
+                        <CreatorLists campaignId={id} onInvited={loadApplicants} />
                     </Section>
 
                     <Section id="payments" title="Payments" count={detail.payments.length}>

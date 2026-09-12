@@ -20,13 +20,12 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { SafeSection } from "@/components/ErrorBoundary";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import { Skeleton } from "@/components/ui/skeleton";
 import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
 import { DisclosureConfirmDialog } from "@/components/campaign/CampaignTerms";
 import Shortfall from "@/components/Shortfall";
-import CreatorLists from "@/components/CreatorLists";
 import { ReliabilityBadge } from "@/components/ReliabilityBadge";
 import { SHORTFALL } from "@/constants/testIds";
 import {
@@ -1116,23 +1115,25 @@ export default function BrandCampaignApplicants() {
                     <InvitedStrip invited={data.invited} />
                 </SafeSection>
 
-                {/* Applicants are who came to you. This is who to go and ask —
-                    same page, because they are two halves of filling a brief.
-                    Separately boxed: the ranking is the newest code on this
-                    screen and the least essential to it. */}
+                {/* **The curated half stays; the asking half went.** Ranked
+                    against this brief with the reasons shipped, which is what
+                    makes it a shortlist rather than the directory it
+                    replaced — a brand receiving curation is the offer. What
+                    is gone is the Invite button beside each row: reaching out
+                    to a creator is ours now, so the panel reads and we ask.
+                    `canInvite` is what the page decides; the component never
+                    works it out for itself. */}
                 <SafeSection name="suggested-creators" label="Suggestions couldn't load">
-                    <SuggestedCreators campaignId={id} />
+                    <SuggestedCreators campaignId={id} canInvite={false} />
                 </SafeSection>
 
-                {/* People you already know are good. Beside the suggestions
-                    rather than instead of them: one is who to try, the other
-                    is who worked last time, and a brand filling a brief wants
-                    both on the same screen. */}
-                <SafeSection name="creator-lists" label="Your lists couldn't load">
-                    <div className="mt-10">
-                        <CreatorLists campaignId={id} onInvited={load} />
-                    </div>
-                </SafeSection>
+                {/* **The saved lists are gone from this screen.** Their whole
+                    purpose was inviting everybody on one in a single action,
+                    so with the invite removed there is nothing left of the
+                    panel — removed rather than left as a list of names with a
+                    dead button, which is the directory this product does not
+                    have. The lists themselves are untouched; WeAre invites
+                    from them. */}
 
                 {/* Creator questions on this campaign. The server 404s this
                     for a weare-run campaign — those threads are between the

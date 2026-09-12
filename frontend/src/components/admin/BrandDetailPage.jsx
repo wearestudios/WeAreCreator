@@ -40,6 +40,7 @@ import CancellationHistory from "@/components/admin/CancellationHistory";
 import BrandInvoices from "@/components/admin/BrandInvoices";
 import BrandDocuments from "@/components/admin/BrandDocuments";
 import BrandTrust from "@/components/admin/BrandTrust";
+import { CommissionControl } from "@/components/admin/CommercialTerms";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const STATE_LABEL = {
@@ -409,6 +410,27 @@ export default function BrandDetailPage() {
                                 userId={id}
                                 trust={data.trust}
                                 onChanged={load}
+                            />
+                        </Section>
+                    )}
+
+                    {/* **What we charge them, and who last said so.**
+                        `allAccess` because the rate is the relationship rather
+                        than scoped work — a `weare_team` member prices a
+                        campaign, an admin prices the client. The brand reads
+                        the rate on its own profile and has nowhere to write
+                        one. */}
+                    {allAccess && (
+                        <Section id="commission" title="What we charge them">
+                            <CommissionControl
+                                label="Commission on this brand"
+                                endpoint={`/admin/brands/${id}/commission`}
+                                value={data.brand.commission_percent}
+                                effective={data.brand.commission_effective}
+                                setAt={data.brand.commission_set_at}
+                                setBy={data.brand.commission_set_by_name}
+                                setReason={data.brand.commission_reason}
+                                onSaved={load}
                             />
                         </Section>
                     )}

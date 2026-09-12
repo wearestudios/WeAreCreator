@@ -2176,7 +2176,36 @@ EXECUTION_OWNERS = ("brand", "weare")
 # Campaigns written before this field existed were brand briefs run by the
 # brand's own manager unless an admin had handed one to a WeAre manager, which
 # is what the startup backfill looks for. Absent means brand.
+#
+# **This is the *reader's* default and it must stay "brand".** It is what an
+# absent value means on a campaign written before the field existed, and there
+# are thousands of those; flipping it would silently hand every historical
+# brief to a WeAre manager who was never told about it. The default for a
+# *new* campaign is the constant below, and the two differing is deliberate —
+# the same split `requires_draft_approval` makes, for the same reason: one is
+# a policy for new work and the other is a promise to old work.
 DEFAULT_EXECUTION_OWNER = "brand"
+
+# **What a brand posting a brief today gets, and it is not theirs to change.**
+# The product is managed-only: a brand writes the brief, approves the work and
+# pays, and our team runs everything between those. The picker is gone from
+# the form and the field is ignored on the brand's create path, so a stale
+# client sending the old default cannot fail a save — the same shape
+# `compensation_type` takes, typed as the full enum and refused by the handler
+# rather than by pydantic.
+#
+# Only an admin can make a campaign brand-executed, through
+# `PATCH /admin/campaigns/{id}`, which deliberately skips the brand guards.
+NEW_CAMPAIGN_EXECUTION_OWNER = "weare"
+
+# Why a brand-posted brief is ours, said once so the create response, the form
+# and the campaign row all quote the same sentence.
+MANAGED_BY_DEFAULT_REASON = "managed"
+MANAGED_BY_DEFAULT_SENTENCE = (
+    "Our team runs this campaign end to end — shortlisting creators, agreeing "
+    "their fees, booking the shoot and chasing delivery. You write the brief, "
+    "approve the work and pay once. Nothing here needs managing by you."
+)
 
 
 def _execution_owner(campaign: dict) -> str:
@@ -2400,10 +2429,13 @@ class PostCampaignPayload(BriefDetailFields):
     # "Input should be 'fixed' or 'negotiated'", which reads like a typo. The
     # handler refuses it with the actual reason instead.
     compensation_type: CompensationType = DEFAULT_COMPENSATION_TYPE
-    # Run it themselves, or hand it to us. Defaults to the brand, because that
-    # is what posting a brief means unless you say otherwise — and because a
-    # campaign silently landing in the WeAre queue is work nobody agreed to.
-    execution_owner: ExecutionOwner = DEFAULT_EXECUTION_OWNER
+    # **Ours, and the brand's create path ignores whatever arrives here.** The
+    # field stays on the model rather than being removed so a client still
+    # sending the old value does not 422 on a key the form no longer shows;
+    # `create_brand_campaign` forces `NEW_CAMPAIGN_EXECUTION_OWNER` and says so
+    # in the response. The admin's create payload overrides this default with
+    # its own and is the only route where the value is honoured.
+    execution_owner: ExecutionOwner = NEW_CAMPAIGN_EXECUTION_OWNER
     # Findable by every verified creator, or invite-only. Defaults to public
     # because that is what posting a brief means unless you say otherwise.
     visibility: CampaignVisibility = DEFAULT_CAMPAIGN_VISIBILITY
@@ -2534,8 +2566,8 @@ class UpdateCampaignPayload(BriefDetailFields):
     compensation_type: Optional[CompensationType] = None
     # Who runs it. A brand may change its mind while the brief is still a
     # draft; once it is live, handing execution over is a conversation, not a
-    # dropdown — `_refuse_late_execution_handover` is what enforces that, and
-    # the admin route skips it.
+    # **and a brand may not change it at all** — `_refuse_brand_execution_choice`
+    # is what enforces that, and the admin route skips it.
     execution_owner: Optional[ExecutionOwner] = None
     # A brand may open a private brief up or pull a public one back at any
     # editable stage. Going private does not evict anyone: creators who already
@@ -3861,6 +3893,14 @@ NOTIFY_EVENTS = {
     # A collaboration flagged as having gone off-platform. To every admin,
     # because it is a decision about an account rather than about a campaign.
     "circumvention_reported": "A collaboration was flagged as off-platform",
+    # The campaign fee, after a brief closed short. Both outcomes are sent —
+    # "we're refunding it" and "it stands, and here is why" — because the
+    # second is the one a brand needs to hear from us rather than work out
+    # from an invoice that never arrived.
+    # To us, when a brief closes short and somebody has to decide.
+    "campaign_fee_decision": "A campaign fee needs a decision",
+    "campaign_fee_refunded": "Your campaign fee is being refunded",
+    "campaign_fee_kept": "About your campaign fee",
     # The question channel, both directions. Who receives campaign_question
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
@@ -4340,7 +4380,13 @@ def _delete_upload(public_url: Optional[str]) -> None:
 
 
 def platform_fee_percent() -> float:
-    """The margin charged to the brand, on top of the creator's fee."""
+    """The margin charged to the brand, on top of the creator's fee.
+
+    **The floor of three, not the whole answer.** A campaign's own rate beats a
+    brand's, and a brand's beats this — see `_resolve_commission`. This stays
+    the value nobody has overridden, and it is still what a brand with no
+    negotiated terms pays.
+    """
     try:
         pct = float(os.environ.get("PLATFORM_FEE_PERCENT", "15"))
     except ValueError:
@@ -4350,6 +4396,354 @@ def platform_fee_percent() -> float:
         logger.warning("PLATFORM_FEE_PERCENT out of range (%s) — falling back to 15", pct)
         return 15.0
     return pct
+
+
+# ---------------------------------------------------------------------------
+# Commission, negotiated rather than deployed
+# ---------------------------------------------------------------------------
+#
+# The rate was one environment variable for everybody, so every brand paid the
+# same margin and agreeing different terms with one of them meant a deploy —
+# which in practice meant not agreeing them. Terms get settled in a
+# conversation, and a number that can only change in a release is a number
+# that stops matching what was actually said.
+#
+# Three levels, narrowest first:
+#
+#   1. the **campaign**, for a launch or an unusual event carrying its own terms
+#   2. the **brand**, for the rate agreed when the relationship was set up
+#   3. the **global default**, for everybody else
+#
+# **A payment freezes the resolved rate at creation and never reads any of the
+# three again.** That is the whole reason the resolution order is a function
+# rather than a lookup at the point of use: editing a brand's rate next month
+# must not silently restate what last month's invoices said. The stored
+# `fee_percent` on the payment is the historical record, and
+# `_payment_fee_percent` is the reader for anything that recomputes against an
+# existing payment.
+
+
+def _clean_commission_percent(raw) -> Optional[float]:
+    """A rate somebody typed, or `None` for "use the level above".
+
+    **`None` and `0` are different answers** and both are real: a brand we
+    charge nothing is a brand on 0%, and one nobody has negotiated with is a
+    brand on whatever the default is today. Collapsing them would either
+    invent a discount or quietly re-price a free account the next time the
+    default moved.
+    """
+    if raw is None:
+        return None
+    try:
+        pct = round(float(raw), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="The commission rate has to be a number.")
+    if pct < 0 or pct > 100:
+        raise HTTPException(
+            status_code=422, detail="The commission rate has to be between 0 and 100."
+        )
+    return pct
+
+
+def _commission_of(doc: Optional[dict]) -> Optional[float]:
+    """One record's own rate, or `None` if it has not set one."""
+    value = (doc or {}).get("commission_percent")
+    if value is None:
+        return None
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        # A rate that cannot be read is not a rate. Falling through to the
+        # level above is the safe direction — it is what the brand was paying
+        # before somebody wrote something unreadable into the field.
+        return None
+
+
+def _resolve_commission(
+    campaign: Optional[dict] = None, brand_profile: Optional[dict] = None
+) -> dict:
+    """Which rate applies, and where it came from.
+
+    Returns `{"percent", "source"}` — the source travels because "15%" and
+    "15%, because nobody has agreed anything else" are different facts to an
+    admin looking at a brand page, and only one of them is worth a
+    conversation.
+    """
+    for doc, source in ((campaign, "campaign"), (brand_profile, "brand")):
+        pct = _commission_of(doc)
+        if pct is not None:
+            return {"percent": pct, "source": source}
+    return {"percent": platform_fee_percent(), "source": "default"}
+
+
+async def _commission_for_campaign(campaign: Optional[dict]) -> dict:
+    """The resolved rate for one campaign, reading its brand for the middle
+    level. One round trip, and only when the campaign has no rate of its own."""
+    if _commission_of(campaign) is not None:
+        return _resolve_commission(campaign, None)
+    profile = await db.brand_profiles.find_one(
+        {"user_id": (campaign or {}).get("brand_id")}
+    )
+    return _resolve_commission(campaign, profile)
+
+
+def _payment_fee_percent(payment: Optional[dict]) -> float:
+    """The rate a payment was written at.
+
+    **Never re-resolved.** A payment carries `fee_percent` from the moment it
+    is created, so anything recomputing against it — a partial release, an
+    export, a recalculation after a dispute — reads the number the invoice was
+    issued at rather than today's. A payment written before the field existed
+    falls back to the global default, which is what it would have been charged
+    at: there was only one rate then.
+    """
+    value = (payment or {}).get("fee_percent")
+    if value is None:
+        return platform_fee_percent()
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return platform_fee_percent()
+
+
+def fee_at(amount, percent: float) -> float:
+    """The margin on an amount at a given rate. One arithmetic, three callers."""
+    return round(float(amount or 0) * float(percent) / 100.0, 2)
+
+
+# ---------------------------------------------------------------------------
+# The campaign fee, and what happens when a brief underfills
+# ---------------------------------------------------------------------------
+#
+# `campaign_fee` is the flat charge for WeAre running a campaign — separate
+# from the creators' fees, which are theirs, and from the commission, which is
+# a percentage of those. It is set by staff, never by the brand.
+#
+# **The refund rule is a promise, so it is stated before it is needed.** A
+# brand hands over a brief and a fee on the understanding that we will fill
+# it; if we do not, the fee comes back. What makes it fair in the other
+# direction is the exception: if we shortlisted enough people and the brand
+# turned them down, the shortfall was their decision and the work was still
+# done. Both halves are told to the brand at creation and frozen into the
+# terms snapshot, because a refund policy somebody meets for the first time
+# during an argument is not a policy, it is a surprise.
+#
+# **Nothing refunds automatically.** The computation says what it thinks and
+# why, in a sentence somebody can read out on a call; an admin confirms it, and
+# can decide the other way with a reason. A rule that moved money on its own
+# would be a rule nobody checked.
+
+REFUND_POLICY_TERMS = (
+    "If we don't fill your campaign, the campaign fee is refundable. The one "
+    "exception is creators you turn down: where we shortlisted enough people "
+    "and the brief would have filled had you taken them, the fee stands — the "
+    "shortfall was a decision rather than a delivery. Either way a person here "
+    "reviews it when the campaign closes and tells you the outcome."
+)
+
+# Where a refund has got to. `none` is the ordinary end of a campaign that
+# filled: not every closed brief has a refund question to answer.
+REFUND_STATES = ("none", "eligible", "forfeited", "refunded", "declined")
+
+# Which decision agrees with which verdict. The rule reaches a *verdict* and a
+# person makes a *decision*, and they are named differently on purpose — "the
+# fee is eligible" and "we refunded it" are not the same sentence, and the gap
+# between them is where the admin's judgement lives. This is the one place the
+# two vocabularies are lined up, so "did somebody overrule the rule" has a
+# single answer.
+_REFUND_AGREES = {"eligible": "refunded", "forfeited": "declined"}
+
+
+def _refund_reckoning(
+    campaign: Optional[dict],
+    *,
+    targeted: int,
+    finalised: int,
+    shortlisted: int,
+    rejected: int,
+) -> dict:
+    """Whether the campaign fee comes back, and the sentence explaining it.
+
+    **Pure.** The counts are gathered once by `_refund_counts_for` and handed
+    in, so the rule can be read, tested and quoted without a database — the
+    same arrangement `_weare_run_reason` and `score_creator_for_campaign` use.
+
+    The rule in one line: **had the brand accepted everybody we shortlisted,
+    would the brief have filled?** If yes, the shortfall is theirs and the fee
+    stands. If no, we did not find enough people and it comes back.
+
+    That generalises the two cases the policy names. Rejecting none of five
+    shortlisted on an eight-creator brief leaves us three short of our own
+    doing — refundable. Rejecting all five on a five-creator brief means we
+    delivered the whole brief and it was turned down — forfeited. And it
+    answers the middle honestly, which a rule written only from those two ends
+    could not: rejecting four of ten on an eight-creator brief forfeits,
+    because ten were there to take.
+    """
+    short = max(0, targeted - finalised)
+    if short == 0:
+        return {
+            "state": "none",
+            "eligible": False,
+            "reason": f"Filled — {finalised} of {targeted} creators finalised.",
+            "targeted": targeted,
+            "finalised": finalised,
+            "shortlisted": shortlisted,
+            "rejected": rejected,
+            "shortfall": 0,
+            "campaign_fee": (campaign or {}).get("campaign_fee"),
+        }
+    # Everyone we put in front of them: the ones they took, plus the ones they
+    # turned down. Anybody we never shortlisted is not in this number, which
+    # is the point — it is a measure of our delivery, not of their appetite.
+    could_have_had = finalised + rejected
+    eligible = could_have_had < targeted
+    if eligible:
+        reason = (
+            f"Underfilled by {short}; brand rejected {rejected} of {shortlisted} "
+            "shortlisted — refund eligible."
+        )
+    else:
+        reason = (
+            f"Underfilled by {short}, but the brand rejected {rejected} of "
+            f"{shortlisted} shortlisted — it would have filled at "
+            f"{could_have_had} of {targeted}. Fee stands."
+        )
+    return {
+        "state": "eligible" if eligible else "forfeited",
+        "eligible": eligible,
+        "reason": reason,
+        "targeted": targeted,
+        "finalised": finalised,
+        "shortlisted": shortlisted,
+        "rejected": rejected,
+        "shortfall": short,
+        "campaign_fee": (campaign or {}).get("campaign_fee"),
+    }
+
+
+async def _refund_counts_for(campaign: dict) -> dict:
+    """The four numbers the rule reads, off the collaborations.
+
+    - **targeted** — what the brief asked for.
+    - **finalised** — who is actually on it (`_FILLED_COLLAB_STATES`, the same
+      set the fill counter uses, so "filled" cannot mean two things).
+    - **shortlisted** — everybody WeAre put in front of the brand, which is
+      exactly `agreed_at` being set: the moment somebody here finished the
+      job. The same line `_brand_sees_collab` draws, so the count cannot
+      disagree with what the brand actually saw.
+    - **rejected** — of those, the ones the brand then declined. Shortlisted
+      *and* declined, never declined alone: a creator we never put forward is
+      not a creator they turned down.
+    """
+    oid = campaign["_id"]
+    shortlisted_query = {"campaign_id": oid, "agreed_at": {"$ne": None}}
+    return {
+        "targeted": int(campaign.get("creators_needed") or 0),
+        "finalised": await db.collaborations.count_documents(
+            {"campaign_id": oid, "state": {"$in": _FILLED_COLLAB_STATES}}
+        ),
+        "shortlisted": await db.collaborations.count_documents(shortlisted_query),
+        "rejected": await db.collaborations.count_documents(
+            {**shortlisted_query, "state": "declined"}
+        ),
+    }
+
+
+async def _raise_refund_decision(campaign: Optional[dict]) -> Optional[dict]:
+    """Tell every admin there is a campaign fee to decide on. Once.
+
+    Silent on a brief with no fee, and on one that filled — there is nothing
+    to answer in either case, and a message saying "no refund is due" on every
+    campaign that ever closed is how a channel stops being read.
+
+    **The claim is the write**, the same arrangement the budget warning and
+    the profile nudge use: the stamp is set under a filter that only matches
+    while it is absent, so a campaign closed and reopened and closed again
+    raises one decision rather than three.
+    """
+    assessment = await _refund_assessment(campaign)
+    if not assessment or assessment["state"] == "none":
+        return None
+    claimed = await db.campaigns.update_one(
+        {"_id": campaign["_id"], "refund_raised_at": {"$exists": False}},
+        {"$set": {"refund_raised_at": datetime.now(timezone.utc)}},
+    )
+    # **`matched_count`, not `modified_count`**, and the difference is the
+    # whole claim. "Did the filter match" is the question — "did the bytes
+    # change" is a different one, and answering with the second would skip a
+    # legitimate first claim any time the write happened to be a no-op.
+    # mongomock makes that concrete: it reports `modified_count` 0 for a
+    # timestamp replaced with a new value, so a test written against it could
+    # not tell a working claim from a missing filter. Found by break-testing.
+    if claimed.matched_count == 0:
+        return assessment
+    for admin_id in await db.users.distinct("_id", {"role": "admin"}):
+        await notify(
+            admin_id,
+            "campaign_fee_decision",
+            title="A campaign fee needs a decision",
+            body=f"“{campaign.get('title')}” — {assessment['reason']}",
+            link=f"/admin/campaigns/{str(campaign['_id'])}",
+        )
+    return assessment
+
+
+async def _refund_assessment(campaign: Optional[dict]) -> Optional[dict]:
+    """What the refund position is on one campaign, or `None` for no fee.
+
+    **Absent `campaign_fee` means there is nothing to refund**, not a refund of
+    zero — campaigns predate the field and plenty will never carry one, so the
+    other reading would put a refund decision in front of an admin on every
+    brief that ever closed. The usual absent-reads-safe rule.
+
+    Derived on read rather than stored, like `overdue` on a takedown: the
+    counts move as the campaign does, and a stored verdict would need a sweep
+    to stay true. What *is* stored is the admin's decision, once they make one.
+    """
+    if (campaign or {}).get("campaign_fee") is None:
+        return None
+    counts = await _refund_counts_for(campaign)
+    computed = _refund_reckoning(campaign, **counts)
+    decided = (campaign or {}).get("refund") or {}
+    return {
+        **computed,
+        # **The decision wins over the computation** once somebody has made
+        # one, and the computation is kept beside it. An admin who refunded a
+        # forfeited fee did so for a reason, and a panel that redrew the
+        # verdict from the counts would erase that they had decided anything.
+        "decided": bool(decided.get("state")),
+        "decided_state": decided.get("state"),
+        "decided_reason": decided.get("reason"),
+        "decided_by_name": decided.get("decided_by_name"),
+        "decided_at": _iso(decided.get("decided_at")),
+        # **The two halves speak different vocabularies and the comparison has
+        # to translate.** The rule says `eligible` or `forfeited`; a person
+        # says `refunded` or `declined`. Comparing the strings made every
+        # decision look like an override, which would have buried the handful
+        # that really are — the exact opposite of the point. `_REFUND_AGREES`
+        # is the mapping, once.
+        "overridden": bool(decided.get("state"))
+        and _REFUND_AGREES.get(computed["state"]) != decided.get("state"),
+    }
+
+
+def _serialize_commission(doc: Optional[dict]) -> dict:
+    """A record's own rate with who last moved it and when.
+
+    Drawn on the brand's entity page and the campaign's, so an admin reading
+    "8%" can see whether that was agreed last week by somebody they can ask.
+    `None` throughout on a record nobody has priced, which is most of them —
+    and `commission_percent: None` is meaningful rather than missing, so the
+    key is always present.
+    """
+    doc = doc or {}
+    return {
+        "commission_percent": _commission_of(doc),
+        "commission_set_at": _iso(doc.get("commission_set_at")),
+        "commission_set_by_name": doc.get("commission_set_by_name"),
+        "commission_reason": doc.get("commission_reason"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -4776,12 +5170,23 @@ async def sla_targets(*, fresh: bool = False) -> dict:
     return dict(value)
 
 
-def compute_fee(agreed_amount: float, override: Optional[float] = None) -> float:
-    """Fee for a collaboration. `override` lets an admin agree a one-off number;
-    everything else comes from central config, not a hardcoded frontend default."""
+def compute_fee(
+    agreed_amount: float,
+    override: Optional[float] = None,
+    percent: Optional[float] = None,
+) -> float:
+    """Fee for a collaboration.
+
+    `override` lets an admin agree a one-off figure; `percent` is the resolved
+    rate for this campaign's brand, and omitting it falls back to the global
+    default. The fallback is deliberately kept rather than made required: a
+    caller with no campaign in hand — the creator dashboard's running estimate
+    of what is still owed — is better off quoting the default than being
+    rewritten to load a brand profile it does not otherwise need.
+    """
     if override is not None:
         return round(float(override), 2)
-    return round(float(agreed_amount) * platform_fee_percent() / 100.0, 2)
+    return fee_at(agreed_amount, platform_fee_percent() if percent is None else percent)
 
 
 # ---------------------------------------------------------------------------
@@ -9335,6 +9740,11 @@ def _serialize_brand_profile(doc: dict) -> dict:
         # the brand nor the reviewer has to remember it.
         "previous_verification_reason": doc.get("previous_verification_reason"),
         "verification_resubmissions": int(doc.get("verification_resubmissions") or 0),
+        # **Read, never written.** A brand sees the rate applied to its
+        # campaigns — it is on every invoice it pays, so hiding it would be
+        # coy rather than careful — and `PUT /brand/profile` has no such key,
+        # so there is nothing for the generic copy loop to let through.
+        "commission_percent": _resolve_commission(None, doc)["percent"],
         "created_at": _iso(doc.get("created_at")),
         "updated_at": _iso(doc.get("updated_at")),
     }
@@ -9398,6 +9808,12 @@ def _serialize_brand_campaign(
         # Those are the same answer for a screen — draw nothing — and keeping
         # them one value is why no panel has to decide which it is looking at.
         "budget": budget,
+        # The flat fee for us running it, and this brief's own commission rate
+        # if somebody priced it separately. Both `None` on most campaigns;
+        # `commission` is the campaign's own value, never the resolved one —
+        # the resolution needs the brand and this function is DB-free.
+        "campaign_fee": doc.get("campaign_fee"),
+        **_serialize_commission(doc),
         # Case-study material. Ours to decide, not the brand's — see
         # set_campaign_showcase.
         "showcase": bool(doc.get("showcase")),
@@ -9503,6 +9919,31 @@ def _why_brand_is_blocked(profile: Optional[dict]) -> str:
         "Verify your business first — upload a document proving you represent it, "
         "then submit for verification."
     )
+
+
+async def _campaign_brand_verified_or_409(campaign: Optional[dict]) -> dict:
+    """Has the brand *on this campaign* been checked?
+
+    The sibling below asks about the caller's own brand, which is the right
+    question when a brand is acting for itself and the wrong one the moment
+    staff act on its behalf: `_brand_scope` on an admin or a `weare_team`
+    member resolves to their own user id, which owns no brand profile, so the
+    caller-shaped check would refuse every staff invite.
+
+    A **409, not a 403**: the caller has every right to be here, the record
+    they are acting on is not ready. Same sentence `approve_campaign` uses,
+    because it is the same rule — creators are never reachable through a
+    business nobody has checked.
+    """
+    profile = await db.brand_profiles.find_one(
+        {"user_id": (campaign or {}).get("brand_id")}
+    )
+    if not profile or not profile.get("verified", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Verify the brand before reaching creators on its campaigns.",
+        )
+    return profile
 
 
 async def _verified_brand_or_403(user: dict) -> dict:
@@ -9799,49 +10240,38 @@ def _weare_run_reason(campaign_type: Optional[str], creators_needed, threshold: 
     return None
 
 
-def _refuse_late_execution_handover(
-    campaign: Optional[dict], update: dict, threshold: int
-) -> None:
-    """Keep a brand from changing who runs a campaign after it has gone out.
+def _refuse_brand_execution_choice(campaign: Optional[dict], update: dict) -> None:
+    """Who runs a campaign is not a brand's field to write. At all.
 
-    Changing it silently reroutes every future application away from whoever
-    has been working the campaign, and it contradicts what creators were told
-    when they applied. While the brief is a draft or in review it is nobody's
-    working assumption yet, so it is freely editable there.
+    Every brand-posted brief is WeAre-run — that is the product, not a
+    restriction on this brief — so there is no editable window here the way
+    there was when the brand could pick. An **admin** can still hand a
+    campaign either way through `PATCH /admin/campaigns/{id}`, which skips
+    every guard on this path; this one is about who is asking.
 
-    An admin can still move it at any time — that is a conversation that has
-    happened, and `PATCH /admin/campaigns/{id}` deliberately does not call this.
+    Refused rather than dropped, unlike the create path. On create the payload
+    carries a default a stale client would send by accident, and failing a
+    whole post over an invisible field is the wrong trade; on an edit the key
+    is present only because somebody sent it deliberately
+    (`exclude_unset=True`), so silence would be us ignoring a request without
+    saying we had.
     """
-    if "execution_owner" not in update or campaign is None:
+    if "execution_owner" not in update:
         return
-    if update["execution_owner"] == _execution_owner(campaign):
+    if update["execution_owner"] == _execution_owner(campaign or {}):
         return  # not a change; re-sending the same value is not an edit
-    # **A campaign that is ours by rule cannot be taken back**, at any status
-    # and however new the draft. The rule is about the shape of the work — a
-    # launch is still one evening, twenty creators are still twenty bookings —
-    # so "it is only a draft" changes nothing about it. Checked before the
-    # status question because it is the stronger of the two: this one has no
-    # editable window at all.
-    if update["execution_owner"] != "weare":
-        reason = _weare_run_reason(
-            campaign.get("campaign_type"),
-            campaign.get("creators_needed"),
-            threshold,
-        )
-        if reason:
-            raise HTTPException(
-                status_code=409,
-                detail={"message": reason[1], "code": f"weare_run_{reason[0]}"},
-            )
-    if campaign.get("status") not in _EXECUTION_SETTLED_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "This campaign is already live, so who runs it can't be changed "
-                "here — creators applied knowing who they'd be dealing with. "
-                "Ask us and we'll move it."
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "message": (
+                "Our team runs every campaign posted here — shortlisting, fees, "
+                "booking and delivery. That isn't something to switch off, and "
+                "it's why there's nothing to manage on your side. If you need a "
+                "different arrangement, talk to us."
             ),
-        )
+            "code": "managed_by_weare",
+        },
+    )
 
 
 async def _execution_manager_fields(campaign: dict, execution_owner: str) -> dict:
@@ -10331,6 +10761,8 @@ async def submit_brand_for_verification(user: dict = Depends(require_roles(*BRAN
 
 
 async def _applicant_counts_for(campaign_ids: list) -> dict:
+    """Every application on each campaign. **The console's count, not the
+    brand's** — see `_brand_applicant_counts_for` below."""
     if not campaign_ids:
         return {}
     unique = list({cid for cid in campaign_ids})
@@ -10340,6 +10772,41 @@ async def _applicant_counts_for(campaign_ids: list) -> dict:
             {"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}},
         ]
     ).to_list(length=len(unique))
+    return {c["_id"]: c["n"] for c in counts}
+
+
+async def _brand_applicant_counts_for(campaigns: list) -> dict:
+    """The same counts, cut to what each brand may actually see.
+
+    **The shortlist gate is not only about the board.** On a weare-run
+    campaign the brand's applicant list is filtered to people we have
+    shortlisted, and this number sat beside it unfiltered — so a brand read
+    "31 applicants" on a card and opened a board with three on it. The missing
+    twenty-eight are precisely the unchecked pitches handing a campaign to us
+    is meant to spare them, and a count is a perfectly good way to leak that
+    they exist: it tells the brand how many people it is not being shown.
+
+    One aggregation for a mixed list, because a brand's dashboard holds both
+    kinds: brand-run campaigns match on the campaign alone, weare-run ones
+    carry the same `agreed_at` clause `_brand_visible_collab_query` uses, so
+    the card and the board cannot disagree about what counts.
+    """
+    campaigns = [c for c in (campaigns or []) if c.get("_id")]
+    if not campaigns:
+        return {}
+    theirs = [c["_id"] for c in campaigns if not _weare_runs(c)]
+    ours = [c["_id"] for c in campaigns if _weare_runs(c)]
+    clauses = []
+    if theirs:
+        clauses.append({"campaign_id": {"$in": theirs}})
+    if ours:
+        clauses.append({"campaign_id": {"$in": ours}, "agreed_at": {"$ne": None}})
+    counts = await db.collaborations.aggregate(
+        [
+            {"$match": clauses[0] if len(clauses) == 1 else {"$or": clauses}},
+            {"$group": {"_id": "$campaign_id", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=len(campaigns))
     return {c["_id"]: c["n"] for c in counts}
 
 
@@ -10539,7 +11006,8 @@ async def list_brand_campaigns(
         .to_list(length=500)
     )
     ids = [d["_id"] for d in docs]
-    count_map = await _applicant_counts_for(ids)
+    # The brand's own count, cut to what it may see on each brief.
+    count_map = await _brand_applicant_counts_for(docs)
     filled_map = await _filled_counts_for(ids)
     awaiting_map = await _awaiting_brand_counts(ids)
     return [
@@ -10587,7 +11055,14 @@ async def create_brand_campaign(
     weare_run = _weare_run_reason(
         payload.campaign_type, payload.creators_needed, await large_campaign_threshold()
     )
-    resolved_execution_owner = "weare" if weare_run else payload.execution_owner
+    # **Every brand-posted brief is ours now, so the payload's value is not
+    # read at all.** The two `_weare_run_reason` shapes still matter — they say
+    # something specific about *this* brief that the form explains differently
+    # — but the fallback is no longer the brand's choice, it is the product.
+    # An admin can hand a campaign back with `PATCH /admin/campaigns/{id}`,
+    # which deliberately skips this whole path.
+    resolved_execution_owner = NEW_CAMPAIGN_EXECUTION_OWNER
+    managed_reason = weare_run[0] if weare_run else MANAGED_BY_DEFAULT_REASON
 
     now = datetime.now(timezone.utc)
     doc = {
@@ -10621,7 +11096,10 @@ async def create_brand_campaign(
         # Why, when it was not the brand's choice. Stored so the campaign can
         # say it on every screen afterwards rather than only in the toast the
         # brand saw once at post time.
-        "weare_run_reason": weare_run[0] if weare_run else None,
+        # Always set now, because every brand-posted brief is ours — `managed`
+        # where it is simply the product, and the specific code where the
+        # shape of the work is the reason. The form quotes the same two.
+        "weare_run_reason": managed_reason,
         "visibility": payload.visibility,
         # Defaults on for a brand running its own campaign and off when they
         # have handed execution to us — our own managers are the reviewers
@@ -10720,7 +11198,16 @@ async def create_brand_campaign(
             note="Published without review — the brand is trusted.",
             **_campaign_audit_context(doc),
         )
-    return _serialize_brand_campaign(doc, 0)
+    return {
+        **_serialize_brand_campaign(doc, 0),
+        # **What the brand is getting, said at the moment they post.** Both
+        # are read as a trust signal rather than small print: our team runs
+        # this, and if we do not fill it the campaign fee comes back. The form
+        # shows them before the button and this is the same wording after it,
+        # so the promise cannot drift between the two screens.
+        "managed_note": MANAGED_BY_DEFAULT_SENTENCE,
+        "refund_terms": REFUND_POLICY_TERMS,
+    }
 
 
 @brand_router.put("/campaigns/{campaign_id}")
@@ -10796,7 +11283,14 @@ async def update_brand_campaign(
     # makes it so. Two reads could disagree if the setting changed between
     # them, which is a race whose only possible outcome is confusion.
     threshold = await large_campaign_threshold()
-    _refuse_late_execution_handover(doc, update, threshold)
+    # **Who runs it is not theirs to write, at any status.**
+    # `_refuse_late_execution_handover` used to sit beside this and allowed the
+    # change while the brief was a draft or in review. It is gone rather than
+    # kept: with this guard in front of it there is no input that could reach
+    # its branches, and a guard that cannot fire is the shape this codebase
+    # keeps finding bugs in. The rule it held is strictly weaker than the one
+    # here — a window nobody may enter is the same as no window.
+    _refuse_brand_execution_choice(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
     # Handing execution over moves the manager with it, or the two fields
     # disagree and applications go to the wrong inbox.
@@ -10900,7 +11394,7 @@ async def update_brand_campaign(
             ),
         )
 
-    counts = await _applicant_counts_for([doc["_id"]])
+    counts = await _brand_applicant_counts_for([updated])
     filled_map = await _filled_counts_for([doc["_id"]])
     awaiting = await _awaiting_brand_counts([doc["_id"]])
     return _serialize_brand_campaign(
@@ -11031,6 +11525,13 @@ async def close_brand_campaign(
             body=f"\"{doc.get('title')}\" was closed before a decision was made.",
         )
 
+    # **The fee question is raised the moment it exists, not found later.**
+    # A campaign that closed short leaves a decision somebody here has to
+    # make, and nothing else in the product would surface it — the brand is
+    # deliberately not told the computed answer, because it is a computation
+    # rather than a decision and reading it as a promise is exactly the wrong
+    # way round.
+    await _raise_refund_decision({**doc, "status": "closed"})
     return {"id": campaign_id, "status": "closed", "applications_closed": len(stale)}
 
 
@@ -11997,7 +12498,7 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
         .to_list(length=500)
     )
     ids = [c["_id"] for c in campaigns]
-    count_map = await _applicant_counts_for(ids)
+    count_map = await _brand_applicant_counts_for(campaigns)
     filled_map = await _filled_counts_for(ids)
     awaiting_map = await _awaiting_brand_counts(ids)
     # One aggregation for the whole list, not one per row.
@@ -13343,6 +13844,13 @@ async def brand_suggested_creators(
 ):
     """Verified creators ranked for this brief, each with the reason.
 
+    **Still the brand's to read, and no longer theirs to act on.** This is the
+    curated half — ranked against one brief with the reasons shipped, which is
+    what makes it a shortlist rather than the directory it replaced — and a
+    brand receiving curation is the offer rather than a contradiction of it.
+    What went is the Invite button beside each row: reaching out is ours now,
+    so the panel reads and the asking happens on our side.
+
     Ownership first, then verification — an unverified brand probing campaign
     ids must not learn which ones exist, and creators are not reachable by a
     brand we have not checked.
@@ -13619,21 +14127,22 @@ async def invite_creator_list(
     campaign_id: str,
     list_id: str,
     payload: CampaignInvitePayload | None = None,
-    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "weare_team")),
+    user: dict = Depends(require_roles("admin", "weare_team")),
 ):
-    """Ask everybody on a list, in one action.
+    """Ask everybody on a list, in one action. **Not a brand's to call.**
+
+    See `weare_invite_creators` below for why the brand roles came off both
+    invite routes. The path still sits under `/brand` because that is the URL
+    the console already calls; what changed is who may call it.
 
     **Through `_invite_creators`**, the same function the one-at-a-time route
     uses, so the verification gate, the duplicate refusal, the per-creator
     result rows and the fact that a number is read and never returned are all
     one implementation. A second invite path would be a second definition of
     what an invitation is.
-
-    Ownership before verification, as everywhere: an unverified brand asking
-    after another brand's campaign must learn nothing from the refusal.
     """
-    campaign = await _own_campaign_or_404(campaign_id, user)
-    await _verified_brand_or_403(user)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    await _campaign_brand_verified_or_409(campaign)
     row = await _own_creator_list_or_404(list_id, user)
     members = [str(i) for i in (row.get("creator_ids") or [])]
     if not members:
@@ -13652,21 +14161,34 @@ async def invite_creator_list(
 
 
 @brand_router.post("/campaigns/{campaign_id}/invite")
-async def brand_invite_creators(
+async def weare_invite_creators(
     campaign_id: str,
     payload: CampaignInvitePayload,
-    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    user: dict = Depends(require_roles("admin", "weare_team")),
 ):
-    """Ask named creators to take up this brief.
+    """Ask named creators to take up this brief. **Not a brand's to call.**
 
-    Ownership first, then verification: an unverified brand asking after
-    another brand's campaign must learn nothing from the refusal. The creators'
-    numbers are read inside `_invite_creators` and never returned — a brand
-    invites through the platform, it does not get a contact list.
+    **Reaching out to a creator is our job, not the brand's.** Both invite
+    routes used to be open to a verified brand, which meant a brand could pick
+    people out and message them through us — the outreach half of exactly the
+    roster this product removed when `GET /brand/creators` went. A brand
+    reaches creators through its brief and through the shortlist we hand it,
+    and that is now true of asking as well as of browsing.
+
+    **Through the console's door** (`_admin_campaign_or_404`) rather than the
+    brand's, because the callers are staff: a `weare_team` member is scoped to
+    assigned brands and `_own_campaign_or_404` would 404 them on every
+    campaign, since it resolves the caller's *own* brand.
+
+    The brand still has to be verified, but that is a fact about the brand on
+    the campaign rather than about whoever is asking —
+    `_campaign_brand_verified_or_409` is that check. Creators are never
+    reachable through a business nobody has checked, whoever presses the
+    button. Their numbers are read inside `_invite_creators` and never
+    returned.
     """
-    campaign = await _own_campaign_or_404(campaign_id, user)
-    # Creators are never reachable by a brand we have not checked.
-    await _verified_brand_or_403(user)
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    await _campaign_brand_verified_or_409(campaign)
     return await _invite_creators(campaign, payload, user)
 
 
@@ -15051,6 +15573,316 @@ async def reject_creator(
     )
 
 
+class CommissionPayload(BaseModel):
+    """A negotiated rate, and why.
+
+    `None` clears it and falls back to the level above — the brand's rate for
+    a campaign, the global default for a brand — which is a different answer
+    from `0` and has to stay sendable.
+
+    The reason is **required in both directions**, including clearing one.
+    "Why is this brand on 8%" is the question somebody asks a year later, and
+    so is "why did it stop being 8%".
+    """
+
+    commission_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+async def _record_commission_change(
+    *,
+    actor: dict,
+    entity: str,
+    entity_id: ObjectId,
+    before: Optional[float],
+    after: Optional[float],
+    reason: str,
+    **context,
+) -> dict:
+    """Write the rate and the line that explains it. One writer, two callers.
+
+    The audit line carries the **old value and the new one** rather than only
+    what it became: a log that says "set to 12" cannot answer whether that was
+    a discount or a rise, and the difference is the entire content of the
+    question anybody asks it.
+    """
+    now = datetime.now(timezone.utc)
+    await audit(
+        actor,
+        f"{entity}.commission",
+        entity,
+        entity_id,
+        before={"commission_percent": before},
+        after={"commission_percent": after},
+        note=reason,
+        **context,
+    )
+    return {
+        "commission_percent": after,
+        # Who last moved it and when, so the entity page can say it without
+        # joining back to the audit log — the same reasoning `cancelled_by_name`
+        # follows.
+        "commission_set_at": now,
+        "commission_set_by_id": ObjectId(actor["_id"]) if actor.get("_id") else None,
+        "commission_set_by_name": actor.get("name"),
+        "commission_reason": reason,
+    }
+
+
+@admin_router.put("/brands/{user_id}/commission")
+async def set_brand_commission(
+    user_id: str,
+    payload: CommissionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """The rate agreed with this brand, or `None` to fall back to the default.
+
+    **Admin-only, not `CONSOLE_ROLES`.** What we charge a client is a
+    commercial decision about the relationship, not scoped work on a campaign
+    — the same line the settings that hand out scope already draw. A brand
+    never reaches this at all: it reads the rate applied to its campaigns and
+    cannot write one.
+    """
+    oid = _as_oid(user_id)
+    profile = await db.brand_profiles.find_one({"user_id": oid}) if oid else None
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    after = _clean_commission_percent(payload.commission_percent)
+    fields = await _record_commission_change(
+        actor=user,
+        entity="brand",
+        entity_id=oid,
+        before=_commission_of(profile),
+        after=after,
+        reason=payload.reason.strip(),
+        brand_id=oid,
+    )
+    await db.brand_profiles.update_one(
+        {"user_id": oid}, {"$set": {**fields, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {
+        "user_id": user_id,
+        **_serialize_commission(fields),
+        # What a campaign under this brand will now be charged, unless it
+        # carries its own — the answer the person who just typed it wants.
+        "effective": _resolve_commission(None, {"commission_percent": after}),
+    }
+
+
+@admin_router.put("/campaigns/{campaign_id}/commission")
+async def set_campaign_commission(
+    campaign_id: str,
+    payload: CommissionPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """A rate for this brief alone, overriding the brand's.
+
+    **`CONSOLE_ROLES` here and admin-only on the brand**, which is the right
+    asymmetry rather than an oversight: a campaign is scoped work a
+    `weare_team` member is already trusted with — a launch carrying different
+    terms is the case this exists for — while the brand's standing rate is the
+    relationship itself. `_admin_campaign_or_404` applies the scope, so
+    somebody can only price a brief belonging to a brand they are on.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    after = _clean_commission_percent(payload.commission_percent)
+    fields = await _record_commission_change(
+        actor=user,
+        entity="campaign",
+        entity_id=campaign["_id"],
+        before=_commission_of(campaign),
+        after=after,
+        reason=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {**fields, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {
+        "campaign_id": campaign_id,
+        **_serialize_commission(fields),
+        "effective": await _commission_for_campaign({**campaign, **fields}),
+    }
+
+
+class CampaignFeePayload(BaseModel):
+    """The flat fee for running a campaign, or `None` to clear it.
+
+    `None` and `0` differ here the way they do for a rate: a campaign we are
+    running for nothing has a fee of zero and a refund question to answer if
+    it underfills, while one nobody has priced has neither.
+    """
+
+    campaign_fee: Optional[float] = Field(default=None, ge=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class RefundDecisionPayload(BaseModel):
+    """An admin's answer on the campaign fee.
+
+    **A reason either way, including agreeing with the computation.** The
+    outcome a brand is told about is a decision somebody made, and "we
+    refunded it because the panel said so" is not something anybody can stand
+    behind three months later.
+    """
+
+    state: Literal["refunded", "declined"]
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@admin_router.put("/campaigns/{campaign_id}/fee")
+async def set_campaign_fee(
+    campaign_id: str,
+    payload: CampaignFeePayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """What we charge for running this brief. Staff only; never the brand's.
+
+    `CONSOLE_ROLES` rather than admin-only, the same split the campaign's
+    commission takes: pricing one brief is scoped work a `weare_team` member
+    already does, and `_admin_campaign_or_404` keeps them inside the brands
+    they are on.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    fee = (
+        None
+        if payload.campaign_fee is None
+        else round(float(payload.campaign_fee), 2)
+    )
+    await audit(
+        user,
+        "campaign.fee",
+        "campaign",
+        campaign["_id"],
+        before={"campaign_fee": campaign.get("campaign_fee")},
+        after={"campaign_fee": fee},
+        note=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {"campaign_fee": fee, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {
+        "campaign_id": campaign_id,
+        "campaign_fee": fee,
+        "refund": await _refund_assessment({**campaign, "campaign_fee": fee}),
+    }
+
+
+@admin_router.get("/campaigns/{campaign_id}/refund")
+async def read_campaign_refund(
+    campaign_id: str,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """The refund position, with the reasoning spelled out.
+
+    Readable at any point rather than only once a campaign closes: an admin
+    watching a brief underfill three days out wants to know what it will cost
+    us, and that is the moment there is still something to do about it.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    assessment = await _refund_assessment(campaign)
+    if assessment is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has no campaign fee, so there is nothing to refund.",
+        )
+    return assessment
+
+
+@admin_router.post("/campaigns/{campaign_id}/refund")
+async def decide_campaign_refund(
+    campaign_id: str,
+    payload: RefundDecisionPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Refund the campaign fee, or decline to.
+
+    **Admin-only, unlike setting the fee.** Pricing a brief is scoped work;
+    moving money back to a client is not, and a scoped role that could refund
+    a fee could refund one on a brand it was assigned to yesterday.
+
+    **The computation never decides.** It is recorded beside the decision so
+    that an override is visible as one — an admin refunding a forfeited fee is
+    a judgement worth being able to find, and one that silently agreed with
+    the panel would be indistinguishable from the panel having acted alone.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    assessment = await _refund_assessment(campaign)
+    if assessment is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has no campaign fee, so there is nothing to refund.",
+        )
+    if assessment.get("decided"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"This has already been {assessment['decided_state']}.",
+        )
+
+    now = datetime.now(timezone.utc)
+    record = {
+        "state": payload.state,
+        "reason": payload.reason.strip(),
+        "decided_at": now,
+        "decided_by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+        "decided_by_name": user.get("name"),
+        # **What the rule said at the moment of the decision**, frozen beside
+        # it: the counts move afterwards — a collaboration can still be
+        # cancelled — and a decision that could not be read against the
+        # numbers it was made on is a decision nobody can audit.
+        "computed_state": assessment["state"],
+        "computed_reason": assessment["reason"],
+        "amount": assessment["campaign_fee"],
+    }
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]}, {"$set": {"refund": record, "updated_at": now}}
+    )
+    await audit(
+        user,
+        "campaign.refund",
+        "campaign",
+        campaign["_id"],
+        before={"computed": assessment["state"]},
+        after={"state": payload.state, "amount": assessment["campaign_fee"]},
+        note=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    # On every payment for this campaign, so a finance export reads the refund
+    # beside the money it relates to rather than only on the campaign.
+    collab_ids = await db.collaborations.distinct(
+        "_id", {"campaign_id": campaign["_id"]}
+    )
+    if collab_ids:
+        await db.payments.update_many(
+            {"collaboration_id": {"$in": collab_ids}},
+            {"$set": {
+                "campaign_fee_refund_state": payload.state,
+                "campaign_fee_refund_amount": (
+                    assessment["campaign_fee"] if payload.state == "refunded" else None
+                ),
+                "updated_at": now,
+            }},
+        )
+    await notify_brand_manager(
+        campaign.get("brand_id"),
+        "campaign_fee_refunded" if payload.state == "refunded" else "campaign_fee_kept",
+        title=(
+            "Your campaign fee is being refunded"
+            if payload.state == "refunded"
+            else "About your campaign fee"
+        ),
+        body=payload.reason.strip(),
+        link=f"/brand/campaigns/{str(campaign['_id'])}/applicants",
+    )
+    return await _refund_assessment(
+        await db.campaigns.find_one({"_id": campaign["_id"]})
+    )
+
+
 @admin_router.post("/creators/{user_id}/suspend")
 async def suspend_creator(
     user_id: str,
@@ -16313,7 +17145,17 @@ async def _build_brand_campaign_export(campaign: dict) -> str:
     """
     cid = campaign["_id"]
     collabs = await db.collaborations.find(
-        {"campaign_id": cid, "state": {"$in": list(_BRAND_EXPORT_STATES)}}
+        {
+            "campaign_id": cid,
+            "state": {"$in": list(_BRAND_EXPORT_STATES)},
+            # **The shortlist gate, on the export as well.** `_BRAND_EXPORT_STATES`
+            # includes `cancelled`, and a collaboration can be cancelled
+            # straight out of `applied` — so on a weare-run brief this query
+            # could put somebody in a brand's CSV whose application that brand
+            # was never shown. The states are a reasonable proxy for "was
+            # taken on" and this is the actual rule, so both are applied.
+            **_brand_visible_collab_query(campaign),
+        }
     ).to_list(length=500)
     creator_ids = [c["creator_id"] for c in collabs]
     profiles = {
@@ -17676,10 +18518,12 @@ async def _export_payments(
     headers = [
         "Payment ID", "State", "Campaign", "Campaign ID", "Brand", "Creator",
         "Phone", "Payout method", "UPI", "Account name", "Account", "IFSC",
-        "PAN", "GSTIN", "Agreed amount", "Platform fee", "Creator payout",
+        "PAN", "GSTIN", "Agreed amount", "Commission %", "Platform fee",
+        "Creator payout",
         "TDS applicable", "TDS amount", "Net paid",
         "Brand invoice amount", "Invoice state", "Reference",
-        "Raised", "Paid", "Collaboration ID",
+        "Campaign fee refund", "Campaign fee refunded", "Raised", "Paid",
+        "Collaboration ID",
     ]
     rows = []
     for d in docs:
@@ -17700,6 +18544,12 @@ async def _export_payments(
             # raised before snapshots carried the bank half.
             *_payout_columns(d.get("payout_snapshot"), prof),
             collab.get("agreed_amount") if collab.get("agreed_amount") is not None else "",
+            # **The rate this payment was written at**, not today's. Rates are
+            # negotiated per brand now, so a column that re-resolved would
+            # restate last quarter's invoices every time somebody agreed new
+            # terms — and reconciliation is the one job that cannot survive
+            # that.
+            _payment_fee_percent(d),
             d.get("platform_fee") if d.get("platform_fee") is not None else "",
             d.get("creator_payout") if d.get("creator_payout") is not None else "",
             # **Three states, not two.** Blank means nobody has said yet; "no"
@@ -17710,6 +18560,13 @@ async def _export_payments(
             d.get("net_paid") if d.get("net_paid") is not None else "",
             d.get("brand_invoice_amount") if d.get("brand_invoice_amount") is not None else "",
             d.get("brand_invoice_state") or "", d.get("reference") or "",
+            # Blank where the campaign carried no fee or nobody has decided,
+            # which is the honest reading of both — a refund column reading
+            # "no" on a brief that never had a fee would invent a decision.
+            d.get("campaign_fee_refund_state") or "",
+            d.get("campaign_fee_refund_amount")
+            if d.get("campaign_fee_refund_amount") is not None
+            else "",
             _iso(d.get("created_at")) or "", _iso(d.get("paid_at")) or "",
             str(d["collaboration_id"]),
         ])
@@ -18573,6 +19430,13 @@ async def get_admin_campaign_detail(
             **_serialize_brand_campaign(
                 campaign, 0, filled, 0, await _campaign_budget(campaign)
             ),
+            # The rate that actually applies, with which level it came from —
+            # `_serialize_brand_campaign` can only report the campaign's own,
+            # because resolving needs the brand and that function is DB-free.
+            "commission_effective": await _commission_for_campaign(campaign),
+            # What the fee position is, and the sentence explaining it. `None`
+            # on a brief with no campaign fee, which is most of them.
+            "refund": await _refund_assessment(campaign),
             # The brand's own serializer stops at the manager's name and phone,
             # which is right for the brand. An admin assigns the manager, so
             # the id has to come back or the picker can't show the current one.
@@ -19993,6 +20857,12 @@ def _admin_brand_fields(p: dict, u: dict) -> dict:
         # Zero on a first submission, which is the ordinary case.
         "verification_resubmissions": int(p.get("verification_resubmissions") or 0),
         "previous_verification_reason": p.get("previous_verification_reason"),
+        # **What we charge this brand, and who last said so.** `None` here
+        # means nobody has negotiated anything, which is why `effective`
+        # travels beside it — "no rate set" and "paying nothing" are opposite
+        # answers and a single number cannot tell them apart.
+        **_serialize_commission(p),
+        "commission_effective": _resolve_commission(None, p),
         "verified_at": _iso(p.get("verified_at")),
         "rejected_at": _iso(p.get("rejected_at")),
         "submitted_at": _iso(p.get("submitted_for_verification_at")),
@@ -20915,7 +21785,12 @@ async def advance_collaboration(
                 ),
             )
 
-        fee = compute_fee(float(agreed), payload.platform_fee)
+        # **The rate is resolved once, here, and frozen onto the record.**
+        # Campaign, then brand, then the global default — and after this write
+        # nothing re-resolves it, so editing a brand's terms next month cannot
+        # restate what this invoice said.
+        commission = await _commission_for_campaign(campaign)
+        fee = compute_fee(float(agreed), payload.platform_fee, commission["percent"])
         # Create the payment record (idempotent by unique index on collaboration_id).
         existing_payment = await db.payments.find_one({"collaboration_id": oid})
         if existing_payment is None:
@@ -20924,7 +21799,11 @@ async def advance_collaboration(
                     "collaboration_id": oid,
                     "agreed_amount": float(agreed),
                     "platform_fee": fee,
-                    "fee_percent": platform_fee_percent(),
+                    "fee_percent": commission["percent"],
+                    # Which level it came from, so an admin reading a payment a
+                    # year later knows whether the rate was negotiated or
+                    # merely current.
+                    "fee_percent_source": commission["source"],
                     "creator_payout": float(agreed),
                     "brand_invoice_amount": round(float(agreed) + fee, 2),
                     "brand_invoice_state": "pending",
@@ -27071,6 +27950,11 @@ def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
         # later rewording cannot be applied backwards to somebody who agreed
         # to different words.
         "platform_terms": CIRCUMVENTION_TERMS,
+        # **The refund promise, frozen like the cancellation terms.** A policy
+        # somebody meets for the first time during an argument is not a
+        # policy; and a later rewording must not be applied backwards to a
+        # campaign booked under the old one.
+        "refund_terms": REFUND_POLICY_TERMS,
     }
 
 
@@ -29355,12 +30239,27 @@ async def resolve_dispute(
         # with its reference and its withholding, rather than through here.
         await _freeze_payment(collab["_id"], frozen=False)
         if payload.resolution == "partial_release":
+            # **At the rate this payment was written at, not today's.** The
+            # row already carries `fee_percent` from the moment it was
+            # created; re-resolving here would re-price a mediated outcome
+            # against terms that may have been renegotiated since, which is
+            # the one place a rate change must not reach.
+            existing = await db.payments.find_one({"collaboration_id": collab["_id"]})
+            fee = fee_at(amount, _payment_fee_percent(existing))
             await db.payments.update_one(
                 {"collaboration_id": collab["_id"]},
                 {"$set": {
                     "agreed_amount": float(amount),
-                    "creator_payout": round(float(amount) - compute_fee(float(amount)), 2),
-                    "platform_fee": compute_fee(float(amount)),
+                    # **The creator keeps the whole of what was released**, and
+                    # this line used to deduct the fee from it — a mediation
+                    # that paid out less than the figure the mediator wrote
+                    # down. Every other payment on the platform sets
+                    # `creator_payout` to the agreed amount and charges the
+                    # margin to the brand on top; this was the one that did
+                    # not, and it was found while making the rate historical.
+                    "creator_payout": round(float(amount), 2),
+                    "platform_fee": fee,
+                    "brand_invoice_amount": round(float(amount) + fee, 2),
                     "updated_at": now,
                 }},
             )
