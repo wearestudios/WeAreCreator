@@ -178,6 +178,19 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
                         {terms.platform_terms}
                     </Line>
                 )}
+                {/* **Both parties read this line and each reads it for a
+                    different reason.** The creator is being told they keep
+                    their whole quote at the moment they agree a number; the
+                    brand, on the same screen from the other side, is being
+                    told where our margin comes from. It was said to neither
+                    until now. Absent on a snapshot written before the clause
+                    existed — those people agreed to what was in front of
+                    them. */}
+                {terms.commission_terms && (
+                    <Line label="Our fee" testId={IDS.termsCommission}>
+                        {terms.commission_terms}
+                    </Line>
+                )}
             </div>
 
             {terms.accepted ? (

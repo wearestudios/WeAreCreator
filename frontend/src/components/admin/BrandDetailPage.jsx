@@ -483,7 +483,13 @@ export default function BrandDetailPage() {
                 onOpenChange={(v) => !v && setDialog({ kind: null })}
                 kicker="Unverify"
                 title={brand?.business_name}
-                description="Takes the brand back behind the gate. Their live campaigns stop reaching creators — publishing, inviting and the creator directory all close."
+                // **What unverifying actually closes, as of managed-only.** It
+                // said "publishing, inviting and the creator directory", and a
+                // brand has neither of the last two: inviting is ours, and the
+                // directory was removed outright. Naming gates that no longer
+                // exist makes the rest of the sentence hard to trust at the
+                // moment somebody is deciding to pull a business off the air.
+                description="Takes the brand back behind the gate. Their live campaigns stop reaching creators — publishing, the shortlist and every approval close until they are verified again."
                 confirmLabel="Unverify"
                 destructive
                 submitting={busy === "unverify"}

@@ -4541,6 +4541,36 @@ REFUND_POLICY_TERMS = (
     "reviews it when the campaign closes and tells you the outcome."
 )
 
+# **Where our margin comes from, said to the brand in its own words.**
+#
+# This is a fact about the money that had been true since the platform
+# existed and appeared on no brand-facing surface: the commission is charged
+# to the brand on top of the creator's fee, never deducted from it, so a
+# creator who quotes ₹20,000 is paid ₹20,000. The creator's side of the site
+# has said so from the start ("charged to the brand on top", "never taken out
+# of yours"); the paying side was left to infer it, and the inference a brand
+# actually makes about an unexplained platform fee is that somebody's rate is
+# being clipped.
+#
+# It is worth saying out loud to *both* audiences for different reasons. A
+# creator needs to know they keep their quote. A brand is buying the fact
+# that its creators are not being squeezed, because a squeezed creator is one
+# who takes the next brief off-platform — which is the failure
+# `CIRCUMVENTION_TERMS` exists to name.
+#
+# Stated at campaign creation and frozen into the terms snapshot beside the
+# refund policy, for the same reason: a commercial term somebody meets for
+# the first time on an invoice is a surprise, and a surprise is not a sales
+# point. Mirrored in `frontend/src/lib/execution.js` with a drift test — the
+# post-campaign form renders it before a campaign exists, so there is nothing
+# to fetch it from at the moment it matters most.
+COMMISSION_TERMS = (
+    "Our commission is charged to you on top of the creator's rate, never "
+    "taken out of it. A creator who quotes ₹20,000 is paid ₹20,000, and you "
+    "see both numbers before you confirm. There is no retainer and no markup "
+    "on what the creator charges."
+)
+
 # Where a refund has got to. `none` is the ordinary end of a campaign that
 # filled: not every closed brief has a refund question to answer.
 REFUND_STATES = ("none", "eligible", "forfeited", "refunded", "declined")
@@ -11200,13 +11230,15 @@ async def create_brand_campaign(
         )
     return {
         **_serialize_brand_campaign(doc, 0),
-        # **What the brand is getting, said at the moment they post.** Both
-        # are read as a trust signal rather than small print: our team runs
-        # this, and if we do not fill it the campaign fee comes back. The form
-        # shows them before the button and this is the same wording after it,
-        # so the promise cannot drift between the two screens.
+        # **What the brand is getting, said at the moment they post.** All
+        # three are read as a trust signal rather than small print: our team
+        # runs this, if we do not fill it the campaign fee comes back, and our
+        # margin sits on top of the creator's rate rather than inside it. The
+        # form shows them before the button and this is the same wording after
+        # it, so the promise cannot drift between the two screens.
         "managed_note": MANAGED_BY_DEFAULT_SENTENCE,
         "refund_terms": REFUND_POLICY_TERMS,
+        "commission_terms": COMMISSION_TERMS,
     }
 
 
@@ -27955,6 +27987,13 @@ def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
         # policy; and a later rewording must not be applied backwards to a
         # campaign booked under the old one.
         "refund_terms": REFUND_POLICY_TERMS,
+        # Where our margin sits relative to the creator's fee. Frozen for the
+        # same reason and read by both parties: it is the brand's strongest
+        # reason to trust the price and the creator's proof they keep their
+        # quote. The *rate* is deliberately not in here — that is resolved per
+        # payment and frozen there (`fee_percent`); this is the arrangement,
+        # which does not change when a rate is renegotiated.
+        "commission_terms": COMMISSION_TERMS,
     }
 
 

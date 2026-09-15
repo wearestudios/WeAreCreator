@@ -2,16 +2,22 @@
 //
 // This reader is not asking what the product does; /how-it-works answers that.
 // They are comparing options with another tab open, which means every line has
-// to be checkable. So the page argues on four things — who is behind it, that
-// the managed option is real, that both sides are verified people, and that
+// to be checkable. So the page argues on four things — who is behind it, what
+// handing a campaign over costs, that both sides are verified people, and that
 // the money and the results are where you can see them — and it argues in
 // labels and single lines, because a page of paragraphs is a page a sceptic
 // skims.
 //
-// **It never argues against agencies.** WeAre Studios is one and the managed
-// service is a genuine offering — "without an agency" here would be a page
-// arguing against the thing two sections down. What is named as the problem is
+// **It never argues against agencies.** WeAre Studios is one and running the
+// campaign is the product — "without an agency" here would be a page arguing
+// against the thing two sections down. What is named as the problem is
 // disorganisation: DMs, spreadsheets, handshake deals.
+//
+// **There is no self-serve half to argue for any more.** The section below the
+// pedigree used to offer a choice between running it yourself and handing it
+// over; managed is the whole product now, so it states the commercial terms
+// instead — the fee on top of the creator rate, and the refund if we cannot
+// fill the brief.
 //
 // One audience, so one ask, stated top and bottom in the same words.
 import React from "react";
@@ -34,7 +40,7 @@ const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
 
 const COPY = {
     title: "Your creator campaigns, handled properly.",
-    line: "A studio that runs campaigns for a living, behind a platform you can run yourself.",
+    line: "A studio that runs campaigns for a living, running yours on a platform you can see into.",
 
     pedigreeTitle: "Built by the people who do the work.",
     pedigreeLine: "WeAre Studios briefs creators, staffs shoots and writes the report. This is that operation, handed to you.",
@@ -49,20 +55,29 @@ const COPY = {
         },
     ],
 
-    choiceTitle: "Run it yourself, or hand it over.",
-    choiceLine: "You pick per campaign, and choosing once does not commit the next one.",
-    choice: [
+    // **This was the self-serve choice and the product no longer has one.**
+    // It read as run it yourself or hand it over, with a third point insisting
+    // the managed service was an option rather than a fee. Managed is the
+    // product now, so the section argues what that costs instead — which is
+    // the thing a sceptic with another tab open is actually weighing.
+    termsTitle: "Handed over, and what that costs.",
+    termsLine: "Our fee sits on top of the creator rate, and comes back if we cannot fill the brief.",
+    terms: [
         {
             label: "No retainer, no markup",
-            line: "On creator fees, either way.",
+            line: "On creator fees. You pay per campaign, nothing between them.",
+        },
+        {
+            label: "Creators keep their full rate",
+            line: "Our fee is charged to you, never taken out of theirs.",
         },
         {
             label: "A named manager",
-            line: "On a managed campaign, at the door on the day.",
+            line: "Holding the roster, and at the door on the day.",
         },
         {
-            label: "Not a fee you are locked into",
-            line: "It is an option you choose.",
+            label: "Refunded if we cannot fill it",
+            line: "Unless you turned down everyone we shortlisted.",
         },
     ],
 
@@ -95,7 +110,7 @@ export default function WhyWeAre() {
         <MarketingPage
             testid={IDS.whyWeAre}
             title="Why WeAre"
-            description="A studio that runs campaigns for a living, behind a platform you can run yourself. Verified people on both sides, rates and fees in the open, and a report at the end."
+            description="A studio that runs campaigns for a living, running yours end to end. Verified people on both sides, rates and fees in the open, and a report at the end."
             path="/why-weare"
         >
             <MarketingHero
@@ -135,15 +150,15 @@ export default function WhyWeAre() {
             />
 
             <TextImageSection
-                eyebrow="The choice"
-                title={COPY.choiceTitle}
-                line={COPY.choiceLine}
-                points={COPY.choice}
+                eyebrow="The terms"
+                title={COPY.termsTitle}
+                line={COPY.termsLine}
+                points={COPY.terms}
                 image={{
-                    // PLACEHOLDER IMAGE: split-feeling shot — a brand manager
-                    // working on a laptop dashboard, with a live shoot visible
-                    // beyond. 3:2.
-                    note: "Brand manager on a laptop dashboard with a live shoot visible beyond, 3:2",
+                    // PLACEHOLDER IMAGE: a WeAre manager and a brand owner
+                    // side by side at the venue before doors, going through
+                    // the roster on a tablet. 3:2.
+                    note: "WeAre manager and brand owner going through the roster on a tablet before doors, 3:2",
                     ratio: "3/2",
                 }}
                 flip

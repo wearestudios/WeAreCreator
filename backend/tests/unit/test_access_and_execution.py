@@ -154,14 +154,25 @@ class TestTheBrandHasNoRoster:
         assert "_brand_visible_creator" in src
 
     def test_the_marketing_copy_no_longer_offers_a_roster(self):
-        """It said applicants arrive "ranked alongside verified creators who
-        fit", which reads as a directory to shop through."""
+        """The same line, corrected twice, and both corrections matter.
+
+        It first said applicants arrive "ranked alongside verified creators who
+        fit" — a directory to shop through, which is what this class exists to
+        say does not exist. That became "beside creators matched to your
+        brief", which fixed the roster half and left the other one: applicants
+        *arriving* is a brand working a raw board, and on a managed-only
+        product nobody unshortlisted reaches them at all.
+
+        So the assertion is the rule rather than either replacement sentence:
+        no roster, no raw pile, and the word for what a brand receives.
+        """
         copy = (FRONTEND / "pages" / "ForBrands.jsx").read_text()
         code = "\n".join(
             l for l in copy.splitlines() if not l.strip().startswith("//")
         )
         assert "ranked alongside verified creators" not in code
-        assert "matched to your brief" in code
+        assert "applicants arrive" not in code.lower()
+        assert "shortlist" in code.lower()
 
 
 # --- 2 & 3. Some campaigns are ours to run ------------------------------------

@@ -9,9 +9,15 @@
 //
 // **The positioning, since it governs every line:** what we are against is
 // disorganisation — DMs, spreadsheets, handshake deals. It is deliberately
-// *not* agencies. WeAre Studios is one, the managed service is a real offering
-// somebody chooses, and "without an agency" would be a page arguing against
-// our own product.
+// *not* agencies. WeAre Studios is one, the managed service is the product
+// itself, and "without an agency" would be a page arguing against our own
+// offering.
+//
+// **The product is managed-only and the page says so as the offer.** There is
+// no self-serve mode to choose between: a brand posts a brief, we cast,
+// negotiate and shortlist, they approve, we run it. Any line that reads as
+// browsing creators, inviting them, or working an applicant board is
+// describing a product that no longer exists.
 //
 // Bengaluru appears as evidence of network depth, never as identity: it is a
 // fact about how fast a brief fills rather than a statement about who we are.
@@ -41,15 +47,20 @@ const COPY = {
     props: [
         {
             label: "Creators we checked",
-            line: "A person reviews every one, and connected Instagram stats are read from Instagram.",
+            line: "A person reviews every one, and connected stats are read from Instagram.",
         },
         {
             label: "Every rate, in front of you",
-            line: "You see what each creator quoted. Our fee sits on top, shown before you confirm.",
+            line: "You see what each creator quoted, with our fee on top.",
         },
         {
-            label: "Yours to run, or ours",
-            line: "Manage it from your dashboard, or hand it to the WeAre Studios team. You choose per campaign.",
+            // **The product is managed-only, so this is the offer rather than
+            // a choice.** This slot used to say "yours to run, or ours", which
+            // described a self-serve mode that no longer exists — a brand
+            // reading it would arrive expecting a dashboard to work an
+            // applicant board from and find a shortlist instead.
+            label: "We run it end to end",
+            line: "The WeAre Studios team casts, negotiates and shortlists. You approve the work.",
         },
     ],
 
@@ -57,21 +68,23 @@ const COPY = {
     steps: [
         {
             label: "Post the brief",
-            line: "What you want made, the budget, and the hours your venue can take people.",
+            line: "What you want made, the budget, and when your venue can take people.",
         },
         {
-            // **Not a directory to browse.** A brand sees the creators on its
-            // own brief — the ones who applied, the ones it invited — plus the
-            // shortlist we rank against what it asked for. This line used to
-            // say applicants arrive ranked alongside verified creators who
-            // fit, which read as a roster to shop through: never what a brand
-            // could reach, and now not even what exists.
+            // **Not a directory to browse, and not a pile to sort.** This
+            // line used to say applicants arrive ranked alongside verified
+            // creators who fit, which read as a roster to shop through —
+            // never what a brand could reach, and now not even what exists.
+            // It then said applicants arrive with their rate, which was the
+            // raw-application reading of the same screen. What a brand
+            // receives is a shortlist: people we checked and agreed a fee
+            // with. Nobody unshortlisted reaches them on a brief we run.
             //
             // Keep quotation marks out of this block — the word-budget test
             // regexes every double-quoted string inside COPY, so a quoted
             // phrase in a comment is charged to the page.
-            label: "Pick your creators",
-            line: "Applicants arrive with their rate, beside creators matched to your brief.",
+            label: "We bring the shortlist",
+            line: "Creators we checked and negotiated with, each with a rate agreed.",
         },
         {
             label: "They shoot",
@@ -83,20 +96,26 @@ const COPY = {
         },
     ],
 
-    choiceTitle: "Self-serve, or we run it.",
-    choiceLine: "An option you choose per campaign, never a fee you are locked into.",
-    choice: [
+    // **The commercial terms, which are the strongest thing we have to say
+    // and appeared nowhere.** This slot used to be "self-serve, or we run
+    // it" — a choice the product no longer offers. What replaces it is what
+    // a brand is actually deciding on: our fee sits on top of the creator's
+    // rate rather than out of it, and it comes back if we cannot fill the
+    // brief. Both are checkable, which is the standard this page is held to.
+    termsTitle: "Our fee, and when it returns.",
+    termsLine: "Charged on top, and refunded if we cannot fill the brief.",
+    terms: [
         {
-            label: "No retainer",
-            line: "And no markup on what the creator charges, either way.",
+            label: "Creators keep their full rate",
+            line: "Our fee is yours to pay, never theirs.",
         },
         {
-            label: "A named manager",
-            line: "On a managed campaign, holding the roster and at the door on the day.",
+            label: "Refunded if we cannot fill it",
+            line: "Unless you turned down everyone we shortlisted.",
         },
         {
-            label: "Same approval, same report",
-            line: "Whichever way you run it.",
+            label: "A named manager, every time",
+            line: "Holding the roster and at the door.",
         },
     ],
 
@@ -112,7 +131,7 @@ export default function ForBrands() {
         <MarketingPage
             testid={IDS.forBrands}
             title="Creator campaigns for brands, handled properly"
-            description="Verified creators, every rate visible before you book, approval before anything is published, and a report at the end. Run it yourself or hand it to the WeAre Studios team."
+            description="Verified creators, every rate visible before you book, approval before anything is published, and a report at the end. The WeAre Studios team runs it end to end."
             path="/for-brands"
         >
             <MarketingHero
@@ -154,10 +173,10 @@ export default function ForBrands() {
             />
 
             <TextImageSection
-                eyebrow="The choice"
-                title={COPY.choiceTitle}
-                line={COPY.choiceLine}
-                points={COPY.choice}
+                eyebrow="The terms"
+                title={COPY.termsTitle}
+                line={COPY.termsLine}
+                points={COPY.terms}
                 image={{
                     // PLACEHOLDER IMAGE: a WeAre campaign manager at a venue
                     // with a tablet, checking creators in at the door, evening.

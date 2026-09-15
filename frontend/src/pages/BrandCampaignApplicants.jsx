@@ -1080,7 +1080,13 @@ export default function BrandCampaignApplicants() {
                             onClearFilters={() => setFilter("all")}
                             clearLabel="Show everyone"
                             emptyTitle="No applications yet."
-                            emptyBody="Verified creators see this brief on their feed and apply from there. Applications usually start within a day of publishing — or invite creators yourself from the panel below."
+                            // **Nobody here invites anybody.** This used to end
+                            // "or invite creators yourself from the panel
+                            // below", which was the one place on this screen
+                            // still offering a button that has since gone —
+                            // an empty state pointing at an affordance that
+                            // is not there is worse than an empty state.
+                            emptyBody="Our team is casting this brief now. Creators appear here once we have checked them and agreed their fee, which usually starts within a day of publishing."
                             filteredTitle="Nothing in this tab."
                             filteredBody="There is work in one of the others — the counts beside each tab say which."
                             className="border-0 bg-transparent"

@@ -150,6 +150,9 @@ export const TERMS = {
 	termsUsage: 'collab-terms-usage',
 	termsDisclosure: 'collab-terms-disclosure',
 	cancellation: 'collab-terms-cancellation',
+	// Where our margin sits relative to the creator's fee. Frozen into the
+	// snapshot beside the cancellation and circumvention clauses.
+	termsCommission: 'collab-terms-commission',
 	acceptBtn: 'collab-terms-accept',
 	accepted: 'collab-terms-accepted',
 	awaiting: 'collab-terms-awaiting',

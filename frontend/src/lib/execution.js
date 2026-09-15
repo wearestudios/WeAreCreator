@@ -49,19 +49,17 @@ export const executionMeta = (campaign) => EXECUTION_META[executionOwner(campaig
 
 export const isWeareRun = (campaign) => executionOwner(campaign) === "weare";
 
-/** Options for a picker, in the order a brand should read them. */
-export const EXECUTION_OPTIONS = [
-    {
-        value: "brand",
-        label: "We'll run it ourselves",
-        hint: "Applications come to you. You accept creators, agree the fee and run the day.",
-    },
-    {
-        value: "weare",
-        label: "Hand it to the WeAre team",
-        hint: "We review applications, book the creators and manage the shoot. You still see everything.",
-    },
-];
+/* **There is no picker, so there are no options.** `EXECUTION_OPTIONS` lived
+ * here — "we'll run it ourselves" against "hand it to the WeAre team" — and
+ * was the brand's wording for a choice the product no longer offers. It has
+ * had no caller since the picker came off `PostCampaign`, and dead copy
+ * offering a removed capability is exactly what the next person reaches for
+ * when they need a label. `MANAGED_NOTE` below is what the form says instead.
+ *
+ * The admin's own control in `CreateDialogs.jsx` spells its two options
+ * inline, deliberately: "we'll run it ourselves" means the brand here and
+ * would mean WeAre there, which is the same words for opposite parties.
+ */
 
 /**
  * Whether this brief is ours to run whatever the brand picks, and why.
@@ -129,3 +127,17 @@ export const REFUND_TERMS =
     "and the brief would have filled had you taken them, the fee stands — the " +
     "shortfall was a decision rather than a delivery. Either way a person here " +
     "reviews it when the campaign closes and tells you the outcome.";
+
+// Where our margin sits relative to the creator's fee. Mirrors
+// `COMMISSION_TERMS` in `backend/server.py`.
+//
+// The creator's side of the site has always said they keep their whole quote;
+// the brand's side never said where our fee comes from, and the inference a
+// brand draws about an unexplained platform fee is that somebody's rate is
+// being clipped. It is a sales point rather than small print — a brand is
+// buying the fact that its creators are not being squeezed.
+export const COMMISSION_TERMS =
+    "Our commission is charged to you on top of the creator's rate, never " +
+    "taken out of it. A creator who quotes ₹20,000 is paid ₹20,000, and you " +
+    "see both numbers before you confirm. There is no retainer and no markup " +
+    "on what the creator charges.";

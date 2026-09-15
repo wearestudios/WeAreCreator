@@ -44,7 +44,11 @@ const COPY = {
         {
             moment: "The brief",
             creator: { label: "Find it and pitch", line: "Ranked by fit, never by what it pays." },
-            brand: { label: "Post it, see who applies", line: "Applicants arrive with their rate, ranked alongside suggestions." },
+            // **The brand does not sort applications.** This said applicants
+            // arrive with their rate, which described a board a brand worked
+            // through — the self-serve reading of a managed product. Nobody
+            // unshortlisted reaches them.
+            brand: { label: "Post it, we cast", line: "We shortlist creators and agree their fees before you see anyone." },
         },
         {
             moment: "The money",
