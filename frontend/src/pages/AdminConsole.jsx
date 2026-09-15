@@ -22,6 +22,8 @@
 // is reached with the R key. Approvals are still optimistic.
 import React, { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
+
+import Settle from "@/components/motion/Settle";
 import { Keyboard, Menu } from "lucide-react";
 
 import { Navbar } from "@/components/Navbar";
@@ -202,6 +204,16 @@ export default function AdminConsole() {
                             label="This screen couldn't load"
                             resetOn={pathname}
                         >
+                        {/* **The console's half of the route settle.** The
+                            app-level one is keyed on the surface, so moving
+                            between sections does not fade the sidebar, the
+                            header or the badge counts — the navigation an
+                            admin is using is the last thing that should
+                            animate under their cursor. This fades only what
+                            changed. `settleKey` is the path, so it replays on
+                            every section and detail page; the chrome around
+                            it never moves. */}
+                        <Settle settleKey={pathname}>
                             <Outlet
                                 context={{
                                     reloadCounts: loadCounts,
@@ -210,6 +222,7 @@ export default function AdminConsole() {
                                     allAccess,
                                 }}
                             />
+                        </Settle>
                         </ErrorBoundary>
                     </main>
                 </div>

@@ -207,21 +207,99 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * The authenticated product's motion
+ *
+ * Separate from `components/marketing/motion.js`, which is framer-motion and
+ * scroll-driven. This is **CSS only**, for three reasons that all point the
+ * same way:
+ *
+ * - The audience is a mid-range Android on Indian mobile data. A CSS
+ *   animation on transform and opacity runs on the compositor; a JS tween
+ *   runs on the main thread beside React.
+ * - `framer-motion` is banned in `components/admin/` by a test, and the
+ *   reason behind that test is sound: the console is a working surface. A
+ *   settle it can share is a settle with one definition.
+ * - The code-splitting work took the creator chunk down 36% and the manager's
+ *   58%. Pulling framer-motion into the brand, manager and admin chunks to
+ *   fade a table in would hand a good part of that back.
+ *
+ * Transforms and opacity only — never height, top or a colour, which force
+ * layout or paint on every frame.
+ *
+ * Every duration here is in the 180–220ms band. Below 180 an entrance reads
+ * as a flicker; above 220 the reader is waiting for the screen rather than
+ * reading it, and on a list that wait is paid forty times a day.
+ * ------------------------------------------------------------------------- */
+:root {
+    /* One curve for the whole product — a gentle deceleration, settling
+       rather than stopping. The same shape as the marketing site's `EASE`,
+       written here in CSS because nothing in this layer runs in JS. */
+    --weare-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --weare-settle: 200ms;
+    --weare-route: 190ms;
+    /* The travel. Deliberately small: 6px reads as settling, and the 14px the
+       marketing site uses reads as arriving — right for a page somebody scrolls
+       through once, wrong for a row in a table they are scanning. */
+    --weare-rise: 6px;
+}
+
+@keyframes weare-settle {
+    from { opacity: 0; transform: translate3d(0, var(--weare-rise), 0); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* Content arriving: a list row, a card, a panel. `both` so the element holds
+   opacity 0 through its stagger delay rather than flashing in and out. */
+.weare-settle {
+    animation: weare-settle var(--weare-settle) var(--weare-ease) both;
+    /* Promotes to its own layer for the duration and then releases it.
+       `will-change` left on permanently is a memory leak per row. */
+    will-change: opacity, transform;
+}
+.weare-settle-done {
+    will-change: auto;
+}
+
+/* A route arriving. Same shape, its own duration so the two can be tuned
+   apart — a whole screen and one row inside it are different distances. */
+.weare-route {
+    animation: weare-settle var(--weare-route) var(--weare-ease) both;
+}
+
+/* ---------------------------------------------------------------------------
  * Reduced motion
  *
  * The components respect `useReducedMotion` individually, but the dialogs,
  * sheets and menus animate through Tailwind/Radix data-attributes that no hook
  * sees. This is the backstop: state still changes instantly and visibly, it
  * just stops sliding and zooming to get there.
+ *
+ * **`animation-delay` has to be zeroed here too, and that is not tidiness.**
+ * The backstop below collapses duration to 0.01ms and says nothing about
+ * delay, and a staggered list sets an inline `animation-delay` per row. With
+ * `animation-fill-mode: both` the element holds its `from` state — opacity 0 —
+ * for the whole delay, so a reduced-motion reader would get exactly the thing
+ * they asked not to have: rows invisible and then popping in, one after
+ * another, just with no tween in between. The considered static fallback is
+ * the end state, present and immediate.
  * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
         animation-duration: 0.01ms !important;
+        animation-delay: 0ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
         scroll-behavior: auto !important;
+    }
+    .weare-settle,
+    .weare-route {
+        animation: none !important;
+        opacity: 1;
+        transform: none;
+        will-change: auto;
     }
 }
 

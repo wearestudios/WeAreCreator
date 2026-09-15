@@ -7,6 +7,8 @@
 // the tie-break inside each band, and anything past two days is marked so it
 // stops blending in.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+
+import { useOptimisticRows } from "@/lib/useOptimistic";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
@@ -270,23 +272,30 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         async (item, fn, successMessage) => {
             setBusyId(item.id);
             setSubmitting(true);
-            try {
-                await fn();
+            // `settled` takes the row out of the list on this frame. The
+            // refetch below replaces the whole array, which is what drops the
+            // patch — an override that outlived its refetch would pin a row
+            // off screen forever.
+            const ok = await apply(item.id, { settled: true }, fn, {
+                onError: async (e) => {
+                    notifyError(e);
+                    // A 409 means somebody else moved it. The rollback puts
+                    // the row back, which would be a lie — it is gone. The
+                    // list is stale either way, so refetch.
+                    if (e?.response?.status === 409) await load();
+                },
+            });
+            if (ok) {
                 notifySuccess(successMessage);
                 setConfirm(null);
                 setAdvance(null);
                 await load();
                 onChanged?.();
-            } catch (e) {
-                notifyError(e);
-                // A 409 means somebody else moved it — the list is stale either way.
-                if (e?.response?.status === 409) await load();
-            } finally {
-                setBusyId(null);
-                setSubmitting(false);
             }
+            setBusyId(null);
+            setSubmitting(false);
         },
-        [load, onChanged],
+        [apply, load, onChanged],
     );
 
     // --- the actions themselves -------------------------------------------
@@ -448,9 +457,25 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         return out;
     }, [items]);
 
+    /**
+     * **The row leaves on the click, not on the response.**
+     *
+     * Working the queue is "decide, next, decide, next", and the old shape put
+     * a network round trip between those two words: the button went busy, the
+     * row sat there looking undecided, and only after a refetch did it go. On
+     * a slow connection that is indistinguishable from nothing having
+     * happened, which is how a decision gets made twice.
+     *
+     * `settled` is the patch, and the filter below drops it. A failure rolls
+     * the patch back — the row returns — *and* marks it failed, which is what
+     * the flash on the row reads, because a row that silently reappears is a
+     * decision somebody believes they made.
+     */
+    const { rows: patched, failed, apply } = useOptimisticRows(items || []);
+
     const visible = useMemo(
-        () => (items || []).filter((i) => !kind || i.kind === kind),
-        [items, kind],
+        () => patched.filter((i) => !i.settled && (!kind || i.kind === kind)),
+        [patched, kind],
     );
 
     /**
@@ -697,6 +722,14 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                 rows={rows}
                 rowKey={(i) => i.id}
                 rowTestId={(i) => IDS.row(i.id)}
+                // The rollback, made visible. A row that failed comes back
+                // tinted for `ROLLBACK_FLASH_MS` — destructive rather than
+                // ember, because ember is the primary action in this console
+                // and a row wearing it reads as something to press.
+                rowClass={(i) =>
+                    failed[i.id] ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : ""
+                }
+                settleKey={kind || "all"}
                 sort={sort}
                 onSortChange={(s) => patch({ sort: s })}
                 focused={focused}

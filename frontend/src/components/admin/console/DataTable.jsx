@@ -50,6 +50,7 @@ import {
 } from "@/components/admin/console/tokens";
 import { ADMIN_TABLE as IDS } from "@/constants/testIds";
 import useWide from "@/lib/useWide";
+import { settleDelay } from "@/lib/motion";
 
 /** Rows past which the body is windowed. Below it, everything is in the DOM. */
 const VIRTUALISE_ABOVE = 150;
@@ -138,6 +139,19 @@ export function DataTable({
     // leftmost so it is what you see before scrolling.
     minWidth = "min-w-[52rem]",
     scrollRef,
+    // **What "the set was replaced" means for this list.** A caller passes
+    // whatever its filters amount to — a tab name, a query string — and the
+    // rows settle again when it changes. Without it the rows would animate on
+    // first mount only: React reuses a row's DOM node across a re-render, and
+    // a CSS animation fires when an element is created, so a filter change
+    // would silently swap the contents of rows that never move.
+    settleKey,
+    // **Per-row state the table itself knows nothing about.** Used for the
+    // rollback flash: a mutation that failed puts its row back, and a row
+    // silently reappearing is a decision somebody believes they made. One
+    // function rather than a `failed` set, so the next thing that needs to
+    // mark a row does not add a second prop.
+    rowClass,
 }) {
     const localRef = useRef(null);
     const bodyRef = scrollRef || localRef;
@@ -150,6 +164,18 @@ export function DataTable({
     // the problem it solves. The lists that can get long are paginated at 50
     // or capped at 200 anyway.
     const virtual = wide && rows.length > VIRTUALISE_ABOVE;
+
+    // **Never on a windowed table.** Rows mount as you scroll into them, so a
+    // settle there is not content arriving — it is every row fading in under
+    // the reader's eye as they move, which is the "popping in" this whole
+    // layer exists to remove. Past 150 rows the list is a data set being
+    // scanned rather than a screen being read.
+    const settles = !virtual;
+    // Row identity *within* a set is preserved, so an optimistic patch
+    // updates a row in place; changing the set remounts them and they settle.
+    const stamp = settles
+        ? [settleKey, sort?.key, sort?.dir].join("|")
+        : "";
 
     const recompute = useCallback(() => {
         const el = bodyRef.current;
@@ -205,6 +231,8 @@ export function DataTable({
                 onFocus={onFocus}
                 onOpen={onOpen}
                 testid={testid}
+                stamp={stamp}
+                rowClass={rowClass}
             />
         );
     }
@@ -280,8 +308,9 @@ export function DataTable({
                             const isFocused = index === focused;
                             return (
                                 <tr
-                                    key={rowKey(row, index)}
+                                    key={`${stamp}:${rowKey(row, index)}`}
                                     data-row-index={index}
+                                    style={settles ? settleDelay(i) : undefined}
                                     data-testid={
                                         rowTestId
                                             ? rowTestId(row, index)
@@ -296,7 +325,7 @@ export function DataTable({
                                             onOpen?.(index);
                                         }
                                     }}
-                                    className={`${ROW_H} cursor-pointer border-b border-white/5 ${CALM} ${FOCUS} ${
+                                    className={`${settles ? "weare-settle " : ""}${ROW_H} cursor-pointer border-b border-white/5 ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
                                         isFocused
                                             ? // The focused row is a left rule
                                               // plus a lift in the surface, not
@@ -352,7 +381,10 @@ const pick = (columns, where) => columns.filter((c) => c.mobile === where);
  * checking one thing rather than comparing forty. Tapping it opens the same
  * peek panel the table's row does.
  */
-function MobileList({ columns, rows, rowKey, rowTestId, focused, onFocus, onOpen, testid }) {
+function MobileList({
+    columns, rows, rowKey, rowTestId, focused, onFocus, onOpen, testid, stamp = "",
+    rowClass,
+}) {
     const primary = pick(columns, "primary");
     const meta = pick(columns, "meta");
     const trailing = pick(columns, "trailing");
@@ -362,8 +394,9 @@ function MobileList({ columns, rows, rowKey, rowTestId, focused, onFocus, onOpen
         <ul className={`${PANEL} divide-y divide-white/5`} data-testid={testid}>
             {rows.map((row, index) => (
                 <li
-                    key={rowKey(row, index)}
+                    key={`${stamp}:${rowKey(row, index)}`}
                     data-row-index={index}
+                    style={settleDelay(index)}
                     data-testid={rowTestId ? rowTestId(row, index) : IDS.row(rowKey(row, index))}
                     tabIndex={0}
                     onFocus={() => onFocus?.(index)}
@@ -374,7 +407,7 @@ function MobileList({ columns, rows, rowKey, rowTestId, focused, onFocus, onOpen
                             onOpen?.(index);
                         }
                     }}
-                    className={`flex items-start gap-3 ${DENSITY.row} ${CALM} ${FOCUS} ${
+                    className={`weare-settle flex items-start gap-3 ${DENSITY.row} ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
                         index === focused ? "bg-white/[0.06]" : ""
                     }`}
                 >

@@ -143,11 +143,39 @@ def test_the_brand_mark_travels_with_the_brand_name():
 
 
 def test_entrances_are_staggered_and_reduced_motion_is_respected():
+    """**The rule is the same; where it is enforced moved.**
+
+    `Reveal` used to be this file's own framer-motion tween, asking
+    `useReducedMotion` for itself and computing its own delay — at 450ms with
+    a 70ms stagger, which made the creator's home the one authenticated screen
+    settling at a different speed from every other. It is the shared CSS
+    settle now, so the stagger comes from `settleDelay` and reduced motion is
+    handled once in `index.css`, where the fallback is the end state rather
+    than a faster animation.
+
+    So this asserts the two properties rather than the old implementation of
+    them: still staggered by position, still answering the preference. The
+    band, the cap and the reduced-motion fallback are pinned in
+    `test_ui_fluidity.py`, which is where the shared layer lives.
+    """
     shared = read("components", "creator", "shared.jsx")
     reveal = shared[shared.index("export const Reveal"):shared.index("export const CountUp")]
 
-    assert "useReducedMotion" in reveal
-    assert "delay" in reveal and "index" in reveal
+    # Staggered by its position in the page.
+    assert "index={index}" in reveal
+    assert "Settle" in reveal
+
+    # And the preference is answered — once, for the whole product.
+    settle = read("components", "motion", "Settle.jsx")
+    assert "settleDelay" in settle
+    css = (FRONTEND / "index.css").read_text()
+    assert ".weare-settle" in css
+    block = css[css.index("@media (prefers-reduced-motion: reduce) {\n    *,"):]
+    assert "animation: none !important" in block
+
+    # `CountUp` is still a JS tween on the creator's money, so it still has to
+    # ask for itself.
+    assert "useReducedMotion" in shared
 
 
 def test_the_card_draws_the_shared_process_flow_rather_than_its_own_bar():

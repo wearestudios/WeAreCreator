@@ -1023,9 +1023,30 @@ What each audience must come away knowing is pinned there too — for creators,
 that briefs are real and paid, the rate is agreed in writing before they shoot,
 they keep 100% of it because the fee sits on the brand, payment follows
 approved delivery, brands are checked, and joining is free; for brands, real
-audience stats, every creator and every rate visible, no retainer and no markup
-on creator fees, approval before publication, a report at the end, and the
-self-serve/managed choice **as an option, never as a fee they are locked into**.
+audience stats, every rate visible, no retainer and no markup on creator fees,
+approval before publication, a report at the end, and **the managed offer
+stated rather than offered as a choice**.
+
+**There is no self-serve half any more, and the tests say so the other way
+round now.** `/for-brands` and `/why-weare` used to be *required* to carry "run
+it yourself" and "not a fee you are locked into", because the risk then was a
+brand reading the managed option as a retainer. Every brand-posted brief is
+WeAre-run, a brand cannot invite a creator and cannot reach a raw application,
+so those lines described a product that does not exist and a brand arriving on
+them expected an applicant board. "run it yourself", "self-serve", "hand it
+over" and "you choose per campaign" are now *banned* on both pages, and a sweep
+over `pages/`, `components/brand/`, `components/marketing/` and `lib/` fails any
+brand-facing string literal offering a capability the brand does not have —
+browsing creators, inviting them, or a creator directory. It reads literals
+rather than whole files, because the convention here is to explain a removal
+where it happened and the explanation necessarily quotes the thing removed.
+
+**The two commercial terms are on the page because they are the pitch.** Our
+fee is charged on top of the creator's rate rather than out of it, and the
+campaign fee comes back if we cannot fill the brief unless the brand turned
+down everyone we shortlisted. Both are checkable, which is the standard these
+pages are held to, and both were on no brand-facing surface at all — see "What
+we charge, and what comes back".
 
 - **An audience page asks once, in the same words, twice.** Hero and close, both
   spread from one `ASK` constant so "the same words" is structural. Two
@@ -1637,6 +1658,32 @@ stops trusting us with its campaigns.
 
 Three commercial facts that were an environment variable and two things
 nobody recorded.
+
+### Where the margin sits, said to the brand
+
+`COMMISSION_TERMS`. The commission is charged to the brand **on top of** the
+creator's fee, never deducted from it, so a creator who quotes ₹20,000 is paid
+₹20,000 — which had been true since the platform existed and appeared on no
+brand-facing surface. The creator's half of the site has said it from the start
+("charged to the brand on top", "never taken out of yours"); the paying side
+was left to infer it, and the inference a brand actually draws about an
+unexplained platform fee is that somebody's rate is being clipped.
+
+- It is worth saying to **both** audiences for different reasons. A creator
+  needs to know they keep their quote. A brand is buying the fact that its
+  creators are not being squeezed, because a squeezed creator is the one who
+  takes the next brief off-platform — the failure `CIRCUMVENTION_TERMS` names.
+- **Stated at campaign creation and frozen into the terms snapshot** beside
+  `REFUND_POLICY_TERMS`, for the same reason: a commercial term somebody meets
+  for the first time on an invoice is a surprise, and a surprise is not a sales
+  point. Mirrored in `lib/execution.js` with a drift test, because the post
+  form renders it before a campaign exists.
+- **The rate itself is deliberately not in the snapshot.** That is resolved per
+  payment and frozen *there* (`fee_percent`); a percentage on the collaboration
+  would be a second historical record of one fact, and the two would disagree
+  the first time a brand's rate was renegotiated between acceptance and payment.
+  What is frozen here is the *arrangement*, which does not change when a rate
+  does.
 
 ### The rate, negotiated rather than deployed
 
@@ -3671,11 +3718,24 @@ holds every rule below.
   objects it replaced are why a closed campaign read grey on one screen and
   red on the next. **Ember is never a status**: it is the primary action, and
   a status wearing it makes every row look like a call to action.
-- **The console is calm.** No grain (the shared dialog primitive grains
-  itself, so the three console dialogs turn it off at the call site), no
-  entrance animation, 150ms colour transitions and nothing else. A list that
-  animates in is a list you cannot read until it has finished. Skeletons stay:
-  that is shape, not motion, and CLS measures 0.0000 with the API delayed.
+- **The console is calm, and the rule narrowed rather than went.** No grain
+  (the shared dialog primitive grains itself, so the three console dialogs
+  turn it off at the call site), 150ms colour transitions, and **no marketing
+  entrance motion** — `<Reveal>`, `<CountUp>`, `framer-motion` and
+  `animate-in` are all still banned here by a test. The reason stands: a list
+  that animates in is a list you cannot read until it has finished, and an
+  admin loads it forty times a day.
+
+  What changed is that `Reveal` is 200ms with a **70ms stagger and no cap**,
+  which on six marketing sections is a page arriving and on forty rows is 2.8
+  seconds of cascade. The shared settle is 200ms with a **30ms stagger capped
+  at eight rows**, so any list has finished at 440ms however long it is, and
+  it is off entirely past `VIRTUALISE_ABOVE` because windowed rows mount as
+  you scroll into them. `AnimatedNumber` is allowed where `CountUp` is not,
+  and that is a real difference rather than a rename: `CountUp` travels from
+  zero on first paint, so an admin opening the queue would watch "0" become
+  "14". See "Motion in the authenticated product". Skeletons stay: that is
+  shape, not motion, and CLS measures 0.0000 with the API delayed.
 - **The peek panel** (`PeekPanel`) is a row's detail without leaving the list —
   working a queue is "check this one, act, next", and a full-page round trip
   per row loses the filter, the sort and the scroll forty times an hour. It
@@ -4026,6 +4086,115 @@ from `index.js`). The admin console, the manager interface and the creator home
 brand-facing pages still use inline string literals, and `auth.js` doesn't match
 the shipped OTP screens. Match the surrounding file — add to the registry when the
 feature already uses it, inline otherwise, and don't half-migrate a page.
+
+## Motion in the authenticated product
+
+The complaint this answers is that the app was **snappy in a bad way**: screens
+cut rather than settled, lists appeared all at once the instant a fetch landed,
+and a button did nothing until the server replied and then everything changed.
+None of that is slow — it is abrupt, which reads as cheap and, on a bad
+connection, as broken.
+
+`lib/motion.js` plus keyframes in `index.css` is the layer, and
+`components/motion/` holds the three components. `test_ui_fluidity.py` holds
+every rule below.
+
+- **It is CSS, and deliberately not `components/marketing/motion.js`.** That
+  one is framer-motion, scroll-driven, and written for a page somebody reads
+  once; this is for screens somebody works in for an hour. Three consequences,
+  all pointing the same way: a CSS animation on transform and opacity is
+  composited while a JS tween runs on the main thread next to React, which is
+  where the jank on a mid-range Android comes from; the console's ban on
+  `framer-motion` stays intact, so the settle has one definition across all
+  four surfaces; and the brand, manager and admin chunks do not grow a motion
+  library, which the code-splitting work took down 33–58%. A test fails any
+  app file importing the marketing layer.
+- **180–220ms, one curve** (`--weare-ease`, the same deceleration the
+  marketing site uses). Below 180 an entrance reads as a flicker; above 220 the
+  reader is waiting for the screen. A second `cubic-bezier` anywhere under the
+  authenticated product fails a test.
+- **The stagger is 30ms and capped at eight rows**, and the cap is the whole
+  reason a stagger is safe on a list: without it a 200-row table cascades for
+  six seconds and the rows somebody scrolled to are the last to exist. Measured
+  in a browser: delays run `0,30,…,240,240,240,240`.
+- **A CSS entrance fires when an element is created, so a list that re-renders
+  into reused DOM nodes never replays it.** That is every filter and sort
+  change — the one moment a reader most needs telling the set is different.
+  `settleKey` is what remounts them; `DataTable` builds its stamp from the
+  caller's key plus the sort, and row identity *within* a stamp is preserved so
+  an optimistic patch updates in place rather than remounting.
+- **The route settle restarts an animation rather than remounting a subtree.**
+  `<div key={pathname}>` replays a CSS entrance for free and is wrong here:
+  `/admin` is a layout route owning the sidebar, the badge counts and eighteen
+  sections in an `<Outlet>`, so a key there would rebuild and refetch all of it
+  every time somebody pressed a section. The wrapper is stable and the class is
+  removed, a reflow forced, and the class re-added. Keyed on the **surface**
+  (the first path segment), because fading the navigation somebody is using is
+  the opposite of the point; moving *within* the console is the `<Outlet>`'s
+  own settle. Marketing paths keep the cut — they stagger every section in on
+  scroll already, and two layers on one page is the same pixels animated twice.
+- **`will-change` is released on `animationend`.** Left on, twenty rows keep
+  twenty compositor layers alive for the life of the screen. Verified: 12 of 12
+  released.
+- **Reduced motion lands on the end state, and the delay is the trap.** The
+  backstop in `index.css` collapsed `animation-duration` and said nothing about
+  `animation-delay` — and with `animation-fill-mode: both` the element holds
+  `opacity: 0` through its whole stagger, so a reader who asked for less motion
+  would get rows invisible and then popping in, one after another, with no
+  tween in between. Both are zeroed now and `.weare-settle` is neutralised
+  outright. Verified by emulation: every card at its final state on first
+  paint, no delay surviving.
+- **Numbers travel rather than snap.** `AnimatedNumber` writes `textContent` on
+  a ref and never calls `setState` per frame — the lesson `CampaignFilm`
+  records — and its **first paint is the real value**, so it moves only when
+  the value changes while mounted. Every formatter rounds, because `value` is a
+  float on every frame but the last; `INT` and `GROUPED` are exported for that
+  reason and `format={String}` fails a test.
+
+### Mutations that answer immediately
+
+`lib/useOptimistic.js`, in two shapes: `useOptimisticRows` lays patches over a
+server-owned list, `useOptimisticAction` is the single-control version for a
+dialog or a toggle. The argument `lib/offlineQueue.js` already made about
+check-ins, made for every other button.
+
+- **The control goes pending on the frame of the click**, not when the request
+  is sent. 60 of the 64 mutation sites already did this; the four that did not
+  are fixed — the circumvention decision (which decides whether somebody keeps
+  their account and gave no sign it had heard the click) and the notification
+  badge (which waited for a round trip to clear a count sitting over an open
+  panel of the notifications the reader is looking at).
+- **The row shows the new value before the server confirms**, because the
+  overwhelming majority succeed and optimising for the failure makes every
+  success feel slow. A refetch always beats a patch: an override that outlived
+  its refetch would pin a stale value on screen forever.
+- **A failure rolls back where the reader can see it** — the value returns
+  *and* the row is marked failed for `ROLLBACK_FLASH_MS`, because somebody who
+  watched a row change and looked away believes it changed. `DataTable` takes a
+  `rowClass` for the flash, in destructive rather than ember: ember is the
+  primary action in the console and a row wearing it reads as something to
+  press.
+- **It never retries and never rethrows.** Retrying is the offline queue's job
+  and a different decision — a check-in is worth replaying because the person is
+  standing there, an approval is not. Rethrowing would make every caller catch
+  it to avoid `globalErrors.js` toasting on top of the message they already
+  showed.
+- The action queue is the exemplar, being the highest-traffic decision surface:
+  working it is "decide, next, decide, next", and the old shape put a network
+  round trip between those two words. A 409 refetches instead of rolling back —
+  somebody else moved it, so putting the row back would be a lie.
+
+### Measured, with a control
+
+Mid-range Android profile — 4× CPU throttle, API delayed 700ms, at 390 and
+1280, against the previous build on the identical harness:
+
+- **CLS is 0.0000 on all five surfaces at both widths**, and two improved: the
+  brief feed at 1280 was 0.0042, the admin overview at 1280 was 0.0224.
+- **Long tasks are unchanged or fewer** — the brief feed at 390 went from eight
+  over 50ms to six. They are React bootstrapping under the throttle, which the
+  reduced-motion runs confirm: with every animation off the same tasks appear
+  at the same durations.
 
 ## Dense views
 

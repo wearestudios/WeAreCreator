@@ -42,6 +42,8 @@ import {
 import { CALM, DENSITY, FOCUS, TEXT } from "@/components/admin/console/tokens";
 import { readSavedFilters } from "@/components/admin/console/useListState";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
+import AnimatedNumber from "@/components/motion/AnimatedNumber";
+import { INT } from "@/lib/motion";
 import { isAllAccess } from "@/lib/consoleScope";
 
 const COLLAPSE_KEY = "weare.admin.sidebar";
@@ -194,7 +196,13 @@ function Badge({ count, active, form = "full" }) {
                 active ? "bg-ember-500 text-black" : "bg-white/10 text-foreground"
             }`}
         >
-            {count > 99 ? "99+" : count}
+            {/* **It travels rather than snapping**, which is the only thing
+                on the sidebar that tells an admin something arrived while
+                they were reading a different section. A count replacing
+                itself is a change nobody sees, because nothing moved. Over
+                99 it is not a number any more — "99+" is a word, and tweening
+                to a word is nonsense — so that case prints. */}
+            {count > 99 ? "99+" : <AnimatedNumber value={count} format={INT} />}
         </span>
     );
 }
