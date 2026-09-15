@@ -32,6 +32,13 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
 const SERVER_RENDERED = [
     /^\/c\/[^/]+\/?$/,
     /^\/brands\/[^/]+\/?$/,
+    // The case-study shelf and one write-up. Server-rendered for both of the
+    // reasons /c/{id} is: these are links we send a brand on WhatsApp, so the
+    // preview is the pitch, *and* they are the one part of this site written
+    // to be found by search rather than sent — which needs a page that exists
+    // without JavaScript.
+    /^\/work\/?$/,
+    /^\/work\/[^/]+\/?$/,
     /^\/sitemap\.xml$/,
 ];
 

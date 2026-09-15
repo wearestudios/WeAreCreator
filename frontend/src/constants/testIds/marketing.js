@@ -38,6 +38,12 @@ export const MARKETING = {
 	// stands in for it before anybody knows.
 	leaderboardSkeleton: 'marketing-leaderboard-skeleton',
 	leaderboardCard: (id) => `marketing-leaderboard-card-${id}`,
+	// The case-study strip on home and /for-brands. Keyed on the slug
+	// rather than a position: a slug is what a failing check can name.
+	caseStudyStrip: 'marketing-case-studies',
+	caseStudyCard: (slug) => `marketing-case-study-${slug}`,
+	caseStudyResult: (slug) => `marketing-case-study-result-${slug}`,
+	caseStudyAll: 'marketing-case-studies-all',
 	leaderboardName: (id) => `marketing-leaderboard-name-${id}`,
 	leaderboardSignal: (id) => `marketing-leaderboard-signal-${id}`,
 	leaderboardMonogram: (id) => `marketing-leaderboard-monogram-${id}`,

@@ -94,15 +94,54 @@ def test_no_page_positions_us_against_agencies(name):
         assert phrase not in text, f"{name}: {phrase!r}"
 
 
-def test_the_managed_service_reads_as_a_choice_not_a_fee():
-    """"An option you choose, not a fee you're locked into." A brand that
-    reads this as a retainer has read the opposite of the offering."""
+def test_the_managed_offer_is_stated_rather_than_offered_as_a_choice():
+    """**The product is managed-only, so there is no choice to describe.**
+
+    This test used to assert the opposite, and was right to at the time: the
+    pages offered "run it yourself, or hand it over" and the risk worth
+    guarding against was a brand reading the managed half as a retainer they
+    were locked into. Both pages therefore had to say "run it yourself" and
+    "no retainer", and /why-weare had to say "not a fee you are locked into".
+
+    The product changed underneath that. Every brand-posted brief is
+    WeAre-run, a brand cannot invite creators and cannot reach a raw
+    application, so a page offering a self-serve mode is describing something
+    that does not exist — and the brand arrives expecting an applicant board.
+    So the assertion is inverted: the self-serve half must be *gone*, and what
+    stands in its place is the managed offer said plainly.
+
+    "No retainer" and "no markup" survive the change, because they were never
+    about the choice. They are what the money actually does, and they are now
+    the load-bearing half of the pitch rather than a reassurance attached to
+    one of two options."""
     for name in ("brands", "why"):
         text = copy_of(*PAGES[name]).lower()
-        assert "run it yourself" in text, name
+        # The offer, not a mode to pick.
+        assert "run it yourself" not in text, name
+        assert "self-serve" not in text, name
+        assert "hand it over" not in text, name
+        assert "you choose per campaign" not in text, name
+        # What is true about the money either way, and always was.
         assert "no retainer" in text, name
-    assert "you choose per campaign" in copy_of(*PAGES["brands"]).lower()
-    assert "not a fee you are locked into" in copy_of(*PAGES["why"]).lower()
+        assert "no markup" in text, name
+
+
+def test_the_brand_pages_state_the_two_commercial_terms():
+    """**The strongest two things we have to say, and they were on no page.**
+
+    A brand is deciding on two facts that live nowhere a stranger can read
+    them: our fee is charged on top of the creator's rate rather than out of
+    it, and the campaign fee comes back if we cannot fill the brief. Both are
+    checkable, which is the standard these pages are held to, and both are the
+    kind of claim a compression quietly loses because it reads like small
+    print."""
+    for name in ("brands", "why"):
+        text = copy_of(*PAGES[name]).lower()
+        # Where our margin sits relative to the creator's fee.
+        assert "full rate" in text or "never taken out of theirs" in text, name
+        # The refund, and the one thing that forfeits it.
+        assert "refunded if we cannot fill it" in text, name
+        assert "shortlisted" in text, name
 
 
 def test_the_pages_use_the_marketing_chrome_not_the_shared_chrome():
@@ -705,7 +744,10 @@ def test_how_it_works_states_the_payment_flow_the_way_the_product_works():
 def test_why_weare_makes_the_standalone_case():
     text = copy_of(*PAGES["why"]).lower()
     assert "weare studios" in text                      # the pedigree
-    assert "run it yourself, or hand it over" in text   # the choice
+    # Was "run it yourself, or hand it over" — the choice the product no
+    # longer offers. The section argues what handing it over *costs* now,
+    # which is the thing a sceptic with another tab open is weighing.
+    assert "handed over" in text                        # the offer
     assert "a person reviews every creator" in text     # verified people
     assert "plus our fee" in text                       # money handled properly
     assert "reach and cost per thousand" in text        # results reported
@@ -718,6 +760,25 @@ def test_the_footer_columns_match_the_react_one():
     """Two renderers with two copies of the link list is how a footer ends up
     advertising a page that moved. The backend's copy builds the sitemap."""
     site = read("src", "lib", "siteNav.js")
+
+    def points_at(to):
+        """Whether the React list carries this destination.
+
+        Three spellings are allowed, and the third is the interesting one: a
+        path can be written inline, interpolated into a template, **or named
+        by a constant defined in the same file**. `/work` is the last —
+        `WORK_PATH`, because the footer and both proof strips link to it and a
+        path written out three times is a path that moves twice. Resolving the
+        constant here keeps the drift check honest rather than forcing the
+        source to inline a value it deliberately names once.
+        """
+        if f'to: "{to}"' in site or f"to: `{to}" in site:
+            return True
+        for name in re.findall(r'to: ([A-Z_][A-Z0-9_]*)', site):
+            if f'export const {name} = "{to}";' in site:
+                return True
+        return False
+
     for heading, links in server.FOOTER_COLUMNS:
         assert f'heading: "{heading}"' in site, heading
         for label, to in links:
@@ -725,7 +786,7 @@ def test_the_footer_columns_match_the_react_one():
             if to.startswith("mailto:"):
                 assert to.split(":", 1)[1] in site
             else:
-                assert f'to: "{to}"' in site or f"to: `{to}" in site, to
+                assert points_at(to), to
 
 
 def test_the_footer_links_every_marketing_page():
@@ -759,7 +820,20 @@ def test_the_copyright_names_the_entity_that_was_already_there():
 
 # --- Getting there ------------------------------------------------------------
 
-SERVER_RENDERED_PATHS = ("/c/:id", "/brands/:id", "/sitemap.xml")
+# **Five now.** `/work` and `/work/:slug` joined the list when case studies
+# shipped, for both of the reasons `/c/:id` is on it: they are links we send a
+# brand directly, so the preview is the pitch, *and* they are the one part of
+# this site written to be **found** rather than sent — which needs a page that
+# exists without JavaScript. A rewrite that never reaches the backend is the
+# failure `/for-brands` and `/for-creators` already had, and it is silent:
+# the catch-all answers with the SPA and the page looks like it works.
+SERVER_RENDERED_PATHS = (
+    "/c/:id",
+    "/brands/:id",
+    "/sitemap.xml",
+    "/work",
+    "/work/:slug",
+)
 
 
 def _rewrites():

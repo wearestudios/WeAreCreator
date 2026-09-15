@@ -234,16 +234,82 @@ def test_transitions_are_150ms_at_most():
     assert not offenders, f"slow transitions in the console: {offenders[:10]}"
 
 
-def test_nothing_in_the_console_animates_in():
-    """A list that animates in is a list you cannot read until it has finished,
-    and an admin loads it forty times a day."""
+def test_the_console_carries_no_motion_library_and_no_marketing_entrance():
+    """**The rule narrowed, deliberately, and the reason it existed survives.**
+
+    This used to be "nothing in the console animates in", and what it actually
+    banned was four markers: `<Reveal`, `<CountUp`, `framer-motion` and
+    `animate-in`. The reason given was right and still is — *a list that
+    animates in is a list you cannot read until it has finished, and an admin
+    loads it forty times a day*.
+
+    What changed is that the product grew one settle for every authenticated
+    surface, and the console is one of them. The distinction that makes both
+    things true is **how long, and how much at once**:
+
+    - `Reveal` is 200ms with a 70ms stagger and no cap. On six marketing
+      sections that is a page arriving. On forty rows it is 2.8 seconds of
+      cascade, which is the thing this test was written about.
+    - The shared settle is 200ms with a **30ms stagger capped at eight rows**,
+      so the whole list has finished at 440ms however long it is, and past 150
+      rows it is switched off entirely because windowed rows mount as you
+      scroll into them.
+
+    So the ban on the marketing components stands — importing `Reveal` here
+    would bring the uncapped stagger with it — and `framer-motion` stays out
+    for a second reason the original test did not have to make: the console
+    chunk does not carry it, and a fade is not worth handing back the 36% the
+    code-splitting work took off it.
+
+    `<CountUp` stays banned and `AnimatedNumber` is allowed, which is a real
+    difference rather than a rename: `CountUp` travels **from zero on first
+    paint**, which is right for a proof figure somebody is being sold and
+    wrong for a queue — an admin opening it should not watch "0" become "14".
+    `AnimatedNumber` paints the real value and only moves when it changes.
+    """
     offenders = []
     for path in admin_sources():
         code = code_of(path)
         for marker in ("<Reveal", "<CountUp", "framer-motion", "animate-in"):
             if marker in code:
                 offenders.append(f"{path.name}: {marker}")
-    assert not offenders, f"entrance motion in the console: {offenders}"
+    assert not offenders, f"marketing entrance motion in the console: {offenders}"
+
+
+def test_the_consoles_settle_is_the_shared_one_and_stays_capped():
+    """The escape hatch this leaves open, closed.
+
+    "No `framer-motion`" is satisfied perfectly by somebody hand-rolling a
+    300ms cascade in CSS in one file, which is the same failure wearing
+    different clothes. The settle the console uses has to be the product's —
+    one class, one duration, one cap — and the cap has to be small enough that
+    a long list finishes while somebody is still looking at it.
+    """
+    import json
+
+    table = code_of(CONSOLE / "DataTable.jsx")
+    # The shared class, not a local keyframe.
+    assert "weare-settle" in table
+    assert "@keyframes" not in table
+    assert "settleDelay" in table
+    # And off on a windowed table, where rows mount on scroll.
+    assert "const settles = !virtual" in table
+
+    motion = (FRONTEND / "src" / "lib" / "motion.js").read_text()
+    cap = int(re.search(r"STAGGER_CAP = (\d+)", motion).group(1))
+    step = int(re.search(r"STAGGER_MS = (\d+)", motion).group(1))
+    durations = json.loads(
+        re.search(r"export const DUR = (\{.*?\});", motion, re.S)
+        .group(1)
+        .replace("settle", '"settle"')
+        .replace("route", '"route"')
+        .replace(",\n}", "\n}")
+    )
+    # The band the whole product is held to.
+    for name, ms in durations.items():
+        assert 180 <= ms <= 220, f"{name}: {ms}ms is outside 180–220"
+    # A list has finished settling inside half a second however long it is.
+    assert cap * step + max(durations.values()) <= 500
 
 
 def test_transition_all_is_never_used():

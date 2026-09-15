@@ -7,6 +7,7 @@ import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import RouteFade from "@/components/motion/RouteFade";
 import RouteFallback from "@/components/RouteFallback";
 import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
@@ -143,6 +144,7 @@ const DormantRoute = adminRoute("DormantRoute");
 const DisputesRoute = adminRoute("DisputesRoute");
 const CircumventionRoute = adminRoute("CircumventionRoute");
 const RetentionRoute = adminRoute("RetentionRoute");
+const CaseStudiesRoute = adminRoute("CaseStudiesRoute");
 const AdminCampaignDetail = load(() =>
     import(/* webpackChunkName: "admin" */ "@/components/admin/CampaignDetailPage"),
 );
@@ -211,6 +213,23 @@ function App() {
                         boundary per route is a boundary somebody forgets on the
                         route they add next month. */}
                     <Suspense fallback={<RouteFallback />}>
+                    {/* **The settle between screens.** It restarts an
+                        animation on a stable wrapper rather than keying a
+                        subtree on the path — `/admin` is a layout route
+                        holding the sidebar and the badge counts across
+                        eighteen sections, and a key there would rebuild all
+                        of it, and refetch, every time somebody pressed one.
+                        Keyed on the *surface* for the same reason: moving
+                        within the console is the `<Outlet>`'s settle, not the
+                        whole screen's.
+
+                        Inside Suspense, so the animation lands on the route
+                        somebody navigated to rather than on the skeleton
+                        standing in for it. And untouched on the five
+                        marketing paths, which stagger every section in on
+                        scroll already — two motion layers on one page is the
+                        same pixels animated twice at two durations. */}
+                    <RouteFade>
                     <Routes>
                         <Route path="/" element={<Landing />} />
                         <Route path="/login" element={<Login />} />
@@ -448,6 +467,7 @@ function App() {
                             <Route path="team" element={<TeamRoute />} />
                             <Route path="deletions" element={<DeletionsRoute />} />
                             <Route path="settings" element={<SettingsRoute />} />
+                            <Route path="case-studies" element={<CaseStudiesRoute />} />
                             <Route path="dormant" element={<DormantRoute />} />
                             <Route path="disputes" element={<DisputesRoute />} />
                             <Route path="circumvention" element={<CircumventionRoute />} />
@@ -463,6 +483,7 @@ function App() {
                             the link having worked. */}
                         <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </RouteFade>
                     </Suspense>
                     </RouteBoundary>
                 </BrowserRouter>

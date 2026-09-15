@@ -14,4 +14,8 @@ export const EXECUTION = {
 	// rather than sitting beside it: a choice the server is about to override
 	// is not a choice.
 	weareRun: 'execution-weare-run',
+	// The commission arrangement, stated on the post form beside the refund
+	// promise. Not the *rate* — that is resolved per payment and frozen
+	// there; this is where our margin sits relative to the creator's fee.
+	commissionTerms: 'execution-commission-terms',
 };

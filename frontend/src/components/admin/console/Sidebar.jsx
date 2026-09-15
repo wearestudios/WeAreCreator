@@ -26,6 +26,7 @@ import {
     Inbox,
     LayoutDashboard,
     MoonStar,
+    Newspaper,
     Archive,
     Scale,
     ShieldAlert,
@@ -42,6 +43,8 @@ import {
 import { CALM, DENSITY, FOCUS, TEXT } from "@/components/admin/console/tokens";
 import { readSavedFilters } from "@/components/admin/console/useListState";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
+import AnimatedNumber from "@/components/motion/AnimatedNumber";
+import { INT } from "@/lib/motion";
 import { isAllAccess } from "@/lib/consoleScope";
 
 const COLLAPSE_KEY = "weare.admin.sidebar";
@@ -133,6 +136,19 @@ export const ADMIN_SECTIONS = [
         badge: "deletions_waiting",
         adminOnly: true,
     },
+    // **Finished work, turned into what sells the next campaign.** Not a
+    // queue and not a record: nothing arrives here to be worked, and nothing
+    // here is the system of record for anything. It is the one section whose
+    // output is read by strangers, which is also why it is admin-only —
+    // `weare_team` is scoped to brands, and what the platform says about
+    // itself in public is not a brand-scoped decision.
+    {
+        key: "case-studies",
+        to: "case-studies",
+        label: "Case studies",
+        Icon: Newspaper,
+        adminOnly: true,
+    },
     // Re-engagement, which is nobody's queue — it is the work that only gets
     // done if somebody can see who to do it for.
     { key: "dormant", to: "dormant", label: "Gone quiet", Icon: MoonStar },
@@ -194,7 +210,13 @@ function Badge({ count, active, form = "full" }) {
                 active ? "bg-ember-500 text-black" : "bg-white/10 text-foreground"
             }`}
         >
-            {count > 99 ? "99+" : count}
+            {/* **It travels rather than snapping**, which is the only thing
+                on the sidebar that tells an admin something arrived while
+                they were reading a different section. A count replacing
+                itself is a change nobody sees, because nothing moved. Over
+                99 it is not a number any more — "99+" is a word, and tweening
+                to a word is nonsense — so that case prints. */}
+            {count > 99 ? "99+" : <AnimatedNumber value={count} format={INT} />}
         </span>
     );
 }

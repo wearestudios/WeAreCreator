@@ -18,7 +18,12 @@ import { api, formatApiError } from "@/lib/api";
 // enable with a devtools attribute edit.
 import { BRAND_COMPENSATION_OPTIONS } from "@/lib/compensation";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
-import { MANAGED_NOTE, REFUND_TERMS, weareRunReason } from "@/lib/execution";
+import {
+    COMMISSION_TERMS,
+    MANAGED_NOTE,
+    REFUND_TERMS,
+    weareRunReason,
+} from "@/lib/execution";
 import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
 import { BUDGET, COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
@@ -96,9 +101,11 @@ export default function PostCampaign() {
     const [totalBudget, setTotalBudget] = useState("");
     // Fixed or negotiated. A brand brief is paid work either way.
     const [compensationType, setCompensationType] = useState("fixed");
-    // Defaults to the brand running it: posting a brief means running it
-    // unless you say otherwise, and a campaign quietly landing in the WeAre
-    // queue is work nobody agreed to. Mirrors DEFAULT_EXECUTION_OWNER.
+    // **No `executionOwner` state, because there is nothing to choose.** This
+    // comment used to explain why the form defaulted to the brand running it;
+    // the product is managed-only and the server forces `weare` on every
+    // brand write path, so the picker and its state came off together. What
+    // stands in its place is the offer — see the `EXECUTION.weareRun` block.
     // Public unless the brand says otherwise — an invite-only brief that
     // nobody meant to hide is merely unfindable, which is worse than wrong.
     const [visibility, setVisibility] = useState("public");
@@ -1146,6 +1153,22 @@ export default function PostCampaign() {
                                 </p>
                                 <p className="mt-3 border-t border-ember-500/20 pt-3 text-xs leading-relaxed text-muted-foreground">
                                     {REFUND_TERMS}
+                                </p>
+                                {/* **The third promise, and the one that was
+                                    nowhere.** A brand reading "platform fee"
+                                    with no explanation assumes somebody's
+                                    rate is being clipped — and a squeezed
+                                    creator is one who takes the next brief
+                                    off-platform, which is the failure the
+                                    circumvention clause exists to name. It
+                                    sits here rather than on the money field
+                                    because it is a term of the arrangement,
+                                    not a note about one input. */}
+                                <p
+                                    data-testid={EXECUTION.commissionTerms}
+                                    className="mt-3 border-t border-ember-500/20 pt-3 text-xs leading-relaxed text-muted-foreground"
+                                >
+                                    {COMMISSION_TERMS}
                                 </p>
                             </div>
                         </div>

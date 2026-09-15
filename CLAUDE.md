@@ -589,6 +589,123 @@ any scraped source.**
   a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
   switching steps and a retry.
 
+## The work we have already done
+
+`case_studies` — a finished campaign, written up. We run campaigns end to end,
+which is the thing neither competitor does, and the only evidence of it
+anywhere was a counted figure in the proof strip. A closed campaign already
+holds nine tenths of a case study — the brand, who shot it, what they made,
+what it reached — and all of it was being thrown away at the moment it became
+most useful.
+
+**The privacy rules are the design, so they come first.** This is the only
+public page in the product that names a *person*.
+
+- **A creator appears only if they opted into public featuring, and that is
+  re-read on every request.** The roster stores **ids**; `_case_study_creator`
+  resolves them at read time and drops anybody who has since said no. A stored
+  snapshot would keep somebody on a public page until an admin remembered to
+  edit it, which is the difference between "removed immediately" and "removed
+  eventually" — the rule `_public_leaderboard` already settled.
+  `_case_study_featurable` is the reader: consent, plus the permanent
+  circumvention bar. The leaderboard's other two conditions are deliberately
+  **not** carried, for different reasons — recency would empty every
+  historical case study as it aged, which is backwards (the work happened, and
+  that it happened a year ago is the point), and a lapsed verification gates
+  *new* work, so reaching back to delete somebody from a campaign they
+  actually shot is the one thing `_creator_block` is documented never to do.
+- **`_public_case_study` is an allow-list built by naming every key**, never a
+  document with fields deleted from it — so a column added to `case_studies`
+  next month cannot reach a public page because nobody excluded it. A test
+  plants a field on the stored row and asks the projection for it.
+- **Money is absent in both directions.** A creator's fee, payout details and
+  earnings are theirs; the brand's campaign fee, commission and budget are the
+  brand's. `CASE_STUDY_FORBIDDEN_FIELDS` names all of it, and the leak test
+  plants recognisable values on the creator profile, the collaboration, the
+  campaign *and* the brand, then searches the JSON, the rendered detail page,
+  the shelf and the list endpoint — the arrangement `test_exports.py` uses.
+- **A follower count *is* here, where `_public_creator_card` omits one.** That
+  difference is real: the leaderboard is an ordering, so publishing counts
+  beside it would make it a follower-count leaderboard wearing another name. A
+  case study is a record of one campaign and the audience it reached is the
+  evidence. The provenance travels with it, as everywhere.
+
+**The vocabulary is the product's own.** The brief asked for categories
+including beauty, tech and fitness and a campaign type called delivery. A case
+study is *about a campaign*, so a filter offering one of those can never match
+anything real — and a second category list is the drift `lib/categories.js`
+exists to prevent. `CATEGORY_LITERAL` and `CampaignType` are shared, and if the
+operation starts running beauty campaigns the enum moves and this moves with it.
+
+- **`_prefill_from_campaign` is the whole feature.** A case study written from
+  scratch competes with running the next campaign, so it does not get written.
+  From a closed campaign, the mechanical nine tenths is already there and what
+  is left is what only a person can do. **The narrative fields are left empty
+  on purpose** — pre-filling the challenge from the brief would publish the
+  brand's own words back at them as our analysis. The engagement rate is the
+  aggregate (engagements over reach) rather than the mean of the per-post
+  rates, the same arithmetic and the same reason as `_rollup_performance`.
+  Only creators who already consented are carried across: an admin ticking
+  names off a list they were never allowed to use is a consent check arriving
+  too late to be one.
+- **The campaign has to be closed** (409 `campaign_not_closed`). A write-up
+  started now would quote numbers that are still moving.
+- **Images are paths we issued.** `_our_image_path` accepts only
+  `/uploads/…` with no traversal and no query string, and
+  `POST /admin/case-studies/images` is the only way to get one — the rule
+  `cover_image_url` already holds. Content links are `http(s)` only, like
+  `brand_assets`, because they render as anchors a stranger clicks.
+- **An unmeasured result is `None`, never `0`**, and a custom metric's value
+  is **text**: "340 covers", "+18% on the week", "sold out in 4 days" are what
+  a brand wants on the page, and a float loses the half that means something.
+- A pull quote with no attribution is dropped whole — an unattributed quote on
+  a marketing page is a sentence we wrote about ourselves.
+- **Publishing 409s naming what is absent**, the brand-verification shape, and
+  the button is disabled with the list on screen. Unpublishing returns it to
+  `draft` and **keeps `published_at`**; re-publishing does not move it, because
+  a correction is not a new piece of work. A published case study cannot be
+  deleted outright — the link may already be out there.
+- **Admin-only, not `CONSOLE_ROLES`** — the split `POST /admin/brands` makes. A
+  case study is a claim this operation puts on the open internet under its own
+  name, with a brand and named people on it; `weare_team` is scoped to brands,
+  and a scoped role that could publish a page naming creators outside its scope
+  is not a scope.
+
+### Where it is read
+
+**`/work` and `/work/{slug}` are server-rendered by the backend**, like
+`/c/{id}` and `/brands/{id}`, and for both of their reasons at once: these are
+links we send a brand directly on WhatsApp, so the preview *is* the pitch, and
+they are the only pages on this site written to be **found** by search rather
+than sent. The marketing pages made the opposite trade because they needed
+`<Link>` between them and their copy needed reusing in the app; neither is true
+here, because a case study links outward rather than sideways.
+
+- Everything typed is `html_escape`d, every image sits in an `aspect-ratio`
+  container, and everything below the hero is `loading="lazy"`.
+  `og:image` is the hero, absolute, and the declared `og:image:width/height`
+  are emitted **only** for the site-card fallback — a wrong one is worse than
+  none, the rule `/c/{id}` already holds.
+- **Vercel must proxy `/work` and `/work/:slug`**, and `setupProxy.js` is the
+  dev half. Five paths now; a rewrite that never reaches the backend is the
+  silent failure `/for-brands` had for months. `PREVIEW.md` is the record and
+  a test fails if the two lists drift.
+- The sitemap lists the shelf and every published case study; `robots.txt`
+  names all three kinds of public page.
+- `components/marketing/CaseStudyStrip.jsx` puts three on home and
+  `/for-brands`. Plain `<a>`, never `<Link>` — a router link to a
+  server-rendered page is swallowed by the SPA's catch-all. `WORK_PATH` in
+  `lib/siteNav.js` is the one spelling, because three things point at it.
+  Fetched only when it is nearly on screen, and **absent below three rather
+  than short**: a shelf of one advertises an operation that has run one
+  campaign. The floor lives in the component because it is a presentation
+  rule — the endpoint's job is to answer what is published.
+- `components/admin/CaseStudies.jsx` is the console. "From a campaign" is the
+  primary action and a blank draft the secondary. Preview goes through
+  `_public_case_study`, not a second rendering, or the preview can disagree
+  with the page. The roster is **read-only** on the form: a box an admin can
+  type a name into is a box that gets a name typed into it.
+
 ## The brand behind the brief
 
 A creator could see a campaign and learn nothing about who was posting it.
@@ -1023,9 +1140,30 @@ What each audience must come away knowing is pinned there too — for creators,
 that briefs are real and paid, the rate is agreed in writing before they shoot,
 they keep 100% of it because the fee sits on the brand, payment follows
 approved delivery, brands are checked, and joining is free; for brands, real
-audience stats, every creator and every rate visible, no retainer and no markup
-on creator fees, approval before publication, a report at the end, and the
-self-serve/managed choice **as an option, never as a fee they are locked into**.
+audience stats, every rate visible, no retainer and no markup on creator fees,
+approval before publication, a report at the end, and **the managed offer
+stated rather than offered as a choice**.
+
+**There is no self-serve half any more, and the tests say so the other way
+round now.** `/for-brands` and `/why-weare` used to be *required* to carry "run
+it yourself" and "not a fee you are locked into", because the risk then was a
+brand reading the managed option as a retainer. Every brand-posted brief is
+WeAre-run, a brand cannot invite a creator and cannot reach a raw application,
+so those lines described a product that does not exist and a brand arriving on
+them expected an applicant board. "run it yourself", "self-serve", "hand it
+over" and "you choose per campaign" are now *banned* on both pages, and a sweep
+over `pages/`, `components/brand/`, `components/marketing/` and `lib/` fails any
+brand-facing string literal offering a capability the brand does not have —
+browsing creators, inviting them, or a creator directory. It reads literals
+rather than whole files, because the convention here is to explain a removal
+where it happened and the explanation necessarily quotes the thing removed.
+
+**The two commercial terms are on the page because they are the pitch.** Our
+fee is charged on top of the creator's rate rather than out of it, and the
+campaign fee comes back if we cannot fill the brief unless the brand turned
+down everyone we shortlisted. Both are checkable, which is the standard these
+pages are held to, and both were on no brand-facing surface at all — see "What
+we charge, and what comes back".
 
 - **An audience page asks once, in the same words, twice.** Hero and close, both
   spread from one `ASK` constant so "the same words" is structural. Two
@@ -1637,6 +1775,32 @@ stops trusting us with its campaigns.
 
 Three commercial facts that were an environment variable and two things
 nobody recorded.
+
+### Where the margin sits, said to the brand
+
+`COMMISSION_TERMS`. The commission is charged to the brand **on top of** the
+creator's fee, never deducted from it, so a creator who quotes ₹20,000 is paid
+₹20,000 — which had been true since the platform existed and appeared on no
+brand-facing surface. The creator's half of the site has said it from the start
+("charged to the brand on top", "never taken out of yours"); the paying side
+was left to infer it, and the inference a brand actually draws about an
+unexplained platform fee is that somebody's rate is being clipped.
+
+- It is worth saying to **both** audiences for different reasons. A creator
+  needs to know they keep their quote. A brand is buying the fact that its
+  creators are not being squeezed, because a squeezed creator is the one who
+  takes the next brief off-platform — the failure `CIRCUMVENTION_TERMS` names.
+- **Stated at campaign creation and frozen into the terms snapshot** beside
+  `REFUND_POLICY_TERMS`, for the same reason: a commercial term somebody meets
+  for the first time on an invoice is a surprise, and a surprise is not a sales
+  point. Mirrored in `lib/execution.js` with a drift test, because the post
+  form renders it before a campaign exists.
+- **The rate itself is deliberately not in the snapshot.** That is resolved per
+  payment and frozen *there* (`fee_percent`); a percentage on the collaboration
+  would be a second historical record of one fact, and the two would disagree
+  the first time a brand's rate was renegotiated between acceptance and payment.
+  What is frozen here is the *arrangement*, which does not change when a rate
+  does.
 
 ### The rate, negotiated rather than deployed
 
@@ -3671,11 +3835,24 @@ holds every rule below.
   objects it replaced are why a closed campaign read grey on one screen and
   red on the next. **Ember is never a status**: it is the primary action, and
   a status wearing it makes every row look like a call to action.
-- **The console is calm.** No grain (the shared dialog primitive grains
-  itself, so the three console dialogs turn it off at the call site), no
-  entrance animation, 150ms colour transitions and nothing else. A list that
-  animates in is a list you cannot read until it has finished. Skeletons stay:
-  that is shape, not motion, and CLS measures 0.0000 with the API delayed.
+- **The console is calm, and the rule narrowed rather than went.** No grain
+  (the shared dialog primitive grains itself, so the three console dialogs
+  turn it off at the call site), 150ms colour transitions, and **no marketing
+  entrance motion** — `<Reveal>`, `<CountUp>`, `framer-motion` and
+  `animate-in` are all still banned here by a test. The reason stands: a list
+  that animates in is a list you cannot read until it has finished, and an
+  admin loads it forty times a day.
+
+  What changed is that `Reveal` is 200ms with a **70ms stagger and no cap**,
+  which on six marketing sections is a page arriving and on forty rows is 2.8
+  seconds of cascade. The shared settle is 200ms with a **30ms stagger capped
+  at eight rows**, so any list has finished at 440ms however long it is, and
+  it is off entirely past `VIRTUALISE_ABOVE` because windowed rows mount as
+  you scroll into them. `AnimatedNumber` is allowed where `CountUp` is not,
+  and that is a real difference rather than a rename: `CountUp` travels from
+  zero on first paint, so an admin opening the queue would watch "0" become
+  "14". See "Motion in the authenticated product". Skeletons stay: that is
+  shape, not motion, and CLS measures 0.0000 with the API delayed.
 - **The peek panel** (`PeekPanel`) is a row's detail without leaving the list —
   working a queue is "check this one, act, next", and a full-page round trip
   per row loses the filter, the sort and the scroll forty times an hour. It
@@ -4026,6 +4203,115 @@ from `index.js`). The admin console, the manager interface and the creator home
 brand-facing pages still use inline string literals, and `auth.js` doesn't match
 the shipped OTP screens. Match the surrounding file — add to the registry when the
 feature already uses it, inline otherwise, and don't half-migrate a page.
+
+## Motion in the authenticated product
+
+The complaint this answers is that the app was **snappy in a bad way**: screens
+cut rather than settled, lists appeared all at once the instant a fetch landed,
+and a button did nothing until the server replied and then everything changed.
+None of that is slow — it is abrupt, which reads as cheap and, on a bad
+connection, as broken.
+
+`lib/motion.js` plus keyframes in `index.css` is the layer, and
+`components/motion/` holds the three components. `test_ui_fluidity.py` holds
+every rule below.
+
+- **It is CSS, and deliberately not `components/marketing/motion.js`.** That
+  one is framer-motion, scroll-driven, and written for a page somebody reads
+  once; this is for screens somebody works in for an hour. Three consequences,
+  all pointing the same way: a CSS animation on transform and opacity is
+  composited while a JS tween runs on the main thread next to React, which is
+  where the jank on a mid-range Android comes from; the console's ban on
+  `framer-motion` stays intact, so the settle has one definition across all
+  four surfaces; and the brand, manager and admin chunks do not grow a motion
+  library, which the code-splitting work took down 33–58%. A test fails any
+  app file importing the marketing layer.
+- **180–220ms, one curve** (`--weare-ease`, the same deceleration the
+  marketing site uses). Below 180 an entrance reads as a flicker; above 220 the
+  reader is waiting for the screen. A second `cubic-bezier` anywhere under the
+  authenticated product fails a test.
+- **The stagger is 30ms and capped at eight rows**, and the cap is the whole
+  reason a stagger is safe on a list: without it a 200-row table cascades for
+  six seconds and the rows somebody scrolled to are the last to exist. Measured
+  in a browser: delays run `0,30,…,240,240,240,240`.
+- **A CSS entrance fires when an element is created, so a list that re-renders
+  into reused DOM nodes never replays it.** That is every filter and sort
+  change — the one moment a reader most needs telling the set is different.
+  `settleKey` is what remounts them; `DataTable` builds its stamp from the
+  caller's key plus the sort, and row identity *within* a stamp is preserved so
+  an optimistic patch updates in place rather than remounting.
+- **The route settle restarts an animation rather than remounting a subtree.**
+  `<div key={pathname}>` replays a CSS entrance for free and is wrong here:
+  `/admin` is a layout route owning the sidebar, the badge counts and eighteen
+  sections in an `<Outlet>`, so a key there would rebuild and refetch all of it
+  every time somebody pressed a section. The wrapper is stable and the class is
+  removed, a reflow forced, and the class re-added. Keyed on the **surface**
+  (the first path segment), because fading the navigation somebody is using is
+  the opposite of the point; moving *within* the console is the `<Outlet>`'s
+  own settle. Marketing paths keep the cut — they stagger every section in on
+  scroll already, and two layers on one page is the same pixels animated twice.
+- **`will-change` is released on `animationend`.** Left on, twenty rows keep
+  twenty compositor layers alive for the life of the screen. Verified: 12 of 12
+  released.
+- **Reduced motion lands on the end state, and the delay is the trap.** The
+  backstop in `index.css` collapsed `animation-duration` and said nothing about
+  `animation-delay` — and with `animation-fill-mode: both` the element holds
+  `opacity: 0` through its whole stagger, so a reader who asked for less motion
+  would get rows invisible and then popping in, one after another, with no
+  tween in between. Both are zeroed now and `.weare-settle` is neutralised
+  outright. Verified by emulation: every card at its final state on first
+  paint, no delay surviving.
+- **Numbers travel rather than snap.** `AnimatedNumber` writes `textContent` on
+  a ref and never calls `setState` per frame — the lesson `CampaignFilm`
+  records — and its **first paint is the real value**, so it moves only when
+  the value changes while mounted. Every formatter rounds, because `value` is a
+  float on every frame but the last; `INT` and `GROUPED` are exported for that
+  reason and `format={String}` fails a test.
+
+### Mutations that answer immediately
+
+`lib/useOptimistic.js`, in two shapes: `useOptimisticRows` lays patches over a
+server-owned list, `useOptimisticAction` is the single-control version for a
+dialog or a toggle. The argument `lib/offlineQueue.js` already made about
+check-ins, made for every other button.
+
+- **The control goes pending on the frame of the click**, not when the request
+  is sent. 60 of the 64 mutation sites already did this; the four that did not
+  are fixed — the circumvention decision (which decides whether somebody keeps
+  their account and gave no sign it had heard the click) and the notification
+  badge (which waited for a round trip to clear a count sitting over an open
+  panel of the notifications the reader is looking at).
+- **The row shows the new value before the server confirms**, because the
+  overwhelming majority succeed and optimising for the failure makes every
+  success feel slow. A refetch always beats a patch: an override that outlived
+  its refetch would pin a stale value on screen forever.
+- **A failure rolls back where the reader can see it** — the value returns
+  *and* the row is marked failed for `ROLLBACK_FLASH_MS`, because somebody who
+  watched a row change and looked away believes it changed. `DataTable` takes a
+  `rowClass` for the flash, in destructive rather than ember: ember is the
+  primary action in the console and a row wearing it reads as something to
+  press.
+- **It never retries and never rethrows.** Retrying is the offline queue's job
+  and a different decision — a check-in is worth replaying because the person is
+  standing there, an approval is not. Rethrowing would make every caller catch
+  it to avoid `globalErrors.js` toasting on top of the message they already
+  showed.
+- The action queue is the exemplar, being the highest-traffic decision surface:
+  working it is "decide, next, decide, next", and the old shape put a network
+  round trip between those two words. A 409 refetches instead of rolling back —
+  somebody else moved it, so putting the row back would be a lie.
+
+### Measured, with a control
+
+Mid-range Android profile — 4× CPU throttle, API delayed 700ms, at 390 and
+1280, against the previous build on the identical harness:
+
+- **CLS is 0.0000 on all five surfaces at both widths**, and two improved: the
+  brief feed at 1280 was 0.0042, the admin overview at 1280 was 0.0224.
+- **Long tasks are unchanged or fewer** — the brief feed at 390 went from eight
+  over 50ms to six. They are React bootstrapping under the throttle, which the
+  reduced-motion runs confirm: with every animation off the same tasks appear
+  at the same durations.
 
 ## Dense views
 

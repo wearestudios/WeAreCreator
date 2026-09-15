@@ -503,10 +503,14 @@ export function CreateCampaignDialog({ open, onOpenChange, onCreated }) {
                         value={form.execution_owner}
                         onChange={set("execution_owner")}
                     >
-                        {/* Said from where the admin sits. `EXECUTION_OPTIONS`
-                            is the brand's wording — "we'll run it ourselves"
-                            means the brand there and would mean WeAre here,
-                            which is the same two words for opposite parties. */}
+                        {/* Said from where the admin sits, and spelled inline
+                            rather than imported: "we'll run it ourselves"
+                            means the brand on a brand's form and would mean
+                            WeAre on this one, which is the same two words for
+                            opposite parties. **This is the only control left
+                            that can set a campaign brand-run** — the brand's
+                            own picker is gone and the server refuses the
+                            field on every brand write path. */}
                         <option value="weare">The WeAre team</option>
                         <option value="brand">The brand</option>
                     </select>

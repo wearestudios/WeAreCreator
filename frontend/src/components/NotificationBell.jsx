@@ -52,12 +52,18 @@ export const NotificationBell = () => {
         setOpen(v);
         if (v) {
             await load();
-            // Opening the panel is the read receipt.
+            // **Opening the panel is the read receipt, so the badge clears on
+            // the open rather than on the response.** It used to wait for the
+            // round trip, which left the count sitting over an open panel of
+            // notifications the reader is looking at — the one moment it is
+            // certainly wrong. Rolled back if the write fails, because a
+            // badge that lies in the other direction is worse.
+            const had = unread;
+            setUnread(0);
             try {
                 await api.post("/notifications/read");
-                setUnread(0);
             } catch {
-                /* the list is still readable if this fails */
+                setUnread(had);
             }
         }
     };

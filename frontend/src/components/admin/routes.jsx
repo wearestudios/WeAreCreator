@@ -31,6 +31,7 @@ import DisputeQueue from "@/components/admin/DisputeQueue";
 import CircumventionQueue from "@/components/admin/CircumventionQueue";
 import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
+import CaseStudies from "@/components/admin/CaseStudies";
 
 /**
  * The overview, with the operational panels above it.
@@ -167,3 +168,20 @@ export const BrandsRoute = () => {
         />
     );
 };
+
+
+/**
+ * Case studies.
+ *
+ * No adapter state and no outlet context: this section owns its own list and
+ * its own editor, and there is no badge count for it — nothing *arrives*
+ * here. A boundary of its own so a half-written draft that renders badly
+ * cannot take the sidebar down with it.
+ */
+export function CaseStudiesRoute() {
+    return (
+        <SafeSection name="case-studies" label="Case studies couldn't load">
+            <CaseStudies />
+        </SafeSection>
+    );
+}

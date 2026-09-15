@@ -7,9 +7,12 @@
 // from and where a stage sits — so every piece of it checks
 // prefers-reduced-motion and simply arrives at the end state instead.
 import React, { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+// `motion` went with `Reveal` — the settle is CSS now. `useReducedMotion`
+// stays for `CountUp`, which is a JS tween and has to ask.
+import { useReducedMotion } from "framer-motion";
 import { IndianRupee } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import Settle from "@/components/motion/Settle";
 import { IST } from "@/lib/time";
 
 // ---------------------------------------------------------------------------
@@ -173,25 +176,29 @@ export const StatePill = ({ state, testid }) => {
  * Purely an entrance: it never moves again, so nothing on the page is still
  * animating while somebody is trying to read or tap it. Under
  * prefers-reduced-motion the element is simply there.
+ *
+ * **It is the shared CSS settle wearing this file's name.** It used to be its
+ * own framer-motion tween at 450ms with a 70ms stagger — its own duration and
+ * its own cap, written before there was a product-wide answer. That made the
+ * creator's home the one authenticated screen settling at a different speed
+ * from every other, which is precisely the drift the marketing site's
+ * `motion.js` exists to prevent on its own half.
+ *
+ * Kept as a named export rather than replaced at its eleven call sites,
+ * because `<Reveal>` renders a `<section>` and the dashboard's layout depends
+ * on that. The name and the element are this file's; the timing is the
+ * product's.
  */
-export const Reveal = ({ index = 0, className = "", children, ...rest }) => {
-    const still = useReducedMotion();
-    return (
-        <motion.section
-            initial={still ? false : { opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-                duration: 0.45,
-                delay: still ? 0 : Math.min(index, 6) * 0.07,
-                ease: [0.22, 1, 0.36, 1],
-            }}
-            className={className}
-            {...rest}
-        >
-            {children}
-        </motion.section>
-    );
-};
+export const Reveal = ({ index = 0, className = "", children, ...rest }) => (
+    <Settle
+        as="section"
+        index={index}
+        className={className}
+        {...rest}
+    >
+        {children}
+    </Settle>
+);
 
 /**
  * A number that counts up to its value once.

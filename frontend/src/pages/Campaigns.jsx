@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
     MapPin,
     IndianRupee,
@@ -24,6 +23,7 @@ import {
 } from "@/components/data/DenseView";
 import { STICKY_BAR, VISIBILITY } from "@/constants/testIds";
 import { api, formatApiError } from "@/lib/api";
+import Settle from "@/components/motion/Settle";
 import { formatCompensation, isBarter } from "@/lib/compensation";
 import { isPrivate } from "@/lib/visibility";
 import ExecutionBadge from "@/components/ExecutionBadge";
@@ -121,12 +121,22 @@ const InviteOnlyPill = ({ campaign }) =>
         </span>
     ) : null;
 
-const CampaignCard = ({ c, index }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: Math.min(index, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
-    >
+/**
+ * **The shared CSS settle, not this file's own framer-motion one.**
+ *
+ * It used to run 500ms with a 40ms stagger, which is outside the band the rest
+ * of the product now uses and long enough that the feed assembles rather than
+ * arrives. Worse, it never replayed: the wrapper was keyed on the campaign id,
+ * so React reused the node and a filter change swapped the contents of cards
+ * that never moved — the one moment a reader most needs to be told the set in
+ * front of them is different.
+ *
+ * `Settle` takes `settleKey` for exactly that, and being CSS it also takes
+ * framer-motion off the path for the brief feed, which is the screen most
+ * likely to be opened on mobile data.
+ */
+const CampaignCard = ({ c, index, settleKey }) => (
+    <Settle index={index} settleKey={settleKey}>
         {/* An <article>, not a <Link>. The brand's name inside it is a link of
             its own now, and an anchor inside an anchor is invalid markup that
             browsers resolve however they like. The card stays clickable
@@ -253,7 +263,7 @@ const CampaignCard = ({ c, index }) => (
                 </div>
             </div>
         </article>
-    </motion.div>
+    </Settle>
 );
 
 export default function Campaigns() {
@@ -346,6 +356,14 @@ export default function Campaigns() {
         budget !== ANY ||
         debouncedQ.length > 0 ||
         sort !== "relevant";
+
+    // **What "the set was replaced" means on this screen.** Every filter plus
+    // the order, so the feed settles again when any of them moves. The
+    // *debounced* query rather than the live one: a settle per keystroke is
+    // the flicker this layer exists to remove.
+    const settleStamp = [
+        city, area, category, campaignType, compensation, budget, sort, debouncedQ,
+    ].join("|");
 
     // One chip per filter that is actually doing something. `sort` is left out
     // on purpose: it changes the order, not the set, so calling it a filter
@@ -681,7 +699,14 @@ export default function Campaigns() {
                         </div>
                     )}
                     {Array.isArray(items) &&
-                        items.map((c, i) => <CampaignCard c={c} key={c.id} index={i} />)}
+                        items.map((c, i) => (
+                            <CampaignCard
+                                c={c}
+                                key={c.id}
+                                index={i}
+                                settleKey={settleStamp}
+                            />
+                        ))}
                 </section>
 
                 {error && (

@@ -12,6 +12,8 @@
 // it is the one most likely to be asked about later, because nothing visible
 // happens as a result of it.
 import React, { useCallback, useEffect, useState } from "react";
+
+import { useOptimisticAction } from "@/lib/useOptimistic";
 import { Link } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 
@@ -45,6 +47,7 @@ export default function CircumventionQueue() {
     const [data, setData] = useState(null);
     // { id, action } — the row being decided, and which way.
     const [deciding, setDeciding] = useState(null);
+    const { run, pending } = useOptimisticAction();
 
     const load = useCallback(async () => {
         setData(null);
@@ -65,20 +68,35 @@ export default function CircumventionQueue() {
 
     const rows = data?.reports || [];
 
+    /**
+     * **The one mutation in the console that had no pending state at all.**
+     *
+     * This decides whether somebody keeps their account, and the dialog gave
+     * no sign it had heard the click — so on a slow connection the obvious
+     * read is that the button missed, and the obvious response is to press it
+     * again. `useOptimisticAction` is the single-control half of the hook:
+     * pending on the frame of the click, and a visible failure rather than a
+     * dialog that quietly stays open.
+     *
+     * Nothing is patched optimistically here on purpose. The row leaving the
+     * queue means an account was suspended, and showing that before the
+     * server has agreed to it is the one kind of optimism this decision
+     * cannot afford.
+     */
     const decide = async (note) => {
         const { id, action } = deciding;
-        try {
-            await api.post(DECIDE[action](id), { note });
-            notifySuccess(
-                action === "confirm"
-                    ? "Upheld. The creator's account is on hold."
-                    : "Dismissed. Nothing happens to the creator.",
-            );
-            setDeciding(null);
-            load();
-        } catch (err) {
-            notifyError(err, { fallback: "That didn't go through." });
-        }
+        const ok = await run(
+            () => api.post(DECIDE[action](id), { note }),
+            { onError: (err) => notifyError(err, { fallback: "That didn't go through." }) },
+        );
+        if (!ok) return;
+        notifySuccess(
+            action === "confirm"
+                ? "Upheld. The creator's account is on hold."
+                : "Dismissed. Nothing happens to the creator.",
+        );
+        setDeciding(null);
+        load();
     };
 
     const columns = [
@@ -261,6 +279,7 @@ export default function CircumventionQueue() {
                 }
                 confirmLabel={deciding?.action === "confirm" ? "Uphold and suspend" : "Dismiss"}
                 destructive={deciding?.action === "confirm"}
+                submitting={pending}
                 // Required on both, which is the dialog's default. A
                 // confirmation ends an account; a dismissal clears somebody of
                 // something. Neither is a decision anybody should be able to
