@@ -1,9 +1,14 @@
 # WeAre Creators
 #
-# Two kinds of page are public and meant to be found: a brand's own page at
-# /brands/{id} and a live brief at /c/{id}. Both are server-rendered by the
-# backend precisely so a crawler can read them — see PREVIEW.md for the
-# rewrites that make those paths reach it.
+# Three kinds of page are public and meant to be found: a brand's own page at
+# /brands/{id}, a live brief at /c/{id}, and a case study at /work/{slug} with
+# the shelf at /work. All are server-rendered by the backend precisely so a
+# crawler can read them — see PREVIEW.md for the rewrites that make those
+# paths reach it.
+#
+# The case studies are the only ones written to be *found* rather than sent: a
+# brand searching for the kind of campaign they want to run should reach the
+# one we ran. They are in the sitemap for that reason.
 #
 # Everything else needs an account. Those routes are a static bundle that
 # renders nothing without a session, so a crawler would index an empty shell.

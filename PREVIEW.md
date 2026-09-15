@@ -243,7 +243,7 @@ Full list with comments: `backend/.env.example`.
 > (They used to carry `"//"` keys explaining themselves inline; Vercel rejects
 > unknown properties on a rewrite object, so the notes live here instead.)
 
-Three pages are **server-rendered by the backend**, not by the React app, and
+Five pages are **server-rendered by the backend**, not by the React app, and
 that is not a style choice: the crawlers that build a WhatsApp, Instagram or
 Slack preview do not run JavaScript, so Open Graph tags the SPA sets at runtime
 are tags nobody ever sees. The page a person opens and the page a crawler
@@ -254,22 +254,35 @@ not show.
 | --- | --- |
 | `/c/:id` | A live brief from a verified brand. What the Share button copies. |
 | `/brands/:id` | The brand's own public page, linked from every campaign card and every shared brief. |
-| `/sitemap.xml` | Every marketing page, public brand page and live brief, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
+| `/sitemap.xml` | Every marketing page, public brand page, live brief and published case study, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
+| `/work` | The case-study shelf. |
+| `/work/:slug` | One campaign we ran, written up. |
 
-It was five until the marketing site moved into the SPA. `/for-brands` and
-`/for-creators` are ordinary React routes now — see below.
+The last two are the only pages on this site written to be **found** rather
+than sent: a brand searching for the kind of campaign they want to run should
+reach the one we ran. That needs a page a crawler can read without running
+JavaScript — and they are also what we paste into a chat with a brand, so the
+preview is the pitch. Both reasons point the same way, which is why they are
+here rather than in the SPA with the rest of the marketing site.
 
-Repoint all three at your Railway URL; they must stay **above** the catch-all:
+It was five, then three when the marketing site moved into the SPA, and five
+again with case studies. `/for-brands` and `/for-creators` are ordinary React
+routes now — see below.
+
+Repoint all five at your Railway URL; they must stay **above** the catch-all:
 
 ```json
 { "source": "/c/:id",       "destination": "https://your-api.up.railway.app/c/:id" },
 { "source": "/brands/:id",  "destination": "https://your-api.up.railway.app/brands/:id" },
-{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" }
+{ "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" },
+{ "source": "/work",        "destination": "https://your-api.up.railway.app/work" },
+{ "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" }
 ```
 
-**All three or none.** They are one feature, and shipping part of it means a
+**All five or none.** They are one feature, and shipping part of it means a
 link into a page that does not exist: the brief page links to the brand page,
-the brand page lists the briefs, and the sitemap points at both.
+the brand page lists the briefs, the case study links to both, and the sitemap
+points at all of them.
 
 The alternative, if you would rather not proxy: set `PUBLIC_SHARE_BASE_URL` to
 the backend's own origin and links will point straight at it. That works

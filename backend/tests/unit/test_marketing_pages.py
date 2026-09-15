@@ -760,6 +760,25 @@ def test_the_footer_columns_match_the_react_one():
     """Two renderers with two copies of the link list is how a footer ends up
     advertising a page that moved. The backend's copy builds the sitemap."""
     site = read("src", "lib", "siteNav.js")
+
+    def points_at(to):
+        """Whether the React list carries this destination.
+
+        Three spellings are allowed, and the third is the interesting one: a
+        path can be written inline, interpolated into a template, **or named
+        by a constant defined in the same file**. `/work` is the last —
+        `WORK_PATH`, because the footer and both proof strips link to it and a
+        path written out three times is a path that moves twice. Resolving the
+        constant here keeps the drift check honest rather than forcing the
+        source to inline a value it deliberately names once.
+        """
+        if f'to: "{to}"' in site or f"to: `{to}" in site:
+            return True
+        for name in re.findall(r'to: ([A-Z_][A-Z0-9_]*)', site):
+            if f'export const {name} = "{to}";' in site:
+                return True
+        return False
+
     for heading, links in server.FOOTER_COLUMNS:
         assert f'heading: "{heading}"' in site, heading
         for label, to in links:
@@ -767,7 +786,7 @@ def test_the_footer_columns_match_the_react_one():
             if to.startswith("mailto:"):
                 assert to.split(":", 1)[1] in site
             else:
-                assert f'to: "{to}"' in site or f"to: `{to}" in site, to
+                assert points_at(to), to
 
 
 def test_the_footer_links_every_marketing_page():
@@ -801,7 +820,20 @@ def test_the_copyright_names_the_entity_that_was_already_there():
 
 # --- Getting there ------------------------------------------------------------
 
-SERVER_RENDERED_PATHS = ("/c/:id", "/brands/:id", "/sitemap.xml")
+# **Five now.** `/work` and `/work/:slug` joined the list when case studies
+# shipped, for both of the reasons `/c/:id` is on it: they are links we send a
+# brand directly, so the preview is the pitch, *and* they are the one part of
+# this site written to be **found** rather than sent — which needs a page that
+# exists without JavaScript. A rewrite that never reaches the backend is the
+# failure `/for-brands` and `/for-creators` already had, and it is silent:
+# the catch-all answers with the SPA and the page looks like it works.
+SERVER_RENDERED_PATHS = (
+    "/c/:id",
+    "/brands/:id",
+    "/sitemap.xml",
+    "/work",
+    "/work/:slug",
+)
 
 
 def _rewrites():

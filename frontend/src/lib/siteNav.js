@@ -16,6 +16,19 @@
 
 export const CONTACT_EMAIL = "creators@wearemonk.in";
 
+/**
+ * The case-study shelf.
+ *
+ * **Server-rendered by the backend**, like `/c/{id}` and `/brands/{id}`, so
+ * everything that points at it uses a plain `<a>` rather than a `<Link>` — a
+ * router link is swallowed by the SPA and answered with the catch-all. Named
+ * here because three places link to it (the footer and both proof strips) and
+ * a path written out three times is a path that moves twice.
+ *
+ * Mirrors `CASE_STUDY_PATH` in `server.py`.
+ */
+export const WORK_PATH = "/work";
+
 // `external` marks a destination the router must not handle — today only the
 // mailto. The audience pages used to be marked too, back when the backend
 // rendered them and a <Link> would have been swallowed by the SPA's
@@ -40,6 +53,12 @@ export const FOOTER_COLUMNS = [
     {
         heading: "The site",
         links: [
+            // **`external`, and not because it leaves the site.** `/work` is
+            // server-rendered by the backend like `/c/{id}` — see PREVIEW.md
+            // — so a `<Link>` would be caught by the router and answered with
+            // the SPA's catch-all, which is the exact failure the audience
+            // pages had for months. `FooterLink` picks `<a>` off this flag.
+            { label: "Our work", to: WORK_PATH, external: true },
             { label: "How it works", to: "/how-it-works" },
             { label: "Why WeAre", to: "/why-weare" },
             { label: "Contact", to: `mailto:${CONTACT_EMAIL}`, external: true },

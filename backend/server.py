@@ -15,7 +15,7 @@ import sys
 import logging
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
-from typing import Optional, Literal, Annotated
+from typing import Optional, Literal, Annotated, get_args
 
 import bcrypt
 import httpx
@@ -26134,6 +26134,968 @@ async def set_leaderboard_settings(
     return await leaderboard_settings()
 
 
+# ---------------------------------------------------------------------------
+# Case studies — finished work, turned into what sells the next campaign
+#
+# We run campaigns end to end, which is the thing neither competitor does, and
+# until now the only evidence of it was a number on the home page. A closed
+# campaign already holds everything a case study needs — the brand, who shot
+# it, what they made, what it reached — and all of that was being thrown away
+# at the moment it became most useful.
+#
+# **The privacy rules are the whole design, so they are stated first.**
+#
+# - A creator appears **only** if they have opted into public featuring, and
+#   that is re-read on every request rather than frozen when the case study
+#   was written. The roster stores *ids*; `_case_study_creator` resolves them
+#   at read time and drops anybody who has since said no. This is the rule the
+#   leaderboard already holds and for the same reason: consent withdrawn is
+#   consent withdrawn now, not by tomorrow's cache.
+# - `_public_case_study` is an **allow-list built by naming every key**, never
+#   a document with fields deleted from it, so a column added to
+#   `case_studies` next month cannot appear on a public page because nobody
+#   remembered to exclude it. The same arrangement `_public_brand` and
+#   `_brand_visible_creator` use.
+# - Money is absent in both directions. A creator's fee, their payout details
+#   and their earnings are theirs; the brand's campaign fee, commission rate
+#   and budget are the brand's. `CASE_STUDY_FORBIDDEN_FIELDS` names all of it
+#   and a leak test plants recognisable values and searches the real output.
+#
+# **The vocabulary is the product's, not a second one.** The brief asked for
+# categories including beauty, tech and fitness, and a campaign type called
+# delivery. Those do not exist here: a campaign's category is one of the eight
+# in `CATEGORY_LITERAL` and its type is one of the three in `CampaignType`. A
+# case study is *about a campaign*, so a filter offering "beauty" would be a
+# filter that can never match anything real, and a second category list is the
+# exact drift `lib/categories.js` and the taxonomy tests exist to prevent. If
+# the operation starts running beauty campaigns, the enum moves and this moves
+# with it.
+# ---------------------------------------------------------------------------
+
+CASE_STUDY_PATH = "/work"
+
+# Draft or published, and nothing in between. There is no "scheduled" here —
+# a publish date nobody is watching is a page that goes live at 3am with a
+# half-written approach on it.
+CASE_STUDY_STATUSES = ("draft", "published")
+
+# What must never reach an unauthenticated reader. Named so the leak test can
+# look for them as keys *and* plant their values and search the rendered
+# bytes — source-reading catches the mistake somebody makes on purpose,
+# running it catches the one where a value arrives through a `**spread` from a
+# document nobody remembered had it.
+#
+# Three groups, and each is somebody different's business:
+#   - the creator as a person: how to reach them, where they live, who pays
+#     them and what they were paid;
+#   - the brand's commercials: what we charge them and what they budgeted;
+#   - our own workings: the agreed fee on any one collaboration.
+CASE_STUDY_FORBIDDEN_FIELDS = (
+    "phone",
+    "whatsapp",
+    "whatsapp_number",
+    "email",
+    "contact_email",
+    "contact_phone",
+    "full_address",
+    "location_lat",
+    "location_lng",
+    "location_place_id",
+    "payout_upi",
+    "payout_account_number",
+    "payout_account_name",
+    "payout_ifsc",
+    "payout_method",
+    "pan",
+    "agreed_amount",
+    "quoted_rate",
+    "base_rate",
+    "lifetime_earned",
+    "total_earned",
+    "campaign_fee",
+    "commission_percent",
+    "fee_percent",
+    "platform_fee",
+    "brand_invoice_amount",
+    "total_budget",
+    "budget_per_creator",
+    "total_spend",
+    "cost_per_thousand_reach",
+)
+
+# How many of each repeated thing a case study may carry. Ceilings rather than
+# targets: the point is that a runaway paste cannot produce a page that takes
+# ten seconds to render, not that anybody should be filling these.
+MAX_CASE_STUDY_GALLERY = 12
+MAX_CASE_STUDY_LINKS = 12
+MAX_CASE_STUDY_METRICS = 6
+MAX_CASE_STUDY_CREATORS = 40
+MAX_CASE_STUDY_TEXT = 4000
+MAX_CASE_STUDY_LINE = 240
+
+
+def _slugify(value: str) -> str:
+    """A title, as it appears in a URL.
+
+    Lowercase, words joined by hyphens, everything else dropped. Deliberately
+    ASCII-only: a slug is a thing somebody reads down a phone and types into a
+    browser, and a percent-encoded Devanagari URL is neither readable nor
+    typable — the title above it still says whatever it says.
+    """
+    out = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+    return out[:80].strip("-")
+
+
+async def _unique_case_study_slug(base: str, *, exclude: Optional[ObjectId] = None) -> str:
+    """`base`, or `base-2`, `base-3` … until nothing else has it.
+
+    **A slug is an address somebody has already sent to a brand**, so
+    uniqueness is resolved by suffixing a new one rather than by refusing the
+    save or by quietly stealing it from the older page. `exclude` is the row
+    being edited, or re-saving a case study without touching its title would
+    walk its own slug forward every time.
+    """
+    base = base or "case-study"
+    candidate, n = base, 1
+    while True:
+        clash = await db.case_studies.find_one(
+            {"slug": candidate, **({"_id": {"$ne": exclude}} if exclude else {})},
+            {"_id": 1},
+        )
+        if not clash:
+            return candidate
+        n += 1
+        candidate = f"{base[:76]}-{n}"
+
+
+def _case_study_featurable(profile: Optional[dict]) -> bool:
+    """Whether this creator may be named on a public page.
+
+    **Consent, and one permanent bar.** Both are borrowed from
+    `_leaderboard_eligible`, which is the existing answer to "may we put this
+    person in front of strangers": `homepage_opt_in`, and never anybody with a
+    confirmed circumvention — that is explicitly permanent and explicitly
+    about whether somebody is held up as an example.
+
+    **The other two leaderboard conditions are deliberately not carried, and
+    the reasons differ.** Recent activity would empty every historical case
+    study as it aged, which is backwards: the work happened, and that it
+    happened a year ago is the point of a case study rather than a
+    disqualification. A lapsed verification gates *new* work — a creator
+    cannot apply — and erasing them from a finished campaign would be the
+    check reaching backwards into a record, which is exactly what
+    `_creator_block` is documented never to do.
+    """
+    profile = profile or {}
+    if not profile.get("homepage_opt_in"):
+        return False
+    if profile.get("circumvention_confirmed_at"):
+        return False
+    return True
+
+
+def _case_study_creator(profile: Optional[dict]) -> Optional[dict]:
+    """One creator on a case study, or `None` if they have not agreed.
+
+    Four fields, named one at a time. A follower count is here where
+    `_public_creator_card` deliberately omits one, and the difference is real
+    rather than an oversight: the leaderboard is an *ordering*, so publishing
+    follower counts beside it would make it a follower-count leaderboard
+    wearing another name. A case study is a record of one campaign, and the
+    audience it reached is the evidence the whole page exists to show.
+    """
+    if not _case_study_featurable(profile):
+        return None
+    return {
+        "id": str(profile["user_id"]),
+        "name": profile.get("name"),
+        "instagram_handle": profile.get("instagram_handle"),
+        "profile_image_url": profile.get("profile_image_url"),
+        "follower_count": profile.get("follower_count"),
+        # **The provenance travels with the number, on every surface.** A
+        # measured figure and one somebody typed are worth different amounts
+        # to a brand, and printing them identically is how the scraped counts
+        # got trusted in the first place. It carries no personal data — only
+        # where the figure came from and when it was last read.
+        "follower_count_source": _follower_provenance(profile)["follower_count_source"],
+        "follower_count_verified": _follower_provenance(profile)["follower_count_verified"],
+    }
+
+
+def _clean_case_study_metrics(value) -> list:
+    """The custom figures — footfall, covers, bookings, whatever this campaign
+    was actually judged on.
+
+    **The value is text, not a number**, and that is the decision worth
+    stating: what a brand wants on the page is "340 covers", "+18% on the
+    week", "sold out in 4 days". Forcing those into a float would either lose
+    the half that means something or invent a unit we do not have.
+    """
+    out = []
+    for raw in value or []:
+        if not isinstance(raw, dict):
+            continue
+        label = " ".join(str(raw.get("label") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+        figure = " ".join(str(raw.get("value") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+        if not label or not figure:
+            continue
+        out.append({"label": label, "value": figure})
+        if len(out) >= MAX_CASE_STUDY_METRICS:
+            break
+    return out
+
+
+def _clean_case_study_links(value) -> list:
+    """Links to the content that actually ran.
+
+    Same rule as `_clean_brief_assets`, and for the same reason: these render
+    as anchors on a page anybody can open, so a `javascript:` in a field an
+    admin pastes is the obvious way to turn a marketing page into an attack.
+    The label is what renders, falling back to the URL when there is none.
+    """
+    out = []
+    for raw in value or []:
+        if not isinstance(raw, dict):
+            continue
+        url = " ".join(str(raw.get("url") or "").split())[:500].strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        label = " ".join(str(raw.get("label") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+        if any(row["url"] == url for row in out):
+            continue
+        out.append({"label": label or url, "url": url})
+        if len(out) >= MAX_CASE_STUDY_LINKS:
+            break
+    return out
+
+
+def _our_image_path(value) -> Optional[str]:
+    """An image path, but only one we issued ourselves.
+
+    **The rule `cover_image_url` and `logo_url` already hold**: the value is a
+    path this server wrote, never a URL somebody typed. A case study's hero and
+    gallery are set by uploading to `POST /admin/case-studies/images`, which
+    goes through `_store_upload` — magic bytes sniffed, our own random name,
+    size enforced while streaming — and the payload will take the path that
+    comes back and nothing else.
+
+    Anything else is dropped rather than refused, because the field is
+    optional everywhere it appears and a 422 on a paste is a worse answer than
+    an empty slot the admin can see is empty.
+    """
+    url = " ".join(str(value or "").split()).strip()
+    if not url.startswith(UPLOAD_URL_PREFIX + "/"):
+        return None
+    # No traversal, no query string, no fragment: this is a filename we minted.
+    if ".." in url or "?" in url or "#" in url:
+        return None
+    return url[:500]
+
+
+def _clean_case_study_gallery(value) -> list:
+    """The image gallery — our own uploads, each with an optional caption."""
+    out = []
+    for raw in value or []:
+        row = raw if isinstance(raw, dict) else {"url": raw}
+        url = _our_image_path(row.get("url"))
+        if not url or any(g["url"] == url for g in out):
+            continue
+        caption = " ".join(str(row.get("caption") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+        out.append({"url": url, "caption": caption or None})
+        if len(out) >= MAX_CASE_STUDY_GALLERY:
+            break
+    return out
+
+
+def _clean_case_study_results(value) -> dict:
+    """Reach, engagement, pieces, plus whatever else this campaign was judged
+    on.
+
+    **An unmeasured figure is `None`, never `0`.** The rule
+    `content_performance` already holds: a campaign with no reach reading and
+    a campaign that reached nobody are different facts, and only one of them
+    is worth publishing. Every surface draws the first as an em dash.
+    """
+    value = value if isinstance(value, dict) else {}
+
+    def number(key, cast):
+        raw = value.get(key)
+        if raw is None or raw == "":
+            return None
+        try:
+            out = cast(raw)
+        except (TypeError, ValueError):
+            return None
+        return out if out >= 0 else None
+
+    return {
+        "reach": number("reach", int),
+        "engagement_rate": number("engagement_rate", float),
+        "content_pieces": number("content_pieces", int),
+        "custom": _clean_case_study_metrics(value.get("custom")),
+    }
+
+
+def _clean_case_study_quote(value) -> Optional[dict]:
+    """The pull quote, which is nothing without a name on it.
+
+    An unattributed quote on a marketing page is a sentence we wrote about
+    ourselves, so the attribution is required and the whole block is dropped
+    without one — rather than rendering a quotation mark with nobody behind it.
+    """
+    value = value if isinstance(value, dict) else {}
+    text = " ".join(str(value.get("text") or "").split())[:MAX_CASE_STUDY_TEXT].strip()
+    who = " ".join(str(value.get("attribution") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+    if not text or not who:
+        return None
+    role = " ".join(str(value.get("role") or "").split())[:MAX_CASE_STUDY_LINE].strip()
+    return {"text": text, "attribution": who, "role": role or None}
+
+
+class CaseStudyPayload(BaseModel):
+    """Everything an admin can set, all of it optional.
+
+    **A partial save, like the creator's profile and the brand's.** Only the
+    keys actually sent are written (`model_fields_set`), so an omitted key
+    means leave it alone and an explicit `null` means clear it — writing a
+    case study is several sittings, and a form that blanks the approach every
+    time somebody fixes the title is a form nobody finishes.
+
+    `status` is absent on purpose: publishing is its own route, because it is
+    a different decision from saving a paragraph.
+    """
+
+    title: Optional[str] = None
+    slug: Optional[str] = None
+    brand_id: Optional[str] = None
+    brand_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    category: Optional[CATEGORY_LITERAL] = None
+    city: Optional[str] = None
+    campaign_type: Optional[CampaignType] = None
+    display_order: Optional[int] = None
+
+    hero_image_url: Optional[str] = None
+    challenge: Optional[str] = None
+    approach: Optional[str] = None
+    headline_result: Optional[str] = None
+    creator_ids: Optional[list[str]] = None
+    deliverables: Optional[str] = None
+    deliverable_items: Optional[list[dict]] = None
+    results: Optional[dict] = None
+    content_links: Optional[list[dict]] = None
+    quote: Optional[dict] = None
+    gallery: Optional[list[dict]] = None
+
+
+class CaseStudyOrderPayload(BaseModel):
+    """The whole running order, as ids in the order they should read."""
+
+    ids: list[str]
+
+
+def _case_study_update(payload: "CaseStudyPayload") -> dict:
+    """The payload, cleaned into exactly the keys it actually sent.
+
+    One writer, so the create route, the edit route and the prefill cannot end
+    up with three ideas of what a valid case study is — the rule
+    `_resolve_deliverables` and `_resolve_brief_details` already hold.
+    """
+    sent = payload.model_fields_set
+    out: dict = {}
+
+    def text(field, limit=MAX_CASE_STUDY_TEXT):
+        raw = getattr(payload, field)
+        if raw is None:
+            return None
+        return str(raw).strip()[:limit] or None
+
+    for field in ("title", "brand_name", "headline_result"):
+        if field in sent:
+            out[field] = text(field, MAX_CASE_STUDY_LINE)
+    for field in ("challenge", "approach"):
+        if field in sent:
+            out[field] = text(field)
+    if "slug" in sent:
+        out["slug"] = _slugify(payload.slug or "") or None
+    if "category" in sent:
+        out["category"] = payload.category
+    if "campaign_type" in sent:
+        out["campaign_type"] = payload.campaign_type
+    if "city" in sent:
+        # The same closed list a creator and a campaign use, or "Bangalore"
+        # and "Bengaluru" are two filters and one city.
+        out["city"] = _canonical_city(payload.city) if payload.city else None
+    if "display_order" in sent:
+        out["display_order"] = int(payload.display_order or 0)
+    if "brand_id" in sent:
+        out["brand_id"] = _as_object_id(payload.brand_id) if payload.brand_id else None
+    for field in ("hero_image_url", "brand_logo_url"):
+        if field in sent:
+            out[field] = _our_image_path(getattr(payload, field))
+    if "creator_ids" in sent:
+        seen, ids = set(), []
+        for raw in (payload.creator_ids or [])[:MAX_CASE_STUDY_CREATORS]:
+            oid = _as_object_id(raw)
+            if oid and oid not in seen:
+                seen.add(oid)
+                ids.append(oid)
+        out["creator_ids"] = ids
+    if "deliverable_items" in sent:
+        out["deliverable_items"] = _clean_deliverables(payload.deliverable_items)
+    if "deliverables" in sent:
+        out["deliverables"] = text("deliverables", MAX_CASE_STUDY_LINE)
+    if "results" in sent:
+        out["results"] = _clean_case_study_results(payload.results)
+    if "content_links" in sent:
+        out["content_links"] = _clean_case_study_links(payload.content_links)
+    if "gallery" in sent:
+        out["gallery"] = _clean_case_study_gallery(payload.gallery)
+    if "quote" in sent:
+        out["quote"] = _clean_case_study_quote(payload.quote)
+    return out
+
+
+def _as_object_id(value) -> Optional[ObjectId]:
+    """An id from a payload, or `None` — never an exception.
+
+    Every caller here is cleaning optional input, and a malformed id in a list
+    of forty is a row to drop rather than a reason to fail the save.
+    """
+    try:
+        return ObjectId(str(value))
+    except Exception:
+        return None
+
+
+async def _case_study_or_404(case_study_id: str) -> dict:
+    oid = _as_object_id(case_study_id)
+    doc = await db.case_studies.find_one({"_id": oid}) if oid else None
+    if not doc:
+        raise HTTPException(status_code=404, detail="That case study doesn't exist.")
+    return doc
+
+
+async def _case_study_roster(doc: dict) -> list:
+    """The creators on this case study who have agreed to be named.
+
+    **Resolved on every read, never stored.** Storing a snapshot at the moment
+    the case study was written would mean a creator who later withdrew consent
+    stayed on a public page until somebody remembered to edit it — which is
+    the difference between "removed immediately" and "removed eventually", and
+    the leaderboard already decided that one.
+    """
+    ids = [i for i in (doc.get("creator_ids") or []) if isinstance(i, ObjectId)]
+    if not ids:
+        return []
+    profiles = await db.creator_profiles.find({"user_id": {"$in": ids}}).to_list(
+        length=MAX_CASE_STUDY_CREATORS
+    )
+    by_id = {p["user_id"]: p for p in profiles}
+    # In the order the admin arranged them, not the order Mongo returned.
+    rows = [_case_study_creator(by_id.get(i)) for i in ids]
+    return [r for r in rows if r]
+
+
+def _case_study_headline(doc: dict) -> str:
+    """The one figure a card and a WhatsApp preview lead with.
+
+    The admin's own sentence wins — "sold out in four days" is a better
+    headline than any number we can compute. Where there is none, reach is the
+    fallback, because it is the figure every campaign has and the one a brand
+    asks about first.
+    """
+    written = (doc.get("headline_result") or "").strip()
+    if written:
+        return written[:MAX_CASE_STUDY_LINE]
+    results = doc.get("results") or {}
+    reach = results.get("reach")
+    if reach:
+        return f"{int(reach):,} people reached"
+    pieces = results.get("content_pieces")
+    if pieces:
+        return f"{int(pieces)} pieces of content"
+    return ""
+
+
+async def _public_case_study(doc: dict, *, full: bool = True) -> dict:
+    """The only projection of a case study on any unauthenticated surface.
+
+    Built by naming every key. A column added to `case_studies` next month
+    cannot appear on a public page because nobody remembered to exclude it —
+    the rule `_public_brand` and `_brand_visible_creator` both hold, and the
+    one that makes the leak test meaningful rather than a list somebody
+    maintains by hand.
+
+    `full=False` is the card: enough for a grid and a preview, and it skips
+    the roster query, which is the only part of this that costs anything.
+    """
+    out = {
+        "slug": doc.get("slug"),
+        "title": doc.get("title"),
+        "brand_name": doc.get("brand_name"),
+        "brand_logo_url": doc.get("brand_logo_url"),
+        "category": doc.get("category"),
+        "category_label": CATEGORY_LABELS.get(doc.get("category"), ""),
+        "city": doc.get("city"),
+        "campaign_type": doc.get("campaign_type"),
+        "hero_image_url": doc.get("hero_image_url"),
+        "headline_result": _case_study_headline(doc),
+        "published_at": _iso(doc.get("published_at")),
+    }
+    if not full:
+        return out
+    results = doc.get("results") or {}
+    out.update(
+        {
+            "challenge": doc.get("challenge"),
+            "approach": doc.get("approach"),
+            "creators": await _case_study_roster(doc),
+            "deliverables": doc.get("deliverables"),
+            "deliverable_items": _deliverable_items(doc),
+            # Named one at a time, so a stray key on the stored results block
+            # cannot ride out. `custom` is already cleaned to label/value.
+            "results": {
+                "reach": results.get("reach"),
+                "engagement_rate": results.get("engagement_rate"),
+                "content_pieces": results.get("content_pieces"),
+                "custom": [
+                    {"label": m.get("label"), "value": m.get("value")}
+                    for m in (results.get("custom") or [])
+                ],
+            },
+            "content_links": [
+                {"label": l.get("label"), "url": l.get("url")}
+                for l in (doc.get("content_links") or [])
+            ],
+            "quote": doc.get("quote"),
+            "gallery": [
+                {"url": g.get("url"), "caption": g.get("caption")}
+                for g in (doc.get("gallery") or [])
+            ],
+        }
+    )
+    return out
+
+
+def _admin_case_study(doc: dict) -> dict:
+    """What the console sees: the public shape plus the editing state.
+
+    Deliberately built on top of the public projection rather than beside it —
+    two serializers is how the preview stops matching the page. What it adds
+    is what an admin needs and a stranger must not see the existence of: the
+    draft status, the running order, and which campaign this came from.
+    """
+    return {
+        "id": str(doc["_id"]),
+        "slug": doc.get("slug"),
+        "title": doc.get("title"),
+        "brand_id": str(doc["brand_id"]) if doc.get("brand_id") else None,
+        "brand_name": doc.get("brand_name"),
+        "brand_logo_url": doc.get("brand_logo_url"),
+        "category": doc.get("category"),
+        "city": doc.get("city"),
+        "campaign_type": doc.get("campaign_type"),
+        "status": doc.get("status") or "draft",
+        "display_order": int(doc.get("display_order") or 0),
+        "hero_image_url": doc.get("hero_image_url"),
+        "challenge": doc.get("challenge"),
+        "approach": doc.get("approach"),
+        "headline_result": doc.get("headline_result"),
+        "creator_ids": [str(i) for i in (doc.get("creator_ids") or [])],
+        "deliverables": doc.get("deliverables"),
+        "deliverable_items": _deliverable_items(doc),
+        "results": doc.get("results") or _clean_case_study_results({}),
+        "content_links": doc.get("content_links") or [],
+        "quote": doc.get("quote"),
+        "gallery": doc.get("gallery") or [],
+        "campaign_id": str(doc["campaign_id"]) if doc.get("campaign_id") else None,
+        "published_at": _iso(doc.get("published_at")),
+        "created_at": _iso(doc.get("created_at")),
+        "updated_at": _iso(doc.get("updated_at")),
+        "public_url": f"{_share_base()}{CASE_STUDY_PATH}/{doc.get('slug') or ''}",
+    }
+
+
+async def _prefill_from_campaign(campaign: dict) -> dict:
+    """Everything a finished campaign already knows about itself.
+
+    **The point of the whole feature.** A case study written from scratch is a
+    separate chore that competes with running the next campaign, so it does
+    not get written. Written from the campaign, the mechanical nine tenths —
+    who the brand is, who shot it, what they made, what it reached — is
+    already there and what is left is the part only a person can do: what the
+    brand needed, and what we did about it.
+    * The narrative fields are left empty on purpose.* Pre-filling them with
+    the brief would publish the brand's own words back at them as our
+    analysis, and a case study that reads like a brief is one nobody believes.
+    """
+    brand = await db.brand_profiles.find_one({"user_id": campaign.get("brand_id")}) or {}
+
+    collabs = await db.collaborations.find(
+        {"campaign_id": campaign["_id"], "state": {"$in": list(DELIVERED_COLLAB_STATES)}}
+    ).to_list(length=MAX_CASE_STUDY_CREATORS)
+    collab_ids = [c["_id"] for c in collabs]
+
+    # Only creators who have already agreed to be featured. Everybody else is
+    # simply absent from the draft — an admin ticking names off a list they
+    # were never allowed to use is a consent check that happens too late.
+    creator_ids = [c["creator_id"] for c in collabs if c.get("creator_id")]
+    featurable = []
+    if creator_ids:
+        profiles = await db.creator_profiles.find(
+            {"user_id": {"$in": creator_ids}}
+        ).to_list(length=MAX_CASE_STUDY_CREATORS)
+        opted = {p["user_id"] for p in profiles if _case_study_featurable(p)}
+        featurable = [i for i in creator_ids if i in opted]
+
+    records = (
+        await db.content_performance.find(
+            {"collaboration_id": {"$in": collab_ids}}
+        ).to_list(length=MAX_CASE_STUDY_CREATORS)
+        if collab_ids
+        else []
+    )
+    reach = sum(r["reach"] for r in records if r.get("reach")) or None
+    engagements = sum(e for e in (_engagements(r) for r in records) if e)
+    links = [
+        {"label": "", "url": c["content_url"]}
+        for c in collabs
+        if (c.get("content_url") or "").startswith(("http://", "https://"))
+    ]
+
+    items = _deliverable_items(campaign)
+    return {
+        "title": campaign.get("title"),
+        "brand_id": campaign.get("brand_id"),
+        "brand_name": brand.get("business_name") or campaign.get("brand_name"),
+        # Already a path we issued, so it passes `_our_image_path` untouched.
+        "brand_logo_url": _our_image_path(brand.get("logo_url")),
+        "hero_image_url": _our_image_path(campaign.get("cover_image_url")),
+        "category": campaign.get("category"),
+        "city": campaign.get("city") or brand.get("city"),
+        "campaign_type": campaign.get("campaign_type"),
+        "creator_ids": featurable,
+        "deliverable_items": items,
+        "deliverables": _deliverables_text(items) or campaign.get("deliverables"),
+        "results": _clean_case_study_results(
+            {
+                "reach": reach,
+                # The aggregate rate, engagements over reach — not the mean of
+                # the per-post rates, which lets one tiny post with a freak
+                # rate move the headline. The same arithmetic
+                # `_rollup_performance` does, and the same reason.
+                "engagement_rate": (
+                    round(engagements / reach * 100, 2) if reach and engagements else None
+                ),
+                "content_pieces": len(records) or len(collabs) or None,
+            }
+        ),
+        "content_links": _clean_case_study_links(links),
+        # Left for a person: see the docstring.
+        "challenge": None,
+        "approach": None,
+        "headline_result": None,
+    }
+
+
+# --- The console ------------------------------------------------------------
+#
+# **Admin-only, not `CONSOLE_ROLES`, and that is the same split
+# `POST /admin/brands` makes.** A case study is a claim this operation puts on
+# the open internet, under our name, with a brand and a set of named people on
+# it. `weare_team` is scoped to assigned brands, which is the right shape for
+# running a campaign and the wrong one for deciding what the platform says
+# about itself in public — and a scoped role that could publish a page naming
+# creators from outside its scope is not scoped.
+
+
+@admin_router.get("/case-studies")
+async def list_case_studies(
+    status: Optional[str] = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Every case study, drafts included, in the order they will read."""
+    query = {}
+    if status in CASE_STUDY_STATUSES:
+        query["status"] = status
+    rows = (
+        await db.case_studies.find(query)
+        .sort([("display_order", 1), ("created_at", -1)])
+        .to_list(length=500)
+    )
+    return {"case_studies": [_admin_case_study(r) for r in rows]}
+
+
+@admin_router.get("/case-studies/{case_study_id}")
+async def get_case_study(
+    case_study_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    return _admin_case_study(await _case_study_or_404(case_study_id))
+
+
+@admin_router.get("/case-studies/{case_study_id}/preview")
+async def preview_case_study(
+    case_study_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Exactly what a stranger would get, on a draft.**
+
+    Through `_public_case_study`, not a second rendering of the same row — a
+    preview built by any other route is a preview that can disagree with the
+    page, which makes it worse than none. It is the one place the public
+    projection is reachable for an unpublished row, and it is behind the admin
+    guard.
+    """
+    doc = await _case_study_or_404(case_study_id)
+    return {
+        "case_study": await _public_case_study(doc),
+        # What publishing would refuse, so the button can say why.
+        "missing_fields": _case_study_missing(doc),
+    }
+
+
+# What a case study has to have before it is worth anybody reading. Narrow on
+# purpose: a page with no hero and no results is a page that makes the product
+# look thin, and everything else is a judgement the admin writing it can make.
+_CASE_STUDY_REQUIRED = {
+    "title": "a title",
+    "slug": "a web address",
+    "brand_name": "the brand's name",
+    "challenge": "what the brand needed",
+    "approach": "what we did",
+    "hero_image_url": "a hero image",
+}
+
+
+def _case_study_missing(doc: dict) -> list:
+    """What is still in the way of publishing, in words a person would use.
+
+    Named rather than counted, for the reason the brand's verification
+    checklist gives: a greyed-out button with no explanation is how a form
+    becomes a support ticket.
+    """
+    out = [label for field, label in _CASE_STUDY_REQUIRED.items() if not doc.get(field)]
+    results = doc.get("results") or {}
+    if not any(
+        results.get(k) is not None for k in ("reach", "engagement_rate", "content_pieces")
+    ) and not results.get("custom"):
+        out.append("at least one result")
+    return out
+
+
+@admin_router.post("/case-studies")
+async def create_case_study(
+    payload: CaseStudyPayload,
+    from_campaign: Optional[str] = None,
+    user: dict = Depends(require_roles("admin")),
+):
+    """A new case study, blank or drawn from a campaign that has finished.
+
+    `from_campaign` is the whole feature — see `_prefill_from_campaign`. The
+    campaign has to be **closed**: a case study about work still being
+    delivered would report numbers that are still moving, and the honest
+    version of that is to wait.
+    """
+    doc = {
+        "status": "draft",
+        "display_order": 0,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    campaign = None
+    if from_campaign:
+        campaign = await _admin_campaign_or_404(from_campaign, user)
+        if campaign.get("status") not in _CLOSED_CAMPAIGN_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "campaign_not_closed",
+                    "message": (
+                        "That campaign is still running. A case study written now "
+                        "would quote numbers that are still moving."
+                    ),
+                },
+            )
+        doc.update(await _prefill_from_campaign(campaign))
+        doc["campaign_id"] = campaign["_id"]
+
+    # Anything the admin sent wins over the prefill: they are looking at the
+    # form and the campaign is not.
+    doc.update(_case_study_update(payload))
+    doc["slug"] = await _unique_case_study_slug(
+        doc.get("slug") or _slugify(doc.get("title") or "") or "case-study"
+    )
+    result = await db.case_studies.insert_one(doc)
+    saved = await db.case_studies.find_one({"_id": result.inserted_id})
+    await audit(
+        user,
+        "case_study.create",
+        "case_study",
+        str(result.inserted_id),
+        after={"slug": saved.get("slug"), "from_campaign": from_campaign},
+        **(_campaign_audit_context(campaign) if campaign else {}),
+    )
+    return _admin_case_study(saved)
+
+
+@admin_router.put("/case-studies/{case_study_id}")
+async def update_case_study(
+    case_study_id: str,
+    payload: CaseStudyPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    doc = await _case_study_or_404(case_study_id)
+    update = _case_study_update(payload)
+    if "slug" in update:
+        update["slug"] = await _unique_case_study_slug(
+            update["slug"] or _slugify(update.get("title") or doc.get("title") or ""),
+            exclude=doc["_id"],
+        )
+    if not update:
+        return _admin_case_study(doc)
+    update["updated_at"] = datetime.now(timezone.utc)
+    await db.case_studies.update_one({"_id": doc["_id"]}, {"$set": update})
+    saved = await db.case_studies.find_one({"_id": doc["_id"]})
+    await audit(
+        user,
+        "case_study.update",
+        "case_study",
+        case_study_id,
+        before={k: doc.get(k) for k in update},
+        after=update,
+    )
+    return _admin_case_study(saved)
+
+
+@admin_router.post("/case-studies/{case_study_id}/publish")
+async def publish_case_study(
+    case_study_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Put it on the open internet.
+
+    409s naming what is absent, the same shape the brand's verification
+    submission uses — and for the same reason: the button is disabled when it
+    would refuse, and the list is what lets somebody fix it rather than guess.
+    """
+    doc = await _case_study_or_404(case_study_id)
+    missing = _case_study_missing(doc)
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "case_study_incomplete",
+                "message": "This isn't ready to publish yet.",
+                "missing_fields": missing,
+            },
+        )
+    update = {
+        "status": "published",
+        "updated_at": datetime.now(timezone.utc),
+        # First publication only. Re-publishing after a correction is not a
+        # new piece of work, and a date that moved every time somebody fixed a
+        # typo would make the shelf reorder itself for no reason.
+        **({} if doc.get("published_at") else {"published_at": datetime.now(timezone.utc)}),
+    }
+    await db.case_studies.update_one({"_id": doc["_id"]}, {"$set": update})
+    await audit(user, "case_study.publish", "case_study", case_study_id, after=update)
+    return _admin_case_study(await db.case_studies.find_one({"_id": doc["_id"]}))
+
+
+@admin_router.post("/case-studies/{case_study_id}/unpublish")
+async def unpublish_case_study(
+    case_study_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take it down, keeping everything.
+
+    Back to `draft` rather than deleted, and `published_at` survives: a page
+    pulled because a figure was wrong is one somebody will put back, and the
+    date it first ran is a fact about it either way.
+    """
+    doc = await _case_study_or_404(case_study_id)
+    await db.case_studies.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": "draft", "updated_at": datetime.now(timezone.utc)}},
+    )
+    await audit(user, "case_study.unpublish", "case_study", case_study_id)
+    return _admin_case_study(await db.case_studies.find_one({"_id": doc["_id"]}))
+
+
+@admin_router.post("/case-studies/order")
+async def reorder_case_studies(
+    payload: CaseStudyOrderPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """The running order, sent whole.
+
+    Whole rather than as a move, because a move is a diff against a list the
+    browser may no longer agree with — two admins reordering at once would
+    produce an order neither of them arranged. Ids the collection does not
+    have are ignored rather than refused: a stale tab should not be able to
+    fail an otherwise good reorder.
+    """
+    for index, raw in enumerate(payload.ids[:500]):
+        oid = _as_object_id(raw)
+        if oid:
+            await db.case_studies.update_one(
+                {"_id": oid}, {"$set": {"display_order": index}}
+            )
+    await audit(user, "case_study.reorder", "case_study", None, after={"ids": payload.ids})
+    return await list_case_studies(None, user)
+
+
+@admin_router.post("/case-studies/images")
+async def upload_case_study_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles("admin")),
+):
+    """Somewhere for a hero or a gallery image to come from.
+
+    **The only way to get a value `_our_image_path` will accept.** The rule
+    `cover_image_url` holds: an image on one of our pages is a file this
+    server wrote, sniffed by its leading bytes and stored under a name we
+    chose — never a URL somebody pasted, which is how a marketing page ends up
+    hotlinking somebody else's server or worse.
+    """
+    url, _ = await _store_upload(file, prefix="case-study")
+    await audit(user, "case_study.image", "case_study", None, after={"url": url})
+    return {"url": url}
+
+
+@admin_router.delete("/case-studies/{case_study_id}")
+async def delete_case_study(
+    case_study_id: str,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Gone, and audited.
+
+    A published page is unpublished first — deleting one outright leaves a URL
+    somebody has already sent to a brand answering 404 with no record of what
+    used to be there.
+    """
+    doc = await _case_study_or_404(case_study_id)
+    if doc.get("status") == "published":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "case_study_published",
+                "message": "Unpublish it first — this link may already be out there.",
+            },
+        )
+    await db.case_studies.delete_one({"_id": doc["_id"]})
+    await audit(
+        user,
+        "case_study.delete",
+        "case_study",
+        case_study_id,
+        before={"slug": doc.get("slug"), "title": doc.get("title")},
+    )
+    return {"status": "deleted"}
+
+
 api_router.include_router(admin_router)
 
 
@@ -29435,6 +30397,101 @@ async def public_leaderboard():
     return await _public_leaderboard()
 
 
+
+# --- Case studies, for anybody --------------------------------------------
+#
+# The JSON half. The pages themselves are server-rendered outside `/api` (see
+# `CASE_STUDY_PATH`), for the reason `/c/{id}` and `/brands/{id}` are: a
+# WhatsApp crawler does not run JavaScript, and these are links we send brands
+# directly. What these two endpoints feed is the *proof strips* inside the
+# React app — home and `/for-brands` — which need three cards and nothing else.
+#
+# Declared above `include_router` for the reason `/proof` documents: that call
+# copies the routes it can see, so a `@public_router.get` written below it
+# registers nothing and 404s with no error anywhere.
+
+
+def _published_case_study_query(
+    category: Optional[str] = None,
+    city: Optional[str] = None,
+    campaign_type: Optional[str] = None,
+) -> dict:
+    """The one filter. Published only, plus whatever was asked for.
+
+    A draft is not "a case study a stranger may not read yet" — it is a page
+    with half an approach on it, and there is no reader for whom that is the
+    right answer. The status check is therefore in the query rather than on
+    the rows, so a filter can never widen it.
+    """
+    query: dict = {"status": "published"}
+    if category in CATEGORY_LABELS:
+        query["category"] = category
+    if campaign_type in get_args(CampaignType):
+        query["campaign_type"] = campaign_type
+    if city:
+        # Through the same canonicaliser a creator's city goes through, or
+        # "Bangalore" in a query string never matches "Bengaluru" in a row.
+        try:
+            query["city"] = _canonical_city(city)
+        except HTTPException:
+            # An unknown city matches nothing, which is the honest answer —
+            # better than 422ing a link somebody was sent.
+            query["city"] = city
+    return query
+
+
+@public_router.get("/case-studies")
+async def list_public_case_studies(
+    category: Optional[str] = None,
+    city: Optional[str] = None,
+    campaign_type: Optional[str] = None,
+    limit: int = 24,
+):
+    """Published case studies, newest arrangement first.
+
+    Ordered by `display_order` then publication date, which is the order an
+    admin arranged rather than the order they were written — the shelf is
+    curated, and the strongest piece of work is rarely the most recent.
+    """
+    rows = (
+        await db.case_studies.find(_published_case_study_query(category, city, campaign_type))
+        .sort([("display_order", 1), ("published_at", -1)])
+        .to_list(length=max(1, min(int(limit or 24), 60)))
+    )
+    return {
+        # Cards, so this does no roster lookups: `full=False` is the half of
+        # the projection a grid needs, and the creators are the only part that
+        # costs a query.
+        "case_studies": [await _public_case_study(r, full=False) for r in rows],
+        "filters": await _public_case_study_filters(),
+    }
+
+
+async def _public_case_study_filters() -> dict:
+    """The values that actually have a published case study behind them.
+
+    Distinct rather than the full enums, the rule `/campaigns/filters` holds:
+    offering a category whose only outcome is an empty grid is a filter that
+    wastes somebody's time to tell them nothing.
+    """
+    rows = await db.case_studies.find(
+        {"status": "published"}, {"category": 1, "city": 1, "campaign_type": 1}
+    ).to_list(length=500)
+    return {
+        "categories": sorted({r["category"] for r in rows if r.get("category")}),
+        "cities": sorted({r["city"] for r in rows if r.get("city")}),
+        "campaign_types": sorted({r["campaign_type"] for r in rows if r.get("campaign_type")}),
+    }
+
+
+@public_router.get("/case-studies/{slug}")
+async def get_public_case_study(slug: str):
+    doc = await db.case_studies.find_one({"slug": slug, "status": "published"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That case study isn't available.")
+    return await _public_case_study(doc)
+
+
 api_router.include_router(public_router)
 
 
@@ -32649,6 +33706,7 @@ FOOTER_COLUMNS = (
     (
         "The site",
         (
+            ("Our work", CASE_STUDY_PATH),
             ("How it works", HOW_IT_WORKS_PATH),
             ("Why WeAre", WHY_WEARE_PATH),
             ("Contact", "mailto:creators@wearemonk.in"),
@@ -32736,6 +33794,393 @@ async def _platform_proof() -> dict:
 
 
 
+
+# --- The work, as pages anybody can open -----------------------------------
+#
+# **Server-rendered, like `/c/{id}` and `/brands/{id}` and for both of their
+# reasons at once.** These are links we send a brand directly on WhatsApp, so
+# the preview *is* the pitch and Open Graph tags React injects are tags no
+# crawler sees. And they are a search asset: a brand looking for "influencer
+# campaign Bengaluru cafe launch" should find the campaign we ran, which means
+# the page has to exist without JavaScript.
+#
+# The marketing pages made the opposite trade and `PageMeta.jsx` explains why —
+# they needed `<Link>` between them and their copy needed reusing in the app.
+# Neither is true here: a case study links outward, not sideways.
+
+
+def _case_study_url(slug: str) -> str:
+    return f"{_share_base()}{CASE_STUDY_PATH}/{slug}"
+
+
+def _case_study_summary(cs: dict) -> str:
+    """The line under the title in a preview card.
+
+    The headline result first, because that is what decides whether a brand
+    taps — the same reasoning `_share_summary` gives for putting money first
+    on a brief.
+    """
+    bits = [b for b in (cs.get("headline_result"), cs.get("brand_name")) if b]
+    where = ", ".join(x for x in (cs.get("category_label"), cs.get("city")) if x)
+    if where:
+        bits.append(where)
+    return " · ".join(bits) or "A campaign we ran end to end."
+
+
+_WORK_CSS = """
+*{box-sizing:border-box}
+body{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}
+.wrap{max-width:52rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}
+.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;margin:0}
+h1{font-family:Fraunces,Georgia,serif;font-size:clamp(1.9rem,5.5vw,3rem);line-height:1.05;margin:.5rem 0 0;letter-spacing:-.02em}
+h2{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1rem}
+section{margin-top:2.75rem}
+p{margin:0 0 1rem}
+.lede{font-family:Fraunces,Georgia,serif;font-size:1.3rem;line-height:1.4;color:#F05D14;margin-top:1rem}
+.chips{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}
+.chip{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}
+.hero{display:block;aspect-ratio:16/9;margin-top:1.75rem;border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1)}
+.hero img{width:100%;height:100%;object-fit:cover;display:block}
+.fallback{background:radial-gradient(120% 120% at 20% 0%,hsl(var(--h) 42% 32%) 0%,transparent 62%),linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}
+.prose{white-space:pre-line;color:rgba(245,241,236,.9)}
+.figures{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))}
+.fig{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.1rem 1.15rem}
+.fignum{display:block;font-family:Fraunces,Georgia,serif;font-size:1.75rem;line-height:1.1;color:#F05D14}
+.figlab{display:block;margin-top:.35rem;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#9C938B}
+.roster{list-style:none;margin:0;padding:0;display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))}
+.roster li{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem;text-align:center}
+.avatar{display:block;width:4rem;height:4rem;margin:0 auto .65rem;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.mono{display:grid;place-items:center;width:100%;height:100%;font-family:Fraunces,Georgia,serif;font-size:1.4rem;color:rgba(245,241,236,.6)}
+.cname{margin:0;font-size:.92rem}
+.chandle{margin:.2rem 0 0;font-size:.78rem;color:#9C938B}
+.cfoll{margin:.25rem 0 0;font-size:.72rem;color:#C9C1B8}
+.gallery{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))}
+.shot{display:block;aspect-ratio:4/5;border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1)}
+.shot img{width:100%;height:100%;object-fit:cover;display:block}
+blockquote{margin:0;border-left:2px solid #F05D14;padding:.25rem 0 .25rem 1.25rem;font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.45}
+.attrib{margin:.75rem 0 0;font-size:.82rem;color:#9C938B}
+.links{display:flex;flex-wrap:wrap;gap:.75rem}
+.out{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}
+.grid{display:grid;gap:1rem}
+.card{display:block;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;text-decoration:none;color:inherit;background:rgba(255,255,255,.02)}
+.cover{display:block;aspect-ratio:16/9;background:rgba(255,255,255,.03)}
+.cover img{width:100%;height:100%;object-fit:cover;display:block}
+.ctitle{display:block;padding:1rem 1.15rem .2rem;font-family:Fraunces,Georgia,serif;font-size:1.2rem;line-height:1.2}
+.cmeta{display:block;padding:0 1.15rem 1.1rem;color:#9C938B;font-size:.82rem}
+.cres{display:block;padding:0 1.15rem .3rem;color:#F05D14;font-size:.88rem}
+.cta{margin-top:3rem;display:flex;flex-wrap:wrap;gap:.75rem}
+.btn{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}
+.primary{background:#F05D14;color:#0B0A09}
+.ghost{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}
+.none{color:#9C938B;margin:0}
+footer{margin-top:3rem;color:#7d766f;font-size:.78rem}
+a{color:inherit}
+@media(min-width:40rem){.grid{grid-template-columns:1fr 1fr}}
+"""
+
+
+def _work_head(
+    *, title: str, summary: str, url: str, og_image: str, image_size: str, ld_json: str
+) -> str:
+    """The head both pages share, so a tag added to one cannot be missing from
+    the other — which is the shape of every "the index previews fine and the
+    detail page previews as the site card" bug."""
+    e = html_escape
+    return f"""<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(summary)}">
+<meta name="theme-color" content="#0B0A09">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="{e(url)}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{e(url)}">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(summary)}">
+<meta property="og:image" content="{e(og_image)}">{image_size}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(title)}">
+<meta name="twitter:description" content="{e(summary)}">
+<meta name="twitter:image" content="{e(og_image)}">
+<script type="application/ld+json">{ld_json}</script>
+<style>{_WORK_CSS}</style>"""
+
+
+def _work_index_html(rows: list, media_base: str = "") -> str:
+    """The shelf. Takes already-projected public dicts, never raw documents."""
+    e = html_escape
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    url = f"{_share_base()}{CASE_STUDY_PATH}"
+    title = "Campaigns we ran, and what they did — WeAre Creators"
+    summary = (
+        "Real campaigns from start to finish: what the brand needed, who shot it, "
+        "and what it reached."
+    )
+
+    cards = []
+    for cs in rows:
+        hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
+        art = (
+            f'<span class="cover"><img src="{e(hero)}" alt="" loading="lazy"></span>'
+            if hero
+            else f'<span class="cover fallback" style="--h:{_cover_hue(cs.get("slug") or "")}"></span>'
+        )
+        meta = e(" · ".join(x for x in (cs.get("brand_name"), cs.get("category_label"),
+                                        cs.get("city")) if x))
+        headline = e(cs.get("headline_result") or "")
+        cards.append(
+            f'<a class="card" href="{e(_case_study_url(cs["slug"]))}">{art}'
+            f'<span class="ctitle">{e(cs.get("title") or "A campaign")}</span>'
+            + (f'<span class="cres">{headline}</span>' if headline else "")
+            + f'<span class="cmeta">{meta}</span></a>'
+        )
+    grid = (
+        f'<div class="grid">{"".join(cards)}</div>'
+        if cards
+        else '<p class="none">The first write-ups are on their way.</p>'
+    )
+
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": "Campaigns we ran",
+        "url": url,
+        "hasPart": [
+            {"@type": "Article", "headline": cs.get("title") or "",
+             "url": _case_study_url(cs["slug"])}
+            for cs in rows
+        ],
+    }
+    head = _work_head(
+        title=title,
+        summary=summary,
+        url=url,
+        og_image=f"{app_base}/og-image.png",
+        image_size='\n<meta property="og:image:width" content="1200">'
+        '\n<meta property="og:image:height" content="630">',
+        ld_json=json.dumps(ld).replace("<", "\\u003c"),
+    )
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{head}</head><body><div class="wrap">
+<p class="eyebrow">Our work</p>
+<h1>Campaigns we ran, end to end.</h1>
+<p class="lede">What the brand needed, who shot it, and what it reached.</p>
+{grid}
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a campaign</a>
+  <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
+</div>
+<footer>
+  WeAre Creators runs paid creator campaigns end to end — casting, fees, the
+  shoot and delivery. Creators appear here only where they have agreed to be
+  featured.
+</footer>
+</div></body></html>"""
+
+
+def _work_detail_html(cs: dict, media_base: str = "") -> str:
+    """One case study. Takes the `_public_case_study` dict, not the document —
+    so a field that is not on the allow-list cannot be reached from in here
+    even by accident, which is the property that makes the leak test mean
+    something."""
+    e = html_escape
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    url = _case_study_url(cs["slug"])
+    name = cs.get("title") or "A campaign"
+    summary = _case_study_summary(cs)
+    hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
+
+    chips = "".join(
+        f'<span class="chip">{e(c)}</span>'
+        for c in (cs.get("brand_name"), cs.get("category_label"), cs.get("city"))
+        if c
+    )
+    art = (
+        f'<span class="hero"><img src="{e(hero)}" alt=""></span>'
+        if hero
+        else f'<span class="hero fallback" style="--h:{_cover_hue(cs["slug"])}"></span>'
+    )
+
+    def prose(heading, body):
+        return (
+            f'<section><h2>{heading}</h2><div class="prose">{e(body)}</div></section>'
+            if body
+            else ""
+        )
+
+    results = cs.get("results") or {}
+    figures = []
+    if results.get("reach"):
+        figures.append((f"{int(results['reach']):,}", "People reached"))
+    if results.get("engagement_rate") is not None:
+        figures.append((f"{results['engagement_rate']}%", "Engagement rate"))
+    if results.get("content_pieces"):
+        figures.append((str(int(results["content_pieces"])), "Pieces of content"))
+    figures += [(m.get("value") or "", m.get("label") or "") for m in results.get("custom") or []]
+    figures_html = (
+        '<section><h2>What it did</h2><div class="figures">'
+        + "".join(
+            f'<div class="fig"><span class="fignum">{e(v)}</span>'
+            f'<span class="figlab">{e(l)}</span></div>'
+            for v, l in figures
+            if v
+        )
+        + "</div></section>"
+        if figures
+        else ""
+    )
+
+    roster = ""
+    if cs.get("creators"):
+        items = []
+        for c in cs["creators"]:
+            photo = _absolute_media_url(c.get("profile_image_url"), media_base)
+            mark = (
+                f'<span class="avatar"><img src="{e(photo)}" alt="" loading="lazy"></span>'
+                if photo
+                else f'<span class="avatar"><span class="mono">'
+                f'{e((c.get("name") or "?")[:1].upper())}</span></span>'
+            )
+            handle = (
+                f'<p class="chandle">@{e(c["instagram_handle"])}</p>'
+                if c.get("instagram_handle")
+                else ""
+            )
+            followers = (
+                f'<p class="cfoll">{int(c["follower_count"]):,} followers</p>'
+                if c.get("follower_count")
+                else ""
+            )
+            items.append(
+                f'<li>{mark}<p class="cname">{e(c.get("name") or "A creator")}</p>'
+                f"{handle}{followers}</li>"
+            )
+        roster = (
+            f'<section><h2>Who made it</h2><ul class="roster">{"".join(items)}</ul></section>'
+        )
+
+    gallery = ""
+    if cs.get("gallery"):
+        shots = "".join(
+            f'<span class="shot"><img src="{e(_absolute_media_url(g["url"], media_base))}" '
+            f'alt="{e(g.get("caption") or "")}" loading="lazy"></span>'
+            for g in cs["gallery"]
+            if g.get("url")
+        )
+        gallery = f'<section><h2>The content</h2><div class="gallery">{shots}</div></section>'
+
+    links = ""
+    if cs.get("content_links"):
+        anchors = "".join(
+            f'<a class="out" href="{e(l["url"])}" rel="nofollow noopener" target="_blank">'
+            f'{e(l.get("label") or "See the post")}</a>'
+            for l in cs["content_links"]
+            if l.get("url")
+        )
+        links = f'<section><h2>See it live</h2><div class="links">{anchors}</div></section>'
+
+    quote_html = ""
+    if cs.get("quote"):
+        q = cs["quote"]
+        who = e(q.get("attribution") or "")
+        role = f' — {e(q["role"])}' if q.get("role") else ""
+        quote_html = (
+            f'<section><blockquote>{e(q.get("text") or "")}</blockquote>'
+            f'<p class="attrib">{who}{role}</p></section>'
+        )
+
+    deliverables = cs.get("deliverables") or _deliverables_text(cs.get("deliverable_items") or [])
+
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": name,
+        "url": url,
+        **({"image": hero} if hero else {}),
+        "description": summary,
+        "publisher": {"@type": "Organization", "name": "WeAre Creators"},
+        **({"datePublished": cs["published_at"][:10]} if cs.get("published_at") else {}),
+    }
+    head = _work_head(
+        title=f"{name} — WeAre Creators",
+        summary=summary,
+        url=url,
+        og_image=hero or f"{app_base}/og-image.png",
+        # Declared dimensions only for the site card, whose size we know. A
+        # wrong one is worse than none, because some crawlers lay the card out
+        # from it — the rule `/c/{id}` already holds.
+        image_size=(
+            ""
+            if hero
+            else '\n<meta property="og:image:width" content="1200">'
+            '\n<meta property="og:image:height" content="630">'
+        ),
+        ld_json=json.dumps(ld).replace("<", "\\u003c"),
+    )
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{head}</head><body><div class="wrap">
+<p class="eyebrow"><a href="{_share_base()}{CASE_STUDY_PATH}">Our work</a></p>
+<h1>{e(name)}</h1>
+{f'<p class="lede">{e(cs["headline_result"])}</p>' if cs.get("headline_result") else ''}
+<div class="chips">{chips}</div>
+{art}
+{prose("What they needed", cs.get("challenge"))}
+{prose("What we did", cs.get("approach"))}
+{figures_html}
+{roster}
+{f'<section><h2>What was made</h2><p class="prose">{e(deliverables)}</p></section>' if deliverables else ''}
+{gallery}
+{links}
+{quote_html}
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a campaign</a>
+  <a class="btn ghost" href="{_share_base()}{CASE_STUDY_PATH}">See more of our work</a>
+</div>
+<footer>
+  We run paid creator campaigns end to end — casting, fees, the shoot and
+  delivery. Creators appear here only where they have agreed to be featured.
+</footer>
+</div></body></html>"""
+
+
+@app.get(CASE_STUDY_PATH, include_in_schema=False)
+async def public_work_index(
+    request: Request,
+    category: Optional[str] = None,
+    city: Optional[str] = None,
+    campaign_type: Optional[str] = None,
+):
+    """The shelf, readable by anybody and by a crawler that runs no JS."""
+    rows = (
+        await db.case_studies.find(_published_case_study_query(category, city, campaign_type))
+        .sort([("display_order", 1), ("published_at", -1)])
+        .to_list(length=60)
+    )
+    cards = [await _public_case_study(r, full=False) for r in rows]
+    return Response(
+        content=_work_index_html(cards, media_base=str(request.base_url)),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get(CASE_STUDY_PATH + "/{slug}", include_in_schema=False)
+async def public_work_page(slug: str, request: Request):
+    """One case study. Published only — a draft is half an approach."""
+    doc = await db.case_studies.find_one({"slug": slug, "status": "published"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That case study isn't available.")
+    return Response(
+        content=_work_detail_html(
+            await _public_case_study(doc), media_base=str(request.base_url)
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 @app.get("/sitemap.xml", include_in_schema=False)
 async def public_sitemap():
     """Every public page, so "indexable" means something.
@@ -32765,10 +34210,26 @@ async def public_sitemap():
     # stranger might search for rather than be sent. Built from
     # `MARKETING_PATHS` rather than listed here, so adding a page to the site
     # cannot quietly leave it out of the sitemap.
+    # Published case studies, and the shelf they sit on. **These are the one
+    # part of the public surface written to be *found* rather than sent** — a
+    # brand searching for the kind of campaign they want to run should reach
+    # the one we ran — so leaving them out of the sitemap would waste the only
+    # pages on this site with a search intent behind them.
+    case_studies = await db.case_studies.find(
+        {"status": "published"}, {"slug": 1, "updated_at": 1}
+    ).to_list(length=2000)
+
     urls = [(f"{_share_base()}{p}".rstrip("/") or _share_base(), None)
             for p in MARKETING_PATHS]
+    if case_studies:
+        urls.append((f"{_share_base()}{CASE_STUDY_PATH}", None))
     urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
+    urls += [
+        (_case_study_url(cs["slug"]), _iso(cs.get("updated_at")))
+        for cs in case_studies
+        if cs.get("slug")
+    ]
 
     body = "".join(
         f"<url><loc>{html_escape(loc)}</loc>"
@@ -32874,6 +34335,14 @@ async def _startup():
     )
     await db.creator_profiles.create_index(
         [("onboarding_nudge_sent_at", 1), ("created_at", 1)]
+    )
+
+    # Case studies. The public shelf reads status + the running order; the
+    # detail page and the uniqueness check both address one by slug, which is
+    # the only thing here that is an identifier.
+    await db.case_studies.create_index("slug", unique=True)
+    await db.case_studies.create_index(
+        [("status", 1), ("display_order", 1), ("published_at", -1)]
     )
 
     # Brand verification documents — read per brand, newest first.

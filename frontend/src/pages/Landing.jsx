@@ -29,6 +29,7 @@ import FloatingCards from "@/components/marketing/FloatingCards";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
 import CreatorLeaderboard from "@/components/marketing/CreatorLeaderboard";
+import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -224,6 +225,14 @@ export default function Landing() {
             <CampaignFilm title={COPY.filmTitle} />
 
             <Problem />
+
+            {/* **Three campaigns we actually ran**, which is the strongest
+                thing this operation has to say and had been on no page. The
+                film above shows how a campaign works; this shows that they
+                have. Below the fold and fetched only when it gets close, and
+                absent entirely below three — a shelf of one advertises an
+                operation that has run one campaign. */}
+            <CaseStudyStrip />
 
             {/* The creators, with their permission. Below the fold and
                 fetched only when it gets close — a marketing page must not

@@ -144,6 +144,7 @@ const DormantRoute = adminRoute("DormantRoute");
 const DisputesRoute = adminRoute("DisputesRoute");
 const CircumventionRoute = adminRoute("CircumventionRoute");
 const RetentionRoute = adminRoute("RetentionRoute");
+const CaseStudiesRoute = adminRoute("CaseStudiesRoute");
 const AdminCampaignDetail = load(() =>
     import(/* webpackChunkName: "admin" */ "@/components/admin/CampaignDetailPage"),
 );
@@ -466,6 +467,7 @@ function App() {
                             <Route path="team" element={<TeamRoute />} />
                             <Route path="deletions" element={<DeletionsRoute />} />
                             <Route path="settings" element={<SettingsRoute />} />
+                            <Route path="case-studies" element={<CaseStudiesRoute />} />
                             <Route path="dormant" element={<DormantRoute />} />
                             <Route path="disputes" element={<DisputesRoute />} />
                             <Route path="circumvention" element={<CircumventionRoute />} />

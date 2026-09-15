@@ -26,6 +26,7 @@ import {
     Inbox,
     LayoutDashboard,
     MoonStar,
+    Newspaper,
     Archive,
     Scale,
     ShieldAlert,
@@ -133,6 +134,19 @@ export const ADMIN_SECTIONS = [
         label: "Deletions",
         Icon: UserX,
         badge: "deletions_waiting",
+        adminOnly: true,
+    },
+    // **Finished work, turned into what sells the next campaign.** Not a
+    // queue and not a record: nothing arrives here to be worked, and nothing
+    // here is the system of record for anything. It is the one section whose
+    // output is read by strangers, which is also why it is admin-only —
+    // `weare_team` is scoped to brands, and what the platform says about
+    // itself in public is not a brand-scoped decision.
+    {
+        key: "case-studies",
+        to: "case-studies",
+        label: "Case studies",
+        Icon: Newspaper,
         adminOnly: true,
     },
     // Re-engagement, which is nobody's queue — it is the work that only gets

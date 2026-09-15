@@ -33,6 +33,7 @@ import {
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
+import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
@@ -171,6 +172,19 @@ export default function ForBrands() {
                 items={COPY.steps}
                 testid={IDS.steps}
             />
+
+            {/* **The evidence, directly after the claim.** The steps above
+                say what we do; this says we have done it, with a brand name
+                and a real number on each card. It sits here rather than at
+                the bottom because a brand deciding whether to read on is
+                deciding at exactly this point.
+
+                Its copy is not charged to the page's word budget, the same
+                treatment `ProofStrip` and `CreatorLeaderboard` already get:
+                what it renders is fetched rather than written, and the
+                heading that frames it belongs to the component that draws
+                every instance of it. */}
+            <CaseStudyStrip />
 
             <TextImageSection
                 eyebrow="The terms"

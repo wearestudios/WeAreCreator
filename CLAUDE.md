@@ -589,6 +589,123 @@ any scraped source.**
   a 409 whose detail is `{"code": "not_professional", ...}` so the UI can show the
   switching steps and a retry.
 
+## The work we have already done
+
+`case_studies` — a finished campaign, written up. We run campaigns end to end,
+which is the thing neither competitor does, and the only evidence of it
+anywhere was a counted figure in the proof strip. A closed campaign already
+holds nine tenths of a case study — the brand, who shot it, what they made,
+what it reached — and all of it was being thrown away at the moment it became
+most useful.
+
+**The privacy rules are the design, so they come first.** This is the only
+public page in the product that names a *person*.
+
+- **A creator appears only if they opted into public featuring, and that is
+  re-read on every request.** The roster stores **ids**; `_case_study_creator`
+  resolves them at read time and drops anybody who has since said no. A stored
+  snapshot would keep somebody on a public page until an admin remembered to
+  edit it, which is the difference between "removed immediately" and "removed
+  eventually" — the rule `_public_leaderboard` already settled.
+  `_case_study_featurable` is the reader: consent, plus the permanent
+  circumvention bar. The leaderboard's other two conditions are deliberately
+  **not** carried, for different reasons — recency would empty every
+  historical case study as it aged, which is backwards (the work happened, and
+  that it happened a year ago is the point), and a lapsed verification gates
+  *new* work, so reaching back to delete somebody from a campaign they
+  actually shot is the one thing `_creator_block` is documented never to do.
+- **`_public_case_study` is an allow-list built by naming every key**, never a
+  document with fields deleted from it — so a column added to `case_studies`
+  next month cannot reach a public page because nobody excluded it. A test
+  plants a field on the stored row and asks the projection for it.
+- **Money is absent in both directions.** A creator's fee, payout details and
+  earnings are theirs; the brand's campaign fee, commission and budget are the
+  brand's. `CASE_STUDY_FORBIDDEN_FIELDS` names all of it, and the leak test
+  plants recognisable values on the creator profile, the collaboration, the
+  campaign *and* the brand, then searches the JSON, the rendered detail page,
+  the shelf and the list endpoint — the arrangement `test_exports.py` uses.
+- **A follower count *is* here, where `_public_creator_card` omits one.** That
+  difference is real: the leaderboard is an ordering, so publishing counts
+  beside it would make it a follower-count leaderboard wearing another name. A
+  case study is a record of one campaign and the audience it reached is the
+  evidence. The provenance travels with it, as everywhere.
+
+**The vocabulary is the product's own.** The brief asked for categories
+including beauty, tech and fitness and a campaign type called delivery. A case
+study is *about a campaign*, so a filter offering one of those can never match
+anything real — and a second category list is the drift `lib/categories.js`
+exists to prevent. `CATEGORY_LITERAL` and `CampaignType` are shared, and if the
+operation starts running beauty campaigns the enum moves and this moves with it.
+
+- **`_prefill_from_campaign` is the whole feature.** A case study written from
+  scratch competes with running the next campaign, so it does not get written.
+  From a closed campaign, the mechanical nine tenths is already there and what
+  is left is what only a person can do. **The narrative fields are left empty
+  on purpose** — pre-filling the challenge from the brief would publish the
+  brand's own words back at them as our analysis. The engagement rate is the
+  aggregate (engagements over reach) rather than the mean of the per-post
+  rates, the same arithmetic and the same reason as `_rollup_performance`.
+  Only creators who already consented are carried across: an admin ticking
+  names off a list they were never allowed to use is a consent check arriving
+  too late to be one.
+- **The campaign has to be closed** (409 `campaign_not_closed`). A write-up
+  started now would quote numbers that are still moving.
+- **Images are paths we issued.** `_our_image_path` accepts only
+  `/uploads/…` with no traversal and no query string, and
+  `POST /admin/case-studies/images` is the only way to get one — the rule
+  `cover_image_url` already holds. Content links are `http(s)` only, like
+  `brand_assets`, because they render as anchors a stranger clicks.
+- **An unmeasured result is `None`, never `0`**, and a custom metric's value
+  is **text**: "340 covers", "+18% on the week", "sold out in 4 days" are what
+  a brand wants on the page, and a float loses the half that means something.
+- A pull quote with no attribution is dropped whole — an unattributed quote on
+  a marketing page is a sentence we wrote about ourselves.
+- **Publishing 409s naming what is absent**, the brand-verification shape, and
+  the button is disabled with the list on screen. Unpublishing returns it to
+  `draft` and **keeps `published_at`**; re-publishing does not move it, because
+  a correction is not a new piece of work. A published case study cannot be
+  deleted outright — the link may already be out there.
+- **Admin-only, not `CONSOLE_ROLES`** — the split `POST /admin/brands` makes. A
+  case study is a claim this operation puts on the open internet under its own
+  name, with a brand and named people on it; `weare_team` is scoped to brands,
+  and a scoped role that could publish a page naming creators outside its scope
+  is not a scope.
+
+### Where it is read
+
+**`/work` and `/work/{slug}` are server-rendered by the backend**, like
+`/c/{id}` and `/brands/{id}`, and for both of their reasons at once: these are
+links we send a brand directly on WhatsApp, so the preview *is* the pitch, and
+they are the only pages on this site written to be **found** by search rather
+than sent. The marketing pages made the opposite trade because they needed
+`<Link>` between them and their copy needed reusing in the app; neither is true
+here, because a case study links outward rather than sideways.
+
+- Everything typed is `html_escape`d, every image sits in an `aspect-ratio`
+  container, and everything below the hero is `loading="lazy"`.
+  `og:image` is the hero, absolute, and the declared `og:image:width/height`
+  are emitted **only** for the site-card fallback — a wrong one is worse than
+  none, the rule `/c/{id}` already holds.
+- **Vercel must proxy `/work` and `/work/:slug`**, and `setupProxy.js` is the
+  dev half. Five paths now; a rewrite that never reaches the backend is the
+  silent failure `/for-brands` had for months. `PREVIEW.md` is the record and
+  a test fails if the two lists drift.
+- The sitemap lists the shelf and every published case study; `robots.txt`
+  names all three kinds of public page.
+- `components/marketing/CaseStudyStrip.jsx` puts three on home and
+  `/for-brands`. Plain `<a>`, never `<Link>` — a router link to a
+  server-rendered page is swallowed by the SPA's catch-all. `WORK_PATH` in
+  `lib/siteNav.js` is the one spelling, because three things point at it.
+  Fetched only when it is nearly on screen, and **absent below three rather
+  than short**: a shelf of one advertises an operation that has run one
+  campaign. The floor lives in the component because it is a presentation
+  rule — the endpoint's job is to answer what is published.
+- `components/admin/CaseStudies.jsx` is the console. "From a campaign" is the
+  primary action and a blank draft the secondary. Preview goes through
+  `_public_case_study`, not a second rendering, or the preview can disagree
+  with the page. The roster is **read-only** on the form: a box an admin can
+  type a name into is a box that gets a name typed into it.
+
 ## The brand behind the brief
 
 A creator could see a campaign and learn nothing about who was posting it.
