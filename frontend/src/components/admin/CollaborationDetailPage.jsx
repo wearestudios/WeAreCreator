@@ -187,7 +187,7 @@ export default function CollaborationDetailPage() {
                                 data-testid={DIDS.action("advance")}
                                 disabled={busy === "advance"}
                                 onClick={advance}
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 {STATE_META[collab.next_state]?.label || "Advance"}
                             </Button>
@@ -210,7 +210,7 @@ export default function CollaborationDetailPage() {
                                     variant="outline"
                                     data-testid={DIDS.action("revert")}
                                     onClick={() => setDialog({ kind: "revert" })}
-                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                                 >
                                     Step back
                                 </Button>
@@ -283,7 +283,7 @@ export default function CollaborationDetailPage() {
 
                     <Section id="timeline" title="Lifecycle">
                         <Panel className="p-0">
-                            <ol className="divide-y divide-white/10">
+                            <ol className="divide-y divide-tint/10">
                                 {order.map((state, i) => {
                                     const done = currentIndex >= 0 && i < currentIndex;
                                     const here = state === collab.state;
@@ -299,14 +299,14 @@ export default function CollaborationDetailPage() {
                                             data-testid={IDS.step(state)}
                                             className={
                                                 "flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6 " +
-                                                (here ? "bg-ember-500/[0.07]" : "")
+                                                (here ? "bg-primary/[0.07]" : "")
                                             }
                                         >
                                             <span className="flex w-56 flex-none items-center gap-3">
                                                 {done ? (
-                                                    <Check className="h-4 w-4 flex-none text-emerald-400" />
+                                                    <Check className="h-4 w-4 flex-none text-state-approved" />
                                                 ) : here ? (
-                                                    <span className="h-2 w-2 flex-none rounded-full bg-ember-500" />
+                                                    <span className="h-2 w-2 flex-none rounded-full bg-primary" />
                                                 ) : (
                                                     <Circle className="h-3 w-3 flex-none text-muted-foreground/40" />
                                                 )}
@@ -335,9 +335,9 @@ export default function CollaborationDetailPage() {
                                 {terminal && (
                                     <li
                                         data-testid={IDS.step(collab.state)}
-                                        className="flex items-center gap-3 bg-red-500/[0.06] px-5 py-4"
+                                        className="flex items-center gap-3 bg-state-rejected/[0.06] px-5 py-4"
                                     >
-                                        <span className="h-2 w-2 flex-none rounded-full bg-red-400" />
+                                        <span className="h-2 w-2 flex-none rounded-full bg-state-rejected" />
                                         <span className="text-sm">
                                             {STATE_META[collab.state]?.label || collab.state}
                                         </span>
@@ -387,7 +387,7 @@ export default function CollaborationDetailPage() {
                                                     href={url}
                                                     target="_blank"
                                                     rel="noreferrer noopener"
-                                                    className="inline-flex items-center gap-2 break-all text-sm text-ember-500 transition-colors duration-150 hover:text-ember-400"
+                                                    className="inline-flex items-center gap-2 break-all text-sm text-primary-ink transition-colors duration-150 hover:text-primary-ink"
                                                 >
                                                     <ExternalLink className="h-3.5 w-3.5 flex-none" />
                                                     {url}
@@ -401,7 +401,7 @@ export default function CollaborationDetailPage() {
                                     </p>
                                 )}
                                 {collab.revision_note && (
-                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                                    <p className="mt-5 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
                                         Changes asked for: {collab.revision_note}
                                     </p>
                                 )}
@@ -467,7 +467,7 @@ export default function CollaborationDetailPage() {
                                             }
                                             data-testid={INVOICE.set(row.value)}
                                             onClick={() => setInvoice(payment.id, row)}
-                                            className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                                            className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
                                         >
                                             {row.label}
                                         </Button>
@@ -477,7 +477,7 @@ export default function CollaborationDetailPage() {
                                     <Button
                                         data-testid={DIDS.action("mark-paid")}
                                         onClick={() => setDialog({ kind: "mark-paid" })}
-                                        className="mt-6 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                        className="mt-6 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                                     >
                                         <IndianRupee className="mr-2 h-4 w-4" />
                                         Mark paid

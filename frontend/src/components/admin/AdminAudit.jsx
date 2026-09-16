@@ -309,7 +309,7 @@ export default function AdminAudit() {
                     data-testid={IDS.filterActor}
                     placeholder="Filter by admin name"
                     aria-label="Filter by admin"
-                    className={`h-8 w-48 border-white/10 bg-transparent ${TEXT.body}`}
+                    className={`h-8 w-48 border-tint/10 bg-transparent ${TEXT.body}`}
                 />
                 <DateFilter
                     dense
@@ -377,7 +377,7 @@ export default function AdminAudit() {
                         <PeekField label="Action">{peek.action}</PeekField>
                         <PeekField label="Change">{summarizeChange(peek)}</PeekField>
                         {peek.note ? (
-                            <p className={`mt-3 whitespace-pre-wrap rounded border border-white/10 p-3 ${TEXT.body} text-muted-foreground`}>
+                            <p className={`mt-3 whitespace-pre-wrap rounded border border-tint/10 p-3 ${TEXT.body} text-muted-foreground`}>
                                 {peek.note}
                             </p>
                         ) : null}

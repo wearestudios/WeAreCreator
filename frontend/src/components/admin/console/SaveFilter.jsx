@@ -26,7 +26,7 @@ export function SaveFilter({ onSave, disabled, savedNames = [] }) {
                 data-testid={IDS.saveFilter}
                 // A disabled control with no explanation is a support ticket.
                 title={disabled ? "Set a filter first" : "Save this filter set"}
-                className={`rounded border border-white/10 px-2 py-1 ${TEXT.meta} ${CALM} hover:bg-white/5 disabled:opacity-40 ${FOCUS}`}
+                className={`rounded border border-tint/10 px-2 py-1 ${TEXT.meta} ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
             >
                 Save filter
             </button>
@@ -50,12 +50,12 @@ export function SaveFilter({ onSave, disabled, savedNames = [] }) {
                 placeholder={savedNames.length ? "Name, or overwrite" : "Name this set"}
                 aria-label="Name this filter set"
                 data-testid={IDS.saveFilterName}
-                className={`h-8 w-44 border-white/10 bg-transparent ${TEXT.body}`}
+                className={`h-8 w-44 border-tint/10 bg-transparent ${TEXT.body}`}
             />
             <button
                 type="submit"
                 data-testid={IDS.saveFilterConfirm}
-                className={`rounded border border-ember-500/40 bg-ember-500/10 px-2 py-1 ${TEXT.meta} text-ember-500 ${CALM} hover:bg-ember-500/20 ${FOCUS}`}
+                className={`rounded border border-primary/40 bg-primary/10 px-2 py-1 ${TEXT.meta} text-primary-ink ${CALM} hover:bg-primary/20 ${FOCUS}`}
             >
                 Save
             </button>
@@ -63,7 +63,7 @@ export function SaveFilter({ onSave, disabled, savedNames = [] }) {
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Cancel"
-                className={`grid h-7 w-7 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 ${FOCUS}`}
+                className={`grid h-7 w-7 place-items-center rounded ${CALM} text-muted-foreground hover:bg-tint/5 ${FOCUS}`}
             >
                 <X className="h-3.5 w-3.5" />
             </button>

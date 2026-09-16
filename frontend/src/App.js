@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import RouteFade from "@/components/motion/RouteFade";
+import { clearTheme, isConsolePath } from "@/lib/consoleTheme";
 import RouteFallback from "@/components/RouteFallback";
 import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
@@ -184,6 +185,30 @@ function RouteBoundary({ children }) {
     );
 }
 
+/**
+ * `data-theme` exists only on console routes. This is what makes that true.
+ *
+ * `AdminConsole` applies the theme on mount and clears it on unmount, which
+ * covers every ordinary navigation. It does not cover the case the pre-paint
+ * script creates: a hard load of `/admin` writes the attribute *before React
+ * runs*, and if that person is not signed in they are redirected to
+ * `/admin/login` — the console never mounts, nothing ever clears it, and the
+ * attribute is left on a page that is not the console. Found in a browser:
+ * the landing page rendered in the light theme.
+ *
+ * So the invariant is maintained by the one thing that sees every route
+ * change, rather than by the component that happens to want it. Clearing a
+ * theme that is already absent costs nothing, so this does nothing at all on
+ * the overwhelming majority of navigations.
+ */
+function ConsoleThemeGuard() {
+    const { pathname } = useLocation();
+    React.useEffect(() => {
+        if (!isConsolePath(pathname)) clearTheme();
+    }, [pathname]);
+    return null;
+}
+
 function App() {
     return (
         <div className="App">
@@ -229,6 +254,9 @@ function App() {
                         marketing paths, which stagger every section in on
                         scroll already — two motion layers on one page is the
                         same pixels animated twice at two durations. */}
+                    {/* Takes `data-theme` off anything that is not the
+                        console — see the component. */}
+                    <ConsoleThemeGuard />
                     <RouteFade>
                     <Routes>
                         <Route path="/" element={<Landing />} />
@@ -501,8 +529,8 @@ function App() {
                     toastOptions={{
                         classNames: {
                             toast:
-                                "group rounded-lg border border-white/10 bg-background/95 " +
-                                "text-foreground shadow-xl shadow-black/50 backdrop-blur-xl grain-surface",
+                                "group rounded-lg border border-tint/10 bg-background/95 " +
+                                "text-foreground shadow-xl shadow-scrim/50 backdrop-blur-xl grain-surface",
                             title: "text-sm leading-snug",
                             description: "text-xs text-muted-foreground",
                             // Success and failure must be distinguishable
@@ -513,9 +541,9 @@ function App() {
                             info: "border-l-2 border-l-sky-400",
                             warning: "border-l-2 border-l-amber-400",
                             actionButton:
-                                "rounded-full bg-ember-500 px-3 text-black hover:bg-ember-400",
+                                "rounded-full bg-primary px-3 text-primary-foreground hover:bg-primary-hover",
                             closeButton:
-                                "border-white/15 bg-card text-muted-foreground hover:text-foreground",
+                                "border-tint/15 bg-card text-muted-foreground hover:text-foreground",
                         },
                     }}
                 />

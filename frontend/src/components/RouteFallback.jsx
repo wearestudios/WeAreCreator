@@ -30,7 +30,7 @@ export default function RouteFallback() {
             {/* The bar every surface has, at the height the shared navbar and
                 the marketing one both use (`h-16`), so the content below it
                 starts where it is going to start. */}
-            <div className="h-16 border-b border-white/10" aria-hidden="true" />
+            <div className="h-16 border-b border-tint/10" aria-hidden="true" />
             <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
                 {/* `aria-hidden` on the shapes and one polite announcement
                     that is not, so a screen reader hears "loading" rather than

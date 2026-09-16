@@ -525,7 +525,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             a brand. It belongs on the row, not in a panel
                             somebody has to open to find out. */}
                         {i.note && (
-                            <span className={`truncate ${TEXT.meta} text-ember-500`}>{i.note}</span>
+                            <span className={`truncate ${TEXT.meta} text-primary-ink`}>{i.note}</span>
                         )}
                     </span>
                 ),
@@ -605,7 +605,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             <Link
                                 to={i.link}
                                 data-testid={IDS.row(i.id) + "-answer"}
-                                className={`inline-flex items-center gap-1 whitespace-nowrap rounded border border-ember-500/40 bg-ember-500/10 px-2 py-0.5 ${TEXT.meta} text-ember-500 ${CALM} hover:bg-ember-500/20 ${FOCUS}`}
+                                className={`inline-flex items-center gap-1 whitespace-nowrap rounded border border-primary/40 bg-primary/10 px-2 py-0.5 ${TEXT.meta} text-primary-ink ${CALM} hover:bg-primary/20 ${FOCUS}`}
                             >
                                 Answer
                                 <ArrowRight className="h-3 w-3" />
@@ -763,7 +763,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                         onClick={() => setShowWaiting((v) => !v)}
                         aria-expanded={showWaiting}
                         data-testid={IDS.showWaiting}
-                        className={`${TEXT.meta} ${CALM} text-muted-foreground hover:text-ember-500 ${FOCUS}`}
+                        className={`${TEXT.meta} ${CALM} text-muted-foreground hover:text-primary-ink ${FOCUS}`}
                     >
                         {showWaiting ? "Hide" : "Show"} {waiting.length} in flight, waiting on
                         somebody else
@@ -772,7 +772,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     {showWaiting && (
                         <ul
                             data-testid={IDS.waitingList}
-                            className={`mt-2 divide-y divide-white/5 ${PANEL}`}
+                            className={`mt-2 divide-y divide-tint/5 ${PANEL}`}
                         >
                             {waiting.map((row) => (
                                 <li
@@ -865,7 +865,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                         </PeekField>
                         <PeekField label="Detail">{peek.secondary}</PeekField>
                         {peek.note && (
-                            <p className={`mt-3 rounded border border-ember-500/25 bg-ember-500/5 p-3 ${TEXT.body} text-ember-500`}>
+                            <p className={`mt-3 rounded border border-primary/25 bg-primary/5 p-3 ${TEXT.body} text-primary-ink`}>
                                 {peek.note}
                             </p>
                         )}
@@ -937,8 +937,8 @@ function KindChip({ on, onClick, testid, Icon, label }) {
             className={
                 `inline-flex h-7 items-center gap-1.5 rounded border px-2 ${TEXT.meta} ${CALM} ${FOCUS} ` +
                 (on
-                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                    : "border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground")
+                    ? "border-primary bg-primary/10 text-primary-ink"
+                    : "border-tint/10 text-muted-foreground hover:border-tint/25 hover:text-foreground")
             }
         >
             {Icon && <Icon className="h-3.5 w-3.5" />}

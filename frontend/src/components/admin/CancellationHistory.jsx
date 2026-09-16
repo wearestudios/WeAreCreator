@@ -82,7 +82,7 @@ export default function CancellationHistory({ rows, showCreator = false }) {
                         {r.kill_fee != null && (
                             <p
                                 data-testid={IDS.fee(r.collaboration_id)}
-                                className={`mt-2 inline-flex rounded border border-ember-500/30 bg-ember-500/10 px-2 py-0.5 ${TEXT.meta} text-ember-500`}
+                                className={`mt-2 inline-flex rounded border border-primary/30 bg-primary/10 px-2 py-0.5 ${TEXT.meta} text-primary-ink`}
                             >
                                 ₹{Number(r.kill_fee).toLocaleString("en-IN")} cancellation fee
                             </p>

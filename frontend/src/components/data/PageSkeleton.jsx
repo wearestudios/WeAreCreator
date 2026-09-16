@@ -94,7 +94,7 @@ export function FormPageSkeleton({
                 {sections.map((s, i) => (
                     <FormSectionSkeleton key={i} {...s} />
                 ))}
-                <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col-reverse items-stretch gap-3 border-t border-tint/10 pt-8 md:flex-row md:items-center md:justify-between">
                     <Skeleton className="h-5 w-full max-w-xs" />
                     <div className="flex flex-col-reverse gap-3 md:flex-row">
                         {Array.from({ length: actions }).map((_, i) => (
@@ -155,7 +155,7 @@ export function DetailPageSkeleton({ testid, cover = false }) {
                             <Skeleton className="h-4 w-4/5" />
                         </div>
                     </section>
-                    <section className="mt-12 rounded-md border border-white/10 bg-card p-8 grain-surface">
+                    <section className="mt-12 rounded-md border border-tint/10 bg-card p-8 grain-surface">
                         <Skeleton className="h-3 w-28" />
                         <Skeleton className="mt-4 h-7 w-3/4" />
                     </section>
@@ -163,11 +163,11 @@ export function DetailPageSkeleton({ testid, cover = false }) {
 
                 <aside className="md:col-span-4">
                     <div className="space-y-4">
-                        <div className="rounded-md border border-white/10 bg-card p-7 grain-surface">
+                        <div className="rounded-md border border-tint/10 bg-card p-7 grain-surface">
                             <Skeleton className="h-3 w-32" />
                             <Skeleton className="mt-2 h-10 w-40" />
                             <Skeleton className="mt-2 h-3 w-full" />
-                            <div className="mt-7 space-y-4 border-t border-white/10 pt-6">
+                            <div className="mt-7 space-y-4 border-t border-tint/10 pt-6">
                                 {Array.from({ length: 3 }).map((_, i) => (
                                     <div key={i} className="flex items-start gap-3">
                                         <Skeleton className="mt-0.5 h-4 w-4 flex-none rounded" />

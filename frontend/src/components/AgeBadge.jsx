@@ -28,19 +28,19 @@ import { AlertTriangle, Clock } from "lucide-react";
  */
 const TONES = {
     calm: {
-        wrap: "border-white/10 text-muted-foreground",
+        wrap: "border-tint/10 text-muted-foreground",
         Icon: Clock,
     },
     due: {
-        wrap: "border-white/15 text-foreground/80",
+        wrap: "border-tint/15 text-foreground/80",
         Icon: Clock,
     },
     overdue: {
-        wrap: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+        wrap: "border-state-pending/30 bg-state-pending/10 text-state-pending",
         Icon: AlertTriangle,
     },
     critical: {
-        wrap: "border-rose-400/40 bg-rose-400/10 text-rose-200",
+        wrap: "border-state-rejected/40 bg-state-rejected/10 text-state-rejected",
         Icon: AlertTriangle,
     },
 };

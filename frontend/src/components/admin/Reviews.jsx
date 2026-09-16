@@ -147,7 +147,7 @@ function ReviewQueue({ config, onChanged }) {
                                       else next.delete(id);
                                       setSelected(next);
                                   }}
-                                  className="h-4 w-4 accent-[#F05D14]"
+                                  className="h-4 w-4 accent-primary"
                               />
                           );
                       },
@@ -173,7 +173,7 @@ function ReviewQueue({ config, onChanged }) {
                             to={config.href(r)}
                             onClick={(e) => e.stopPropagation()}
                             data-testid={IDS.open(config.idOf(r))}
-                            className="truncate transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                            className="truncate transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                             {config.primary(r)}
                         </Link>
@@ -321,7 +321,7 @@ function ReviewQueue({ config, onChanged }) {
             {config.note && raw && count > 0 && (
                 <p
                     data-testid={IDS.blockedNote}
-                    className={`mb-3 rounded border border-ember-500/30 bg-ember-500/10 px-3 py-2 ${TEXT.body} text-ember-500`}
+                    className={`mb-3 rounded border border-primary/30 bg-primary/10 px-3 py-2 ${TEXT.body} text-primary-ink`}
                 >
                     {config.note}
                 </p>
@@ -333,16 +333,16 @@ function ReviewQueue({ config, onChanged }) {
             {config.bulkKind && selected.size > 0 && (
                 <div
                     data-testid={BULK.bar}
-                    className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-ember-500/30 bg-ember-500/10 px-3 py-2"
+                    className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2"
                 >
-                    <span className={`${TEXT.body} text-ember-500`}>
+                    <span className={`${TEXT.body} text-primary-ink`}>
                         {selected.size} selected
                     </span>
                     <Button
                         size="sm"
                         onClick={() => setBulk("approve")}
                         data-testid={BULK.approve}
-                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                     >
                         {config.approveLabel} all
                     </Button>
@@ -560,7 +560,7 @@ export function CreatorReviews({ onChanged }) {
                                 {r.niches.map((n) => (
                                     <span
                                         key={n}
-                                        className="rounded-full bg-ember-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-ember-500"
+                                        className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-primary-ink"
                                     >
                                         {n}
                                     </span>
@@ -579,7 +579,7 @@ export function CreatorReviews({ onChanged }) {
                                 target="_blank"
                                 rel="noreferrer"
                                 data-testid={IDS.instagram(r.user_id)}
-                                className="inline-flex h-11 items-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500"
+                                className="inline-flex h-11 items-center gap-2 rounded-md border border-tint/15 px-4 text-sm transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink"
                             >
                                 <Instagram className="h-4 w-4" />
                                 Open @{r.instagram_handle}
@@ -647,7 +647,7 @@ export function CampaignReviews({ onChanged }) {
                         {/* A brand that lost its verification while the brief
                             sat here can't have it approved — say so up front. */}
                         {!r.brand_verified && (
-                            <p className="rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-3 text-sm leading-relaxed text-ember-500">
+                            <p className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary-ink">
                                 {r.brand_name || "This brand"} isn't verified. Approve them
                                 in Brand reviews first — this brief can't go live until
                                 they are.
@@ -655,7 +655,7 @@ export function CampaignReviews({ onChanged }) {
                         )}
 
                         {r.previous_review_reason && (
-                            <p className="rounded-md border border-white/10 bg-background/60 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                            <p className="rounded-md border border-tint/10 bg-background/60 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
                                 Last time we sent this back: “{r.previous_review_reason}”
                             </p>
                         )}
@@ -760,7 +760,7 @@ export function BrandReviews({ onChanged }) {
                         .filter(Boolean)
                         .join(" · "),
                 renderAvatar: () => (
-                    <span className="grid h-6 w-6 flex-none place-items-center rounded border border-white/10 bg-ember-500/10 text-ember-500">
+                    <span className="grid h-6 w-6 flex-none place-items-center rounded border border-tint/10 bg-primary/10 text-primary-ink">
                         <Building2 className="h-3.5 w-3.5" />
                     </span>
                 ),
@@ -794,7 +794,7 @@ export function BrandReviews({ onChanged }) {
                         {/* Briefs stacked up behind this decision make it urgent
                             in a way the signup date alone doesn't show. */}
                         {r.campaigns_awaiting_review > 0 && (
-                            <p className="inline-flex items-center gap-2 rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-2.5 text-sm text-ember-500">
+                            <p className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm text-primary-ink">
                                 <Sparkles className="h-3.5 w-3.5" />
                                 {r.campaigns_awaiting_review} brief
                                 {r.campaigns_awaiting_review === 1 ? "" : "s"} queued behind

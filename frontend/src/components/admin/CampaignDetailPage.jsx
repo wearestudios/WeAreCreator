@@ -307,7 +307,7 @@ export default function CampaignDetailPage() {
                                             "Campaign is live",
                                         )
                                     }
-                                    className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                    className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                                 >
                                     Approve
                                 </Button>
@@ -315,7 +315,7 @@ export default function CampaignDetailPage() {
                                     variant="outline"
                                     data-testid={DIDS.action("reject")}
                                     onClick={() => setDialog({ kind: "reject" })}
-                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                                 >
                                     Send back
                                 </Button>
@@ -326,7 +326,7 @@ export default function CampaignDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("pause")}
                                 onClick={() => setDialog({ kind: "pause" })}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 <Pause className="mr-2 h-4 w-4" />
                                 Pause
@@ -343,7 +343,7 @@ export default function CampaignDetailPage() {
                                         "Back on the feed",
                                     )
                                 }
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 <Play className="mr-2 h-4 w-4" />
                                 Resume
@@ -354,7 +354,7 @@ export default function CampaignDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("invite")}
                                 onClick={() => setDialog({ kind: "invite" })}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 <Send className="mr-2 h-4 w-4" />
                                 Invite
@@ -364,7 +364,7 @@ export default function CampaignDetailPage() {
                             variant="outline"
                             data-testid={DIDS.action("edit")}
                             onClick={() => setDialog({ kind: "edit" })}
-                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                         >
                             Edit
                         </Button>
@@ -432,7 +432,7 @@ export default function CampaignDetailPage() {
                                         className="mt-1.5"
                                     />
                                 </div>
-                                <dl className="grid gap-5 border-t border-white/10 pt-6 sm:grid-cols-3">
+                                <dl className="grid gap-5 border-t border-tint/10 pt-6 sm:grid-cols-3">
                                     <Field label="Category">{campaign.category}</Field>
                                     <Field label="Type">
                                         {(campaign.campaign_type || "—").replace(/_/g, " ")}
@@ -460,12 +460,12 @@ export default function CampaignDetailPage() {
                                     </Field>
                                 </dl>
                                 {campaign.review_reason && (
-                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                                    <p className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
                                         Sent back: {campaign.review_reason}
                                     </p>
                                 )}
                                 {campaign.pause_reason && (
-                                    <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                                    <p className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
                                         Paused: {campaign.pause_reason}
                                     </p>
                                 )}
@@ -507,7 +507,7 @@ export default function CampaignDetailPage() {
                                     <Link
                                         to={`/admin/brands/${detail.brand.user_id}`}
                                         data-testid={IDS.brandLink}
-                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-150 hover:text-ember-500"
+                                        className="flex items-center gap-3 font-serif text-xl transition-colors duration-150 hover:text-primary-ink"
                                     >
                                         <BrandAvatar brand={detail.brand} />
                                         {detail.brand.business_name || "Unknown brand"}
@@ -543,7 +543,7 @@ export default function CampaignDetailPage() {
                                             loadManagers();
                                             setDialog({ kind: "reassign" });
                                         }}
-                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
+                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                                     >
                                         <UserCog className="h-3.5 w-3.5" />
                                         Reassign
@@ -609,13 +609,13 @@ export default function CampaignDetailPage() {
                         {detail.slots.length === 0 ? (
                             <p
                                 data-testid={IDS.slotsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 No slots yet. The campaign manager sets these once the brief is
                                 approved — until then nobody can book a time.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                 {detail.slots.map((s) => (
                                     <li
                                         key={s.id}
@@ -642,7 +642,7 @@ export default function CampaignDetailPage() {
                                                         data-testid={IDS.slotBooking(
                                                             b.collaboration_id,
                                                         )}
-                                                        className="rounded-full border border-white/10 px-2.5 py-1 text-sm transition-colors duration-150 hover:border-ember-500 hover:text-ember-500"
+                                                        className="rounded-full border border-tint/10 px-2.5 py-1 text-sm transition-colors duration-150 hover:border-primary hover:text-primary-ink"
                                                     >
                                                         {b.creator_name || "Creator"}
                                                     </Link>
@@ -674,7 +674,7 @@ export default function CampaignDetailPage() {
                         {!groups ? null : groups.every((g) => g.rows.length === 0) ? (
                             <p
                                 data-testid={IDS.applicantsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 Nobody has applied yet. Invite creators, or wait — a brief
                                 usually takes a day or two to gather applications.
@@ -690,11 +690,11 @@ export default function CampaignDetailPage() {
                                         >
                                             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                                 {g.label}
-                                                <span className="ml-2 text-ember-500">
+                                                <span className="ml-2 text-primary-ink">
                                                     {g.rows.length}
                                                 </span>
                                             </p>
-                                            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                                            <ul className="mt-3 divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                                 {g.rows.map((a) => (
                                                     <li
                                                         key={
@@ -735,7 +735,7 @@ export default function CampaignDetailPage() {
                                                                 <StatePill state={a.state} />
                                                                 <Link
                                                                     to={`/admin/applications/${a.collaboration_id}`}
-                                                                    className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
+                                                                    className="flex-none text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                                                                 >
                                                                     Open
                                                                 </Link>
@@ -792,13 +792,13 @@ export default function CampaignDetailPage() {
                         {detail.payments.length === 0 ? (
                             <p
                                 data-testid={IDS.paymentsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 No payments yet. One is raised when a collaboration reaches
                                 payment.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                 {detail.payments.map((p) => (
                                     <li
                                         key={p.id}
@@ -960,10 +960,10 @@ function ReassignManagerDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={DIDS.action("reassign-dialog")}
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-tint/10 bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                         Reassign
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -987,11 +987,11 @@ function ReassignManagerDialog({
                         <SelectTrigger
                             data-testid={DIDS.action("reassign-picker")}
                             aria-label="Campaign manager"
-                            className="h-11 rounded-md border-white/10 bg-background/60"
+                            className="h-11 rounded-md border-tint/10 bg-background/60"
                         >
                             <SelectValue placeholder="Pick a manager" />
                         </SelectTrigger>
-                        <SelectContent className="rounded-md border-white/10 bg-card">
+                        <SelectContent className="rounded-md border-tint/10 bg-card">
                             {managers.map((m) => (
                                 <SelectItem key={m.user_id} value={m.user_id}>
                                     {m.name}
@@ -1011,7 +1011,7 @@ function ReassignManagerDialog({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 Back
                             </Button>
@@ -1020,7 +1020,7 @@ function ReassignManagerDialog({
                             type="submit"
                             disabled={submitting || !picked || picked === currentId}
                             data-testid={DIDS.action("reassign-submit")}
-                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {submitting ? "Reassigning…" : "Reassign"}
                         </Button>

@@ -152,7 +152,7 @@ export default function SlaSettings() {
                                         setForm((f) => ({ ...f, [key]: e.target.value }))
                                     }
                                     data-testid={IDS.input(key)}
-                                    className="h-9 w-24 border-white/10 bg-background/60 text-right tabular-nums"
+                                    className="h-9 w-24 border-tint/10 bg-background/60 text-right tabular-nums"
                                 />
                                 <span className={`${TEXT.meta} w-20 text-muted-foreground`}>
                                     hrs · {inWords(Number(form[key]))}
@@ -168,10 +168,10 @@ export default function SlaSettings() {
                                     }
                                     data-testid={IDS.reset(key)}
                                     title={`Back to the default, ${inWords(defaults[key])}`}
-                                    className={`rounded border border-white/10 p-1.5 ${CALM} ${
+                                    className={`rounded border border-tint/10 p-1.5 ${CALM} ${
                                         isDefault
                                             ? "opacity-30"
-                                            : "text-muted-foreground hover:border-ember-500/40 hover:text-ember-500"
+                                            : "text-muted-foreground hover:border-primary/40 hover:text-primary-ink"
                                     }`}
                                 >
                                     <RotateCcw className="h-3.5 w-3.5" />
@@ -188,7 +188,7 @@ export default function SlaSettings() {
                     onClick={save}
                     disabled={busy || changed.length === 0}
                     data-testid={IDS.save}
-                    className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600"
+                    className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover"
                 >
                     {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {changed.length === 0

@@ -6032,6 +6032,58 @@ async def logout(response: Response, user: dict = Depends(get_current_user)):
     return {"success": True}
 
 
+# The two the console can be in. A third value is not a theme, and an
+# unrecognised stored one reads as "never chosen" rather than travelling to a
+# client that would then write it onto `<html>`.
+CONSOLE_THEMES = ("dark", "light")
+
+
+def _console_theme(user: Optional[dict]) -> Optional[str]:
+    """The admin's stored console theme, or None if they have never chosen.
+
+    **None is a real answer and not a default.** It is the difference between
+    "follow this machine's operating system" and "they picked dark" — and only
+    the first should change when somebody switches their OS to light.
+    """
+    value = (user or {}).get("console_theme")
+    return value if value in CONSOLE_THEMES else None
+
+
+class ConsoleThemePayload(BaseModel):
+    """`null` clears the choice and hands the reader back to their OS.
+
+    That is worth being able to do: somebody who tried light and wants to stop
+    thinking about it should be able to say "whatever this machine says"
+    rather than having to pick the one that happens to match today.
+    """
+
+    theme: Optional[Literal["dark", "light"]] = None
+
+
+@auth_router.put("/me/console-theme")
+async def set_console_theme(
+    payload: ConsoleThemePayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Remember how this admin wants the console to look.
+
+    **On the auth router and guarded by `CONSOLE_ROLES`**, not on the admin
+    router: it is a fact about the person rather than about the platform, it
+    is written by the account menu rather than by any console screen, and
+    `weare_team` reads the same console and sits in front of it just as long.
+
+    Deliberately **not audited.** The log answers "what was decided about this
+    record"; somebody's own reading preference is neither a decision about
+    anybody nor something anyone will ask about later, and a line per toggle
+    is noise in the one place people go looking for who did what.
+    """
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"console_theme": payload.theme, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"console_theme": payload.theme}
+
+
 @auth_router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
     imp = user.get("_impersonation")
@@ -6043,6 +6095,13 @@ async def me(user: dict = Depends(get_current_user)):
         "phone": user.get("phone"),
         "status": user.get("status"),
         "created_at": _iso(user.get("created_at")),
+        # **The console's theme, against the account rather than the browser.**
+        # `localStorage` would mean an admin who works from a laptop and a
+        # desk machine sets it twice and loses it on a new browser; a
+        # preference about how somebody reads for hours is theirs, not their
+        # device's. `None` means they have never chosen, which is what tells
+        # the client to follow the operating system rather than guess.
+        "console_theme": _console_theme(user),
         # Present only during a view-as session. The frontend draws its banner
         # off this rather than off anything it stored when it started, so a
         # session resumed in a second tab — or one that expired while the tab

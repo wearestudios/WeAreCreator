@@ -56,7 +56,49 @@
             content="Verified Bengaluru creators, paid briefs from cafés, restaurants, hotels, retail and fashion brands. Brief to booking to payment, in one place."
         />
         <meta name="twitter:image" content="%PUBLIC_URL%/og-image.png" />
-    </head>
+    <!--
+      Theme, before first paint.
+
+      React cannot do this: the bundle has to download, parse and mount before
+      it can set an attribute, and on the mid-range Android and Indian mobile
+      data this product is built for that is a real interval spent looking at
+      a full-screen dark page that is about to become light. A flash of the
+      wrong theme is worse than no theme.
+
+      **Only on /admin**, which is the whole of the scoping. The marketing
+      site, the creator app, the brand app and the manager screens never get
+      the attribute and so cannot be affected by what it means.
+
+      Kept deliberately small and dependency-free, because it is inline and
+      blocking. The precedence it implements is the same one `resolveTheme`
+      in lib/consoleTheme.js implements — explicit choice, then this browser's
+      cache of one, then the operating system — and a test pins that the two
+      agree.
+    -->
+    <script>
+      (function () {
+        try {
+          if (location.pathname.indexOf("/admin") !== 0) return;
+          var stored = null;
+          try { stored = localStorage.getItem("weare:console-theme"); } catch (e) {}
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          if (theme === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+            document.documentElement.style.colorScheme = "light";
+          }
+        } catch (e) {
+          /* Dark is the absence of the attribute, so a throw here lands on
+             the theme the console has always had rather than on nothing. */
+        }
+      })();
+    </script>
+  </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="root"></div>

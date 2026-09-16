@@ -59,7 +59,7 @@ export default function AdminDormant() {
                 <Link
                     to={r.href}
                     data-testid={IDS.row(r.id)}
-                    className="truncate hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                    className="truncate hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     {r.name}
                 </Link>
@@ -100,7 +100,7 @@ export default function AdminDormant() {
             value: (r) => (r.never_active ? Number.MAX_SAFE_INTEGER : r.days_quiet ?? 0),
             cell: (r) =>
                 r.never_active ? (
-                    <span className="text-amber-300">Never</span>
+                    <span className="text-state-pending">Never</span>
                 ) : (
                     <span className="tabular-nums">{r.days_quiet}d</span>
                 ),
@@ -137,8 +137,8 @@ export default function AdminDormant() {
                         className={
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (kind === k.value
-                                ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
-                                : "border-white/10 text-muted-foreground hover:text-foreground")
+                                ? "border-primary/40 bg-primary/10 text-primary-ink"
+                                : "border-tint/10 text-muted-foreground hover:text-foreground")
                         }
                     >
                         {k.label}

@@ -135,8 +135,8 @@ export default function ImageUploadField({
 
     const frame =
         shape === "square"
-            ? "media-frame grid aspect-square h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-white/10"
-            : "media-frame relative w-full overflow-hidden rounded-lg border border-white/10 aspect-[16/9] sm:max-w-sm";
+            ? "media-frame grid aspect-square h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-tint/10"
+            : "media-frame relative w-full overflow-hidden rounded-lg border border-tint/10 aspect-[16/9] sm:max-w-sm";
 
     return (
         <div className={shape === "square" ? "flex flex-wrap items-center gap-5" : ""}>
@@ -186,7 +186,7 @@ export default function ImageUploadField({
                         disabled={disabled || busy}
                         data-testid={testids.choose}
                         onClick={() => inputRef.current?.click()}
-                        className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                        className="h-11 rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                     >
                         {busy ? (
                             <>
@@ -206,7 +206,7 @@ export default function ImageUploadField({
                             disabled={disabled || busy}
                             onClick={remove}
                             data-testid={testids.remove}
-                            className="min-h-[2.75rem] px-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-red-300 disabled:opacity-40"
+                            className="min-h-[2.75rem] px-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                         >
                             Remove
                         </button>
@@ -220,7 +220,7 @@ export default function ImageUploadField({
                     <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
                 )}
                 {error && (
-                    <p data-testid={testids.error} className="mt-2 text-xs text-red-300">
+                    <p data-testid={testids.error} className="mt-2 text-xs text-state-rejected">
                         {error}
                     </p>
                 )}

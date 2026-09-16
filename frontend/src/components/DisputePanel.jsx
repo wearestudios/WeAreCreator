@@ -115,7 +115,7 @@ export default function DisputePanel({
             className={`rounded-md border p-4 ${
                 open
                     ? "border-destructive/40 bg-destructive/10"
-                    : "border-white/10 bg-card"
+                    : "border-tint/10 bg-card"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -146,7 +146,7 @@ export default function DisputePanel({
                     <p className="whitespace-pre-wrap">{dispute.reason}</p>
 
                     {dispute.state === "resolved" && (
-                        <div className="rounded border border-white/10 bg-background/40 p-3">
+                        <div className="rounded border border-tint/10 bg-background/40 p-3">
                             <p className="text-sm">
                                 {dispute.resolution_label || dispute.resolution}
                                 {typeof dispute.resolution_amount === "number"
@@ -203,7 +203,7 @@ export default function DisputePanel({
                         onClick={withdraw}
                         disabled={busy}
                         data-testid={IDS.withdraw}
-                        className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                        className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
                     >
                         {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                         Take it back
@@ -214,7 +214,7 @@ export default function DisputePanel({
                         size="sm"
                         onClick={() => setResolving(true)}
                         data-testid={IDS.resolve}
-                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                     >
                         Decide it
                     </Button>
@@ -230,7 +230,7 @@ export default function DisputePanel({
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="What happened, and what you think should happen about it."
                         data-testid={IDS.reason}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
                     />
                     <p className="text-xs text-muted-foreground">
                         This freezes the collaboration and any payment on it until
@@ -242,7 +242,7 @@ export default function DisputePanel({
                             onClick={raise}
                             disabled={busy || reason.trim().length < 10}
                             data-testid={IDS.submit}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             Raise it
@@ -268,10 +268,10 @@ export default function DisputePanel({
                                 type="button"
                                 onClick={() => setResolution(r.key)}
                                 data-testid={IDS.resolution(r.key)}
-                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 ${
+                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                     resolution === r.key
-                                        ? "border-ember-500 bg-ember-500/10 text-foreground"
-                                        : "border-white/10 text-muted-foreground hover:border-white/20"
+                                        ? "border-primary bg-primary/10 text-foreground"
+                                        : "border-tint/10 text-muted-foreground hover:border-tint/20"
                                 }`}
                             >
                                 {r.label}
@@ -290,7 +290,7 @@ export default function DisputePanel({
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder="How much goes to the creator"
                             data-testid={IDS.resolveAmount}
-                            className="h-11 border-white/10 bg-background/60 text-base tabular-nums"
+                            className="h-11 border-tint/10 bg-background/60 text-base tabular-nums"
                         />
                     )}
 
@@ -301,7 +301,7 @@ export default function DisputePanel({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="Why this is the right outcome. Both sides read it."
                         data-testid={IDS.resolveNote}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
                     />
 
                     <div className="flex flex-wrap gap-2">
@@ -314,7 +314,7 @@ export default function DisputePanel({
                                 (resolution === "partial_release" && amount === "")
                             }
                             data-testid={IDS.resolveSubmit}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             Record the decision

@@ -29,6 +29,12 @@ import { Keyboard, Menu } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
 import { consoleLabel, isAllAccess } from "@/lib/consoleScope";
+import {
+    applyTheme,
+    clearTheme,
+    rememberTheme,
+    resolveTheme,
+} from "@/lib/consoleTheme";
 import BrandFilter from "@/components/admin/console/BrandFilter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
@@ -79,6 +85,37 @@ export default function AdminConsole() {
     // The sections, on a screen too narrow for a rail.
     const [showNav, setShowNav] = useState(false);
     const { pathname } = useLocation();
+
+    // **The theme is applied here and cleared on the way out, and that is the
+    // whole of the scoping.** `data-theme` has to sit on `<html>` rather than
+    // on a wrapper, because Radix portals every dialog, sheet, popover, the
+    // command palette and every toast into `document.body` — a wrapper-scoped
+    // theme would leave all of them dark on a light console. Setting it only
+    // while this layout is mounted is what keeps the marketing site, the
+    // creator app, the brand app and the manager screens exactly as they were.
+    //
+    // The pre-paint script in `public/index.html` has already done this on a
+    // hard load; this is what handles a *soft* navigation into the console,
+    // and what carries the account's choice once `/auth/me` has answered.
+    const accountTheme = user?.console_theme ?? null;
+    useEffect(() => {
+        applyTheme(resolveTheme(accountTheme));
+        rememberTheme(accountTheme);
+        return clearTheme;
+    }, [accountTheme]);
+
+    // Somebody on "System" who switches their machine at dusk should see the
+    // console follow. Only while they have made no explicit choice: an admin
+    // who picked dark did so on purpose, and having it flip under them at
+    // sunset would be the preference not being honoured.
+    useEffect(() => {
+        if (accountTheme) return;
+        const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+        if (!mq?.addEventListener) return;
+        const onChange = () => applyTheme(resolveTheme(null));
+        mq.addEventListener("change", onChange);
+        return () => mq.removeEventListener("change", onChange);
+    }, [accountTheme]);
 
     // One dashboard call feeds every badge, refreshed after any action so a
     // badge always matches what is actually left in its section.

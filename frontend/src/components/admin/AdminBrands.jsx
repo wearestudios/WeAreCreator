@@ -174,7 +174,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                             to={`/admin/brands/${b.user_id}`}
                             onClick={(e) => e.stopPropagation()}
                             data-testid={IDS.open(b.user_id)}
-                            className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                            className={`truncate ${CALM} hover:text-primary-ink ${FOCUS}`}
                         >
                             {b.business_name || "Unnamed brand"}
                         </Link>
@@ -233,7 +233,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                             onViewCampaigns?.(b.user_id);
                         }}
                         data-testid={IDS.viewCampaigns(b.user_id)}
-                        className={`${CALM} hover:text-ember-500 ${FOCUS}`}
+                        className={`${CALM} hover:text-primary-ink ${FOCUS}`}
                         title={
                             b.active_campaign_count > 0
                                 ? `${b.active_campaign_count} live`
@@ -421,7 +421,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                         data-testid={IDS.search}
                         placeholder="Business name, email or phone"
                         aria-label="Search brands"
-                        className={`h-8 border-white/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -523,7 +523,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                         {brandStatus(peek) === "rejected" && peek.verification_reason && (
                             <p
                                 data-testid={IDS.rowReason(peek.user_id)}
-                                className={`mt-3 rounded border border-rose-500/25 bg-rose-500/5 p-3 ${TEXT.body} text-rose-300`}
+                                className={`mt-3 rounded border border-state-rejected/25 bg-state-rejected/5 p-3 ${TEXT.body} text-state-rejected`}
                             >
                                 Rejected: {peek.verification_reason}
                             </p>

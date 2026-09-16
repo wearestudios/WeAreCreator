@@ -51,7 +51,7 @@ export const Breadcrumbs = ({ crumbs }) => (
                             <Link
                                 to={c.to}
                                 data-testid={BREADCRUMBS.crumb(c.key)}
-                                className="max-w-[14rem] truncate transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="max-w-[14rem] truncate transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 {c.label}
                             </Link>
@@ -74,7 +74,7 @@ export const Section = ({ id, title, count, action, children, className = "" }) 
             <h2 className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                 {title}
                 {typeof count === "number" && (
-                    <span className="ml-2 text-ember-500">{count}</span>
+                    <span className="ml-2 text-primary-ink">{count}</span>
                 )}
             </h2>
             {action}
@@ -113,8 +113,8 @@ export const Stat = ({ label, value, testid, highlight }) => (
         className={
             "rounded-md border p-5 " +
             (highlight
-                ? "border-ember-500/40 bg-ember-500/10"
-                : "border-white/10 bg-card")
+                ? "border-primary/40 bg-primary/10"
+                : "border-tint/10 bg-card")
         }
     >
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -123,7 +123,7 @@ export const Stat = ({ label, value, testid, highlight }) => (
         <p
             className={
                 "mt-3 font-serif text-2xl leading-none md:text-3xl " +
-                (highlight ? "text-ember-500" : "")
+                (highlight ? "text-primary-ink" : "")
             }
         >
             {value}
@@ -137,7 +137,7 @@ export const Panel = ({ children, className = "", ...rest }) => (
     <div
         {...rest}
         className={
-            "rounded-md border border-white/10 bg-card p-6 " + className
+            "rounded-md border border-tint/10 bg-card p-6 " + className
         }
     >
         {children}
@@ -180,7 +180,7 @@ export function DetailShell({
                 to={backTo}
                 data-testid={IDS.back}
                 className={
-                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                     (crumbs ? "mt-2" : "")
                 }
             >
@@ -205,7 +205,7 @@ export function DetailShell({
             ) : notFound ? (
                 <div
                     data-testid={IDS.notFound}
-                    className="mt-10 rounded-md border border-white/10 bg-card px-6 py-12"
+                    className="mt-10 rounded-md border border-tint/10 bg-card px-6 py-12"
                 >
                     <p className="font-serif text-2xl">Nothing here.</p>
                     <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
@@ -215,7 +215,7 @@ export function DetailShell({
                     <Link to={backTo} className="mt-6 inline-block">
                         <Button
                             variant="outline"
-                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                         >
                             {backLabel}
                         </Button>
@@ -233,7 +233,7 @@ export function DetailShell({
                     <div className="mt-6 flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
                         <div className="min-w-0">
                             {kicker && (
-                                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                                     {kicker}
                                 </p>
                             )}
@@ -276,14 +276,14 @@ export const AuditTrail = ({ rows, emptyMessage, formatWhen }) => {
         return (
             <p
                 data-testid={IDS.timelineEmpty}
-                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
             >
                 {emptyMessage || "Nothing has happened to this yet."}
             </p>
         );
     }
     return (
-        <ol data-testid={IDS.timeline} className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+        <ol data-testid={IDS.timeline} className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
             {rows.map((e) => (
                 <li
                     key={e.id}

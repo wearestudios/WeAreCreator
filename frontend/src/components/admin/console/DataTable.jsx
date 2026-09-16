@@ -84,7 +84,7 @@ function SortIcon({ dir }) {
     const Icon = dir === "asc" ? ArrowUp : dir === "desc" ? ArrowDown : ChevronsUpDown;
     return (
         <Icon
-            className={`h-3 w-3 shrink-0 ${dir ? "text-ember-500" : "text-muted-foreground/50"}`}
+            className={`h-3 w-3 shrink-0 ${dir ? "text-primary-ink" : "text-muted-foreground/50"}`}
         />
     );
 }
@@ -250,7 +250,7 @@ export function DataTable({
                     ellipsises instead of pushing the buttons away. */}
                 <table className={`w-full table-fixed border-collapse text-left ${minWidth}`}>
                     <thead className="sticky top-0 z-10 bg-card">
-                        <tr className="border-b border-white/10">
+                        <tr className="border-b border-tint/10">
                             {columns.map((col) => (
                                 <th
                                     key={col.key}
@@ -325,15 +325,15 @@ export function DataTable({
                                             onOpen?.(index);
                                         }
                                     }}
-                                    className={`${settles ? "weare-settle " : ""}${ROW_H} cursor-pointer border-b border-white/5 ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
+                                    className={`${settles ? "weare-settle " : ""}${ROW_H} cursor-pointer border-b border-tint/5 ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
                                         isFocused
                                             ? // The focused row is a left rule
                                               // plus a lift in the surface, not
                                               // a colour — it has to be legible
                                               // beside a status colour without
                                               // competing with it.
-                                              "bg-white/[0.06] shadow-[inset_2px_0_0_0_theme(colors.ember.500)]"
-                                            : "hover:bg-white/[0.03]"
+                                              "bg-tint/[0.06] shadow-[inset_2px_0_0_0_theme(colors.ember.500)]"
+                                            : "hover:bg-tint/[0.03]"
                                     }`}
                                 >
                                     {columns.map((col) => (
@@ -391,7 +391,7 @@ function MobileList({
     const actions = pick(columns, "action");
 
     return (
-        <ul className={`${PANEL} divide-y divide-white/5`} data-testid={testid}>
+        <ul className={`${PANEL} divide-y divide-tint/5`} data-testid={testid}>
             {rows.map((row, index) => (
                 <li
                     key={`${stamp}:${rowKey(row, index)}`}
@@ -408,7 +408,7 @@ function MobileList({
                         }
                     }}
                     className={`weare-settle flex items-start gap-3 ${DENSITY.row} ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
-                        index === focused ? "bg-white/[0.06]" : ""
+                        index === focused ? "bg-tint/[0.06]" : ""
                     }`}
                 >
                     <div className="min-w-0 flex-1">
@@ -464,17 +464,17 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
         // Two lines and a value on the right, which is the mobile row.
         return (
             <ul
-                className={`${PANEL} divide-y divide-white/5`}
+                className={`${PANEL} divide-y divide-tint/5`}
                 aria-hidden
                 data-testid={testid ? `${testid}-skeleton` : undefined}
             >
                 {Array.from({ length: rows }).map((_, r) => (
                     <li key={r} className={`flex items-start gap-3 ${DENSITY.row}`}>
                         <div className="min-w-0 flex-1">
-                            <div className="h-3.5 w-2/5 rounded bg-white/5" />
-                            <div className="mt-2 h-3 w-3/5 rounded bg-white/5" />
+                            <div className="h-3.5 w-2/5 rounded bg-tint/5" />
+                            <div className="mt-2 h-3 w-3/5 rounded bg-tint/5" />
                         </div>
-                        <div className="h-3.5 w-12 shrink-0 rounded bg-white/5" />
+                        <div className="h-3.5 w-12 shrink-0 rounded bg-tint/5" />
                     </li>
                 ))}
             </ul>
@@ -488,7 +488,7 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
             <div className="overflow-hidden">
             <table className={`w-full table-fixed border-collapse ${minWidth}`}>
                 <thead className="bg-card">
-                    <tr className="border-b border-white/10">
+                    <tr className="border-b border-tint/10">
                         {columns.map((col) => (
                             <th
                                 key={col.key}
@@ -503,11 +503,11 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
                 </thead>
                 <tbody aria-hidden>
                     {Array.from({ length: rows }).map((_, r) => (
-                        <tr key={r} className={`${ROW_H} border-b border-white/5`}>
+                        <tr key={r} className={`${ROW_H} border-b border-tint/5`}>
                             {columns.map((col) => (
                                 <td key={col.key} className={`${DENSITY.row} ${col.hideBelow ? "hidden lg:table-cell" : ""}`}>
                                     <div
-                                        className={`h-3 rounded bg-white/5 ${
+                                        className={`h-3 rounded bg-tint/5 ${
                                             col.numeric ? "ml-auto w-12" : "w-3/4"
                                         }`}
                                     />

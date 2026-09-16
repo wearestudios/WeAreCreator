@@ -139,10 +139,10 @@ export default function BrandDetailPage() {
                             className={
                                 "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] " +
                                 (brand.verified
-                                    ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+                                    ? "border-state-approved/30 bg-state-approved/15 text-state-approved"
                                     : brand.verification_state === "rejected"
-                                      ? "border-red-500/25 bg-red-500/10 text-red-300/80"
-                                      : "border-amber-500/30 bg-amber-500/15 text-amber-300")
+                                      ? "border-state-rejected/25 bg-state-rejected/10 text-state-rejected"
+                                      : "border-state-pending/30 bg-state-pending/15 text-state-pending")
                             }
                         >
                             {STATE_LABEL[brand.verification_state] || brand.verification_state}
@@ -155,7 +155,7 @@ export default function BrandDetailPage() {
                         {brand.verification_resubmissions > 0 && (
                             <span
                                 data-testid={IDS.resubmissions}
-                                className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+                                className="rounded border border-state-pending/30 bg-state-pending/10 px-1.5 py-0.5 text-state-pending"
                             >
                                 {brand.verification_resubmissions === 1
                                     ? "Resubmitted once"
@@ -182,7 +182,7 @@ export default function BrandDetailPage() {
                                         "Brand verified",
                                     )
                                 }
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 Verify
                             </Button>
@@ -192,7 +192,7 @@ export default function BrandDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("unverify")}
                                 onClick={() => setDialog({ kind: "unverify" })}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 Unverify
                             </Button>
@@ -277,7 +277,7 @@ export default function BrandDetailPage() {
                                                 href={brand.website}
                                                 target="_blank"
                                                 rel="noreferrer noopener"
-                                                className="inline-flex items-center gap-1.5 break-all text-ember-500 hover:text-ember-400"
+                                                className="inline-flex items-center gap-1.5 break-all text-primary-ink hover:text-primary-ink"
                                             >
                                                 <Globe className="h-3.5 w-3.5 flex-none" />
                                                 {brand.website}
@@ -294,7 +294,7 @@ export default function BrandDetailPage() {
                                     </Field>
                                 </dl>
                                 {brand.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
                                         Last decision: {brand.verification_reason}
                                     </p>
                                 )}
@@ -309,7 +309,7 @@ export default function BrandDetailPage() {
                                 <p className="mt-1 text-sm text-muted-foreground">
                                     {brand.manager_designation || "—"}
                                 </p>
-                                <dl className="mt-6 space-y-4 border-t border-white/10 pt-5">
+                                <dl className="mt-6 space-y-4 border-t border-tint/10 pt-5">
                                     <Field label="WhatsApp (their login)">
                                         {brand.manager_phone}
                                     </Field>
@@ -317,7 +317,7 @@ export default function BrandDetailPage() {
                                     <Field label="Account status">{brand.status}</Field>
                                 </dl>
                                 {brand.contact_email_is_free_domain && (
-                                    <p className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm leading-relaxed text-amber-200">
+                                    <p className="mt-5 rounded-md border border-state-pending/30 bg-state-pending/10 p-3 text-sm leading-relaxed text-state-pending">
                                         That's a free mail address. Not a problem on its own —
                                         plenty of real small businesses use one — but a domain
                                         address is the cheapest evidence somebody works there.
@@ -348,12 +348,12 @@ export default function BrandDetailPage() {
                         {data.campaigns.length === 0 ? (
                             <p
                                 data-testid={IDS.campaignsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 They haven't posted anything yet.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                 {data.campaigns.map((c) => (
                                     <li
                                         key={c.id}

@@ -29,7 +29,7 @@ const PAGE_SIZE = 50;
 const RESULT_META = {
     invited: {
         label: "Invited",
-        tone: "text-emerald-300",
+        tone: "text-state-approved",
         Icon: Check,
     },
     already_invited: {
@@ -39,7 +39,7 @@ const RESULT_META = {
     },
     failed: {
         label: "Not sent",
-        tone: "text-red-300",
+        tone: "text-state-rejected",
         Icon: AlertCircle,
     },
 };
@@ -141,10 +141,10 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-white/10 bg-card"
+                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-tint/10 bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                         Invite creators
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -163,7 +163,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                             {report.invited} invited · {report.failed} failed ·{" "}
                             {report.already_invited} already had one.
                         </p>
-                        <ul className="mt-4 divide-y divide-white/10">
+                        <ul className="mt-4 divide-y divide-tint/10">
                             {report.results.map((r) => {
                                 const meta = RESULT_META[r.status] || RESULT_META.failed;
                                 const { Icon } = meta;
@@ -202,13 +202,13 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.search}
                                 placeholder="Search verified creators"
                                 aria-label="Search verified creators"
-                                className="h-11 md:h-10 rounded-md border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                className="h-11 md:h-10 rounded-md border-tint/10 bg-background/60 pl-9 focus-visible:ring-ring"
                             />
                         </div>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-white/10 bg-background/40">
+                        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-tint/10 bg-background/40">
                             {rows === null ? (
-                                <div data-testid={IDS.skeleton} className="divide-y divide-white/10">
+                                <div data-testid={IDS.skeleton} className="divide-y divide-tint/10">
                                     {[0, 1, 2, 3].map((i) => (
                                         <div key={i} className="flex items-center gap-3 px-4 py-3">
                                             <Skeleton className="h-9 w-9 flex-none rounded-md" />
@@ -229,7 +229,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                         : "No verified creators to invite yet."}
                                 </p>
                             ) : (
-                                <ul data-testid={IDS.list} className="divide-y divide-white/10">
+                                <ul data-testid={IDS.list} className="divide-y divide-tint/10">
                                     {rows.map((c) => {
                                         const isOn = selectedIds.has(c.user_id);
                                         return (
@@ -241,7 +241,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                     data-testid={IDS.option(c.user_id)}
                                                     className={
                                                         "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 " +
-                                                        (isOn ? "bg-ember-500/10" : "hover:bg-white/5")
+                                                        (isOn ? "bg-primary/10" : "hover:bg-tint/5")
                                                     }
                                                 >
                                                     <CreatorAvatar creator={c} size="h-9 w-9" />
@@ -261,8 +261,8 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                         className={
                                                             "grid h-5 w-5 flex-none place-items-center rounded border transition-colors duration-150 " +
                                                             (isOn
-                                                                ? "border-ember-500 bg-ember-500 text-black"
-                                                                : "border-white/20")
+                                                                ? "border-primary bg-primary text-primary-foreground"
+                                                                : "border-tint/20")
                                                         }
                                                     >
                                                         {isOn && <Check className="h-3.5 w-3.5" />}
@@ -295,7 +295,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.note}
                                 maxLength={500}
                                 placeholder="Why these creators — kept on the record, not sent"
-                                className="mt-2 h-11 md:h-10 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                className="mt-2 h-11 md:h-10 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
                             />
                         </div>
                     </>
@@ -307,7 +307,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                             <Button
                                 type="button"
                                 data-testid={IDS.reportDone}
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 Done
                             </Button>
@@ -325,7 +325,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                     type="button"
                                     variant="outline"
                                     data-testid={IDS.cancel}
-                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                                 >
                                     Cancel
                                 </Button>
@@ -335,7 +335,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 onClick={send}
                                 disabled={sending || selected.length === 0}
                                 data-testid={IDS.submit}
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 {sending ? (
                                     <>

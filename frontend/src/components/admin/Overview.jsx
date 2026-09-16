@@ -169,7 +169,7 @@ export default function Overview({ onChanged }) {
                     <Link
                         to={`/admin/campaigns/${c.id}`}
                         onClick={(e) => e.stopPropagation()}
-                        className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                        className={`truncate ${CALM} hover:text-primary-ink ${FOCUS}`}
                     >
                         {c.title}
                     </Link>
@@ -230,7 +230,7 @@ export default function Overview({ onChanged }) {
                 testid: IDS.sort("approved"),
                 value: (c) => c.approved ?? 0,
                 cell: (c) => (
-                    <span data-testid={IDS.rowApproved(c.id)} className="text-emerald-300">
+                    <span data-testid={IDS.rowApproved(c.id)} className="text-state-approved">
                         {c.approved ?? 0}
                     </span>
                 ),
@@ -243,7 +243,7 @@ export default function Overview({ onChanged }) {
                 width: "w-28",
                 value: (c) => c.rejected ?? 0,
                 cell: (c) => (
-                    <span data-testid={IDS.rowRejected(c.id)} className="text-rose-300">
+                    <span data-testid={IDS.rowRejected(c.id)} className="text-state-rejected">
                         {c.rejected ?? 0}
                     </span>
                 ),
@@ -334,7 +334,7 @@ export default function Overview({ onChanged }) {
                     {STAT_CARDS.map((c) => (
                         <div
                             key={c.key}
-                            className="rounded-md border border-white/10 bg-card p-5"
+                            className="rounded-md border border-tint/10 bg-card p-5"
                         >
                             <Skeleton className="h-3 w-16" />
                             <Skeleton className="mt-4 h-7 w-20" />
@@ -362,8 +362,8 @@ export default function Overview({ onChanged }) {
                                 className={
                                     "rounded-md border p-5 text-left transition-colors duration-150 " +
                                     (on
-                                        ? "border-ember-500 bg-ember-500/10"
-                                        : "border-white/10 bg-card hover:border-ember-500/40")
+                                        ? "border-primary bg-primary/10"
+                                        : "border-tint/10 bg-card hover:border-primary/40")
                                 }
                             >
                                 <div className="flex items-center justify-between gap-2">
@@ -373,14 +373,14 @@ export default function Overview({ onChanged }) {
                                     <card.Icon
                                         className={
                                             "h-3.5 w-3.5 flex-none " +
-                                            (on ? "text-ember-500" : "text-muted-foreground")
+                                            (on ? "text-primary-ink" : "text-muted-foreground")
                                         }
                                     />
                                 </div>
                                 <p
                                     className={
                                         "mt-3 flex items-baseline font-serif text-2xl leading-none " +
-                                        (on ? "text-ember-500" : "")
+                                        (on ? "text-primary-ink" : "")
                                     }
                                 >
                                     {card.money && <IndianRupee className="h-4 w-4" />}
@@ -430,7 +430,7 @@ export default function Overview({ onChanged }) {
                         type="button"
                         onClick={clearFilters}
                         data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
+                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                     >
                         <X className="h-3.5 w-3.5" />
                         Clear
@@ -579,7 +579,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                 type="button"
                 onClick={onBack}
                 data-testid={DETAIL_IDS.back}
-                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500"
+                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 All campaigns
@@ -590,7 +590,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                     <Skeleton className="h-8 w-2/3" />
                     <div className="grid gap-4 lg:grid-cols-3">
                         {COLUMNS.map((c) => (
-                            <div key={c.key} className="rounded-md border border-white/10 bg-card">
+                            <div key={c.key} className="rounded-md border border-tint/10 bg-card">
                                 <ListSkeleton rows={3} />
                             </div>
                         ))}
@@ -630,9 +630,9 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 <div
                                     key={col.key}
                                     data-testid={DETAIL_IDS.column(col.key)}
-                                    className="rounded-md border border-white/10 bg-card"
+                                    className="rounded-md border border-tint/10 bg-card"
                                 >
-                                    <div className="flex items-baseline justify-between border-b border-white/10 px-5 py-4">
+                                    <div className="flex items-baseline justify-between border-b border-tint/10 px-5 py-4">
                                         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                             {col.label}
                                         </p>
@@ -652,7 +652,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                             {col.empty}
                                         </p>
                                     ) : (
-                                        <ul className="divide-y divide-white/10">
+                                        <ul className="divide-y divide-tint/10">
                                             {entries.map((e) => (
                                                 <ApplicantRow
                                                     key={e.collaboration_id}
@@ -741,7 +741,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onAdvance(entry)}
                             data-testid={DETAIL_IDS.creatorAdvance(entry.collaboration_id)}
-                            className="h-9 rounded-full bg-ember-500 px-3 text-sm text-black hover:bg-ember-400"
+                            className="h-9 rounded-full bg-primary px-3 text-sm text-primary-foreground hover:bg-primary-hover"
                         >
                             Move forward
                         </Button>
@@ -753,7 +753,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onDecline(entry)}
                             data-testid={DETAIL_IDS.creatorDecline(entry.collaboration_id)}
-                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-sm text-red-300 hover:bg-red-500/10"
+                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-sm text-state-rejected hover:bg-state-rejected/10"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Decline
@@ -765,7 +765,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onCancel(entry)}
                             data-testid={DETAIL_IDS.creatorCancel(entry.collaboration_id)}
-                            className="h-9 rounded-full border-red-500/30 bg-transparent px-3 text-sm text-red-300 hover:bg-red-500/10"
+                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-sm text-state-rejected hover:bg-state-rejected/10"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Cancel

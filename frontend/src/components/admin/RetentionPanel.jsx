@@ -159,11 +159,11 @@ export default function RetentionPanel() {
                     {data.needs_legal_review && (
                         <p
                             data-testid={IDS.legal}
-                            className="flex items-start gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100/90"
+                            className="flex items-start gap-2 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm text-state-pending"
                         >
                             <Scale
                                 aria-hidden="true"
-                                className="mt-0.5 h-4 w-4 flex-none text-amber-300"
+                                className="mt-0.5 h-4 w-4 flex-none text-state-pending"
                             />
                             {/* **Flagged, never invented.** These are a
                                 considered reading of the statutory minimums
@@ -186,7 +186,7 @@ export default function RetentionPanel() {
                         onClick={purge}
                         disabled={busy}
                         data-testid={IDS.purge}
-                        className="min-h-[2.75rem] border-white/20 bg-transparent"
+                        className="min-h-[2.75rem] border-tint/20 bg-transparent"
                     >
                         {busy ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

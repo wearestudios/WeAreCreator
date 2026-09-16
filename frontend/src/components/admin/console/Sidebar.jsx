@@ -200,14 +200,14 @@ function Badge({ count, active, form = "full" }) {
         return (
             <span
                 aria-label={`${count} waiting`}
-                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-ember-500"
+                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
             />
         );
     }
     return (
         <span
             className={`ml-auto grid h-5 min-w-[1.25rem] shrink-0 place-items-center rounded px-1 ${TEXT.meta} tabular-nums ${
-                active ? "bg-ember-500 text-black" : "bg-white/10 text-foreground"
+                active ? "bg-primary text-primary-foreground" : "bg-tint/10 text-foreground"
             }`}
         >
             {/* **It travels rather than snapping**, which is the only thing
@@ -244,8 +244,8 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
                 className={({ isActive }) =>
                     `mx-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.body} ${CALM} ${FOCUS} ` +
                     (isActive
-                        ? "bg-ember-500/10 text-ember-500"
-                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground")
+                        ? "bg-primary/10 text-primary-ink"
+                        : "text-muted-foreground hover:bg-tint/5 hover:text-foreground")
                 }
             >
                 {({ isActive }) => (
@@ -276,7 +276,7 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
                             navigate(`/admin/${to}`, { state: { savedFilter: set.state } });
                             onNavigate?.();
                         }}
-                        className={`mx-1 h-8 w-[calc(100%-0.5rem)] items-center gap-2 rounded pl-9 pr-2 text-left ${labelClass ? "flex" : "hidden"} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                        className={`mx-1 h-8 w-[calc(100%-0.5rem)] items-center gap-2 rounded pl-9 pr-2 text-left ${labelClass ? "flex" : "hidden"} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
                     >
                         <span className="truncate">{set.name}</span>
                     </button>
@@ -306,19 +306,19 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>
             <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 md:hidden" />
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim/50 md:hidden" />
                 <Dialog.Content
                     data-testid={SHELL_IDS.mobileNav}
                     aria-describedby={undefined}
-                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/10 bg-card md:hidden"
+                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-tint/10 bg-card md:hidden"
                 >
-                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2.5">
+                    <div className="flex items-center justify-between border-b border-tint/10 px-3 py-2.5">
                         <Dialog.Title className={`${TEXT.meta} uppercase tracking-[0.16em] text-muted-foreground`}>
                             Sections
                         </Dialog.Title>
                         <Dialog.Close
                             aria-label="Close"
-                            className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                            className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
                         >
                             <X className="h-4 w-4" />
                         </Dialog.Close>
@@ -385,7 +385,7 @@ export function AdminSidebar({ counts, role }) {
             // **`hidden md:flex`.** Below that the sections are a sheet, not a
             // rail: see `AdminNavSheet`. A 56px column of unlabelled icons is
             // navigation you have to already know.
-            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-white/10 bg-card/40 md:flex ${CALM} ${
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-tint/10 bg-card/40 md:flex ${CALM} ${
                 collapsed ? "w-14" : "w-56"
             }`}
         >
@@ -408,7 +408,7 @@ export function AdminSidebar({ counts, role }) {
                 data-testid={IDS.collapse}
                 aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                 aria-expanded={!collapsed}
-                className={`m-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                className={`m-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
             >
                 {collapsed ? (
                     <ChevronsRight className="h-4 w-4" />

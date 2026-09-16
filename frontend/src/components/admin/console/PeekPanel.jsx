@@ -37,7 +37,7 @@ import { ADMIN_PEEK as IDS } from "@/constants/testIds";
 /** A label and a value, the panel's one content primitive. */
 export function PeekField({ label, children, testid }) {
     return (
-        <div className="flex items-baseline justify-between gap-4 border-b border-white/5 py-2">
+        <div className="flex items-baseline justify-between gap-4 border-b border-tint/5 py-2">
             <span className={`${TEXT.meta} shrink-0 text-muted-foreground`}>{label}</span>
             <span data-testid={testid} className={`${TEXT.body} text-right`}>
                 {children ?? "—"}
@@ -72,7 +72,7 @@ export function PeekPanel({
                     panel and takes the contrast down a step; the rows behind
                     stay readable, which is the point of peeking rather than
                     opening. No blur, and nothing that fades in. */}
-                <Dialog.Overlay className="fixed inset-0 z-50 bg-black/25" />
+                <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim/25" />
                 <Dialog.Content
                     data-testid={testid}
                     aria-describedby={undefined}
@@ -80,9 +80,9 @@ export function PeekPanel({
                     // over a working list, and a see-through one makes the
                     // rows behind it legible-but-not-quite, which is worse
                     // than either.
-                    className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-white/10 bg-card sm:max-w-md"
+                    className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-tint/10 bg-card sm:max-w-md"
                 >
-                    <div className={`flex items-start justify-between gap-3 border-b border-white/10 ${DENSITY.panel}`}>
+                    <div className={`flex items-start justify-between gap-3 border-b border-tint/10 ${DENSITY.panel}`}>
                         <div className="min-w-0">
                             <Dialog.Title className={`${TEXT.heading} truncate`}>
                                 {title}
@@ -98,7 +98,7 @@ export function PeekPanel({
                         <Dialog.Close
                             data-testid={IDS.close}
                             aria-label="Close"
-                            className={`grid h-8 w-8 shrink-0 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                            className={`grid h-8 w-8 shrink-0 place-items-center rounded ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
                         >
                             <X className="h-4 w-4" />
                         </Dialog.Close>
@@ -106,13 +106,13 @@ export function PeekPanel({
 
                     <div className={`flex-1 overflow-y-auto ${DENSITY.panel}`}>{children}</div>
 
-                    <div className={`flex flex-wrap items-center gap-2 border-t border-white/10 ${DENSITY.panel}`}>
+                    <div className={`flex flex-wrap items-center gap-2 border-t border-tint/10 ${DENSITY.panel}`}>
                         {actions}
                         {href ? (
                             <Link
                                 to={href}
                                 data-testid={IDS.openFull}
-                                className={`ml-auto inline-flex items-center gap-1.5 rounded px-2 py-1 ${TEXT.meta} ${CALM} text-muted-foreground hover:text-ember-500 ${FOCUS}`}
+                                className={`ml-auto inline-flex items-center gap-1.5 rounded px-2 py-1 ${TEXT.meta} ${CALM} text-muted-foreground hover:text-primary-ink ${FOCUS}`}
                             >
                                 Open full page
                                 <ExternalLink className="h-3 w-3" />

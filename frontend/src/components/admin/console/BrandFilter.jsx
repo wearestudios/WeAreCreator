@@ -52,7 +52,7 @@ export default function BrandFilter() {
                 value={selected}
                 onChange={(e) => choose(e.target.value)}
                 data-testid={IDS.root}
-                className={`h-7 min-w-0 max-w-[10rem] rounded border border-white/10 bg-background px-1.5 ${TEXT.meta} text-muted-foreground ${CALM} ${FOCUS}`}
+                className={`h-7 min-w-0 max-w-[10rem] rounded border border-tint/10 bg-background px-1.5 ${TEXT.meta} text-muted-foreground ${CALM} ${FOCUS}`}
             >
                 <option value="">All your brands</option>
                 {brands.map((b) => (

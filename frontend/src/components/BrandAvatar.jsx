@@ -35,7 +35,7 @@ export default function BrandAvatar({
                 loading="lazy"
                 onError={() => setBroken(true)}
                 data-testid={BRAND_LOGO.image(id)}
-                className={`${size} aspect-square flex-none rounded-md border border-white/10 bg-white/5 object-contain ${className}`}
+                className={`${size} aspect-square flex-none rounded-md border border-tint/10 bg-tint/5 object-contain ${className}`}
             />
         );
     }
@@ -43,7 +43,7 @@ export default function BrandAvatar({
         <span
             aria-hidden="true"
             data-testid={BRAND_LOGO.monogram(id)}
-            className={`${size} grid flex-none place-items-center rounded-md border border-white/10 bg-ember-500/10 font-serif text-sm text-ember-500 ${className}`}
+            className={`${size} grid flex-none place-items-center rounded-md border border-tint/10 bg-primary/10 font-serif text-sm text-primary-ink ${className}`}
         >
             {monogram}
         </span>
