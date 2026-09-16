@@ -155,6 +155,18 @@ export default function PostCampaign() {
     const [venueAddress, setVenueAddress] = useState("");
     const [venueInstructions, setVenueInstructions] = useState("");
     const [onSiteContact, setOnSiteContact] = useState("");
+
+    // **A delivery brief has no venue and nothing to book.** Two flags rather
+    // than `=== "delivery"` in eleven places: the form branched on
+    // `personal_table` versus everything else, and a fourth type reading as
+    // "everything else" is how it would have been asked for an event date it
+    // does not have.
+    //
+    // `usesWindow` is "runs between two dates" — true of a personal table and
+    // of a delivery, for different reasons: one is a window creators book
+    // into, the other a window to send within.
+    const isDelivery = campaignType === "delivery";
+    const usesWindow = campaignType === "personal_table" || isDelivery;
     const [submitting, setSubmitting] = useState(false);
 
     /**
@@ -378,9 +390,11 @@ export default function PostCampaign() {
         const needed = Number(creatorsNeeded);
         if (!Number.isFinite(needed) || needed < 1)
             return "How many creators do you need?";
-        if (campaignType === "personal_table") {
+        if (usesWindow) {
             if (!startDate || !endDate)
-                return "A personal table runs over a window — pick both dates.";
+                return isDelivery
+                    ? "A delivery runs over a window — pick both dates."
+                    : "A personal table runs over a window — pick both dates.";
             if (new Date(endDate) < new Date(startDate))
                 return "End date cannot be before the start date.";
         } else if (!eventDate) {
@@ -470,24 +484,24 @@ export default function PostCampaign() {
         // the hour are one arrangement. A group event's is the day; its
         // sittings carry the times.
         event_date:
-            campaignType !== "personal_table" && eventDate
+            !usesWindow && eventDate
                 ? new Date(
                       campaignType === "launch" && eventTime
                           ? `${eventDate}T${eventTime}`
                           : eventDate,
                   ).toISOString()
                 : null,
-        start_date:
-            campaignType === "personal_table" && startDate
-                ? new Date(startDate).toISOString()
-                : null,
-        end_date:
-            campaignType === "personal_table" && endDate
-                ? new Date(endDate).toISOString()
-                : null,
-        venue_address: venueAddress.trim() || null,
-        venue_instructions: venueInstructions.trim() || null,
-        on_site_contact: onSiteContact.trim() || null,
+        start_date: usesWindow && startDate ? new Date(startDate).toISOString() : null,
+        end_date: usesWindow && endDate ? new Date(endDate).toISOString() : null,
+        // Absent rather than empty on a delivery: there is no venue, and a
+        // stored blank reads as a venue somebody forgot to fill in.
+        ...(isDelivery
+            ? {}
+            : {
+                  venue_address: venueAddress.trim() || null,
+                  venue_instructions: venueInstructions.trim() || null,
+                  on_site_contact: onSiteContact.trim() || null,
+              }),
         status,
     });
 
@@ -629,7 +643,7 @@ export default function PostCampaign() {
                         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             What kind of campaign
                         </p>
-                        <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-3">
+                        <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             {[
                                 {
                                     value: "launch",
@@ -645,6 +659,11 @@ export default function PostCampaign() {
                                     value: "personal_table",
                                     label: "Personal table",
                                     blurb: "A window creators book into.",
+                                },
+                                {
+                                    value: "delivery",
+                                    label: "Delivery",
+                                    blurb: "You send it. They shoot it at home.",
                                 },
                             ].map((opt) => {
                                 const on = campaignType === opt.value;
@@ -686,11 +705,13 @@ export default function PostCampaign() {
                         )}
 
                         {/* Only the dates this type actually has. */}
-                        {campaignType === "personal_table" ? (
+                        {usesWindow ? (
                             <div className="grid gap-5 md:grid-cols-2">
                                 <div>
                                     <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                        Bookable from
+                                        {/* Nothing is bookable on a delivery —
+                                            the window is when you post it. */}
+                                        {isDelivery ? "Sending from" : "Bookable from"}
                                     </Label>
                                     <div className="relative mt-2">
                                         <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -706,7 +727,7 @@ export default function PostCampaign() {
                                 </div>
                                 <div>
                                     <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
-                                        Until
+                                        {isDelivery ? "Sent by" : "Until"}
                                     </Label>
                                     <div className="relative mt-2">
                                         <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1457,6 +1478,28 @@ export default function PostCampaign() {
                             </div>
                         </div>
 
+                        {/* **Absent, not disabled, on a delivery.** There is
+                            no venue to give an address for, and three greyed
+                            boxes headed "The venue" read as fields somebody
+                            has not got to yet rather than as questions this
+                            kind of campaign does not have. The parcel goes to
+                            the address on the creator's own profile, which
+                            they confirm before anything is sent. */}
+                        {isDelivery ? (
+                            <div
+                                data-testid="pc-delivery-note"
+                                className="space-y-2 border-t border-white/10 pt-6"
+                            >
+                                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    Where it goes
+                                </p>
+                                <p className="text-sm leading-relaxed text-muted-foreground">
+                                    Nowhere to set. Each creator confirms their own
+                                    delivery address before you send anything, and
+                                    you record the tracking reference when it goes.
+                                </p>
+                            </div>
+                        ) : (
                         <div className="space-y-5 border-t border-white/10 pt-6">
                             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                                 The venue (optional for now)
@@ -1506,6 +1549,7 @@ export default function PostCampaign() {
                                 </div>
                             </div>
                         </div>
+                        )}
                     </section>
 
                     {error && (

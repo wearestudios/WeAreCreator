@@ -170,6 +170,10 @@ export default function ApplicationDetail({
     const [error, setError] = useState("");
     const [notFound, setNotFound] = useState(false);
     const [busy, setBusy] = useState(null);
+    // Held here rather than in the panel, because the panel is a branch inside
+    // this component's render and a hook cannot live in one.
+    const [dispatchCourier, setDispatchCourier] = useState("");
+    const [dispatchTracking, setDispatchTracking] = useState("");
     // Which review dialog is open: "approve", "partial", "changes" or null.
     // One value rather than three booleans, so two cannot be open at once.
     const [reviewing, setReviewing] = useState(null);
@@ -556,6 +560,76 @@ export default function ApplicationDetail({
                             </Field>
                         </div>
                     </Section>
+
+                    {/* **The delivery a creator is waiting on.** A band above
+                        the rest for the same reason `SlotAnswer` is one on the
+                        manager's page: somebody has confirmed where to send it
+                        and is now waiting on us, which is not a section you go
+                        and look in.
+
+                        The component never asks what role is looking —
+                        `can_dispatch` is decided server-side, so a brand on a
+                        brief we run never sees it. */}
+                    {actions.can_dispatch && (
+                        <Section id="dispatch" title="Ready to send">
+                            <p className="text-sm text-muted-foreground">
+                                {app.creator?.name || "The creator"} confirmed their
+                                address
+                                {app.delivery?.address_note ? (
+                                    <>
+                                        {" "}— <span className="text-foreground">
+                                            {app.delivery.address_note}
+                                        </span>
+                                    </>
+                                ) : (
+                                    ""
+                                )}
+                                . The label prints from their profile; record the
+                                tracking reference here when it goes.
+                            </p>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <Input
+                                    data-testid="application-dispatch-courier"
+                                    placeholder="Courier (optional)"
+                                    value={dispatchCourier}
+                                    onChange={(e) => setDispatchCourier(e.target.value)}
+                                />
+                                <Input
+                                    data-testid="application-dispatch-tracking"
+                                    placeholder="Tracking reference (optional)"
+                                    value={dispatchTracking}
+                                    onChange={(e) => setDispatchTracking(e.target.value)}
+                                />
+                            </div>
+                            {/* **Optional, and the placeholder says so.** Half of
+                                what this operation sends goes by a local courier
+                                with a photo of a docket rather than a scannable
+                                number, and a required field there is a field
+                                filled in with "sent". */}
+                            <Button
+                                data-testid="application-dispatch"
+                                disabled={busy === "dispatch"}
+                                className="mt-4 min-h-[2.75rem]"
+                                onClick={() =>
+                                    act(
+                                        "dispatch",
+                                        () =>
+                                            api.post(`/collaborations/${id}/dispatch`, {
+                                                courier: dispatchCourier.trim() || null,
+                                                tracking_reference:
+                                                    dispatchTracking.trim() || null,
+                                            }),
+                                        "Marked as sent — the creator has been told",
+                                    )
+                                }
+                            >
+                                {busy === "dispatch" && (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                )}
+                                Mark as sent
+                            </Button>
+                        </Section>
+                    )}
 
                     {/* The second half of the booking handshake. Offered only
                         to whoever runs this campaign — the server decides —

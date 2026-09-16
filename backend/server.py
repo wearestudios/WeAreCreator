@@ -960,8 +960,31 @@ class BrandProfileUpdate(BaseModel):
 # event happens on one day; a personal table runs over a window a creator books
 # into. Storing both shapes on every campaign and trusting the UI to fill the
 # right ones is how a brief ends up with an event date *and* a window.
-CampaignType = Literal["launch", "group_event", "personal_table"]
+# **`delivery` is the fourth, and it is the one with no venue at all.** The
+# other three are a place a creator turns up to, which meant a product seeding
+# or a shipped-sample campaign could not be posted here — on a platform whose
+# taxonomy is fifteen groups precisely because it takes every category. A
+# skincare brand sending twenty creators a bottle had to describe it as a
+# personal table at an address nobody was going to visit, and then every
+# downstream screen asked when the shoot was.
+CampaignType = Literal["launch", "group_event", "personal_table", "delivery"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
+
+# The type with no venue, named once because seven readers ask the question and
+# `== "delivery"` scattered across them is how one of them ends up asking a
+# different question. Absent reads False: campaigns predate types, and a brief
+# written before this existed was a venue brief.
+DELIVERY_CAMPAIGN_TYPE = "delivery"
+
+
+def _is_delivery(campaign: Optional[dict]) -> bool:
+    """Is this a campaign where something is sent rather than somewhere gone?
+
+    Pure and DB-free, the shape `_execution_owner` and `_compensation_type`
+    hold, and it never returns None — every surface that asks this branches on
+    it and has to get one of two answers.
+    """
+    return (campaign or {}).get("campaign_type") == DELIVERY_CAMPAIGN_TYPE
 
 # ---------------------------------------------------------------------------
 # Which scheduling fields each type actually has
@@ -1002,6 +1025,18 @@ _SCHEDULING_BY_TYPE = {
     "personal_table": {
         "required": ("start_date", "end_date"),
         "allowed": ("start_date", "end_date", "restricted_days", "shoot_windows"),
+    },
+    # **delivery** — a window to send within, and nothing else. There is no
+    # venue, so there are no sittings to divide, no hours that work and no
+    # days that don't: a courier is not a kitchen. Asking any of those would
+    # be the exact failure this table was written to stop, one type later.
+    #
+    # The window is required rather than optional because a brand has to say
+    # by when, or "dispatched" has no clock to be late against — see
+    # `_SLA_BY_COLLAB_STATE`.
+    DELIVERY_CAMPAIGN_TYPE: {
+        "required": ("start_date", "end_date"),
+        "allowed": ("start_date", "end_date"),
     },
 }
 
@@ -1827,6 +1862,21 @@ def _proof_block(campaign: Optional[dict], collab: Optional[dict]) -> dict:
     }
 
 
+def _ready_to_shoot_state(campaign: Optional[dict]) -> str:
+    """The state at which this campaign's creator has the thing and can shoot.
+
+    `attended` on a venue brief, `received` on a delivery one — the same
+    moment in the story wearing two names, because on one of them somebody
+    walked through a door and on the other a courier did.
+
+    **One reader, so nothing names `attended` directly again.** Every place
+    that did was a place that silently meant "and delivery campaigns never get
+    here", which is how a whole campaign type ends up unable to submit
+    content.
+    """
+    return "received" if _is_delivery(campaign) else "attended"
+
+
 def _content_submission_states(campaign: Optional[dict]) -> tuple:
     """Which states a delivery may be filed from, and why not otherwise.
 
@@ -1848,7 +1898,13 @@ def _content_submission_states(campaign: Optional[dict]) -> tuple:
             "This campaign reviews drafts before publication. Submit your draft "
             "first — the live link goes in once it's approved."
         )
-    return ("attended", "content_submitted"), (
+    ready = _ready_to_shoot_state(campaign)
+    if ready == "received":
+        return (ready, "content_submitted"), (
+            "Content can be submitted once you've confirmed the delivery "
+            "arrived, and changed any time before it's approved."
+        )
+    return (ready, "content_submitted"), (
         "Content can be submitted once the collaboration is marked attended, "
         "and changed any time before it's approved."
     )
@@ -2699,6 +2755,49 @@ class ReschedulePayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class ConfirmDeliveryAddressPayload(BaseModel):
+    """The creator saying where to send it.
+
+    **No address field.** The address is the one already on the creator's
+    profile, which is the record a courier label is printed from and the one
+    they keep up to date; letting a per-campaign address be typed here would
+    be a second copy of somebody's home address, kept in a collaboration row
+    nobody would think to erase.
+
+    What this carries instead is `note` — "leave it with the neighbour",
+    "office reception, weekdays only" — which is about *this* delivery and
+    belongs nowhere else.
+    """
+
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class DispatchDeliveryPayload(BaseModel):
+    """The runner saying it has gone.
+
+    The tracking reference is **optional and free text**. Half of what this
+    operation actually sends goes by a local courier with a WhatsApp photo of
+    a docket rather than a scannable number, and a required field there would
+    be a field filled in with "sent". Where there is a real reference, the
+    creator gets it in the message.
+    """
+
+    tracking_reference: Optional[str] = Field(default=None, max_length=120)
+    courier: Optional[str] = Field(default=None, max_length=80)
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class ConfirmDeliveryReceivedPayload(BaseModel):
+    """The creator saying it arrived. A note, and nothing required.
+
+    Deliberately not a condition report: "it came damaged" is a conversation
+    with whoever runs the campaign, not a dropdown, and a structured field
+    here would collect a judgement nobody acts on.
+    """
+
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
 class CreatorBookSlotPayload(BaseModel):
     """A creator taking a place on a slot.
 
@@ -2902,6 +3001,14 @@ COLLAB_STATE_ORDER = [
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The delivery half, which stands in for the two above on a campaign with
+    # no venue. Listed here rather than bolted on, so `COLLAB_STATE_ORDER`
+    # stays the one place every state this system has is written down — a
+    # state missing from it is a state no audit line, no process flow and no
+    # `_stage_of` can name.
+    "address_confirmed",
+    "dispatched",
+    "received",
     # The draft gate: the reviewer sees the content BEFORE the creator's
     # audience does. Optional per campaign — `requires_draft_approval` — and
     # skipped entirely from the ladder when off, so a campaign without it
@@ -2916,6 +3023,26 @@ COLLAB_STATE_ORDER = [
 
 # The optional pair, named once so every "skip them when off" reads the same.
 DRAFT_REVIEW_STATES = ("draft_submitted", "draft_approved")
+
+# The two halves of "how does the creator come to have the thing they are
+# shooting". Exactly one of these is on a given campaign's ladder, never both
+# and never neither, which is what `_collab_ladder` guarantees.
+#
+# **Venue**: a seat is booked and somebody marks them present.
+# **Delivery**: the creator confirms where to send it, the runner sends it
+# with an optional tracking reference, and the creator says it arrived. Three
+# steps rather than two because the middle one is the only part neither party
+# controls — a parcel in transit is a real state, and collapsing it into
+# "dispatched means received" is how a brand chases a creator for content
+# that is sitting in a depot.
+VENUE_ATTENDANCE_STATES = ("slot_booked", "attended")
+DELIVERY_STATES = ("address_confirmed", "dispatched", "received")
+
+# Where a collaboration stands when the creator has the thing and can shoot.
+# `attended` on a venue brief, `received` on a delivery one — the same moment
+# in the story, so anything asking "can they submit content yet" asks this
+# rather than naming one of them and being wrong on the other type.
+READY_TO_SHOOT_STATES = ("attended", "received")
 
 
 # ---------------------------------------------------------------------------
@@ -2988,10 +3115,24 @@ def _requires_draft_approval(campaign: dict) -> bool:
 
 
 def _collab_ladder(campaign: Optional[dict]) -> list:
-    """The state order this campaign actually walks."""
-    if _requires_draft_approval(campaign):
-        return COLLAB_STATE_ORDER
-    return [s for s in COLLAB_STATE_ORDER if s not in DRAFT_REVIEW_STATES]
+    """The state order this campaign actually walks.
+
+    **Two independent substitutions, not four hand-written ladders.** The
+    draft gate is optional per campaign and the venue/delivery split is
+    decided by the type, and they compose: a delivery brief can gate drafts
+    and a venue brief can skip them. Writing the four combinations out would
+    mean the fifth thing added next year is written four times and gets one
+    of them wrong.
+
+    Exactly one of `VENUE_ATTENDANCE_STATES` and `DELIVERY_STATES` survives,
+    always — there is no campaign where a creator both turns up and has it
+    sent, and none where neither happens.
+    """
+    drop = set()
+    if not _requires_draft_approval(campaign):
+        drop |= set(DRAFT_REVIEW_STATES)
+    drop |= set(DELIVERY_STATES if not _is_delivery(campaign) else VENUE_ATTENDANCE_STATES)
+    return [s for s in COLLAB_STATE_ORDER if s not in drop]
 
 # Once a collaboration is in one of these, nothing may move it again.
 # **Four ways out, and `withdrawn` is the creator's.** Until it existed the
@@ -3022,6 +3163,14 @@ COLLAB_GROUP_ONGOING = (
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The delivery half belongs here for the reason the comment above gives:
+    # every state belongs to exactly one group, so a collaboration waiting on
+    # a courier cannot silently vanish from a creator's record — or, because
+    # `_COMMITTED_COLLAB_STATES` is built from this tuple, from the money a
+    # brief has spoken for.
+    "address_confirmed",
+    "dispatched",
+    "received",
     "draft_submitted",
     "draft_approved",
     "content_submitted",
@@ -3231,6 +3380,17 @@ _SLA_BY_COLLAB_STATE = {
     "accepted": "commercial_agreement",
     "commercial_agreed": "slot_booking",
     "attended": "content_submission",
+    # The delivery half. `address_confirmed` reuses the slot-booking target
+    # because it is the same question — how long may the creator take over
+    # the one thing only they can supply — and inventing a tenth target for a
+    # wait that behaves identically would be a number nobody tunes.
+    #
+    # **`dispatched` is deliberately absent, and `slot_booked` is absent for
+    # the same reason.** A parcel in transit is waiting on a courier, not on a
+    # person here; a clock on it would go red about somebody who has already
+    # done everything asked of them. Absent means no clock, never zero.
+    "address_confirmed": "slot_booking",
+    "received": "content_submission",
     "draft_submitted": "draft_review",
     "content_submitted": "draft_review",
     "content_approved": "payment",
@@ -3860,6 +4020,12 @@ def _campaign_audit_context(campaign: Optional[dict]) -> dict:
 # recorded and readable in-app, it just isn't pushed to WhatsApp.
 NOTIFY_EVENTS = {
     "application_declined": "Your application wasn't taken forward",
+    # The delivery half of the lifecycle. Three events because three different
+    # people need to hear three different things: the runner that an address
+    # is ready, the creator that it has been sent, the runner that it landed.
+    "delivery_address_confirmed": "A creator confirmed their delivery address",
+    "delivery_dispatched": "Your delivery is on its way",
+    "delivery_received": "A creator confirmed their delivery arrived",
     "application_accepted": "A brand accepted your pitch",
     "commercial_agreed": "Your fee has been agreed",
     "slot_booked": "Your slot is confirmed",
@@ -8362,6 +8528,9 @@ def _serialize_collab_row(
         # would otherwise learn about from a payment that never arrived.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
         "campaign_id": str(collab["campaign_id"]),
@@ -8399,7 +8568,12 @@ def _serialize_collab_row(
         # campaign reviews the cut first. The flag has to agree with what
         # `submit_collab_content` will actually accept.
         "can_submit_content": state == "content_submitted"
-        or state == ("draft_approved" if _requires_draft_approval(campaign) else "attended"),
+        or state
+        == (
+            "draft_approved"
+            if _requires_draft_approval(campaign)
+            else _ready_to_shoot_state(campaign)
+        ),
         # **The creator's two answers, decided here and not in the browser.**
         # Whether they may raise a dispute, take their own back, and answer a
         # takedown are the same rules the routes enforce; a card that works
@@ -8584,7 +8758,27 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
         }
     if state == "slot_booked":
         return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
-    if state == "attended":
+    # The delivery half, before the shared branch below: these three have no
+    # venue equivalent, and the last of them lands on `received`, which is the
+    # same "now shoot it" moment `attended` is.
+    if state == "address_confirmed":
+        return {
+            "action": "await_dispatch",
+            "label": "Your address is confirmed. Waiting for it to be sent.",
+            "waiting_on": "brand",
+        }
+    if state == "dispatched":
+        tracking = (collab.get("delivery") or {}).get("tracking_reference")
+        return {
+            "action": "confirm_received",
+            "label": (
+                f"On its way — tracking {tracking}. Tell us when it arrives."
+                if tracking
+                else "On its way. Tell us when it arrives."
+            ),
+            "waiting_on": "you",
+        }
+    if state in READY_TO_SHOOT_STATES:
         if _requires_draft_approval(campaign):
             # The whole point of the stage: nothing is published until it has
             # been looked at, so the ask here is a draft, not a live link.
@@ -9522,6 +9716,221 @@ async def creator_self_check_in(
         raise HTTPException(status_code=409, detail=refusal)
 
     return await _check_in_collaboration(collab, campaign, user, method="self_qr")
+
+
+# ---------------------------------------------------------------------------
+# Delivery: the three steps that stand in for booking and turning up
+# ---------------------------------------------------------------------------
+#
+# On a brief with no venue there is no slot to take and nobody to mark
+# present, so the two states in the middle of the ladder are replaced by
+# three: the creator confirms where it goes, the runner sends it, the creator
+# says it landed. See `DELIVERY_STATES`.
+#
+# **Each one is written by the party who actually knows.** An address is the
+# creator's, an arrival is the creator's, and the send is the runner's — which
+# is why `advance_collaboration` refuses all three rather than offering an
+# admin a button that records something they cannot see.
+
+
+async def _delivery_collab_or_409(collab_id: str, user: dict, *, expected: str):
+    """The creator's own collaboration, on a delivery campaign, at `expected`.
+
+    A 404 for somebody else's, the same as every other creator route here, and
+    a **409 with the reason** for the right collaboration in the wrong state —
+    a creator who taps twice on a slow connection should read "you already
+    told us" rather than a bare refusal.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has a venue — book a slot rather than a delivery.",
+        )
+    state = collab.get("state")
+    if state != expected:
+        raise HTTPException(
+            status_code=409,
+            detail=_DELIVERY_WRONG_STATE.get(
+                (expected, state),
+                f"Your collaboration is {state} — there's nothing to do here.",
+            ),
+        )
+    return collab, campaign
+
+
+# The refusals worth spelling out, because "wrong state" is not something
+# anybody can act on. Keyed by (what we wanted, what it actually is).
+_DELIVERY_WRONG_STATE = {
+    ("commercial_agreed", "address_confirmed"): "You've already confirmed your address.",
+    ("commercial_agreed", "dispatched"): "This is already on its way to you.",
+    ("commercial_agreed", "received"): "You've already confirmed this arrived.",
+    ("dispatched", "address_confirmed"): "This hasn't been sent yet — we'll tell you when it is.",
+    ("dispatched", "commercial_agreed"): "Confirm your delivery address first.",
+    ("dispatched", "received"): "You've already confirmed this arrived.",
+}
+
+
+@creator_router.post("/collaborations/{collab_id}/confirm-address")
+async def creator_confirm_delivery_address(
+    collab_id: str,
+    payload: ConfirmDeliveryAddressPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Confirm where this delivery goes. `commercial_agreed → address_confirmed`.
+
+    **The address comes off the profile and is checked rather than typed.**
+    That is the whole reason this is a confirmation and not a form: the
+    profile address is the one the creator maintains, the one the map pin
+    belongs to, and the one an erasure removes. A copy taken here would
+    outlive all three.
+
+    A profile with no address is refused, and the refusal says which field —
+    "your delivery address is empty" is something somebody can go and fix.
+    """
+    collab, campaign = await _delivery_collab_or_409(
+        collab_id, user, expected="commercial_agreed"
+    )
+
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+    address = (profile.get("full_address") or "").strip()
+    if not address:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Add your delivery address to your profile first — that's "
+                    "where this will be sent."
+                ),
+                "code": "no_delivery_address",
+                "missing_fields": ["full_address"],
+            },
+        )
+
+    now = datetime.now(timezone.utc)
+    # **A snapshot of the address as confirmed, not the address itself.** What
+    # is stored is that they confirmed *at this moment*; the label a courier
+    # prints is read from the profile at dispatch, so a creator who moves
+    # house between confirming and sending is not posted to the old one.
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {
+            "$set": {
+                **_state_stamp("address_confirmed", now),
+                "delivery": {
+                    "address_confirmed_at": now,
+                    "address_note": (payload.note or "").strip() or None,
+                },
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were confirming. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_address_confirmed",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "address_confirmed"},
+        **_campaign_audit_context(campaign),
+    )
+    # Routed the way an application is: on a brief we run this reaches our
+    # team, on a brand-run one it reaches the brand. Whoever it is, they are
+    # the one who has to put it in a box.
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "delivery_address_confirmed",
+        title="An address is confirmed",
+        body=f"{user.get('name') or 'A creator'} confirmed their delivery address.",
+    )
+    return _delivery_block(updated)
+
+
+@creator_router.post("/collaborations/{collab_id}/confirm-received")
+async def creator_confirm_delivery_received(
+    collab_id: str,
+    payload: ConfirmDeliveryReceivedPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Confirm it arrived. `dispatched → received`.
+
+    This is the moment the content clock starts — `received` carries the
+    `content_submission` target the same way `attended` does — which is why it
+    is the creator's to write rather than something inferred from a tracking
+    API we do not have. A parcel marked delivered by a courier and never
+    actually received is exactly the case that would otherwise put somebody
+    overdue for work they cannot start.
+    """
+    collab, campaign = await _delivery_collab_or_409(
+        collab_id, user, expected="dispatched"
+    )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "dispatched"},
+        {
+            "$set": {
+                **_state_stamp("received", now),
+                "delivery.received_at": now,
+                "delivery.received_note": (payload.note or "").strip() or None,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were confirming. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_received",
+        "collaboration",
+        collab["_id"],
+        before={"state": "dispatched"},
+        after={"state": "received"},
+        **_campaign_audit_context(campaign),
+    )
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "delivery_received",
+        title="A delivery arrived",
+        body=f"{user.get('name') or 'A creator'} confirmed their delivery arrived.",
+    )
+    return _delivery_block(updated)
+
+
+def _delivery_block(collab: Optional[dict]) -> Optional[dict]:
+    """What every surface reads about a delivery. The one serializer.
+
+    **No address and no map pin.** Both are on the creator's profile and both
+    are off `_BRAND_VISIBLE_CREATOR_FIELDS` for the reason a coordinate on
+    somebody's front door is their home address to five decimal places — and
+    this block rides on brand-facing payloads. What a brand needs is that the
+    address is confirmed, not what it says; the label is printed from the
+    profile by whoever packs the box, behind the staff role.
+    """
+    delivery = (collab or {}).get("delivery") or {}
+    if not delivery:
+        return None
+    return {
+        "address_confirmed_at": _iso(delivery.get("address_confirmed_at")),
+        "address_note": delivery.get("address_note"),
+        "dispatched_at": _iso(delivery.get("dispatched_at")),
+        "dispatched_by_name": delivery.get("dispatched_by_name"),
+        "tracking_reference": delivery.get("tracking_reference"),
+        "courier": delivery.get("courier"),
+        "dispatch_note": delivery.get("dispatch_note"),
+        "received_at": _iso(delivery.get("received_at")),
+        "received_note": delivery.get("received_note"),
+    }
 
 
 @creator_router.post("/collaborations/{collab_id}/withdraw")
@@ -12301,6 +12710,9 @@ def _serialize_applicant(
         "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -14899,6 +15311,42 @@ api_router.include_router(brand_router)
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
+def _ladder_for_standing(current: str, campaign: Optional[dict]) -> list:
+    """The ladder to read, for a collaboration *standing* on `current`.
+
+    **Where somebody is standing beats what the campaign now says.** A draft
+    toggle flipped mid-flight, or a campaign type an admin corrected after the
+    fact, must not strand a live collaboration on a state its own ladder no
+    longer contains — there would be no next step and no previous one, which
+    is a row nobody can move and nobody can see why.
+
+    So a state off the computed ladder puts **its own group** back, and only
+    its own. Falling back to the whole order would be the obvious version and
+    is wrong: a delivery collaboration on a campaign that does not gate drafts
+    would then be told the step after `received` is `draft_submitted`, a state
+    nothing on that campaign can ever leave. One rescue must not strand
+    somebody somewhere else.
+
+    Written once here because the draft gate and the delivery split need the
+    identical promise, and writing it twice is how the two come to disagree.
+    """
+    ladder = _collab_ladder(campaign)
+    if current in ladder or current not in COLLAB_STATE_ORDER:
+        return ladder
+    restore = next(
+        (
+            group
+            for group in (DRAFT_REVIEW_STATES, DELIVERY_STATES, VENUE_ATTENDANCE_STATES)
+            if current in group
+        ),
+        (),
+    )
+    keep = set(ladder) | set(restore)
+    # Rebuilt from COLLAB_STATE_ORDER rather than spliced, so the result is in
+    # the canonical order whatever was put back.
+    return [state for state in COLLAB_STATE_ORDER if state in keep]
+
+
 def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
     """The next step on this campaign's happy path, or None at the end.
 
@@ -14907,11 +15355,7 @@ def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optiona
     always did. A caller without the campaign in hand gets the draft-free
     ladder — the safe reading for everything written before the field existed.
     """
-    ladder = _collab_ladder(campaign)
-    if current in DRAFT_REVIEW_STATES and current not in ladder:
-        # A collaboration standing on a draft state is on the draft ladder,
-        # whatever the caller failed to pass.
-        ladder = COLLAB_STATE_ORDER
+    ladder = _ladder_for_standing(current, campaign)
     try:
         idx = ladder.index(current)
     except ValueError:
@@ -14928,9 +15372,7 @@ def _previous_collab_state(current: str, campaign: Optional[dict] = None) -> Opt
     campaign that doesn't review drafts must not land on `draft_approved`, a
     state nothing on that campaign can ever leave.
     """
-    ladder = _collab_ladder(campaign)
-    if current in DRAFT_REVIEW_STATES and current not in ladder:
-        ladder = COLLAB_STATE_ORDER
+    ladder = _ladder_for_standing(current, campaign)
     try:
         idx = ladder.index(current)
     except ValueError:
@@ -14952,7 +15394,11 @@ _DRAFT_OWNED_TRANSITIONS = set(DRAFT_REVIEW_STATES)
 
 # And the one only the creator may take. Booking is choosing when your own day
 # goes; an admin doing it for somebody is an appointment they find out about.
-_CREATOR_OWNED_TRANSITIONS = {"slot_booked"}
+# Nobody books on a creator's behalf, and nobody confirms on their behalf
+# either: an address is theirs to check and an arrival is theirs to report.
+# An admin writing `received` would be recording that a parcel turned up
+# somewhere they cannot see.
+_CREATOR_OWNED_TRANSITIONS = {"slot_booked", "address_confirmed", "received"}
 
 
 # Who has to do something next, and what. One table, read by every surface —
@@ -14971,6 +15417,21 @@ _NEXT_ACTION = {
     "commercial_agreed": ("creator", "Book a slot", "The creator picks their place."),
     "slot_booked": ("creator", "Turn up", "Attendance is marked on the day."),
     "attended": ("creator", "Submit the content", "Links to what they published."),
+    # The delivery half. The owner column is what makes these worth having
+    # separately: confirming an address and confirming arrival are both the
+    # creator's, and the send in between is the runner's, so a screen can say
+    # whose move it is rather than "waiting".
+    "address_confirmed": (
+        "brand",
+        "Send it",
+        "The address is confirmed — dispatch it and record the tracking reference.",
+    ),
+    "dispatched": (
+        "creator",
+        "Confirm it arrived",
+        "On its way. Tell us when it lands so the clock for content starts.",
+    ),
+    "received": ("creator", "Submit the content", "Links to what they published."),
     # The reviewer here follows execution_owner, like content review does —
     # "brand" is the owner vocabulary for "not us and not the creator".
     "draft_submitted": ("brand", "Review the draft", "Approve it, or send it back with a note, before anything goes live."),
@@ -14997,6 +15458,13 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
     if state == "commercial_agreed" and (campaign or {}).get("campaign_type") == "personal_table":
         label = "Pick a time"
         detail = "The creator chooses a time inside the campaign's window."
+
+    # **On a delivery brief there is no slot to book at all.** Telling a
+    # creator to pick their place when the thing is being posted to them is
+    # the instruction that made this type unusable before it existed.
+    if state == "commercial_agreed" and _is_delivery(campaign):
+        label = "Confirm your address"
+        detail = "Check the delivery address on your profile, then confirm it."
 
     # On a campaign that reviews drafts, what follows attendance is a draft,
     # not a live link. The state is the same; the instruction is not, and the
@@ -15092,6 +15560,28 @@ PROCESS_STAGES = (
 )
 PROCESS_STAGE_KEYS = tuple(k for k, _ in PROCESS_STAGES)
 
+# **The same eight stages, two words apart, on a delivery brief.** "Scheduled"
+# and "Attended" are both plainly false about a parcel — nothing was scheduled
+# and nobody attended — and a creator reading "Attended" on a campaign where a
+# bottle was posted to them has been told the screen does not know what kind of
+# work this is.
+#
+# It is a relabelling and deliberately not a ninth and tenth stage. The journey
+# is the same journey: something is arranged, the creator comes to have the
+# thing, they shoot it, it is reviewed, it goes live, they are paid. Splitting
+# the stepper by type would mean every screen that draws it learns the
+# difference, and `_stage_of` would stop being one reader.
+_DELIVERY_STAGE_LABELS = {"scheduled": "Dispatch", "attended": "Delivered"}
+
+
+def _process_stages(campaign: Optional[dict]) -> tuple:
+    """The eight stages, named for the kind of campaign this is. One reader."""
+    if not _is_delivery(campaign):
+        return PROCESS_STAGES
+    return tuple(
+        (key, _DELIVERY_STAGE_LABELS.get(key, label)) for key, label in PROCESS_STAGES
+    )
+
 # Which stage each internal state stands in, on a campaign that gates drafts.
 _STAGE_BY_STATE_WITH_DRAFT = {
     "applied": "submitted",
@@ -15102,6 +15592,13 @@ _STAGE_BY_STATE_WITH_DRAFT = {
     "commercial_agreed": "negotiated",
     "slot_booked": "scheduled",
     "attended": "attended",
+    # Delivery lands on the same two stages rather than growing a ninth and
+    # tenth box. The *words* change (see `_process_stages`) because
+    # "Scheduled" and "Attended" are both false about a parcel; the shape of
+    # the journey does not, because it really is the same journey.
+    "address_confirmed": "scheduled",
+    "dispatched": "scheduled",
+    "received": "attended",
     "draft_submitted": "content_review",
     "draft_approved": "content_review",
     "content_submitted": "content_delivery",
@@ -15148,6 +15645,15 @@ _PROCESS_ACTION = {
     "slot_booked": ("creator", "Turn up on the day", "Booked — waiting for the day"),
     "attended": ("creator", "Publish and send the link", "Waiting for the creator's content"),
     "attended_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
+    # The delivery half. Both voices are written out rather than reusing the
+    # venue ones, because the *wait* reads differently from the outside: "on
+    # its way" is a fact about a courier, and a brand reading "waiting for the
+    # creator" about a parcel it has not posted yet would chase the wrong
+    # person.
+    "address_confirmed": ("runner", "Send it and record the tracking", "Waiting to be sent"),
+    "dispatched": ("creator", "Confirm it arrived", "On its way to the creator"),
+    "received": ("creator", "Publish and send the link", "Waiting for the creator's content"),
+    "received_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
     "draft_submitted": ("brand", "Review the draft", "The draft is being reviewed"),
     "draft_approved": ("creator", "Publish and send the live link", "Waiting for the creator to publish"),
     "content_submitted": ("brand", "Approve it, or ask for changes", "The content is being reviewed"),
@@ -15226,6 +15732,11 @@ def _process_flow(
         action_key = "attended_draft"
     if state == "slot_booked" and not _slot_confirmed(collab):
         action_key = "slot_pending"
+    # A delivery brief reaches `received` where a venue one reaches
+    # `attended`, and with a draft gate the same split applies: what the
+    # creator does next is make the draft, not publish.
+    if state == "received" and _requires_draft_approval(campaign):
+        action_key = "received_draft"
 
     owner, mine, theirs = _PROCESS_ACTION.get(action_key, (None, None, None))
     owner = _process_owner(owner, campaign)
@@ -15239,7 +15750,7 @@ def _process_flow(
     # stepper rather than replacing it, because the work still has a place on
     # the line.
     changes_note = None
-    if state == "attended":
+    if state in READY_TO_SHOOT_STATES:
         changes_note = (collab.get("draft_revision_note") or collab.get("revision_note") or "").strip() or None
 
     index = PROCESS_STAGE_KEYS.index(stage_key) if stage_key in PROCESS_STAGE_KEYS else -1
@@ -15250,7 +15761,7 @@ def _process_flow(
             "done": index >= 0 and i < index,
             "current": i == index,
         }
-        for i, (key, label_) in enumerate(PROCESS_STAGES)
+        for i, (key, label_) in enumerate(_process_stages(campaign))
     ]
 
     return {
@@ -21905,6 +22416,9 @@ def _serialize_admin_collab(
         "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -22260,6 +22774,34 @@ async def advance_collaboration(
             detail=(
                 "Only the creator can book their own slot. They pick a time, "
                 "and whoever runs the campaign confirms it."
+            ),
+        )
+
+    if to_state in _CREATOR_OWNED_TRANSITIONS:
+        # The delivery half of the same rule. An address is the creator's to
+        # check — writing it for them is recording a confirmation they never
+        # gave, about where their own parcel goes — and an arrival is
+        # something only the person it arrived at can report. Refused here
+        # rather than absent, so the console says why instead of the button
+        # quietly doing nothing.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only the creator can confirm their address and confirm the "
+                "delivery arrived. Dispatching it is yours, from the "
+                "collaboration page."
+            ),
+        )
+
+    if to_state == "dispatched":
+        # Dispatch carries a tracking reference and a notification, and both
+        # live on the route that takes one. Advancing blind would record a
+        # send with nothing the creator can follow.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Record the dispatch from the collaboration page, so the "
+                "tracking reference goes to the creator with it."
             ),
         )
 
@@ -31346,6 +31888,88 @@ async def read_content_proof(
 # a collaboration.
 # ---------------------------------------------------------------------------
 
+@notes_router.post("/{collab_id}/dispatch")
+async def dispatch_delivery(
+    collab_id: str,
+    payload: DispatchDeliveryPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES, *BRAND_ROLES)),
+):
+    """Record that it has been sent. `address_confirmed → dispatched`.
+
+    **On the notes router**, whose door already answers "may this person read
+    this collaboration" for exactly the three audiences who could be sending
+    it — the brand on its own brief, the assigned manager, an admin — with a
+    404 behind each. Writing a fourth door here would be a fourth answer to a
+    question that has one.
+    """
+    # The door hands back the campaign too, which is the one this decision is
+    # about — re-reading it would be a second lookup that could disagree.
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409, detail="This campaign has a venue — there's nothing to send."
+        )
+    if collab.get("state") != "address_confirmed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The creator hasn't confirmed their address yet."
+                if collab.get("state") == "commercial_agreed"
+                else f"This collaboration is {collab.get('state')} — it can't be dispatched."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    tracking = (payload.tracking_reference or "").strip() or None
+    courier = (payload.courier or "").strip() or None
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "address_confirmed"},
+        {
+            "$set": {
+                **_state_stamp("dispatched", now),
+                "delivery.dispatched_at": now,
+                "delivery.dispatched_by_id": ObjectId(user["_id"]),
+                "delivery.dispatched_by_name": user.get("name"),
+                "delivery.tracking_reference": tracking,
+                "delivery.courier": courier,
+                "delivery.dispatch_note": (payload.note or "").strip() or None,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were recording it. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_dispatched",
+        "collaboration",
+        collab["_id"],
+        before={"state": "address_confirmed"},
+        after={"state": "dispatched", "tracking_reference": tracking, "courier": courier},
+        **_campaign_audit_context(campaign),
+    )
+    # The creator hears immediately, with the reference where there is one:
+    # this is the message that stops them wondering, and the one they check
+    # against the parcel when it turns up.
+    await notify(
+        collab["creator_id"],
+        "delivery_dispatched",
+        title="Your delivery is on its way",
+        body=(
+            f"Sent{f' via {courier}' if courier else ''}."
+            + (f" Tracking: {tracking}." if tracking else "")
+            + " Let us know when it arrives."
+        ),
+        link=f"/dashboard?collab={str(collab['_id'])}",
+    )
+    return _delivery_block(updated)
+
+
 disputes_router = APIRouter(prefix="/disputes", tags=["disputes"])
 
 DISPUTE_STATES = ("open", "resolved", "withdrawn")
@@ -32719,7 +33343,13 @@ async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -
     the state, the audit line or the notification."""
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": {"$in": ["attended", "draft_submitted"]}},
+        {
+            "_id": collab["_id"],
+            # `received` is `attended` on a delivery brief — the state the
+            # creator submits a draft from. Naming only `attended` here made
+            # the draft gate unreachable on the whole type.
+            "state": {"$in": [_ready_to_shoot_state(campaign), "draft_submitted"]},
+        },
         {
             "$set": {
                 **_state_stamp("draft_submitted", now),
@@ -33089,6 +33719,9 @@ async def get_application(
         # mediated is not one.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         # Whether a flag is already sitting with an admin. The panel says so
         # rather than offering a button that would 409.
         "circumvention_open": circumvention_open,
@@ -33200,6 +33833,13 @@ async def get_application(
             "can_confirm_slot": state == "slot_booked"
             and not _slot_confirmed(collab)
             and _question_staff_may_see(campaign, user),
+            # The delivery equivalent, decided server-side like every other
+            # action here so neither console offers a button the API refuses.
+            # Same reader again: on a weare-run brief the brand does not send
+            # the parcel and must not be shown a control that says they do.
+            "can_dispatch": state == "address_confirmed"
+            and _is_delivery(campaign)
+            and _question_staff_may_see(campaign, user),
             "can_advance": is_admin
             and state not in TERMINAL_COLLAB_STATES
             and _next_collab_state(state, campaign)
@@ -33207,6 +33847,10 @@ async def get_application(
                 _BRAND_OWNED_TRANSITIONS
                 | _DRAFT_OWNED_TRANSITIONS
                 | _CREATOR_OWNED_TRANSITIONS
+                # Dispatch carries a tracking reference and a message to the
+                # creator, both of which live on its own route. An Advance
+                # button here would record a send with nothing to follow.
+                | {"dispatched"}
             )
             and _next_collab_state(state, campaign) is not None,
             # **Raising is for the parties, resolving is for the mediator**,

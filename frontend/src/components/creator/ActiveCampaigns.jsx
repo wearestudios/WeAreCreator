@@ -14,6 +14,7 @@ import {
     FileVideo,
     Loader2,
     MapPin,
+    PackageCheck,
     Phone,
     Rocket,
     Send,
@@ -52,6 +53,12 @@ import SubmitDraftDialog from "./SubmitDraftDialog";
 
 const ACTION_ICON = {
     book_slot: CalendarClock,
+    // The delivery half. `await_dispatch` has no icon on purpose: it is the
+    // one row where the creator's next action is to do nothing, and an icon
+    // beside a button that is not there reads as a control that failed to
+    // render.
+    confirm_address: MapPin,
+    confirm_received: PackageCheck,
     submit_draft: FileVideo,
     resubmit_draft: FileVideo,
     submit_content: Upload,
@@ -86,7 +93,61 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
         }
     };
 
+    // **Two states, one pattern, and both are the creator's own.** Confirming
+    // an address and confirming an arrival are POSTs with an optional note and
+    // no form worth the name — a dialog for either would be two taps where one
+    // does. Optimistic like every other mutation here: the row answers on the
+    // frame of the click rather than after a round trip.
+    const [confirming, setConfirming] = useState(null);
+    const confirmDelivery = async (what) => {
+        setConfirming(what);
+        try {
+            await api.post(
+                `/creator/collaborations/${collab.id}/${
+                    what === "address" ? "confirm-address" : "confirm-received"
+                }`,
+                {},
+            );
+            notifySuccess(
+                what === "address"
+                    ? "Address confirmed — we'll send it shortly"
+                    : "Thanks — you can shoot whenever you're ready",
+            );
+            onRefresh?.();
+        } catch (e) {
+            notifyError(e);
+        } finally {
+            setConfirming(null);
+        }
+    };
+
     const action = (() => {
+        if (next.action === "confirm_address") {
+            return (
+                <Button
+                    data-testid={IDS.primary(collab.id)}
+                    disabled={confirming === "address"}
+                    onClick={() => confirmDelivery("address")}
+                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                >
+                    <Icon className="mr-2 h-4 w-4" />
+                    {confirming === "address" ? "Confirming…" : "Confirm my address"}
+                </Button>
+            );
+        }
+        if (next.action === "confirm_received") {
+            return (
+                <Button
+                    data-testid={IDS.primary(collab.id)}
+                    disabled={confirming === "received"}
+                    onClick={() => confirmDelivery("received")}
+                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                >
+                    <Icon className="mr-2 h-4 w-4" />
+                    {confirming === "received" ? "Confirming…" : "It arrived"}
+                </Button>
+            );
+        }
         if (next.action === "book_slot") {
             return (
                 <Button

@@ -107,25 +107,75 @@ class TestCollaborationStateMachine:
     def test_closed_is_the_end(self):
         assert server._next_collab_state("closed") is None
 
-    def test_happy_path_walks_forward_one_step_at_a_time(self):
-        """Both ladders, because there are now two. A campaign that reviews
-        drafts walks the full order; one that doesn't — which is what an
-        absent campaign reads as, and so what every collaboration written
-        before the field existed keeps — walks the eight it always did."""
-        for campaign, expected in (
-            ({"requires_draft_approval": True}, server.COLLAB_STATE_ORDER),
-            (None, server._collab_ladder(None)),
-            ({}, server._collab_ladder(None)),
-        ):
-            walked = ["applied"]
-            while (nxt := server._next_collab_state(walked[-1], campaign)) is not None:
-                walked.append(nxt)
-            assert walked == expected
+    @pytest.mark.parametrize(
+        "campaign",
+        [
+            None,
+            {},
+            {"requires_draft_approval": True},
+            {"campaign_type": "delivery"},
+            {"campaign_type": "delivery", "requires_draft_approval": True},
+            {"campaign_type": "personal_table"},
+        ],
+        ids=["absent", "empty", "draft", "delivery", "delivery+draft", "venue"],
+    )
+    def test_happy_path_walks_forward_one_step_at_a_time(self, campaign):
+        """**Four ladders now, from two independent substitutions.**
 
-    def test_the_draft_states_are_the_only_optional_ones(self):
-        assert set(server.COLLAB_STATE_ORDER) - set(server._collab_ladder(None)) == set(
+        The draft gate is optional per campaign; the venue/delivery split is
+        decided by the type; and they compose. Whichever combination this is,
+        walking `_next_collab_state` from `applied` has to reproduce
+        `_collab_ladder` exactly — a step that skips one or repeats one is a
+        collaboration somebody cannot move.
+        """
+        expected = server._collab_ladder(campaign)
+        walked = ["applied"]
+        while (nxt := server._next_collab_state(walked[-1], campaign)) is not None:
+            walked.append(nxt)
+        assert walked == expected
+
+    def test_exactly_one_of_the_two_middle_halves_is_ever_on_the_ladder(self):
+        """There is no campaign where a creator both turns up somewhere and
+        has it posted to them, and none where neither happens. A ladder with
+        both would ask a creator to book a slot for a parcel; one with neither
+        would jump from the fee straight to content nobody could have shot."""
+        for campaign in ({}, {"campaign_type": "delivery"}, {"campaign_type": "launch"}):
+            ladder = set(server._collab_ladder(campaign))
+            venue = ladder & set(server.VENUE_ATTENDANCE_STATES)
+            delivery = ladder & set(server.DELIVERY_STATES)
+            assert bool(venue) != bool(delivery), campaign
+            assert len(venue or delivery) == len(
+                server.VENUE_ATTENDANCE_STATES if venue else server.DELIVERY_STATES
+            )
+
+    def test_the_optional_states_are_the_draft_pair_and_the_delivery_half(self):
+        """Nothing else may quietly become conditional. A state that is
+        sometimes on the ladder is a state every read has to be checked
+        against, and the one that gets missed is a row nobody can see."""
+        venue_ladder = set(server._collab_ladder(None))
+        assert set(server.COLLAB_STATE_ORDER) - venue_ladder == set(
             server.DRAFT_REVIEW_STATES
+        ) | set(server.DELIVERY_STATES)
+
+        delivery_ladder = set(
+            server._collab_ladder({"campaign_type": "delivery", "requires_draft_approval": True})
         )
+        assert set(server.COLLAB_STATE_ORDER) - delivery_ladder == set(
+            server.VENUE_ATTENDANCE_STATES
+        )
+
+    def test_a_collaboration_standing_on_a_delivery_state_is_not_stranded(self):
+        """The same promise the draft gate gets. An admin correcting a
+        campaign's type after the fact must not leave a live collaboration on
+        a state with no next step and no previous one — a row nobody can move
+        and nobody can see why."""
+        venue = {"campaign_type": "personal_table"}
+        assert server._next_collab_state("address_confirmed", venue) == "dispatched"
+        assert server._next_collab_state("received", venue) == "content_submitted"
+        assert server._previous_collab_state("received", venue) == "dispatched"
+        # And the mirror: a venue state under a delivery campaign.
+        delivery = {"campaign_type": "delivery"}
+        assert server._next_collab_state("slot_booked", delivery) == "attended"
 
     def test_a_collaboration_standing_on_a_draft_state_still_has_a_next_step(self):
         """The toggle can be turned off under somebody mid-review. They must
@@ -1542,12 +1592,33 @@ def _campaign_body(**overrides):
 
 
 class TestCampaignTypes:
-    def test_the_three_types_are_the_declared_ones(self):
+    def test_the_four_types_are_the_declared_ones(self):
+        """**`delivery` is the fourth and it is the one with no venue.** The
+        other three are a place a creator turns up to, which is why a product
+        seeding campaign could not be posted here at all."""
         assert set(server.CampaignType.__args__) == {
             "launch",
             "group_event",
             "personal_table",
+            "delivery",
         }
+        assert server.DELIVERY_CAMPAIGN_TYPE in server.CampaignType.__args__
+
+    def test_every_type_declares_its_scheduling_shape(self):
+        """A type that inherits the table by omission is how a launch came to
+        be asked which weekdays don't work. A fourth one has to say."""
+        assert set(server._SCHEDULING_BY_TYPE) == set(server.CampaignType.__args__)
+
+    def test_a_delivery_brief_is_asked_for_no_venue_scheduling(self):
+        """There is no venue, so there are no hours that work and no days that
+        don't — a courier is not a kitchen. Asking either would be the exact
+        failure `_SCHEDULING_BY_TYPE` was written to stop, one type later."""
+        allowed = set(server._SCHEDULING_BY_TYPE["delivery"]["allowed"])
+        assert allowed == {"start_date", "end_date"}
+        assert not allowed & {"restricted_days", "shoot_windows", "sittings", "duration_minutes"}
+        # And the refusal names the control on the screen rather than a field.
+        refusal = server._scheduling_refusal("delivery", {"start_date", "end_date", "shoot_windows"})
+        assert refusal and "the hours that work" in refusal
         assert server.EVENT_CAMPAIGN_TYPES == ("launch", "group_event")
 
     def test_a_type_is_required(self):
