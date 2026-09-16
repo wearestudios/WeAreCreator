@@ -3904,7 +3904,39 @@ class TestVerificationDocumentsAreNotPublic:
         # under a different brand.
         assert '{"_id": doc_oid, "brand_id": brand_oid}' in src
         assert "audit(" in src
-        assert '"no-store"' in src
+        # The bytes leave through the one delivery helper, which is where
+        # `no-store` and the download name now live — asserted there rather
+        # than here, so the header cannot be set on three routes and missed on
+        # a fourth.
+        assert "_private_file_response(" in src
+        assert '"no-store"' in inspect.getsource(server._private_file_response)
+
+    def test_every_private_read_goes_through_the_one_delivery_helper(self):
+        """**Four routes, one way out.** Each of them decides who may read the
+        record; none of them decides how the bytes travel, because that is
+        where `no-store`, the `Content-Disposition` and the choice between a
+        stream and a signed URL live. A route building its own response is a
+        route that will be the one missing a header."""
+        import inspect
+
+        servers = [
+            server.download_brand_document,
+            server._stream_content_proof,
+            server.download_draft_file,
+        ]
+        for fn in servers:
+            src = inspect.getsource(fn)
+            assert "_private_file_response(" in src, fn.__name__
+            assert "FileResponse(" not in src, fn.__name__
+
+    def test_a_purged_file_is_a_410_and_not_a_404(self):
+        """The row is a tombstone and the file went under the retention
+        policy. "That couldn't be opened" would send somebody looking for a
+        bug where the honest answer is that we deleted it on purpose."""
+        import inspect
+
+        src = inspect.getsource(server.download_brand_document)
+        assert "410" in src
 
 
 class TestDocumentSniffing:
@@ -3937,30 +3969,98 @@ class TestDocumentSniffing:
         assert "sniffer(first)" in src
         assert "sniffer = sniffer or sniff_document_type" in src
         assert "file.filename" in src
-        # The client's name is a label only — it must not reach the path.
-        stored = src[src.index("stored_name = "):src.index("path = PRIVATE_UPLOAD_DIR")]
+        # The client's name is a label only — it must not reach the stored
+        # name. The window is from where the name is built to where the bytes
+        # are handed to storage, which is every line that decides the key.
+        stored = src[src.index("stored_name = ") : src.index("STORAGE.put(")]
         assert "filename" not in stored
 
     def test_the_size_limit_is_enforced_while_streaming(self):
+        """**Still while the bytes arrive, not after.** The check moved into
+        `_drain_to_spool` when the write did, and it has to stay on the chunk
+        that crosses the line — measuring a 300MB draft by first pulling it
+        into memory is the failure this exists to prevent."""
         import inspect
 
-        src = inspect.getsource(server._store_private_upload)
+        src = inspect.getsource(server._drain_to_spool)
         assert "written > limit" in src
         assert "413" in src
+        # The refusal fires inside the read loop, before the next chunk.
+        assert src.index("written > limit") < src.index("chunk = await file.read")
+        # And both writers still go through it rather than draining their own.
+        for fn in (server._store_upload, server._store_private_upload):
+            assert "_drain_to_spool(" in inspect.getsource(fn), fn.__name__
+
+    def test_an_oversized_upload_is_refused_without_being_kept(self):
+        """Driven rather than read: a spooled buffer that outlived a refusal
+        would be a temporary file per rejected upload, which on a phone-heavy
+        service is a disk that fills up quietly."""
+        import asyncio
+
+        limit_mb = server.max_upload_bytes() // (1024 * 1024)
+
+        class _Endless:
+            """A file that never stops arriving. If the check only ran at the
+            end, this test would hang rather than fail — which is the point."""
+
+            filename = "huge.pdf"
+            closed = False
+
+            def __init__(self):
+                self.chunks = 0
+
+            async def read(self, n=-1):
+                self.chunks += 1
+                return b"%PDF-" + b"x" * (1024 * 1024)
+
+            async def close(self):
+                self.closed = True
+
+        upload = _Endless()
+
+        async def go():
+            with pytest.raises(HTTPException) as exc:
+                await server._store_private_upload(upload, prefix="brand")
+            return exc.value
+
+        err = asyncio.new_event_loop().run_until_complete(go())
+        assert err.status_code == 413
+        # It stopped on the chunk that crossed the line, not after draining a
+        # file with no end to it.
+        assert upload.chunks <= limit_mb + 2, upload.chunks
+        # And the handle is released either way — `finally`, not the happy path.
+        assert upload.closed is True
 
 
 class TestPrivatePathResolution:
+    """A stored name is ours and random, but this is the one place a key is
+    built from stored data, so it checks rather than assumes — and it has to
+    keep checking now that the same name can address an object in a bucket."""
+
     @pytest.mark.parametrize(
         "name", ["../../etc/passwd", "a/b.pdf", "a\\b.pdf", "", ".", ".."],
     )
     def test_traversal_and_nonsense_are_refused(self, name):
-        assert server._private_upload_path(name) is None
+        assert server._private_upload_exists(name) is False
+        assert server.STORAGE.path(name, private=True) is None
 
     def test_it_checks_the_directory_boundary(self):
         import inspect
 
-        src = inspect.getsource(server._private_upload_path)
+        src = inspect.getsource(server.LocalStorage.path)
         assert "relative_to" in src
+
+    def test_a_separator_is_refused_before_the_backend_is_asked(self):
+        """The name check sits in `_private_upload_exists`, above whichever
+        backend is in use — on S3 there is no directory to escape from, so a
+        boundary check that lived only in `LocalStorage` would be a boundary
+        check production does not run. A key with a slash in it would address
+        a different prefix entirely, which is the object-store shape of the
+        same bug."""
+        import inspect
+
+        src = inspect.getsource(server._private_upload_exists)
+        assert '"/" in stored_name' in src and '"\\\\" in stored_name' in src
 
 
 class TestBrandProfileFields:

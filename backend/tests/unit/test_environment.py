@@ -265,3 +265,89 @@ def test_the_required_three_are_documented_with_a_usable_default():
         match = re.search(rf"^{key}=(.*)$", text, re.M)
         assert match, f"{key} is required but not documented as a live line"
         assert match.group(1).strip(), f"{key} is documented with no example value"
+
+
+# ---------------------------------------------------------------------------
+# The operator's copy of the list
+# ---------------------------------------------------------------------------
+
+
+def _deployment_md() -> str:
+    path = Path(server.__file__).resolve().parents[1] / "DEPLOYMENT.md"
+    assert path.is_file(), "DEPLOYMENT.md is missing"
+    return path.read_text()
+
+
+def test_deployment_md_names_every_variable_the_backend_reads():
+    """**Two audiences, one list.**
+
+    `.env.example` is the machine-checked one and is what a developer copies;
+    DEPLOYMENT.md is what somebody setting up a production box reads, and a
+    variable missing from it is a variable they will not know to set until
+    something breaks in a way that does not name it.
+
+    The dynamic notification templates are excluded for the same reason they
+    are special-cased above: they are resolved as
+    `AISENSY_TEMPLATE_{event.upper()}` and there is one per notify event, so
+    listing forty of them in an operator's guide would bury the ten that
+    matter. `.env.example` is where they are held to.
+    """
+    doc = _deployment_md()
+    missing = sorted(
+        name
+        for name in _variables_read_by_the_backend()
+        if not name.startswith("AISENSY_TEMPLATE_") and name not in doc
+    )
+    assert not missing, f"not in DEPLOYMENT.md: {', '.join(missing)}"
+
+
+def test_deployment_md_says_which_ones_refuse_to_start():
+    """A list of forty variables with no indication of which three end the
+    process is a list somebody reads once and does not act on."""
+    doc = _deployment_md()
+    for required, _why in server._ENV_REQUIRED:
+        assert required in doc, required
+    assert "Refusing to start" in doc
+    # And the storage half, which is the newer of the two checks.
+    for name, _why in server._S3_REQUIRED:
+        assert name in doc, name
+
+
+def test_deployment_md_states_the_production_otp_refusal():
+    """The one thing in this file that is a security claim rather than a
+    setting: both switches are refused in production, and the refusal does not
+    depend on getting anything else right. An operator who believes otherwise
+    leaves a fixed login code on a live box."""
+    doc = _deployment_md()
+    assert "ALLOW_OTP_SIMULATION" in doc and "OTP_TEST_CODE" in doc
+    assert "refused when `APP_ENV` reads as production" in doc
+    # And it points at the test that actually pins the dangerous combination,
+    # rather than only asserting it in prose.
+    assert "test_production_refuses_it_even_with_simulation_forced_on" in doc
+
+
+def test_the_refusal_deployment_md_describes_is_the_one_in_the_code():
+    """Driven, not quoted. The document says `APP_ENV=production` with
+    simulation forced on still refuses the fixed code; this asks the real
+    function."""
+    import os
+
+    before = {k: os.environ.get(k) for k in ("APP_ENV", "ENV", "ALLOW_OTP_SIMULATION",
+                                             "OTP_TEST_CODE", "AISENSY_API_KEY",
+                                             "AISENSY_CAMPAIGN_NAME")}
+    try:
+        os.environ["APP_ENV"] = "production"
+        os.environ["ALLOW_OTP_SIMULATION"] = "true"
+        os.environ["OTP_TEST_CODE"] = "123456"
+        for key in ("ENV", "AISENSY_API_KEY", "AISENSY_CAMPAIGN_NAME"):
+            os.environ.pop(key, None)
+
+        assert server._simulation_allowed() is True, "precondition: forced on"
+        assert server._fixed_test_otp() is None
+        assert server._fixed_test_otp_refusal() is not None
+    finally:
+        for key, value in before.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

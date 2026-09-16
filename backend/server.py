@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import logging
+import tempfile
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
 from typing import Optional, Literal, Annotated, get_args
@@ -33,7 +34,12 @@ from fastapi import (
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -4066,13 +4072,301 @@ async def notify(
 
 
 # ---------------------------------------------------------------------------
+# Where the bytes actually live
+# ---------------------------------------------------------------------------
+#
+# Uploads used to be local disk and nothing else, with a NOTE on the directory
+# saying not to rely on it in production. The host this runs on has an
+# ephemeral filesystem, so that note described a live data-loss bug: **every
+# redeploy took every brand's verification documents, every creator's profile
+# photo, every campaign cover and every unpublished draft with it.** The
+# database rows survived and pointed at nothing, which is the worst shape of
+# the failure — a brand reads "GST certificate uploaded" and an admin opens a
+# 404.
+#
+# So there are two backends behind one interface, and the *record* does not
+# know which is in use. A stored name is still a stored name and a public URL
+# is still `/uploads/<name>`: only where the bytes sit changes. That is what
+# makes the migration a file copy rather than a data migration, and it is why
+# `_our_image_path`, `_absolute_media_url`, `_delete_upload` and `coverHue`
+# did not have to move.
+#
+# **Local disk stays, and is not a lesser path.** It is what the unit suite,
+# `docker compose` and a laptop use, and a backend that only works when four
+# credentials are present is a backend nobody can run. What changed is that it
+# is no longer *silently* what production gets — see `_refuse_ephemeral_storage`.
+
+STORAGE_PUBLIC_PREFIX = "public"
+STORAGE_PRIVATE_PREFIX = "private"
+
+
+def storage_backend_name() -> str:
+    """Which backend this process will use: "s3" or "local".
+
+    Derived from `S3_BUCKET` when `STORAGE_BACKEND` says nothing, because a
+    bucket configured and not used is a configuration somebody thinks is live.
+    An unrecognised value reads as "local" and is warned about at boot rather
+    than being guessed at — the guess that matters is caught by
+    `_refuse_ephemeral_storage`, which asks whether this is production rather
+    than what the string said.
+    """
+    declared = os.environ.get("STORAGE_BACKEND", "").strip().lower()
+    if declared in ("s3", "local"):
+        return declared
+    if declared:
+        logger.warning(
+            "STORAGE_BACKEND=%r is not 's3' or 'local' — reading it as local.",
+            declared,
+        )
+        return "local"
+    return "s3" if os.environ.get("S3_BUCKET", "").strip() else "local"
+
+
+# Every setting the S3 backend needs, with why each one matters, so a missing
+# one is named rather than surfacing as a botocore stack trace on the first
+# upload somebody tries.
+_S3_REQUIRED = (
+    ("S3_BUCKET", "the bucket uploads are written to"),
+    ("S3_REGION", "the bucket's region, e.g. ap-south-1"),
+    ("S3_ACCESS_KEY_ID", "the access key the server signs requests with"),
+    ("S3_SECRET_ACCESS_KEY", "the secret for that access key"),
+)
+
+
+def signed_url_ttl_seconds() -> int:
+    """How long a signed link to a private object stays valid.
+
+    Two minutes by default, which is long enough for a browser to follow a
+    redirect and short enough that a link copied out of a network tab is dead
+    before it can be passed on. Clamped, because a TTL of a day is a public
+    link with extra steps and a TTL of one second is a document nobody can
+    open on a slow connection.
+    """
+    try:
+        value = int(os.environ.get("S3_SIGNED_URL_TTL_SECONDS", "120"))
+    except ValueError:
+        logger.warning("S3_SIGNED_URL_TTL_SECONDS is not a number — using 120.")
+        return 120
+    return max(30, min(value, 3600))
+
+
+class LocalStorage:
+    """Files on this machine's disk. The development and test backend.
+
+    Public files are served by the `StaticFiles` mount, exactly as they always
+    were; private files are streamed by the authenticated routes that already
+    existed. `signed_url` returns None, which is how the private routes know
+    to stream rather than redirect — an absent signed URL is a fact about the
+    backend, not a failure.
+    """
+
+    name = "local"
+    durable = False
+
+    def _dir(self, private: bool) -> Path:
+        """**Read at call time, never bound at construction.**
+
+        `UPLOAD_DIR` and `PRIVATE_UPLOAD_DIR` are settings, and a test that
+        points one at a temporary directory expects the next write to land
+        there. Capturing them in `__init__` made that silently untrue — the
+        object went to the real directory while the test watched an empty
+        tmpdir, which is the kind of green test that proves nothing.
+        """
+        return PRIVATE_UPLOAD_DIR if private else UPLOAD_DIR
+
+    def put(self, name: str, fileobj, *, content_type: str, private: bool) -> None:
+        target_dir = self._dir(private)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        fileobj.seek(0)
+        with open(target_dir / name, "wb") as out:
+            while True:
+                chunk = fileobj.read(64 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+    def open(self, name: str, *, private: bool):
+        path = self.path(name, private=private)
+        return open(path, "rb") if path else None
+
+    def path(self, name: str, *, private: bool) -> Optional[Path]:
+        """The file on disk, or None. **The one place a path is built from a
+        stored name**, so it checks the directory boundary rather than trusting
+        that the name is one we generated."""
+        if not name or "/" in name or "\\" in name or name in ("", ".", ".."):
+            return None
+        base = self._dir(private)
+        resolved = (base / name).resolve()
+        try:
+            resolved.relative_to(base.resolve())
+        except ValueError:
+            return None
+        return resolved if resolved.is_file() else None
+
+    def delete(self, name: str, *, private: bool) -> bool:
+        path = self.path(name, private=private)
+        if not path:
+            return False
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError:
+            logger.exception("Could not remove %s upload %s", self.name, name)
+            return False
+
+    def exists(self, name: str, *, private: bool) -> bool:
+        return self.path(name, private=private) is not None
+
+    def signed_url(self, name: str, *, private: bool = True) -> Optional[str]:
+        return None
+
+    def public_url(self, name: str) -> str:
+        return f"{UPLOAD_URL_PREFIX}/{name}"
+
+
+class S3Storage:
+    """S3, or anything that speaks it — R2, Spaces, MinIO, Wasabi.
+
+    One bucket with two prefixes rather than two buckets: the difference
+    between a cover image and a GST certificate is a policy on a prefix, and
+    two buckets is two sets of credentials, two lifecycle rules and two places
+    to get the public-access setting wrong.
+
+    - `public/` is meant to be read by strangers. A campaign cover previews in
+      a WhatsApp card and a profile photo renders on an applicant board, so
+      these are served with a long cache and no signature.
+    - `private/` **must block public access at the bucket level.** Verification
+      documents carry registered addresses and directors' names; drafts are
+      work that is not public yet; story proofs routinely catch a viewer list
+      or a DM notification. Nothing here is reachable without a signature, and
+      DEPLOYMENT.md names the bucket policy that enforces it.
+
+    boto3 is imported lazily, inside the constructor. The unit suite and a
+    laptop run the local backend and must not need the dependency installed to
+    import this module at all.
+    """
+
+    name = "s3"
+    durable = True
+
+    def __init__(self):
+        import boto3  # noqa: PLC0415 — deliberately lazy; see the docstring
+        from botocore.config import Config
+
+        self.bucket = os.environ["S3_BUCKET"].strip()
+        self.public_base = os.environ.get("S3_PUBLIC_BASE_URL", "").strip().rstrip("/")
+        self._client = boto3.client(
+            "s3",
+            region_name=os.environ.get("S3_REGION", "").strip() or None,
+            endpoint_url=os.environ.get("S3_ENDPOINT_URL", "").strip() or None,
+            aws_access_key_id=os.environ.get("S3_ACCESS_KEY_ID", "").strip() or None,
+            aws_secret_access_key=(
+                os.environ.get("S3_SECRET_ACCESS_KEY", "").strip() or None
+            ),
+            # SigV4 explicitly: several S3-compatible hosts reject the older
+            # signature, and the failure is a 403 that reads like bad
+            # credentials rather than like a protocol mismatch.
+            config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
+        )
+
+    @staticmethod
+    def key(name: str, *, private: bool) -> str:
+        prefix = STORAGE_PRIVATE_PREFIX if private else STORAGE_PUBLIC_PREFIX
+        return f"{prefix}/{name}"
+
+    def put(self, name: str, fileobj, *, content_type: str, private: bool) -> None:
+        fileobj.seek(0)
+        extra = {"ContentType": content_type}
+        if private:
+            # Belt as well as the bucket's own braces. A bucket-level block on
+            # public access is what actually protects these, but an object
+            # written without this would be one policy edit away from readable.
+            extra["CacheControl"] = "no-store"
+        else:
+            # A cover image is content-addressed by a random name we generated
+            # and is never rewritten in place, so it can be cached hard.
+            extra["CacheControl"] = "public, max-age=31536000, immutable"
+        self._client.upload_fileobj(
+            fileobj, self.bucket, self.key(name, private=private), ExtraArgs=extra
+        )
+
+    def open(self, name: str, *, private: bool):
+        try:
+            obj = self._client.get_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+        except Exception:
+            return None
+        return obj["Body"]
+
+    def path(self, name: str, *, private: bool) -> Optional[Path]:
+        return None  # there is no path; callers ask `exists` or `open`
+
+    def delete(self, name: str, *, private: bool) -> bool:
+        try:
+            self._client.delete_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+            return True
+        except Exception:
+            # A file we cannot remove must not abort an erasure half-way
+            # through — the database writes are what the person asked for.
+            logger.exception("Could not remove s3 object %s", name)
+            return False
+
+    def exists(self, name: str, *, private: bool) -> bool:
+        try:
+            self._client.head_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+            return True
+        except Exception:
+            return False
+
+    def signed_url(self, name: str, *, private: bool = True) -> Optional[str]:
+        """A time-limited link to one object, or None if it cannot be signed."""
+        try:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": self.key(name, private=private)},
+                ExpiresIn=signed_url_ttl_seconds(),
+            )
+        except Exception:
+            logger.exception("Could not sign a URL for %s", name)
+            return None
+
+    def public_url(self, name: str) -> str:
+        """**Still `/uploads/<name>`, deliberately.**
+
+        The obvious move is to store the bucket URL on the record, and it is
+        wrong: `_our_image_path` validates that a case-study image is a path we
+        issued, `_absolute_media_url` builds the share card's `og:image`
+        against the backend, `_delete_upload` reads the name back out of the
+        URL, and `cover.js` hashes the id rather than the URL. Every one of
+        those depends on the shape. Keeping it means moving to S3 rewrites no
+        rows at all, and `GET /uploads/{name}` redirects to the object.
+        """
+        return f"{UPLOAD_URL_PREFIX}/{name}"
+
+    def object_url(self, name: str) -> str:
+        """Where `/uploads/{name}` sends a browser — a CDN if one is set."""
+        key = self.key(name, private=False)
+        if self.public_base:
+            return f"{self.public_base}/{key}"
+        endpoint = os.environ.get("S3_ENDPOINT_URL", "").strip().rstrip("/")
+        if endpoint:
+            return f"{endpoint}/{self.bucket}/{key}"
+        region = os.environ.get("S3_REGION", "").strip()
+        host = f"s3.{region}.amazonaws.com" if region else "s3.amazonaws.com"
+        return f"https://{self.bucket}.{host}/{key}"
+
+
+# ---------------------------------------------------------------------------
 # Uploads
 # ---------------------------------------------------------------------------
 
-# Where uploaded files land. Served back out at /uploads by the static mount.
-# NOTE: this is local disk. On an ephemeral container it does not survive a
-# restart — point UPLOAD_DIR at a mounted volume, or swap _store_upload for
-# object storage, before relying on it in production.
+# The local directories. They are still where a laptop and the test suite put
+# things, and they are what the migration script reads *from*.
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 UPLOAD_URL_PREFIX = "/uploads"
 
@@ -4117,16 +4411,46 @@ def sniff_image_type(head: bytes) -> Optional[tuple]:
     return None
 
 
-async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
-    """Validate and write an uploaded image. Returns (public_url, disk_path).
+async def _drain_to_spool(file: UploadFile, first: bytes, limit: int, over: str):
+    """Read an upload into a spooled buffer, refusing it the moment it is too big.
 
-    Reads in chunks so an oversized upload is rejected without first pulling the
-    whole thing into memory.
+    **One read path for both backends**, which is the point. The size check has
+    to happen while the bytes are arriving — pulling a 300MB draft fully into
+    memory to measure it is the failure mode this guards against — and S3's
+    `upload_fileobj` wants a seekable object. A `SpooledTemporaryFile` is both:
+    it holds small files in memory and spills a large one to disk, and the
+    check still fires on the chunk that crosses the line rather than at the end.
+
+    The caller closes it. On a refusal this closes it itself, because the
+    exception leaves the caller no object to close.
+    """
+    spool = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)
+    written = 0
+    chunk = first
+    try:
+        while chunk:
+            written += len(chunk)
+            if written > limit:
+                raise HTTPException(status_code=413, detail=over)
+            spool.write(chunk)
+            chunk = await file.read(64 * 1024)
+    except Exception:
+        spool.close()
+        raise
+    return spool, written
+
+
+async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
+    """Validate and store an uploaded image. Returns (public_url, stored_name).
+
+    The second element used to be a `Path` and is now the stored name: on S3
+    there is no path, and **no caller ever used it** — both call sites bind it
+    to `_path` and drop it. Returning the name instead means the one thing a
+    caller might plausibly want is the thing it gets.
     """
     limit = max_upload_bytes()
-    chunk_size = 64 * 1024
 
-    first = await file.read(chunk_size)
+    first = await file.read(64 * 1024)
     if not first:
         raise HTTPException(status_code=422, detail="That file is empty.")
 
@@ -4138,37 +4462,30 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
         )
     mime, ext = sniffed
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     # The client's filename is never trusted — the extension comes from the
     # bytes, and the stem is random so uploads can't be guessed or overwritten.
     filename = f"{prefix}-{_secrets.token_urlsafe(16)}{ext}"
-    path = UPLOAD_DIR / filename
 
-    written = 0
+    spool = None
     try:
-        with open(path, "wb") as out:
-            chunk = first
-            while chunk:
-                written += len(chunk)
-                if written > limit:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"Images must be under {limit // (1024 * 1024)}MB.",
-                    )
-                out.write(chunk)
-                chunk = await file.read(chunk_size)
+        spool, written = await _drain_to_spool(
+            file, first, limit, f"Images must be under {limit // (1024 * 1024)}MB."
+        )
+        STORAGE.put(filename, spool, content_type=mime, private=False)
     except HTTPException:
-        path.unlink(missing_ok=True)
         raise
-    except OSError as exc:
-        path.unlink(missing_ok=True)
+    except Exception as exc:
         logger.error("upload write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save that image.")
     finally:
+        if spool is not None:
+            spool.close()
         await file.close()
 
-    logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
-    return f"{UPLOAD_URL_PREFIX}/{filename}", path
+    logger.info(
+        "stored upload %s (%s, %d bytes, %s)", filename, mime, written, STORAGE.name
+    )
+    return STORAGE.public_url(filename), filename
 
 
 # ---------------------------------------------------------------------------
@@ -4183,6 +4500,105 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
 PRIVATE_UPLOAD_DIR = Path(
     os.environ.get("PRIVATE_UPLOAD_DIR", str(ROOT_DIR / "private_uploads"))
 )
+
+
+def _refuse_ephemeral_storage() -> list:
+    """Refuse to start on a production box that would write uploads to disk.
+
+    **This is the bug, not a precaution.** The host's filesystem is ephemeral,
+    so local storage in production is a guarantee that the next redeploy
+    destroys every verification document, profile photo, campaign cover and
+    unpublished draft, leaving the rows pointing at nothing. Nothing about
+    that is visible until somebody opens a file weeks later, which is why it
+    has to be a boot refusal and not a warning: a warning in a deploy log is a
+    line nobody reads until they are already looking for the cause.
+
+    The same shape `validate_environment` uses, and for the same reason —
+    every missing thing named at once, so it takes one deploy rather than
+    four. **Unset `APP_ENV` reads as production**, exactly as everywhere else
+    here: guessing the other way is how a real deployment ends up silently
+    writing to a disk that is about to disappear.
+
+    Returns the missing settings so a test can call it without ending the
+    process.
+    """
+    declared = os.environ.get("STORAGE_BACKEND", "").strip().lower()
+
+    if storage_backend_name() == "s3":
+        missing = [
+            (k, why) for k, why in _S3_REQUIRED if not os.environ.get(k, "").strip()
+        ]
+    elif declared == "local":
+        # **There has to be a way through, or somebody edits the check out.**
+        # It is explicit, it is loud, and `.env.example` says it is never right
+        # on a deployed box — which is a different thing from a check that
+        # cannot be satisfied, and the difference is whether the next person
+        # deletes the check or sets the variable.
+        if _is_production():
+            logger.warning(
+                "STORAGE_BACKEND=local on a production box: uploads are going to "
+                "local disk and will be lost on the next redeploy. This is only "
+                "right if that disk is a mounted volume."
+            )
+        return []
+    elif _is_production():
+        missing = [
+            (
+                "S3_BUCKET",
+                "uploads would go to local disk, which this host wipes on deploy",
+            )
+        ] + [(k, why) for k, why in _S3_REQUIRED[1:]]
+    else:
+        return []  # a laptop and the test suite are meant to use the disk
+
+    if missing:
+        lines = [
+            "",
+            "Refusing to start: file storage is not configured.",
+            "",
+            "  Uploads (verification documents, profile photos, campaign covers,",
+            "  drafts, story proofs) would be written to local disk, which does",
+            "  not survive a redeploy on this host.",
+            "",
+        ]
+        lines += [f"  {k:<22} {why}" for k, why in missing]
+        lines += [
+            "",
+            "  Set STORAGE_BACKEND=local to use the disk anyway — appropriate on a",
+            "  laptop, never on a deployed box. See DEPLOYMENT.md.",
+            "",
+        ]
+        print("\n".join(lines), file=sys.stderr, flush=True)
+    return missing
+
+
+def _build_storage():
+    """Pick the backend, once, at import.
+
+    A failure to construct the S3 client is fatal in the same way and for the
+    same reason a missing `JWT_SECRET` is: the alternative is a process that
+    starts cleanly, serves the marketing page, and loses the first document
+    somebody uploads.
+    """
+    if storage_backend_name() != "s3":
+        return LocalStorage()
+    try:
+        return S3Storage()
+    except ImportError:
+        print(
+            "\nRefusing to start: STORAGE_BACKEND is s3 but boto3 is not installed."
+            "\n  pip install -r requirements.txt\n",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise SystemExit(1)
+
+
+if _refuse_ephemeral_storage():
+    raise SystemExit(1)
+
+STORAGE = _build_storage()
+logger.info("file storage: %s (durable=%s)", STORAGE.name, STORAGE.durable)
 
 # The same sniffing rule as the profile-image upload — the extension comes from
 # the bytes, never from the client — plus PDF, because that is what a licence
@@ -4248,29 +4664,22 @@ def sniff_draft_type(head: bytes) -> Optional[tuple]:
 
 
 def _remove_private_upload(stored_name: Optional[str]) -> bool:
-    """Delete one private file from disk, by the name *we* gave it.
+    """Delete one private file, by the name *we* gave it.
 
     **Only the stored name, never a path from a record.** The stored name is
     ours and random — the uploader's filename is kept as a label and nowhere
-    near this — so there is no traversal to worry about, and the `.name` below
-    makes that structural rather than a promise.
+    near this — so there is no traversal to worry about, and `Path(...).name`
+    below makes that structural rather than a promise.
 
     Missing is success: erasure has to be idempotent, and a file already gone
-    is the state we wanted.
+    is the state we wanted. This is the erasure path, so a backend that cannot
+    remove the object logs and returns False rather than raising — the
+    database writes are what the person actually asked for, and a leftover
+    object is findable through the decision record.
     """
     if not stored_name:
         return False
-    try:
-        target = PRIVATE_UPLOAD_DIR / Path(str(stored_name)).name
-        target.unlink(missing_ok=True)
-        return True
-    except OSError:
-        # A file we cannot remove must not abort an erasure half-way through —
-        # the database writes are what the person actually asked for. The
-        # decision record names the collections, so a leftover file is
-        # findable rather than silent.
-        logger.exception("Could not remove private upload %s", stored_name)
-        return False
+    return STORAGE.delete(Path(str(stored_name)).name, private=True)
 
 
 async def _store_private_upload(
@@ -4304,37 +4713,34 @@ async def _store_private_upload(
         )
     mime, ext = sniffed
 
-    PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     stored_name = f"{prefix}-{_secrets.token_urlsafe(20)}{ext}"
-    path = PRIVATE_UPLOAD_DIR / stored_name
 
-    written = 0
+    spool = None
     try:
-        with open(path, "wb") as out:
-            chunk = first
-            while chunk:
-                written += len(chunk)
-                if written > limit:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"{kind} must be under {limit // (1024 * 1024)}MB.",
-                    )
-                out.write(chunk)
-                chunk = await file.read(chunk_size)
+        spool, written = await _drain_to_spool(
+            file, first, limit, f"{kind} must be under {limit // (1024 * 1024)}MB."
+        )
+        STORAGE.put(stored_name, spool, content_type=mime, private=True)
     except HTTPException:
-        path.unlink(missing_ok=True)
         raise
-    except OSError as exc:
-        path.unlink(missing_ok=True)
+    except Exception as exc:
         logger.error("private upload write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save that document.")
     finally:
+        if spool is not None:
+            spool.close()
         await file.close()
 
     # The original filename is kept only to show the uploader what they sent;
     # it never touches the filesystem, so a "../../etc/passwd" is just a label.
     original = (file.filename or "document")[:200]
-    logger.info("stored private upload %s (%s, %d bytes)", stored_name, mime, written)
+    logger.info(
+        "stored private upload %s (%s, %d bytes, %s)",
+        stored_name,
+        mime,
+        written,
+        STORAGE.name,
+    )
     return {
         "stored_name": stored_name,
         "original_name": original,
@@ -4357,32 +4763,80 @@ def _safe_download_name(original: Optional[str]) -> str:
     return cleaned[:120] or "file"
 
 
-def _private_upload_path(stored_name: Optional[str]) -> Optional[Path]:
-    """Resolve a stored document, refusing anything that escapes the directory.
+def _private_upload_exists(stored_name: Optional[str]) -> bool:
+    """Is there really a file behind this record?
 
-    The names are ours and random, but this is the one place a path is built
-    from stored data, so it checks rather than assumes.
+    The four routes that serve a private file all ask this first, because a
+    row whose bytes are gone under the retention policy is a **410 and not a
+    404** — "that couldn't be opened" would send somebody looking for a bug
+    where the honest answer is that the file was deliberately purged.
+
+    It replaces `_private_upload_path`, which answered the same question by
+    returning a `Path`. On S3 there is no path, and every caller only ever
+    used the result as a boolean and then handed it to `FileResponse`.
     """
-    if not stored_name or "/" in stored_name or "\\" in stored_name:
-        return None
-    if stored_name in ("", ".", ".."):
-        return None
-    path = (PRIVATE_UPLOAD_DIR / stored_name).resolve()
-    try:
-        path.relative_to(PRIVATE_UPLOAD_DIR.resolve())
-    except ValueError:
-        return None
-    return path if path.is_file() else None
+    if not stored_name or not isinstance(stored_name, str):
+        return False
+    if "/" in stored_name or "\\" in stored_name or stored_name in ("", ".", ".."):
+        return False
+    return STORAGE.exists(stored_name, private=True)
+
+
+def _private_file_response(
+    stored_name: str, *, original_name: Optional[str], mime: Optional[str], inline: bool
+):
+    """Hand one private file to a caller who has already been authorised.
+
+    **The permission check never moves.** Whichever backend is in use, the
+    route above this has already decided that this person may read this
+    record, and audited it. This function only answers *how* the bytes travel:
+
+    - **local** streams them, exactly as it always did;
+    - **S3** issues a time-limited signed URL and redirects to it, which is
+      what keeps the object itself private — nothing in the bucket is
+      readable without a signature.
+
+    One property does change on S3 and is worth stating rather than
+    discovering: for the length of `signed_url_ttl_seconds()` the signed link
+    *is* a bearer credential, so a URL lifted out of a network tab works until
+    it expires, where the streamed blob never sat at an address at all. The
+    TTL is two minutes by default for exactly that reason. If that trade is
+    not wanted, this function is the single place to make S3 stream too —
+    `STORAGE.open()` is already there and already used by the fallback below.
+    """
+    signed = STORAGE.signed_url(stored_name, private=True)
+    if signed:
+        # 307, not 302: the method and body are preserved, and a cached 301/302
+        # of a URL that expires in two minutes is a link that breaks later for
+        # reasons nobody can reproduce.
+        return RedirectResponse(
+            signed, status_code=307, headers={"Cache-Control": "no-store"}
+        )
+
+    path = STORAGE.path(stored_name, private=True)
+    disposition = "inline" if inline else "attachment"
+    filename = _safe_download_name(original_name)
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{filename}"',
+        "Cache-Control": "no-store",
+    }
+    if path:
+        return FileResponse(
+            path, media_type=mime or "application/octet-stream", headers=headers
+        )
+
+    body = STORAGE.open(stored_name, private=True)
+    if body is None:
+        raise HTTPException(status_code=410, detail="That file is no longer stored.")
+    return StreamingResponse(
+        body, media_type=mime or "application/octet-stream", headers=headers
+    )
 
 
 def _delete_private_upload(stored_name: Optional[str]) -> None:
-    path = _private_upload_path(stored_name)
-    if not path:
+    if not _private_upload_exists(stored_name):
         return
-    try:
-        path.unlink(missing_ok=True)
-    except OSError as exc:
-        logger.warning("could not delete private upload %s: %s", stored_name, exc)
+    STORAGE.delete(stored_name, private=True)
 
 
 def _delete_upload(public_url: Optional[str]) -> None:
@@ -4394,10 +4848,7 @@ def _delete_upload(public_url: Optional[str]) -> None:
     # Defend the directory boundary even though the name is generated by us.
     if "/" in name or "\\" in name or name in ("", ".", ".."):
         return
-    try:
-        (UPLOAD_DIR / name).unlink(missing_ok=True)
-    except OSError as exc:
-        logger.warning("could not delete upload %s: %s", name, exc)
+    STORAGE.delete(name, private=False)
 
 
 def platform_fee_percent() -> float:
@@ -8760,21 +9211,17 @@ async def read_own_content_proof(
 def _stream_content_proof(collab: dict, proof_id: str):
     """One proof's bytes. The only way they leave, for either audience."""
     match = next((p for p in _content_proofs(collab) if p.get("id") == proof_id), None)
-    path = _private_upload_path((match or {}).get("stored_name"))
-    if not path:
+    stored = (match or {}).get("stored_name")
+    if not _private_upload_exists(stored):
         raise HTTPException(status_code=404, detail="That screenshot isn't here.")
-    return FileResponse(
-        path,
-        media_type=match.get("mime") or "application/octet-stream",
-        headers={
-            # The same header the brand-document and draft routes carry: these
-            # bytes are somebody's private screen, and a copy in a shared
-            # browser cache is a copy nobody decided to make.
-            "Cache-Control": "no-store",
-            "Content-Disposition": (
-                f'inline; filename="{_safe_download_name(match.get("original_name"))}"'
-            ),
-        },
+    # `no-store` and the rest ride on `_private_file_response`: these bytes are
+    # somebody's private screen, and a copy in a shared browser cache is a copy
+    # nobody decided to make.
+    return _private_file_response(
+        stored,
+        original_name=match.get("original_name"),
+        mime=match.get("mime"),
+        inline=True,
     )
 
 
@@ -21211,10 +21658,9 @@ async def download_brand_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    path = _private_upload_path(doc.get("stored_name"))
-    if not path:
-        logger.error("brand document %s is recorded but missing on disk", document_id)
-        raise HTTPException(status_code=410, detail="That file is no longer on disk.")
+    if not _private_upload_exists(doc.get("stored_name")):
+        logger.error("brand document %s is recorded but its bytes are gone", document_id)
+        raise HTTPException(status_code=410, detail="That file is no longer stored.")
 
     await audit(
         user,
@@ -21223,15 +21669,13 @@ async def download_brand_document(
         brand_oid,
         after={"document_id": document_id, "doc_type": doc.get("doc_type")},
     )
-    return FileResponse(
-        path,
-        media_type=doc.get("mime") or "application/octet-stream",
-        # inline so a reviewer can read it in the browser; the filename is the
-        # one they uploaded, which is only ever a label.
-        headers={
-            "Content-Disposition": f'inline; filename="{doc.get("original_name") or "document"}"',
-            "Cache-Control": "no-store",
-        },
+    # inline so a reviewer can read it in the browser; the filename is the one
+    # they uploaded, which is only ever a label.
+    return _private_file_response(
+        doc["stored_name"],
+        original_name=doc.get("original_name") or "document",
+        mime=doc.get("mime"),
+        inline=True,
     )
 
 
@@ -32427,8 +32871,7 @@ async def download_draft_file(
     """
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
     draft = collab.get("draft") or {}
-    path = _private_upload_path(draft.get("stored_name"))
-    if not path:
+    if not _private_upload_exists(draft.get("stored_name")):
         raise HTTPException(status_code=404, detail="There's no draft file here.")
 
     await audit(
@@ -32436,13 +32879,11 @@ async def download_draft_file(
         after={"kind": draft.get("kind")},
         **_campaign_audit_context(campaign),
     )
-    return FileResponse(
-        path,
-        media_type=draft.get("mime") or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'inline; filename="{draft.get("original_name") or "draft"}"',
-            "Cache-Control": "no-store",
-        },
+    return _private_file_response(
+        draft["stored_name"],
+        original_name=draft.get("original_name") or "draft",
+        mime=draft.get("mime"),
+        inline=True,
     )
 
 
@@ -34271,15 +34712,41 @@ async def public_sitemap():
 
 app.include_router(api_router)
 
-# Uploaded images are served straight off disk. Mounted outside /api because
-# these are plain files, not API responses — the frontend joins the backend
-# origin with the stored path.
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount(
-    UPLOAD_URL_PREFIX,
-    StaticFiles(directory=str(UPLOAD_DIR)),
-    name="uploads",
-)
+# Public uploads live at `/uploads/<name>` whichever backend holds them, which
+# is what makes moving to S3 a file copy rather than a data migration — see
+# `S3Storage.public_url`. Outside `/api` because these are plain files, not API
+# responses: the frontend joins the backend origin with the stored path.
+if STORAGE.name == "local":
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        UPLOAD_URL_PREFIX,
+        StaticFiles(directory=str(UPLOAD_DIR)),
+        name="uploads",
+    )
+else:
+
+    @app.get(UPLOAD_URL_PREFIX + "/{name}")
+    async def serve_public_upload(name: str):
+        """Send a browser to the object, rather than proxying its bytes.
+
+        **A redirect, not a stream.** These are covers and profile photos on
+        every card of every list — proxying them would put the whole image
+        load of the product through this process and defeat any CDN in front
+        of the bucket. The `public/` prefix is readable by design: a campaign
+        cover has to render in a WhatsApp preview, where there is no session
+        to authenticate with. Nothing private is reachable this way — that
+        prefix is a separate one and is blocked at the bucket.
+
+        The name is still checked rather than trusted, because it arrives off
+        a URL here rather than out of a record.
+        """
+        if "/" in name or "\\" in name or name in ("", ".", ".."):
+            raise HTTPException(status_code=404, detail="Not found")
+        return RedirectResponse(
+            STORAGE.object_url(name),
+            status_code=307,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
 # ---------------------------------------------------------------------------
 # CORS
