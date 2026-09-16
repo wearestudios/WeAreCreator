@@ -12503,6 +12503,436 @@ async def close_brand_campaign(
     return {"id": campaign_id, "status": "closed", "applications_closed": len(stale)}
 
 
+# ---------------------------------------------------------------------------
+# Was this campaign worth it?
+# ---------------------------------------------------------------------------
+#
+# A brand could see what a campaign *did* — reach, engagement, a cost per
+# thousand — only on the printable report an admin generates and sends them.
+# Nothing in their own console answered the question, and the question they
+# actually ask at renewal is not about one campaign at all: it is "is this
+# better than the last one we ran".
+#
+# So there are two levels and the second is the one that matters. Per campaign:
+# what it reached, what it cost, what was promised against what arrived, what
+# is left of the budget, and who did the work. Across campaigns: the same
+# numbers rolled up, with **this campaign set against that brand's own
+# history**, because a brand comparing itself to itself is the only comparison
+# it can act on. An industry benchmark it cannot verify is a number it ignores.
+#
+# **No creator contact detail reaches any of it.** The per-creator table is
+# built by reading keys *off* `_brand_visible_creator` rather than off the
+# profile, so the exclusion is a property of the projection and not of the
+# eight column names somebody happened to pick — the same reasoning the
+# close-out export already holds, and the reason a leak test can plant values
+# and search the bytes.
+
+
+def _analytics_creator_row(visible: dict, performance: Optional[dict], cost) -> dict:
+    """One line of the per-creator table.
+
+    Takes the **already-projected** creator, never a raw profile. That is the
+    whole safety property: a phone number cannot appear here because there is
+    no phone number in the input, and a field added to `creator_profiles` next
+    month cannot leak because this cannot see it.
+    """
+    visible = visible or {}
+    performance = performance or {}
+    reach = performance.get("reach")
+    return {
+        "creator_id": visible.get("user_id") or visible.get("id"),
+        "reference": visible.get("reference"),
+        "name": visible.get("name"),
+        "instagram_handle": visible.get("instagram_handle"),
+        "profile_image_url": visible.get("profile_image_url"),
+        "follower_count": visible.get("follower_count"),
+        "reach": reach,
+        "impressions": performance.get("impressions"),
+        # **The post's rate, not the creator's profile rate.** The profile
+        # figure describes their account in general; this describes the work
+        # they did here, which is the only one a brand is entitled to draw a
+        # conclusion about from this campaign.
+        "engagement_rate": _engagement_rate_from(performance),
+        "engagements": _engagements(performance),
+        "cost": cost,
+        # What this creator cost per thousand people they reached — the
+        # comparison the table exists to make possible. `None` on barter and on
+        # anything unmeasured, never 0: a free collaboration did not cost
+        # nothing per thousand, it has no cost per thousand.
+        "cost_per_thousand_reach": (
+            round(cost / reach * 1000, 2) if cost and reach else None
+        ),
+        "measured": reach is not None,
+    }
+
+
+def _promised_versus_delivered(campaign: dict, collabs: list) -> dict:
+    """What the brief asked for across the whole campaign, against what arrived.
+
+    **Built on `_delivered_counts`, not on a second reading of the field.**
+    `delivered_items` is a `{type: n}` map with one reader already, and
+    `_delivery_shortfall` already answers this for a single collaboration —
+    what was missing was the campaign-level sum, which is the number a brand
+    asks about.
+
+    `counted: False` where the brief has no structured ask, rather than a row
+    of zeroes. The same line `_delivery_shortfall` draws: a campaign nobody
+    counted has no shortfall, and reporting one would be a claim about work
+    that was never measured.
+
+    The promise is per creator **taken on**, not per creator wanted. A brief
+    that asked for six people and filled four promised four people's worth of
+    content — holding it to six would report a shortfall against creators who
+    were never booked, which is an underfill and already has its own number.
+    """
+    asked = _deliverable_items(campaign)
+    if not asked:
+        return {"counted": False, "rows": [], "promised": None, "delivered": None}
+
+    taken = [c for c in collabs if c.get("state") in _FILLED_COLLAB_STATES]
+    per_creator = {i["type"]: int(i["quantity"]) for i in asked}
+
+    delivered: dict = {}
+    measured = 0
+    for collab in taken:
+        got = _delivered_counts(collab)
+        if got:
+            measured += 1
+        for kind, wanted in per_creator.items():
+            if got:
+                delivered[kind] = delivered.get(kind, 0) + min(wanted, got.get(kind, 0))
+            elif collab.get("state") in DELIVERED_COLLAB_STATES:
+                # Approved with nothing counted against it. The brief was
+                # accepted, so it was delivered — a partial acceptance is the
+                # only thing that records less, and it writes `delivered_items`.
+                delivered[kind] = delivered.get(kind, 0) + wanted
+
+    rows = [
+        {
+            "type": kind,
+            "label": DELIVERABLE_TYPES[kind],
+            "promised": wanted * len(taken),
+            "delivered": delivered.get(kind, 0),
+            "outstanding": max(0, wanted * len(taken) - delivered.get(kind, 0)),
+        }
+        for kind, wanted in per_creator.items()
+    ]
+    return {
+        "counted": True,
+        "rows": rows,
+        "promised": sum(r["promised"] for r in rows),
+        "delivered": sum(r["delivered"] for r in rows),
+        "creators_taken": len(taken),
+        # How much of this was actually counted rather than assumed from an
+        # approval. A brand reading "18 of 18 delivered" deserves to know
+        # whether anybody checked.
+        "creators_counted": measured,
+    }
+
+
+async def _campaign_analytics(campaign: dict, *, with_creators: bool = True) -> dict:
+    """Everything one brief did, for the brand that posted it."""
+    cid = campaign["_id"]
+    collabs = await db.collaborations.find({"campaign_id": cid}).to_list(length=500)
+    records = await _performance_for([cid])
+    paid_ids = await _paid_collab_ids([cid])
+    barter_ids = await _barter_collab_ids([cid])
+
+    payments = await db.payments.find(
+        {"collaboration_id": {"$in": [c["_id"] for c in collabs]}, "state": "paid"}
+    ).to_list(length=500)
+    spend = sum(float(p.get("creator_payout") or 0) for p in payments)
+    cost_by_collab = {p["collaboration_id"]: float(p.get("creator_payout") or 0) for p in payments}
+
+    totals = _rollup_performance(records, paid_ids, spend, barter_ids)
+    committed = await _committed_amounts_for([cid])
+    amount, counted = committed.get(cid, (0.0, 0))
+
+    creators = []
+    if with_creators:
+        by_collab = {r["collaboration_id"]: r for r in records}
+        # **Only creators the brand is entitled to see at all.** The shortlist
+        # gate is the same one the applicant board draws — a brand that never
+        # saw an application does not meet it here through a chart.
+        visible = [c for c in collabs if _brand_sees_collab(campaign, c)]
+        profiles = await db.creator_profiles.find(
+            {"user_id": {"$in": [c["creator_id"] for c in visible]}}
+        ).to_list(length=500)
+        by_creator = {p["user_id"]: p for p in profiles}
+        for collab in visible:
+            if collab.get("state") not in _FILLED_COLLAB_STATES:
+                continue
+            creators.append(
+                _analytics_creator_row(
+                    _brand_visible_creator(by_creator.get(collab["creator_id"])),
+                    by_collab.get(collab["_id"]),
+                    cost_by_collab.get(collab["_id"]),
+                )
+            )
+        # Best reach first: the table exists to answer "who performed", and
+        # unmeasured rows sort last rather than as zero — we did not measure
+        # them, which is not the same as them having reached nobody.
+        creators.sort(key=lambda r: (r["reach"] is None, -(r["reach"] or 0)))
+
+    return {
+        "campaign": {
+            "id": str(cid),
+            "reference": _reference_of(campaign),
+            "title": campaign.get("title"),
+            "status": campaign.get("status"),
+            "category": campaign.get("category"),
+            "city": campaign.get("city"),
+            "campaign_type": campaign.get("campaign_type"),
+            "compensation_type": _compensation_type(campaign),
+            "created_at": _iso(campaign.get("created_at")),
+            "creators_needed": campaign.get("creators_needed"),
+        },
+        "totals": totals,
+        "budget": _budget_of(campaign, amount, counted),
+        "deliverables": _promised_versus_delivered(campaign, collabs),
+        "creators": creators,
+    }
+
+
+def _brand_rollup(campaign_analytics: list) -> dict:
+    """The brand's own history, in one line. Pure.
+
+    **The average cost per thousand is computed from the totals, not averaged
+    from the per-campaign figures.** Those two differ whenever the campaigns
+    differ in size, and the mean of the rates lets one small brief with a
+    freak number move the headline — the same arithmetic, and the same reason,
+    as `_rollup_performance`'s engagement rate.
+    """
+    spend = sum(a["totals"]["total_spend"] for a in campaign_analytics)
+    reach = sum(a["totals"]["total_reach"] for a in campaign_analytics)
+    paid_reach = sum(a["totals"]["paid_reach"] for a in campaign_analytics)
+    engagements = sum(a["totals"]["total_engagements"] for a in campaign_analytics)
+    return {
+        "campaigns": len(campaign_analytics),
+        "total_spend": round(spend, 2),
+        "total_reach": reach,
+        "total_engagements": engagements,
+        "engagement_rate": round(engagements / reach * 100, 2) if reach else None,
+        "cost_per_thousand_reach": (
+            round(spend / paid_reach * 1000, 2) if paid_reach and spend else None
+        ),
+        "paid_reach": paid_reach,
+        "creators_delivered": sum(
+            a["totals"]["creators_delivered"] for a in campaign_analytics
+        ),
+    }
+
+
+def _against_their_own_history(this: dict, others: list) -> Optional[dict]:
+    """This campaign set against the brand's previous ones.
+
+    **The comparison that makes a second campaign feel obvious**, which is why
+    it is a first-class block rather than a line at the bottom of a table. A
+    brand cannot check an industry benchmark; it can check its own last three
+    briefs, and that is the number it will actually act on.
+
+    `None` on a first campaign — deliberately, and said rather than shown as
+    0%. "No change" is a claim about a comparison that does not exist.
+    """
+    if not others:
+        return None
+    baseline = _brand_rollup(others)
+
+    def _delta(now, before, *, lower_is_better=False):
+        if now is None or not before:
+            return None
+        change = round((now - before) / before * 100, 1)
+        return {
+            "value": now,
+            "previous": before,
+            "change_percent": change,
+            # Said here, once, rather than at three call sites: a cost per
+            # thousand going *down* is the good direction, and a chart that
+            # colours every fall red would be telling a brand its best
+            # campaign went badly.
+            "better": (change < 0) if lower_is_better else (change > 0),
+        }
+
+    return {
+        "campaigns_before": baseline["campaigns"],
+        "reach": _delta(this["totals"]["total_reach"], baseline["total_reach"]),
+        "engagement_rate": _delta(
+            this["totals"]["engagement_rate"], baseline["engagement_rate"]
+        ),
+        "cost_per_thousand_reach": _delta(
+            this["totals"]["cost_per_thousand_reach"],
+            baseline["cost_per_thousand_reach"],
+            lower_is_better=True,
+        ),
+    }
+
+
+@brand_router.get("/campaigns/{campaign_id}/analytics")
+async def brand_campaign_analytics(
+    campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """One brief: what it reached, what it cost, and who did the work.
+
+    Ownership first, as everywhere — another brand's campaign is a 404 rather
+    than a 403, or the refusal says which ids exist.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    analytics = await _campaign_analytics(campaign)
+
+    # The rest of this brand's history, so the comparison is right here rather
+    # than a page away. Closed and in-progress only: a draft has nothing to
+    # compare with and would drag the baseline toward zero.
+    others = await db.campaigns.find(
+        {
+            "brand_id": campaign.get("brand_id"),
+            "_id": {"$ne": campaign["_id"]},
+            "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES},
+        }
+    ).to_list(length=200)
+    history = [await _campaign_analytics(c, with_creators=False) for c in others]
+
+    return {
+        **analytics,
+        "versus_their_own_history": _against_their_own_history(analytics, history),
+    }
+
+
+# What counts as a campaign worth comparing against. A draft never ran and a
+# brief still taking applications has not finished doing whatever it will do.
+_COMPARABLE_CAMPAIGN_STATUSES = ("in_progress", "completed", "closed")
+
+
+@brand_router.get("/analytics")
+async def brand_analytics(
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    brand_id: Optional[str] = None,
+    days: Optional[int] = None,
+):
+    """Everything this brand has run, rolled up, newest campaign first.
+
+    `brand_id` is for an admin looking at somebody's numbers; a brand manager's
+    own scope comes from `_brand_scope`, which is how every brand-scoped query
+    here finds its brand — reaching for `user["_id"]` is only correct while the
+    login and the brand are the same row.
+
+    **`days` is absent by default, and that is not the admin panel's default
+    with a different number.** This section is a brand's whole history — the
+    argument for a second campaign is the first one — and a window applied
+    without being asked for would hide the campaign a brand is proudest of the
+    day it turned six months old. Narrowing is theirs to choose.
+    """
+    if days is not None and days not in ANALYTICS_WINDOWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days must be one of: {', '.join(str(d) for d in ANALYTICS_WINDOWS)}",
+        )
+
+    scope = _brand_scope(user)
+    if brand_id and is_all_access(user):
+        try:
+            scope = ObjectId(brand_id)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+    query = {"brand_id": scope, "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES}}
+    if days is not None:
+        query["created_at"] = {"$gte": _days_ago(days)}
+    campaigns = await db.campaigns.find(query).sort("created_at", -1).to_list(length=200)
+    per_campaign = [await _campaign_analytics(c, with_creators=False) for c in campaigns]
+
+    return {
+        "rollup": _brand_rollup(per_campaign),
+        "campaigns": per_campaign,
+        # The most recent brief against everything before it, so the headline
+        # comparison is on the dashboard rather than only on one campaign page.
+        "latest_versus_history": (
+            _against_their_own_history(per_campaign[0], per_campaign[1:])
+            if per_campaign
+            else None
+        ),
+        "window_days": days,
+        "generated_at": _iso(datetime.now(timezone.utc)),
+    }
+
+
+@brand_router.get("/analytics/export")
+async def export_brand_analytics(
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    campaign_id: Optional[str] = None,
+    days: Optional[int] = None,
+):
+    """The same numbers as a CSV, under the same rules.
+
+    **One builder for both shapes**, because a spreadsheet that disagreed with
+    the screen it was downloaded from is worse than no spreadsheet. The
+    per-creator rows come from `_campaign_analytics`, which means they come
+    from `_brand_visible_creator`, which means the PII exclusion is the
+    projection's property here exactly as it is on screen.
+    """
+    if campaign_id:
+        campaign = await _own_campaign_or_404(campaign_id, user)
+        data = await _campaign_analytics(campaign)
+        headers = [
+            "Creator", "Reference", "Instagram", "Followers", "Reach",
+            "Impressions", "Engagements", "Engagement rate %", "Cost",
+            "Cost per 1,000 reach",
+        ]
+        rows = [
+            [
+                r["name"] or "", r["reference"] or "",
+                f"@{r['instagram_handle']}" if r.get("instagram_handle") else "",
+                r["follower_count"] if r["follower_count"] is not None else "",
+                r["reach"] if r["reach"] is not None else "",
+                r["impressions"] if r["impressions"] is not None else "",
+                r["engagements"] if r["engagements"] is not None else "",
+                r["engagement_rate"] if r["engagement_rate"] is not None else "",
+                r["cost"] if r["cost"] is not None else "",
+                r["cost_per_thousand_reach"] if r["cost_per_thousand_reach"] is not None else "",
+            ]
+            for r in data["creators"]
+        ]
+        name = f"{_reference_of(campaign) or 'campaign'}-analytics"
+        await audit(
+            user, "campaign.analytics_export", "campaign", campaign["_id"],
+            after={"rows": len(rows), "includes_contact_details": False},
+            **_campaign_audit_context(campaign),
+        )
+    else:
+        # The same window the screen is showing, for the same reason the admin
+        # export carries one: a file downloaded under a heading that says one
+        # thing and holding another is the disagreement this endpoint exists to
+        # prevent.
+        payload = await brand_analytics(user, days=days)
+        headers = [
+            "Campaign", "Reference", "Status", "Category", "City", "Created",
+            "Creators delivered", "Reach", "Engagements", "Engagement rate %",
+            "Spend", "Cost per 1,000 reach",
+        ]
+        rows = [
+            [
+                a["campaign"]["title"] or "", a["campaign"]["reference"] or "",
+                a["campaign"]["status"] or "", a["campaign"]["category"] or "",
+                a["campaign"]["city"] or "",
+                (a["campaign"]["created_at"] or "")[:10],
+                a["totals"]["creators_delivered"], a["totals"]["total_reach"],
+                a["totals"]["total_engagements"],
+                a["totals"]["engagement_rate"] if a["totals"]["engagement_rate"] is not None else "",
+                a["totals"]["total_spend"],
+                a["totals"]["cost_per_thousand_reach"]
+                if a["totals"]["cost_per_thousand_reach"] is not None
+                else "",
+            ]
+            for a in payload["campaigns"]
+        ]
+        name = "campaign-analytics"
+        await audit(
+            user, "brand.analytics_export", "brand_profile", _brand_scope(user),
+            after={"rows": len(rows), "includes_contact_details": False},
+        )
+
+    return _csv_response(rows, headers, name)
+
+
 @brand_router.get("/campaigns/{campaign_id}/export")
 async def export_brand_campaign(
     campaign_id: str,
@@ -16740,6 +17170,62 @@ async def set_brand_commission(
     }
 
 
+class DeliveryCostPayload(BaseModel):
+    """What running this brief actually cost us.
+
+    `null` clears it, which is not the same as `0`: zero is a claim that it
+    cost nothing to run, and absent is "nobody has worked it out". The margin
+    table reads the difference — see `_campaign_margin`, where an absent cost
+    makes `complete` false and the figure is reported as revenue rather than
+    dressed up as margin.
+    """
+
+    delivery_cost: Optional[float] = Field(default=None, ge=0)
+    reason: Optional[str] = Field(default=None, max_length=400)
+
+
+@admin_router.put("/campaigns/{campaign_id}/delivery-cost")
+async def set_campaign_delivery_cost(
+    campaign_id: str,
+    payload: DeliveryCostPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Record what a brief cost to run, so its margin is a margin.
+
+    **Recorded, never inferred.** Nothing in this system knows what a
+    manager's evening at a venue cost, what the samples cost to post, or
+    whose time went into casting — and a formula that guessed would put a
+    guess in a board pack. So the margin metric reports revenue until
+    somebody types the other half, and says which it is doing.
+
+    `CONSOLE_ROLES` and through `_admin_campaign_or_404`, the same door and
+    the same scope as the per-campaign commission beside it: what one brief
+    cost is scoped operational work, where the brand's standing rate is the
+    relationship and stays admin-only.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    before = campaign.get("delivery_cost")
+    after = None if payload.delivery_cost is None else round(float(payload.delivery_cost), 2)
+
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {"delivery_cost": after, "updated_at": datetime.now(timezone.utc)}},
+    )
+    # **Old value and new**, like the commission change: "set to 40,000" cannot
+    # say whether that was a correction or a first estimate.
+    await audit(
+        user,
+        "campaign.delivery_cost",
+        "campaign",
+        campaign["_id"],
+        before={"delivery_cost": before},
+        after={"delivery_cost": after},
+        note=(payload.reason or "").strip() or None,
+        **_campaign_audit_context(campaign),
+    )
+    return {"delivery_cost": after}
+
+
 @admin_router.put("/campaigns/{campaign_id}/commission")
 async def set_campaign_commission(
     campaign_id: str,
@@ -19674,6 +20160,215 @@ async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q,
     return rows, headers
 
 
+# ---------------------------------------------------------------------------
+# The four numbers the business is actually judged on
+# ---------------------------------------------------------------------------
+#
+# `admin_intelligence` above draws four shapes, and none of them is one of
+# these. It answers "what is happening" — briefs posted per week, how full they
+# got, how many brands have come back at all, how many creators are quiet. That
+# is a dashboard.
+#
+# These four answer "is this working", and each is a ratio with a denominator
+# somebody would argue about, which is exactly why they are **pure functions
+# taking counts** rather than aggregations with the arithmetic buried inside
+# them. `_refund_reckoning` and `_weare_run_reason` are the same arrangement,
+# for the same reason: a rule you can read in one screen and test without a
+# database is a rule people trust enough to act on.
+
+# A brand that posts again inside this window came back; one that posts on day
+# 91 came back too, but not in a way this quarter can claim. Ninety days
+# because that is roughly a marketing cycle here — a café doing something
+# monthly and a launch brand doing something seasonal both fit inside it.
+REPEAT_WINDOW_DAYS = 90
+
+# What "filled on time" means. A brief that reached its headcount the week
+# after the shoot did not fill: the creators it needed were needed on the day.
+FILL_ON_TIME = "by the campaign's own start date"
+
+
+def _repeat_rate(cohort: list) -> dict:
+    """**The most important number here: did brands come back?**
+
+    Takes a list of `(first_post, next_post_or_None)` pairs — the arithmetic
+    and the query are separated so the rule can be read without either.
+
+    Three things this is careful about, all of which make the number smaller
+    and all of which make it true:
+
+    - **A brand that has not had 90 days yet is not in the denominator.**
+      Somebody who posted their first brief last Tuesday cannot have repeated,
+      and counting them as a failure drags the rate down by however fast we
+      are acquiring — so a good month would *lower* the number. That is the
+      classic way this metric lies.
+    - **The window runs from their first brief**, not from the start of the
+      period, so it is the same 90 days for everybody.
+    - `eligible` travels with the answer, because a 50% repeat rate over four
+      brands is not the same fact as 50% over four hundred.
+    """
+    eligible = [pair for pair in cohort if pair[0] is not None and pair[2]]
+    repeated = [pair for pair in eligible if pair[1] is not None]
+    return {
+        "eligible": len(eligible),
+        "repeated": len(repeated),
+        # None rather than 0 with nobody in the denominator: "0% came back" and
+        # "nobody has had the chance yet" are different facts, and only one of
+        # them is bad news.
+        "rate": round(len(repeated) / len(eligible) * 100, 1) if eligible else None,
+        "window_days": REPEAT_WINDOW_DAYS,
+    }
+
+
+def _fill_outcome(needed: Optional[int], filled: int, on_time: bool) -> Optional[str]:
+    """What happened to one brief: filled, underfilled, or late.
+
+    `None` for a brief with no headcount to hit — a campaign that never said
+    how many people it wanted cannot have missed, and scoring it as a failure
+    would punish a brief for a field it was not asked to fill.
+
+    **Late is its own outcome and not a kind of underfill.** A brief that got
+    its six creators a fortnight after the shoot is a different operational
+    story from one that only ever found four, and rolling them together hides
+    which of the two is happening.
+    """
+    if not needed or needed <= 0:
+        return None
+    if filled < needed:
+        return "underfilled"
+    return "filled" if on_time else "late"
+
+
+def _fill_rate(outcomes: list) -> dict:
+    """The share of briefs that filled to target on time."""
+    counted = [o for o in outcomes if o]
+    filled = sum(1 for o in counted if o == "filled")
+    return {
+        "campaigns": len(counted),
+        "filled": filled,
+        "late": sum(1 for o in counted if o == "late"),
+        "underfilled": sum(1 for o in counted if o == "underfilled"),
+        "rate": round(filled / len(counted) * 100, 1) if counted else None,
+    }
+
+
+def _campaign_margin(
+    campaign_fee: Optional[float],
+    commission: Optional[float],
+    delivery_cost: Optional[float],
+) -> dict:
+    """What we made on one brief, and whether that is a real number.
+
+    Revenue is the campaign fee plus the commission — **the creator's own fee
+    is neither**, because it passes through: the brand pays it, the creator
+    receives it, and the margin arrangement this platform sells on is precisely
+    that we do not take a cut of it (see `COMMISSION_TERMS`). Putting it in
+    either side of this would report a margin the business does not earn.
+
+    `delivery_cost` is what running the brief cost us and is **recorded, never
+    inferred**. Nothing in this system knows what a manager's evening at a
+    venue cost, and a guess here would be a guess in a board pack.
+
+    So `complete` is the load-bearing field: a margin computed with no recorded
+    cost is a gross figure wearing a net figure's name, and a table that mixed
+    the two would overstate the business.
+    """
+    revenue = round(float(campaign_fee or 0) + float(commission or 0), 2)
+    has_cost = delivery_cost is not None
+    cost = round(float(delivery_cost or 0), 2)
+    return {
+        "revenue": revenue,
+        "campaign_fee": round(float(campaign_fee or 0), 2),
+        "commission": round(float(commission or 0), 2),
+        "delivery_cost": cost if has_cost else None,
+        "margin": round(revenue - cost, 2),
+        # Whether the cost side was actually recorded. False means this is
+        # revenue, not margin, and every surface says so rather than printing
+        # a confident number.
+        "complete": has_cost,
+        "margin_percent": (
+            round((revenue - cost) / revenue * 100, 1) if revenue and has_cost else None
+        ),
+    }
+
+
+def _first_payment_rate(creators: list) -> dict:
+    """How many creators ever get paid, and how long it takes.
+
+    Takes `(verified_at, first_paid_at)` pairs. The question behind it is
+    supply retention: a creator who signs up, is checked, and never earns
+    anything is somebody we spent effort on who will not be here next quarter.
+
+    **The median, not the mean.** One creator who took eleven months because
+    they went travelling should not move the headline, and with the small
+    numbers a young marketplace has, the mean is mostly noise.
+    """
+    verified = [c for c in creators if c[0] is not None]
+    paid = [c for c in verified if c[1] is not None]
+    days = sorted(
+        max(0, (c[1] - c[0]).days) for c in paid if isinstance(c[1], datetime)
+    )
+    median = None
+    if days:
+        mid = len(days) // 2
+        median = days[mid] if len(days) % 2 else round((days[mid - 1] + days[mid]) / 2, 1)
+    return {
+        "verified": len(verified),
+        "paid": len(paid),
+        "rate": round(len(paid) / len(verified) * 100, 1) if verified else None,
+        "median_days_to_first_payment": median,
+        # The spread, because "median 12 days" over a range of 2-160 is a
+        # different operation from the same median over 9-15.
+        "fastest_days": days[0] if days else None,
+        "slowest_days": days[-1] if days else None,
+    }
+
+
+def _supply_and_demand(creator_counts: dict, campaign_counts: dict) -> dict:
+    """Where the creators are against where the briefs are.
+
+    **The two lists at the end are the whole point.** A table of counts is
+    something somebody reads and nods at; "seven categories where we have
+    creators and no briefs" is a list a salesperson can work, and "four briefs
+    we could not fill in Pune" is a list a supply person can work. A dashboard
+    that stops at the counts makes both of them do the join by eye.
+
+    Keys are `(category, city)` pairs. `unfilled` is passed in rather than
+    derived here, because whether a brief failed to fill is `_fill_outcome`'s
+    answer and there must not be a second one.
+    """
+    keys = sorted(set(creator_counts) | set(campaign_counts))
+    rows = []
+    for key in keys:
+        creators = creator_counts.get(key, 0)
+        campaigns = campaign_counts.get(key, 0)
+        rows.append(
+            {
+                "category": key[0],
+                "city": key[1],
+                "creators": creators,
+                "campaigns": campaigns,
+                # Creators per brief. `None` where there are no briefs, which
+                # is not a ratio of infinity — it is the sell-into case below.
+                "creators_per_campaign": (
+                    round(creators / campaigns, 1) if campaigns else None
+                ),
+            }
+        )
+    return {
+        "rows": rows,
+        # **Sell into these**: supply sitting idle because nobody has briefed
+        # for it. Ordered by how much of it there is, because that is the
+        # order somebody would work the list in.
+        "sell_into": sorted(
+            [r for r in rows if r["creators"] > 0 and r["campaigns"] == 0],
+            key=lambda r: -r["creators"],
+        ),
+        # **Recruit for these**: demand we could not meet. Filled in by the
+        # caller from `_fill_outcome`, so "could not fill" has one definition.
+        "recruit_for": [],
+    }
+
+
 # How far back the trend charts look, and how long a creator can be quiet
 # before we stop calling them active. 60 days because a creator doing one
 # campaign a quarter is still a creator.
@@ -19791,6 +20486,416 @@ async def admin_intelligence(user: dict = Depends(require_roles("admin"))):
         "window_weeks": INTELLIGENCE_WEEKS,
         "generated_at": _iso(now),
     }
+
+
+# ---------------------------------------------------------------------------
+# Is the business healthy?
+# ---------------------------------------------------------------------------
+#
+# `admin_intelligence` says what is happening. This says whether it is working,
+# and the difference is that every number here has a denominator: a repeat
+# *rate* rather than a repeat count, a fill *rate* broken down far enough to
+# act on, a margin rather than a revenue, and the share of creators who ever
+# get paid at all.
+#
+# **Computed on a schedule and read from a cache**, because the honest version
+# of these scans most of the database: every campaign, every collaboration,
+# every payment, every performance reading. Recomputing that on each load of
+# a dashboard is how an analytics page becomes the slowest screen in the
+# product and then stops being opened.
+#
+# `analytics_cache` is its own collection, not a row in `platform_settings` —
+# the same separation `leaderboard_cache` makes, for the same reason: that
+# collection holds what an operator typed and is one bad `_id` away from being
+# overwritten by a nightly job.
+
+ANALYTICS_CACHE_ID = "admin"
+# How stale a read may be before the endpoint recomputes rather than serving
+# it. An hour: these move on the timescale of campaigns, not of clicks, and a
+# number that changes while somebody is reading it is a number they distrust.
+ANALYTICS_MAX_AGE_SECONDS = 3600
+
+# The windows the picker offers, and **the only ones the route accepts**. An
+# open `days` integer would let one request scan the whole history on every
+# keystroke of a number input, and the cache holds exactly one window — so the
+# set is closed, the default is the cached one, and the other three are worked
+# out on request. That is the honest reading of "cache the expensive
+# aggregation and refresh it on a schedule": the schedule covers the window
+# almost everybody reads, and changing the range is a deliberate act that pays
+# for itself.
+ANALYTICS_DEFAULT_DAYS = 180
+ANALYTICS_WINDOWS = (30, 90, 180, 365)
+
+
+async def _compute_admin_analytics(days: int = ANALYTICS_DEFAULT_DAYS) -> dict:
+    """The four metrics, and where supply is against demand.
+
+    One pass over the records, handing counts to the pure functions above —
+    the aggregation lives here and the arithmetic lives there, so the rules can
+    be read and tested without a database.
+    """
+    now = datetime.now(timezone.utc)
+    since = _days_ago(days)
+
+    campaigns = await db.campaigns.find(
+        {},
+        {
+            "brand_id": 1, "created_at": 1, "status": 1, "creators_needed": 1,
+            "category": 1, "city": 1, "campaign_type": 1, "campaign_fee": 1,
+            "start_date": 1, "event_date": 1, "delivery_cost": 1,
+        },
+    ).to_list(length=5000)
+    ids = [c["_id"] for c in campaigns]
+    filled = await _filled_counts_for(ids)
+
+    # --- 1. Brand repeat rate ------------------------------------------
+    by_brand: dict = {}
+    for c in campaigns:
+        when = c.get("created_at")
+        if isinstance(when, datetime):
+            by_brand.setdefault(c["brand_id"], []).append(_aware(when))
+
+    cohort = []
+    for posts in by_brand.values():
+        posts.sort()
+        first = posts[0]
+        window_end = first + timedelta(days=REPEAT_WINDOW_DAYS)
+        again = next((p for p in posts[1:] if p <= window_end), None)
+        # The third element is whether their window has actually closed. A
+        # brand three weeks into its first 90 days has not failed to repeat.
+        cohort.append((first, again, window_end <= now))
+    repeat = _repeat_rate(cohort)
+
+    # Trended by the month a brand *first* posted, which is the only honest
+    # axis: a cohort's repeat rate is a fact about when they arrived, and
+    # plotting it by calendar month would move every past point every time
+    # somebody came back.
+    months: dict = {}
+    for posts in by_brand.values():
+        posts.sort()
+        first = posts[0]
+        if first < since:
+            continue
+        key = first.strftime("%Y-%m")
+        window_end = first + timedelta(days=REPEAT_WINDOW_DAYS)
+        again = next((p for p in posts[1:] if p <= window_end), None)
+        months.setdefault(key, []).append((first, again, window_end <= now))
+    repeat_trend = [
+        {"month": key, **_repeat_rate(rows)} for key, rows in sorted(months.items())
+    ]
+
+    # --- 2. Fill rate, and where it is failing --------------------------
+    def _due(c):
+        return c.get("start_date") or c.get("event_date")
+
+    outcomes, by_category, by_city, unfilled_keys = [], {}, {}, {}
+    for c in campaigns:
+        needed = c.get("creators_needed")
+        got = filled.get(c["_id"], 0)
+        due = _due(c)
+        # On time means "by the day it needed them". A brief with no date has
+        # no deadline to miss, so it is judged on headcount alone.
+        on_time = True if not isinstance(due, datetime) else _aware(due) >= now or got >= needed
+        outcome = _fill_outcome(needed, got, on_time)
+        if not outcome:
+            continue
+        outcomes.append(outcome)
+        key = (c.get("category") or "—", _canonical_city(c.get("city")) or "—")
+        by_category.setdefault(key[0], []).append(outcome)
+        by_city.setdefault(key[1], []).append(outcome)
+        if outcome == "underfilled":
+            unfilled_keys[key] = unfilled_keys.get(key, 0) + 1
+
+    fill = {
+        **_fill_rate(outcomes),
+        "by_category": [
+            {"key": k, **_fill_rate(v)} for k, v in sorted(by_category.items())
+        ],
+        "by_city": [{"key": k, **_fill_rate(v)} for k, v in sorted(by_city.items())],
+        "on_time_means": FILL_ON_TIME,
+    }
+
+    # --- 3. Margin per campaign, by type --------------------------------
+    payments = await db.payments.find(
+        {"state": "paid"}, {"collaboration_id": 1, "platform_fee": 1}
+    ).to_list(length=20000)
+    collab_campaign = {
+        c["_id"]: c["campaign_id"]
+        for c in await db.collaborations.find({}, {"campaign_id": 1}).to_list(length=20000)
+    }
+    commission_by_campaign: dict = {}
+    for pay in payments:
+        cid = collab_campaign.get(pay.get("collaboration_id"))
+        if cid:
+            commission_by_campaign[cid] = commission_by_campaign.get(cid, 0.0) + float(
+                pay.get("platform_fee") or 0
+            )
+
+    margins, by_type = [], {}
+    for c in campaigns:
+        fee = c.get("campaign_fee")
+        commission = commission_by_campaign.get(c["_id"], 0.0)
+        if not fee and not commission:
+            continue  # nothing was charged; there is no margin to report
+        block = _campaign_margin(fee, commission, c.get("delivery_cost"))
+        margins.append(block)
+        by_type.setdefault(c.get("campaign_type") or "—", []).append(block)
+
+    def _margin_group(rows):
+        complete = [r for r in rows if r["complete"]]
+        return {
+            "campaigns": len(rows),
+            "revenue": round(sum(r["revenue"] for r in rows), 2),
+            # **Only over the briefs whose cost was actually recorded.**
+            # Averaging a gross figure in with net ones would overstate the
+            # business by exactly the amount nobody has measured.
+            "margin": round(sum(r["margin"] for r in complete), 2) if complete else None,
+            "with_recorded_cost": len(complete),
+            "average_margin": (
+                round(sum(r["margin"] for r in complete) / len(complete), 2)
+                if complete
+                else None
+            ),
+        }
+
+    margin = {
+        **_margin_group(margins),
+        "by_campaign_type": [
+            {"key": k, **_margin_group(v)} for k, v in sorted(by_type.items())
+        ],
+    }
+
+    # --- 4. Creator first-payment rate ----------------------------------
+    profiles = await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"user_id": 1, "verified_at": 1, "created_at": 1}
+    ).to_list(length=20000)
+    paid_rows = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {
+                "$group": {
+                    "_id": "$collab.creator_id",
+                    "first": {"$min": "$paid_at"},
+                }
+            },
+        ]
+    ).to_list(length=20000)
+    first_paid = {r["_id"]: _aware(r.get("first")) for r in paid_rows if r.get("first")}
+    first_payment = _first_payment_rate(
+        [
+            (
+                _aware(p.get("verified_at") or p.get("created_at")),
+                first_paid.get(p["user_id"]),
+            )
+            for p in profiles
+        ]
+    )
+
+    # --- Supply against demand ------------------------------------------
+    creator_keys: dict = {}
+    for p in await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"niches": 1, "city": 1}
+    ).to_list(length=20000):
+        city = _canonical_city(p.get("city")) or "—"
+        # A creator with three niches is supply in three categories, because
+        # they really are — a brief in any of them could book them.
+        for niche in _creator_categories(p) or ["—"]:
+            creator_keys[(niche, city)] = creator_keys.get((niche, city), 0) + 1
+
+    campaign_keys: dict = {}
+    for c in campaigns:
+        key = (c.get("category") or "—", _canonical_city(c.get("city")) or "—")
+        campaign_keys[key] = campaign_keys.get(key, 0) + 1
+
+    supply = _supply_and_demand(creator_keys, campaign_keys)
+    # **Recruit for these**: filled in from `_fill_outcome` rather than judged
+    # again here, so "could not fill" has one definition in this file.
+    supply["recruit_for"] = sorted(
+        [
+            {
+                "category": key[0],
+                "city": key[1],
+                "unfilled_campaigns": n,
+                "creators": creator_keys.get(key, 0),
+            }
+            for key, n in unfilled_keys.items()
+        ],
+        key=lambda r: (-r["unfilled_campaigns"], r["creators"]),
+    )
+
+    return {
+        "repeat_rate": repeat,
+        "repeat_rate_trend": repeat_trend,
+        "fill_rate": fill,
+        "margin": margin,
+        "first_payment": first_payment,
+        "supply_and_demand": supply,
+        "window_days": days,
+        "generated_at": _iso(now),
+    }
+
+
+def _aware(value):
+    """A stored datetime as an aware one.
+
+    BSON has no time zone, so a value round-tripped through Mongo comes back
+    naive and comparing it with `datetime.now(timezone.utc)` raises. Every
+    write here goes through `datetime.now(timezone.utc)`, so stamping it UTC
+    states a fact rather than guessing — the same rule `_iso` holds.
+    """
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _creator_categories(profile: dict) -> list:
+    """Which campaign categories a creator counts as supply for.
+
+    Through `CAMPAIGN_CATEGORY_SYNONYMS`, the same bridge the scorer uses:
+    nobody writes "fnb" about themselves, so matching a creator's own words to
+    a category enum has to go through the one table that knows both. A second
+    mapping here would put a creator in a different category on this screen
+    from the one the suggestions panel puts them in.
+    """
+    words = {str(n).strip().lower() for n in (profile.get("niches") or []) if n}
+    out = []
+    for category, synonyms in CAMPAIGN_CATEGORY_SYNONYMS.items():
+        if words & {s.lower() for s in synonyms} or category in words:
+            out.append(category)
+    return out
+
+
+async def refresh_admin_analytics() -> dict:
+    """Recompute and store. The scheduled half."""
+    data = await _compute_admin_analytics()
+    await db.analytics_cache.update_one(
+        {"_id": ANALYTICS_CACHE_ID},
+        {"$set": {"data": data, "computed_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    logger.info("Refreshed admin analytics")
+    return data
+
+
+@admin_router.get("/analytics")
+async def admin_analytics(
+    user: dict = Depends(require_roles("admin")),
+    refresh: bool = False,
+    days: int = ANALYTICS_DEFAULT_DAYS,
+):
+    """The four numbers, from the cache unless it is stale or somebody asks.
+
+    **Admin-only, not `CONSOLE_ROLES`** — the same split every
+    platform-wide instrument makes. A repeat rate across every brand is a fact
+    about the business, not about the brands a scoped team member works on,
+    and answering it for them would be the scope leaking through a chart.
+
+    **Only the default window is cached**, and a narrower one is computed here
+    — see `ANALYTICS_WINDOWS`. Caching each window would mean four documents
+    going stale at four different times and a panel that could show last
+    Tuesday's 30 days beside this morning's 180.
+    """
+    if days not in ANALYTICS_WINDOWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days must be one of: {', '.join(str(d) for d in ANALYTICS_WINDOWS)}",
+        )
+    if days != ANALYTICS_DEFAULT_DAYS:
+        return {**(await _compute_admin_analytics(days)), "cached": False, "age_seconds": 0}
+
+    cached = await db.analytics_cache.find_one({"_id": ANALYTICS_CACHE_ID})
+    age = None
+    if cached and isinstance(cached.get("computed_at"), datetime):
+        age = (datetime.now(timezone.utc) - _aware(cached["computed_at"])).total_seconds()
+
+    if refresh or not cached or age is None or age > ANALYTICS_MAX_AGE_SECONDS:
+        data = await refresh_admin_analytics()
+        return {**data, "cached": False, "age_seconds": 0}
+    # `age_seconds` travels with it so the panel can say when this was worked
+    # out. A dashboard that looks live and is an hour old is worse than one
+    # that says so.
+    return {**cached["data"], "cached": True, "age_seconds": int(age)}
+
+
+@admin_router.get("/analytics/export")
+async def export_admin_analytics(
+    kind: str = "supply",
+    user: dict = Depends(require_roles("admin")),
+    days: int = ANALYTICS_DEFAULT_DAYS,
+):
+    """The tables as CSV. One row shape per `kind`, so a spreadsheet is a
+    spreadsheet rather than four stacked on top of each other.
+
+    **`days` rides through to the same reader the screen uses**, or the file
+    somebody downloads under a 30-day heading would hold 180 days of rows —
+    the spreadsheet-disagrees-with-the-screen failure, arriving by a route
+    nobody would think to check.
+    """
+    if kind not in ("supply", "fill", "margin", "repeat"):
+        raise HTTPException(
+            status_code=422, detail="kind must be one of: supply, fill, margin, repeat"
+        )
+    data = await admin_analytics(user, days=days)
+
+    if kind == "supply":
+        headers = ["Category", "City", "Creators", "Campaigns", "Creators per campaign"]
+        rows = [
+            [r["category"], r["city"], r["creators"], r["campaigns"],
+             r["creators_per_campaign"] if r["creators_per_campaign"] is not None else ""]
+            for r in data["supply_and_demand"]["rows"]
+        ]
+    elif kind == "fill":
+        headers = ["Breakdown", "Key", "Campaigns", "Filled", "Late", "Underfilled", "Rate %"]
+        rows = [
+            [label, r["key"], r["campaigns"], r["filled"], r["late"], r["underfilled"],
+             r["rate"] if r["rate"] is not None else ""]
+            for label, group in (("Category", "by_category"), ("City", "by_city"))
+            for r in data["fill_rate"][group]
+        ]
+    elif kind == "margin":
+        headers = ["Campaign type", "Campaigns", "Revenue", "Margin",
+                   "With recorded cost", "Average margin"]
+        rows = [
+            [r["key"], r["campaigns"], r["revenue"],
+             r["margin"] if r["margin"] is not None else "",
+             r["with_recorded_cost"],
+             r["average_margin"] if r["average_margin"] is not None else ""]
+            for r in data["margin"]["by_campaign_type"]
+        ]
+    else:
+        headers = ["Cohort month", "Brands eligible", "Came back", "Repeat rate %"]
+        rows = [
+            [r["month"], r["eligible"], r["repeated"],
+             r["rate"] if r["rate"] is not None else ""]
+            for r in data["repeat_rate_trend"]
+        ]
+
+    await audit(user, "analytics.export", "platform", None, after={"kind": kind, "rows": len(rows)})
+    return _csv_response(rows, headers, f"analytics-{kind}")
+
+
+@admin_router.post("/jobs/analytics")
+async def run_analytics_refresh(user: dict = Depends(require_roles("admin"))):
+    """Recompute by hand. The same function the loop calls, so a number
+    somebody forced and a number the schedule produced cannot differ."""
+    data = await refresh_admin_analytics()
+    # Audited like every other job here. `_SYSTEM_ACTOR` credits the scheduled
+    # pass; this one names the person, which is the difference worth having in
+    # the log when a number moved between two readings of the same dashboard.
+    await audit(
+        user, "job.analytics", "job", "analytics",
+        after={"generated_at": data["generated_at"]},
+    )
+    return {"refreshed": True, "generated_at": data["generated_at"]}
 
 
 async def _creator_names_for(user_ids: list) -> dict:
@@ -26933,6 +28038,43 @@ async def _leaderboard_loop():
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             raise
+
+
+async def _analytics_loop():
+    """Recompute the business metrics on a timer.
+
+    **Sleeps first, unlike the leaderboard loop**, and the difference is
+    deliberate: nothing public renders from this, and the endpoint recomputes
+    on its own when the cache is missing or stale. So a fresh box pays the
+    scan when somebody first opens the page rather than during boot, which is
+    when it is least welcome.
+    """
+    interval = _analytics_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        try:
+            await refresh_admin_analytics()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("analytics refresh failed: %s", exc)
+
+
+def _analytics_interval_seconds() -> int:
+    """How often the business metrics are recomputed. Zero disables it.
+
+    Hourly by default, which is far more often than these move — a repeat rate
+    does not change between lunch and tea — but the scan is the expensive part
+    and an hour keeps it off the request path without the numbers ever being
+    surprising.
+    """
+    try:
+        return max(0, int(os.environ.get("ANALYTICS_REFRESH_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600
 
 
 def _leaderboard_interval_seconds() -> int:
@@ -35969,6 +37111,16 @@ async def _startup():
             "Creator leaderboard on: every %ds, %d needed before it renders",
             _leaderboard_interval_seconds(),
             LEADERBOARD_MIN_DEFAULT,
+        )
+
+    # The business metrics. Cached because the honest version scans most of
+    # the database; zero turns the loop off for a deployment driving
+    # POST /admin/jobs/analytics from its own scheduler, and the endpoint
+    # still recomputes on a stale or missing cache either way.
+    if _analytics_interval_seconds() > 0:
+        app.state.analytics_task = asyncio.create_task(_analytics_loop())
+        logger.info(
+            "Admin analytics on: recomputed every %ds", _analytics_interval_seconds()
         )
 
     # Instagram token renewal and stats caching. Off when the Meta app isn't

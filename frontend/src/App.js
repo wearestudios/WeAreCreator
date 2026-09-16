@@ -136,6 +136,7 @@ const CampaignsRoute = adminRoute("CampaignsRoute");
 const CreatorsRoute = adminRoute("CreatorsRoute");
 const BrandsRoute = adminRoute("BrandsRoute");
 const PerformanceRoute = adminRoute("PerformanceRoute");
+const AnalyticsRoute = adminRoute("AnalyticsRoute");
 const HealthRoute = adminRoute("HealthRoute");
 const AuditRoute = adminRoute("AuditRoute");
 const TeamRoute = adminRoute("TeamRoute");
@@ -490,6 +491,7 @@ function App() {
                                 }
                             />
                             <Route path="performance" element={<PerformanceRoute />} />
+                            <Route path="analytics" element={<AnalyticsRoute />} />
                             <Route path="health" element={<HealthRoute />} />
                             <Route path="audit" element={<AuditRoute />} />
                             <Route path="team" element={<TeamRoute />} />

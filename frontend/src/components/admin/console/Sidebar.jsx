@@ -19,6 +19,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
     Activity,
+    TrendingUp,
     BadgeCheck,
     Building2,
     ChevronsLeft,
@@ -117,6 +118,17 @@ export const ADMIN_SECTIONS = [
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", to: "brands", label: "Brands", Icon: Building2 },
     { key: "performance", to: "performance", label: "Performance", Icon: Activity },
+    // The four ratios the business is judged on, as opposed to Performance,
+    // which is what the *content* did. Admin-only like every other
+    // platform-wide instrument: a repeat rate across every brand is a fact
+    // about the business, not about the brands a scoped team member works on.
+    {
+        key: "analytics",
+        to: "analytics",
+        label: "Analytics",
+        Icon: TrendingUp,
+        adminOnly: true,
+    },
     {
         key: "health",
         to: "health",

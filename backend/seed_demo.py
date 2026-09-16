@@ -107,6 +107,9 @@ WIPED = (
     # rows — keeping it would put yesterday's creators on a homepage whose
     # database no longer has them.
     "leaderboard_cache",
+    # Derived and rebuilt on a schedule, so a stale one over fresh demo data
+    # would show yesterday's business against today's records.
+    "analytics_cache",
     "creator_lists",
     "payments",
     "deletion_requests",

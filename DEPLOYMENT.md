@@ -260,6 +260,7 @@ on a production box, that box is handing out a fixed login code right now.
 | `PROFILE_NUDGE_INTERVAL_SECONDS` | | How often the job looks. `0` disables. |
 | `LIFECYCLE_INTERVAL_SECONDS` | | The chasers. `0` disables; `POST /admin/jobs/lifecycle` runs one pass by hand. |
 | `LEADERBOARD_REFRESH_INTERVAL_SECONDS` | daily | `0` disables. The homepage never computes it. |
+| `ANALYTICS_REFRESH_INTERVAL_SECONDS` | `3600` | The admin analytics scan, kept off the request path. `0` disables the loop; the endpoint still recomputes on a stale or missing cache, so this only decides who waits for it. |
 
 ### Frontend (build-time, baked into the bundle)
 

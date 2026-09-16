@@ -288,6 +288,28 @@ def _world():
     return w
 
 
+def next_ist_weekday(index, hour=19):
+    """The next `index` (Monday 0, as `datetime.weekday()`) at `hour` IST.
+
+    **Relative to now, never a date typed into the file.** These three tests
+    pinned real 2026 dates chosen for the weekday they land on, and the
+    campaign `_world` builds runs from yesterday to sixty days out — so the
+    moment the calendar passed those dates, every slot fell outside the
+    campaign's own window and the refusal under test was replaced by a
+    different one. The tests failed for a reason that had nothing to do with
+    what they are about, which is the worst kind of red: it says the rule
+    broke, and the rule is fine.
+
+    Weekday indexes follow Python's `datetime.weekday()`, which is what
+    `restricted_days` holds — not JavaScript's `getDay()`.
+    """
+    # A week out, so the result is comfortably inside the window at both ends
+    # whatever today happens to be.
+    day = (datetime.now(timezone.utc) + timedelta(days=7)).astimezone(IST).date()
+    day += timedelta(days=(index - day.weekday()) % 7)
+    return ist(day.year, day.month, day.day, hour)
+
+
 def _make_slot(w, starts, ends):
     return server.create_campaign_slot(
         str(w["campaign"]),
@@ -306,8 +328,9 @@ def _status(coro):
 
 def test_a_manager_cannot_open_a_slot_on_a_restricted_day():
     w = _world()
-    monday = _status(_make_slot(w, ist(2026, 8, 24, 19, 0), ist(2026, 8, 24, 21, 0)))
-    wednesday = _status(_make_slot(w, ist(2026, 8, 26, 19, 0), ist(2026, 8, 26, 21, 0)))
+    mon, wed = next_ist_weekday(0), next_ist_weekday(2)
+    monday = _status(_make_slot(w, mon, mon + timedelta(hours=2)))
+    wednesday = _status(_make_slot(w, wed, wed + timedelta(hours=2)))
 
     assert monday == 422
     assert wednesday == 200
@@ -315,14 +338,16 @@ def test_a_manager_cannot_open_a_slot_on_a_restricted_day():
 
 def test_a_manager_cannot_open_a_slot_outside_the_hours():
     w = _world()
-    lunch = _status(_make_slot(w, ist(2026, 8, 26, 12, 0), ist(2026, 8, 26, 14, 0)))
+    noon = next_ist_weekday(2, hour=12)
+    lunch = _status(_make_slot(w, noon, noon + timedelta(hours=2)))
     assert lunch == 422
 
 
 def test_the_refusal_names_what_is_allowed():
     w = _world()
     try:
-        asyncio.run(_make_slot(w, ist(2026, 8, 24, 19, 0), ist(2026, 8, 24, 21, 0)))
+        mon = next_ist_weekday(0)
+        asyncio.run(_make_slot(w, mon, mon + timedelta(hours=2)))
         pytest.fail("should have refused")
     except HTTPException as e:
         assert "Wednesday" in str(e.detail)

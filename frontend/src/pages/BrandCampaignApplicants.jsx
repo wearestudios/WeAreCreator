@@ -21,6 +21,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { SafeSection } from "@/components/ErrorBoundary";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
+import CampaignAnalytics from "@/components/brand/CampaignAnalytics";
 import { Skeleton } from "@/components/ui/skeleton";
 import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
@@ -1119,6 +1120,16 @@ export default function BrandCampaignApplicants() {
 
                 <SafeSection name="invited" label="Invitations couldn't load">
                     <InvitedStrip invited={data.invited} />
+                </SafeSection>
+
+                {/* **Under "who is on it", above "how do we fill it".** This is
+                    the screen a brand opens while a campaign is running, and
+                    "what has it done so far" belongs beside the roster it is
+                    about rather than at the bottom under the panels about
+                    filling a brief that is already filling. It renders nothing
+                    until somebody has actually been taken on. */}
+                <SafeSection name="campaign-analytics" label="Results couldn't load">
+                    <CampaignAnalytics campaignId={id} className="mt-12" />
                 </SafeSection>
 
                 {/* **The curated half stays; the asking half went.** Ranked
