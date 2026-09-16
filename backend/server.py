@@ -2173,18 +2173,32 @@ def _is_barter(campaign: dict) -> bool:
 # they will be dealing with on the day.
 ExecutionOwner = Literal["brand", "weare"]
 EXECUTION_OWNERS = ("brand", "weare")
-# Campaigns written before this field existed were brand briefs run by the
-# brand's own manager unless an admin had handed one to a WeAre manager, which
-# is what the startup backfill looks for. Absent means brand.
+# **The reader's default, and it is "weare" because the product is.** Every
+# brief posted here is ours to run; an absent or unrecognised value is a row
+# nobody has said anything about, and the true thing to say about it today is
+# that we run it.
 #
-# **This is the *reader's* default and it must stay "brand".** It is what an
-# absent value means on a campaign written before the field existed, and there
-# are thousands of those; flipping it would silently hand every historical
-# brief to a WeAre manager who was never told about it. The default for a
-# *new* campaign is the constant below, and the two differing is deliberate —
-# the same split `requires_draft_approval` makes, for the same reason: one is
-# a policy for new work and the other is a promise to old work.
-DEFAULT_EXECUTION_OWNER = "brand"
+# This used to be "brand", and the reasoning was a real one: campaigns predate
+# the field, and reading absent as "weare" would silently hand every
+# historical brief to a WeAre manager who was never told. What makes the flip
+# safe is that the promise to old work is now kept **where it belongs, in the
+# data** — startup migration 9 stamps `LEGACY_EXECUTION_OWNER` on every
+# pre-field campaign, so none of them is relying on the reader to stay put.
+# The migration runs inside `@app.on_event("startup")`, which FastAPI awaits
+# before the first request, so there is no window where a historical brief is
+# read through the new default.
+DEFAULT_EXECUTION_OWNER = "weare"
+
+# What a campaign written before `execution_owner` existed actually was. Who
+# ran one was implicit in who its manager was — a WeAre `campaign_manager`
+# meant us, anything else meant the brand — and this is the "anything else"
+# half, written once by the backfill rather than inferred forever by a reader.
+#
+# It is deliberately its own constant rather than a literal inside the
+# migration: it is a statement about history, and pinning it here is what
+# stops it drifting with `DEFAULT_EXECUTION_OWNER` the next time the product
+# changes shape.
+LEGACY_EXECUTION_OWNER = "brand"
 
 # **What a brand posting a brief today gets, and it is not theirs to change.**
 # The product is managed-only: a brand writes the brief, approves the work and
@@ -2266,17 +2280,24 @@ def _brand_visible_collab_query(campaign: Optional[dict]) -> dict:
 
 
 def _execution_owner_query(value: str) -> dict:
-    """A Mongo filter for one execution owner, matching pre-field documents.
+    """A Mongo filter for one execution owner, agreeing with `_execution_owner`.
 
-    "brand" has to be `$ne: "weare"` rather than an equality test: campaigns
-    written before this field existed have no value at all, and they were
-    brand-run. The startup backfill fills them in, but a filter that only works
-    after a migration has run is a filter that silently returns nothing on a
-    box that has not restarted yet. Same reasoning as `showcase`'s `$ne: True`.
+    **The default side is `$ne` on the other one, and which side that is comes
+    off the constant rather than being written in.** A document with no value
+    — or an unrecognised one — reads as `DEFAULT_EXECUTION_OWNER`, so the
+    filter for the default has to match it and the filter for the other side
+    must not. Hardcoding either half is how the query and the reader end up
+    disagreeing the next time the default moves, which is exactly what
+    happened when it did.
+
+    An equality test on the default side would silently return nothing for
+    pre-field documents on a box whose startup migration has not run. Same
+    reasoning as `showcase`'s `$ne: True`.
     """
-    if value == "weare":
-        return {"execution_owner": "weare"}
-    return {"execution_owner": {"$ne": "weare"}}
+    other = "brand" if DEFAULT_EXECUTION_OWNER == "weare" else "weare"
+    if value == DEFAULT_EXECUTION_OWNER:
+        return {"execution_owner": {"$ne": other}}
+    return {"execution_owner": other}
 
 
 # --- Campaign visibility -----------------------------------------------------
@@ -34281,6 +34302,65 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
+async def backfill_execution_owner() -> None:
+    """Stamp `execution_owner` on every campaign written before it existed.
+
+    **This is what lets `DEFAULT_EXECUTION_OWNER` say "weare".** The reader's
+    default used to be "brand" purely to protect these rows, which meant the
+    promise to old work was being kept by a constant that also had to describe
+    the current product — two jobs, pulling opposite ways, and the product won
+    the argument the moment every brief became ours to run. The promise lives
+    in the data now: these campaigns say "brand" because that is what they
+    were, and no reader has to remember it.
+
+    Who ran one was implicit in who its manager was — a WeAre
+    `campaign_manager` on it meant us, anything else meant the brand. That is
+    derived once, here, rather than by every reader joining users on every
+    campaign row forever.
+
+    Extracted from `_startup` rather than left inline so it can be **driven**
+    against a database and read back, which is the only way to tell the
+    promise being kept from a constant that merely says so. `_startup` awaits
+    it before FastAPI serves a request, so there is no window in which a
+    pre-field campaign is read through the new default.
+
+    Idempotent: both passes match only on the field being absent, so running
+    it twice is running it once.
+    """
+    weare_manager_ids = await db.users.distinct("_id", {"role": "campaign_manager"})
+    if weare_manager_ids:
+        ours = await db.campaigns.update_many(
+            {
+                "execution_owner": {"$exists": False},
+                "manager_id": {"$in": weare_manager_ids},
+            },
+            {"$set": {"execution_owner": "weare"}},
+        )
+        if ours.modified_count:
+            logger.info(
+                "Backfilled execution_owner=weare on %d campaign(s) with a WeAre manager",
+                ours.modified_count,
+            )
+
+    # Everything still unmarked was the brand's own. Done second and
+    # unconditionally, so the pass is order-independent.
+    #
+    # **`LEGACY_EXECUTION_OWNER`, never `DEFAULT_EXECUTION_OWNER`.** This line
+    # is a statement about what these campaigns *were*; writing today's
+    # default here would rewrite history to match the current product, which
+    # is the exact harm the old reader default existed to prevent.
+    theirs = await db.campaigns.update_many(
+        {"execution_owner": {"$exists": False}},
+        {"$set": {"execution_owner": LEGACY_EXECUTION_OWNER}},
+    )
+    if theirs.modified_count:
+        logger.info(
+            "Backfilled execution_owner=%s on %d campaign(s)",
+            LEGACY_EXECUTION_OWNER,
+            theirs.modified_count,
+        )
+
+
 @app.on_event("startup")
 async def _startup():
     # First, before any of the slow work: whether this process will hand out a
@@ -34641,36 +34721,8 @@ async def _startup():
             priced.modified_count,
         )
 
-    # 9. Campaigns predate `execution_owner`. Who ran one was implicit in who
-    #    its manager was: a WeAre campaign_manager on it meant we were running
-    #    it, anything else meant the brand. That is derived once, here, rather
-    #    than by every reader joining users on every campaign row forever.
-    weare_manager_ids = await db.users.distinct("_id", {"role": "campaign_manager"})
-    if weare_manager_ids:
-        ours = await db.campaigns.update_many(
-            {
-                "execution_owner": {"$exists": False},
-                "manager_id": {"$in": weare_manager_ids},
-            },
-            {"$set": {"execution_owner": "weare"}},
-        )
-        if ours.modified_count:
-            logger.info(
-                "Backfilled execution_owner=weare on %d campaign(s) with a WeAre manager",
-                ours.modified_count,
-            )
-    # Everything still unmarked was the brand's own. Done second and
-    # unconditionally, so the pass is idempotent and order-independent.
-    theirs = await db.campaigns.update_many(
-        {"execution_owner": {"$exists": False}},
-        {"$set": {"execution_owner": DEFAULT_EXECUTION_OWNER}},
-    )
-    if theirs.modified_count:
-        logger.info(
-            "Backfilled execution_owner=%s on %d campaign(s)",
-            DEFAULT_EXECUTION_OWNER,
-            theirs.modified_count,
-        )
+    # 9. Campaigns predate `execution_owner`.
+    await backfill_execution_owner()
 
     # 10. Campaigns predate `city`. They all ran in Bengaluru — that is where
     #     the operation is and was — so this is what they are rather than a

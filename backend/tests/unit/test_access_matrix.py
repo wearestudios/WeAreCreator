@@ -853,9 +853,10 @@ class TestAdminCreation:
         drifted back would put a brand-run campaign on the platform with no
         manager assigned and nobody told.
 
-        The *reader's* default is the one that must stay `brand`, and it is
-        checked below: it is what an absent value means on the thousands of
-        campaigns written before the field existed.
+        The reader's default agrees with them now too — see below. It used to
+        be the odd one out, holding `brand` so that campaigns written before
+        the field existed did not change hands on deploy; that promise moved
+        into `backfill_execution_owner`, which stamps those rows.
         """
         assert (
             server.AdminCreateCampaignPayload.model_fields["execution_owner"].default
@@ -866,13 +867,19 @@ class TestAdminCreation:
             == "weare"
         )
 
-    def test_the_readers_default_is_still_brand(self, world):
-        """The migration promise, and the one thing changing the creation
-        default must not touch. Flipping this would hand every historical
-        brief to a WeAre manager who was never told about it."""
-        assert server.DEFAULT_EXECUTION_OWNER == "brand"
-        assert server._execution_owner({}) == "brand"
-        assert server._execution_owner({"title": "written before the field"}) == "brand"
+    def test_the_reader_agrees_with_them(self, world):
+        """One default now, in all three places, because there is one product.
+
+        The migration promise did not go away — it moved somewhere it can be
+        driven. `backfill_execution_owner` stamps every pre-field campaign
+        with `LEGACY_EXECUTION_OWNER`, so no historical brief is relying on a
+        reader to hold still, and `_startup` awaits it before FastAPI serves a
+        request.
+        """
+        assert server.DEFAULT_EXECUTION_OWNER == "weare"
+        assert server._execution_owner({}) == "weare"
+        assert server._execution_owner({"title": "says nothing"}) == "weare"
+        assert server.LEGACY_EXECUTION_OWNER == "brand"
 
     def test_a_weare_run_brief_waits_for_a_real_manager(self, world):
         """Stamping the brand's own person would route applications straight

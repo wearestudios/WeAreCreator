@@ -2499,14 +2499,28 @@ applicant and no WeAre manager was told at all.
   rather than kept**: with the absolute guard in front of it no input could
   reach its branches, and a guard that cannot fire is the shape this codebase
   keeps finding bugs in.
-- **`DEFAULT_EXECUTION_OWNER` is the *reader's* default and stays `brand`.**
-  It is what an absent value means on the thousands of campaigns written
-  before the field existed, so flipping it would hand every historical brief
-  to a WeAre manager who was never told. The creation default and the reader
-  default differing is deliberate — the same split `requires_draft_approval`
-  makes, for the same reason: one is a policy for new work and the other is a
-  promise to old work. `_execution_owner(campaign)` is the only reader — pure,
-  DB-free, never `None`, because every surface has to print one of two words.
+- **`DEFAULT_EXECUTION_OWNER` is `weare` too, and the promise to old work
+  moved into the data to let it be.** The reader's default was `brand` for one
+  reason: thousands of campaigns predate the field, and reading absent as
+  `weare` would hand every historical brief to a manager who was never told.
+  That made one constant do two jobs — describe the product *and* protect the
+  back catalogue — and the jobs pull opposite ways once every brief is ours.
+  So `backfill_execution_owner` stamps `LEGACY_EXECUTION_OWNER` (`brand`) on
+  every pre-field campaign, `_startup` awaits it before FastAPI serves a
+  request, and the reader is free to say the true thing about a row nobody has
+  said anything about: we run it. This is the deliberate opposite of the split
+  `requires_draft_approval` keeps — there the old work is protected by the
+  reader because there is no backfill; here it is protected by the write.
+  A promise kept by a backfill has to be **driven** to count, so
+  `test_managed_and_commission.py` runs it against a database and reads the
+  rows back rather than asserting the constant.
+- **`_execution_owner_query` derives which side is `$ne` from the constant**,
+  rather than writing `brand` and `weare` in. The default side has to match a
+  document with no field — an equality test there returns nothing on a box
+  whose migration has not run — and hardcoding which side that is is how the
+  filter and the reader came to disagree when the default moved.
+  `_execution_owner(campaign)` is still the only reader — pure, DB-free, never
+  `None`, because every surface has to print one of two words.
 - `weare_run_reason` is now always set on a brand-posted brief:
   `MANAGED_BY_DEFAULT_REASON` (`managed`) where it is simply the product, and
   the specific code where the *shape* of the work is why. Both are ours;
@@ -2534,10 +2548,14 @@ applicant and no WeAre manager was told at all.
   `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
   the payload generically, so an unguarded field rides along with everything
   else.
-- Filtering for `brand` is `{"$ne": "weare"}`, not an equality test — campaigns
-  predate the field. The startup backfill fills them in (deriving `weare` from a
-  WeAre `manager_id`), but a filter that only works after a migration has run
-  returns nothing on a box that has not restarted. Same reasoning as `showcase`.
+- Filtering for the **default** side is `$ne` on the other, not an equality
+  test — campaigns predate the field, and a filter that only works after a
+  migration has run returns nothing on a box that has not restarted. Same
+  reasoning as `showcase`. With the default at `weare` that means `weare` is
+  `{"$ne": "brand"}` and `brand` is the equality test, which is the reverse of
+  how it read before and is exactly why the function computes it rather than
+  spelling it out. The backfill still derives `weare` from a WeAre
+  `manager_id` before falling back to `brand`.
 
 `lib/execution.js` is the frontend half — the two words, the three audiences'
 wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote`
