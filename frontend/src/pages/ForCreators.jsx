@@ -45,7 +45,7 @@ const COPY = {
         },
     ],
 
-    stepsTitle: "Signing up to being paid.",
+    stepsTitle: "From signing up to being paid.",
     steps: [
         {
             label: "Build your profile",
@@ -73,11 +73,11 @@ const COPY = {
             line: "Your city, what you make, and links to your work.",
         },
         {
-            label: "Payout details, later",
+            label: "Payout details come later",
             line: "UPI and PAN before your first payment. Never part of being looked at.",
         },
         {
-            label: "Instagram, if you want",
+            label: "Connecting Instagram is optional",
             line: "Connect it and your numbers are read from Instagram rather than typed in.",
         },
     ],

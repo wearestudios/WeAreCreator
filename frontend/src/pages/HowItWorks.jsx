@@ -34,45 +34,45 @@ const COPY = {
     title: "Both sides of the same campaign.",
     line: "A creator from signing up to being paid, and a brand from brief to report.",
 
-    tracksTitle: "Six moments, from both sides.",
+    tracksTitle: "Six steps, seen from both sides.",
     tracks: [
         {
-            moment: "Getting on",
+            step: "Signing up",
             creator: { label: "Build a profile", line: "Reviewed by a person before you can pitch." },
             brand: { label: "Register the business", line: "Checked against your paperwork before you reach anyone." },
         },
         {
-            moment: "The brief",
-            creator: { label: "Find it and pitch", line: "Ranked by fit, never by what it pays." },
+            step: "The brief",
+            creator: { label: "Find a brief and pitch", line: "Ranked by fit, never by what it pays." },
             // **The brand does not sort applications.** This said applicants
             // arrive with their rate, which described a board a brand worked
             // through — the self-serve reading of a managed product. Nobody
             // unshortlisted reaches them.
-            brand: { label: "Post it, we cast", line: "We shortlist creators and agree their fees before you see anyone." },
+            brand: { label: "Post the brief and we cast", line: "We shortlist creators and agree their fees before you see anyone." },
         },
         {
-            moment: "The money",
+            step: "The money",
             creator: { label: "Rate agreed first", line: "Recorded against the booking, not left in a DM." },
             brand: { label: "You pay us", line: "Creator's rate plus our fee, both shown before you confirm." },
         },
         {
-            moment: "The shoot",
+            step: "The shoot",
             creator: { label: "Book a slot", line: "Inside the hours the venue can take people." },
             brand: { label: "See the roster", line: "Who is booked, when, and what changes." },
         },
         {
-            moment: "Before it is live",
+            step: "Before it is live",
             creator: { label: "Send the draft", line: "Publish once it is approved. Nothing gets taken down." },
-            brand: { label: "Approve or ask", line: "Nothing is published until you have said yes." },
+            brand: { label: "Approve it or ask for changes", line: "Nothing is published until you have said yes." },
         },
         {
-            moment: "Afterwards",
+            step: "Afterwards",
             creator: { label: "Paid on delivery", line: "Released once the brand approves. No invoice to chase." },
             brand: { label: "Read the report", line: "Reach, engagement and cost per thousand, in one place." },
         },
     ],
 
-    trustTitle: "What makes it a process.",
+    trustTitle: "What makes this a process.",
     trust: [
         {
             label: "Verified both ways",
@@ -83,7 +83,7 @@ const COPY = {
             line: "Agreed before the shoot, because it is what gets argued about after.",
         },
         {
-            label: "Approval before public",
+            label: "Approval before it is public",
             line: "The brand sees the content before the creator's followers do.",
         },
         {
@@ -99,7 +99,7 @@ const COPY = {
     closeLine: "Creators join free. We check a brand before it reaches anyone.",
 };
 
-/** One side of one moment. A label, a line, and nothing else. */
+/** One side of one step. A label, a line, and nothing else. */
 function Track({ side, entry, testid }) {
     return (
         <div
@@ -167,12 +167,12 @@ export default function HowItWorks() {
                     <div className="mt-6 space-y-8 md:mt-4 md:space-y-5">
                         {COPY.tracks.map((row, i) => (
                             <Reveal
-                                key={row.moment}
+                                key={row.step}
                                 i={i % 3}
                                 className="grid gap-4 md:grid-cols-12 md:items-stretch md:gap-6"
                             >
                                 <p className="font-serif text-fluid-lg leading-tight tracking-tight text-ember-500 md:col-span-2 md:pt-5">
-                                    {row.moment}
+                                    {row.step}
                                 </p>
                                 <div className="md:col-span-5">
                                     <Track

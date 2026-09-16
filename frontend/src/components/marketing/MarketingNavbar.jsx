@@ -81,13 +81,19 @@ export function MarketingNavbar() {
                     >
                         Sign in
                     </Link>
-                    {/* "Join" rather than "Sign up as a creator": the menu
-                        beside it names two audiences, and a creator-specific
-                        button tells a brand the bar is not for them. /signup
-                        carries a role picker and defaults to creator. */}
+                    {/* Not "Sign up as a creator": the menu beside it names
+                        two audiences, and a creator-specific button tells a
+                        brand the bar is not for them. /signup carries a role
+                        picker and defaults to creator.
+
+                        **"Sign up" rather than "Join"**, which is what it said
+                        — one word against "Sign in" beside it, and in the same
+                        register. "Join" is the more casual of the two, and a
+                        pair where one half is clipped reads as a pair somebody
+                        stopped proof-reading. */}
                     <Link to="/signup" data-testid={IDS.navJoin}>
                         <Button className="rounded-full bg-ember-500 px-5 text-black transition-colors duration-200 hover:bg-ember-400">
-                            Join
+                            Sign up
                         </Button>
                     </Link>
 
@@ -140,7 +146,7 @@ export function MarketingNavbar() {
                                     <SheetClose asChild>
                                         <Link to="/signup" data-testid={`${IDS.navJoin}-mobile`}>
                                             <Button className="h-11 w-full rounded-full bg-ember-500 text-black transition-colors duration-200 hover:bg-ember-400">
-                                                Join
+                                                Sign up
                                             </Button>
                                         </Link>
                                     </SheetClose>

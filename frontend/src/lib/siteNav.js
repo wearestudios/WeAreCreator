@@ -60,7 +60,7 @@ export const FOOTER_COLUMNS = [
             // pages had for months. `FooterLink` picks `<a>` off this flag.
             { label: "Our work", to: WORK_PATH, external: true },
             { label: "How it works", to: "/how-it-works" },
-            { label: "Why WeAre", to: "/why-weare" },
+            { label: "Why WeAre Creators", to: "/why-weare" },
             { label: "Contact", to: `mailto:${CONTACT_EMAIL}`, external: true },
         ],
     },
@@ -88,7 +88,7 @@ export const MARKETING_LINKS = [
     { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre", testId: "nav-why" },
+    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
 ];
 
 /** The marketing pages, for the sitemap and for tests that walk them all. */

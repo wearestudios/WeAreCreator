@@ -41,7 +41,12 @@ const linksFor = (role) => {
         // opens on a 403 is worse than one that is absent. Everything else
         // here comes back scoped to the brands they run.
         return [
-            { to: "/admin/queue", label: "Queue", testId: "nav-admin-queue", secondary: true },
+            // "Action queue" rather than "Queue": the console's own sidebar
+            // has called it that since it was built, and a nav item that
+            // names the same screen differently is a second vocabulary for
+            // one thing. "Queue" alone is also internal shorthand — it says
+            // what the data structure is rather than what the screen is for.
+            { to: "/admin/queue", label: "Action queue", testId: "nav-admin-queue", secondary: true },
             { to: "/admin/campaigns", label: "Campaigns", testId: "nav-admin-campaigns", secondary: true },
             ...(isAllAccess(role)
                 ? [{ to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true }]
@@ -99,7 +104,7 @@ const MARKETING_LINKS = [
     { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre", testId: "nav-why" },
+    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
 ];
 
 export const Navbar = () => {
@@ -242,16 +247,23 @@ export const Navbar = () => {
                                 Log in
                             </Link>
                             {/* The primary action stays in the bar at every
-                                width. It says "Join" rather than "Sign up as a
-                                creator": the site now addresses two audiences
-                                by name in the menu beside it, and a
-                                creator-specific button there tells a brand the
+                                width, and it is deliberately not audience-
+                                specific: the site addresses two audiences by
+                                name in the menu beside it, so a "Sign up as a
+                                creator" button there would tell a brand the
                                 bar is not for them. /signup carries a role
                                 picker and defaults to creator, so nobody who
-                                wanted the old button loses a step. */}
+                                wanted the old button loses a step.
+
+                                **"Sign up" rather than "Join".** One word
+                                against "Log in" beside it, in the same
+                                register: "Join" is the shorter and more casual
+                                of the two, and a pair where one half is
+                                clipped reads as a pair somebody stopped
+                                proof-reading. */}
                             <Link to="/signup" data-testid="nav-signup-link">
                                 <Button className="rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400">
-                                    Join
+                                    Sign up
                                 </Button>
                             </Link>
                         </>
@@ -368,7 +380,7 @@ export const Navbar = () => {
                                                     data-testid="nav-signup-link-mobile"
                                                 >
                                                     <Button className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
-                                                        Join
+                                                        Sign up
                                                     </Button>
                                                 </Link>
                                             </SheetClose>

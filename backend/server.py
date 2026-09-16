@@ -33708,7 +33708,7 @@ FOOTER_COLUMNS = (
         (
             ("Our work", CASE_STUDY_PATH),
             ("How it works", HOW_IT_WORKS_PATH),
-            ("Why WeAre", WHY_WEARE_PATH),
+            ("Why WeAre Creators", WHY_WEARE_PATH),
             ("Contact", "mailto:creators@wearemonk.in"),
         ),
     ),
