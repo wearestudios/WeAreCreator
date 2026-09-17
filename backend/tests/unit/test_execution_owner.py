@@ -41,18 +41,29 @@ def test_it_reads_back_what_was_stored(owner):
     assert server._execution_owner(campaign(execution_owner=owner)) == owner
 
 
-def test_a_campaign_written_before_the_field_is_brand_run():
-    """Campaigns predate this. They were brand briefs unless an admin had put
-    one of our managers on them, which the startup backfill looks for."""
-    assert server._execution_owner(campaign()) == "brand"
-    assert server._execution_owner({}) == "brand"
-    assert server._execution_owner(None) == "brand"
+def test_a_row_that_says_nothing_reads_as_ours():
+    """**The default is "weare", because the product is managed-only.**
+
+    It used to be "brand", to protect campaigns written before the field
+    existed. That protection lives in `backfill_execution_owner` now, which
+    stamps those rows explicitly — driven against a database in
+    `test_managed_and_commission.py`, because a promise nothing exercises is a
+    promise nothing keeps. So this constant is free to say the true thing
+    about a row nobody has said anything about today, which is that we run it.
+    """
+    assert server.DEFAULT_EXECUTION_OWNER == "weare"
+    assert server._execution_owner(campaign()) == "weare"
+    assert server._execution_owner({}) == "weare"
+    assert server._execution_owner(None) == "weare"
 
 
-def test_an_unrecognised_value_reads_as_brand_rather_than_travelling_as_is():
+def test_an_unrecognised_value_reads_as_the_default_rather_than_travelling_as_is():
     """A badge has to print one of two words. Passing junk through would put it
     on screen."""
-    assert server._execution_owner(campaign(execution_owner="partner")) == "brand"
+    assert (
+        server._execution_owner(campaign(execution_owner="partner"))
+        == server.DEFAULT_EXECUTION_OWNER
+    )
 
 
 def test_weare_runs_is_the_same_answer():
@@ -63,17 +74,32 @@ def test_weare_runs_is_the_same_answer():
 # --- Filtering --------------------------------------------------------------
 
 
-def test_filtering_for_brand_matches_documents_with_no_field():
-    """`{"execution_owner": "brand"}` would miss every pre-field campaign. The
-    backfill fills them in, but a filter that only works after a migration has
-    run is one that silently returns nothing on a box that has not restarted."""
-    query = server._execution_owner_query("brand")
+def test_the_filter_for_the_default_side_matches_documents_with_no_field():
+    """An equality test on the default side would miss every pre-field
+    campaign. The backfill fills them in, but a filter that only works after a
+    migration has run is one that silently returns nothing on a box that has
+    not restarted — and a document carrying junk reads as the default too."""
+    other = "brand" if server.DEFAULT_EXECUTION_OWNER == "weare" else "weare"
 
-    assert query == {"execution_owner": {"$ne": "weare"}}
+    assert server._execution_owner_query(server.DEFAULT_EXECUTION_OWNER) == {
+        "execution_owner": {"$ne": other}
+    }
 
 
-def test_filtering_for_weare_is_an_equality_test():
-    assert server._execution_owner_query("weare") == {"execution_owner": "weare"}
+def test_the_filter_for_the_other_side_is_an_equality_test():
+    other = "brand" if server.DEFAULT_EXECUTION_OWNER == "weare" else "weare"
+
+    assert server._execution_owner_query(other) == {"execution_owner": other}
+
+
+def test_the_filter_reads_the_constant_rather_than_writing_the_sides_in():
+    """**The query and the reader must not be able to disagree**, and the way
+    they did was that one hardcoded which side matched an absent value. Both
+    derive it from `DEFAULT_EXECUTION_OWNER` now, so moving the default moves
+    them together."""
+    source = inspect.getsource(server._execution_owner_query)
+
+    assert "DEFAULT_EXECUTION_OWNER" in source
 
 
 @pytest.mark.parametrize("fn", [server.list_all_campaigns, server.list_brand_campaigns])
@@ -296,9 +322,15 @@ def test_it_is_read_through_the_reader_everywhere_it_is_emitted():
         # `_weare_run_reason`.
         "resolved_execution_owner",
         '"weare"',
-        # The backfill's `$set`, which writes the literal default rather than
-        # reading it — that is what a backfill is for.
-        "DEFAULT_EXECUTION_OWNER",
+        # The backfill's `$set`. It writes what these campaigns *were*, which
+        # is deliberately not what today's reader would call them — the whole
+        # reason `LEGACY_EXECUTION_OWNER` is a second constant.
+        "LEGACY_EXECUTION_OWNER",
+        # `_execution_owner_query`'s equality half. A filter, not a value being
+        # emitted: it is the side the default answers with `$ne`, and it is a
+        # name rather than a literal so the query cannot disagree with the
+        # reader about which side that is.
+        "other",
         "None",
     }
     for value in re.findall(r'"execution_owner":\s*(.+)', source):

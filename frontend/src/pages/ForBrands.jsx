@@ -41,13 +41,13 @@ const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
 // All of the page's words, in one place, so the budget can be read rather
 // than counted across a file. A unit test enforces it.
 const COPY = {
-    title: "Fill the room. Launch the thing.",
+    title: "Campaigns that fill the room.",
     line: "Creators we have checked, the rate agreed before anyone shoots, and nothing published until you approve it.",
     footnote: "No retainer. No markup on creator fees.",
 
     props: [
         {
-            label: "Creators we checked",
+            label: "Every creator is checked",
             line: "A person reviews every one, and connected stats are read from Instagram.",
         },
         {
@@ -65,7 +65,7 @@ const COPY = {
         },
     ],
 
-    stepsTitle: "Brief to report, in four moves.",
+    stepsTitle: "Brief to report, in four steps.",
     steps: [
         {
             label: "Post the brief",
@@ -88,7 +88,7 @@ const COPY = {
             line: "Creators we checked and negotiated with, each with a rate agreed.",
         },
         {
-            label: "They shoot",
+            label: "The creators shoot",
             line: "On slots they booked, inside the days and hours you set.",
         },
         {
@@ -103,7 +103,7 @@ const COPY = {
     // a brand is actually deciding on: our fee sits on top of the creator's
     // rate rather than out of it, and it comes back if we cannot fill the
     // brief. Both are checkable, which is the standard this page is held to.
-    termsTitle: "Our fee, and when it returns.",
+    termsTitle: "What we charge, and what comes back.",
     termsLine: "Charged on top, and refunded if we cannot fill the brief.",
     terms: [
         {
@@ -116,12 +116,12 @@ const COPY = {
         },
         {
             label: "A named manager, every time",
-            line: "Holding the roster and at the door.",
+            line: "Holding the roster, and at the door.",
         },
     ],
 
-    reachTitle: "Deepest in Bengaluru.",
-    reachLine: "That is where the network is thickest and briefs fill fastest. Creators sign up from anywhere in India.",
+    reachTitle: "The network runs deepest in Bengaluru.",
+    reachLine: "That is where briefs fill fastest. Creators sign up from anywhere in India.",
 
     closeTitle: "Post your first brief.",
     closeLine: "About ten minutes. We check your business before anything reaches a creator.",

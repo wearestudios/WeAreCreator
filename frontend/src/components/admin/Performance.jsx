@@ -57,7 +57,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
             {nothing ? (
                 <p
                     data-testid={IDS.empty}
-                    className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm leading-relaxed text-muted-foreground"
+                    className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm leading-relaxed text-muted-foreground"
                 >
                     Nothing measured yet. Once a creator submits content, record what the
                     post did — from Instagram where they've connected it, or by hand from
@@ -174,7 +174,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                                 </div>
                             ))}
                         </dl>
-                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 pt-5 text-sm text-muted-foreground">
+                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-tint/10 pt-5 text-sm text-muted-foreground">
                             <span className="text-sm text-foreground">
                                 {pct(performance.engagement_rate)} engagement
                             </span>
@@ -199,7 +199,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         onClick={tryInstagram}
                         disabled={fetching}
                         data-testid={IDS.fetch}
-                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                        className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                     >
                         {fetching ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -212,7 +212,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         variant="outline"
                         onClick={() => setOpen(true)}
                         data-testid={IDS.edit}
-                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                        className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                     >
                         <BarChart3 className="mr-2 h-4 w-4" />
                         {performance ? "Correct by hand" : "Enter by hand"}
@@ -292,10 +292,10 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-w-lg rounded-md border border-white/10 bg-card"
+                className="max-w-lg rounded-md border border-tint/10 bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                         Performance
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -329,7 +329,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                                         setValues((v) => ({ ...v, [m.key]: e.target.value }))
                                     }
                                     placeholder="—"
-                                    className="mt-2 h-11 rounded-md border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                         ))}
@@ -348,7 +348,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 Cancel
                             </Button>
@@ -357,7 +357,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                             type="submit"
                             disabled={busy}
                             data-testid={IDS.submit}
-                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {busy ? "Saving…" : "Save"}
                         </Button>
@@ -379,7 +379,7 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
             <a href={href("csv")} data-testid={IDS.reportCsv}>
                 <Button
                     variant="outline"
-                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                 >
                     <Download className="mr-2 h-4 w-4" />
                     CSV
@@ -393,7 +393,7 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
             >
                 <Button
                     variant="outline"
-                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                 >
                     <Printer className="mr-2 h-4 w-4" />
                     Printable report
@@ -407,8 +407,8 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
                 className={
                     "rounded-full bg-transparent " +
                     (showcase
-                        ? "border-ember-500/50 text-ember-500 hover:bg-ember-500/10"
-                        : "border-white/15 hover:bg-white/5")
+                        ? "border-primary/50 text-primary-ink hover:bg-primary/10"
+                        : "border-tint/15 hover:bg-tint/5")
                 }
             >
                 <Star className={"mr-2 h-4 w-4 " + (showcase ? "fill-current" : "")} />

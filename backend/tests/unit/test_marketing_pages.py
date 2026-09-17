@@ -167,9 +167,15 @@ def test_the_enemy_named_is_disorganisation_not_a_competitor():
         assert "in writing" in low or "before anyone shoots" in low or "before you shoot" in low, name
         assert "verified" in low or "checked" in low, name
     # And home names it outright, since it is the only argument home keeps.
+    #
+    # The second assertion used to read "nobody checked", which was the label
+    # verbatim. The copy audit made it "creators nobody has checked" — the
+    # same charge with the noun restored — so what is pinned now is the idea
+    # rather than the two words it happened to be written in. A rule that
+    # names a phrase is a rule that fails on its next honest rewrite.
     home = copy_of(*PAGES["home"]).lower()
     assert "dms and spreadsheets" in home
-    assert "nobody checked" in home
+    assert "nobody has checked" in home
 
 
 def test_the_headline_direction_is_carried():
@@ -351,7 +357,7 @@ def test_the_navbar_offers_the_four_pages_and_both_auth_actions():
     sheet is the only navigation below md, so anything missing there is
     unreachable on a phone."""
     nav = read("src", "components", "Navbar.jsx")
-    for label in ("For brands", "For creators", "How it works", "Why WeAre"):
+    for label in ("For brands", "For creators", "How it works", "Why WeAre Creators"):
         assert f'label: "{label}"' in nav, label
     assert 'data-testid="nav-login-link"' in nav
     assert 'data-testid="nav-signup-link"' in nav
@@ -713,7 +719,11 @@ def test_how_it_works_shows_both_sides_against_each_other():
     """A creator's step and the brand's step opposite it happen at the same
     moment, and that is the argument. Two separate lists would lose it."""
     src = read(*PAGES["how"])
-    tracks = re.findall(r"moment:", src)
+    # `step:`, which is what the key is called since the copy audit — these
+    # are steps in a process rather than moments in one, and the heading above
+    # them says so. Both spellings count, so the structure rule survives the
+    # rename instead of quietly matching nothing.
+    tracks = re.findall(r"\b(?:step|moment):", src)
     assert len(tracks) >= 5, tracks
     # Every row carries both sides; a blank one reads as a step somebody
     # forgot to write.
@@ -727,7 +737,11 @@ def test_how_it_works_carries_the_four_trust_mechanics():
     text = copy_of(*PAGES["how"]).lower()
     assert "verified both ways" in text
     assert "rate in writing" in text
-    assert "approval before public" in text
+    # "approval before it is public" since the copy audit — it read "approval
+    # before public", which used the adjective as a noun to save two words.
+    # The docstring above already says the mechanics are the point rather than
+    # the wording, so this matches the mechanic and not the phrasing.
+    assert "approval before it is public" in text
     assert "paid on approved delivery" in text
 
 
@@ -745,9 +759,10 @@ def test_why_weare_makes_the_standalone_case():
     text = copy_of(*PAGES["why"]).lower()
     assert "weare studios" in text                      # the pedigree
     # Was "run it yourself, or hand it over" — the choice the product no
-    # longer offers. The section argues what handing it over *costs* now,
-    # which is the thing a sceptic with another tab open is weighing.
-    assert "handed over" in text                        # the offer
+    # longer offers — and then "handed over, and what that costs", which
+    # stopped mid-thought. The section argues what handing a campaign over
+    # *costs*, which is what a sceptic with another tab open is weighing.
+    assert "handing it over costs" in text              # the offer
     assert "a person reviews every creator" in text     # verified people
     assert "plus our fee" in text                       # money handled properly
     assert "reach and cost per thousand" in text        # results reported
@@ -957,7 +972,11 @@ def test_no_headline_runs_past_eight_words(name):
     src = read(*PAGES[name])
     start = src.index("const COPY = {")
     block = src[start:]
-    for m in re.finditer(r'(\w*[Tt]itle|label|moment):\s*"((?:[^"\\]|\\.)*)"', block):
+    # `step` was `moment` until the copy audit: these are steps in a process,
+    # not moments in one, and the visible heading above them says so. Both
+    # spellings are matched so the rule holds through the rename rather than
+    # silently stopping at it — which is how a headline cap goes missing.
+    for m in re.finditer(r'(\w*[Tt]itle|label|moment|step):\s*"((?:[^"\\]|\\.)*)"', block):
         n = len(_words(m.group(2)))
         assert n <= 8, f"{name}: {n} words — {m.group(2)!r}"
 

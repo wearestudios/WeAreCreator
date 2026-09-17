@@ -401,10 +401,19 @@ def test_barter_counts_as_settled():
     assert server._brand_sees_collab(campaign, collab) is True
 
 
-def test_a_pre_field_campaign_is_brand_run_and_hides_nothing():
-    """Campaigns predate `execution_owner`. A shield that switched on for them
-    would empty every existing brand's board."""
-    assert server._brand_sees_collab({}, {"state": "applied"}) is True
+def test_a_brand_run_campaign_hides_nothing():
+    """The shield is only ever on a brief we run. On the brand's own campaign
+    the board is theirs to work, and switching it on there would empty it.
+
+    Said explicitly rather than by omitting the field: campaigns predate
+    `execution_owner` and an absent value used to mean brand-run, but the
+    reader's default is "weare" now and the pre-field rows are stamped by
+    `backfill_execution_owner` instead. A test that still leaned on the
+    omission would be asserting the old rule while looking like the new one.
+    """
+    brand_run = {"execution_owner": "brand"}
+
+    assert server._brand_sees_collab(brand_run, {"state": "applied"}) is True
 
 
 @pytest.mark.parametrize(

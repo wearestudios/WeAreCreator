@@ -176,11 +176,29 @@ def test_the_lifecycle_carries_every_step_in_order():
 
 
 def test_the_lifecycle_grows_two_steps_where_drafts_are_reviewed():
-    bar = server._lifecycle_for(
-        {"state": "accepted"}, {"requires_draft_approval": True}
-    )
+    """The bar ships the ladder this campaign actually walks, not the whole
+    machine. On a venue brief that gates drafts that is every state except the
+    delivery half — which is not a step this campaign has, and drawing it
+    would promise a creator a parcel nobody is sending."""
+    campaign = {"requires_draft_approval": True}
+    bar = server._lifecycle_for({"state": "accepted"}, campaign)
 
-    assert [s["state"] for s in bar["steps"]] == server.COLLAB_STATE_ORDER
+    assert [s["state"] for s in bar["steps"]] == server._collab_ladder(campaign)
+    assert "draft_submitted" in [s["state"] for s in bar["steps"]]
+    assert "dispatched" not in [s["state"] for s in bar["steps"]]
+
+
+def test_the_lifecycle_swaps_the_middle_on_a_delivery_brief():
+    """Booking and turning up are replaced by confirming an address, sending
+    it and confirming it arrived. Exactly one of the two halves is ever on the
+    bar — a creator asked to book a slot for a parcel is the failure this
+    whole type exists to fix."""
+    campaign = {"campaign_type": "delivery"}
+    steps = [s["state"] for s in server._lifecycle_for({"state": "accepted"}, campaign)["steps"]]
+
+    assert steps == server._collab_ladder(campaign)
+    assert [s for s in steps if s in server.DELIVERY_STATES] == list(server.DELIVERY_STATES)
+    assert not [s for s in steps if s in server.VENUE_ATTENDANCE_STATES]
 
 
 def test_the_lifecycle_marks_exactly_one_step_current():

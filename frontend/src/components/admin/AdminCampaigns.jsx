@@ -277,7 +277,7 @@ export default function AdminCampaigns({
                             to={`/admin/campaigns/${c.id}`}
                             onClick={(e) => e.stopPropagation()}
                             data-testid={IDS.open(c.id)}
-                            className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                            className={`truncate ${CALM} hover:text-primary-ink ${FOCUS}`}
                         >
                             {c.title}
                         </Link>
@@ -285,7 +285,7 @@ export default function AdminCampaigns({
                             <Star
                                 data-testid={PERF_IDS.showcaseBadge(c.id)}
                                 title={c.showcase_note || "Marked as a showcase campaign"}
-                                className="h-3 w-3 shrink-0 fill-current text-ember-500"
+                                className="h-3 w-3 shrink-0 fill-current text-primary-ink"
                             />
                         )}
                     </span>
@@ -575,7 +575,7 @@ export default function AdminCampaigns({
                         data-testid={IDS.search}
                         placeholder="Campaign title"
                         aria-label="Search campaigns"
-                        className={`h-8 border-white/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -605,8 +605,8 @@ export default function AdminCampaigns({
                     className={
                         `inline-flex h-8 flex-none items-center gap-1.5 rounded border px-2 ${TEXT.body} ${CALM} ${FOCUS} ` +
                         (showcase
-                            ? "border-ember-500 bg-ember-500/10 text-ember-500"
-                            : "border-white/10 text-muted-foreground hover:border-white/25")
+                            ? "border-primary bg-primary/10 text-primary-ink"
+                            : "border-tint/10 text-muted-foreground hover:border-tint/25")
                     }
                 >
                     <Star className={"h-3.5 w-3.5 " + (showcase ? "fill-current" : "")} />
@@ -631,7 +631,7 @@ export default function AdminCampaigns({
                         type="button"
                         onClick={clearFilters}
                         data-testid={IDS.filterClear}
-                        className={`inline-flex items-center gap-1.5 ${TEXT.meta} ${CALM} text-muted-foreground hover:text-ember-500 ${FOCUS}`}
+                        className={`inline-flex items-center gap-1.5 ${TEXT.meta} ${CALM} text-muted-foreground hover:text-primary-ink ${FOCUS}`}
                     >
                         <X className="h-3.5 w-3.5" />
                         Clear
@@ -807,7 +807,7 @@ export default function AdminCampaigns({
                         {peek.review_reason && peek.status === "draft" && (
                             <p
                                 data-testid={IDS.reviewReason(peek.id)}
-                                className={`mt-3 rounded border border-amber-500/25 bg-amber-500/5 p-3 ${TEXT.body} text-amber-300`}
+                                className={`mt-3 rounded border border-state-pending/25 bg-state-pending/5 p-3 ${TEXT.body} text-state-pending`}
                             >
                                 Sent back: {peek.review_reason}
                             </p>
@@ -829,7 +829,7 @@ export default function AdminCampaigns({
                                     <li
                                         key={c.collaboration_id}
                                         data-testid={IDS.creatorRow(c.collaboration_id)}
-                                        className="flex items-center justify-between gap-3 border-b border-white/5 py-2"
+                                        className="flex items-center justify-between gap-3 border-b border-tint/5 py-2"
                                     >
                                         <span className="min-w-0">
                                             <span className={`block truncate ${TEXT.body}`}>

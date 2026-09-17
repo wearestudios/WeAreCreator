@@ -102,7 +102,7 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     data-testid={IDS.input(settingKey)}
-                    className="h-9 w-24 border-white/10 bg-background/60 text-right tabular-nums"
+                    className="h-9 w-24 border-tint/10 bg-background/60 text-right tabular-nums"
                 />
                 <span className={`${TEXT.meta} w-16 text-muted-foreground`}>{unit}</span>
                 <button
@@ -110,10 +110,10 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                     disabled={!data || isDefault}
                     onClick={() => setValue(String(data.default))}
                     title={data ? `Back to the default, ${data.default} ${unit}` : "Back to the default"}
-                    className={`rounded border border-white/10 p-1.5 ${CALM} ${
+                    className={`rounded border border-tint/10 p-1.5 ${CALM} ${
                         isDefault
                             ? "opacity-30"
-                            : "text-muted-foreground hover:border-ember-500/40 hover:text-ember-500"
+                            : "text-muted-foreground hover:border-primary/40 hover:text-primary-ink"
                     }`}
                 >
                     <RotateCcw className="h-3.5 w-3.5" />
@@ -124,7 +124,7 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                     onClick={save}
                     disabled={busy || !data || !changed}
                     data-testid={IDS.save(settingKey)}
-                    className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                    className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                 >
                     {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                     Save

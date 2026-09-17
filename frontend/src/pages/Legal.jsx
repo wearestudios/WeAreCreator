@@ -142,10 +142,10 @@ export function Terms() {
     return (
         <Shell
             kicker="Terms"
-            title="How working with WeAre works."
+            title="The terms of working with WeAre Creators."
             standfirst="WeAre Creators connects verified creators with brands running paid campaigns. These are the terms you accept when you create an account."
         >
-            <Section title="Getting on the platform">
+            <Section title="Joining the platform">
                 <p>
                     Creators build a profile and are reviewed by the WeAre team before
                     they can apply to a brief. Joining and applying are free, and stay
@@ -361,7 +361,7 @@ export function Privacy() {
                 </p>
             </Section>
 
-            <Section title="Your data, your call">
+            <Section title="Your rights over your data">
                 <p>
                     Write to{" "}
                     <a

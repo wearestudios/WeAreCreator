@@ -48,7 +48,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
         <div data-testid={IDS.panel} className="space-y-3">
             <p className="flex flex-wrap items-center gap-2 text-sm">
                 {trust.trusted ? (
-                    <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-400" />
+                    <ShieldCheck aria-hidden="true" className="h-4 w-4 text-state-approved" />
                 ) : (
                     <ShieldOff aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
                 )}
@@ -73,7 +73,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
             </p>
 
             {trust.revoked && (
-                <p className="rounded-md border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100/90">
+                <p className="rounded-md border border-state-pending/30 bg-state-pending/10 p-3 text-sm text-state-pending">
                     Revoked by hand: {trust.revoked_reason}
                 </p>
             )}
@@ -84,7 +84,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
                     size="sm"
                     onClick={() => setAsking(trust.revoked ? "restore" : "revoke")}
                     data-testid={trust.revoked ? IDS.restore : IDS.revoke}
-                    className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                    className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
                 >
                     {trust.revoked ? "Let them publish again" : "Send their briefs back to review"}
                 </Button>
@@ -103,7 +103,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
                                 : "Why. e.g. Spoke to them; the briefing problem is sorted."
                         }
                         data-testid={IDS.reason}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -111,7 +111,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
                             onClick={() => act(asking)}
                             disabled={busy || !reason.trim()}
                             data-testid={IDS.submit}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             {asking === "revoke" ? "Revoke" : "Restore"}

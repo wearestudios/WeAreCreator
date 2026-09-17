@@ -38,6 +38,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ListSkeleton } from "@/components/data/DenseView";
 import { BRAND_CAMPAIGN_CONTROLS, CAMPAIGN_TEMPLATES as TEMPLATES, VISIBILITY } from "@/constants/testIds";
 import { SaveAsTemplate } from "@/components/brand/CampaignTemplates";
+import { BrandAnalyticsSummary } from "@/components/brand/CampaignAnalytics";
+import { SafeSection } from "@/components/ErrorBoundary";
 import {
     Dialog,
     DialogContent,
@@ -515,6 +517,15 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 Icon={Building2}
                             />
                         </section>
+
+                        {/* Above the campaign list rather than below it: the
+                            question "was the last one worth it" is what somebody
+                            is holding when they scroll past to post the next
+                            one. It renders nothing until a campaign has
+                            actually delivered something. */}
+                        <SafeSection name="BrandAnalyticsSummary" label="your results">
+                            <BrandAnalyticsSummary />
+                        </SafeSection>
 
                         <section data-testid="brand-campaigns-section" className="mt-14">
                             <div className="flex items-baseline justify-between">

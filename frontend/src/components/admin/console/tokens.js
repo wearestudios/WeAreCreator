@@ -63,33 +63,33 @@ export const TEXT = {
 export const STATUS_TONE = {
     pending: {
         label: "Pending",
-        dot: "bg-amber-400",
-        text: "text-amber-300",
-        chip: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+        dot: "bg-state-pending",
+        text: "text-state-pending",
+        chip: "border-state-pending/30 bg-state-pending/10 text-state-pending",
     },
     good: {
         label: "Approved",
-        dot: "bg-emerald-400",
-        text: "text-emerald-300",
-        chip: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+        dot: "bg-state-approved",
+        text: "text-state-approved",
+        chip: "border-state-approved/30 bg-state-approved/10 text-state-approved",
     },
     bad: {
         label: "Rejected",
-        dot: "bg-rose-400",
-        text: "text-rose-300",
-        chip: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+        dot: "bg-state-rejected",
+        text: "text-state-rejected",
+        chip: "border-state-rejected/30 bg-state-rejected/10 text-state-rejected",
     },
     active: {
         label: "In progress",
-        dot: "bg-sky-400",
-        text: "text-sky-300",
-        chip: "border-sky-400/30 bg-sky-400/10 text-sky-200",
+        dot: "bg-state-progress",
+        text: "text-state-progress",
+        chip: "border-state-progress/30 bg-state-progress/10 text-state-progress",
     },
     idle: {
         label: "—",
-        dot: "bg-white/30",
+        dot: "bg-tint/30",
         text: "text-muted-foreground",
-        chip: "border-white/15 bg-white/5 text-muted-foreground",
+        chip: "border-tint/15 bg-tint/5 text-muted-foreground",
     },
 };
 
@@ -171,8 +171,8 @@ export const CALM = "transition-colors duration-150";
 
 /** The focus ring, identical on every focusable thing in the console. */
 export const FOCUS =
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
     "focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 /** A panel: hairline border, flat surface, no grain, no shadow. */
-export const PANEL = "rounded-md border border-white/10 bg-card";
+export const PANEL = "rounded-md border border-tint/10 bg-card";

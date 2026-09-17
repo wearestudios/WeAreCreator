@@ -790,7 +790,12 @@ class TestWhatTheFormWillAccept:
         campaign type called delivery. A case study is *about a campaign*, so
         a filter offering one of those is a filter that can never match
         anything real — and a second category list is the drift
-        `lib/categories.js` exists to prevent."""
+        `lib/categories.js` exists to prevent.
+
+        **`delivery` has since become real**, and that is the rule working
+        rather than an exception to it: the enum moved and this moved with it,
+        because it was never a second list. The categories are still the
+        product's own."""
         import typing
 
         assert typing.get_args(
@@ -804,8 +809,14 @@ class TestWhatTheFormWillAccept:
         async def body(db):
             with pytest.raises(Exception):
                 server.CaseStudyPayload(category="beauty")
+            # A type this operation does not run is still refused.
             with pytest.raises(Exception):
-                server.CaseStudyPayload(campaign_type="delivery")
+                server.CaseStudyPayload(campaign_type="popup")
+            # And one it does is accepted, without a second list to update.
+            assert (
+                server.CaseStudyPayload(campaign_type="delivery").campaign_type
+                == "delivery"
+            )
 
         run(body)
 

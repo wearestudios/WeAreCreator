@@ -57,7 +57,7 @@ const Row = ({ label, hint, children, className = "" }) => (
 );
 
 const select =
-    "h-9 w-full rounded border border-white/10 bg-background px-2 text-sm transition-colors duration-150";
+    "h-9 w-full rounded border border-tint/10 bg-background px-2 text-sm transition-colors duration-150";
 
 /**
  * The shell all three share: a title, a body, one primary action, and the
@@ -93,7 +93,7 @@ function CreateShell({ open, onOpenChange, title, blurb, testid, onSubmit, submi
                 order does not decide it — measured, the plain form lost. */}
             <DialogContent
                 data-testid={testid}
-                className="max-h-[90vh] overflow-y-auto rounded-md border border-white/10 bg-card ![background-image:none] sm:max-w-xl"
+                className="max-h-[90vh] overflow-y-auto rounded-md border border-tint/10 bg-card ![background-image:none] sm:max-w-xl"
             >
                 <DialogHeader className="text-left">
                     <DialogTitle>{title}</DialogTitle>
@@ -109,7 +109,7 @@ function CreateShell({ open, onOpenChange, title, blurb, testid, onSubmit, submi
                     {error ? (
                         <p
                             data-testid={IDS.error}
-                            className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+                            className="rounded border border-state-rejected/30 bg-state-rejected/10 px-3 py-2 text-sm text-state-rejected"
                         >
                             {error}
                         </p>

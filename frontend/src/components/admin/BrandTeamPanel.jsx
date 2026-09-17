@@ -86,11 +86,11 @@ export default function BrandTeamPanel({ brandId, canAssign }) {
     return (
         <div
             data-testid={IDS.section}
-            className="rounded-md border border-white/10 bg-card"
+            className="rounded-md border border-tint/10 bg-card"
         >
             {members === null ? (
                 <div className="px-5 py-4" aria-hidden="true">
-                    <div className="h-5 w-40 animate-pulse rounded bg-white/5" />
+                    <div className="h-5 w-40 animate-pulse rounded bg-tint/5" />
                 </div>
             ) : members.length === 0 ? (
                 <p
@@ -101,7 +101,7 @@ export default function BrandTeamPanel({ brandId, canAssign }) {
                     only.
                 </p>
             ) : (
-                <ul className="divide-y divide-white/10">
+                <ul className="divide-y divide-tint/10">
                     {members.map((m) => (
                         <li
                             key={m.id}
@@ -125,7 +125,7 @@ export default function BrandTeamPanel({ brandId, canAssign }) {
                                     disabled={busy === m.id}
                                     data-testid={IDS.remove(m.id)}
                                     aria-label={`Take ${m.name || "them"} off this brand`}
-                                    className={`grid h-8 w-8 flex-none place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground disabled:opacity-50 ${FOCUS}`}
+                                    className={`grid h-8 w-8 flex-none place-items-center rounded ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground disabled:opacity-50 ${FOCUS}`}
                                 >
                                     <X className="h-4 w-4" />
                                 </button>
@@ -136,13 +136,13 @@ export default function BrandTeamPanel({ brandId, canAssign }) {
             )}
 
             {canAssign && (
-                <div className="flex flex-col gap-2 border-t border-white/10 px-5 py-3 sm:flex-row sm:items-center">
+                <div className="flex flex-col gap-2 border-t border-tint/10 px-5 py-3 sm:flex-row sm:items-center">
                     <select
                         value={picked}
                         onChange={(e) => setPicked(e.target.value)}
                         data-testid={IDS.picker}
                         aria-label="Put somebody on this brand"
-                        className={`h-9 min-w-0 flex-1 rounded border border-white/10 bg-background px-2 text-sm ${CALM} ${FOCUS}`}
+                        className={`h-9 min-w-0 flex-1 rounded border border-tint/10 bg-background px-2 text-sm ${CALM} ${FOCUS}`}
                     >
                         <option value="">Put somebody on this brand…</option>
                         {available.map((m) => (
@@ -164,7 +164,7 @@ export default function BrandTeamPanel({ brandId, canAssign }) {
             )}
 
             {canAssign && everyone.length === 0 && (
-                <p className={`border-t border-white/10 px-5 py-3 ${TEXT.meta} text-muted-foreground`}>
+                <p className={`border-t border-tint/10 px-5 py-3 ${TEXT.meta} text-muted-foreground`}>
                     No team accounts exist yet — create one under Team.
                 </p>
             )}

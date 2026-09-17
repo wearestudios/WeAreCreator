@@ -64,7 +64,7 @@ export default function DisputeQueue() {
                 <Link
                     to={r.href}
                     data-testid={IDS.row(r.id)}
-                    className="truncate hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                    className="truncate hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     {r.campaign_title || "Untitled"}
                 </Link>
@@ -108,7 +108,7 @@ export default function DisputeQueue() {
                     {r.payment_frozen && (
                         <Snowflake
                             aria-label="Payment held"
-                            className="h-3 w-3 text-sky-300"
+                            className="h-3 w-3 text-state-progress"
                         />
                     )}
                     {typeof r.agreed_amount === "number"
@@ -164,8 +164,8 @@ export default function DisputeQueue() {
                         className={
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (state === s.value
-                                ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
-                                : "border-white/10 text-muted-foreground hover:text-foreground")
+                                ? "border-primary/40 bg-primary/10 text-primary-ink"
+                                : "border-tint/10 text-muted-foreground hover:text-foreground")
                         }
                     >
                         {s.label}

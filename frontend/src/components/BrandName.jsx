@@ -15,7 +15,7 @@ import { brandPageUrl } from "@/lib/brandPage";
 import { BRAND_PAGE } from "@/constants/testIds";
 
 const FOCUS =
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm";
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm";
 
 export default function BrandName({
     brand,
@@ -61,7 +61,7 @@ export default function BrandName({
             // is what makes tapping the brand open the brand rather than the
             // brief sitting underneath it.
             onClick={(e) => e.stopPropagation()}
-            className={`${shared} ${FOCUS} transition-colors duration-200 hover:text-ember-500`}
+            className={`${shared} ${FOCUS} transition-colors duration-200 hover:text-primary-ink`}
         >
             {inner}
         </a>

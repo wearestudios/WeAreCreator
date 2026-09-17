@@ -110,14 +110,14 @@ export default function CreatorLists({ campaignId, onInvited }) {
                     placeholder="e.g. Worked well at launches"
                     maxLength={80}
                     data-testid={IDS.name}
-                    className="h-10 w-64 border-white/10 bg-background/60"
+                    className="h-10 w-64 border-tint/10 bg-background/60"
                 />
                 <Button
                     size="sm"
                     onClick={create}
                     disabled={creating || !name.trim()}
                     data-testid={IDS.submit}
-                    className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                    className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                 >
                     {creating && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                     <ListPlus className="mr-1.5 h-3.5 w-3.5" />
@@ -136,7 +136,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                         <li
                             key={list.id}
                             data-testid={IDS.row(list.id)}
-                            className="rounded-md border border-white/10 bg-card p-4"
+                            className="rounded-md border border-tint/10 bg-card p-4"
                         >
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="min-w-0 flex-1">
@@ -155,7 +155,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                                         onClick={() => invite(list)}
                                         disabled={busy === list.id}
                                         data-testid={IDS.invite(list.id)}
-                                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                                     >
                                         {busy === list.id && (
                                             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -170,7 +170,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                                     disabled={busy === list.id}
                                     data-testid={IDS.remove(list.id)}
                                     title="Remove this list"
-                                    className="rounded border border-white/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                    className="rounded border border-tint/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
                                     <Trash2 className="h-3.5 w-3.5" />
                                     <span className="sr-only">Remove list</span>
@@ -182,7 +182,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                                     {list.members.map((m) => (
                                         <li
                                             key={m.user_id}
-                                            className="flex items-center gap-2 rounded border border-white/10 px-2 py-1"
+                                            className="flex items-center gap-2 rounded border border-tint/10 px-2 py-1"
                                         >
                                             <CreatorAvatar creator={m} size="h-5 w-5" />
                                             <span className="text-xs">{m.name}</span>

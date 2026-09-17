@@ -52,7 +52,7 @@ const COPY = {
     problemTitle: "Most campaigns run on DMs and spreadsheets.",
     problems: [
         {
-            label: "Nobody checked",
+            label: "Creators nobody has checked",
             line: "A follower count in a DM is a number somebody typed.",
         },
         {
@@ -60,15 +60,15 @@ const COPY = {
             line: "Settled on the day, or argued about three weeks later.",
         },
         {
-            label: "No proof",
+            label: "No proof it worked",
             line: "It ends, and nobody can say what it actually did.",
         },
     ],
-    promise: "We built the boring parts.",
+    promise: "We built the process that closes all three.",
 
     filmTitle: "One campaign, start to finish.",
 
-    closeTitle: "Which side are you on?",
+    closeTitle: "Where would you like to begin?",
     closeLine: "Creators join free. We check a brand before it reaches anyone.",
 };
 

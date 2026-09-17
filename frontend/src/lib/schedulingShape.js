@@ -20,6 +20,10 @@ export const SCHEDULING_DATE_FIELDS = {
 	group_event: ['event_date'],
 	// A window the creator picks a time inside.
 	personal_table: ['start_date', 'end_date'],
+	// A window to send within — the only scheduling a brief with no venue has.
+	// There is nothing to book and nobody to turn up, so the hours that work
+	// and the days that don't have no answer here.
+	delivery: ['start_date', 'end_date'],
 };
 
 export const SCHEDULING_DATE_LABELS = {

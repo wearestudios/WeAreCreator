@@ -107,25 +107,75 @@ class TestCollaborationStateMachine:
     def test_closed_is_the_end(self):
         assert server._next_collab_state("closed") is None
 
-    def test_happy_path_walks_forward_one_step_at_a_time(self):
-        """Both ladders, because there are now two. A campaign that reviews
-        drafts walks the full order; one that doesn't — which is what an
-        absent campaign reads as, and so what every collaboration written
-        before the field existed keeps — walks the eight it always did."""
-        for campaign, expected in (
-            ({"requires_draft_approval": True}, server.COLLAB_STATE_ORDER),
-            (None, server._collab_ladder(None)),
-            ({}, server._collab_ladder(None)),
-        ):
-            walked = ["applied"]
-            while (nxt := server._next_collab_state(walked[-1], campaign)) is not None:
-                walked.append(nxt)
-            assert walked == expected
+    @pytest.mark.parametrize(
+        "campaign",
+        [
+            None,
+            {},
+            {"requires_draft_approval": True},
+            {"campaign_type": "delivery"},
+            {"campaign_type": "delivery", "requires_draft_approval": True},
+            {"campaign_type": "personal_table"},
+        ],
+        ids=["absent", "empty", "draft", "delivery", "delivery+draft", "venue"],
+    )
+    def test_happy_path_walks_forward_one_step_at_a_time(self, campaign):
+        """**Four ladders now, from two independent substitutions.**
 
-    def test_the_draft_states_are_the_only_optional_ones(self):
-        assert set(server.COLLAB_STATE_ORDER) - set(server._collab_ladder(None)) == set(
+        The draft gate is optional per campaign; the venue/delivery split is
+        decided by the type; and they compose. Whichever combination this is,
+        walking `_next_collab_state` from `applied` has to reproduce
+        `_collab_ladder` exactly — a step that skips one or repeats one is a
+        collaboration somebody cannot move.
+        """
+        expected = server._collab_ladder(campaign)
+        walked = ["applied"]
+        while (nxt := server._next_collab_state(walked[-1], campaign)) is not None:
+            walked.append(nxt)
+        assert walked == expected
+
+    def test_exactly_one_of_the_two_middle_halves_is_ever_on_the_ladder(self):
+        """There is no campaign where a creator both turns up somewhere and
+        has it posted to them, and none where neither happens. A ladder with
+        both would ask a creator to book a slot for a parcel; one with neither
+        would jump from the fee straight to content nobody could have shot."""
+        for campaign in ({}, {"campaign_type": "delivery"}, {"campaign_type": "launch"}):
+            ladder = set(server._collab_ladder(campaign))
+            venue = ladder & set(server.VENUE_ATTENDANCE_STATES)
+            delivery = ladder & set(server.DELIVERY_STATES)
+            assert bool(venue) != bool(delivery), campaign
+            assert len(venue or delivery) == len(
+                server.VENUE_ATTENDANCE_STATES if venue else server.DELIVERY_STATES
+            )
+
+    def test_the_optional_states_are_the_draft_pair_and_the_delivery_half(self):
+        """Nothing else may quietly become conditional. A state that is
+        sometimes on the ladder is a state every read has to be checked
+        against, and the one that gets missed is a row nobody can see."""
+        venue_ladder = set(server._collab_ladder(None))
+        assert set(server.COLLAB_STATE_ORDER) - venue_ladder == set(
             server.DRAFT_REVIEW_STATES
+        ) | set(server.DELIVERY_STATES)
+
+        delivery_ladder = set(
+            server._collab_ladder({"campaign_type": "delivery", "requires_draft_approval": True})
         )
+        assert set(server.COLLAB_STATE_ORDER) - delivery_ladder == set(
+            server.VENUE_ATTENDANCE_STATES
+        )
+
+    def test_a_collaboration_standing_on_a_delivery_state_is_not_stranded(self):
+        """The same promise the draft gate gets. An admin correcting a
+        campaign's type after the fact must not leave a live collaboration on
+        a state with no next step and no previous one — a row nobody can move
+        and nobody can see why."""
+        venue = {"campaign_type": "personal_table"}
+        assert server._next_collab_state("address_confirmed", venue) == "dispatched"
+        assert server._next_collab_state("received", venue) == "content_submitted"
+        assert server._previous_collab_state("received", venue) == "dispatched"
+        # And the mirror: a venue state under a delivery campaign.
+        delivery = {"campaign_type": "delivery"}
+        assert server._next_collab_state("slot_booked", delivery) == "attended"
 
     def test_a_collaboration_standing_on_a_draft_state_still_has_a_next_step(self):
         """The toggle can be turned off under somebody mid-review. They must
@@ -1542,12 +1592,33 @@ def _campaign_body(**overrides):
 
 
 class TestCampaignTypes:
-    def test_the_three_types_are_the_declared_ones(self):
+    def test_the_four_types_are_the_declared_ones(self):
+        """**`delivery` is the fourth and it is the one with no venue.** The
+        other three are a place a creator turns up to, which is why a product
+        seeding campaign could not be posted here at all."""
         assert set(server.CampaignType.__args__) == {
             "launch",
             "group_event",
             "personal_table",
+            "delivery",
         }
+        assert server.DELIVERY_CAMPAIGN_TYPE in server.CampaignType.__args__
+
+    def test_every_type_declares_its_scheduling_shape(self):
+        """A type that inherits the table by omission is how a launch came to
+        be asked which weekdays don't work. A fourth one has to say."""
+        assert set(server._SCHEDULING_BY_TYPE) == set(server.CampaignType.__args__)
+
+    def test_a_delivery_brief_is_asked_for_no_venue_scheduling(self):
+        """There is no venue, so there are no hours that work and no days that
+        don't — a courier is not a kitchen. Asking either would be the exact
+        failure `_SCHEDULING_BY_TYPE` was written to stop, one type later."""
+        allowed = set(server._SCHEDULING_BY_TYPE["delivery"]["allowed"])
+        assert allowed == {"start_date", "end_date"}
+        assert not allowed & {"restricted_days", "shoot_windows", "sittings", "duration_minutes"}
+        # And the refusal names the control on the screen rather than a field.
+        refusal = server._scheduling_refusal("delivery", {"start_date", "end_date", "shoot_windows"})
+        assert refusal and "the hours that work" in refusal
         assert server.EVENT_CAMPAIGN_TYPES == ("launch", "group_event")
 
     def test_a_type_is_required(self):
@@ -3904,7 +3975,39 @@ class TestVerificationDocumentsAreNotPublic:
         # under a different brand.
         assert '{"_id": doc_oid, "brand_id": brand_oid}' in src
         assert "audit(" in src
-        assert '"no-store"' in src
+        # The bytes leave through the one delivery helper, which is where
+        # `no-store` and the download name now live — asserted there rather
+        # than here, so the header cannot be set on three routes and missed on
+        # a fourth.
+        assert "_private_file_response(" in src
+        assert '"no-store"' in inspect.getsource(server._private_file_response)
+
+    def test_every_private_read_goes_through_the_one_delivery_helper(self):
+        """**Four routes, one way out.** Each of them decides who may read the
+        record; none of them decides how the bytes travel, because that is
+        where `no-store`, the `Content-Disposition` and the choice between a
+        stream and a signed URL live. A route building its own response is a
+        route that will be the one missing a header."""
+        import inspect
+
+        servers = [
+            server.download_brand_document,
+            server._stream_content_proof,
+            server.download_draft_file,
+        ]
+        for fn in servers:
+            src = inspect.getsource(fn)
+            assert "_private_file_response(" in src, fn.__name__
+            assert "FileResponse(" not in src, fn.__name__
+
+    def test_a_purged_file_is_a_410_and_not_a_404(self):
+        """The row is a tombstone and the file went under the retention
+        policy. "That couldn't be opened" would send somebody looking for a
+        bug where the honest answer is that we deleted it on purpose."""
+        import inspect
+
+        src = inspect.getsource(server.download_brand_document)
+        assert "410" in src
 
 
 class TestDocumentSniffing:
@@ -3937,30 +4040,98 @@ class TestDocumentSniffing:
         assert "sniffer(first)" in src
         assert "sniffer = sniffer or sniff_document_type" in src
         assert "file.filename" in src
-        # The client's name is a label only — it must not reach the path.
-        stored = src[src.index("stored_name = "):src.index("path = PRIVATE_UPLOAD_DIR")]
+        # The client's name is a label only — it must not reach the stored
+        # name. The window is from where the name is built to where the bytes
+        # are handed to storage, which is every line that decides the key.
+        stored = src[src.index("stored_name = ") : src.index("STORAGE.put(")]
         assert "filename" not in stored
 
     def test_the_size_limit_is_enforced_while_streaming(self):
+        """**Still while the bytes arrive, not after.** The check moved into
+        `_drain_to_spool` when the write did, and it has to stay on the chunk
+        that crosses the line — measuring a 300MB draft by first pulling it
+        into memory is the failure this exists to prevent."""
         import inspect
 
-        src = inspect.getsource(server._store_private_upload)
+        src = inspect.getsource(server._drain_to_spool)
         assert "written > limit" in src
         assert "413" in src
+        # The refusal fires inside the read loop, before the next chunk.
+        assert src.index("written > limit") < src.index("chunk = await file.read")
+        # And both writers still go through it rather than draining their own.
+        for fn in (server._store_upload, server._store_private_upload):
+            assert "_drain_to_spool(" in inspect.getsource(fn), fn.__name__
+
+    def test_an_oversized_upload_is_refused_without_being_kept(self):
+        """Driven rather than read: a spooled buffer that outlived a refusal
+        would be a temporary file per rejected upload, which on a phone-heavy
+        service is a disk that fills up quietly."""
+        import asyncio
+
+        limit_mb = server.max_upload_bytes() // (1024 * 1024)
+
+        class _Endless:
+            """A file that never stops arriving. If the check only ran at the
+            end, this test would hang rather than fail — which is the point."""
+
+            filename = "huge.pdf"
+            closed = False
+
+            def __init__(self):
+                self.chunks = 0
+
+            async def read(self, n=-1):
+                self.chunks += 1
+                return b"%PDF-" + b"x" * (1024 * 1024)
+
+            async def close(self):
+                self.closed = True
+
+        upload = _Endless()
+
+        async def go():
+            with pytest.raises(HTTPException) as exc:
+                await server._store_private_upload(upload, prefix="brand")
+            return exc.value
+
+        err = asyncio.new_event_loop().run_until_complete(go())
+        assert err.status_code == 413
+        # It stopped on the chunk that crossed the line, not after draining a
+        # file with no end to it.
+        assert upload.chunks <= limit_mb + 2, upload.chunks
+        # And the handle is released either way — `finally`, not the happy path.
+        assert upload.closed is True
 
 
 class TestPrivatePathResolution:
+    """A stored name is ours and random, but this is the one place a key is
+    built from stored data, so it checks rather than assumes — and it has to
+    keep checking now that the same name can address an object in a bucket."""
+
     @pytest.mark.parametrize(
         "name", ["../../etc/passwd", "a/b.pdf", "a\\b.pdf", "", ".", ".."],
     )
     def test_traversal_and_nonsense_are_refused(self, name):
-        assert server._private_upload_path(name) is None
+        assert server._private_upload_exists(name) is False
+        assert server.STORAGE.path(name, private=True) is None
 
     def test_it_checks_the_directory_boundary(self):
         import inspect
 
-        src = inspect.getsource(server._private_upload_path)
+        src = inspect.getsource(server.LocalStorage.path)
         assert "relative_to" in src
+
+    def test_a_separator_is_refused_before_the_backend_is_asked(self):
+        """The name check sits in `_private_upload_exists`, above whichever
+        backend is in use — on S3 there is no directory to escape from, so a
+        boundary check that lived only in `LocalStorage` would be a boundary
+        check production does not run. A key with a slash in it would address
+        a different prefix entirely, which is the object-store shape of the
+        same bug."""
+        import inspect
+
+        src = inspect.getsource(server._private_upload_exists)
+        assert '"/" in stored_name' in src and '"\\\\" in stored_name' in src
 
 
 class TestBrandProfileFields:

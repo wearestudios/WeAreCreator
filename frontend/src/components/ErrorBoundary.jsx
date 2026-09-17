@@ -84,7 +84,7 @@ export default class ErrorBoundary extends React.Component {
                     className="grid min-h-screen place-items-center bg-background px-6 text-foreground grain-page"
                 >
                     <div className="w-full max-w-lg">
-                        <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary-ink">
                             <CloudOff className="h-4 w-4" />
                             Connection
                         </p>
@@ -102,7 +102,7 @@ export default class ErrorBoundary extends React.Component {
                             <a
                                 href="/"
                                 data-testid={IDS.pageHome}
-                                className="inline-flex h-12 min-h-[2.75rem] items-center justify-center gap-2 rounded-full border border-white/15 px-6 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-white/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="inline-flex h-12 min-h-[2.75rem] items-center justify-center gap-2 rounded-full border border-tint/15 px-6 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-tint/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 <Home className="h-4 w-4" />
                                 Go to the home page
@@ -116,7 +116,7 @@ export default class ErrorBoundary extends React.Component {
                                 type="button"
                                 onClick={() => window.location.reload()}
                                 data-testid={IDS.chunkRetry}
-                                className="inline-flex h-12 min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-full bg-ember-500 px-6 text-xs uppercase tracking-[0.15em] text-black transition-colors duration-200 hover:bg-ember-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="inline-flex h-12 min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-full bg-primary px-6 text-xs uppercase tracking-[0.15em] text-primary-foreground transition-colors duration-200 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 <RotateCw className="h-4 w-4" />
                                 Try again
@@ -134,7 +134,7 @@ export default class ErrorBoundary extends React.Component {
                     className="grid min-h-screen place-items-center bg-background px-6 text-foreground grain-page"
                 >
                     <div className="w-full max-w-lg">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                             WeAre Creators
                         </p>
                         <h1 className="mt-5 font-serif text-fluid-4xl leading-tight tracking-tight">
@@ -152,7 +152,7 @@ export default class ErrorBoundary extends React.Component {
                             <a
                                 href="/"
                                 data-testid={IDS.pageHome}
-                                className="inline-flex h-12 min-h-[2.75rem] items-center justify-center gap-2 rounded-full border border-white/15 px-6 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-white/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="inline-flex h-12 min-h-[2.75rem] items-center justify-center gap-2 rounded-full border border-tint/15 px-6 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-tint/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 <Home className="h-4 w-4" />
                                 Go to the home page
@@ -161,14 +161,14 @@ export default class ErrorBoundary extends React.Component {
                                 type="button"
                                 onClick={() => window.location.reload()}
                                 data-testid={IDS.pageReload}
-                                className="inline-flex h-12 min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-full bg-ember-500 px-6 text-xs uppercase tracking-[0.15em] text-black transition-colors duration-200 hover:bg-ember-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                className="inline-flex h-12 min-h-[2.75rem] flex-1 items-center justify-center gap-2 rounded-full bg-primary px-6 text-xs uppercase tracking-[0.15em] text-primary-foreground transition-colors duration-200 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 <RotateCw className="h-4 w-4" />
                                 Reload this page
                             </button>
                         </div>
 
-                        <p className="mt-8 border-t border-white/10 pt-6 text-xs leading-relaxed text-muted-foreground">
+                        <p className="mt-8 border-t border-tint/10 pt-6 text-xs leading-relaxed text-muted-foreground">
                             Still stuck? Message us on WhatsApp and say what you
                             were doing — we can see the error from here.
                         </p>
@@ -183,15 +183,15 @@ export default class ErrorBoundary extends React.Component {
             <div
                 data-testid={name ? IDS.section(name) : IDS.sectionAny}
                 role="alert"
-                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-6"
+                className="rounded-md border border-state-pending/30 bg-state-pending/10 p-6"
             >
                 <div className="flex items-start gap-3">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-300" />
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-state-pending" />
                     <div className="min-w-0 flex-1">
-                        <p className="text-xs uppercase tracking-[0.2em] text-amber-200">
+                        <p className="text-xs uppercase tracking-[0.2em] text-state-pending">
                             {label || "This section couldn't load"}
                         </p>
-                        <p className="mt-2 text-sm leading-relaxed text-amber-100/80">
+                        <p className="mt-2 text-sm leading-relaxed text-state-pending">
                             The rest of the page is fine. Try again, or reload if
                             it keeps happening.
                         </p>
@@ -199,7 +199,7 @@ export default class ErrorBoundary extends React.Component {
                             type="button"
                             onClick={this.retry}
                             data-testid={name ? IDS.sectionRetry(name) : IDS.sectionRetryAny}
-                            className="mt-4 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-amber-400/40 px-4 text-xs uppercase tracking-[0.15em] text-amber-200 transition-colors duration-200 hover:border-amber-300 hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-2"
+                            className="mt-4 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-state-pending/40 px-4 text-xs uppercase tracking-[0.15em] text-state-pending transition-colors duration-200 hover:border-state-pending hover:text-state-pending focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-2"
                         >
                             <RotateCw className="h-3.5 w-3.5" />
                             Try again

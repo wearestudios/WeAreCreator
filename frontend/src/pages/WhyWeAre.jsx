@@ -50,8 +50,8 @@ const COPY = {
             line: "Every screen answers a question somebody had mid-shoot.",
         },
         {
-            label: "Deepest in Bengaluru",
-            line: "Which is why briefs fill fast here. Creators sign up from anywhere in India.",
+            label: "The network runs deepest in Bengaluru",
+            line: "Which is why briefs fill fastest. Creators sign up from anywhere in India.",
         },
     ],
 
@@ -60,7 +60,7 @@ const COPY = {
     // the managed service was an option rather than a fee. Managed is the
     // product now, so the section argues what that costs instead — which is
     // the thing a sceptic with another tab open is actually weighing.
-    termsTitle: "Handed over, and what that costs.",
+    termsTitle: "What handing it over costs.",
     termsLine: "Our fee sits on top of the creator rate, and comes back if we cannot fill the brief.",
     terms: [
         {
@@ -85,7 +85,7 @@ const COPY = {
     problemLine: "Each of these has a mechanism here rather than a good intention.",
     problems: [
         {
-            label: "Nobody checked",
+            label: "Creators nobody has checked",
             line: "A person reviews every creator. Connected stats are read from Instagram.",
         },
         {
@@ -93,7 +93,7 @@ const COPY = {
             line: "Agreed and recorded against the booking before anyone shoots.",
         },
         {
-            label: "No proof",
+            label: "No proof it worked",
             line: "Reach and cost per thousand, collected from the posts that ran.",
         },
     ],
@@ -109,12 +109,12 @@ export default function WhyWeAre() {
     return (
         <MarketingPage
             testid={IDS.whyWeAre}
-            title="Why WeAre"
+            title="Why WeAre Creators"
             description="A studio that runs campaigns for a living, running yours end to end. Verified people on both sides, rates and fees in the open, and a report at the end."
             path="/why-weare"
         >
             <MarketingHero
-                eyebrow="Why WeAre"
+                eyebrow="Why WeAre Creators"
                 title={COPY.title}
                 line={COPY.line}
                 cta={{ ...ASK, testid: IDS.ctaTop }}

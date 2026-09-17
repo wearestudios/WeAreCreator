@@ -58,7 +58,7 @@ export function DeliverablePicker({ value, onChange, testid = "deliverable-picke
 
     return (
         <div data-testid={testid}>
-            <ul className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-background/40">
+            <ul className="divide-y divide-tint/10 overflow-hidden rounded-md border border-tint/10 bg-background/40">
                 {DELIVERABLE_KEYS.map((key) => {
                     const qty = Number(counts[key]) || 0;
                     return (
@@ -82,7 +82,7 @@ export function DeliverablePicker({ value, onChange, testid = "deliverable-picke
                                     disabled={qty === 0}
                                     onClick={() => set(key, qty - 1)}
                                     data-testid={`${testid}-minus-${key}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 text-muted-foreground transition-colors duration-150 hover:border-white/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 disabled:opacity-30 md:h-9 md:w-9"
+                                    className="flex h-11 w-11 items-center justify-center rounded-md border border-tint/10 text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 md:h-9 md:w-9"
                                 >
                                     <Minus className="h-4 w-4" />
                                 </button>
@@ -96,7 +96,7 @@ export function DeliverablePicker({ value, onChange, testid = "deliverable-picke
                                         set(key, Number(e.target.value.replace(/\D/g, "")))
                                     }
                                     data-testid={`${testid}-input-${key}`}
-                                    className="h-11 w-14 rounded-md border border-white/10 bg-background/60 text-center text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:h-9"
+                                    className="h-11 w-14 rounded-md border border-tint/10 bg-background/60 text-center text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-9"
                                 />
                                 <button
                                     type="button"
@@ -104,7 +104,7 @@ export function DeliverablePicker({ value, onChange, testid = "deliverable-picke
                                     disabled={qty >= MAX_DELIVERABLE_QUANTITY}
                                     onClick={() => set(key, qty + 1)}
                                     data-testid={`${testid}-plus-${key}`}
-                                    className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 text-muted-foreground transition-colors duration-150 hover:border-white/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 disabled:opacity-30 md:h-9 md:w-9"
+                                    className="flex h-11 w-11 items-center justify-center rounded-md border border-tint/10 text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 md:h-9 md:w-9"
                                 >
                                     <Plus className="h-4 w-4" />
                                 </button>

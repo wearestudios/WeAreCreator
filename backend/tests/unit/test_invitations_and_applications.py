@@ -90,6 +90,15 @@ class World:
                     "compensation_type": "fixed",
                     "budget_per_creator": 8000,
                     "area": "Indiranagar",
+                    # **Brand-run, stated rather than assumed.** These tests are
+                    # about the three boards agreeing with each other, not about
+                    # the shortlist gate — and on a weare-run brief the brand's
+                    # board correctly hides an applicant nobody has shortlisted,
+                    # which would make "the boards agree" fail for a reason that
+                    # has nothing to do with what is being checked. Leaving the
+                    # field off used to mean brand-run; the reader's default is
+                    # "weare" now, so it has to be said.
+                    "execution_owner": "brand",
                 }
             )
         ).inserted_id

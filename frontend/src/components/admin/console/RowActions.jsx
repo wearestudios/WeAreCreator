@@ -15,9 +15,9 @@ import React from "react";
 import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
 
 const TONES = {
-    bad: "border-rose-500/30 text-rose-300 hover:bg-rose-500/10",
-    primary: "border-ember-500/40 bg-ember-500/10 text-ember-500 hover:bg-ember-500/20",
-    plain: "border-white/15 text-muted-foreground hover:bg-white/5",
+    bad: "border-state-rejected/30 text-state-rejected hover:bg-state-rejected/10",
+    primary: "border-primary/40 bg-primary/10 text-primary-ink hover:bg-primary/20",
+    plain: "border-tint/15 text-muted-foreground hover:bg-tint/5",
 };
 
 export function RowButton({ children, onClick, disabled, testid, tone = "plain", title }) {

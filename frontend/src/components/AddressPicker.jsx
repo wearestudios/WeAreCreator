@@ -160,7 +160,7 @@ export default function AddressPicker({
                 rows={2}
                 maxLength={500}
                 autoComplete="street-address"
-                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                className="mt-2 border-tint/10 bg-card/60 focus-visible:ring-ring"
                 placeholder={
                     status === "ready"
                         ? "Start typing and pick your address"
@@ -185,7 +185,7 @@ export default function AddressPicker({
             )}
 
             {status === "failed" && (
-                <p data-testid={ADDRESS.failed} className="mt-2 text-xs text-amber-300">
+                <p data-testid={ADDRESS.failed} className="mt-2 text-xs text-state-pending">
                     Address suggestions couldn't load. Type it out in full instead — that
                     works just as well.
                 </p>
@@ -197,7 +197,7 @@ export default function AddressPicker({
                         ref={mapNodeRef}
                         data-testid={ADDRESS.map}
                         aria-label="Drag the pin to the exact spot"
-                        className="h-48 w-full overflow-hidden rounded-md border border-white/10 media-frame"
+                        className="h-48 w-full overflow-hidden rounded-md border border-tint/10 media-frame"
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                         <p className="text-xs text-muted-foreground">
@@ -211,7 +211,7 @@ export default function AddressPicker({
                             type="button"
                             data-testid={ADDRESS.clearPin}
                             onClick={() => setPin({ lat: null, lng: null, placeId: null })}
-                            className="inline-flex min-h-[2.75rem] items-center gap-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-red-300 md:min-h-0"
+                            className="inline-flex min-h-[2.75rem] items-center gap-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-state-rejected md:min-h-0"
                         >
                             <X className="h-3 w-3" />
                             Remove pin
@@ -231,7 +231,7 @@ export default function AddressPicker({
                             alt="Your saved location"
                             width={640}
                             height={160}
-                            className="w-full rounded-md border border-white/10 media-frame"
+                            className="w-full rounded-md border border-tint/10 media-frame"
                         />
                     ) : null}
                     <p className="mt-2 text-xs text-muted-foreground">
@@ -242,7 +242,7 @@ export default function AddressPicker({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={ADDRESS.openInMaps}
-                            className="text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                            className="text-primary-ink transition-colors duration-200 hover:text-primary-ink"
                         >
                             Check it on Google Maps
                         </a>

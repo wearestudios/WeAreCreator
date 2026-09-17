@@ -42,6 +42,142 @@
         --ring: 18 88% 51%;
 
         --radius: 0.5rem;
+
+        /* -------------------------------------------------------------
+         * The tint, which is what made a second theme possible at all
+         *
+         * The console was written in the dark-mode idiom: `border-white/10`
+         * for a hairline, `bg-white/5` for a surface lift, `divide-white/10`
+         * between rows — about 240 of them. Every one is *white at low
+         * alpha*, which is invisible on an off-white page. That is the
+         * single biggest reason a light theme could not simply be added.
+         *
+         * `--tint` is the base colour those alphas are applied to, so
+         * `border-tint/10` reads exactly as `border-white/10` did in dark
+         * and flips to a warm near-black in light. The alpha stays at the
+         * call site, which is what lets the replacement be mechanical and
+         * keeps every value somebody chose — a hairline that was 10% and a
+         * stronger one that was 15% stay two different things.
+         * ------------------------------------------------------------- */
+        --tint: 0 0% 100%;
+
+        /* The modal scrim. Black on both themes — a dialog's job is to take
+         * the page away, and a light scrim on a light page does not — but
+         * tokenised so no overlay carries a raw colour. */
+        --scrim: 0 0% 0%;
+
+        /* The accent in its two jobs, which need different values on light
+         * and are therefore two tokens rather than one.
+         *
+         * `--primary` fills a button; `--primary-ink` is the accent used as
+         * *text or an icon on a surface*. On dark they are the same ember.
+         * On light they cannot be: #F05D14 on an off-white page is about
+         * 3.0:1, which fails AA for body text, while the same orange as a
+         * button fill with white on it is fine. Collapsing them would mean
+         * either an unreadable label or a button that has stopped being
+         * ember. */
+        --primary-ink: 18 88% 51%;
+        --primary-hover: 24 90% 54%; /* ember-400 */
+
+        /* The four states the console shows, named for what they mean
+         * rather than for a colour. `STATUS_TONE` is the only consumer, so
+         * the whole console follows these four lines.
+         *
+         * Three values each: the dot (a solid mark), the ink (the word
+         * beside it) and the chip fill. A chip is the same hue at low
+         * alpha, so it rides on `-ink` with an alpha at the call site the
+         * way `--tint` does. */
+        --state-pending: 43 96% 56%; /* amber */
+        --state-approved: 158 64% 52%; /* emerald */
+        --state-rejected: 350 89% 60%; /* rose */
+        --state-progress: 199 89% 60%; /* sky */
+        /* A fifth, which the audit turned up rather than the brief naming
+         * it: violet marked "past the shoot" — attended, draft in review,
+         * content submitted, completed. It is a real distinction (work has
+         * happened, and is not yet approved) and flattening it into
+         * "in progress" to fit a four-token list would have lost it. */
+        --state-done: 262 83% 68%; /* violet */
+    }
+
+    /* -----------------------------------------------------------------
+     * The light theme — the admin console only
+     *
+     * **Scoped by where the attribute is set, not by a selector.**
+     * `data-theme` goes on `<html>` and is written only while an /admin
+     * route is mounted (see `lib/consoleTheme.js`), then removed on the way
+     * out. It has to be on the root rather than on a wrapper because Radix
+     * portals every dialog, sheet, popover and the command palette into
+     * `document.body` — a wrapper-scoped theme would leave every one of
+     * them dark on a light console, which is most of what the spec asks to
+     * be verified.
+     *
+     * A warm off-white rather than pure white, at the same hue as the dark
+     * palette, so the two read as one product seen two ways rather than as
+     * two designs.
+     * ----------------------------------------------------------------- */
+    :root[data-theme="light"] {
+        --background: 30 25% 97%; /* #FAF8F5 — warm, not white */
+        --foreground: 24 14% 11%;
+
+        /* **White cards on off-white.** The separation is done by a
+         * hairline and the paper underneath, because the dark theme's trick
+         * — a *lighter* surface — has nowhere to go when the page is
+         * already near-white. */
+        --card: 0 0% 100%;
+        --card-foreground: 24 14% 11%;
+        /* Hover, and the one place this inverts: on light, elevation is a
+         * slightly *darker* tint, not a lighter one. */
+        --card-elevated: 30 20% 96%;
+
+        --popover: 0 0% 100%;
+        --popover-foreground: 24 14% 11%;
+
+        /* ember-600. Still plainly ember, dark enough that white sits on it
+         * at 5.1:1. */
+        --primary: 20 90% 41%;
+        --primary-foreground: 0 0% 100%;
+        /* ember-700, for the accent as text. 7.4:1 on the card. */
+        --primary-ink: 20 92% 29%;
+        --primary-hover: 20 92% 35%;
+
+        --secondary: 30 16% 93%;
+        --secondary-foreground: 24 14% 11%;
+
+        --muted: 30 16% 93%;
+        /* 5.0:1 on white and 4.8:1 on the page. Metadata still has to be
+         * readable — "muted" is a hierarchy, not permission to fail AA. */
+        --muted-foreground: 24 7% 40%;
+
+        --accent: 20 90% 41%;
+        --accent-foreground: 0 0% 100%;
+
+        --destructive: 0 72% 42%;
+        --destructive-foreground: 0 0% 100%;
+
+        --border: 28 14% 87%;
+        --input: 28 14% 87%;
+        --ring: 20 90% 41%;
+
+        /* The flip that carries the 240 alpha-tint classes. */
+        --tint: 24 14% 11%;
+        /* Lighter than the dark theme's, because the page behind it is
+         * near-white: 60% black over off-white is a hole, where the same
+         * value over near-black is a veil. */
+        --scrim: 24 20% 18%;
+
+        /* Darkened until the word beside the dot passes AA — and the bar it
+         * has to clear is the *chip*, not the card: a state is usually shown
+         * as its own hue at 10% with the ink on top, so the background is
+         * already tinted toward the text. Measured on the chip, the card and
+         * the page; amber needed two more points than the eye suggested.
+         *
+         * The dot keeps more chroma than the ink, because a 12px solid mark
+         * is a graphical object at 3:1 rather than text at 4.5:1. */
+        --state-pending: 32 90% 32%;
+        --state-approved: 158 72% 26%;
+        --state-rejected: 350 74% 39%;
+        --state-progress: 202 90% 32%;
+        --state-done: 262 66% 45%;
     }
 }
 

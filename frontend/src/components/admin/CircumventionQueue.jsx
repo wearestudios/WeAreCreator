@@ -110,7 +110,7 @@ export default function CircumventionQueue() {
                 <Link
                     to={`/admin/creators/${r.creator_id}`}
                     data-testid={IDS.row(r.id)}
-                    className="truncate hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                    className="truncate hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     {r.creator_name || "Unnamed"}
                 </Link>
@@ -125,7 +125,7 @@ export default function CircumventionQueue() {
             cell: (r) => (
                 <Link
                     to={`/admin/applications/${r.collaboration_id}`}
-                    className="truncate text-muted-foreground hover:text-ember-500"
+                    className="truncate text-muted-foreground hover:text-primary-ink"
                 >
                     {r.campaign_title || "Untitled"}
                 </Link>
@@ -238,8 +238,8 @@ export default function CircumventionQueue() {
                         className={
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (state === s.value
-                                ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
-                                : "border-white/10 text-muted-foreground hover:text-foreground")
+                                ? "border-primary/40 bg-primary/10 text-primary-ink"
+                                : "border-tint/10 text-muted-foreground hover:text-foreground")
                         }
                     >
                         {s.label}

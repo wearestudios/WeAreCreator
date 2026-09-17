@@ -35,3 +35,11 @@ httpx==0.28.1
 # --- Config ---
 python-dotenv>=1.0.1
 tzdata>=2024.2            # zoneinfo data; the slim images ship without it
+
+# --- Object storage ---
+# Uploads in production go to S3 (or anything that speaks it — R2, Spaces,
+# MinIO). Never imported when STORAGE_BACKEND=local, so a laptop that has not
+# installed this still runs; the import is inside S3Storage.__init__ for
+# exactly that reason, and a missing boto3 with STORAGE_BACKEND=s3 refuses to
+# boot rather than failing on the first upload.
+boto3>=1.34.0

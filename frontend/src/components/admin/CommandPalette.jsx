@@ -132,13 +132,13 @@ export function CommandPalette() {
                 type="button"
                 onClick={() => setOpen(true)}
                 data-testid={IDS.trigger}
-                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-white/10 bg-card px-3.5 text-sm text-muted-foreground transition-colors duration-150 hover:border-white/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
+                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-tint/10 bg-card px-3.5 text-sm text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
             >
                 <Search className="h-4 w-4 flex-none" />
                 <span className="min-w-0 flex-1 truncate text-left">
                     Search everything
                 </span>
-                <kbd className="hidden flex-none rounded border border-white/15 px-1.5 py-0.5 font-sans text-[10px] tracking-wider text-muted-foreground md:inline">
+                <kbd className="hidden flex-none rounded border border-tint/15 px-1.5 py-0.5 font-sans text-[10px] tracking-wider text-muted-foreground md:inline">
                     ⌘K
                 </kbd>
             </button>
@@ -149,11 +149,11 @@ export function CommandPalette() {
                     aria-describedby={undefined}
                     // Anchored high rather than centred: the list grows
                     // downwards, and a centred box jumps as results arrive.
-                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-white/10 bg-card p-0"
+                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-tint/10 bg-card p-0"
                 >
                     <DialogTitle className="sr-only">Search everything</DialogTitle>
 
-                    <div className="flex items-center gap-3 border-b border-white/10 px-4">
+                    <div className="flex items-center gap-3 border-b border-tint/10 px-4">
                         <Search className="h-4 w-4 flex-none text-muted-foreground" />
                         <input
                             ref={inputRef}
@@ -197,7 +197,7 @@ export function CommandPalette() {
                                     <div key={g.key} data-testid={IDS.group(g.key)}>
                                         <p className="sticky top-0 bg-card/95 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-sm">
                                             {g.label}
-                                            <span className="ml-2 text-ember-500">
+                                            <span className="ml-2 text-primary-ink">
                                                 {g.items.length}
                                             </span>
                                         </p>
@@ -217,14 +217,14 @@ export function CommandPalette() {
                                                             onClick={() => go(item)}
                                                             className={
                                                                 "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-150 " +
-                                                                (active ? "bg-ember-500/10" : "")
+                                                                (active ? "bg-primary/10" : "")
                                                             }
                                                         >
                                                             <Icon
                                                                 className={
                                                                     "h-4 w-4 flex-none " +
                                                                     (active
-                                                                        ? "text-ember-500"
+                                                                        ? "text-primary-ink"
                                                                         : "text-muted-foreground")
                                                                 }
                                                             />
@@ -248,12 +248,12 @@ export function CommandPalette() {
                                                                 )}
                                                             </span>
                                                             {item.badge && (
-                                                                <span className="flex-none rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                                                                <span className="flex-none rounded-full border border-tint/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
                                                                     {item.badge}
                                                                 </span>
                                                             )}
                                                             {active && (
-                                                                <CornerDownLeft className="h-3.5 w-3.5 flex-none text-ember-500" />
+                                                                <CornerDownLeft className="h-3.5 w-3.5 flex-none text-primary-ink" />
                                                             )}
                                                         </button>
                                                     </li>
@@ -266,7 +266,7 @@ export function CommandPalette() {
                         )}
                     </div>
 
-                    <div className="flex items-center gap-4 border-t border-white/10 px-4 py-2.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                    <div className="flex items-center gap-4 border-t border-tint/10 px-4 py-2.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
                         <span>↑↓ move</span>
                         <span>⏎ open</span>
                         <span>esc close</span>

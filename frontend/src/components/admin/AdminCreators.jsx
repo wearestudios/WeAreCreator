@@ -135,7 +135,7 @@ export default function AdminCreators() {
                         to={`/admin/creators/${c.user_id}`}
                         onClick={(e) => e.stopPropagation()}
                         data-testid={IDS.open(c.user_id)}
-                        className={`truncate ${CALM} hover:text-ember-500 ${FOCUS}`}
+                        className={`truncate ${CALM} hover:text-primary-ink ${FOCUS}`}
                     >
                         {c.name || "Unnamed"}
                     </Link>
@@ -316,7 +316,7 @@ export default function AdminCreators() {
                         onChange={(e) => setTyped(e.target.value)}
                         placeholder="Name, handle, phone"
                         data-testid={IDS.search}
-                        className={`h-8 border-white/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -401,7 +401,7 @@ export default function AdminCreators() {
                             disabled={page <= 1}
                             onClick={() => patch({ page: page - 1 })}
                             data-testid={IDS.pagePrev}
-                            className={`rounded border border-white/10 px-2 py-1 ${CALM} hover:bg-white/5 disabled:opacity-40 ${FOCUS}`}
+                            className={`rounded border border-tint/10 px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
                         >
                             Previous
                         </button>
@@ -410,7 +410,7 @@ export default function AdminCreators() {
                             disabled={page >= pages}
                             onClick={() => patch({ page: page + 1 })}
                             data-testid={IDS.pageNext}
-                            className={`rounded border border-white/10 px-2 py-1 ${CALM} hover:bg-white/5 disabled:opacity-40 ${FOCUS}`}
+                            className={`rounded border border-tint/10 px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
                         >
                             Next
                         </button>

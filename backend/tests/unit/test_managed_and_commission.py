@@ -268,13 +268,94 @@ class TestManagedByDefault:
 
         run(body)
 
-    def test_the_readers_default_is_untouched(self):
-        # The migration promise. Thousands of campaigns predate the field and
-        # an absent value still means the brand ran it — flipping this reader
-        # is the one change that would have hurt.
-        assert server._execution_owner({}) == "brand"
-        assert server.DEFAULT_EXECUTION_OWNER == "brand"
+    def test_both_defaults_say_weare_now(self):
+        # The reader's default was "brand" for one reason — thousands of
+        # campaigns predate the field and an absent value meant the brand ran
+        # it. That promise moved into `backfill_execution_owner`, which stamps
+        # those rows explicitly, so the reader is free to describe the product
+        # rather than the back catalogue.
+        assert server.DEFAULT_EXECUTION_OWNER == "weare"
         assert server.NEW_CAMPAIGN_EXECUTION_OWNER == "weare"
+        assert server._execution_owner({}) == "weare"
+        # And the back catalogue's own word is still spelled, once.
+        assert server.LEGACY_EXECUTION_OWNER == "brand"
+
+    def test_the_backfill_stamps_brand_on_a_pre_field_campaign(self):
+        """**The promise to old work, driven rather than asserted.**
+
+        This is the test the old reader default stood in for. A campaign
+        written before the field existed has to come out of the backfill
+        saying "brand" — if it came out saying nothing, the new reader would
+        hand it to a WeAre manager who was never told about it.
+        """
+
+        async def body(db):
+            plain = (await db.campaigns.insert_one({"title": "Old brief"})).inserted_id
+            await server.backfill_execution_owner()
+            return await db.campaigns.find_one({"_id": plain})
+
+        doc = run(body)
+
+        assert doc["execution_owner"] == "brand"
+        assert server._execution_owner(doc) == "brand"
+
+    def test_the_backfill_reads_a_weare_manager_as_ours(self):
+        """Who ran a pre-field campaign was implicit in who its manager was."""
+
+        async def body(db):
+            manager = (
+                await db.users.insert_one({"role": "campaign_manager", "name": "Priya"})
+            ).inserted_id
+            ours = (
+                await db.campaigns.insert_one(
+                    {"title": "Staffed brief", "manager_id": manager}
+                )
+            ).inserted_id
+            theirs = (
+                await db.campaigns.insert_one({"title": "Unstaffed brief"})
+            ).inserted_id
+            await server.backfill_execution_owner()
+            return (
+                await db.campaigns.find_one({"_id": ours}),
+                await db.campaigns.find_one({"_id": theirs}),
+            )
+
+        ours, theirs = run(body)
+
+        assert ours["execution_owner"] == "weare"
+        assert theirs["execution_owner"] == "brand"
+
+    def test_the_backfill_leaves_a_campaign_that_already_answered_alone(self):
+        """Idempotent, and it must not rewrite an admin's decision. A brief an
+        admin handed back to the brand yesterday is still the brand's after a
+        restart."""
+
+        async def body(db):
+            handed = (
+                await db.campaigns.insert_one(
+                    {"title": "Handed back", "execution_owner": "brand"}
+                )
+            ).inserted_id
+            kept = (
+                await db.campaigns.insert_one(
+                    {"title": "Ours", "execution_owner": "weare"}
+                )
+            ).inserted_id
+            await server.backfill_execution_owner()
+            await server.backfill_execution_owner()  # twice, because a migration runs on every boot
+            return (
+                await db.campaigns.find_one({"_id": handed}),
+                await db.campaigns.find_one({"_id": kept}),
+            )
+
+        handed, kept = run(body)
+
+        assert handed["execution_owner"] == "brand"
+        assert kept["execution_owner"] == "weare"
+
+    def test_startup_actually_runs_it(self):
+        """A backfill nothing calls is a promise nothing keeps."""
+        assert "backfill_execution_owner()" in inspect.getsource(server._startup)
 
 
 # ---------------------------------------------------------------------------

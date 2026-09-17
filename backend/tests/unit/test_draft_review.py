@@ -387,10 +387,17 @@ def test_the_admin_console_cannot_fabricate_either_draft_step():
 
 def test_the_draft_file_lands_in_private_storage():
     """An unpublished cut must not be one guessed URL away from the internet.
-    PRIVATE_UPLOAD_DIR is deliberately not the directory `app.mount`s."""
-    assert "PRIVATE_UPLOAD_DIR" in source(server._store_private_upload)
+
+    Private storage is deliberately not the place `app.mount` serves — a
+    separate directory on disk, a separate prefix in the bucket, and on S3 a
+    prefix the bucket blocks public access to. `private=True` is the one line
+    that decides it."""
+    src = source(server._store_private_upload)
+    assert "STORAGE.put(" in src
+    assert "private=True" in src
+    assert "private=False" not in src
     assert "_store_private_upload(" in source(server.submit_draft_file)
-    assert "UPLOAD_DIR" not in source(server.submit_draft_file)
+    assert "_store_upload(" not in source(server.submit_draft_file)
 
 
 def test_no_payload_ever_carries_the_stored_path():
@@ -414,7 +421,11 @@ def test_no_payload_ever_carries_the_stored_path():
 
 def test_reading_the_file_is_audited():
     assert "audit(" in source(server.download_draft_file)
-    assert "no-store" in source(server.download_draft_file)
+    # `no-store` rides on the shared delivery helper now, so it is asserted
+    # where it is set rather than on each of the four routes that use it —
+    # one of which would eventually be the one that forgot.
+    assert "_private_file_response(" in source(server.download_draft_file)
+    assert "no-store" in source(server._private_file_response)
 
 
 def test_every_draft_route_writes_an_audit_line():

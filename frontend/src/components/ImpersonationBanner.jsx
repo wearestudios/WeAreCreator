@@ -73,7 +73,7 @@ export function ImpersonationBanner() {
             data-testid={IDS.banner}
             role="status"
             // z-50 clears the navbar's z-40. Nothing in the app sits above it.
-            className="fixed inset-x-0 top-0 z-50 border-b border-ember-500/40 bg-ember-500 text-black"
+            className="fixed inset-x-0 top-0 z-50 border-b border-primary/40 bg-primary text-primary-foreground"
         >
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2.5 md:px-6">
                 <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em]">
@@ -95,7 +95,7 @@ export function ImpersonationBanner() {
                     onClick={stop}
                     disabled={leaving}
                     data-testid={IDS.stop}
-                    className="ml-auto inline-flex min-h-[2.25rem] items-center gap-1.5 rounded-full bg-black/85 px-4 py-1.5 text-xs font-medium uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:ring-offset-ember-500 disabled:opacity-60"
+                    className="ml-auto inline-flex min-h-[2.25rem] items-center gap-1.5 rounded-full bg-scrim/85 px-4 py-1.5 text-xs font-medium uppercase tracking-[0.15em] text-primary-ink transition-colors duration-200 hover:bg-scrim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scrim focus-visible:ring-offset-2 focus-visible:ring-offset-primary disabled:opacity-60"
                 >
                     <LogOut className="h-3.5 w-3.5" />
                     {leaving ? "Leaving…" : "Stop"}

@@ -80,6 +80,13 @@ module.exports = {
                 primary: {
                     DEFAULT: "hsl(var(--primary))",
                     foreground: "hsl(var(--primary-foreground))",
+                    // The accent doing its other job — text or an icon on a
+                    // surface rather than a button fill. Identical to
+                    // DEFAULT on dark; darker on light, because #F05D14 on
+                    // an off-white page is 3.0:1 and fails AA as body text
+                    // while the same orange as a fill is fine.
+                    ink: "hsl(var(--primary-ink) / <alpha-value>)",
+                    hover: "hsl(var(--primary-hover) / <alpha-value>)",
                 },
                 secondary: {
                     DEFAULT: "hsl(var(--secondary))",
@@ -100,6 +107,24 @@ module.exports = {
                 border: "hsl(var(--border))",
                 input: "hsl(var(--input))",
                 ring: "hsl(var(--ring))",
+                // **The base the console's alpha hairlines are applied to.**
+                // `border-tint/10` is what `border-white/10` used to be, and
+                // reads identically in dark — `--tint` is white there. The
+                // `<alpha-value>` form is the whole point: the alpha stays at
+                // the call site, so a 10% hairline and a 15% one remain two
+                // different decisions rather than collapsing into one token.
+                tint: "hsl(var(--tint) / <alpha-value>)",
+                scrim: "hsl(var(--scrim) / <alpha-value>)",
+                // The four states the console shows, named for meaning. The
+                // chip fill is the same hue at low alpha, so these carry
+                // `<alpha-value>` too and `bg-state-pending/10` works.
+                state: {
+                    pending: "hsl(var(--state-pending) / <alpha-value>)",
+                    approved: "hsl(var(--state-approved) / <alpha-value>)",
+                    rejected: "hsl(var(--state-rejected) / <alpha-value>)",
+                    progress: "hsl(var(--state-progress) / <alpha-value>)",
+                    done: "hsl(var(--state-done) / <alpha-value>)",
+                },
                 ember: {
                     50: "#FFF3EC",
                     100: "#FFDDC5",

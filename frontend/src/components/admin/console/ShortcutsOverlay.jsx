@@ -29,7 +29,7 @@ export const SHORTCUTS = [
 
 function Key({ children }) {
     return (
-        <kbd className={`inline-grid min-w-[1.5rem] place-items-center rounded border border-white/15 bg-white/5 px-1.5 py-0.5 ${TEXT.meta} text-foreground`}>
+        <kbd className={`inline-grid min-w-[1.5rem] place-items-center rounded border border-tint/15 bg-tint/5 px-1.5 py-0.5 ${TEXT.meta} text-foreground`}>
             {children}
         </kbd>
     );
@@ -52,7 +52,7 @@ export function ShortcutsOverlay({ open, onOpenChange }) {
                     {SHORTCUTS.map((s) => (
                         <li
                             key={s.what}
-                            className={`flex items-center justify-between gap-6 border-b border-white/5 ${DENSITY.row}`}
+                            className={`flex items-center justify-between gap-6 border-b border-tint/5 ${DENSITY.row}`}
                         >
                             <span className={TEXT.body}>{s.what}</span>
                             <span className="flex shrink-0 items-center gap-1">

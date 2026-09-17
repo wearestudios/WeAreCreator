@@ -107,6 +107,9 @@ WIPED = (
     # rows — keeping it would put yesterday's creators on a homepage whose
     # database no longer has them.
     "leaderboard_cache",
+    # Derived and rebuilt on a schedule, so a stale one over fresh demo data
+    # would show yesterday's business against today's records.
+    "analytics_cache",
     "creator_lists",
     "payments",
     "deletion_requests",
@@ -741,6 +744,25 @@ async def seed_campaigns(brands: dict, staff: dict) -> dict:
             start_date=ahead(4), end_date=ahead(18),
             execution_owner="weare", **mgr_contact, created_at=ago(9),
         )),
+        # **The type with no venue.** A skincare brand posting samples is the
+        # case `delivery` exists for, and it is the one shape the seed could
+        # not previously produce — so the three states that replace booking
+        # and attendance had no occupant on any screen, which is the same as
+        # not being able to tell a working screen from a broken one.
+        ("bl_samples", _campaign(
+            bl, title="Sample box, shot at home",
+            brief=("We post you the box. Shoot it wherever you normally "
+                   "shoot — no studio, no venue, no travel."),
+            items=[{"type": "reel", "quantity": 1}, {"type": "story", "quantity": 3}],
+            budget=18000, category="beauty", area="HSR Layout", needed=3,
+            ctype="delivery", status="in_progress",
+            start_date=ago(12), end_date=ahead(10),
+            execution_owner="weare", requires_draft_approval=False,
+            # No venue fields at all, which is the point of the type rather
+            # than an omission: there is nowhere to go.
+            venue_address=None, restricted_days=[], shoot_windows=[],
+            **mgr_contact, created_at=ago(16),
+        )),
         ("bl_paused", _campaign(
             bl, title="Cleanser refill pouches",
             brief="Paused while the packaging is redone.",
@@ -1061,6 +1083,44 @@ async def seed_work(brands, creators, campaigns, staff):
         scheduled_at=ago(9), checked_in_at=ago(9),
         draft_url="https://drive.example/unlisted/roastery-cut-1",
         draft_submitted_at=ago(4), draft_approved_at=ago(2),
+    )
+
+    # --- The delivery brief: one collaboration on each of the three rungs --
+    #
+    # Written exactly as the routes write them, `delivery` sub-document and
+    # all, so a screen reading `_delivery_block` here sees what it would see
+    # in production rather than a shape the seed invented.
+    samples = campaigns["bl_samples"]
+    made["address_confirmed"] = await _collab(
+        samples, C["farida"], "address_confirmed", days_ago=2,
+        quoted_rate=18000, agreed_amount=18000.0, agreed_at=ago(4),
+        delivery={
+            "address_confirmed_at": ago(2),
+            "address_note": "Flat is on the second floor, no lift after 8pm.",
+        },
+    )
+    made["dispatched"] = await _collab(
+        samples, C["kabir"], "dispatched", days_ago=1,
+        quoted_rate=18000, agreed_amount=18000.0, agreed_at=ago(5),
+        delivery={
+            "address_confirmed_at": ago(3),
+            "dispatched_at": ago(1),
+            "dispatched_by_name": "WeAre Ops",
+            "courier": "Delhivery",
+            "tracking_reference": "DL-8841-2290",
+        },
+    )
+    made["received"] = await _collab(
+        samples, C["ana"], "received", days_ago=1,
+        quoted_rate=18000, agreed_amount=18000.0, agreed_at=ago(6),
+        delivery={
+            "address_confirmed_at": ago(5),
+            "dispatched_at": ago(3),
+            "dispatched_by_name": "WeAre Ops",
+            "courier": "Delhivery",
+            "tracking_reference": "DL-8841-2291",
+            "received_at": ago(1),
+        },
     )
 
     # --- Blume, weare-run, with a dispute on it ----------------------------

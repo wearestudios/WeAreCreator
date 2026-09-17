@@ -73,9 +73,9 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
             )}
 
             {active && (
-                <div className="rounded-md border border-white/10 bg-card p-4">
+                <div className="rounded-md border border-tint/10 bg-card p-4">
                     <p className="flex items-center gap-2 text-sm">
-                        <ShieldOff aria-hidden="true" className="h-3.5 w-3.5 text-amber-300" />
+                        <ShieldOff aria-hidden="true" className="h-3.5 w-3.5 text-state-pending" />
                         Override on
                     </p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
@@ -91,7 +91,7 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
                         onClick={() => set(false)}
                         disabled={busy}
                         data-testid={IDS.overrideClear}
-                        className="mt-3 min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                        className="mt-3 min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
                     >
                         {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                         Put the block back
@@ -108,7 +108,7 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
                     size="sm"
                     onClick={() => setAsking(true)}
                     data-testid={IDS.override}
-                    className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                    className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
                 >
                     Let them post anyway
                 </Button>
@@ -123,7 +123,7 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="Why. e.g. Invoice went to the wrong address, resent today."
                         data-testid={IDS.overrideReason}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -131,7 +131,7 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
                             onClick={() => set(true)}
                             disabled={busy || !reason.trim()}
                             data-testid={IDS.overrideSubmit}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             Lift the block

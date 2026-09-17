@@ -84,13 +84,13 @@ export const NotificationBell = () => {
                             ? `Notifications, ${unread} unread`
                             : "Notifications"
                     }
-                    className="relative grid h-11 w-11 place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-9 md:w-9"
+                    className="relative grid h-11 w-11 place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-tint/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-9 md:w-9"
                 >
                     <Bell className="h-4 w-4" />
                     {unread > 0 && (
                         <span
                             data-testid="nav-notifications-badge"
-                            className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-ember-500 px-1 text-[9px] font-semibold text-black"
+                            className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground"
                         >
                             {unread > 9 ? "9+" : unread}
                         </span>
@@ -100,10 +100,10 @@ export const NotificationBell = () => {
             <PopoverContent
                 align="end"
                 data-testid="nav-notifications-panel"
-                className="w-80 rounded-md border-white/10 bg-card p-0 grain-surface"
+                className="w-80 rounded-md border-tint/10 bg-card p-0 grain-surface"
             >
-                <div className="border-b border-white/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <div className="border-b border-tint/10 px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                         Notifications
                     </p>
                 </div>
@@ -120,14 +120,14 @@ export const NotificationBell = () => {
                         move.
                     </p>
                 ) : (
-                    <ul className="max-h-96 divide-y divide-white/10 overflow-y-auto">
+                    <ul className="max-h-96 divide-y divide-tint/10 overflow-y-auto">
                         {items.map((n) => (
                             <li key={n.id}>
                                 <button
                                     type="button"
                                     onClick={() => go(n)}
                                     data-testid={`notification-${n.id}`}
-                                    className="w-full px-4 py-3 text-left transition-colors duration-200 hover:bg-white/5"
+                                    className="w-full px-4 py-3 text-left transition-colors duration-200 hover:bg-tint/5"
                                 >
                                     <div className="flex items-baseline justify-between gap-3">
                                         <span className="text-sm font-medium text-foreground">

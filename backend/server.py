@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import logging
+import tempfile
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
 from typing import Optional, Literal, Annotated, get_args
@@ -33,7 +34,12 @@ from fastapi import (
     UploadFile,
 )
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -954,8 +960,31 @@ class BrandProfileUpdate(BaseModel):
 # event happens on one day; a personal table runs over a window a creator books
 # into. Storing both shapes on every campaign and trusting the UI to fill the
 # right ones is how a brief ends up with an event date *and* a window.
-CampaignType = Literal["launch", "group_event", "personal_table"]
+# **`delivery` is the fourth, and it is the one with no venue at all.** The
+# other three are a place a creator turns up to, which meant a product seeding
+# or a shipped-sample campaign could not be posted here — on a platform whose
+# taxonomy is fifteen groups precisely because it takes every category. A
+# skincare brand sending twenty creators a bottle had to describe it as a
+# personal table at an address nobody was going to visit, and then every
+# downstream screen asked when the shoot was.
+CampaignType = Literal["launch", "group_event", "personal_table", "delivery"]
 EVENT_CAMPAIGN_TYPES = ("launch", "group_event")
+
+# The type with no venue, named once because seven readers ask the question and
+# `== "delivery"` scattered across them is how one of them ends up asking a
+# different question. Absent reads False: campaigns predate types, and a brief
+# written before this existed was a venue brief.
+DELIVERY_CAMPAIGN_TYPE = "delivery"
+
+
+def _is_delivery(campaign: Optional[dict]) -> bool:
+    """Is this a campaign where something is sent rather than somewhere gone?
+
+    Pure and DB-free, the shape `_execution_owner` and `_compensation_type`
+    hold, and it never returns None — every surface that asks this branches on
+    it and has to get one of two answers.
+    """
+    return (campaign or {}).get("campaign_type") == DELIVERY_CAMPAIGN_TYPE
 
 # ---------------------------------------------------------------------------
 # Which scheduling fields each type actually has
@@ -996,6 +1025,18 @@ _SCHEDULING_BY_TYPE = {
     "personal_table": {
         "required": ("start_date", "end_date"),
         "allowed": ("start_date", "end_date", "restricted_days", "shoot_windows"),
+    },
+    # **delivery** — a window to send within, and nothing else. There is no
+    # venue, so there are no sittings to divide, no hours that work and no
+    # days that don't: a courier is not a kitchen. Asking any of those would
+    # be the exact failure this table was written to stop, one type later.
+    #
+    # The window is required rather than optional because a brand has to say
+    # by when, or "dispatched" has no clock to be late against — see
+    # `_SLA_BY_COLLAB_STATE`.
+    DELIVERY_CAMPAIGN_TYPE: {
+        "required": ("start_date", "end_date"),
+        "allowed": ("start_date", "end_date"),
     },
 }
 
@@ -1821,6 +1862,21 @@ def _proof_block(campaign: Optional[dict], collab: Optional[dict]) -> dict:
     }
 
 
+def _ready_to_shoot_state(campaign: Optional[dict]) -> str:
+    """The state at which this campaign's creator has the thing and can shoot.
+
+    `attended` on a venue brief, `received` on a delivery one — the same
+    moment in the story wearing two names, because on one of them somebody
+    walked through a door and on the other a courier did.
+
+    **One reader, so nothing names `attended` directly again.** Every place
+    that did was a place that silently meant "and delivery campaigns never get
+    here", which is how a whole campaign type ends up unable to submit
+    content.
+    """
+    return "received" if _is_delivery(campaign) else "attended"
+
+
 def _content_submission_states(campaign: Optional[dict]) -> tuple:
     """Which states a delivery may be filed from, and why not otherwise.
 
@@ -1842,7 +1898,13 @@ def _content_submission_states(campaign: Optional[dict]) -> tuple:
             "This campaign reviews drafts before publication. Submit your draft "
             "first — the live link goes in once it's approved."
         )
-    return ("attended", "content_submitted"), (
+    ready = _ready_to_shoot_state(campaign)
+    if ready == "received":
+        return (ready, "content_submitted"), (
+            "Content can be submitted once you've confirmed the delivery "
+            "arrived, and changed any time before it's approved."
+        )
+    return (ready, "content_submitted"), (
         "Content can be submitted once the collaboration is marked attended, "
         "and changed any time before it's approved."
     )
@@ -2173,18 +2235,32 @@ def _is_barter(campaign: dict) -> bool:
 # they will be dealing with on the day.
 ExecutionOwner = Literal["brand", "weare"]
 EXECUTION_OWNERS = ("brand", "weare")
-# Campaigns written before this field existed were brand briefs run by the
-# brand's own manager unless an admin had handed one to a WeAre manager, which
-# is what the startup backfill looks for. Absent means brand.
+# **The reader's default, and it is "weare" because the product is.** Every
+# brief posted here is ours to run; an absent or unrecognised value is a row
+# nobody has said anything about, and the true thing to say about it today is
+# that we run it.
 #
-# **This is the *reader's* default and it must stay "brand".** It is what an
-# absent value means on a campaign written before the field existed, and there
-# are thousands of those; flipping it would silently hand every historical
-# brief to a WeAre manager who was never told about it. The default for a
-# *new* campaign is the constant below, and the two differing is deliberate —
-# the same split `requires_draft_approval` makes, for the same reason: one is
-# a policy for new work and the other is a promise to old work.
-DEFAULT_EXECUTION_OWNER = "brand"
+# This used to be "brand", and the reasoning was a real one: campaigns predate
+# the field, and reading absent as "weare" would silently hand every
+# historical brief to a WeAre manager who was never told. What makes the flip
+# safe is that the promise to old work is now kept **where it belongs, in the
+# data** — startup migration 9 stamps `LEGACY_EXECUTION_OWNER` on every
+# pre-field campaign, so none of them is relying on the reader to stay put.
+# The migration runs inside `@app.on_event("startup")`, which FastAPI awaits
+# before the first request, so there is no window where a historical brief is
+# read through the new default.
+DEFAULT_EXECUTION_OWNER = "weare"
+
+# What a campaign written before `execution_owner` existed actually was. Who
+# ran one was implicit in who its manager was — a WeAre `campaign_manager`
+# meant us, anything else meant the brand — and this is the "anything else"
+# half, written once by the backfill rather than inferred forever by a reader.
+#
+# It is deliberately its own constant rather than a literal inside the
+# migration: it is a statement about history, and pinning it here is what
+# stops it drifting with `DEFAULT_EXECUTION_OWNER` the next time the product
+# changes shape.
+LEGACY_EXECUTION_OWNER = "brand"
 
 # **What a brand posting a brief today gets, and it is not theirs to change.**
 # The product is managed-only: a brand writes the brief, approves the work and
@@ -2266,17 +2342,24 @@ def _brand_visible_collab_query(campaign: Optional[dict]) -> dict:
 
 
 def _execution_owner_query(value: str) -> dict:
-    """A Mongo filter for one execution owner, matching pre-field documents.
+    """A Mongo filter for one execution owner, agreeing with `_execution_owner`.
 
-    "brand" has to be `$ne: "weare"` rather than an equality test: campaigns
-    written before this field existed have no value at all, and they were
-    brand-run. The startup backfill fills them in, but a filter that only works
-    after a migration has run is a filter that silently returns nothing on a
-    box that has not restarted yet. Same reasoning as `showcase`'s `$ne: True`.
+    **The default side is `$ne` on the other one, and which side that is comes
+    off the constant rather than being written in.** A document with no value
+    — or an unrecognised one — reads as `DEFAULT_EXECUTION_OWNER`, so the
+    filter for the default has to match it and the filter for the other side
+    must not. Hardcoding either half is how the query and the reader end up
+    disagreeing the next time the default moves, which is exactly what
+    happened when it did.
+
+    An equality test on the default side would silently return nothing for
+    pre-field documents on a box whose startup migration has not run. Same
+    reasoning as `showcase`'s `$ne: True`.
     """
-    if value == "weare":
-        return {"execution_owner": "weare"}
-    return {"execution_owner": {"$ne": "weare"}}
+    other = "brand" if DEFAULT_EXECUTION_OWNER == "weare" else "weare"
+    if value == DEFAULT_EXECUTION_OWNER:
+        return {"execution_owner": {"$ne": other}}
+    return {"execution_owner": other}
 
 
 # --- Campaign visibility -----------------------------------------------------
@@ -2672,6 +2755,49 @@ class ReschedulePayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
+class ConfirmDeliveryAddressPayload(BaseModel):
+    """The creator saying where to send it.
+
+    **No address field.** The address is the one already on the creator's
+    profile, which is the record a courier label is printed from and the one
+    they keep up to date; letting a per-campaign address be typed here would
+    be a second copy of somebody's home address, kept in a collaboration row
+    nobody would think to erase.
+
+    What this carries instead is `note` — "leave it with the neighbour",
+    "office reception, weekdays only" — which is about *this* delivery and
+    belongs nowhere else.
+    """
+
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class DispatchDeliveryPayload(BaseModel):
+    """The runner saying it has gone.
+
+    The tracking reference is **optional and free text**. Half of what this
+    operation actually sends goes by a local courier with a WhatsApp photo of
+    a docket rather than a scannable number, and a required field there would
+    be a field filled in with "sent". Where there is a real reference, the
+    creator gets it in the message.
+    """
+
+    tracking_reference: Optional[str] = Field(default=None, max_length=120)
+    courier: Optional[str] = Field(default=None, max_length=80)
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
+class ConfirmDeliveryReceivedPayload(BaseModel):
+    """The creator saying it arrived. A note, and nothing required.
+
+    Deliberately not a condition report: "it came damaged" is a conversation
+    with whoever runs the campaign, not a dropdown, and a structured field
+    here would collect a judgement nobody acts on.
+    """
+
+    note: Optional[str] = Field(default=None, max_length=400)
+
+
 class CreatorBookSlotPayload(BaseModel):
     """A creator taking a place on a slot.
 
@@ -2875,6 +3001,14 @@ COLLAB_STATE_ORDER = [
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The delivery half, which stands in for the two above on a campaign with
+    # no venue. Listed here rather than bolted on, so `COLLAB_STATE_ORDER`
+    # stays the one place every state this system has is written down — a
+    # state missing from it is a state no audit line, no process flow and no
+    # `_stage_of` can name.
+    "address_confirmed",
+    "dispatched",
+    "received",
     # The draft gate: the reviewer sees the content BEFORE the creator's
     # audience does. Optional per campaign — `requires_draft_approval` — and
     # skipped entirely from the ladder when off, so a campaign without it
@@ -2889,6 +3023,26 @@ COLLAB_STATE_ORDER = [
 
 # The optional pair, named once so every "skip them when off" reads the same.
 DRAFT_REVIEW_STATES = ("draft_submitted", "draft_approved")
+
+# The two halves of "how does the creator come to have the thing they are
+# shooting". Exactly one of these is on a given campaign's ladder, never both
+# and never neither, which is what `_collab_ladder` guarantees.
+#
+# **Venue**: a seat is booked and somebody marks them present.
+# **Delivery**: the creator confirms where to send it, the runner sends it
+# with an optional tracking reference, and the creator says it arrived. Three
+# steps rather than two because the middle one is the only part neither party
+# controls — a parcel in transit is a real state, and collapsing it into
+# "dispatched means received" is how a brand chases a creator for content
+# that is sitting in a depot.
+VENUE_ATTENDANCE_STATES = ("slot_booked", "attended")
+DELIVERY_STATES = ("address_confirmed", "dispatched", "received")
+
+# Where a collaboration stands when the creator has the thing and can shoot.
+# `attended` on a venue brief, `received` on a delivery one — the same moment
+# in the story, so anything asking "can they submit content yet" asks this
+# rather than naming one of them and being wrong on the other type.
+READY_TO_SHOOT_STATES = ("attended", "received")
 
 
 # ---------------------------------------------------------------------------
@@ -2961,10 +3115,24 @@ def _requires_draft_approval(campaign: dict) -> bool:
 
 
 def _collab_ladder(campaign: Optional[dict]) -> list:
-    """The state order this campaign actually walks."""
-    if _requires_draft_approval(campaign):
-        return COLLAB_STATE_ORDER
-    return [s for s in COLLAB_STATE_ORDER if s not in DRAFT_REVIEW_STATES]
+    """The state order this campaign actually walks.
+
+    **Two independent substitutions, not four hand-written ladders.** The
+    draft gate is optional per campaign and the venue/delivery split is
+    decided by the type, and they compose: a delivery brief can gate drafts
+    and a venue brief can skip them. Writing the four combinations out would
+    mean the fifth thing added next year is written four times and gets one
+    of them wrong.
+
+    Exactly one of `VENUE_ATTENDANCE_STATES` and `DELIVERY_STATES` survives,
+    always — there is no campaign where a creator both turns up and has it
+    sent, and none where neither happens.
+    """
+    drop = set()
+    if not _requires_draft_approval(campaign):
+        drop |= set(DRAFT_REVIEW_STATES)
+    drop |= set(DELIVERY_STATES if not _is_delivery(campaign) else VENUE_ATTENDANCE_STATES)
+    return [s for s in COLLAB_STATE_ORDER if s not in drop]
 
 # Once a collaboration is in one of these, nothing may move it again.
 # **Four ways out, and `withdrawn` is the creator's.** Until it existed the
@@ -2995,6 +3163,14 @@ COLLAB_GROUP_ONGOING = (
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The delivery half belongs here for the reason the comment above gives:
+    # every state belongs to exactly one group, so a collaboration waiting on
+    # a courier cannot silently vanish from a creator's record — or, because
+    # `_COMMITTED_COLLAB_STATES` is built from this tuple, from the money a
+    # brief has spoken for.
+    "address_confirmed",
+    "dispatched",
+    "received",
     "draft_submitted",
     "draft_approved",
     "content_submitted",
@@ -3204,6 +3380,17 @@ _SLA_BY_COLLAB_STATE = {
     "accepted": "commercial_agreement",
     "commercial_agreed": "slot_booking",
     "attended": "content_submission",
+    # The delivery half. `address_confirmed` reuses the slot-booking target
+    # because it is the same question — how long may the creator take over
+    # the one thing only they can supply — and inventing a tenth target for a
+    # wait that behaves identically would be a number nobody tunes.
+    #
+    # **`dispatched` is deliberately absent, and `slot_booked` is absent for
+    # the same reason.** A parcel in transit is waiting on a courier, not on a
+    # person here; a clock on it would go red about somebody who has already
+    # done everything asked of them. Absent means no clock, never zero.
+    "address_confirmed": "slot_booking",
+    "received": "content_submission",
     "draft_submitted": "draft_review",
     "content_submitted": "draft_review",
     "content_approved": "payment",
@@ -3833,6 +4020,12 @@ def _campaign_audit_context(campaign: Optional[dict]) -> dict:
 # recorded and readable in-app, it just isn't pushed to WhatsApp.
 NOTIFY_EVENTS = {
     "application_declined": "Your application wasn't taken forward",
+    # The delivery half of the lifecycle. Three events because three different
+    # people need to hear three different things: the runner that an address
+    # is ready, the creator that it has been sent, the runner that it landed.
+    "delivery_address_confirmed": "A creator confirmed their delivery address",
+    "delivery_dispatched": "Your delivery is on its way",
+    "delivery_received": "A creator confirmed their delivery arrived",
     "application_accepted": "A brand accepted your pitch",
     "commercial_agreed": "Your fee has been agreed",
     "slot_booked": "Your slot is confirmed",
@@ -4045,13 +4238,301 @@ async def notify(
 
 
 # ---------------------------------------------------------------------------
+# Where the bytes actually live
+# ---------------------------------------------------------------------------
+#
+# Uploads used to be local disk and nothing else, with a NOTE on the directory
+# saying not to rely on it in production. The host this runs on has an
+# ephemeral filesystem, so that note described a live data-loss bug: **every
+# redeploy took every brand's verification documents, every creator's profile
+# photo, every campaign cover and every unpublished draft with it.** The
+# database rows survived and pointed at nothing, which is the worst shape of
+# the failure — a brand reads "GST certificate uploaded" and an admin opens a
+# 404.
+#
+# So there are two backends behind one interface, and the *record* does not
+# know which is in use. A stored name is still a stored name and a public URL
+# is still `/uploads/<name>`: only where the bytes sit changes. That is what
+# makes the migration a file copy rather than a data migration, and it is why
+# `_our_image_path`, `_absolute_media_url`, `_delete_upload` and `coverHue`
+# did not have to move.
+#
+# **Local disk stays, and is not a lesser path.** It is what the unit suite,
+# `docker compose` and a laptop use, and a backend that only works when four
+# credentials are present is a backend nobody can run. What changed is that it
+# is no longer *silently* what production gets — see `_refuse_ephemeral_storage`.
+
+STORAGE_PUBLIC_PREFIX = "public"
+STORAGE_PRIVATE_PREFIX = "private"
+
+
+def storage_backend_name() -> str:
+    """Which backend this process will use: "s3" or "local".
+
+    Derived from `S3_BUCKET` when `STORAGE_BACKEND` says nothing, because a
+    bucket configured and not used is a configuration somebody thinks is live.
+    An unrecognised value reads as "local" and is warned about at boot rather
+    than being guessed at — the guess that matters is caught by
+    `_refuse_ephemeral_storage`, which asks whether this is production rather
+    than what the string said.
+    """
+    declared = os.environ.get("STORAGE_BACKEND", "").strip().lower()
+    if declared in ("s3", "local"):
+        return declared
+    if declared:
+        logger.warning(
+            "STORAGE_BACKEND=%r is not 's3' or 'local' — reading it as local.",
+            declared,
+        )
+        return "local"
+    return "s3" if os.environ.get("S3_BUCKET", "").strip() else "local"
+
+
+# Every setting the S3 backend needs, with why each one matters, so a missing
+# one is named rather than surfacing as a botocore stack trace on the first
+# upload somebody tries.
+_S3_REQUIRED = (
+    ("S3_BUCKET", "the bucket uploads are written to"),
+    ("S3_REGION", "the bucket's region, e.g. ap-south-1"),
+    ("S3_ACCESS_KEY_ID", "the access key the server signs requests with"),
+    ("S3_SECRET_ACCESS_KEY", "the secret for that access key"),
+)
+
+
+def signed_url_ttl_seconds() -> int:
+    """How long a signed link to a private object stays valid.
+
+    Two minutes by default, which is long enough for a browser to follow a
+    redirect and short enough that a link copied out of a network tab is dead
+    before it can be passed on. Clamped, because a TTL of a day is a public
+    link with extra steps and a TTL of one second is a document nobody can
+    open on a slow connection.
+    """
+    try:
+        value = int(os.environ.get("S3_SIGNED_URL_TTL_SECONDS", "120"))
+    except ValueError:
+        logger.warning("S3_SIGNED_URL_TTL_SECONDS is not a number — using 120.")
+        return 120
+    return max(30, min(value, 3600))
+
+
+class LocalStorage:
+    """Files on this machine's disk. The development and test backend.
+
+    Public files are served by the `StaticFiles` mount, exactly as they always
+    were; private files are streamed by the authenticated routes that already
+    existed. `signed_url` returns None, which is how the private routes know
+    to stream rather than redirect — an absent signed URL is a fact about the
+    backend, not a failure.
+    """
+
+    name = "local"
+    durable = False
+
+    def _dir(self, private: bool) -> Path:
+        """**Read at call time, never bound at construction.**
+
+        `UPLOAD_DIR` and `PRIVATE_UPLOAD_DIR` are settings, and a test that
+        points one at a temporary directory expects the next write to land
+        there. Capturing them in `__init__` made that silently untrue — the
+        object went to the real directory while the test watched an empty
+        tmpdir, which is the kind of green test that proves nothing.
+        """
+        return PRIVATE_UPLOAD_DIR if private else UPLOAD_DIR
+
+    def put(self, name: str, fileobj, *, content_type: str, private: bool) -> None:
+        target_dir = self._dir(private)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        fileobj.seek(0)
+        with open(target_dir / name, "wb") as out:
+            while True:
+                chunk = fileobj.read(64 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+    def open(self, name: str, *, private: bool):
+        path = self.path(name, private=private)
+        return open(path, "rb") if path else None
+
+    def path(self, name: str, *, private: bool) -> Optional[Path]:
+        """The file on disk, or None. **The one place a path is built from a
+        stored name**, so it checks the directory boundary rather than trusting
+        that the name is one we generated."""
+        if not name or "/" in name or "\\" in name or name in ("", ".", ".."):
+            return None
+        base = self._dir(private)
+        resolved = (base / name).resolve()
+        try:
+            resolved.relative_to(base.resolve())
+        except ValueError:
+            return None
+        return resolved if resolved.is_file() else None
+
+    def delete(self, name: str, *, private: bool) -> bool:
+        path = self.path(name, private=private)
+        if not path:
+            return False
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError:
+            logger.exception("Could not remove %s upload %s", self.name, name)
+            return False
+
+    def exists(self, name: str, *, private: bool) -> bool:
+        return self.path(name, private=private) is not None
+
+    def signed_url(self, name: str, *, private: bool = True) -> Optional[str]:
+        return None
+
+    def public_url(self, name: str) -> str:
+        return f"{UPLOAD_URL_PREFIX}/{name}"
+
+
+class S3Storage:
+    """S3, or anything that speaks it — R2, Spaces, MinIO, Wasabi.
+
+    One bucket with two prefixes rather than two buckets: the difference
+    between a cover image and a GST certificate is a policy on a prefix, and
+    two buckets is two sets of credentials, two lifecycle rules and two places
+    to get the public-access setting wrong.
+
+    - `public/` is meant to be read by strangers. A campaign cover previews in
+      a WhatsApp card and a profile photo renders on an applicant board, so
+      these are served with a long cache and no signature.
+    - `private/` **must block public access at the bucket level.** Verification
+      documents carry registered addresses and directors' names; drafts are
+      work that is not public yet; story proofs routinely catch a viewer list
+      or a DM notification. Nothing here is reachable without a signature, and
+      DEPLOYMENT.md names the bucket policy that enforces it.
+
+    boto3 is imported lazily, inside the constructor. The unit suite and a
+    laptop run the local backend and must not need the dependency installed to
+    import this module at all.
+    """
+
+    name = "s3"
+    durable = True
+
+    def __init__(self):
+        import boto3  # noqa: PLC0415 — deliberately lazy; see the docstring
+        from botocore.config import Config
+
+        self.bucket = os.environ["S3_BUCKET"].strip()
+        self.public_base = os.environ.get("S3_PUBLIC_BASE_URL", "").strip().rstrip("/")
+        self._client = boto3.client(
+            "s3",
+            region_name=os.environ.get("S3_REGION", "").strip() or None,
+            endpoint_url=os.environ.get("S3_ENDPOINT_URL", "").strip() or None,
+            aws_access_key_id=os.environ.get("S3_ACCESS_KEY_ID", "").strip() or None,
+            aws_secret_access_key=(
+                os.environ.get("S3_SECRET_ACCESS_KEY", "").strip() or None
+            ),
+            # SigV4 explicitly: several S3-compatible hosts reject the older
+            # signature, and the failure is a 403 that reads like bad
+            # credentials rather than like a protocol mismatch.
+            config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
+        )
+
+    @staticmethod
+    def key(name: str, *, private: bool) -> str:
+        prefix = STORAGE_PRIVATE_PREFIX if private else STORAGE_PUBLIC_PREFIX
+        return f"{prefix}/{name}"
+
+    def put(self, name: str, fileobj, *, content_type: str, private: bool) -> None:
+        fileobj.seek(0)
+        extra = {"ContentType": content_type}
+        if private:
+            # Belt as well as the bucket's own braces. A bucket-level block on
+            # public access is what actually protects these, but an object
+            # written without this would be one policy edit away from readable.
+            extra["CacheControl"] = "no-store"
+        else:
+            # A cover image is content-addressed by a random name we generated
+            # and is never rewritten in place, so it can be cached hard.
+            extra["CacheControl"] = "public, max-age=31536000, immutable"
+        self._client.upload_fileobj(
+            fileobj, self.bucket, self.key(name, private=private), ExtraArgs=extra
+        )
+
+    def open(self, name: str, *, private: bool):
+        try:
+            obj = self._client.get_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+        except Exception:
+            return None
+        return obj["Body"]
+
+    def path(self, name: str, *, private: bool) -> Optional[Path]:
+        return None  # there is no path; callers ask `exists` or `open`
+
+    def delete(self, name: str, *, private: bool) -> bool:
+        try:
+            self._client.delete_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+            return True
+        except Exception:
+            # A file we cannot remove must not abort an erasure half-way
+            # through — the database writes are what the person asked for.
+            logger.exception("Could not remove s3 object %s", name)
+            return False
+
+    def exists(self, name: str, *, private: bool) -> bool:
+        try:
+            self._client.head_object(
+                Bucket=self.bucket, Key=self.key(name, private=private)
+            )
+            return True
+        except Exception:
+            return False
+
+    def signed_url(self, name: str, *, private: bool = True) -> Optional[str]:
+        """A time-limited link to one object, or None if it cannot be signed."""
+        try:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": self.key(name, private=private)},
+                ExpiresIn=signed_url_ttl_seconds(),
+            )
+        except Exception:
+            logger.exception("Could not sign a URL for %s", name)
+            return None
+
+    def public_url(self, name: str) -> str:
+        """**Still `/uploads/<name>`, deliberately.**
+
+        The obvious move is to store the bucket URL on the record, and it is
+        wrong: `_our_image_path` validates that a case-study image is a path we
+        issued, `_absolute_media_url` builds the share card's `og:image`
+        against the backend, `_delete_upload` reads the name back out of the
+        URL, and `cover.js` hashes the id rather than the URL. Every one of
+        those depends on the shape. Keeping it means moving to S3 rewrites no
+        rows at all, and `GET /uploads/{name}` redirects to the object.
+        """
+        return f"{UPLOAD_URL_PREFIX}/{name}"
+
+    def object_url(self, name: str) -> str:
+        """Where `/uploads/{name}` sends a browser — a CDN if one is set."""
+        key = self.key(name, private=False)
+        if self.public_base:
+            return f"{self.public_base}/{key}"
+        endpoint = os.environ.get("S3_ENDPOINT_URL", "").strip().rstrip("/")
+        if endpoint:
+            return f"{endpoint}/{self.bucket}/{key}"
+        region = os.environ.get("S3_REGION", "").strip()
+        host = f"s3.{region}.amazonaws.com" if region else "s3.amazonaws.com"
+        return f"https://{self.bucket}.{host}/{key}"
+
+
+# ---------------------------------------------------------------------------
 # Uploads
 # ---------------------------------------------------------------------------
 
-# Where uploaded files land. Served back out at /uploads by the static mount.
-# NOTE: this is local disk. On an ephemeral container it does not survive a
-# restart — point UPLOAD_DIR at a mounted volume, or swap _store_upload for
-# object storage, before relying on it in production.
+# The local directories. They are still where a laptop and the test suite put
+# things, and they are what the migration script reads *from*.
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 UPLOAD_URL_PREFIX = "/uploads"
 
@@ -4096,16 +4577,46 @@ def sniff_image_type(head: bytes) -> Optional[tuple]:
     return None
 
 
-async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
-    """Validate and write an uploaded image. Returns (public_url, disk_path).
+async def _drain_to_spool(file: UploadFile, first: bytes, limit: int, over: str):
+    """Read an upload into a spooled buffer, refusing it the moment it is too big.
 
-    Reads in chunks so an oversized upload is rejected without first pulling the
-    whole thing into memory.
+    **One read path for both backends**, which is the point. The size check has
+    to happen while the bytes are arriving — pulling a 300MB draft fully into
+    memory to measure it is the failure mode this guards against — and S3's
+    `upload_fileobj` wants a seekable object. A `SpooledTemporaryFile` is both:
+    it holds small files in memory and spills a large one to disk, and the
+    check still fires on the chunk that crosses the line rather than at the end.
+
+    The caller closes it. On a refusal this closes it itself, because the
+    exception leaves the caller no object to close.
+    """
+    spool = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)
+    written = 0
+    chunk = first
+    try:
+        while chunk:
+            written += len(chunk)
+            if written > limit:
+                raise HTTPException(status_code=413, detail=over)
+            spool.write(chunk)
+            chunk = await file.read(64 * 1024)
+    except Exception:
+        spool.close()
+        raise
+    return spool, written
+
+
+async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
+    """Validate and store an uploaded image. Returns (public_url, stored_name).
+
+    The second element used to be a `Path` and is now the stored name: on S3
+    there is no path, and **no caller ever used it** — both call sites bind it
+    to `_path` and drop it. Returning the name instead means the one thing a
+    caller might plausibly want is the thing it gets.
     """
     limit = max_upload_bytes()
-    chunk_size = 64 * 1024
 
-    first = await file.read(chunk_size)
+    first = await file.read(64 * 1024)
     if not first:
         raise HTTPException(status_code=422, detail="That file is empty.")
 
@@ -4117,37 +4628,30 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
         )
     mime, ext = sniffed
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     # The client's filename is never trusted — the extension comes from the
     # bytes, and the stem is random so uploads can't be guessed or overwritten.
     filename = f"{prefix}-{_secrets.token_urlsafe(16)}{ext}"
-    path = UPLOAD_DIR / filename
 
-    written = 0
+    spool = None
     try:
-        with open(path, "wb") as out:
-            chunk = first
-            while chunk:
-                written += len(chunk)
-                if written > limit:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"Images must be under {limit // (1024 * 1024)}MB.",
-                    )
-                out.write(chunk)
-                chunk = await file.read(chunk_size)
+        spool, written = await _drain_to_spool(
+            file, first, limit, f"Images must be under {limit // (1024 * 1024)}MB."
+        )
+        STORAGE.put(filename, spool, content_type=mime, private=False)
     except HTTPException:
-        path.unlink(missing_ok=True)
         raise
-    except OSError as exc:
-        path.unlink(missing_ok=True)
+    except Exception as exc:
         logger.error("upload write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save that image.")
     finally:
+        if spool is not None:
+            spool.close()
         await file.close()
 
-    logger.info("stored upload %s (%s, %d bytes)", filename, mime, written)
-    return f"{UPLOAD_URL_PREFIX}/{filename}", path
+    logger.info(
+        "stored upload %s (%s, %d bytes, %s)", filename, mime, written, STORAGE.name
+    )
+    return STORAGE.public_url(filename), filename
 
 
 # ---------------------------------------------------------------------------
@@ -4162,6 +4666,105 @@ async def _store_upload(file: UploadFile, *, prefix: str) -> tuple:
 PRIVATE_UPLOAD_DIR = Path(
     os.environ.get("PRIVATE_UPLOAD_DIR", str(ROOT_DIR / "private_uploads"))
 )
+
+
+def _refuse_ephemeral_storage() -> list:
+    """Refuse to start on a production box that would write uploads to disk.
+
+    **This is the bug, not a precaution.** The host's filesystem is ephemeral,
+    so local storage in production is a guarantee that the next redeploy
+    destroys every verification document, profile photo, campaign cover and
+    unpublished draft, leaving the rows pointing at nothing. Nothing about
+    that is visible until somebody opens a file weeks later, which is why it
+    has to be a boot refusal and not a warning: a warning in a deploy log is a
+    line nobody reads until they are already looking for the cause.
+
+    The same shape `validate_environment` uses, and for the same reason —
+    every missing thing named at once, so it takes one deploy rather than
+    four. **Unset `APP_ENV` reads as production**, exactly as everywhere else
+    here: guessing the other way is how a real deployment ends up silently
+    writing to a disk that is about to disappear.
+
+    Returns the missing settings so a test can call it without ending the
+    process.
+    """
+    declared = os.environ.get("STORAGE_BACKEND", "").strip().lower()
+
+    if storage_backend_name() == "s3":
+        missing = [
+            (k, why) for k, why in _S3_REQUIRED if not os.environ.get(k, "").strip()
+        ]
+    elif declared == "local":
+        # **There has to be a way through, or somebody edits the check out.**
+        # It is explicit, it is loud, and `.env.example` says it is never right
+        # on a deployed box — which is a different thing from a check that
+        # cannot be satisfied, and the difference is whether the next person
+        # deletes the check or sets the variable.
+        if _is_production():
+            logger.warning(
+                "STORAGE_BACKEND=local on a production box: uploads are going to "
+                "local disk and will be lost on the next redeploy. This is only "
+                "right if that disk is a mounted volume."
+            )
+        return []
+    elif _is_production():
+        missing = [
+            (
+                "S3_BUCKET",
+                "uploads would go to local disk, which this host wipes on deploy",
+            )
+        ] + [(k, why) for k, why in _S3_REQUIRED[1:]]
+    else:
+        return []  # a laptop and the test suite are meant to use the disk
+
+    if missing:
+        lines = [
+            "",
+            "Refusing to start: file storage is not configured.",
+            "",
+            "  Uploads (verification documents, profile photos, campaign covers,",
+            "  drafts, story proofs) would be written to local disk, which does",
+            "  not survive a redeploy on this host.",
+            "",
+        ]
+        lines += [f"  {k:<22} {why}" for k, why in missing]
+        lines += [
+            "",
+            "  Set STORAGE_BACKEND=local to use the disk anyway — appropriate on a",
+            "  laptop, never on a deployed box. See DEPLOYMENT.md.",
+            "",
+        ]
+        print("\n".join(lines), file=sys.stderr, flush=True)
+    return missing
+
+
+def _build_storage():
+    """Pick the backend, once, at import.
+
+    A failure to construct the S3 client is fatal in the same way and for the
+    same reason a missing `JWT_SECRET` is: the alternative is a process that
+    starts cleanly, serves the marketing page, and loses the first document
+    somebody uploads.
+    """
+    if storage_backend_name() != "s3":
+        return LocalStorage()
+    try:
+        return S3Storage()
+    except ImportError:
+        print(
+            "\nRefusing to start: STORAGE_BACKEND is s3 but boto3 is not installed."
+            "\n  pip install -r requirements.txt\n",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise SystemExit(1)
+
+
+if _refuse_ephemeral_storage():
+    raise SystemExit(1)
+
+STORAGE = _build_storage()
+logger.info("file storage: %s (durable=%s)", STORAGE.name, STORAGE.durable)
 
 # The same sniffing rule as the profile-image upload — the extension comes from
 # the bytes, never from the client — plus PDF, because that is what a licence
@@ -4227,29 +4830,22 @@ def sniff_draft_type(head: bytes) -> Optional[tuple]:
 
 
 def _remove_private_upload(stored_name: Optional[str]) -> bool:
-    """Delete one private file from disk, by the name *we* gave it.
+    """Delete one private file, by the name *we* gave it.
 
     **Only the stored name, never a path from a record.** The stored name is
     ours and random — the uploader's filename is kept as a label and nowhere
-    near this — so there is no traversal to worry about, and the `.name` below
-    makes that structural rather than a promise.
+    near this — so there is no traversal to worry about, and `Path(...).name`
+    below makes that structural rather than a promise.
 
     Missing is success: erasure has to be idempotent, and a file already gone
-    is the state we wanted.
+    is the state we wanted. This is the erasure path, so a backend that cannot
+    remove the object logs and returns False rather than raising — the
+    database writes are what the person actually asked for, and a leftover
+    object is findable through the decision record.
     """
     if not stored_name:
         return False
-    try:
-        target = PRIVATE_UPLOAD_DIR / Path(str(stored_name)).name
-        target.unlink(missing_ok=True)
-        return True
-    except OSError:
-        # A file we cannot remove must not abort an erasure half-way through —
-        # the database writes are what the person actually asked for. The
-        # decision record names the collections, so a leftover file is
-        # findable rather than silent.
-        logger.exception("Could not remove private upload %s", stored_name)
-        return False
+    return STORAGE.delete(Path(str(stored_name)).name, private=True)
 
 
 async def _store_private_upload(
@@ -4283,37 +4879,34 @@ async def _store_private_upload(
         )
     mime, ext = sniffed
 
-    PRIVATE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     stored_name = f"{prefix}-{_secrets.token_urlsafe(20)}{ext}"
-    path = PRIVATE_UPLOAD_DIR / stored_name
 
-    written = 0
+    spool = None
     try:
-        with open(path, "wb") as out:
-            chunk = first
-            while chunk:
-                written += len(chunk)
-                if written > limit:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"{kind} must be under {limit // (1024 * 1024)}MB.",
-                    )
-                out.write(chunk)
-                chunk = await file.read(chunk_size)
+        spool, written = await _drain_to_spool(
+            file, first, limit, f"{kind} must be under {limit // (1024 * 1024)}MB."
+        )
+        STORAGE.put(stored_name, spool, content_type=mime, private=True)
     except HTTPException:
-        path.unlink(missing_ok=True)
         raise
-    except OSError as exc:
-        path.unlink(missing_ok=True)
+    except Exception as exc:
         logger.error("private upload write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not save that document.")
     finally:
+        if spool is not None:
+            spool.close()
         await file.close()
 
     # The original filename is kept only to show the uploader what they sent;
     # it never touches the filesystem, so a "../../etc/passwd" is just a label.
     original = (file.filename or "document")[:200]
-    logger.info("stored private upload %s (%s, %d bytes)", stored_name, mime, written)
+    logger.info(
+        "stored private upload %s (%s, %d bytes, %s)",
+        stored_name,
+        mime,
+        written,
+        STORAGE.name,
+    )
     return {
         "stored_name": stored_name,
         "original_name": original,
@@ -4336,32 +4929,80 @@ def _safe_download_name(original: Optional[str]) -> str:
     return cleaned[:120] or "file"
 
 
-def _private_upload_path(stored_name: Optional[str]) -> Optional[Path]:
-    """Resolve a stored document, refusing anything that escapes the directory.
+def _private_upload_exists(stored_name: Optional[str]) -> bool:
+    """Is there really a file behind this record?
 
-    The names are ours and random, but this is the one place a path is built
-    from stored data, so it checks rather than assumes.
+    The four routes that serve a private file all ask this first, because a
+    row whose bytes are gone under the retention policy is a **410 and not a
+    404** — "that couldn't be opened" would send somebody looking for a bug
+    where the honest answer is that the file was deliberately purged.
+
+    It replaces `_private_upload_path`, which answered the same question by
+    returning a `Path`. On S3 there is no path, and every caller only ever
+    used the result as a boolean and then handed it to `FileResponse`.
     """
-    if not stored_name or "/" in stored_name or "\\" in stored_name:
-        return None
-    if stored_name in ("", ".", ".."):
-        return None
-    path = (PRIVATE_UPLOAD_DIR / stored_name).resolve()
-    try:
-        path.relative_to(PRIVATE_UPLOAD_DIR.resolve())
-    except ValueError:
-        return None
-    return path if path.is_file() else None
+    if not stored_name or not isinstance(stored_name, str):
+        return False
+    if "/" in stored_name or "\\" in stored_name or stored_name in ("", ".", ".."):
+        return False
+    return STORAGE.exists(stored_name, private=True)
+
+
+def _private_file_response(
+    stored_name: str, *, original_name: Optional[str], mime: Optional[str], inline: bool
+):
+    """Hand one private file to a caller who has already been authorised.
+
+    **The permission check never moves.** Whichever backend is in use, the
+    route above this has already decided that this person may read this
+    record, and audited it. This function only answers *how* the bytes travel:
+
+    - **local** streams them, exactly as it always did;
+    - **S3** issues a time-limited signed URL and redirects to it, which is
+      what keeps the object itself private — nothing in the bucket is
+      readable without a signature.
+
+    One property does change on S3 and is worth stating rather than
+    discovering: for the length of `signed_url_ttl_seconds()` the signed link
+    *is* a bearer credential, so a URL lifted out of a network tab works until
+    it expires, where the streamed blob never sat at an address at all. The
+    TTL is two minutes by default for exactly that reason. If that trade is
+    not wanted, this function is the single place to make S3 stream too —
+    `STORAGE.open()` is already there and already used by the fallback below.
+    """
+    signed = STORAGE.signed_url(stored_name, private=True)
+    if signed:
+        # 307, not 302: the method and body are preserved, and a cached 301/302
+        # of a URL that expires in two minutes is a link that breaks later for
+        # reasons nobody can reproduce.
+        return RedirectResponse(
+            signed, status_code=307, headers={"Cache-Control": "no-store"}
+        )
+
+    path = STORAGE.path(stored_name, private=True)
+    disposition = "inline" if inline else "attachment"
+    filename = _safe_download_name(original_name)
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{filename}"',
+        "Cache-Control": "no-store",
+    }
+    if path:
+        return FileResponse(
+            path, media_type=mime or "application/octet-stream", headers=headers
+        )
+
+    body = STORAGE.open(stored_name, private=True)
+    if body is None:
+        raise HTTPException(status_code=410, detail="That file is no longer stored.")
+    return StreamingResponse(
+        body, media_type=mime or "application/octet-stream", headers=headers
+    )
 
 
 def _delete_private_upload(stored_name: Optional[str]) -> None:
-    path = _private_upload_path(stored_name)
-    if not path:
+    if not _private_upload_exists(stored_name):
         return
-    try:
-        path.unlink(missing_ok=True)
-    except OSError as exc:
-        logger.warning("could not delete private upload %s: %s", stored_name, exc)
+    STORAGE.delete(stored_name, private=True)
 
 
 def _delete_upload(public_url: Optional[str]) -> None:
@@ -4373,10 +5014,7 @@ def _delete_upload(public_url: Optional[str]) -> None:
     # Defend the directory boundary even though the name is generated by us.
     if "/" in name or "\\" in name or name in ("", ".", ".."):
         return
-    try:
-        (UPLOAD_DIR / name).unlink(missing_ok=True)
-    except OSError as exc:
-        logger.warning("could not delete upload %s: %s", name, exc)
+    STORAGE.delete(name, private=False)
 
 
 def platform_fee_percent() -> float:
@@ -5394,6 +6032,58 @@ async def logout(response: Response, user: dict = Depends(get_current_user)):
     return {"success": True}
 
 
+# The two the console can be in. A third value is not a theme, and an
+# unrecognised stored one reads as "never chosen" rather than travelling to a
+# client that would then write it onto `<html>`.
+CONSOLE_THEMES = ("dark", "light")
+
+
+def _console_theme(user: Optional[dict]) -> Optional[str]:
+    """The admin's stored console theme, or None if they have never chosen.
+
+    **None is a real answer and not a default.** It is the difference between
+    "follow this machine's operating system" and "they picked dark" — and only
+    the first should change when somebody switches their OS to light.
+    """
+    value = (user or {}).get("console_theme")
+    return value if value in CONSOLE_THEMES else None
+
+
+class ConsoleThemePayload(BaseModel):
+    """`null` clears the choice and hands the reader back to their OS.
+
+    That is worth being able to do: somebody who tried light and wants to stop
+    thinking about it should be able to say "whatever this machine says"
+    rather than having to pick the one that happens to match today.
+    """
+
+    theme: Optional[Literal["dark", "light"]] = None
+
+
+@auth_router.put("/me/console-theme")
+async def set_console_theme(
+    payload: ConsoleThemePayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Remember how this admin wants the console to look.
+
+    **On the auth router and guarded by `CONSOLE_ROLES`**, not on the admin
+    router: it is a fact about the person rather than about the platform, it
+    is written by the account menu rather than by any console screen, and
+    `weare_team` reads the same console and sits in front of it just as long.
+
+    Deliberately **not audited.** The log answers "what was decided about this
+    record"; somebody's own reading preference is neither a decision about
+    anybody nor something anyone will ask about later, and a line per toggle
+    is noise in the one place people go looking for who did what.
+    """
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"console_theme": payload.theme, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"console_theme": payload.theme}
+
+
 @auth_router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
     imp = user.get("_impersonation")
@@ -5405,6 +6095,13 @@ async def me(user: dict = Depends(get_current_user)):
         "phone": user.get("phone"),
         "status": user.get("status"),
         "created_at": _iso(user.get("created_at")),
+        # **The console's theme, against the account rather than the browser.**
+        # `localStorage` would mean an admin who works from a laptop and a
+        # desk machine sets it twice and loses it on a new browser; a
+        # preference about how somebody reads for hours is theirs, not their
+        # device's. `None` means they have never chosen, which is what tells
+        # the client to follow the operating system rather than guess.
+        "console_theme": _console_theme(user),
         # Present only during a view-as session. The frontend draws its banner
         # off this rather than off anything it stored when it started, so a
         # session resumed in a second tab — or one that expired while the tab
@@ -7890,6 +8587,9 @@ def _serialize_collab_row(
         # would otherwise learn about from a payment that never arrived.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
         "campaign_id": str(collab["campaign_id"]),
@@ -7927,7 +8627,12 @@ def _serialize_collab_row(
         # campaign reviews the cut first. The flag has to agree with what
         # `submit_collab_content` will actually accept.
         "can_submit_content": state == "content_submitted"
-        or state == ("draft_approved" if _requires_draft_approval(campaign) else "attended"),
+        or state
+        == (
+            "draft_approved"
+            if _requires_draft_approval(campaign)
+            else _ready_to_shoot_state(campaign)
+        ),
         # **The creator's two answers, decided here and not in the browser.**
         # Whether they may raise a dispute, take their own back, and answer a
         # takedown are the same rules the routes enforce; a card that works
@@ -8112,7 +8817,27 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
         }
     if state == "slot_booked":
         return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
-    if state == "attended":
+    # The delivery half, before the shared branch below: these three have no
+    # venue equivalent, and the last of them lands on `received`, which is the
+    # same "now shoot it" moment `attended` is.
+    if state == "address_confirmed":
+        return {
+            "action": "await_dispatch",
+            "label": "Your address is confirmed. Waiting for it to be sent.",
+            "waiting_on": "brand",
+        }
+    if state == "dispatched":
+        tracking = (collab.get("delivery") or {}).get("tracking_reference")
+        return {
+            "action": "confirm_received",
+            "label": (
+                f"On its way — tracking {tracking}. Tell us when it arrives."
+                if tracking
+                else "On its way. Tell us when it arrives."
+            ),
+            "waiting_on": "you",
+        }
+    if state in READY_TO_SHOOT_STATES:
         if _requires_draft_approval(campaign):
             # The whole point of the stage: nothing is published until it has
             # been looked at, so the ask here is a draft, not a live link.
@@ -8739,21 +9464,17 @@ async def read_own_content_proof(
 def _stream_content_proof(collab: dict, proof_id: str):
     """One proof's bytes. The only way they leave, for either audience."""
     match = next((p for p in _content_proofs(collab) if p.get("id") == proof_id), None)
-    path = _private_upload_path((match or {}).get("stored_name"))
-    if not path:
+    stored = (match or {}).get("stored_name")
+    if not _private_upload_exists(stored):
         raise HTTPException(status_code=404, detail="That screenshot isn't here.")
-    return FileResponse(
-        path,
-        media_type=match.get("mime") or "application/octet-stream",
-        headers={
-            # The same header the brand-document and draft routes carry: these
-            # bytes are somebody's private screen, and a copy in a shared
-            # browser cache is a copy nobody decided to make.
-            "Cache-Control": "no-store",
-            "Content-Disposition": (
-                f'inline; filename="{_safe_download_name(match.get("original_name"))}"'
-            ),
-        },
+    # `no-store` and the rest ride on `_private_file_response`: these bytes are
+    # somebody's private screen, and a copy in a shared browser cache is a copy
+    # nobody decided to make.
+    return _private_file_response(
+        stored,
+        original_name=match.get("original_name"),
+        mime=match.get("mime"),
+        inline=True,
     )
 
 
@@ -9054,6 +9775,221 @@ async def creator_self_check_in(
         raise HTTPException(status_code=409, detail=refusal)
 
     return await _check_in_collaboration(collab, campaign, user, method="self_qr")
+
+
+# ---------------------------------------------------------------------------
+# Delivery: the three steps that stand in for booking and turning up
+# ---------------------------------------------------------------------------
+#
+# On a brief with no venue there is no slot to take and nobody to mark
+# present, so the two states in the middle of the ladder are replaced by
+# three: the creator confirms where it goes, the runner sends it, the creator
+# says it landed. See `DELIVERY_STATES`.
+#
+# **Each one is written by the party who actually knows.** An address is the
+# creator's, an arrival is the creator's, and the send is the runner's — which
+# is why `advance_collaboration` refuses all three rather than offering an
+# admin a button that records something they cannot see.
+
+
+async def _delivery_collab_or_409(collab_id: str, user: dict, *, expected: str):
+    """The creator's own collaboration, on a delivery campaign, at `expected`.
+
+    A 404 for somebody else's, the same as every other creator route here, and
+    a **409 with the reason** for the right collaboration in the wrong state —
+    a creator who taps twice on a slow connection should read "you already
+    told us" rather than a bare refusal.
+    """
+    collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has a venue — book a slot rather than a delivery.",
+        )
+    state = collab.get("state")
+    if state != expected:
+        raise HTTPException(
+            status_code=409,
+            detail=_DELIVERY_WRONG_STATE.get(
+                (expected, state),
+                f"Your collaboration is {state} — there's nothing to do here.",
+            ),
+        )
+    return collab, campaign
+
+
+# The refusals worth spelling out, because "wrong state" is not something
+# anybody can act on. Keyed by (what we wanted, what it actually is).
+_DELIVERY_WRONG_STATE = {
+    ("commercial_agreed", "address_confirmed"): "You've already confirmed your address.",
+    ("commercial_agreed", "dispatched"): "This is already on its way to you.",
+    ("commercial_agreed", "received"): "You've already confirmed this arrived.",
+    ("dispatched", "address_confirmed"): "This hasn't been sent yet — we'll tell you when it is.",
+    ("dispatched", "commercial_agreed"): "Confirm your delivery address first.",
+    ("dispatched", "received"): "You've already confirmed this arrived.",
+}
+
+
+@creator_router.post("/collaborations/{collab_id}/confirm-address")
+async def creator_confirm_delivery_address(
+    collab_id: str,
+    payload: ConfirmDeliveryAddressPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Confirm where this delivery goes. `commercial_agreed → address_confirmed`.
+
+    **The address comes off the profile and is checked rather than typed.**
+    That is the whole reason this is a confirmation and not a form: the
+    profile address is the one the creator maintains, the one the map pin
+    belongs to, and the one an erasure removes. A copy taken here would
+    outlive all three.
+
+    A profile with no address is refused, and the refusal says which field —
+    "your delivery address is empty" is something somebody can go and fix.
+    """
+    collab, campaign = await _delivery_collab_or_409(
+        collab_id, user, expected="commercial_agreed"
+    )
+
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+    address = (profile.get("full_address") or "").strip()
+    if not address:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Add your delivery address to your profile first — that's "
+                    "where this will be sent."
+                ),
+                "code": "no_delivery_address",
+                "missing_fields": ["full_address"],
+            },
+        )
+
+    now = datetime.now(timezone.utc)
+    # **A snapshot of the address as confirmed, not the address itself.** What
+    # is stored is that they confirmed *at this moment*; the label a courier
+    # prints is read from the profile at dispatch, so a creator who moves
+    # house between confirming and sending is not posted to the old one.
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {
+            "$set": {
+                **_state_stamp("address_confirmed", now),
+                "delivery": {
+                    "address_confirmed_at": now,
+                    "address_note": (payload.note or "").strip() or None,
+                },
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were confirming. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_address_confirmed",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={"state": "address_confirmed"},
+        **_campaign_audit_context(campaign),
+    )
+    # Routed the way an application is: on a brief we run this reaches our
+    # team, on a brand-run one it reaches the brand. Whoever it is, they are
+    # the one who has to put it in a box.
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "delivery_address_confirmed",
+        title="An address is confirmed",
+        body=f"{user.get('name') or 'A creator'} confirmed their delivery address.",
+    )
+    return _delivery_block(updated)
+
+
+@creator_router.post("/collaborations/{collab_id}/confirm-received")
+async def creator_confirm_delivery_received(
+    collab_id: str,
+    payload: ConfirmDeliveryReceivedPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    """Confirm it arrived. `dispatched → received`.
+
+    This is the moment the content clock starts — `received` carries the
+    `content_submission` target the same way `attended` does — which is why it
+    is the creator's to write rather than something inferred from a tracking
+    API we do not have. A parcel marked delivered by a courier and never
+    actually received is exactly the case that would otherwise put somebody
+    overdue for work they cannot start.
+    """
+    collab, campaign = await _delivery_collab_or_409(
+        collab_id, user, expected="dispatched"
+    )
+
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "dispatched"},
+        {
+            "$set": {
+                **_state_stamp("received", now),
+                "delivery.received_at": now,
+                "delivery.received_note": (payload.note or "").strip() or None,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were confirming. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_received",
+        "collaboration",
+        collab["_id"],
+        before={"state": "dispatched"},
+        after={"state": "received"},
+        **_campaign_audit_context(campaign),
+    )
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "delivery_received",
+        title="A delivery arrived",
+        body=f"{user.get('name') or 'A creator'} confirmed their delivery arrived.",
+    )
+    return _delivery_block(updated)
+
+
+def _delivery_block(collab: Optional[dict]) -> Optional[dict]:
+    """What every surface reads about a delivery. The one serializer.
+
+    **No address and no map pin.** Both are on the creator's profile and both
+    are off `_BRAND_VISIBLE_CREATOR_FIELDS` for the reason a coordinate on
+    somebody's front door is their home address to five decimal places — and
+    this block rides on brand-facing payloads. What a brand needs is that the
+    address is confirmed, not what it says; the label is printed from the
+    profile by whoever packs the box, behind the staff role.
+    """
+    delivery = (collab or {}).get("delivery") or {}
+    if not delivery:
+        return None
+    return {
+        "address_confirmed_at": _iso(delivery.get("address_confirmed_at")),
+        "address_note": delivery.get("address_note"),
+        "dispatched_at": _iso(delivery.get("dispatched_at")),
+        "dispatched_by_name": delivery.get("dispatched_by_name"),
+        "tracking_reference": delivery.get("tracking_reference"),
+        "courier": delivery.get("courier"),
+        "dispatch_note": delivery.get("dispatch_note"),
+        "received_at": _iso(delivery.get("received_at")),
+        "received_note": delivery.get("received_note"),
+    }
 
 
 @creator_router.post("/collaborations/{collab_id}/withdraw")
@@ -11567,6 +12503,436 @@ async def close_brand_campaign(
     return {"id": campaign_id, "status": "closed", "applications_closed": len(stale)}
 
 
+# ---------------------------------------------------------------------------
+# Was this campaign worth it?
+# ---------------------------------------------------------------------------
+#
+# A brand could see what a campaign *did* — reach, engagement, a cost per
+# thousand — only on the printable report an admin generates and sends them.
+# Nothing in their own console answered the question, and the question they
+# actually ask at renewal is not about one campaign at all: it is "is this
+# better than the last one we ran".
+#
+# So there are two levels and the second is the one that matters. Per campaign:
+# what it reached, what it cost, what was promised against what arrived, what
+# is left of the budget, and who did the work. Across campaigns: the same
+# numbers rolled up, with **this campaign set against that brand's own
+# history**, because a brand comparing itself to itself is the only comparison
+# it can act on. An industry benchmark it cannot verify is a number it ignores.
+#
+# **No creator contact detail reaches any of it.** The per-creator table is
+# built by reading keys *off* `_brand_visible_creator` rather than off the
+# profile, so the exclusion is a property of the projection and not of the
+# eight column names somebody happened to pick — the same reasoning the
+# close-out export already holds, and the reason a leak test can plant values
+# and search the bytes.
+
+
+def _analytics_creator_row(visible: dict, performance: Optional[dict], cost) -> dict:
+    """One line of the per-creator table.
+
+    Takes the **already-projected** creator, never a raw profile. That is the
+    whole safety property: a phone number cannot appear here because there is
+    no phone number in the input, and a field added to `creator_profiles` next
+    month cannot leak because this cannot see it.
+    """
+    visible = visible or {}
+    performance = performance or {}
+    reach = performance.get("reach")
+    return {
+        "creator_id": visible.get("user_id") or visible.get("id"),
+        "reference": visible.get("reference"),
+        "name": visible.get("name"),
+        "instagram_handle": visible.get("instagram_handle"),
+        "profile_image_url": visible.get("profile_image_url"),
+        "follower_count": visible.get("follower_count"),
+        "reach": reach,
+        "impressions": performance.get("impressions"),
+        # **The post's rate, not the creator's profile rate.** The profile
+        # figure describes their account in general; this describes the work
+        # they did here, which is the only one a brand is entitled to draw a
+        # conclusion about from this campaign.
+        "engagement_rate": _engagement_rate_from(performance),
+        "engagements": _engagements(performance),
+        "cost": cost,
+        # What this creator cost per thousand people they reached — the
+        # comparison the table exists to make possible. `None` on barter and on
+        # anything unmeasured, never 0: a free collaboration did not cost
+        # nothing per thousand, it has no cost per thousand.
+        "cost_per_thousand_reach": (
+            round(cost / reach * 1000, 2) if cost and reach else None
+        ),
+        "measured": reach is not None,
+    }
+
+
+def _promised_versus_delivered(campaign: dict, collabs: list) -> dict:
+    """What the brief asked for across the whole campaign, against what arrived.
+
+    **Built on `_delivered_counts`, not on a second reading of the field.**
+    `delivered_items` is a `{type: n}` map with one reader already, and
+    `_delivery_shortfall` already answers this for a single collaboration —
+    what was missing was the campaign-level sum, which is the number a brand
+    asks about.
+
+    `counted: False` where the brief has no structured ask, rather than a row
+    of zeroes. The same line `_delivery_shortfall` draws: a campaign nobody
+    counted has no shortfall, and reporting one would be a claim about work
+    that was never measured.
+
+    The promise is per creator **taken on**, not per creator wanted. A brief
+    that asked for six people and filled four promised four people's worth of
+    content — holding it to six would report a shortfall against creators who
+    were never booked, which is an underfill and already has its own number.
+    """
+    asked = _deliverable_items(campaign)
+    if not asked:
+        return {"counted": False, "rows": [], "promised": None, "delivered": None}
+
+    taken = [c for c in collabs if c.get("state") in _FILLED_COLLAB_STATES]
+    per_creator = {i["type"]: int(i["quantity"]) for i in asked}
+
+    delivered: dict = {}
+    measured = 0
+    for collab in taken:
+        got = _delivered_counts(collab)
+        if got:
+            measured += 1
+        for kind, wanted in per_creator.items():
+            if got:
+                delivered[kind] = delivered.get(kind, 0) + min(wanted, got.get(kind, 0))
+            elif collab.get("state") in DELIVERED_COLLAB_STATES:
+                # Approved with nothing counted against it. The brief was
+                # accepted, so it was delivered — a partial acceptance is the
+                # only thing that records less, and it writes `delivered_items`.
+                delivered[kind] = delivered.get(kind, 0) + wanted
+
+    rows = [
+        {
+            "type": kind,
+            "label": DELIVERABLE_TYPES[kind],
+            "promised": wanted * len(taken),
+            "delivered": delivered.get(kind, 0),
+            "outstanding": max(0, wanted * len(taken) - delivered.get(kind, 0)),
+        }
+        for kind, wanted in per_creator.items()
+    ]
+    return {
+        "counted": True,
+        "rows": rows,
+        "promised": sum(r["promised"] for r in rows),
+        "delivered": sum(r["delivered"] for r in rows),
+        "creators_taken": len(taken),
+        # How much of this was actually counted rather than assumed from an
+        # approval. A brand reading "18 of 18 delivered" deserves to know
+        # whether anybody checked.
+        "creators_counted": measured,
+    }
+
+
+async def _campaign_analytics(campaign: dict, *, with_creators: bool = True) -> dict:
+    """Everything one brief did, for the brand that posted it."""
+    cid = campaign["_id"]
+    collabs = await db.collaborations.find({"campaign_id": cid}).to_list(length=500)
+    records = await _performance_for([cid])
+    paid_ids = await _paid_collab_ids([cid])
+    barter_ids = await _barter_collab_ids([cid])
+
+    payments = await db.payments.find(
+        {"collaboration_id": {"$in": [c["_id"] for c in collabs]}, "state": "paid"}
+    ).to_list(length=500)
+    spend = sum(float(p.get("creator_payout") or 0) for p in payments)
+    cost_by_collab = {p["collaboration_id"]: float(p.get("creator_payout") or 0) for p in payments}
+
+    totals = _rollup_performance(records, paid_ids, spend, barter_ids)
+    committed = await _committed_amounts_for([cid])
+    amount, counted = committed.get(cid, (0.0, 0))
+
+    creators = []
+    if with_creators:
+        by_collab = {r["collaboration_id"]: r for r in records}
+        # **Only creators the brand is entitled to see at all.** The shortlist
+        # gate is the same one the applicant board draws — a brand that never
+        # saw an application does not meet it here through a chart.
+        visible = [c for c in collabs if _brand_sees_collab(campaign, c)]
+        profiles = await db.creator_profiles.find(
+            {"user_id": {"$in": [c["creator_id"] for c in visible]}}
+        ).to_list(length=500)
+        by_creator = {p["user_id"]: p for p in profiles}
+        for collab in visible:
+            if collab.get("state") not in _FILLED_COLLAB_STATES:
+                continue
+            creators.append(
+                _analytics_creator_row(
+                    _brand_visible_creator(by_creator.get(collab["creator_id"])),
+                    by_collab.get(collab["_id"]),
+                    cost_by_collab.get(collab["_id"]),
+                )
+            )
+        # Best reach first: the table exists to answer "who performed", and
+        # unmeasured rows sort last rather than as zero — we did not measure
+        # them, which is not the same as them having reached nobody.
+        creators.sort(key=lambda r: (r["reach"] is None, -(r["reach"] or 0)))
+
+    return {
+        "campaign": {
+            "id": str(cid),
+            "reference": _reference_of(campaign),
+            "title": campaign.get("title"),
+            "status": campaign.get("status"),
+            "category": campaign.get("category"),
+            "city": campaign.get("city"),
+            "campaign_type": campaign.get("campaign_type"),
+            "compensation_type": _compensation_type(campaign),
+            "created_at": _iso(campaign.get("created_at")),
+            "creators_needed": campaign.get("creators_needed"),
+        },
+        "totals": totals,
+        "budget": _budget_of(campaign, amount, counted),
+        "deliverables": _promised_versus_delivered(campaign, collabs),
+        "creators": creators,
+    }
+
+
+def _brand_rollup(campaign_analytics: list) -> dict:
+    """The brand's own history, in one line. Pure.
+
+    **The average cost per thousand is computed from the totals, not averaged
+    from the per-campaign figures.** Those two differ whenever the campaigns
+    differ in size, and the mean of the rates lets one small brief with a
+    freak number move the headline — the same arithmetic, and the same reason,
+    as `_rollup_performance`'s engagement rate.
+    """
+    spend = sum(a["totals"]["total_spend"] for a in campaign_analytics)
+    reach = sum(a["totals"]["total_reach"] for a in campaign_analytics)
+    paid_reach = sum(a["totals"]["paid_reach"] for a in campaign_analytics)
+    engagements = sum(a["totals"]["total_engagements"] for a in campaign_analytics)
+    return {
+        "campaigns": len(campaign_analytics),
+        "total_spend": round(spend, 2),
+        "total_reach": reach,
+        "total_engagements": engagements,
+        "engagement_rate": round(engagements / reach * 100, 2) if reach else None,
+        "cost_per_thousand_reach": (
+            round(spend / paid_reach * 1000, 2) if paid_reach and spend else None
+        ),
+        "paid_reach": paid_reach,
+        "creators_delivered": sum(
+            a["totals"]["creators_delivered"] for a in campaign_analytics
+        ),
+    }
+
+
+def _against_their_own_history(this: dict, others: list) -> Optional[dict]:
+    """This campaign set against the brand's previous ones.
+
+    **The comparison that makes a second campaign feel obvious**, which is why
+    it is a first-class block rather than a line at the bottom of a table. A
+    brand cannot check an industry benchmark; it can check its own last three
+    briefs, and that is the number it will actually act on.
+
+    `None` on a first campaign — deliberately, and said rather than shown as
+    0%. "No change" is a claim about a comparison that does not exist.
+    """
+    if not others:
+        return None
+    baseline = _brand_rollup(others)
+
+    def _delta(now, before, *, lower_is_better=False):
+        if now is None or not before:
+            return None
+        change = round((now - before) / before * 100, 1)
+        return {
+            "value": now,
+            "previous": before,
+            "change_percent": change,
+            # Said here, once, rather than at three call sites: a cost per
+            # thousand going *down* is the good direction, and a chart that
+            # colours every fall red would be telling a brand its best
+            # campaign went badly.
+            "better": (change < 0) if lower_is_better else (change > 0),
+        }
+
+    return {
+        "campaigns_before": baseline["campaigns"],
+        "reach": _delta(this["totals"]["total_reach"], baseline["total_reach"]),
+        "engagement_rate": _delta(
+            this["totals"]["engagement_rate"], baseline["engagement_rate"]
+        ),
+        "cost_per_thousand_reach": _delta(
+            this["totals"]["cost_per_thousand_reach"],
+            baseline["cost_per_thousand_reach"],
+            lower_is_better=True,
+        ),
+    }
+
+
+@brand_router.get("/campaigns/{campaign_id}/analytics")
+async def brand_campaign_analytics(
+    campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """One brief: what it reached, what it cost, and who did the work.
+
+    Ownership first, as everywhere — another brand's campaign is a 404 rather
+    than a 403, or the refusal says which ids exist.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    analytics = await _campaign_analytics(campaign)
+
+    # The rest of this brand's history, so the comparison is right here rather
+    # than a page away. Closed and in-progress only: a draft has nothing to
+    # compare with and would drag the baseline toward zero.
+    others = await db.campaigns.find(
+        {
+            "brand_id": campaign.get("brand_id"),
+            "_id": {"$ne": campaign["_id"]},
+            "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES},
+        }
+    ).to_list(length=200)
+    history = [await _campaign_analytics(c, with_creators=False) for c in others]
+
+    return {
+        **analytics,
+        "versus_their_own_history": _against_their_own_history(analytics, history),
+    }
+
+
+# What counts as a campaign worth comparing against. A draft never ran and a
+# brief still taking applications has not finished doing whatever it will do.
+_COMPARABLE_CAMPAIGN_STATUSES = ("in_progress", "completed", "closed")
+
+
+@brand_router.get("/analytics")
+async def brand_analytics(
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    brand_id: Optional[str] = None,
+    days: Optional[int] = None,
+):
+    """Everything this brand has run, rolled up, newest campaign first.
+
+    `brand_id` is for an admin looking at somebody's numbers; a brand manager's
+    own scope comes from `_brand_scope`, which is how every brand-scoped query
+    here finds its brand — reaching for `user["_id"]` is only correct while the
+    login and the brand are the same row.
+
+    **`days` is absent by default, and that is not the admin panel's default
+    with a different number.** This section is a brand's whole history — the
+    argument for a second campaign is the first one — and a window applied
+    without being asked for would hide the campaign a brand is proudest of the
+    day it turned six months old. Narrowing is theirs to choose.
+    """
+    if days is not None and days not in ANALYTICS_WINDOWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days must be one of: {', '.join(str(d) for d in ANALYTICS_WINDOWS)}",
+        )
+
+    scope = _brand_scope(user)
+    if brand_id and is_all_access(user):
+        try:
+            scope = ObjectId(brand_id)
+        except Exception:
+            raise HTTPException(status_code=404, detail="Brand not found")
+
+    query = {"brand_id": scope, "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES}}
+    if days is not None:
+        query["created_at"] = {"$gte": _days_ago(days)}
+    campaigns = await db.campaigns.find(query).sort("created_at", -1).to_list(length=200)
+    per_campaign = [await _campaign_analytics(c, with_creators=False) for c in campaigns]
+
+    return {
+        "rollup": _brand_rollup(per_campaign),
+        "campaigns": per_campaign,
+        # The most recent brief against everything before it, so the headline
+        # comparison is on the dashboard rather than only on one campaign page.
+        "latest_versus_history": (
+            _against_their_own_history(per_campaign[0], per_campaign[1:])
+            if per_campaign
+            else None
+        ),
+        "window_days": days,
+        "generated_at": _iso(datetime.now(timezone.utc)),
+    }
+
+
+@brand_router.get("/analytics/export")
+async def export_brand_analytics(
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    campaign_id: Optional[str] = None,
+    days: Optional[int] = None,
+):
+    """The same numbers as a CSV, under the same rules.
+
+    **One builder for both shapes**, because a spreadsheet that disagreed with
+    the screen it was downloaded from is worse than no spreadsheet. The
+    per-creator rows come from `_campaign_analytics`, which means they come
+    from `_brand_visible_creator`, which means the PII exclusion is the
+    projection's property here exactly as it is on screen.
+    """
+    if campaign_id:
+        campaign = await _own_campaign_or_404(campaign_id, user)
+        data = await _campaign_analytics(campaign)
+        headers = [
+            "Creator", "Reference", "Instagram", "Followers", "Reach",
+            "Impressions", "Engagements", "Engagement rate %", "Cost",
+            "Cost per 1,000 reach",
+        ]
+        rows = [
+            [
+                r["name"] or "", r["reference"] or "",
+                f"@{r['instagram_handle']}" if r.get("instagram_handle") else "",
+                r["follower_count"] if r["follower_count"] is not None else "",
+                r["reach"] if r["reach"] is not None else "",
+                r["impressions"] if r["impressions"] is not None else "",
+                r["engagements"] if r["engagements"] is not None else "",
+                r["engagement_rate"] if r["engagement_rate"] is not None else "",
+                r["cost"] if r["cost"] is not None else "",
+                r["cost_per_thousand_reach"] if r["cost_per_thousand_reach"] is not None else "",
+            ]
+            for r in data["creators"]
+        ]
+        name = f"{_reference_of(campaign) or 'campaign'}-analytics"
+        await audit(
+            user, "campaign.analytics_export", "campaign", campaign["_id"],
+            after={"rows": len(rows), "includes_contact_details": False},
+            **_campaign_audit_context(campaign),
+        )
+    else:
+        # The same window the screen is showing, for the same reason the admin
+        # export carries one: a file downloaded under a heading that says one
+        # thing and holding another is the disagreement this endpoint exists to
+        # prevent.
+        payload = await brand_analytics(user, days=days)
+        headers = [
+            "Campaign", "Reference", "Status", "Category", "City", "Created",
+            "Creators delivered", "Reach", "Engagements", "Engagement rate %",
+            "Spend", "Cost per 1,000 reach",
+        ]
+        rows = [
+            [
+                a["campaign"]["title"] or "", a["campaign"]["reference"] or "",
+                a["campaign"]["status"] or "", a["campaign"]["category"] or "",
+                a["campaign"]["city"] or "",
+                (a["campaign"]["created_at"] or "")[:10],
+                a["totals"]["creators_delivered"], a["totals"]["total_reach"],
+                a["totals"]["total_engagements"],
+                a["totals"]["engagement_rate"] if a["totals"]["engagement_rate"] is not None else "",
+                a["totals"]["total_spend"],
+                a["totals"]["cost_per_thousand_reach"]
+                if a["totals"]["cost_per_thousand_reach"] is not None
+                else "",
+            ]
+            for a in payload["campaigns"]
+        ]
+        name = "campaign-analytics"
+        await audit(
+            user, "brand.analytics_export", "brand_profile", _brand_scope(user),
+            after={"rows": len(rows), "includes_contact_details": False},
+        )
+
+    return _csv_response(rows, headers, name)
+
+
 @brand_router.get("/campaigns/{campaign_id}/export")
 async def export_brand_campaign(
     campaign_id: str,
@@ -11833,6 +13199,9 @@ def _serialize_applicant(
         "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -14431,6 +15800,42 @@ api_router.include_router(brand_router)
 
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
+def _ladder_for_standing(current: str, campaign: Optional[dict]) -> list:
+    """The ladder to read, for a collaboration *standing* on `current`.
+
+    **Where somebody is standing beats what the campaign now says.** A draft
+    toggle flipped mid-flight, or a campaign type an admin corrected after the
+    fact, must not strand a live collaboration on a state its own ladder no
+    longer contains — there would be no next step and no previous one, which
+    is a row nobody can move and nobody can see why.
+
+    So a state off the computed ladder puts **its own group** back, and only
+    its own. Falling back to the whole order would be the obvious version and
+    is wrong: a delivery collaboration on a campaign that does not gate drafts
+    would then be told the step after `received` is `draft_submitted`, a state
+    nothing on that campaign can ever leave. One rescue must not strand
+    somebody somewhere else.
+
+    Written once here because the draft gate and the delivery split need the
+    identical promise, and writing it twice is how the two come to disagree.
+    """
+    ladder = _collab_ladder(campaign)
+    if current in ladder or current not in COLLAB_STATE_ORDER:
+        return ladder
+    restore = next(
+        (
+            group
+            for group in (DRAFT_REVIEW_STATES, DELIVERY_STATES, VENUE_ATTENDANCE_STATES)
+            if current in group
+        ),
+        (),
+    )
+    keep = set(ladder) | set(restore)
+    # Rebuilt from COLLAB_STATE_ORDER rather than spliced, so the result is in
+    # the canonical order whatever was put back.
+    return [state for state in COLLAB_STATE_ORDER if state in keep]
+
+
 def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optional[str]:
     """The next step on this campaign's happy path, or None at the end.
 
@@ -14439,11 +15844,7 @@ def _next_collab_state(current: str, campaign: Optional[dict] = None) -> Optiona
     always did. A caller without the campaign in hand gets the draft-free
     ladder — the safe reading for everything written before the field existed.
     """
-    ladder = _collab_ladder(campaign)
-    if current in DRAFT_REVIEW_STATES and current not in ladder:
-        # A collaboration standing on a draft state is on the draft ladder,
-        # whatever the caller failed to pass.
-        ladder = COLLAB_STATE_ORDER
+    ladder = _ladder_for_standing(current, campaign)
     try:
         idx = ladder.index(current)
     except ValueError:
@@ -14460,9 +15861,7 @@ def _previous_collab_state(current: str, campaign: Optional[dict] = None) -> Opt
     campaign that doesn't review drafts must not land on `draft_approved`, a
     state nothing on that campaign can ever leave.
     """
-    ladder = _collab_ladder(campaign)
-    if current in DRAFT_REVIEW_STATES and current not in ladder:
-        ladder = COLLAB_STATE_ORDER
+    ladder = _ladder_for_standing(current, campaign)
     try:
         idx = ladder.index(current)
     except ValueError:
@@ -14484,7 +15883,11 @@ _DRAFT_OWNED_TRANSITIONS = set(DRAFT_REVIEW_STATES)
 
 # And the one only the creator may take. Booking is choosing when your own day
 # goes; an admin doing it for somebody is an appointment they find out about.
-_CREATOR_OWNED_TRANSITIONS = {"slot_booked"}
+# Nobody books on a creator's behalf, and nobody confirms on their behalf
+# either: an address is theirs to check and an arrival is theirs to report.
+# An admin writing `received` would be recording that a parcel turned up
+# somewhere they cannot see.
+_CREATOR_OWNED_TRANSITIONS = {"slot_booked", "address_confirmed", "received"}
 
 
 # Who has to do something next, and what. One table, read by every surface —
@@ -14503,6 +15906,21 @@ _NEXT_ACTION = {
     "commercial_agreed": ("creator", "Book a slot", "The creator picks their place."),
     "slot_booked": ("creator", "Turn up", "Attendance is marked on the day."),
     "attended": ("creator", "Submit the content", "Links to what they published."),
+    # The delivery half. The owner column is what makes these worth having
+    # separately: confirming an address and confirming arrival are both the
+    # creator's, and the send in between is the runner's, so a screen can say
+    # whose move it is rather than "waiting".
+    "address_confirmed": (
+        "brand",
+        "Send it",
+        "The address is confirmed — dispatch it and record the tracking reference.",
+    ),
+    "dispatched": (
+        "creator",
+        "Confirm it arrived",
+        "On its way. Tell us when it lands so the clock for content starts.",
+    ),
+    "received": ("creator", "Submit the content", "Links to what they published."),
     # The reviewer here follows execution_owner, like content review does —
     # "brand" is the owner vocabulary for "not us and not the creator".
     "draft_submitted": ("brand", "Review the draft", "Approve it, or send it back with a note, before anything goes live."),
@@ -14529,6 +15947,13 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
     if state == "commercial_agreed" and (campaign or {}).get("campaign_type") == "personal_table":
         label = "Pick a time"
         detail = "The creator chooses a time inside the campaign's window."
+
+    # **On a delivery brief there is no slot to book at all.** Telling a
+    # creator to pick their place when the thing is being posted to them is
+    # the instruction that made this type unusable before it existed.
+    if state == "commercial_agreed" and _is_delivery(campaign):
+        label = "Confirm your address"
+        detail = "Check the delivery address on your profile, then confirm it."
 
     # On a campaign that reviews drafts, what follows attendance is a draft,
     # not a live link. The state is the same; the instruction is not, and the
@@ -14624,6 +16049,28 @@ PROCESS_STAGES = (
 )
 PROCESS_STAGE_KEYS = tuple(k for k, _ in PROCESS_STAGES)
 
+# **The same eight stages, two words apart, on a delivery brief.** "Scheduled"
+# and "Attended" are both plainly false about a parcel — nothing was scheduled
+# and nobody attended — and a creator reading "Attended" on a campaign where a
+# bottle was posted to them has been told the screen does not know what kind of
+# work this is.
+#
+# It is a relabelling and deliberately not a ninth and tenth stage. The journey
+# is the same journey: something is arranged, the creator comes to have the
+# thing, they shoot it, it is reviewed, it goes live, they are paid. Splitting
+# the stepper by type would mean every screen that draws it learns the
+# difference, and `_stage_of` would stop being one reader.
+_DELIVERY_STAGE_LABELS = {"scheduled": "Dispatch", "attended": "Delivered"}
+
+
+def _process_stages(campaign: Optional[dict]) -> tuple:
+    """The eight stages, named for the kind of campaign this is. One reader."""
+    if not _is_delivery(campaign):
+        return PROCESS_STAGES
+    return tuple(
+        (key, _DELIVERY_STAGE_LABELS.get(key, label)) for key, label in PROCESS_STAGES
+    )
+
 # Which stage each internal state stands in, on a campaign that gates drafts.
 _STAGE_BY_STATE_WITH_DRAFT = {
     "applied": "submitted",
@@ -14634,6 +16081,13 @@ _STAGE_BY_STATE_WITH_DRAFT = {
     "commercial_agreed": "negotiated",
     "slot_booked": "scheduled",
     "attended": "attended",
+    # Delivery lands on the same two stages rather than growing a ninth and
+    # tenth box. The *words* change (see `_process_stages`) because
+    # "Scheduled" and "Attended" are both false about a parcel; the shape of
+    # the journey does not, because it really is the same journey.
+    "address_confirmed": "scheduled",
+    "dispatched": "scheduled",
+    "received": "attended",
     "draft_submitted": "content_review",
     "draft_approved": "content_review",
     "content_submitted": "content_delivery",
@@ -14680,6 +16134,15 @@ _PROCESS_ACTION = {
     "slot_booked": ("creator", "Turn up on the day", "Booked — waiting for the day"),
     "attended": ("creator", "Publish and send the link", "Waiting for the creator's content"),
     "attended_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
+    # The delivery half. Both voices are written out rather than reusing the
+    # venue ones, because the *wait* reads differently from the outside: "on
+    # its way" is a fact about a courier, and a brand reading "waiting for the
+    # creator" about a parcel it has not posted yet would chase the wrong
+    # person.
+    "address_confirmed": ("runner", "Send it and record the tracking", "Waiting to be sent"),
+    "dispatched": ("creator", "Confirm it arrived", "On its way to the creator"),
+    "received": ("creator", "Publish and send the link", "Waiting for the creator's content"),
+    "received_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
     "draft_submitted": ("brand", "Review the draft", "The draft is being reviewed"),
     "draft_approved": ("creator", "Publish and send the live link", "Waiting for the creator to publish"),
     "content_submitted": ("brand", "Approve it, or ask for changes", "The content is being reviewed"),
@@ -14758,6 +16221,11 @@ def _process_flow(
         action_key = "attended_draft"
     if state == "slot_booked" and not _slot_confirmed(collab):
         action_key = "slot_pending"
+    # A delivery brief reaches `received` where a venue one reaches
+    # `attended`, and with a draft gate the same split applies: what the
+    # creator does next is make the draft, not publish.
+    if state == "received" and _requires_draft_approval(campaign):
+        action_key = "received_draft"
 
     owner, mine, theirs = _PROCESS_ACTION.get(action_key, (None, None, None))
     owner = _process_owner(owner, campaign)
@@ -14771,7 +16239,7 @@ def _process_flow(
     # stepper rather than replacing it, because the work still has a place on
     # the line.
     changes_note = None
-    if state == "attended":
+    if state in READY_TO_SHOOT_STATES:
         changes_note = (collab.get("draft_revision_note") or collab.get("revision_note") or "").strip() or None
 
     index = PROCESS_STAGE_KEYS.index(stage_key) if stage_key in PROCESS_STAGE_KEYS else -1
@@ -14782,7 +16250,7 @@ def _process_flow(
             "done": index >= 0 and i < index,
             "current": i == index,
         }
-        for i, (key, label_) in enumerate(PROCESS_STAGES)
+        for i, (key, label_) in enumerate(_process_stages(campaign))
     ]
 
     return {
@@ -15700,6 +17168,62 @@ async def set_brand_commission(
         # carries its own — the answer the person who just typed it wants.
         "effective": _resolve_commission(None, {"commission_percent": after}),
     }
+
+
+class DeliveryCostPayload(BaseModel):
+    """What running this brief actually cost us.
+
+    `null` clears it, which is not the same as `0`: zero is a claim that it
+    cost nothing to run, and absent is "nobody has worked it out". The margin
+    table reads the difference — see `_campaign_margin`, where an absent cost
+    makes `complete` false and the figure is reported as revenue rather than
+    dressed up as margin.
+    """
+
+    delivery_cost: Optional[float] = Field(default=None, ge=0)
+    reason: Optional[str] = Field(default=None, max_length=400)
+
+
+@admin_router.put("/campaigns/{campaign_id}/delivery-cost")
+async def set_campaign_delivery_cost(
+    campaign_id: str,
+    payload: DeliveryCostPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """Record what a brief cost to run, so its margin is a margin.
+
+    **Recorded, never inferred.** Nothing in this system knows what a
+    manager's evening at a venue cost, what the samples cost to post, or
+    whose time went into casting — and a formula that guessed would put a
+    guess in a board pack. So the margin metric reports revenue until
+    somebody types the other half, and says which it is doing.
+
+    `CONSOLE_ROLES` and through `_admin_campaign_or_404`, the same door and
+    the same scope as the per-campaign commission beside it: what one brief
+    cost is scoped operational work, where the brand's standing rate is the
+    relationship and stays admin-only.
+    """
+    campaign = await _admin_campaign_or_404(campaign_id, user)
+    before = campaign.get("delivery_cost")
+    after = None if payload.delivery_cost is None else round(float(payload.delivery_cost), 2)
+
+    await db.campaigns.update_one(
+        {"_id": campaign["_id"]},
+        {"$set": {"delivery_cost": after, "updated_at": datetime.now(timezone.utc)}},
+    )
+    # **Old value and new**, like the commission change: "set to 40,000" cannot
+    # say whether that was a correction or a first estimate.
+    await audit(
+        user,
+        "campaign.delivery_cost",
+        "campaign",
+        campaign["_id"],
+        before={"delivery_cost": before},
+        after={"delivery_cost": after},
+        note=(payload.reason or "").strip() or None,
+        **_campaign_audit_context(campaign),
+    )
+    return {"delivery_cost": after}
 
 
 @admin_router.put("/campaigns/{campaign_id}/commission")
@@ -18636,6 +20160,215 @@ async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q,
     return rows, headers
 
 
+# ---------------------------------------------------------------------------
+# The four numbers the business is actually judged on
+# ---------------------------------------------------------------------------
+#
+# `admin_intelligence` above draws four shapes, and none of them is one of
+# these. It answers "what is happening" — briefs posted per week, how full they
+# got, how many brands have come back at all, how many creators are quiet. That
+# is a dashboard.
+#
+# These four answer "is this working", and each is a ratio with a denominator
+# somebody would argue about, which is exactly why they are **pure functions
+# taking counts** rather than aggregations with the arithmetic buried inside
+# them. `_refund_reckoning` and `_weare_run_reason` are the same arrangement,
+# for the same reason: a rule you can read in one screen and test without a
+# database is a rule people trust enough to act on.
+
+# A brand that posts again inside this window came back; one that posts on day
+# 91 came back too, but not in a way this quarter can claim. Ninety days
+# because that is roughly a marketing cycle here — a café doing something
+# monthly and a launch brand doing something seasonal both fit inside it.
+REPEAT_WINDOW_DAYS = 90
+
+# What "filled on time" means. A brief that reached its headcount the week
+# after the shoot did not fill: the creators it needed were needed on the day.
+FILL_ON_TIME = "by the campaign's own start date"
+
+
+def _repeat_rate(cohort: list) -> dict:
+    """**The most important number here: did brands come back?**
+
+    Takes a list of `(first_post, next_post_or_None)` pairs — the arithmetic
+    and the query are separated so the rule can be read without either.
+
+    Three things this is careful about, all of which make the number smaller
+    and all of which make it true:
+
+    - **A brand that has not had 90 days yet is not in the denominator.**
+      Somebody who posted their first brief last Tuesday cannot have repeated,
+      and counting them as a failure drags the rate down by however fast we
+      are acquiring — so a good month would *lower* the number. That is the
+      classic way this metric lies.
+    - **The window runs from their first brief**, not from the start of the
+      period, so it is the same 90 days for everybody.
+    - `eligible` travels with the answer, because a 50% repeat rate over four
+      brands is not the same fact as 50% over four hundred.
+    """
+    eligible = [pair for pair in cohort if pair[0] is not None and pair[2]]
+    repeated = [pair for pair in eligible if pair[1] is not None]
+    return {
+        "eligible": len(eligible),
+        "repeated": len(repeated),
+        # None rather than 0 with nobody in the denominator: "0% came back" and
+        # "nobody has had the chance yet" are different facts, and only one of
+        # them is bad news.
+        "rate": round(len(repeated) / len(eligible) * 100, 1) if eligible else None,
+        "window_days": REPEAT_WINDOW_DAYS,
+    }
+
+
+def _fill_outcome(needed: Optional[int], filled: int, on_time: bool) -> Optional[str]:
+    """What happened to one brief: filled, underfilled, or late.
+
+    `None` for a brief with no headcount to hit — a campaign that never said
+    how many people it wanted cannot have missed, and scoring it as a failure
+    would punish a brief for a field it was not asked to fill.
+
+    **Late is its own outcome and not a kind of underfill.** A brief that got
+    its six creators a fortnight after the shoot is a different operational
+    story from one that only ever found four, and rolling them together hides
+    which of the two is happening.
+    """
+    if not needed or needed <= 0:
+        return None
+    if filled < needed:
+        return "underfilled"
+    return "filled" if on_time else "late"
+
+
+def _fill_rate(outcomes: list) -> dict:
+    """The share of briefs that filled to target on time."""
+    counted = [o for o in outcomes if o]
+    filled = sum(1 for o in counted if o == "filled")
+    return {
+        "campaigns": len(counted),
+        "filled": filled,
+        "late": sum(1 for o in counted if o == "late"),
+        "underfilled": sum(1 for o in counted if o == "underfilled"),
+        "rate": round(filled / len(counted) * 100, 1) if counted else None,
+    }
+
+
+def _campaign_margin(
+    campaign_fee: Optional[float],
+    commission: Optional[float],
+    delivery_cost: Optional[float],
+) -> dict:
+    """What we made on one brief, and whether that is a real number.
+
+    Revenue is the campaign fee plus the commission — **the creator's own fee
+    is neither**, because it passes through: the brand pays it, the creator
+    receives it, and the margin arrangement this platform sells on is precisely
+    that we do not take a cut of it (see `COMMISSION_TERMS`). Putting it in
+    either side of this would report a margin the business does not earn.
+
+    `delivery_cost` is what running the brief cost us and is **recorded, never
+    inferred**. Nothing in this system knows what a manager's evening at a
+    venue cost, and a guess here would be a guess in a board pack.
+
+    So `complete` is the load-bearing field: a margin computed with no recorded
+    cost is a gross figure wearing a net figure's name, and a table that mixed
+    the two would overstate the business.
+    """
+    revenue = round(float(campaign_fee or 0) + float(commission or 0), 2)
+    has_cost = delivery_cost is not None
+    cost = round(float(delivery_cost or 0), 2)
+    return {
+        "revenue": revenue,
+        "campaign_fee": round(float(campaign_fee or 0), 2),
+        "commission": round(float(commission or 0), 2),
+        "delivery_cost": cost if has_cost else None,
+        "margin": round(revenue - cost, 2),
+        # Whether the cost side was actually recorded. False means this is
+        # revenue, not margin, and every surface says so rather than printing
+        # a confident number.
+        "complete": has_cost,
+        "margin_percent": (
+            round((revenue - cost) / revenue * 100, 1) if revenue and has_cost else None
+        ),
+    }
+
+
+def _first_payment_rate(creators: list) -> dict:
+    """How many creators ever get paid, and how long it takes.
+
+    Takes `(verified_at, first_paid_at)` pairs. The question behind it is
+    supply retention: a creator who signs up, is checked, and never earns
+    anything is somebody we spent effort on who will not be here next quarter.
+
+    **The median, not the mean.** One creator who took eleven months because
+    they went travelling should not move the headline, and with the small
+    numbers a young marketplace has, the mean is mostly noise.
+    """
+    verified = [c for c in creators if c[0] is not None]
+    paid = [c for c in verified if c[1] is not None]
+    days = sorted(
+        max(0, (c[1] - c[0]).days) for c in paid if isinstance(c[1], datetime)
+    )
+    median = None
+    if days:
+        mid = len(days) // 2
+        median = days[mid] if len(days) % 2 else round((days[mid - 1] + days[mid]) / 2, 1)
+    return {
+        "verified": len(verified),
+        "paid": len(paid),
+        "rate": round(len(paid) / len(verified) * 100, 1) if verified else None,
+        "median_days_to_first_payment": median,
+        # The spread, because "median 12 days" over a range of 2-160 is a
+        # different operation from the same median over 9-15.
+        "fastest_days": days[0] if days else None,
+        "slowest_days": days[-1] if days else None,
+    }
+
+
+def _supply_and_demand(creator_counts: dict, campaign_counts: dict) -> dict:
+    """Where the creators are against where the briefs are.
+
+    **The two lists at the end are the whole point.** A table of counts is
+    something somebody reads and nods at; "seven categories where we have
+    creators and no briefs" is a list a salesperson can work, and "four briefs
+    we could not fill in Pune" is a list a supply person can work. A dashboard
+    that stops at the counts makes both of them do the join by eye.
+
+    Keys are `(category, city)` pairs. `unfilled` is passed in rather than
+    derived here, because whether a brief failed to fill is `_fill_outcome`'s
+    answer and there must not be a second one.
+    """
+    keys = sorted(set(creator_counts) | set(campaign_counts))
+    rows = []
+    for key in keys:
+        creators = creator_counts.get(key, 0)
+        campaigns = campaign_counts.get(key, 0)
+        rows.append(
+            {
+                "category": key[0],
+                "city": key[1],
+                "creators": creators,
+                "campaigns": campaigns,
+                # Creators per brief. `None` where there are no briefs, which
+                # is not a ratio of infinity — it is the sell-into case below.
+                "creators_per_campaign": (
+                    round(creators / campaigns, 1) if campaigns else None
+                ),
+            }
+        )
+    return {
+        "rows": rows,
+        # **Sell into these**: supply sitting idle because nobody has briefed
+        # for it. Ordered by how much of it there is, because that is the
+        # order somebody would work the list in.
+        "sell_into": sorted(
+            [r for r in rows if r["creators"] > 0 and r["campaigns"] == 0],
+            key=lambda r: -r["creators"],
+        ),
+        # **Recruit for these**: demand we could not meet. Filled in by the
+        # caller from `_fill_outcome`, so "could not fill" has one definition.
+        "recruit_for": [],
+    }
+
+
 # How far back the trend charts look, and how long a creator can be quiet
 # before we stop calling them active. 60 days because a creator doing one
 # campaign a quarter is still a creator.
@@ -18753,6 +20486,416 @@ async def admin_intelligence(user: dict = Depends(require_roles("admin"))):
         "window_weeks": INTELLIGENCE_WEEKS,
         "generated_at": _iso(now),
     }
+
+
+# ---------------------------------------------------------------------------
+# Is the business healthy?
+# ---------------------------------------------------------------------------
+#
+# `admin_intelligence` says what is happening. This says whether it is working,
+# and the difference is that every number here has a denominator: a repeat
+# *rate* rather than a repeat count, a fill *rate* broken down far enough to
+# act on, a margin rather than a revenue, and the share of creators who ever
+# get paid at all.
+#
+# **Computed on a schedule and read from a cache**, because the honest version
+# of these scans most of the database: every campaign, every collaboration,
+# every payment, every performance reading. Recomputing that on each load of
+# a dashboard is how an analytics page becomes the slowest screen in the
+# product and then stops being opened.
+#
+# `analytics_cache` is its own collection, not a row in `platform_settings` —
+# the same separation `leaderboard_cache` makes, for the same reason: that
+# collection holds what an operator typed and is one bad `_id` away from being
+# overwritten by a nightly job.
+
+ANALYTICS_CACHE_ID = "admin"
+# How stale a read may be before the endpoint recomputes rather than serving
+# it. An hour: these move on the timescale of campaigns, not of clicks, and a
+# number that changes while somebody is reading it is a number they distrust.
+ANALYTICS_MAX_AGE_SECONDS = 3600
+
+# The windows the picker offers, and **the only ones the route accepts**. An
+# open `days` integer would let one request scan the whole history on every
+# keystroke of a number input, and the cache holds exactly one window — so the
+# set is closed, the default is the cached one, and the other three are worked
+# out on request. That is the honest reading of "cache the expensive
+# aggregation and refresh it on a schedule": the schedule covers the window
+# almost everybody reads, and changing the range is a deliberate act that pays
+# for itself.
+ANALYTICS_DEFAULT_DAYS = 180
+ANALYTICS_WINDOWS = (30, 90, 180, 365)
+
+
+async def _compute_admin_analytics(days: int = ANALYTICS_DEFAULT_DAYS) -> dict:
+    """The four metrics, and where supply is against demand.
+
+    One pass over the records, handing counts to the pure functions above —
+    the aggregation lives here and the arithmetic lives there, so the rules can
+    be read and tested without a database.
+    """
+    now = datetime.now(timezone.utc)
+    since = _days_ago(days)
+
+    campaigns = await db.campaigns.find(
+        {},
+        {
+            "brand_id": 1, "created_at": 1, "status": 1, "creators_needed": 1,
+            "category": 1, "city": 1, "campaign_type": 1, "campaign_fee": 1,
+            "start_date": 1, "event_date": 1, "delivery_cost": 1,
+        },
+    ).to_list(length=5000)
+    ids = [c["_id"] for c in campaigns]
+    filled = await _filled_counts_for(ids)
+
+    # --- 1. Brand repeat rate ------------------------------------------
+    by_brand: dict = {}
+    for c in campaigns:
+        when = c.get("created_at")
+        if isinstance(when, datetime):
+            by_brand.setdefault(c["brand_id"], []).append(_aware(when))
+
+    cohort = []
+    for posts in by_brand.values():
+        posts.sort()
+        first = posts[0]
+        window_end = first + timedelta(days=REPEAT_WINDOW_DAYS)
+        again = next((p for p in posts[1:] if p <= window_end), None)
+        # The third element is whether their window has actually closed. A
+        # brand three weeks into its first 90 days has not failed to repeat.
+        cohort.append((first, again, window_end <= now))
+    repeat = _repeat_rate(cohort)
+
+    # Trended by the month a brand *first* posted, which is the only honest
+    # axis: a cohort's repeat rate is a fact about when they arrived, and
+    # plotting it by calendar month would move every past point every time
+    # somebody came back.
+    months: dict = {}
+    for posts in by_brand.values():
+        posts.sort()
+        first = posts[0]
+        if first < since:
+            continue
+        key = first.strftime("%Y-%m")
+        window_end = first + timedelta(days=REPEAT_WINDOW_DAYS)
+        again = next((p for p in posts[1:] if p <= window_end), None)
+        months.setdefault(key, []).append((first, again, window_end <= now))
+    repeat_trend = [
+        {"month": key, **_repeat_rate(rows)} for key, rows in sorted(months.items())
+    ]
+
+    # --- 2. Fill rate, and where it is failing --------------------------
+    def _due(c):
+        return c.get("start_date") or c.get("event_date")
+
+    outcomes, by_category, by_city, unfilled_keys = [], {}, {}, {}
+    for c in campaigns:
+        needed = c.get("creators_needed")
+        got = filled.get(c["_id"], 0)
+        due = _due(c)
+        # On time means "by the day it needed them". A brief with no date has
+        # no deadline to miss, so it is judged on headcount alone.
+        on_time = True if not isinstance(due, datetime) else _aware(due) >= now or got >= needed
+        outcome = _fill_outcome(needed, got, on_time)
+        if not outcome:
+            continue
+        outcomes.append(outcome)
+        key = (c.get("category") or "—", _canonical_city(c.get("city")) or "—")
+        by_category.setdefault(key[0], []).append(outcome)
+        by_city.setdefault(key[1], []).append(outcome)
+        if outcome == "underfilled":
+            unfilled_keys[key] = unfilled_keys.get(key, 0) + 1
+
+    fill = {
+        **_fill_rate(outcomes),
+        "by_category": [
+            {"key": k, **_fill_rate(v)} for k, v in sorted(by_category.items())
+        ],
+        "by_city": [{"key": k, **_fill_rate(v)} for k, v in sorted(by_city.items())],
+        "on_time_means": FILL_ON_TIME,
+    }
+
+    # --- 3. Margin per campaign, by type --------------------------------
+    payments = await db.payments.find(
+        {"state": "paid"}, {"collaboration_id": 1, "platform_fee": 1}
+    ).to_list(length=20000)
+    collab_campaign = {
+        c["_id"]: c["campaign_id"]
+        for c in await db.collaborations.find({}, {"campaign_id": 1}).to_list(length=20000)
+    }
+    commission_by_campaign: dict = {}
+    for pay in payments:
+        cid = collab_campaign.get(pay.get("collaboration_id"))
+        if cid:
+            commission_by_campaign[cid] = commission_by_campaign.get(cid, 0.0) + float(
+                pay.get("platform_fee") or 0
+            )
+
+    margins, by_type = [], {}
+    for c in campaigns:
+        fee = c.get("campaign_fee")
+        commission = commission_by_campaign.get(c["_id"], 0.0)
+        if not fee and not commission:
+            continue  # nothing was charged; there is no margin to report
+        block = _campaign_margin(fee, commission, c.get("delivery_cost"))
+        margins.append(block)
+        by_type.setdefault(c.get("campaign_type") or "—", []).append(block)
+
+    def _margin_group(rows):
+        complete = [r for r in rows if r["complete"]]
+        return {
+            "campaigns": len(rows),
+            "revenue": round(sum(r["revenue"] for r in rows), 2),
+            # **Only over the briefs whose cost was actually recorded.**
+            # Averaging a gross figure in with net ones would overstate the
+            # business by exactly the amount nobody has measured.
+            "margin": round(sum(r["margin"] for r in complete), 2) if complete else None,
+            "with_recorded_cost": len(complete),
+            "average_margin": (
+                round(sum(r["margin"] for r in complete) / len(complete), 2)
+                if complete
+                else None
+            ),
+        }
+
+    margin = {
+        **_margin_group(margins),
+        "by_campaign_type": [
+            {"key": k, **_margin_group(v)} for k, v in sorted(by_type.items())
+        ],
+    }
+
+    # --- 4. Creator first-payment rate ----------------------------------
+    profiles = await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"user_id": 1, "verified_at": 1, "created_at": 1}
+    ).to_list(length=20000)
+    paid_rows = await db.payments.aggregate(
+        [
+            {"$match": {"state": "paid"}},
+            {
+                "$lookup": {
+                    "from": "collaborations",
+                    "localField": "collaboration_id",
+                    "foreignField": "_id",
+                    "as": "collab",
+                }
+            },
+            {"$addFields": {"collab": {"$arrayElemAt": ["$collab", 0]}}},
+            {
+                "$group": {
+                    "_id": "$collab.creator_id",
+                    "first": {"$min": "$paid_at"},
+                }
+            },
+        ]
+    ).to_list(length=20000)
+    first_paid = {r["_id"]: _aware(r.get("first")) for r in paid_rows if r.get("first")}
+    first_payment = _first_payment_rate(
+        [
+            (
+                _aware(p.get("verified_at") or p.get("created_at")),
+                first_paid.get(p["user_id"]),
+            )
+            for p in profiles
+        ]
+    )
+
+    # --- Supply against demand ------------------------------------------
+    creator_keys: dict = {}
+    for p in await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"niches": 1, "city": 1}
+    ).to_list(length=20000):
+        city = _canonical_city(p.get("city")) or "—"
+        # A creator with three niches is supply in three categories, because
+        # they really are — a brief in any of them could book them.
+        for niche in _creator_categories(p) or ["—"]:
+            creator_keys[(niche, city)] = creator_keys.get((niche, city), 0) + 1
+
+    campaign_keys: dict = {}
+    for c in campaigns:
+        key = (c.get("category") or "—", _canonical_city(c.get("city")) or "—")
+        campaign_keys[key] = campaign_keys.get(key, 0) + 1
+
+    supply = _supply_and_demand(creator_keys, campaign_keys)
+    # **Recruit for these**: filled in from `_fill_outcome` rather than judged
+    # again here, so "could not fill" has one definition in this file.
+    supply["recruit_for"] = sorted(
+        [
+            {
+                "category": key[0],
+                "city": key[1],
+                "unfilled_campaigns": n,
+                "creators": creator_keys.get(key, 0),
+            }
+            for key, n in unfilled_keys.items()
+        ],
+        key=lambda r: (-r["unfilled_campaigns"], r["creators"]),
+    )
+
+    return {
+        "repeat_rate": repeat,
+        "repeat_rate_trend": repeat_trend,
+        "fill_rate": fill,
+        "margin": margin,
+        "first_payment": first_payment,
+        "supply_and_demand": supply,
+        "window_days": days,
+        "generated_at": _iso(now),
+    }
+
+
+def _aware(value):
+    """A stored datetime as an aware one.
+
+    BSON has no time zone, so a value round-tripped through Mongo comes back
+    naive and comparing it with `datetime.now(timezone.utc)` raises. Every
+    write here goes through `datetime.now(timezone.utc)`, so stamping it UTC
+    states a fact rather than guessing — the same rule `_iso` holds.
+    """
+    if not isinstance(value, datetime):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _creator_categories(profile: dict) -> list:
+    """Which campaign categories a creator counts as supply for.
+
+    Through `CAMPAIGN_CATEGORY_SYNONYMS`, the same bridge the scorer uses:
+    nobody writes "fnb" about themselves, so matching a creator's own words to
+    a category enum has to go through the one table that knows both. A second
+    mapping here would put a creator in a different category on this screen
+    from the one the suggestions panel puts them in.
+    """
+    words = {str(n).strip().lower() for n in (profile.get("niches") or []) if n}
+    out = []
+    for category, synonyms in CAMPAIGN_CATEGORY_SYNONYMS.items():
+        if words & {s.lower() for s in synonyms} or category in words:
+            out.append(category)
+    return out
+
+
+async def refresh_admin_analytics() -> dict:
+    """Recompute and store. The scheduled half."""
+    data = await _compute_admin_analytics()
+    await db.analytics_cache.update_one(
+        {"_id": ANALYTICS_CACHE_ID},
+        {"$set": {"data": data, "computed_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    logger.info("Refreshed admin analytics")
+    return data
+
+
+@admin_router.get("/analytics")
+async def admin_analytics(
+    user: dict = Depends(require_roles("admin")),
+    refresh: bool = False,
+    days: int = ANALYTICS_DEFAULT_DAYS,
+):
+    """The four numbers, from the cache unless it is stale or somebody asks.
+
+    **Admin-only, not `CONSOLE_ROLES`** — the same split every
+    platform-wide instrument makes. A repeat rate across every brand is a fact
+    about the business, not about the brands a scoped team member works on,
+    and answering it for them would be the scope leaking through a chart.
+
+    **Only the default window is cached**, and a narrower one is computed here
+    — see `ANALYTICS_WINDOWS`. Caching each window would mean four documents
+    going stale at four different times and a panel that could show last
+    Tuesday's 30 days beside this morning's 180.
+    """
+    if days not in ANALYTICS_WINDOWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"days must be one of: {', '.join(str(d) for d in ANALYTICS_WINDOWS)}",
+        )
+    if days != ANALYTICS_DEFAULT_DAYS:
+        return {**(await _compute_admin_analytics(days)), "cached": False, "age_seconds": 0}
+
+    cached = await db.analytics_cache.find_one({"_id": ANALYTICS_CACHE_ID})
+    age = None
+    if cached and isinstance(cached.get("computed_at"), datetime):
+        age = (datetime.now(timezone.utc) - _aware(cached["computed_at"])).total_seconds()
+
+    if refresh or not cached or age is None or age > ANALYTICS_MAX_AGE_SECONDS:
+        data = await refresh_admin_analytics()
+        return {**data, "cached": False, "age_seconds": 0}
+    # `age_seconds` travels with it so the panel can say when this was worked
+    # out. A dashboard that looks live and is an hour old is worse than one
+    # that says so.
+    return {**cached["data"], "cached": True, "age_seconds": int(age)}
+
+
+@admin_router.get("/analytics/export")
+async def export_admin_analytics(
+    kind: str = "supply",
+    user: dict = Depends(require_roles("admin")),
+    days: int = ANALYTICS_DEFAULT_DAYS,
+):
+    """The tables as CSV. One row shape per `kind`, so a spreadsheet is a
+    spreadsheet rather than four stacked on top of each other.
+
+    **`days` rides through to the same reader the screen uses**, or the file
+    somebody downloads under a 30-day heading would hold 180 days of rows —
+    the spreadsheet-disagrees-with-the-screen failure, arriving by a route
+    nobody would think to check.
+    """
+    if kind not in ("supply", "fill", "margin", "repeat"):
+        raise HTTPException(
+            status_code=422, detail="kind must be one of: supply, fill, margin, repeat"
+        )
+    data = await admin_analytics(user, days=days)
+
+    if kind == "supply":
+        headers = ["Category", "City", "Creators", "Campaigns", "Creators per campaign"]
+        rows = [
+            [r["category"], r["city"], r["creators"], r["campaigns"],
+             r["creators_per_campaign"] if r["creators_per_campaign"] is not None else ""]
+            for r in data["supply_and_demand"]["rows"]
+        ]
+    elif kind == "fill":
+        headers = ["Breakdown", "Key", "Campaigns", "Filled", "Late", "Underfilled", "Rate %"]
+        rows = [
+            [label, r["key"], r["campaigns"], r["filled"], r["late"], r["underfilled"],
+             r["rate"] if r["rate"] is not None else ""]
+            for label, group in (("Category", "by_category"), ("City", "by_city"))
+            for r in data["fill_rate"][group]
+        ]
+    elif kind == "margin":
+        headers = ["Campaign type", "Campaigns", "Revenue", "Margin",
+                   "With recorded cost", "Average margin"]
+        rows = [
+            [r["key"], r["campaigns"], r["revenue"],
+             r["margin"] if r["margin"] is not None else "",
+             r["with_recorded_cost"],
+             r["average_margin"] if r["average_margin"] is not None else ""]
+            for r in data["margin"]["by_campaign_type"]
+        ]
+    else:
+        headers = ["Cohort month", "Brands eligible", "Came back", "Repeat rate %"]
+        rows = [
+            [r["month"], r["eligible"], r["repeated"],
+             r["rate"] if r["rate"] is not None else ""]
+            for r in data["repeat_rate_trend"]
+        ]
+
+    await audit(user, "analytics.export", "platform", None, after={"kind": kind, "rows": len(rows)})
+    return _csv_response(rows, headers, f"analytics-{kind}")
+
+
+@admin_router.post("/jobs/analytics")
+async def run_analytics_refresh(user: dict = Depends(require_roles("admin"))):
+    """Recompute by hand. The same function the loop calls, so a number
+    somebody forced and a number the schedule produced cannot differ."""
+    data = await refresh_admin_analytics()
+    # Audited like every other job here. `_SYSTEM_ACTOR` credits the scheduled
+    # pass; this one names the person, which is the difference worth having in
+    # the log when a number moved between two readings of the same dashboard.
+    await audit(
+        user, "job.analytics", "job", "analytics",
+        after={"generated_at": data["generated_at"]},
+    )
+    return {"refreshed": True, "generated_at": data["generated_at"]}
 
 
 async def _creator_names_for(user_ids: list) -> dict:
@@ -21190,10 +23333,9 @@ async def download_brand_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    path = _private_upload_path(doc.get("stored_name"))
-    if not path:
-        logger.error("brand document %s is recorded but missing on disk", document_id)
-        raise HTTPException(status_code=410, detail="That file is no longer on disk.")
+    if not _private_upload_exists(doc.get("stored_name")):
+        logger.error("brand document %s is recorded but its bytes are gone", document_id)
+        raise HTTPException(status_code=410, detail="That file is no longer stored.")
 
     await audit(
         user,
@@ -21202,15 +23344,13 @@ async def download_brand_document(
         brand_oid,
         after={"document_id": document_id, "doc_type": doc.get("doc_type")},
     )
-    return FileResponse(
-        path,
-        media_type=doc.get("mime") or "application/octet-stream",
-        # inline so a reviewer can read it in the browser; the filename is the
-        # one they uploaded, which is only ever a label.
-        headers={
-            "Content-Disposition": f'inline; filename="{doc.get("original_name") or "document"}"',
-            "Cache-Control": "no-store",
-        },
+    # inline so a reviewer can read it in the browser; the filename is the one
+    # they uploaded, which is only ever a label.
+    return _private_file_response(
+        doc["stored_name"],
+        original_name=doc.get("original_name") or "document",
+        mime=doc.get("mime"),
+        inline=True,
     )
 
 
@@ -21440,6 +23580,9 @@ def _serialize_admin_collab(
         "proof": _proof_block(campaign, collab),
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -21795,6 +23938,34 @@ async def advance_collaboration(
             detail=(
                 "Only the creator can book their own slot. They pick a time, "
                 "and whoever runs the campaign confirms it."
+            ),
+        )
+
+    if to_state in _CREATOR_OWNED_TRANSITIONS:
+        # The delivery half of the same rule. An address is the creator's to
+        # check — writing it for them is recording a confirmation they never
+        # gave, about where their own parcel goes — and an arrival is
+        # something only the person it arrived at can report. Refused here
+        # rather than absent, so the console says why instead of the button
+        # quietly doing nothing.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only the creator can confirm their address and confirm the "
+                "delivery arrived. Dispatching it is yours, from the "
+                "collaboration page."
+            ),
+        )
+
+    if to_state == "dispatched":
+        # Dispatch carries a tracking reference and a notification, and both
+        # live on the route that takes one. Advancing blind would record a
+        # send with nothing the creator can follow.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Record the dispatch from the collaboration page, so the "
+                "tracking reference goes to the creator with it."
             ),
         )
 
@@ -25867,6 +28038,43 @@ async def _leaderboard_loop():
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
             raise
+
+
+async def _analytics_loop():
+    """Recompute the business metrics on a timer.
+
+    **Sleeps first, unlike the leaderboard loop**, and the difference is
+    deliberate: nothing public renders from this, and the endpoint recomputes
+    on its own when the cache is missing or stale. So a fresh box pays the
+    scan when somebody first opens the page rather than during boot, which is
+    when it is least welcome.
+    """
+    interval = _analytics_interval_seconds()
+    while True:
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        try:
+            await refresh_admin_analytics()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("analytics refresh failed: %s", exc)
+
+
+def _analytics_interval_seconds() -> int:
+    """How often the business metrics are recomputed. Zero disables it.
+
+    Hourly by default, which is far more often than these move — a repeat rate
+    does not change between lunch and tea — but the scan is the expensive part
+    and an hour keeps it off the request path without the numbers ever being
+    surprising.
+    """
+    try:
+        return max(0, int(os.environ.get("ANALYTICS_REFRESH_INTERVAL_SECONDS", "3600")))
+    except ValueError:
+        return 3600
 
 
 def _leaderboard_interval_seconds() -> int:
@@ -30881,6 +33089,88 @@ async def read_content_proof(
 # a collaboration.
 # ---------------------------------------------------------------------------
 
+@notes_router.post("/{collab_id}/dispatch")
+async def dispatch_delivery(
+    collab_id: str,
+    payload: DispatchDeliveryPayload,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES, *BRAND_ROLES)),
+):
+    """Record that it has been sent. `address_confirmed → dispatched`.
+
+    **On the notes router**, whose door already answers "may this person read
+    this collaboration" for exactly the three audiences who could be sending
+    it — the brand on its own brief, the assigned manager, an admin — with a
+    404 behind each. Writing a fourth door here would be a fourth answer to a
+    question that has one.
+    """
+    # The door hands back the campaign too, which is the one this decision is
+    # about — re-reading it would be a second lookup that could disagree.
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409, detail="This campaign has a venue — there's nothing to send."
+        )
+    if collab.get("state") != "address_confirmed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The creator hasn't confirmed their address yet."
+                if collab.get("state") == "commercial_agreed"
+                else f"This collaboration is {collab.get('state')} — it can't be dispatched."
+            ),
+        )
+
+    now = datetime.now(timezone.utc)
+    tracking = (payload.tracking_reference or "").strip() or None
+    courier = (payload.courier or "").strip() or None
+
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "address_confirmed"},
+        {
+            "$set": {
+                **_state_stamp("dispatched", now),
+                "delivery.dispatched_at": now,
+                "delivery.dispatched_by_id": ObjectId(user["_id"]),
+                "delivery.dispatched_by_name": user.get("name"),
+                "delivery.tracking_reference": tracking,
+                "delivery.courier": courier,
+                "delivery.dispatch_note": (payload.note or "").strip() or None,
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were recording it. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_dispatched",
+        "collaboration",
+        collab["_id"],
+        before={"state": "address_confirmed"},
+        after={"state": "dispatched", "tracking_reference": tracking, "courier": courier},
+        **_campaign_audit_context(campaign),
+    )
+    # The creator hears immediately, with the reference where there is one:
+    # this is the message that stops them wondering, and the one they check
+    # against the parcel when it turns up.
+    await notify(
+        collab["creator_id"],
+        "delivery_dispatched",
+        title="Your delivery is on its way",
+        body=(
+            f"Sent{f' via {courier}' if courier else ''}."
+            + (f" Tracking: {tracking}." if tracking else "")
+            + " Let us know when it arrives."
+        ),
+        link=f"/dashboard?collab={str(collab['_id'])}",
+    )
+    return _delivery_block(updated)
+
+
 disputes_router = APIRouter(prefix="/disputes", tags=["disputes"])
 
 DISPUTE_STATES = ("open", "resolved", "withdrawn")
@@ -32254,7 +34544,13 @@ async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -
     the state, the audit line or the notification."""
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": {"$in": ["attended", "draft_submitted"]}},
+        {
+            "_id": collab["_id"],
+            # `received` is `attended` on a delivery brief — the state the
+            # creator submits a draft from. Naming only `attended` here made
+            # the draft gate unreachable on the whole type.
+            "state": {"$in": [_ready_to_shoot_state(campaign), "draft_submitted"]},
+        },
         {
             "$set": {
                 **_state_stamp("draft_submitted", now),
@@ -32406,8 +34702,7 @@ async def download_draft_file(
     """
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
     draft = collab.get("draft") or {}
-    path = _private_upload_path(draft.get("stored_name"))
-    if not path:
+    if not _private_upload_exists(draft.get("stored_name")):
         raise HTTPException(status_code=404, detail="There's no draft file here.")
 
     await audit(
@@ -32415,13 +34710,11 @@ async def download_draft_file(
         after={"kind": draft.get("kind")},
         **_campaign_audit_context(campaign),
     )
-    return FileResponse(
-        path,
-        media_type=draft.get("mime") or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'inline; filename="{draft.get("original_name") or "draft"}"',
-            "Cache-Control": "no-store",
-        },
+    return _private_file_response(
+        draft["stored_name"],
+        original_name=draft.get("original_name") or "draft",
+        mime=draft.get("mime"),
+        inline=True,
     )
 
 
@@ -32627,6 +34920,9 @@ async def get_application(
         # mediated is not one.
         "dispute": _serialize_dispute(collab),
         "takedown": _serialize_takedown(collab),
+        # Absent on every venue brief, which is how a surface knows not to
+        # draw a tracking row at all rather than drawing an empty one.
+        "delivery": _delivery_block(collab),
         # Whether a flag is already sitting with an admin. The panel says so
         # rather than offering a button that would 409.
         "circumvention_open": circumvention_open,
@@ -32738,6 +35034,13 @@ async def get_application(
             "can_confirm_slot": state == "slot_booked"
             and not _slot_confirmed(collab)
             and _question_staff_may_see(campaign, user),
+            # The delivery equivalent, decided server-side like every other
+            # action here so neither console offers a button the API refuses.
+            # Same reader again: on a weare-run brief the brand does not send
+            # the parcel and must not be shown a control that says they do.
+            "can_dispatch": state == "address_confirmed"
+            and _is_delivery(campaign)
+            and _question_staff_may_see(campaign, user),
             "can_advance": is_admin
             and state not in TERMINAL_COLLAB_STATES
             and _next_collab_state(state, campaign)
@@ -32745,6 +35048,10 @@ async def get_application(
                 _BRAND_OWNED_TRANSITIONS
                 | _DRAFT_OWNED_TRANSITIONS
                 | _CREATOR_OWNED_TRANSITIONS
+                # Dispatch carries a tracking reference and a message to the
+                # creator, both of which live on its own route. An Advance
+                # button here would record a send with nothing to follow.
+                | {"dispatched"}
             )
             and _next_collab_state(state, campaign) is not None,
             # **Raising is for the parties, resolving is for the mediator**,
@@ -33708,7 +36015,7 @@ FOOTER_COLUMNS = (
         (
             ("Our work", CASE_STUDY_PATH),
             ("How it works", HOW_IT_WORKS_PATH),
-            ("Why WeAre", WHY_WEARE_PATH),
+            ("Why WeAre Creators", WHY_WEARE_PATH),
             ("Contact", "mailto:creators@wearemonk.in"),
         ),
     ),
@@ -34250,15 +36557,41 @@ async def public_sitemap():
 
 app.include_router(api_router)
 
-# Uploaded images are served straight off disk. Mounted outside /api because
-# these are plain files, not API responses — the frontend joins the backend
-# origin with the stored path.
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount(
-    UPLOAD_URL_PREFIX,
-    StaticFiles(directory=str(UPLOAD_DIR)),
-    name="uploads",
-)
+# Public uploads live at `/uploads/<name>` whichever backend holds them, which
+# is what makes moving to S3 a file copy rather than a data migration — see
+# `S3Storage.public_url`. Outside `/api` because these are plain files, not API
+# responses: the frontend joins the backend origin with the stored path.
+if STORAGE.name == "local":
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        UPLOAD_URL_PREFIX,
+        StaticFiles(directory=str(UPLOAD_DIR)),
+        name="uploads",
+    )
+else:
+
+    @app.get(UPLOAD_URL_PREFIX + "/{name}")
+    async def serve_public_upload(name: str):
+        """Send a browser to the object, rather than proxying its bytes.
+
+        **A redirect, not a stream.** These are covers and profile photos on
+        every card of every list — proxying them would put the whole image
+        load of the product through this process and defeat any CDN in front
+        of the bucket. The `public/` prefix is readable by design: a campaign
+        cover has to render in a WhatsApp preview, where there is no session
+        to authenticate with. Nothing private is reachable this way — that
+        prefix is a separate one and is blocked at the bucket.
+
+        The name is still checked rather than trusted, because it arrives off
+        a URL here rather than out of a record.
+        """
+        if "/" in name or "\\" in name or name in ("", ".", ".."):
+            raise HTTPException(status_code=404, detail="Not found")
+        return RedirectResponse(
+            STORAGE.object_url(name),
+            status_code=307,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -34279,6 +36612,65 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Startup: indexes + admin seed
 # ---------------------------------------------------------------------------
+
+
+async def backfill_execution_owner() -> None:
+    """Stamp `execution_owner` on every campaign written before it existed.
+
+    **This is what lets `DEFAULT_EXECUTION_OWNER` say "weare".** The reader's
+    default used to be "brand" purely to protect these rows, which meant the
+    promise to old work was being kept by a constant that also had to describe
+    the current product — two jobs, pulling opposite ways, and the product won
+    the argument the moment every brief became ours to run. The promise lives
+    in the data now: these campaigns say "brand" because that is what they
+    were, and no reader has to remember it.
+
+    Who ran one was implicit in who its manager was — a WeAre
+    `campaign_manager` on it meant us, anything else meant the brand. That is
+    derived once, here, rather than by every reader joining users on every
+    campaign row forever.
+
+    Extracted from `_startup` rather than left inline so it can be **driven**
+    against a database and read back, which is the only way to tell the
+    promise being kept from a constant that merely says so. `_startup` awaits
+    it before FastAPI serves a request, so there is no window in which a
+    pre-field campaign is read through the new default.
+
+    Idempotent: both passes match only on the field being absent, so running
+    it twice is running it once.
+    """
+    weare_manager_ids = await db.users.distinct("_id", {"role": "campaign_manager"})
+    if weare_manager_ids:
+        ours = await db.campaigns.update_many(
+            {
+                "execution_owner": {"$exists": False},
+                "manager_id": {"$in": weare_manager_ids},
+            },
+            {"$set": {"execution_owner": "weare"}},
+        )
+        if ours.modified_count:
+            logger.info(
+                "Backfilled execution_owner=weare on %d campaign(s) with a WeAre manager",
+                ours.modified_count,
+            )
+
+    # Everything still unmarked was the brand's own. Done second and
+    # unconditionally, so the pass is order-independent.
+    #
+    # **`LEGACY_EXECUTION_OWNER`, never `DEFAULT_EXECUTION_OWNER`.** This line
+    # is a statement about what these campaigns *were*; writing today's
+    # default here would rewrite history to match the current product, which
+    # is the exact harm the old reader default existed to prevent.
+    theirs = await db.campaigns.update_many(
+        {"execution_owner": {"$exists": False}},
+        {"$set": {"execution_owner": LEGACY_EXECUTION_OWNER}},
+    )
+    if theirs.modified_count:
+        logger.info(
+            "Backfilled execution_owner=%s on %d campaign(s)",
+            LEGACY_EXECUTION_OWNER,
+            theirs.modified_count,
+        )
 
 
 @app.on_event("startup")
@@ -34641,36 +37033,8 @@ async def _startup():
             priced.modified_count,
         )
 
-    # 9. Campaigns predate `execution_owner`. Who ran one was implicit in who
-    #    its manager was: a WeAre campaign_manager on it meant we were running
-    #    it, anything else meant the brand. That is derived once, here, rather
-    #    than by every reader joining users on every campaign row forever.
-    weare_manager_ids = await db.users.distinct("_id", {"role": "campaign_manager"})
-    if weare_manager_ids:
-        ours = await db.campaigns.update_many(
-            {
-                "execution_owner": {"$exists": False},
-                "manager_id": {"$in": weare_manager_ids},
-            },
-            {"$set": {"execution_owner": "weare"}},
-        )
-        if ours.modified_count:
-            logger.info(
-                "Backfilled execution_owner=weare on %d campaign(s) with a WeAre manager",
-                ours.modified_count,
-            )
-    # Everything still unmarked was the brand's own. Done second and
-    # unconditionally, so the pass is idempotent and order-independent.
-    theirs = await db.campaigns.update_many(
-        {"execution_owner": {"$exists": False}},
-        {"$set": {"execution_owner": DEFAULT_EXECUTION_OWNER}},
-    )
-    if theirs.modified_count:
-        logger.info(
-            "Backfilled execution_owner=%s on %d campaign(s)",
-            DEFAULT_EXECUTION_OWNER,
-            theirs.modified_count,
-        )
+    # 9. Campaigns predate `execution_owner`.
+    await backfill_execution_owner()
 
     # 10. Campaigns predate `city`. They all ran in Bengaluru — that is where
     #     the operation is and was — so this is what they are rather than a
@@ -34747,6 +37111,16 @@ async def _startup():
             "Creator leaderboard on: every %ds, %d needed before it renders",
             _leaderboard_interval_seconds(),
             LEADERBOARD_MIN_DEFAULT,
+        )
+
+    # The business metrics. Cached because the honest version scans most of
+    # the database; zero turns the loop off for a deployment driving
+    # POST /admin/jobs/analytics from its own scheduler, and the endpoint
+    # still recomputes on a stale or missing cache either way.
+    if _analytics_interval_seconds() > 0:
+        app.state.analytics_task = asyncio.create_task(_analytics_loop())
+        logger.info(
+            "Admin analytics on: recomputed every %ds", _analytics_interval_seconds()
         )
 
     # Instagram token renewal and stats caching. Off when the Meta app isn't

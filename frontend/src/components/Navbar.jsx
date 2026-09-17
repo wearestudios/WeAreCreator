@@ -6,6 +6,7 @@ import { isAllAccess, isConsoleRole } from "@/lib/consoleScope";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/NotificationBell";
 import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
+import AdminAccountMenu from "@/components/admin/AdminAccountMenu";
 import { api } from "@/lib/api";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
 import { LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
@@ -41,7 +42,12 @@ const linksFor = (role) => {
         // opens on a 403 is worse than one that is absent. Everything else
         // here comes back scoped to the brands they run.
         return [
-            { to: "/admin/queue", label: "Queue", testId: "nav-admin-queue", secondary: true },
+            // "Action queue" rather than "Queue": the console's own sidebar
+            // has called it that since it was built, and a nav item that
+            // names the same screen differently is a second vocabulary for
+            // one thing. "Queue" alone is also internal shorthand — it says
+            // what the data structure is rather than what the screen is for.
+            { to: "/admin/queue", label: "Action queue", testId: "nav-admin-queue", secondary: true },
             { to: "/admin/campaigns", label: "Campaigns", testId: "nav-admin-campaigns", secondary: true },
             ...(isAllAccess(role)
                 ? [{ to: "/admin/creators", label: "Creators", testId: "nav-admin-creators", secondary: true }]
@@ -99,7 +105,7 @@ const MARKETING_LINKS = [
     { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre", testId: "nav-why" },
+    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
 ];
 
 export const Navbar = () => {
@@ -123,6 +129,18 @@ export const Navbar = () => {
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
 
+    // **The account's stored choice, or `null` for "never chosen".** The
+    // distinction is the whole reason this is not a boolean: `null` means
+    // follow the operating system, which is what should change when somebody
+    // switches their machine at dusk. `/auth/me` carries it, so a second
+    // browser or a new device arrives already set.
+    const [consoleTheme, setConsoleTheme] = useState(
+        user?.console_theme ?? null,
+    );
+    useEffect(() => {
+        setConsoleTheme(user?.console_theme ?? null);
+    }, [user?.console_theme]);
+
     // null while /auth/me is in flight, false once we know nobody is signed in.
     const checking = user === null;
     const signedIn = Boolean(user) && user !== false;
@@ -135,10 +153,16 @@ export const Navbar = () => {
 
     const roleLinks = signedIn ? linksFor(user.role) : [];
 
+    // **The bar reads `--background`, not black.** It carried `bg-black/60`,
+    // which on a light console is a mid-grey band with mid-grey text on it —
+    // measured at 1.05:1, the worst contrast anywhere in the product.
+    // Translucent over the page's own colour is what it was always trying to
+    // be; on dark the two are within a couple of sRGB points, verified by
+    // measurement rather than by eye.
     return (
         <header
             data-testid="site-navbar"
-            className="sticky top-0 z-40 w-full border-b border-white/10 bg-black/60 backdrop-blur-xl"
+            className="sticky top-0 z-40 w-full border-b border-tint/10 bg-background/70 backdrop-blur-xl"
         >
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
                 {/* Creators keeps the wordmark and the accent; the studio is
@@ -149,16 +173,16 @@ export const Navbar = () => {
                     <Link
                         to="/"
                         data-testid="nav-logo"
-                        className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
+                        className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
-                        <span className="grid h-8 w-8 place-items-center rounded-md bg-ember-500 font-serif text-lg font-semibold text-black">
+                        <span className="grid h-8 w-8 place-items-center rounded-md bg-primary font-serif text-lg font-semibold text-primary-foreground">
                             W
                         </span>
                         <span className="font-serif text-xl tracking-tight">
-                            WeAre <span className="text-ember-500">Creators</span>
+                            WeAre <span className="text-primary-ink">Creators</span>
                         </span>
                     </Link>
-                    <span aria-hidden className="hidden h-4 w-px bg-white/15 sm:block" />
+                    <span aria-hidden className="hidden h-4 w-px bg-tint/15 sm:block" />
                     <StudioEndorsement
                         testid={STUDIO_IDS.nav}
                         className="hidden sm:block"
@@ -190,7 +214,7 @@ export const Navbar = () => {
                         <div
                             data-testid="nav-auth-loading"
                             aria-hidden
-                            className="h-9 w-28 animate-pulse rounded-full bg-white/5"
+                            className="h-9 w-28 animate-pulse rounded-full bg-tint/5"
                         />
                     ) : signedIn ? (
                         <>
@@ -203,7 +227,7 @@ export const Navbar = () => {
                                         "hidden text-sm transition-colors duration-200 " +
                                         (l.secondary ? "lg:inline " : "sm:inline ") +
                                         (l.accent
-                                            ? "text-ember-500 hover:text-ember-400"
+                                            ? "text-primary-ink hover:text-primary-ink"
                                             : "text-muted-foreground hover:text-foreground")
                                     }
                                 >
@@ -221,12 +245,25 @@ export const Navbar = () => {
                                     profileImageUrl={avatar}
                                     onLogout={handleLogout}
                                 />
+                            ) : isConsoleRole(user.role) ? (
+                                /* **The theme control lives here, not in the
+                                   console layout.** A toggle floating over a
+                                   dense working surface is a control somebody
+                                   hits reaching for a table; an appearance
+                                   preference belongs with the account it is
+                                   stored against. */
+                                <AdminAccountMenu
+                                    user={user}
+                                    theme={consoleTheme}
+                                    onThemeChange={setConsoleTheme}
+                                    onLogout={handleLogout}
+                                />
                             ) : (
                                 <Button
                                     data-testid="nav-logout-btn"
                                     onClick={handleLogout}
                                     variant="outline"
-                                    className="hidden border-white/15 bg-transparent text-foreground hover:bg-white/5 sm:inline-flex"
+                                    className="hidden border-tint/15 bg-transparent text-foreground hover:bg-tint/5 sm:inline-flex"
                                 >
                                     Log out
                                 </Button>
@@ -242,16 +279,23 @@ export const Navbar = () => {
                                 Log in
                             </Link>
                             {/* The primary action stays in the bar at every
-                                width. It says "Join" rather than "Sign up as a
-                                creator": the site now addresses two audiences
-                                by name in the menu beside it, and a
-                                creator-specific button there tells a brand the
+                                width, and it is deliberately not audience-
+                                specific: the site addresses two audiences by
+                                name in the menu beside it, so a "Sign up as a
+                                creator" button there would tell a brand the
                                 bar is not for them. /signup carries a role
                                 picker and defaults to creator, so nobody who
-                                wanted the old button loses a step. */}
+                                wanted the old button loses a step.
+
+                                **"Sign up" rather than "Join".** One word
+                                against "Log in" beside it, in the same
+                                register: "Join" is the shorter and more casual
+                                of the two, and a pair where one half is
+                                clipped reads as a pair somebody stopped
+                                proof-reading. */}
                             <Link to="/signup" data-testid="nav-signup-link">
-                                <Button className="rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400">
-                                    Join
+                                <Button className="rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary-hover">
+                                    Sign up
                                 </Button>
                             </Link>
                         </>
@@ -264,7 +308,7 @@ export const Navbar = () => {
                                 type="button"
                                 data-testid="nav-mobile-menu-btn"
                                 aria-label="Open menu"
-                                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
+                                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-tint/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
                             >
                                 <Menu className="h-5 w-5" />
                             </button>
@@ -275,14 +319,14 @@ export const Navbar = () => {
                             // A menu needs no description; opting out explicitly
                             // keeps Radix from warning about a missing one.
                             aria-describedby={undefined}
-                            className="w-[86%] border-l border-white/10 bg-background p-0 sm:max-w-sm"
+                            className="w-[86%] border-l border-tint/10 bg-background p-0 sm:max-w-sm"
                         >
                             <SheetTitle className="sr-only">Menu</SheetTitle>
 
                             <div className="flex h-full flex-col">
-                                <div className="flex flex-col gap-1 border-b border-white/10 px-6 py-5">
+                                <div className="flex flex-col gap-1 border-b border-tint/10 px-6 py-5">
                                     <span className="font-serif text-xl tracking-tight">
-                                        WeAre <span className="text-ember-500">Creators</span>
+                                        WeAre <span className="text-primary-ink">Creators</span>
                                     </span>
                                     <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
@@ -303,10 +347,10 @@ export const Navbar = () => {
                                                             to={l.to}
                                                             data-testid={`${l.testId}-mobile`}
                                                             className={
-                                                                "border-b border-white/10 py-3.5 font-serif text-2xl leading-tight transition-colors duration-200 " +
+                                                                "border-b border-tint/10 py-3.5 font-serif text-2xl leading-tight transition-colors duration-200 " +
                                                                 (l.accent
-                                                                    ? "text-ember-500 hover:text-ember-400"
-                                                                    : "text-foreground hover:text-ember-500")
+                                                                    ? "text-primary-ink hover:text-primary-ink"
+                                                                    : "text-foreground hover:text-primary-ink")
                                                             }
                                                         >
                                                             {l.label}
@@ -334,7 +378,7 @@ export const Navbar = () => {
                                                         <Link
                                                             to={l.to}
                                                             data-testid={`${l.testId}-mobile`}
-                                                            className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
+                                                            className="border-b border-tint/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-primary-ink"
                                                         >
                                                             {l.label}
                                                         </Link>
@@ -345,18 +389,18 @@ export const Navbar = () => {
                                     )}
                                 </nav>
 
-                                <div className="border-t border-white/10 px-6 py-6">
+                                <div className="border-t border-tint/10 px-6 py-6">
                                     {checking ? (
                                         <div
                                             aria-hidden
-                                            className="h-11 w-full animate-pulse rounded-full bg-white/5"
+                                            className="h-11 w-full animate-pulse rounded-full bg-tint/5"
                                         />
                                     ) : signedIn ? (
                                         <Button
                                             data-testid="nav-logout-btn-mobile"
                                             onClick={handleLogout}
                                             variant="outline"
-                                            className="h-11 w-full rounded-full border-white/15 bg-transparent text-foreground hover:bg-white/5"
+                                            className="h-11 w-full rounded-full border-tint/15 bg-transparent text-foreground hover:bg-tint/5"
                                         >
                                             Log out
                                         </Button>
@@ -367,8 +411,8 @@ export const Navbar = () => {
                                                     to="/signup"
                                                     data-testid="nav-signup-link-mobile"
                                                 >
-                                                    <Button className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
-                                                        Join
+                                                    <Button className="h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
+                                                        Sign up
                                                     </Button>
                                                 </Link>
                                             </SheetClose>

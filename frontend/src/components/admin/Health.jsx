@@ -88,9 +88,9 @@ export function HealthPanel() {
             {withItems.length === 0 ? (
                 <div
                     data-testid={IDS.allClear}
-                    className="flex items-center gap-4 rounded-md border border-emerald-500/25 bg-emerald-500/[0.07] px-6 py-8"
+                    className="flex items-center gap-4 rounded-md border border-state-approved/25 bg-state-approved/[0.07] px-6 py-8"
                 >
-                    <CheckCircle2 className="h-5 w-5 flex-none text-emerald-400" />
+                    <CheckCircle2 className="h-5 w-5 flex-none text-state-approved" />
                     <p className="text-sm leading-relaxed text-muted-foreground">
                         Nothing is overdue. Every campaign is filling, every accepted
                         creator has a slot, and nobody is waiting on us.
@@ -118,14 +118,14 @@ function HealthCheck({ check }) {
     // it the console overflowed 24px at 375px.
     return (
         <Panel data-testid={IDS.check(check.key)} className="min-w-0 overflow-hidden p-0">
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-tint/10 px-5 py-4">
                 <div className="min-w-0">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                         {check.label}
                         <span
                             data-testid={IDS.checkCount(check.key)}
                             className={
-                                "ml-2 " + (check.critical ? "text-destructive" : "text-ember-500")
+                                "ml-2 " + (check.critical ? "text-destructive" : "text-primary-ink")
                             }
                         >
                             {check.count}
@@ -140,7 +140,7 @@ function HealthCheck({ check }) {
                 </div>
             </div>
 
-            <ul className="divide-y divide-white/5">
+            <ul className="divide-y divide-tint/5">
                 {shown.map((item) => (
                     // **A stretched link, not a wrapping one.** A row can now
                     // carry its own actions — "invite creators", "extend the
@@ -151,7 +151,7 @@ function HealthCheck({ check }) {
                     // interactive sits above the overlay on `relative z-10`.
                     <li
                         key={item.id}
-                        className="group relative px-5 py-3 transition-colors duration-150 hover:bg-white/[0.03]"
+                        className="group relative px-5 py-3 transition-colors duration-150 hover:bg-tint/[0.03]"
                     >
                         <div className="flex items-center gap-3">
                             <span
@@ -160,14 +160,14 @@ function HealthCheck({ check }) {
                                     "h-1.5 w-1.5 flex-none rounded-full " +
                                     (item.severity === "critical"
                                         ? "bg-destructive"
-                                        : "bg-amber-400/70")
+                                        : "bg-state-pending/70")
                                 }
                             />
                             <span className="min-w-0 flex-1">
                                 <Link
                                     to={item.href}
                                     data-testid={IDS.item(item.id)}
-                                    className="block truncate text-sm after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
+                                    className="block truncate text-sm after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                 >
                                     {item.label}
                                 </Link>
@@ -183,13 +183,13 @@ function HealthCheck({ check }) {
                             {item.slots_short > 0 && (
                                 <span
                                     data-testid={IDS.shortfall(item.id)}
-                                    className={`flex-none rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 ${TEXT.meta} text-amber-200`}
+                                    className={`flex-none rounded border border-state-pending/30 bg-state-pending/10 px-1.5 py-0.5 ${TEXT.meta} text-state-pending`}
                                 >
                                     {item.slots_short} short
                                     {item.days_left != null ? ` · ${item.days_left}d` : ""}
                                 </span>
                             )}
-                            <ArrowRight className="h-3.5 w-3.5 flex-none text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-ember-500" />
+                            <ArrowRight className="h-3.5 w-3.5 flex-none text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-primary-ink" />
                         </div>
 
                         {/* **The ways out, not just the problem.** Naming
@@ -205,7 +205,7 @@ function HealthCheck({ check }) {
                                         // `text-sm`, not the metadata step:
                                         // these are things to press, and the
                                         // console reserves 12px for facts.
-                                        className="rounded border border-white/10 px-2 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                        className="rounded border border-tint/10 px-2 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     >
                                         {action.label}
                                     </Link>
@@ -221,7 +221,7 @@ function HealthCheck({ check }) {
                     type="button"
                     onClick={() => setExpanded(true)}
                     data-testid={IDS.more(check.key)}
-                    className="min-h-[2.75rem] w-full border-t border-white/10 px-5 py-3 text-left text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
+                    className="min-h-[2.75rem] w-full border-t border-tint/10 px-5 py-3 text-left text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                 >
                     {hidden} more
                 </button>
@@ -286,7 +286,19 @@ function StackedBars({ series, weeks, height = 48 }) {
     const totals = weeks.map((_, i) => series.reduce((n, s) => n + (s.points[i] || 0), 0));
     const max = Math.max(...totals, 1);
     const bw = 100 / weeks.length;
-    const tones = ["hsl(var(--primary))", "#7dd3a0", "#7cc4e8", "#c4a5e8", "#e8c97c"];
+    // **The chart reads the same tokens the pills do.** These were four
+    // hand-picked pastels chosen to sit on a near-black card, which on an
+    // off-white one are four barely-distinguishable washes. Going through the
+    // state tokens means the series a bar describes is the colour that state
+    // wears everywhere else in the console, and both themes get values
+    // somebody checked rather than values that happened to look fine on one.
+    const tones = [
+        "hsl(var(--primary))",
+        "hsl(var(--state-approved))",
+        "hsl(var(--state-progress))",
+        "hsl(var(--state-done))",
+        "hsl(var(--state-pending))",
+    ];
 
     return (
         <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="mt-4 h-12 w-full" aria-hidden="true">
@@ -321,11 +333,11 @@ function SplitBar({ a, b, labelA, labelB }) {
     const pct = total ? (a / total) * 100 : 0;
     return (
         <>
-            <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-white/10">
-                <div className="bg-ember-500" style={{ width: `${pct}%` }} />
+            <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-tint/10">
+                <div className="bg-primary" style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-3 flex items-baseline justify-between text-sm">
-                <span className="text-ember-500">
+                <span className="text-primary-ink">
                     {formatCompact(a)} {labelA}
                 </span>
                 <span className="text-muted-foreground">
@@ -466,7 +478,7 @@ export function ExportsPanel() {
                                 setTo(null);
                             }}
                             data-testid={EXPORT_IDS.clearDates}
-                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 md:min-h-0"
+                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                         >
                             Clear dates
                         </button>
@@ -483,9 +495,9 @@ export function ExportsPanel() {
                         key={e.key}
                         href={href(e.key)}
                         data-testid={EXPORT_IDS.kind(e.key)}
-                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-white/10 bg-card px-4 py-3.5 transition-colors duration-150 hover:border-ember-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-tint/10 bg-card px-4 py-3.5 transition-colors duration-150 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
-                        <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-150 group-hover:text-ember-500" />
+                        <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-150 group-hover:text-primary-ink" />
                         <span className="min-w-0 flex-1">
                             <span className="block text-sm">{e.label}</span>
                             <span className="block truncate text-sm text-muted-foreground">

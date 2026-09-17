@@ -150,13 +150,27 @@ def test_a_missing_record_says_which_one():
     assert 'missing="Brand profile not found"' in source(server.upload_brand_logo)
 
 
-def test_covers_land_in_the_public_directory_not_the_private_one():
+def test_covers_land_in_public_storage_not_private_storage():
     """The opposite of a verification document: a cover is meant to be seen by
-    strangers, which is the whole point of it."""
+    strangers, which is the whole point of it.
+
+    This used to name `UPLOAD_DIR`, which stopped being the answer when the
+    bytes moved to object storage — on S3 the difference is a prefix, not a
+    directory. `private=False` is where that decision lives now, and it is the
+    same decision: a public prefix is readable without a signature and the
+    private one is not."""
     src = source(server._store_upload)
 
-    assert "UPLOAD_DIR" in src
-    assert "PRIVATE_UPLOAD_DIR" not in src
+    assert "STORAGE.put(" in src
+    assert "private=False" in src
+    assert "private=True" not in src
+    # And the two really are different places, whichever backend is in use:
+    # a separate directory on disk, a separate prefix in the bucket.
+    assert server.UPLOAD_DIR != server.PRIVATE_UPLOAD_DIR
+    assert server.STORAGE_PUBLIC_PREFIX != server.STORAGE_PRIVATE_PREFIX
+    assert server.S3Storage.key("a.jpg", private=True) != server.S3Storage.key(
+        "a.jpg", private=False
+    )
 
 
 # --- The formats we offer ---------------------------------------------------
@@ -463,7 +477,10 @@ def test_the_brand_avatar_mirrors_the_creator_one():
     brand = component("components", "BrandAvatar.jsx")
     creator = component("components", "admin", "shared.jsx")
 
-    for shared in ("rounded-md border border-white/10", "bg-ember-500/10", "font-serif"):
+    # Tokens rather than raw colours since the console gained a light theme —
+    # `border-tint/10` is `border-white/10` with the base flipped per theme, so
+    # the two avatars still have to be spelled the same way as each other.
+    for shared in ("rounded-md border border-tint/10", "bg-primary/10", "font-serif"):
         assert shared in brand, f"BrandAvatar has dropped {shared}"
         assert shared in creator
 

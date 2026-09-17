@@ -32,7 +32,7 @@ import { formatDate } from "@/lib/time";
 import { TEXT } from "./console/tokens";
 
 const STATUS_TONE = {
-    accepted: "text-emerald-300",
+    accepted: "text-state-approved",
     rejected: "text-destructive",
     submitted: "text-muted-foreground",
 };
@@ -133,9 +133,9 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                     onClick={() => setOpen((v) => !v)}
                     aria-expanded={open}
                     data-testid={IDS.toggle(doc.id)}
-                    className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                    className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                    <FileText className="h-4 w-4 flex-none text-ember-500" />
+                    <FileText className="h-4 w-4 flex-none text-primary-ink" />
                     <span className="min-w-0">
                         {doc.doc_label}
                         <span className="block truncate text-sm text-muted-foreground">
@@ -176,7 +176,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                 <div className="mt-3 space-y-3">
                     <div
                         data-testid={IDS.viewer(doc.id)}
-                        className="overflow-hidden rounded-md border border-white/10 bg-background/60"
+                        className="overflow-hidden rounded-md border border-tint/10 bg-background/60"
                     >
                         {loading && (
                             <p className="flex items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
@@ -219,7 +219,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 href={blobUrl}
                                 download={doc.original_name || "document"}
                                 data-testid={IDS.download(doc.id)}
-                                className={`inline-flex items-center gap-1.5 rounded border border-white/15 px-3 py-2 ${TEXT.meta} uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500`}
+                                className={`inline-flex items-center gap-1.5 rounded border border-tint/15 px-3 py-2 ${TEXT.meta} uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                             >
                                 <Download className="h-3.5 w-3.5" />
                                 Download
@@ -234,7 +234,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                             onClick={() => review("accepted")}
                             disabled={busy || doc.status === "accepted"}
                             data-testid={IDS.accept(doc.id)}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             <Check className="mr-1.5 h-3.5 w-3.5" />
@@ -261,7 +261,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 onChange={(e) => setNote(e.target.value)}
                                 placeholder="What's wrong with it. The brand is told this, so it can re-upload the right one."
                                 data-testid={IDS.rejectNote(doc.id)}
-                                className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                                className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
                             />
                             <Button
                                 size="sm"
@@ -271,7 +271,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 // producing a 422.
                                 disabled={busy || !note.trim()}
                                 data-testid={IDS.rejectSubmit(doc.id)}
-                                className="min-h-[2.75rem] bg-destructive text-white hover:bg-destructive/90 sm:min-h-0"
+                                className="min-h-[2.75rem] bg-destructive text-primary-foreground hover:bg-destructive/90 sm:min-h-0"
                             >
                                 {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                                 Reject this document
@@ -289,7 +289,7 @@ export default function BrandDocuments({ brandId, documents, onChanged }) {
         return (
             <p
                 data-testid={IDS.empty}
-                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
             >
                 Nothing uploaded. A brand needs at least one — GST certificate, business
                 registration, FSSAI licence or shop &amp; establishment licence — before
@@ -300,7 +300,7 @@ export default function BrandDocuments({ brandId, documents, onChanged }) {
     return (
         <ul
             data-testid={IDS.list}
-            className="divide-y divide-white/10 rounded-md border border-white/10 bg-card"
+            className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card"
         >
             {documents.map((d) => (
                 <DocumentRow key={d.id} brandId={brandId} doc={d} onReviewed={onChanged} />

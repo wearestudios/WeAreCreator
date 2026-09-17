@@ -8,13 +8,22 @@
  * the same field, so the copy lives here rather than being retyped per screen.
  *
  * Mirrors EXECUTION_OWNERS on the server, and like `_execution_owner` there,
- * anything unrecognised — including a campaign written before the field
- * existed — reads as "brand" rather than as an empty badge.
+ * anything unrecognised reads as the default rather than as an empty badge.
+ * A drift test fails if the two files disagree, so this constant moves when
+ * the server's does and not before.
  */
 
 export const EXECUTION_OWNERS = ["brand", "weare"];
 
-export const DEFAULT_EXECUTION_OWNER = "brand";
+/**
+ * The reader's default, matching `DEFAULT_EXECUTION_OWNER` in server.py.
+ *
+ * "weare", because the product is managed-only: a row that says nothing is a
+ * row nobody has said anything about, and what is true of it today is that we
+ * run it. Campaigns written before the field existed are not relying on this
+ * — the server's startup migration stamps them "brand" explicitly.
+ */
+export const DEFAULT_EXECUTION_OWNER = "weare";
 
 export const EXECUTION_META = {
     brand: {

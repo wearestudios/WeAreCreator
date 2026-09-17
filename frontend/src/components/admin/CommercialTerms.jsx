@@ -248,7 +248,7 @@ export function CampaignFeePanel({ campaignId, campaignFee, refund, onSaved }) {
             {refund && refund.state !== "none" && (
                 <div
                     data-testid={IDS.refund}
-                    className="rounded-lg border border-white/10 bg-card p-4"
+                    className="rounded-lg border border-tint/10 bg-card p-4"
                 >
                     <p className={`${TEXT.meta} flex items-center gap-1.5 text-muted-foreground`}>
                         <Receipt aria-hidden="true" className="h-3 w-3" />
@@ -276,7 +276,7 @@ export function CampaignFeePanel({ campaignId, campaignFee, refund, onSaved }) {
                                 {refund.overridden && (
                                     <span
                                         data-testid={IDS.refundOverridden}
-                                        className="ml-1 text-amber-300"
+                                        className="ml-1 text-state-pending"
                                     >
                                         (against the reckoning)
                                     </span>

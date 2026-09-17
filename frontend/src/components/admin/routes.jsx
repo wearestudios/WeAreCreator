@@ -13,6 +13,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminConsole } from "@/pages/AdminConsole";
 import { SafeSection } from "@/components/ErrorBoundary";
 import Overview from "@/components/admin/Overview";
+import Analytics from "@/components/admin/Analytics";
 import {
     ExportsPanel,
     HealthPanel,
@@ -74,6 +75,13 @@ export const HealthRoute = () => (
 export const PerformanceRoute = () => (
     <SafeSection name="intelligence" label="Activity charts couldn't load">
         <IntelligencePanel />
+    </SafeSection>
+);
+
+/** The four ratios the business is judged on. */
+export const AnalyticsRoute = () => (
+    <SafeSection name="analytics" label="Analytics couldn't load">
+        <Analytics />
     </SafeSection>
 );
 

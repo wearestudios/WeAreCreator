@@ -33,7 +33,7 @@ export default function CampaignCover({
     const src = campaign?.cover_image_url ? mediaUrl(campaign.cover_image_url) : null;
     const initial = initialOf(campaign?.brand_name, campaign?.business_name, campaign?.title);
 
-    const frame = `relative w-full overflow-hidden border border-white/10 ${ratio} ${rounded} ${className}`;
+    const frame = `relative w-full overflow-hidden border border-tint/10 ${ratio} ${rounded} ${className}`;
 
     if (src && !broken) {
         return (
@@ -67,7 +67,7 @@ export default function CampaignCover({
             <span
                 aria-hidden="true"
                 data-testid={COVER.fallback(id)}
-                className="absolute inset-0 grid place-items-center font-serif text-[clamp(2.5rem,9vw,4.5rem)] leading-none text-white/45"
+                className="absolute inset-0 grid place-items-center font-serif text-[clamp(2.5rem,9vw,4.5rem)] leading-none text-tint/45"
             >
                 {initial}
             </span>

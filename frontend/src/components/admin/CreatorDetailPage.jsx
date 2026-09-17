@@ -151,7 +151,7 @@ export default function CreatorDetailPage() {
                             testid={DIDS.stat("verification")}
                         />
                         {suspended && (
-                            <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-red-300/80">
+                            <span className="rounded-full border border-state-rejected/25 bg-state-rejected/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-state-rejected">
                                 Suspended
                             </span>
                         )}
@@ -179,7 +179,7 @@ export default function CreatorDetailPage() {
                                         "Creator verified",
                                     )
                                 }
-                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 Approve
                             </Button>
@@ -189,7 +189,7 @@ export default function CreatorDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("reject")}
                                 onClick={() => setDialog({ kind: "reject" })}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 Reject
                             </Button>
@@ -204,7 +204,7 @@ export default function CreatorDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("reinstate")}
                                 onClick={() => setDialog({ kind: "reinstate" })}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
                             >
                                 Reinstate
                             </Button>
@@ -267,12 +267,12 @@ export default function CreatorDetailPage() {
                                 {creator.about && (
                                     <p
                                         data-testid="admin-creator-about"
-                                        className="mt-6 whitespace-pre-line border-t border-white/10 pt-6 text-sm leading-relaxed text-foreground/90"
+                                        className="mt-6 whitespace-pre-line border-t border-tint/10 pt-6 text-sm leading-relaxed text-foreground/90"
                                     >
                                         {creator.about}
                                     </p>
                                 )}
-                                <dl className="mt-7 grid gap-5 border-t border-white/10 pt-6 sm:grid-cols-3">
+                                <dl className="mt-7 grid gap-5 border-t border-tint/10 pt-6 sm:grid-cols-3">
                                     <Field label="Base rate">
                                         {creator.base_rate != null
                                             ? `₹${formatRupees(creator.base_rate)}`
@@ -316,7 +316,7 @@ export default function CreatorDetailPage() {
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 data-testid={ADDRESS.openInMaps}
-                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-150 hover:text-ember-400 md:min-h-0"
+                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-primary-ink transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                                             >
                                                 <MapPin className="h-3.5 w-3.5" />
                                                 {creator.location_lat != null
@@ -352,7 +352,7 @@ export default function CreatorDetailPage() {
                                     <Field label="PAN">{creator.pan_masked}</Field>
                                 </dl>
                                 {creator.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200">
+                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
                                         Last decision: {creator.verification_reason}
                                     </p>
                                 )}
@@ -425,7 +425,7 @@ export default function CreatorDetailPage() {
                                             href={data.youtube.url}
                                             target="_blank"
                                             rel="noreferrer noopener"
-                                            className="mt-4 block break-all text-sm text-ember-500 transition-colors duration-150 hover:text-ember-400"
+                                            className="mt-4 block break-all text-sm text-primary-ink transition-colors duration-150 hover:text-primary-ink"
                                         >
                                             {data.youtube.url}
                                         </a>
@@ -451,12 +451,12 @@ export default function CreatorDetailPage() {
                         {!data.slot_bookings?.length ? (
                             <p
                                 data-testid={IDS.bookingsEmpty}
-                                className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
                             >
                                 Nothing booked. A slot is taken once a fee is agreed.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                 {data.slot_bookings.map((b) => (
                                     <li
                                         key={b.id}
@@ -501,11 +501,11 @@ export default function CreatorDetailPage() {
                                 <div key={g.key} data-testid={IDS.collabGroup(g.key)}>
                                     <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                         {g.label}
-                                        <span className="ml-2 text-ember-500">
+                                        <span className="ml-2 text-primary-ink">
                                             {data.collaborations[g.key].length}
                                         </span>
                                     </p>
-                                    <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+                                    <ul className="mt-3 divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
                                         {data.collaborations[g.key].map((c) => (
                                             <li
                                                 key={c.id}
@@ -543,7 +543,7 @@ export default function CreatorDetailPage() {
                             {COLLAB_GROUPS.every(
                                 (g) => (data.collaborations[g.key] || []).length === 0,
                             ) && (
-                                <p className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground">
+                                <p className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground">
                                     They haven't applied to anything yet.
                                 </p>
                             )}

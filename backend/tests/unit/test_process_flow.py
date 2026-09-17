@@ -103,7 +103,15 @@ def test_without_a_draft_gate_the_two_content_stages_shift_by_one():
 
 def test_the_underlying_ladder_is_untouched():
     """The whole point of a presentation layer. If this ever fails, the flow
-    stopped being a view and started being a second state machine."""
+    stopped being a view and started being a second state machine.
+
+    The delivery half was added to the *machine* when the type was, which is
+    right — `COLLAB_STATE_ORDER` is the one place every state this system has
+    is written down, and a state missing from it is a state no audit line and
+    no `_stage_of` can name. What must not happen is the eight *stages*
+    growing to ten to accommodate it: the journey is the same journey, and the
+    presentation says so with two different words. See `_process_stages`.
+    """
     assert server.COLLAB_STATE_ORDER == [
         "applied",
         "verified",
@@ -111,6 +119,9 @@ def test_the_underlying_ladder_is_untouched():
         "commercial_agreed",
         "slot_booked",
         "attended",
+        "address_confirmed",
+        "dispatched",
+        "received",
         "draft_submitted",
         "draft_approved",
         "content_submitted",
@@ -118,6 +129,73 @@ def test_the_underlying_ladder_is_untouched():
         "in_payment",
         "closed",
     ]
+
+
+def test_a_delivery_brief_still_draws_eight_stages():
+    """**A relabelling, not a ninth and tenth box.** Something is arranged,
+    the creator comes to have the thing, they shoot it, it is reviewed, it
+    goes live, they are paid — on both kinds of campaign. Splitting the
+    stepper by type would mean every screen that draws it learns the
+    difference."""
+    delivery = {"campaign_type": "delivery"}
+    flow = server._process_flow({"state": "received"}, delivery)
+
+    assert flow["stage_count"] == len(server.PROCESS_STAGES) == 8
+    assert [s["key"] for s in flow["stages"]] == list(server.PROCESS_STAGE_KEYS)
+
+
+def test_the_two_venue_words_are_replaced_on_a_delivery_brief():
+    """"Scheduled" and "Attended" are both plainly false about a parcel —
+    nothing was scheduled and nobody attended. A creator reading "Attended" on
+    a campaign where a bottle was posted to them has been told the screen does
+    not know what kind of work this is."""
+    labels = dict(server._process_stages({"campaign_type": "delivery"}))
+    assert labels["scheduled"] == "Dispatch"
+    assert labels["attended"] == "Delivered"
+
+    # And a venue brief is untouched, which is the half that could regress
+    # silently.
+    assert dict(server._process_stages({"campaign_type": "launch"})) == dict(
+        server.PROCESS_STAGES
+    )
+    assert dict(server._process_stages(None)) == dict(server.PROCESS_STAGES)
+
+
+@pytest.mark.parametrize(
+    "state,stage",
+    [
+        ("address_confirmed", "scheduled"),
+        ("dispatched", "scheduled"),
+        ("received", "attended"),
+    ],
+)
+def test_every_delivery_state_stands_in_a_stage(state, stage):
+    """A state missing from the mapping renders nothing at all, which on a
+    stepper is a step that silently disappears. That is why this is a test
+    rather than a `.get()` with a default."""
+    assert server._stage_of(state, {"campaign_type": "delivery"}) == stage
+
+
+def test_the_delivery_voice_says_whose_move_it_is():
+    """The picture is identical for all three audiences and only the voice
+    changes. The wait reads differently from the outside here: "on its way" is
+    a fact about a courier, and a brand reading "waiting for the creator"
+    about a parcel it has not posted yet would chase the wrong person."""
+    delivery = {"campaign_type": "delivery", "execution_owner": "brand"}
+
+    creator = server._process_flow(
+        {"state": "dispatched"}, delivery, viewer={"role": "creator"}
+    )
+    assert creator["next_action"]["owner"] == "creator"
+    assert "Confirm it arrived" in creator["next_action"]["label"]
+
+    # Nobody else is told to do it; they are told what is being waited on.
+    onlooker = server._process_flow({"state": "dispatched"}, delivery)
+    assert "On its way" in onlooker["next_action"]["label"]
+
+    # And the step before it is the runner's, not the creator's.
+    waiting = server._process_flow({"state": "address_confirmed"}, delivery)
+    assert waiting["next_action"]["owner"] == "brand"
 
 
 # ---------------------------------------------------------------------------

@@ -92,8 +92,8 @@ export default function AdminDeletions() {
                         className={
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (state === s.value
-                                ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
-                                : "border-white/10 text-muted-foreground hover:text-foreground")
+                                ? "border-primary/40 bg-primary/10 text-primary-ink"
+                                : "border-tint/10 text-muted-foreground hover:text-foreground")
                         }
                     >
                         {s.label}
@@ -134,14 +134,14 @@ export default function AdminDeletions() {
                             {row.blocking?.length > 0 && (
                                 <div
                                     data-testid={IDS.blocked(row.id)}
-                                    className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 p-3"
+                                    className="mt-3 rounded border border-state-pending/30 bg-state-pending/10 p-3"
                                 >
-                                    <p className="flex items-center gap-2 text-sm text-amber-200">
+                                    <p className="flex items-center gap-2 text-sm text-state-pending">
                                         <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
                                         {row.blocking.length} collaboration
                                         {row.blocking.length === 1 ? "" : "s"} still under way
                                     </p>
-                                    <ul className={`mt-2 space-y-1 ${TEXT.meta} text-amber-100/90`}>
+                                    <ul className={`mt-2 space-y-1 ${TEXT.meta} text-state-pending`}>
                                         {row.blocking.map((b) => (
                                             <li key={b.collaboration_id}>
                                                 {b.campaign_title} — {b.state?.replace(/_/g, " ")}

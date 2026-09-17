@@ -33,11 +33,11 @@ export default function SuspensionPrompts({ data }) {
     return (
         <section
             data-testid={IDS.panel}
-            className="mb-4 rounded-md border border-amber-400/30 bg-amber-400/10 p-4"
+            className="mb-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
         >
             <div className="flex flex-wrap items-center gap-2">
-                <UserX aria-hidden="true" className="h-4 w-4 text-amber-300" />
-                <p className={`${TEXT.meta} uppercase tracking-[0.14em] text-amber-200`}>
+                <UserX aria-hidden="true" className="h-4 w-4 text-state-pending" />
+                <p className={`${TEXT.meta} uppercase tracking-[0.14em] text-state-pending`}>
                     Worth a look
                 </p>
                 <p className={`${TEXT.meta} text-muted-foreground`}>
@@ -58,7 +58,7 @@ export default function SuspensionPrompts({ data }) {
                         <Link
                             to={p.href}
                             data-testid={IDS.suspend(p.user_id)}
-                            className={`min-w-0 flex-1 truncate text-sm hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 ${CALM}`}
+                            className={`min-w-0 flex-1 truncate text-sm hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${CALM}`}
                         >
                             {p.name}
                             {p.reference ? (
@@ -72,7 +72,7 @@ export default function SuspensionPrompts({ data }) {
                             four is a different account from three out of
                             forty, and a row that omits the second number is
                             asking somebody to decide blind. */}
-                        <span className={`${TEXT.meta} tabular-nums text-amber-200`}>
+                        <span className={`${TEXT.meta} tabular-nums text-state-pending`}>
                             {p.no_shows} no-show{p.no_shows === 1 ? "" : "s"}
                             {typeof p.completed === "number"
                                 ? ` · ${p.completed} completed`

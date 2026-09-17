@@ -57,16 +57,16 @@ export function ViewAsButton({ userId, name, role, disabled }) {
                 disabled={disabled || !userId}
                 onClick={() => setOpen(true)}
                 data-testid={IDS.start(userId)}
-                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
             >
                 <Eye className="mr-2 h-4 w-4" />
                 View as
             </Button>
 
             <AlertDialog open={open} onOpenChange={setOpen}>
-                <AlertDialogContent className="rounded-md border border-white/10 bg-card">
+                <AlertDialogContent className="rounded-md border border-tint/10 bg-card">
                     <AlertDialogHeader>
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
                             View as
                         </p>
                         <AlertDialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -87,7 +87,7 @@ export function ViewAsButton({ userId, name, role, disabled }) {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-2">
-                        <AlertDialogCancel className="rounded-full border-white/15 bg-transparent hover:bg-white/5">
+                        <AlertDialogCancel className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5">
                             Cancel
                         </AlertDialogCancel>
                         <AlertDialogAction
@@ -97,7 +97,7 @@ export function ViewAsButton({ userId, name, role, disabled }) {
                             }}
                             disabled={busy}
                             data-testid={IDS.start("confirm")}
-                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {busy ? (
                                 <>

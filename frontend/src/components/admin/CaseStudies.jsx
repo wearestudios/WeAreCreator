@@ -54,8 +54,8 @@ const TYPE_LABELS = {
 };
 
 const field =
-    "w-full rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm " +
-    "text-foreground outline-none transition-colors duration-150 focus:border-ember-500/60";
+    "w-full rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-sm " +
+    "text-foreground outline-none transition-colors duration-150 focus:border-primary/60";
 
 function Row({ label, hint, children }) {
     return (
@@ -311,10 +311,10 @@ function Editor({ study, onSaved, onClose }) {
             {missing.length > 0 && (
                 <div
                     data-testid={IDS.missing}
-                    className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4"
+                    className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
                 >
-                    <p className="text-sm text-amber-200">Before this can go live:</p>
-                    <ul className="mt-2 list-disc pl-5 text-sm text-amber-100/90">
+                    <p className="text-sm text-state-pending">Before this can go live:</p>
+                    <ul className="mt-2 list-disc pl-5 text-sm text-state-pending">
                         {missing.map((m) => (
                             <li key={m}>{m}</li>
                         ))}
@@ -322,7 +322,7 @@ function Editor({ study, onSaved, onClose }) {
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-3 border-t border-white/10 pt-4">
+            <div className="flex flex-wrap items-center gap-3 border-t border-tint/10 pt-4">
                 <Button onClick={save} disabled={pending} data-testid={IDS.save}>
                     {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Save
@@ -354,7 +354,7 @@ function Editor({ study, onSaved, onClose }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         data-testid={IDS.viewLive}
-                        className="inline-flex items-center gap-1.5 text-sm text-ember-500"
+                        className="inline-flex items-center gap-1.5 text-sm text-primary-ink"
                     >
                         <ExternalLink className="h-3.5 w-3.5" /> View live
                     </a>
@@ -551,7 +551,7 @@ export default function CaseStudies() {
                                 type="button"
                                 onClick={() => createFrom(c.id)}
                                 data-testid={IDS.campaignOption(c.id)}
-                                className={`w-full rounded-md border border-white/10 bg-white/[0.02] ${DENSITY.row} text-left text-sm transition-colors duration-150 hover:border-ember-500/40`}
+                                className={`w-full rounded-md border border-tint/10 bg-tint/[0.02] ${DENSITY.row} text-left text-sm transition-colors duration-150 hover:border-primary/40`}
                             >
                                 <span className="block truncate">{c.title}</span>
                                 <span className={`${TEXT.meta} text-muted-foreground`}>

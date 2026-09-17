@@ -1269,6 +1269,64 @@ This was a compression, not a repositioning: every claim survived, and the
 tests that pin what each audience must come away knowing were rewritten to
 look for the idea rather than the sentence it used to sit in.
 
+### The register
+
+The budget says how *much* each page may say. This says how it says it, and it
+was the half nobody had written down — so the site drifted into two voices. Some
+lines were confident and precise; others were clipped for punch and landed as
+curt, which on a page asking a business to spend money reads as cheap rather
+than as brisk.
+
+Four faults, all of them the same instinct taken too far:
+
+- **Sentence fragments used for punch.** "Nobody checked" was the charge the
+  whole home page is built on, delivered as a shrug with the noun missing. It
+  is "Creators nobody has checked" — same length class, same claim, and it
+  names who.
+- **Dropped articles.** "Find it and pitch", "Post it, we cast" — telegraphic
+  in a way that reads as notes toward copy rather than copy. They are "Find a
+  brief and pitch" and "Post the brief and we cast".
+- **Casual filler and vague nouns.** `/for-brands` opened on "Fill the room.
+  Launch the thing.", which was the vaguest line on the site and called a
+  campaign "the thing". It is "Campaigns that fill the room."
+- **Jokes at our own expense.** "We built the boring parts." invites the
+  reader to agree with the adjective, on the page where they are deciding
+  whether to pay for it. It is "We built the process that closes all three."
+
+Two rules follow from those:
+
+- **A heading or a card title is a complete phrase**, not a note. "Handed
+  over, and what that costs." stopped mid-thought — a participle with no
+  subject and a dangling clause — and is "What handing it over costs."
+  "Approval before public" used an adjective as a noun to save two words.
+- **A both-sides page routes; it never challenges.** "Which side are you on?"
+  asks a stranger about allegiance before they have decided anything. It is
+  "Where would you like to begin?"
+
+**These are steps, not moments.** `/how-it-works` called its six rows moments,
+which made a sequence somebody can follow read as atmosphere. The key is
+`step` now, and the headline-length regex in `test_marketing_pages.py` matches
+both spellings so the cap survived the rename rather than silently stopping at
+it.
+
+**The register pass is not a licence to lengthen.** Every page came out of it
+inside the same budget — home 105/120, `/for-brands` 250/250, `/for-creators`
+244/250, `/how-it-works` 288/300, `/why-weare` 257/300 — which is the
+constraint that forces a rewrite to be better rather than merely longer. On
+`/for-brands`, which has no headroom at all, the new hero is a word shorter
+than the one it replaced and that is what paid for the fixes below it.
+
+**What the tests pin, and what they must not.** Several of these lines were
+asserted verbatim, so the audit had to move five assertions. Each now pins the
+*idea* — "nobody has checked" rather than the label, "handing it over costs"
+rather than the heading — because a rule that names a phrase is a rule that
+fails on its next honest rewrite. The five preserved lines set the standard the
+rest was raised to: "Your creator campaigns, handled properly", "Verified
+creators, the rate agreed before anyone shoots, and results you can show", "A
+follower count in a DM is a number somebody typed", "Our fee is charged to the
+brand on top, never taken out of yours", and "Ranked by fit, never by what it
+pays".
+
 ### The motion layer
 
 `components/marketing/motion.js` — one easing curve (`EASE`), durations
@@ -1464,9 +1522,20 @@ space the photograph will.
 ### The navbar, and the 404
 
 Logged out, the bar carries the four pages — For brands, For creators, How it
-works, Why WeAre — plus Log in and **Join**. It said "Sign up as a creator"
-until the site started addressing two audiences by name beside it; `/signup`
-carries a role picker and defaults to creator, so nobody loses a step. One
+works, Why WeAre Creators — plus Log in and **Sign up**. The button said "Sign
+up as a creator" until the site started addressing two audiences by name beside
+it; `/signup` carries a role picker and defaults to creator, so nobody loses a
+step.
+
+**Two of those are register fixes rather than renames.** "Why WeAre" reads as a
+phrase somebody stopped typing — the product is WeAre Creators, and the nav is
+the one place the name is stated rather than assumed. And "Join" sat beside
+"Log in" as the shorter, more casual half of a pair, which is how a bar reads
+as unfinished; "Sign up" is the same word count as its neighbour and the same
+register. The admin bar's "Queue" went the same way, to "Action queue" — the
+console's own sidebar had called it that since it was built, so the nav was a
+second vocabulary for one screen, and "Queue" alone names the data structure
+rather than the job. One
 `MARKETING_LINKS` list feeds the desktop bar and the mobile sheet, because the
 sheet is the only navigation below `md` and anything missing there is
 unreachable on a phone. Signed-in users keep their role navigation; the
@@ -1494,8 +1563,8 @@ either. `FooterLink` picks `<a>` over `<Link>` on `link.external`, which today
 marks only the mailto — the audience pages were marked too while the backend
 rendered them.
 
-Four columns now rather than three: "Why WeAre" and "How it works" used to be
-the audience pages under borrowed names, because those were the only two pages
+Four columns now rather than three: "Why WeAre Creators" and "How it works"
+used to be the audience pages under borrowed names, because those were the only two pages
 that existed. Each is its own page, and the audience columns point at the
 audience pages.
 
@@ -2430,14 +2499,28 @@ applicant and no WeAre manager was told at all.
   rather than kept**: with the absolute guard in front of it no input could
   reach its branches, and a guard that cannot fire is the shape this codebase
   keeps finding bugs in.
-- **`DEFAULT_EXECUTION_OWNER` is the *reader's* default and stays `brand`.**
-  It is what an absent value means on the thousands of campaigns written
-  before the field existed, so flipping it would hand every historical brief
-  to a WeAre manager who was never told. The creation default and the reader
-  default differing is deliberate — the same split `requires_draft_approval`
-  makes, for the same reason: one is a policy for new work and the other is a
-  promise to old work. `_execution_owner(campaign)` is the only reader — pure,
-  DB-free, never `None`, because every surface has to print one of two words.
+- **`DEFAULT_EXECUTION_OWNER` is `weare` too, and the promise to old work
+  moved into the data to let it be.** The reader's default was `brand` for one
+  reason: thousands of campaigns predate the field, and reading absent as
+  `weare` would hand every historical brief to a manager who was never told.
+  That made one constant do two jobs — describe the product *and* protect the
+  back catalogue — and the jobs pull opposite ways once every brief is ours.
+  So `backfill_execution_owner` stamps `LEGACY_EXECUTION_OWNER` (`brand`) on
+  every pre-field campaign, `_startup` awaits it before FastAPI serves a
+  request, and the reader is free to say the true thing about a row nobody has
+  said anything about: we run it. This is the deliberate opposite of the split
+  `requires_draft_approval` keeps — there the old work is protected by the
+  reader because there is no backfill; here it is protected by the write.
+  A promise kept by a backfill has to be **driven** to count, so
+  `test_managed_and_commission.py` runs it against a database and reads the
+  rows back rather than asserting the constant.
+- **`_execution_owner_query` derives which side is `$ne` from the constant**,
+  rather than writing `brand` and `weare` in. The default side has to match a
+  document with no field — an equality test there returns nothing on a box
+  whose migration has not run — and hardcoding which side that is is how the
+  filter and the reader came to disagree when the default moved.
+  `_execution_owner(campaign)` is still the only reader — pure, DB-free, never
+  `None`, because every surface has to print one of two words.
 - `weare_run_reason` is now always set on a brand-posted brief:
   `MANAGED_BY_DEFAULT_REASON` (`managed`) where it is simply the product, and
   the specific code where the *shape* of the work is why. Both are ours;
@@ -2465,10 +2548,14 @@ applicant and no WeAre manager was told at all.
   `_refuse_brand_barter`, and for the same reason: the brand edit loop copies
   the payload generically, so an unguarded field rides along with everything
   else.
-- Filtering for `brand` is `{"$ne": "weare"}`, not an equality test — campaigns
-  predate the field. The startup backfill fills them in (deriving `weare` from a
-  WeAre `manager_id`), but a filter that only works after a migration has run
-  returns nothing on a box that has not restarted. Same reasoning as `showcase`.
+- Filtering for the **default** side is `$ne` on the other, not an equality
+  test — campaigns predate the field, and a filter that only works after a
+  migration has run returns nothing on a box that has not restarted. Same
+  reasoning as `showcase`. With the default at `weare` that means `weare` is
+  `{"$ne": "brand"}` and `brand` is the equality test, which is the reverse of
+  how it read before and is exactly why the function computes it rather than
+  spelling it out. The backfill still derives `weare` from a WeAre
+  `manager_id` before falling back to `brand`.
 
 `lib/execution.js` is the frontend half — the two words, the three audiences'
 wording, and the reader with the same default. `ExecutionBadge` / `ExecutionNote`

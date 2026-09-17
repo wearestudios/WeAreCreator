@@ -23,19 +23,19 @@ import { CheckCircle2, CircleDashed, Info, TriangleAlert } from "lucide-react";
 const BANDS = {
     strong: {
         Icon: CheckCircle2,
-        wrap: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+        wrap: "border-state-approved/30 bg-state-approved/10 text-state-approved",
     },
     steady: {
         Icon: CheckCircle2,
-        wrap: "border-white/15 text-foreground/80",
+        wrap: "border-tint/15 text-foreground/80",
     },
     mixed: {
         Icon: TriangleAlert,
-        wrap: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+        wrap: "border-state-pending/30 bg-state-pending/10 text-state-pending",
     },
     new: {
         Icon: CircleDashed,
-        wrap: "border-white/10 text-muted-foreground",
+        wrap: "border-tint/10 text-muted-foreground",
     },
 };
 
@@ -91,7 +91,7 @@ export function ReliabilityPanel({ stats, testid }) {
                 one campaign and from forty are different claims, and the
                 second number is what tells them apart. */}
             {!stats.enough_history && (
-                <p className="flex items-start gap-2 rounded border border-white/10 p-3 text-sm text-muted-foreground">
+                <p className="flex items-start gap-2 rounded border border-tint/10 p-3 text-sm text-muted-foreground">
                     <Info aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     Only {stats.completed} finished {stats.completed === 1 ? "campaign" : "campaigns"} so
                     far — the rates below are a start, not a pattern.
