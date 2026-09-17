@@ -106,7 +106,15 @@ function ScoreBreakdown({ row }) {
     );
 }
 
-export function SuggestedCreators({ campaignId, canInvite = true }) {
+// **The default is `false`, and it changed when inviting became ours.** This
+// component lives under `components/brand/` and its only mount is the brand's
+// own applicant board, which passes `canInvite={false}` — so the `true` branch
+// had no caller at all, while still being what a new mount would get by
+// forgetting the prop. A brand-facing component whose default offers a
+// capability brands do not have is a 403 waiting for somebody to mount it in a
+// hurry, and the button would look like a bug rather than a decision. A
+// console surface that wants the asking half says so explicitly.
+export function SuggestedCreators({ campaignId, canInvite = false }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);

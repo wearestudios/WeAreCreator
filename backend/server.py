@@ -16551,6 +16551,7 @@ async def list_all_creators(
     q: Optional[str] = None,
     verification_status: Optional[str] = None,
     niche: Optional[str] = None,
+    category: Optional[str] = None,
     city: Optional[str] = None,
     area: Optional[str] = None,  # alias for city; creators carry a city, not an area
     onboarded_only: bool = False,
@@ -16578,6 +16579,24 @@ async def list_all_creators(
         match["verification_status"] = verification_status
     if niche:
         match["niches"] = {"$regex": f"^{re.escape(niche.strip())}$", "$options": "i"}
+    if category:
+        # **Through the same bridge the supply figure counted with**, so the
+        # analytics panel's "14 fitness creators" and the list its link opens
+        # are the same fourteen people. A literal match on the category word
+        # would find whoever typed "fnb" about themselves, which is nobody.
+        clause = _category_niche_query(category)
+        if clause is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown category: {category}.",
+            )
+        # `niche` and `category` are both clauses on `niches`, so the narrower
+        # one must not silently replace the other — the `setdefault` rule the
+        # campaign feed's filters already hold.
+        if "niches" in match:
+            match.setdefault("$and", []).append({"niches": clause})
+        else:
+            match["niches"] = clause
     if location:
         match["city"] = {"$regex": f"^{re.escape(location)}$", "$options": "i"}
     if onboarded_only:
@@ -20757,6 +20776,34 @@ def _aware(value):
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def _category_niche_query(category: str) -> Optional[dict]:
+    """The `niches` clause matching everybody `_creator_categories` counts.
+
+    **The query half of the same bridge, so a link lands on the set the number
+    counted.** The supply panel says "14 fitness creators in Bengaluru" and
+    offers a way through to them; filtering on the literal word `fitness` would
+    find only the creators who happened to type it, which is a link to an
+    emptier list than the figure beside it — the decoration failure the health
+    panel's three dead links already taught, arriving as a subtler version of
+    itself because the list does load, just with the wrong people missing.
+
+    Returns `None` for a category nobody has synonyms for, so the caller can
+    tell "no such category" from "this category matches nothing".
+    """
+    synonyms = CAMPAIGN_CATEGORY_SYNONYMS.get((category or "").strip().lower())
+    if synonyms is None:
+        return None
+    # The category's own key counts too, exactly as `_creator_categories`
+    # allows — somebody who did write "fnb" is in it.
+    terms = {category.strip().lower(), *(s.lower() for s in synonyms)}
+    return {
+        "$elemMatch": {
+            "$regex": f"^({'|'.join(re.escape(t) for t in sorted(terms))})$",
+            "$options": "i",
+        }
+    }
+
+
 def _creator_categories(profile: dict) -> list:
     """Which campaign categories a creator counts as supply for.
 
@@ -21185,6 +21232,8 @@ async def list_all_campaigns(
     date_to: Optional[datetime] = None,
     date_field: str = "created_at",  # created_at | start_date | end_date
     q: Optional[str] = None,
+    category: Optional[str] = None,
+    city: Optional[str] = None,
     page: int = 1,
     page_size: int = 25,
     user: dict = Depends(require_roles(*CONSOLE_ROLES)),
@@ -21249,6 +21298,23 @@ async def list_all_campaigns(
         # campaign written before the field existed — hence $ne rather than an
         # equality that would match nothing.
         match["showcase"] = True if showcase else {"$ne": True}
+    # **Category and city, because the supply panel links here.** "Briefs we
+    # could not fill in fnb · Bengaluru" offering a way through to a keyword
+    # search over titles would land on a different set from the one it
+    # counted, which is the health panel's dead-link failure wearing a subtler
+    # face: the list loads, so nobody notices it is the wrong list.
+    if category:
+        if category not in CATEGORY_LITERAL.__args__:
+            raise HTTPException(
+                status_code=422,
+                detail=f"category must be one of: {', '.join(CATEGORY_LITERAL.__args__)}.",
+            )
+        match["category"] = category
+    if city:
+        # Through `_canonical_city`, the same fold the campaign feed uses, or
+        # "Bangalore" and "Bengaluru" are two filters over one city. An
+        # unparseable one 422s there, naming what is allowed.
+        match["city"] = _canonical_city(city)
 
     pipeline: list = []
     if match:
