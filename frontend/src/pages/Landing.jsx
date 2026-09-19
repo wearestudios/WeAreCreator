@@ -13,14 +13,15 @@
 //
 // **Nothing here is fetched from a third party.** The slider hotlinked four
 // stock photographs until the image slots replaced them.
-import React from "react";
+import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 import MarketingNavbar from "@/components/marketing/MarketingNavbar";
 import MarketingFooter from "@/components/marketing/MarketingFooter";
 import { Button } from "@/components/ui/button";
 import PageMeta from "@/components/marketing/PageMeta";
+import { CAMPAIGN_PROOF_POINTS } from "@/lib/promise";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
@@ -36,6 +37,7 @@ import {
     LANDING_PAGE as PAGE_IDS,
     MARKETING as IDS,
 } from "@/constants/testIds";
+import { FUNNEL, track } from "@/lib/analytics";
 
 // ---------------------------------------------------------------------------
 // Copy
@@ -46,8 +48,12 @@ import {
 // lines to twenty, and the page total under 120.
 
 const COPY = {
-    title: "Your creator campaigns, handled properly.",
-    line: "Verified creators, the rate agreed before anyone shoots, and results you can show.",
+    // The headline is `CAMPAIGN_CLAIM`, rendered by `KineticHeadline` — it is
+    // not repeated here, because two copies of a claim is how a company ends
+    // up with two claims. This line does the job a subheading should: it says
+    // what "run the campaign" actually covers, rather than saying the
+    // headline again in longer words.
+    line: "Casting, the rate agreed in writing, the shoot, the approval and the payment.",
 
     problemTitle: "Most campaigns run on DMs and spreadsheets.",
     problems: [
@@ -201,19 +207,52 @@ function Problem() {
 }
 
 export default function Landing() {
+    // The top of the funnel. Fired once on mount rather than on every render,
+    // and it carries nothing about who is looking — a landing view is a count,
+    // not a person.
+    useEffect(() => {
+        track(FUNNEL.landing, { page: "home" });
+    }, []);
+
     return (
         <div
             data-testid={PAGE_IDS.page}
             className="min-h-screen bg-background text-foreground grain-page"
         >
             <PageMeta
-                title="Creator campaigns, handled properly"
-                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns in Bengaluru."
+                title="We run the campaign, not just the booking"
+                description="Paid creator campaigns in Bengaluru, run end to end. Verified creators, the rate agreed in writing before anyone shoots, and the campaign fee back if we cannot fill your brief."
                 path="/"
             />
             <MarketingNavbar />
 
             <Hero />
+
+            {/* **The three proof points, immediately under the claim.** A
+                claim with nothing checkable under it is a slogan, and these
+                are the three things a brand can go and verify: ask how a
+                creator was checked, ask for the rate in writing, read the
+                refund rule. Labels only here — the full sentence lives on the
+                landing pages, which have the room. Same constant either way,
+                so the promise cannot drift between them. */}
+            <section
+                data-testid="home-proof-points"
+                className="mx-auto max-w-7xl px-6 pb-4"
+            >
+                <ul className="grid gap-3 sm:grid-cols-3">
+                    {CAMPAIGN_PROOF_POINTS.map(({ label }, i) => (
+                        <Reveal key={label} i={i}>
+                            <li className="flex items-center gap-3 rounded-lg border border-white/10 bg-card px-4 py-3 text-sm grain-surface">
+                                <Check
+                                    className="h-4 w-4 shrink-0 text-ember-500"
+                                    aria-hidden="true"
+                                />
+                                {label}
+                            </li>
+                        </Reveal>
+                    ))}
+                </ul>
+            </section>
 
             {/* Counted, never written down. The hero carried a hardcoded
                 "500+ verified creators" until this replaced it. */}

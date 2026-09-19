@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { CIRCUMVENTION, SIGNUP } from "@/constants/testIds";
 import { CIRCUMVENTION_TERMS } from "@/lib/platformTerms";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -18,6 +18,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { CONTACT_ROLES, OTHER_ROLE } from "@/lib/contactRoles";
+import { FUNNEL, track } from "@/lib/analytics";
 
 const ROLE_OPTIONS = [
     {
@@ -44,6 +45,17 @@ export default function Signup() {
     }, [params]);
 
     const [role, setRole] = useState(initialRole);
+
+    // **Started, not completed** — the drop-off between these two is the
+    // number this funnel exists to show. Keyed on the role so the two sides
+    // are counted apart; refires when somebody switches side, because that is
+    // a different funnel they have started.
+    useEffect(() => {
+        track(
+            role === "brand" ? FUNNEL.brandSignupStarted : FUNNEL.creatorSignupStarted,
+            { role },
+        );
+    }, [role]);
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     // A brand registers one named person, who becomes its only login. Asked

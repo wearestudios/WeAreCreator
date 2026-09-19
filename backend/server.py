@@ -44,7 +44,7 @@ from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict, model_validator
+from pydantic import BaseModel, EmailStr, Field, BeforeValidator, field_validator, ConfigDict, model_validator
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -36365,11 +36365,37 @@ def _work_detail_html(cs: dict, media_base: str = "") -> str:
     summary = _case_study_summary(cs)
     hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
 
+    # **The chips link out**, which is where the search value compounds. A case
+    # study is the proof a category page and a city page both need, and the
+    # edge has to exist in both directions or only one of the two accrues
+    # anything. The brand chip stays plain text: a brand's public page is
+    # already linked from its own briefs, and linking it from here would point
+    # a reader at a company rather than at more of our work.
+    #
+    # The category chip goes to the *creator* category page rather than to the
+    # campaign category it was filed under, because that is the page a reader
+    # of this case study would want next — "who else makes this kind of thing".
+    # `_seo_category_for_campaign` is the one-way bridge.
+    city = (cs.get("city") or "").strip()
+    seo_cat = _seo_category_for_campaign(cs.get("category"))
     chips = "".join(
         f'<span class="chip">{e(c)}</span>'
-        for c in (cs.get("brand_name"), cs.get("category_label"), cs.get("city"))
+        for c in (cs.get("brand_name"),)
         if c
     )
+    if seo_cat:
+        chips += (
+            f'<a class="chip" href="{e(CATEGORY_PATH)}/{e(seo_cat["slug"])}">'
+            f'{e(seo_cat["label"])} creators</a>'
+        )
+    elif cs.get("category_label"):
+        chips += f'<span class="chip">{e(cs["category_label"])}</span>'
+    if city:
+        chips += (
+            f'<a class="chip" href="{e(CITY_PATH)}/{e(_slugify(city))}">{e(city)}</a>'
+            if _slugify(city) in SEO_CITY_BY_SLUG
+            else f'<span class="chip">{e(city)}</span>'
+        )
     art = (
         f'<span class="hero"><img src="{e(hero)}" alt=""></span>'
         if hero
@@ -36518,6 +36544,1203 @@ def _work_detail_html(cs: dict, media_base: str = "") -> str:
 </div></body></html>"""
 
 
+# --- The go-to-market surface ----------------------------------------------
+#
+# **One repeatable promise, and pages a stranger can find.** Everything above
+# this point is a product somebody already knows about: a brief they were sent,
+# a brand page linked from it, a case study we pasted into a chat. Nothing on
+# this site was written to be *found*, and the two halves of that are one
+# problem — a search asset with no claim on it is a page somebody leaves, and a
+# claim on a page nobody reaches is a claim nobody reads.
+#
+# **The claim leads with what only we do.** Every competitor books a creator;
+# we run the campaign. "Handled properly" described the same thing and made the
+# reader work out what it meant, which is a hero explaining rather than
+# landing. `CAMPAIGN_CLAIM` is one line somebody can repeat back after one read
+# and say in one breath, and `CAMPAIGN_PROOF_POINTS` are the three checkable
+# facts under it — each one a thing a brand can go and verify rather than a
+# thing we assert about ourselves. Mirrored in `frontend/src/lib/promise.js`
+# with a drift test, because the React hero renders it and these pages render
+# it and two copies of a promise is how a company ends up with two promises.
+#
+# The positioning is unchanged and still governs every word: the enemy is
+# disorganisation, never agencies — `_FORBIDDEN_MARKETING_PHRASES` is checked
+# against these pages too.
+
+CAMPAIGN_CLAIM = "We run the campaign, not just the booking."
+
+# The three under it. **Each is checkable**, which is the standard the
+# marketing pages are already held to: a brand can ask to see the verification,
+# ask for the rate in writing, and read the refund rule before it signs
+# anything. "Trusted by the best" is not on this list because there is no way
+# for a reader to find out whether it is true.
+CAMPAIGN_PROOF_POINTS = (
+    (
+        "Verified creators",
+        "Every creator is checked before a brand ever sees them — the account, "
+        "the audience and the work.",
+    ),
+    (
+        "The rate, agreed in writing",
+        "Settled before anyone shoots, so nothing is argued about three weeks "
+        "later.",
+    ),
+    (
+        "The campaign fee comes back",
+        "If we cannot fill your brief, you get the fee back. The one exception "
+        "is creators you turn down.",
+    ),
+)
+
+
+def _slugify(value: str) -> str:
+    """A path segment from a human label. One spelling, so a link built in two
+    places points at one page."""
+    out = re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower())
+    return out.strip("-")
+
+
+# **The category pages are keyed on `CREATOR_TAXONOMY`, not `CATEGORY_LITERAL`,
+# and that is deliberate rather than the vocabulary drift this codebase keeps
+# closing.** They are two different words for two different things: a campaign
+# has a `category` (eight values, what kind of business is buying), and a
+# creator has `niches` (fifteen groups, what they actually make). The search
+# somebody types is "food creators for restaurants" — creator-shaped — so a
+# page keyed on the campaign enum would answer a question nobody asks and leave
+# ten of our fifteen groups with no page at all.
+#
+# The bridge between them is `_SEO_CATEGORY_CAMPAIGN_KINDS`, and it goes **one
+# way only**: a category page asks "which campaign categories might a case
+# study here belong to", never the reverse. A two-way mapping would be a second
+# definition of what a campaign category is.
+#
+# `blurb` is the search-intent sentence and `campaigns` is what a brief in this
+# space actually looks like — written per group rather than templated, because
+# fifteen pages saying the same sentence with a noun swapped is fifteen pages a
+# search engine reads as one.
+_SEO_CATEGORY_CAMPAIGN_KINDS = {
+    "food-and-drink": ("fnb", "hospitality"),
+    "fashion": ("retail", "fashion"),
+    "beauty": ("retail", "wellness"),
+    "travel": ("travel", "hospitality"),
+    "fitness-and-wellness": ("wellness", "lifestyle"),
+    "tech": ("retail", "lifestyle"),
+    "gaming": ("retail", "lifestyle"),
+    "home-and-interiors": ("retail", "real_estate"),
+    "parenting": ("retail", "lifestyle"),
+    "finance": ("lifestyle",),
+    "art-and-design": ("lifestyle", "retail"),
+    "music": ("lifestyle", "hospitality"),
+    "comedy": ("lifestyle",),
+    "automotive": ("retail", "lifestyle"),
+    "pets": ("retail", "lifestyle"),
+}
+
+# What a brief in each space looks like, in the brand's own words. Three each,
+# because a page that lists one example reads as the only thing we have done.
+_SEO_CATEGORY_CAMPAIGNS = {
+    "food-and-drink": (
+        "A tasting for a new menu, six creators across three sittings",
+        "An opening night, everybody in the room at once",
+        "A delivery-first brand sending the dish to the creator",
+    ),
+    "fashion": (
+        "A drop, shot the week before it goes live",
+        "A store opening with creators through the door on the day",
+        "A lookbook the brand can run as paid media afterwards",
+    ),
+    "beauty": (
+        "A product sent out, with a routine filmed over two weeks",
+        "A salon or clinic booking creators in for the treatment",
+        "A launch where the claim has to be demonstrated, not described",
+    ),
+    "travel": (
+        "A stay in exchange for the work, or a paid brief on top",
+        "A property opening, covered by creators who live nearby",
+        "A route or an itinerary, filmed over a weekend",
+    ),
+    "fitness-and-wellness": (
+        "A studio opening with trial classes for creators",
+        "A supplement or equipment brand, reviewed over a month",
+        "A programme followed and filmed from week one",
+    ),
+    "tech": (
+        "A device sent out for an honest review",
+        "An app launch, with the flow filmed rather than described",
+        "A category explainer a brand can run as paid media",
+    ),
+    "gaming": (
+        "A title launch, streamed on the day",
+        "A hardware brief where the gear is used, not unboxed",
+        "A tournament or event covered from inside it",
+    ),
+    "home-and-interiors": (
+        "A showroom visit, filmed as a walkthrough",
+        "A product placed in a real home over a fortnight",
+        "A project a developer or studio wants documented",
+    ),
+    "parenting": (
+        "A product tried by a family over a month",
+        "A store or clinic opening with parents through the door",
+        "A guide a brand can run where parents are already looking",
+    ),
+    "finance": (
+        "An explainer that has to be accurate before it is clever",
+        "A product walkthrough, filmed in the app",
+        "A campaign aimed at first-time investors or earners",
+    ),
+    "art-and-design": (
+        "A show or exhibition, covered on the opening",
+        "A materials or tools brand, used on a real piece",
+        "A brand collaboration where the work itself is the ad",
+    ),
+    "music": (
+        "A gig or festival covered from the floor",
+        "An instrument or audio brand, played rather than shown",
+        "A release, with creators making to the track",
+    ),
+    "comedy": (
+        "A sketch built around the product rather than bolted onto it",
+        "A launch that needs to be funny to be watched",
+        "A format a brand can run repeatedly",
+    ),
+    "automotive": (
+        "A test drive, filmed over a weekend",
+        "A showroom opening with creators on the day",
+        "An accessory or service brand, used on a real vehicle",
+    ),
+    "pets": (
+        "A food or product brand, tried over a month",
+        "A clinic or store opening with pets and owners through the door",
+        "A rescue or adoption campaign a brand is backing",
+    ),
+}
+
+
+def _seo_category_for_campaign(campaign_category: Optional[str]) -> Optional[dict]:
+    """The creator category page a campaign of this kind belongs on.
+
+    **One way only.** `_SEO_CATEGORY_CAMPAIGN_KINDS` maps a creator category to
+    the campaign kinds it might cover; this reads that backwards to pick a page
+    for a case study. It is not a definition of what a campaign category *is* —
+    that stays `CATEGORY_LITERAL` — and nothing writes through it. The first
+    match in taxonomy order wins, so a campaign kind claimed by two groups lands
+    on the more specific one, which is the one listed first.
+    """
+    if not campaign_category:
+        return None
+    for cat in SEO_CATEGORIES:
+        if campaign_category in cat["campaign_kinds"]:
+            return cat
+    return None
+
+
+def _seo_categories() -> tuple:
+    """The category pages, derived from `CREATOR_TAXONOMY`.
+
+    **Derived rather than listed**, so a group added to the taxonomy gets a
+    page and a sitemap entry by being added to the taxonomy — the failure this
+    avoids is the one the footer and the sitemap already had, where a page
+    existed and nothing pointed at it. A group with no hand-written examples
+    falls back to a generic line rather than being dropped: a page with a thin
+    section is better than a taxonomy group a brand cannot find at all.
+    """
+    out = []
+    for label, terms in CREATOR_TAXONOMY:
+        slug = _slugify(label.replace("&", "and"))
+        out.append(
+            {
+                "slug": slug,
+                "label": label,
+                "terms": tuple(terms),
+                "campaign_kinds": _SEO_CATEGORY_CAMPAIGN_KINDS.get(slug, ()),
+                "campaigns": _SEO_CATEGORY_CAMPAIGNS.get(
+                    slug,
+                    (
+                        f"A brief aimed at {label.lower()} audiences",
+                        "A launch or opening with creators there on the day",
+                        "A product sent out and filmed over a few weeks",
+                    ),
+                ),
+            }
+        )
+    return tuple(out)
+
+
+SEO_CATEGORIES = _seo_categories()
+SEO_CATEGORY_BY_SLUG = {c["slug"]: c for c in SEO_CATEGORIES}
+
+CATEGORY_PATH = "/creators"
+CITY_PATH = "/creators-in"
+FAQ_PATH = "/faq"
+BLOG_PATH = "/blog"
+
+
+def _category_url(slug: str) -> str:
+    return f"{_share_base()}{CATEGORY_PATH}/{slug}"
+
+
+def _city_url(slug: str) -> str:
+    return f"{_share_base()}{CITY_PATH}/{slug}"
+
+
+def _blog_url(slug: str) -> str:
+    return f"{_share_base()}{BLOG_PATH}/{slug}"
+
+
+# The cities that get a page. **`INDIAN_CITIES` is the list, and the page is
+# only built where creators actually are** — see `_seo_city_rows`. A city page
+# with nobody behind it is a page that ranks for a search we cannot answer,
+# which costs more than not ranking: a brand arrives, finds nothing, and knows
+# something about us. Bengaluru is first because that is where the network runs
+# deepest, and the copy says so rather than implying a national operation.
+SEO_CITY_BY_SLUG = {_slugify(c): c for c in INDIAN_CITIES}
+
+# How many verified creators a city needs before it gets a page of its own.
+# Below this the honest answer is the category page, which does not promise a
+# location.
+SEO_CITY_FLOOR = 3
+
+
+async def _seo_creator_counts() -> dict:
+    """Verified creators per taxonomy group and per city, in one pass.
+
+    Indicative rather than exact, and the page says so: a count that moves
+    every time somebody signs up is a number a brand should read as "roughly
+    this many", not as a stock level. One aggregation because a page that ran
+    fifteen queries to draw a strip of numbers is a page nobody serves from a
+    phone.
+    """
+    rows = await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"niches": 1, "city": 1}
+    ).to_list(length=20000)
+
+    by_term = {}
+    by_city = {}
+    for row in rows:
+        city = (row.get("city") or "").strip()
+        if city:
+            by_city[city] = by_city.get(city, 0) + 1
+        words = {str(n).strip().lower() for n in (row.get("niches") or []) if n}
+        for cat in SEO_CATEGORIES:
+            if words & {t.lower() for t in cat["terms"]}:
+                by_term[cat["slug"]] = by_term.get(cat["slug"], 0) + 1
+    return {"categories": by_term, "cities": by_city, "total": len(rows)}
+
+
+def _indicative(count: int) -> Optional[str]:
+    """A count as a phrase, rounded down to a figure that stays true.
+
+    **Rounded down and never up**, and absent below the floor rather than
+    printed small. "40+ creators" holding while the fortieth signs up is the
+    point; "3 creators" is a number that argues against us, and a page is
+    better off saying nothing than saying that.
+    """
+    for floor in (500, 250, 100, 50, 25, 10):
+        if count >= floor:
+            return f"{floor}+"
+    return None
+
+
+
+# The organisation, stated once. **Emitted on every server-rendered page**
+# rather than only on home, because home is a React route a crawler reads as
+# an empty shell — the trade `PageMeta.jsx` documents. These pages are the ones
+# a crawler can actually read, so they are where the entity lives.
+def _organization_ld() -> dict:
+    base = _share_base()
+    return {
+        "@type": "Organization",
+        "name": "WeAre Creators",
+        "url": base,
+        "logo": f"{base}/og-image.png",
+        "description": (
+            "WeAre Creators runs paid influencer campaigns end to end for brands "
+            "in Bengaluru — casting verified creators, agreeing the rate in "
+            "writing, running the shoot and reporting what it did."
+        ),
+        "email": MARKETING_CONTACT,
+        "areaServed": {"@type": "City", "name": "Bengaluru"},
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Bengaluru",
+            "addressRegion": "Karnataka",
+            "addressCountry": "IN",
+        },
+    }
+
+
+def _ld_script(*blocks: dict) -> str:
+    """One `<script>` holding a `@graph`, never several.
+
+    Several scripts is not wrong and is harder to read back — a test that has
+    to find the FAQ block among four tags is a test that passes when the block
+    is empty. `</` is escaped because a string inside the JSON containing one
+    would close the script tag and put the rest of the page inside it.
+    """
+    graph = {"@context": "https://schema.org", "@graph": list(blocks)}
+    return json.dumps(graph, ensure_ascii=False).replace("<", "\\u003c")
+
+
+# The bar these pages carry. **Not the React `MarketingNavbar`** — that one
+# takes a session and lives in the bundle; this is five links and a CTA in
+# HTML, which is what the design guidelines ask for on desktop and what makes
+# the internal linking real rather than theoretical. A crawler follows these.
+_SEO_NAV = (
+    ("For brands", FOR_BRANDS_PATH),
+    ("For creators", FOR_CREATORS_PATH),
+    ("Our work", CASE_STUDY_PATH),
+    ("Guides", BLOG_PATH),
+    ("FAQ", FAQ_PATH),
+)
+
+_SEO_CSS = """
+*{box-sizing:border-box}
+body{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:60rem;margin:0 auto;padding:0 1.5rem 4rem}
+nav{position:sticky;top:0;z-index:10;background:rgba(11,10,9,.92);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.08)}
+.navin{max-width:60rem;margin:0 auto;padding:.85rem 1.5rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap}
+.brand{font-family:Fraunces,Georgia,serif;font-size:1.05rem;text-decoration:none;color:#F5F1EC;margin-right:auto}
+.brand b{color:#F05D14;font-weight:inherit}
+.navlink{font-size:.85rem;text-decoration:none;color:#C9C1B8}
+.navlink:hover{color:#F5F1EC}
+.navcta{display:inline-flex;align-items:center;min-height:2.25rem;padding:0 1rem;border-radius:999px;background:#F05D14;color:#0B0A09;font-size:.82rem;text-decoration:none}
+.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;margin:2.5rem 0 0}
+h1{font-family:Fraunces,Georgia,serif;font-size:clamp(1.9rem,5.5vw,3rem);line-height:1.05;margin:.6rem 0 0;letter-spacing:-.02em}
+h2{font-family:Fraunces,Georgia,serif;font-size:clamp(1.3rem,3.2vw,1.7rem);line-height:1.15;margin:0 0 1rem;letter-spacing:-.01em}
+h3{font-size:.95rem;margin:0 0 .35rem}
+section{margin-top:3rem}
+p{margin:0 0 1rem}
+.lede{font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.4;color:#F05D14;margin-top:1rem;max-width:36rem}
+.sub{color:#C9C1B8;max-width:40rem;margin-top:1rem}
+.proof{margin-top:2rem;display:grid;gap:1rem;grid-template-columns:1fr}
+.pf{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.1rem 1.15rem}
+.pf h3{color:#F05D14;font-family:Fraunces,Georgia,serif;font-size:1.05rem}
+.pf p{margin:0;font-size:.88rem;color:#C9C1B8}
+.stat{display:inline-flex;align-items:baseline;gap:.5rem;margin-top:1.5rem;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:.4rem 1rem}
+.statnum{font-family:Fraunces,Georgia,serif;font-size:1.15rem;color:#F05D14}
+.statlab{font-size:.78rem;color:#9C938B}
+ul.plain{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+ul.plain li{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem 1.15rem;font-size:.92rem}
+.grid{display:grid;gap:1rem}
+.card{display:block;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;text-decoration:none;color:inherit;background:rgba(255,255,255,.02)}
+.card:hover{border-color:rgba(240,93,20,.4)}
+.cover{display:block;aspect-ratio:16/9;background:rgba(255,255,255,.03)}
+.cover img{width:100%;height:100%;object-fit:cover;display:block}
+.ctitle{display:block;padding:1rem 1.15rem .2rem;font-family:Fraunces,Georgia,serif;font-size:1.15rem;line-height:1.2}
+.cmeta{display:block;padding:0 1.15rem 1.1rem;color:#9C938B;font-size:.82rem}
+.cres{display:block;padding:0 1.15rem .3rem;color:#F05D14;font-size:.88rem}
+details{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem 1.15rem;margin-bottom:.75rem}
+summary{cursor:pointer;font-size:1rem;color:#F5F1EC}
+details p{margin:.85rem 0 0;color:#C9C1B8;font-size:.92rem}
+.tags{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}
+.tag{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.75rem;color:#C9C1B8;text-decoration:none}
+.tag:hover{border-color:rgba(240,93,20,.5);color:#F5F1EC}
+.cta{margin-top:3rem;padding:1.75rem;border:1px solid rgba(240,93,20,.3);border-radius:.5rem;background:rgba(240,93,20,.06)}
+.cta h2{margin-bottom:.5rem}
+.btnrow{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.75rem}
+.btn{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}
+.primary{background:#F05D14;color:#0B0A09}
+.ghost{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}
+.prose{color:rgba(245,241,236,.9)}
+.prose h2{margin-top:2.25rem}
+.prose ul{padding-left:1.15rem}
+.none{color:#9C938B}
+footer{margin-top:4rem;border-top:1px solid rgba(255,255,255,.08);padding-top:2rem;color:#7d766f;font-size:.8rem}
+.fcols{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));margin-bottom:2rem}
+.fcol h4{margin:0 0 .6rem;font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500}
+.fcol a{display:block;margin-bottom:.4rem;color:#C9C1B8;text-decoration:none;font-size:.85rem}
+.fcol a:hover{color:#F5F1EC}
+a{color:inherit}
+@media(min-width:40rem){.grid{grid-template-columns:1fr 1fr}.proof{grid-template-columns:repeat(3,1fr)}}
+"""
+
+
+def _seo_head(
+    *,
+    title: str,
+    description: str,
+    url: str,
+    ld_json: str,
+    og_type: str = "website",
+    og_image: Optional[str] = None,
+) -> str:
+    """The head every findable page shares.
+
+    **One function, so a tag added for one page cannot be missing from
+    another** — the rule `_work_head` already holds, widened to cover the pages
+    written to be found rather than sent. Everything a search engine is told
+    about this site is emitted here: the canonical, the description written for
+    intent, the card, the geography and the structured data.
+
+    `geo.*` and `og:locale` say India explicitly. They are weak signals on
+    their own and free to send, and the alternative is letting a crawler guess
+    from a `.in`-less domain.
+    """
+    e = html_escape
+    image = og_image or f"{_share_base()}/og-image.png"
+    return f"""<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(description)}">
+<meta name="theme-color" content="#0B0A09">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="{e(url)}">
+<meta name="geo.region" content="IN-KA">
+<meta name="geo.placename" content="Bengaluru">
+<meta name="ICBM" content="12.9716, 77.5946">
+<meta property="og:type" content="{e(og_type)}">
+<meta property="og:site_name" content="WeAre Creators">
+<meta property="og:locale" content="en_IN">
+<meta property="og:url" content="{e(url)}">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(description)}">
+<meta property="og:image" content="{e(image)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(title)}">
+<meta name="twitter:description" content="{e(description)}">
+<meta name="twitter:image" content="{e(image)}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script type="application/ld+json">{ld_json}</script>
+<style>{_SEO_CSS}</style>"""
+
+
+def _seo_nav(cta_href: str = "/signup?role=brand", cta: str = "Post a campaign") -> str:
+    e = html_escape
+    links = "".join(
+        f'<a class="navlink" href="{e(p)}">{e(label)}</a>' for label, p in _SEO_NAV
+    )
+    return (
+        '<nav><div class="navin">'
+        f'<a class="brand" href="/">WeAre <b>Creators</b></a>'
+        f"{links}"
+        f'<a class="navcta" href="{e(cta_href)}">{e(cta)}</a>'
+        "</div></nav>"
+    )
+
+
+def _seo_footer() -> str:
+    """The same four columns the React footer carries, from the same constant.
+
+    `FOOTER_COLUMNS` already exists and is already drift-tested against
+    `lib/siteNav.js`; rendering it here rather than writing a third list is
+    what stops these pages advertising a page that moved.
+    """
+    e = html_escape
+    cols = "".join(
+        f'<div class="fcol"><h4>{e(heading)}</h4>'
+        + "".join(f'<a href="{e(href)}">{e(label)}</a>' for label, href in links)
+        + "</div>"
+        for heading, links in FOOTER_COLUMNS
+    )
+    return (
+        f'<footer><div class="fcols">{cols}</div>'
+        "<p>WeAre Creators runs paid influencer campaigns end to end for brands in "
+        "Bengaluru. The network runs deepest here, and creators sign up from "
+        "anywhere in India.</p></footer>"
+    )
+
+
+def _seo_page(*, head: str, body: str, cta_href: str = "/signup?role=brand",
+              cta: str = "Post a campaign") -> str:
+    """Nav, body, footer. The whole document, so no page can forget one."""
+    # The footer goes **inside** `.wrap`, not after it. Outside, it has no
+    # page gutter at all and its four columns run to the left edge of the
+    # viewport while everything above them is inset — which reads as a
+    # rendering fault rather than as a footer. Caught in a browser.
+    return (
+        f"<!doctype html><html lang=\"en-IN\"><head>{head}</head><body>"
+        f"{_seo_nav(cta_href, cta)}"
+        f"<div class=\"wrap\">{body}{_seo_footer()}</div>"
+        "</body></html>"
+    )
+
+
+def _proof_html() -> str:
+    """The three proof points, rendered the same way everywhere they appear."""
+    e = html_escape
+    return '<div class="proof">' + "".join(
+        f"<div class=\"pf\"><h3>{e(label)}</h3><p>{e(line)}</p></div>"
+        for label, line in CAMPAIGN_PROOF_POINTS
+    ) + "</div>"
+
+
+def _seo_cta(
+    *,
+    heading: str = "Post a brief and we will cast it.",
+    line: str = (
+        "Tell us what you need made. We shortlist creators, agree their fees and "
+        "run the shoot."
+    ),
+) -> str:
+    """**Every page routes to the right signup**, which is the whole reason a
+    search asset is worth having. A page that ranks and ends is a page that
+    taught somebody about us and sent them nowhere."""
+    e = html_escape
+    return (
+        f'<div class="cta"><h2>{e(heading)}</h2><p>{e(line)}</p>'
+        '<div class="btnrow">'
+        '<a class="btn primary" href="/signup?role=brand">Post a campaign</a>'
+        '<a class="btn ghost" href="/for-creators">Join as a creator</a>'
+        "</div></div>"
+    )
+
+
+
+def _case_study_card_html(cs: dict, media_base: str = "") -> str:
+    """One case-study card. Shared by the shelf's own page and by every page
+    that links to case studies, so a card cannot look like two things."""
+    e = html_escape
+    hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
+    art = (
+        f'<span class="cover"><img src="{e(hero)}" alt="" loading="lazy" '
+        f'width="800" height="450"></span>'
+        if hero
+        else '<span class="cover"></span>'
+    )
+    headline = _case_study_headline(cs) if "_case_study_headline" in globals() else ""
+    meta = " · ".join(
+        x for x in (cs.get("brand_name"), (cs.get("city") or "").strip()) if x
+    )
+    return (
+        f'<a class="card" href="{e(_case_study_url(cs.get("slug") or ""))}">{art}'
+        f'<span class="ctitle">{e(cs.get("title") or "")}</span>'
+        + (f'<span class="cres">{e(headline)}</span>' if headline else "")
+        + f'<span class="cmeta">{e(meta)}</span></a>'
+    )
+
+
+async def _case_studies_for(
+    *, campaign_kinds: tuple = (), city: Optional[str] = None, limit: int = 4
+) -> list:
+    """Published case studies for a category or a city page.
+
+    **The same projection the public shelf uses**, never the raw document —
+    `_public_case_study` is the allow-list, and a page that reached past it to
+    render a card would be a second definition of what is public.
+    """
+    query: dict = {"status": "published"}
+    if campaign_kinds:
+        query["category"] = {"$in": list(campaign_kinds)}
+    if city:
+        query["city"] = city
+    rows = (
+        await db.case_studies.find(query)
+        .sort([("display_order", 1), ("published_at", -1)])
+        .to_list(length=limit)
+    )
+    return [await _public_case_study(r, full=False) for r in rows]
+
+
+def _related_links_html(*, category_slug: Optional[str] = None,
+                        city: Optional[str] = None) -> str:
+    """**Internal linking, which is the half that compounds.**
+
+    Search value accumulates through the edges between pages, not on any one of
+    them: a category page linking to the cities it runs in, a city page linking
+    to the categories, and both linking to the case studies that prove it. This
+    renders the edges a page is *not* about, so no page is a dead end.
+    """
+    e = html_escape
+    bits = []
+    others = [c for c in SEO_CATEGORIES if c["slug"] != category_slug][:9]
+    if others:
+        bits.append(
+            '<section><h2>Other categories</h2><div class="tags">'
+            + "".join(
+                f'<a class="tag" href="{e(CATEGORY_PATH)}/{e(c["slug"])}">'
+                f'{e(c["label"])}</a>'
+                for c in others
+            )
+            + "</div></section>"
+        )
+    return "".join(bits)
+
+
+def _category_page_html(
+    cat: dict, *, count: Optional[str], case_studies: list, cities: list,
+    media_base: str = ""
+) -> str:
+    """One creator category, written for the search that reaches it."""
+    e = html_escape
+    label = cat["label"]
+    lower = label.lower()
+    url = _category_url(cat["slug"])
+    title = f"{label} creators for brand campaigns in Bengaluru — WeAre Creators"
+    description = (
+        f"Hire verified {lower} creators for a paid campaign. We run it end to "
+        f"end — casting, the rate agreed in writing, the shoot and a report at "
+        f"the end. Post a brief and we cast it."
+    )
+
+    ld = _ld_script(
+        _organization_ld(),
+        {
+            "@type": "CollectionPage",
+            "name": title,
+            "url": url,
+            "description": description,
+            "about": {"@type": "Thing", "name": f"{label} creators"},
+            "isPartOf": {"@type": "WebSite", "name": "WeAre Creators",
+                         "url": _share_base()},
+        },
+        _breadcrumb_ld([("Home", "/"), ("Creators", CATEGORY_PATH),
+                        (label, f"{CATEGORY_PATH}/{cat['slug']}")]),
+    )
+
+    examples = "".join(f"<li>{e(x)}</li>" for x in cat["campaigns"])
+    terms = "".join(
+        f'<span class="tag">{e(t)}</span>' for t in cat["terms"][:10]
+    )
+    stat = (
+        f'<div class="stat"><span class="statnum">{e(count)}</span>'
+        f'<span class="statlab">verified {e(lower)} creators</span></div>'
+        if count
+        else ""
+    )
+
+    work = (
+        '<section><h2>Campaigns we have run</h2><div class="grid">'
+        + "".join(_case_study_card_html(cs, media_base) for cs in case_studies)
+        + "</div></section>"
+        if case_studies
+        else ""
+    )
+    city_links = (
+        '<section><h2>Where we run them</h2><div class="tags">'
+        + "".join(
+            f'<a class="tag" href="{e(CITY_PATH)}/{e(_slugify(c))}">{e(c)}</a>'
+            for c in cities
+        )
+        + "</div></section>"
+        if cities
+        else ""
+    )
+
+    body = f"""<p class="eyebrow">{e(label)}</p>
+<h1>{e(label)} creators, on a campaign we run.</h1>
+<p class="lede">{e(CAMPAIGN_CLAIM)}</p>
+<p class="sub">A brand posts the brief. We shortlist {e(lower)} creators who fit it,
+agree each rate in writing before anyone shoots, run the shoot and send you a
+report at the end.</p>
+{stat}
+{_proof_html()}
+<section><h2>What a {e(lower)} campaign looks like</h2><ul class="plain">{examples}</ul></section>
+<section><h2>What these creators cover</h2><div class="tags">{terms}</div></section>
+{work}
+{city_links}
+{_seo_cta(heading=f"Need {lower} creators?")}
+{_related_links_html(category_slug=cat["slug"])}"""
+
+    return _seo_page(
+        head=_seo_head(title=title, description=description, url=url, ld_json=ld),
+        body=body,
+    )
+
+
+def _city_page_html(
+    city: str, *, count: Optional[str], case_studies: list, categories: list,
+    media_base: str = ""
+) -> str:
+    """One city. Bengaluru is the real one; the rest exist where creators do."""
+    e = html_escape
+    url = _city_url(_slugify(city))
+    title = f"Influencer marketing in {city} — verified creators, campaigns run end to end"
+    description = (
+        f"Run a paid creator campaign in {city}. We cast verified creators, agree "
+        f"the rate in writing before the shoot, run the day and report what it "
+        f"did. Post a brief and we cast it."
+    )
+
+    ld = _ld_script(
+        _organization_ld(),
+        {
+            "@type": "CollectionPage",
+            "name": title,
+            "url": url,
+            "description": description,
+            "about": {"@type": "City", "name": city},
+        },
+        _breadcrumb_ld([("Home", "/"), ("Creators", CATEGORY_PATH),
+                        (city, f"{CITY_PATH}/{_slugify(city)}")]),
+    )
+
+    stat = (
+        f'<div class="stat"><span class="statnum">{e(count)}</span>'
+        f'<span class="statlab">verified creators in {e(city)}</span></div>'
+        if count
+        else ""
+    )
+    work = (
+        '<section><h2>Campaigns we have run here</h2><div class="grid">'
+        + "".join(_case_study_card_html(cs, media_base) for cs in case_studies)
+        + "</div></section>"
+        if case_studies
+        else ""
+    )
+    cat_links = (
+        '<section><h2>By category</h2><div class="tags">'
+        + "".join(
+            f'<a class="tag" href="{e(CATEGORY_PATH)}/{e(c["slug"])}">{e(c["label"])}</a>'
+            for c in categories
+        )
+        + "</div></section>"
+        if categories
+        else ""
+    )
+
+    body = f"""<p class="eyebrow">{e(city)}</p>
+<h1>Creator campaigns in {e(city)}, run end to end.</h1>
+<p class="lede">{e(CAMPAIGN_CLAIM)}</p>
+<p class="sub">Post the brief and we cast it from verified creators in {e(city)} —
+each rate agreed in writing before the shoot, the day run by us, and a report
+on what it reached.</p>
+{stat}
+{_proof_html()}
+<section><h2>What a {e(city)} campaign looks like</h2><ul class="plain">
+<li>An opening or a launch night, with creators in the room on the day</li>
+<li>A tasting, a treatment or a trial booked across several sittings</li>
+<li>A product sent to creators here and filmed over a few weeks</li>
+</ul></section>
+{work}
+{cat_links}
+{_seo_cta(heading=f"Running something in {city}?")}"""
+
+    return _seo_page(
+        head=_seo_head(title=title, description=description, url=url, ld_json=ld),
+        body=body,
+    )
+
+
+def _breadcrumb_ld(trail: list) -> dict:
+    base = _share_base()
+    return {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": i + 1,
+                "name": name,
+                "item": f"{base}{path}".rstrip("/") or base,
+            }
+            for i, (name, path) in enumerate(trail)
+        ],
+    }
+
+
+# **What brands and creators actually ask**, answered against what the product
+# really does rather than against what sounds good — the standard `Legal.jsx`
+# is held to, for the same reason: somebody reads this and believes it.
+#
+# Every answer here is checkable inside the product. The refund rule is
+# `_refund_reckoning`, the fee is `COMMISSION_TERMS`, the payment trigger is
+# the `content_approved → in_payment` step, the ownership answer is
+# `usage_rights`, and the disclosure answer is `DISCLOSURE_LABELS`. A test
+# fails the page if it says something the code does not do.
+FAQ_ENTRIES = (
+    (
+        "What does it cost to run a campaign?",
+        "You pay the creators' fees plus our fee, which is charged to you on top "
+        "of them and never taken out of what a creator quotes. A creator who "
+        "quotes ₹20,000 is paid ₹20,000. There is a separate flat campaign fee "
+        "for running the brief, agreed before you post it. No retainer, and no "
+        "markup on creator fees.",
+    ),
+    (
+        "How are creators verified?",
+        "Before a brand ever sees them, we check the account and the person "
+        "behind it: identity, the Instagram account connected through Instagram's "
+        "official API so the follower count and engagement rate are read rather "
+        "than typed, and their past delivery here. A creator whose profile "
+        "materially changes goes back for another look.",
+    ),
+    (
+        "When do creators get paid?",
+        "After the content is approved. The rate is agreed in writing before the "
+        "shoot, the creator delivers, whoever is running the campaign approves "
+        "it, and the payment is raised against that approval. Creators keep 100% "
+        "of the agreed fee.",
+    ),
+    (
+        "What happens if a campaign does not fill?",
+        "The campaign fee comes back. The one exception is creators you turned "
+        "down: if we shortlisted enough people and the brief would have filled "
+        "had you taken them, the shortfall was a decision rather than a delivery "
+        "and the fee stands. Either way a person here reviews it when the "
+        "campaign closes and tells you the outcome.",
+    ),
+    (
+        "Who owns the content afterwards?",
+        "Whatever was agreed on the brief, and it is stated before a creator "
+        "applies. A brief grants one of three things: an organic repost, paid "
+        "usage for a stated period, or a full buyout. Paid usage always carries a "
+        "period, because open-ended paid usage is a buyout under a smaller name. "
+        "The grant is frozen onto the collaboration when the creator is accepted, "
+        "so it cannot change afterwards.",
+    ),
+    (
+        "How does disclosure work?",
+        "Every campaign carries a disclosure label, including barter — a gifted "
+        "post is an ad, and ASCI puts the liability on the advertiser as well as "
+        "the creator. The label is picked from a fixed set rather than typed, and "
+        "it is confirmed at review: once when the draft is approved and again "
+        "against the live post, with who confirmed it and when on the record.",
+    ),
+    (
+        "How long does a campaign take?",
+        "A brief usually has creators shortlisted within a day or two of going "
+        "live. From there it depends on the shape of the work: a launch night is "
+        "one evening, a tasting runs across a few sittings, and a product sent out "
+        "is a few weeks. Content review and payment follow delivery.",
+    ),
+    (
+        "Can a brand contact creators directly?",
+        "Not through us, and that is deliberate. Brands never receive a creator's "
+        "phone number, email or address — not on the applicant board, not at "
+        "acceptance and not in an export. Everything runs through the platform, "
+        "which is what protects the rate, the record and the creator.",
+    ),
+    (
+        "Is it free for creators to join?",
+        "Yes. Creators join free, keep 100% of the agreed fee, and are never "
+        "charged to apply for a brief or to be shortlisted.",
+    ),
+    (
+        "Where do you operate?",
+        "The network runs deepest in Bengaluru, and creators sign up from anywhere "
+        "in India. If you are running something outside Bengaluru, post the brief "
+        "and we will tell you honestly whether we can fill it.",
+    ),
+)
+
+
+def _faq_page_html() -> str:
+    e = html_escape
+    url = f"{_share_base()}{FAQ_PATH}"
+    title = "Influencer marketing FAQ — costs, verification, payment and rights"
+    description = (
+        "What a creator campaign costs, how creators are verified, when they get "
+        "paid, what happens if a brief does not fill, who owns the content and "
+        "how disclosure works."
+    )
+
+    ld = _ld_script(
+        _organization_ld(),
+        {
+            "@type": "FAQPage",
+            "url": url,
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": q,
+                    "acceptedAnswer": {"@type": "Answer", "text": a},
+                }
+                for q, a in FAQ_ENTRIES
+            ],
+        },
+        _breadcrumb_ld([("Home", "/"), ("FAQ", FAQ_PATH)]),
+    )
+
+    items = "".join(
+        f"<details><summary>{e(q)}</summary><p>{e(a)}</p></details>"
+        for q, a in FAQ_ENTRIES
+    )
+    body = f"""<p class="eyebrow">Questions</p>
+<h1>What brands and creators ask.</h1>
+<p class="sub">Answered against what the product actually does. If something here
+is not true of your campaign, the brief wins and we will tell you.</p>
+<section>{items}</section>
+{_seo_cta()}"""
+
+    return _seo_page(
+        head=_seo_head(title=title, description=description, url=url, ld_json=ld),
+        body=body,
+    )
+
+
+
+# --- The blog ---------------------------------------------------------------
+#
+# Eight years of running campaigns and nothing published. The knowledge that
+# would rank — what a reel actually costs in this city, how to write a brief a
+# creator can shoot, what ASCI requires — exists in people's heads and in
+# WhatsApp threads.
+#
+# **It is a case study's shape, not a CMS.** `blog_posts` reuses the rules
+# `case_studies` already settled rather than inventing new ones: a slug, a
+# draft/published state, `published_at` kept across an unpublish because a
+# correction is not a new piece of work, images that are paths we issued, and
+# an allow-list projection built by naming every key. What is different is that
+# a post names no creator and carries no campaign money, so the consent and
+# forbidden-field machinery a case study needs does not apply here.
+
+BLOG_CATEGORIES = (
+    ("rate-benchmarks", "Rate benchmarks"),
+    ("campaign-playbooks", "Campaign playbooks"),
+    ("disclosure-and-rules", "Disclosure and rules"),
+    ("for-creators", "For creators"),
+    ("industry", "Industry"),
+)
+BLOG_CATEGORY_LABELS = dict(BLOG_CATEGORIES)
+BLOG_STATES = ("draft", "published")
+
+
+class BlogPostPayload(BaseModel):
+    """What an admin writes. `body` is markdown-ish plain text — headings with
+    `## `, paragraphs separated by blank lines — rendered by `_blog_body_html`
+    rather than by a markdown dependency, because the whole vocabulary is two
+    rules and a dependency here is a dependency in the public render path."""
+
+    title: str = Field(min_length=3, max_length=160)
+    slug: Optional[str] = Field(default=None, max_length=160)
+    summary: str = Field(min_length=10, max_length=320)
+    body: str = Field(min_length=20)
+    category: str
+    hero_image_url: Optional[str] = None
+    author_name: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("category")
+    @classmethod
+    def _known_category(cls, v):
+        if v not in BLOG_CATEGORY_LABELS:
+            raise ValueError(
+                "category must be one of: " + ", ".join(BLOG_CATEGORY_LABELS)
+            )
+        return v
+
+
+class BlogPostUpdate(BaseModel):
+    """Partial, like every other edit here: only the keys present are written."""
+
+    title: Optional[str] = Field(default=None, min_length=3, max_length=160)
+    slug: Optional[str] = Field(default=None, max_length=160)
+    summary: Optional[str] = Field(default=None, min_length=10, max_length=320)
+    body: Optional[str] = Field(default=None, min_length=20)
+    category: Optional[str] = None
+    hero_image_url: Optional[str] = None
+    author_name: Optional[str] = Field(default=None, max_length=120)
+
+    @field_validator("category")
+    @classmethod
+    def _known_category(cls, v):
+        if v is not None and v not in BLOG_CATEGORY_LABELS:
+            raise ValueError(
+                "category must be one of: " + ", ".join(BLOG_CATEGORY_LABELS)
+            )
+        return v
+
+
+def _public_blog_post(doc: dict, *, full: bool = True) -> dict:
+    """**An allow-list built by naming every key**, never a document with
+    fields deleted from it — the rule `_public_case_study` holds. A column
+    added to `blog_posts` next month cannot reach a public page because nobody
+    remembered to exclude it."""
+    out = {
+        "slug": doc.get("slug"),
+        "title": doc.get("title"),
+        "summary": doc.get("summary"),
+        "category": doc.get("category"),
+        "category_label": BLOG_CATEGORY_LABELS.get(doc.get("category") or ""),
+        "hero_image_url": doc.get("hero_image_url"),
+        "author_name": doc.get("author_name"),
+        "published_at": _iso(doc.get("published_at")),
+        "updated_at": _iso(doc.get("updated_at")),
+    }
+    if full:
+        out["body"] = doc.get("body")
+    return out
+
+
+def _blog_body_html(body: str) -> str:
+    """Escape first, then allow exactly two things.
+
+    **Everything is escaped before any markup is added**, so a post cannot
+    contain HTML however it is typed — the same reason every case-study field
+    is escaped. `## ` becomes a heading and `- ` becomes a list item; anything
+    else is a paragraph. Two rules is the whole vocabulary, and a writer who
+    needs a third can ask for it rather than getting a markdown parser and an
+    XSS surface for free.
+    """
+    e = html_escape
+    out, bullets = [], []
+
+    def flush():
+        if bullets:
+            out.append("<ul>" + "".join(f"<li>{b}</li>" for b in bullets) + "</ul>")
+            bullets.clear()
+
+    for block in (body or "").split("\n\n"):
+        block = block.strip()
+        if not block:
+            continue
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        if all(ln.startswith("- ") for ln in lines):
+            bullets.extend(e(ln[2:]) for ln in lines)
+            continue
+        flush()
+        if block.startswith("## "):
+            out.append(f"<h2>{e(block[3:].strip())}</h2>")
+        else:
+            out.append("<p>" + "<br>".join(e(ln) for ln in lines) + "</p>")
+    flush()
+    return "".join(out)
+
+
+def _blog_card_html(post: dict, media_base: str = "") -> str:
+    e = html_escape
+    hero = _absolute_media_url(post.get("hero_image_url"), media_base)
+    art = (
+        f'<span class="cover"><img src="{e(hero)}" alt="" loading="lazy" '
+        f'width="800" height="450"></span>'
+        if hero
+        else '<span class="cover"></span>'
+    )
+    return (
+        f'<a class="card" href="{e(BLOG_PATH)}/{e(post.get("slug") or "")}">{art}'
+        f'<span class="ctitle">{e(post.get("title") or "")}</span>'
+        f'<span class="cmeta">{e(post.get("category_label") or "")}'
+        + (f' · {e((post.get("published_at") or "")[:10])}'
+           if post.get("published_at") else "")
+        + "</span></a>"
+    )
+
+
+def _blog_index_html(posts: list, *, category: Optional[str] = None,
+                     media_base: str = "") -> str:
+    e = html_escape
+    label = BLOG_CATEGORY_LABELS.get(category or "")
+    url = f"{_share_base()}{BLOG_PATH}" + (f"?category={category}" if category else "")
+    title = (
+        f"{label} — WeAre Creators guides"
+        if label
+        else "Guides: rate benchmarks, campaign playbooks and disclosure rules"
+    )
+    description = (
+        "What a creator campaign actually costs in Bengaluru, how to write a brief "
+        "somebody can shoot, and what the disclosure rules require. Written by the "
+        "people running the campaigns."
+    )
+
+    ld = _ld_script(
+        _organization_ld(),
+        {
+            "@type": "Blog",
+            "name": "WeAre Creators guides",
+            "url": f"{_share_base()}{BLOG_PATH}",
+            "description": description,
+            "blogPost": [
+                {
+                    "@type": "BlogPosting",
+                    "headline": p.get("title") or "",
+                    "url": _blog_url(p.get("slug") or ""),
+                    "datePublished": p.get("published_at") or "",
+                }
+                for p in posts
+            ],
+        },
+        _breadcrumb_ld([("Home", "/"), ("Guides", BLOG_PATH)]),
+    )
+
+    cats = '<div class="tags">' + "".join(
+        f'<a class="tag" href="{e(BLOG_PATH)}?category={e(key)}">{e(name)}</a>'
+        for key, name in BLOG_CATEGORIES
+    ) + "</div>"
+    grid = (
+        '<div class="grid">'
+        + "".join(_blog_card_html(p, media_base) for p in posts)
+        + "</div>"
+        if posts
+        else '<p class="none">Nothing published here yet.</p>'
+    )
+
+    body = f"""<p class="eyebrow">Guides</p>
+<h1>{e(label) if label else "What we have learned running campaigns."}</h1>
+<p class="sub">Rate benchmarks, campaign playbooks and the disclosure rules —
+written by the people who run the briefs rather than by somebody describing
+them from outside.</p>
+<section>{cats}</section>
+<section>{grid}</section>
+{_seo_cta()}"""
+
+    return _seo_page(
+        head=_seo_head(title=title, description=description, url=url, ld_json=ld),
+        body=body,
+    )
+
+
+def _blog_post_html(post: dict, *, related: list, media_base: str = "") -> str:
+    e = html_escape
+    url = _blog_url(post.get("slug") or "")
+    title = f"{post.get('title') or ''} — WeAre Creators"
+    description = post.get("summary") or ""
+    hero = _absolute_media_url(post.get("hero_image_url"), media_base)
+
+    ld = _ld_script(
+        _organization_ld(),
+        {
+            "@type": "Article",
+            "headline": post.get("title") or "",
+            "description": description,
+            "url": url,
+            "mainEntityOfPage": {"@type": "WebPage", "@id": url},
+            "datePublished": post.get("published_at") or "",
+            "dateModified": post.get("updated_at") or post.get("published_at") or "",
+            "author": {
+                "@type": "Organization" if not post.get("author_name") else "Person",
+                "name": post.get("author_name") or "WeAre Creators",
+            },
+            "publisher": {
+                "@type": "Organization",
+                "name": "WeAre Creators",
+                "logo": {"@type": "ImageObject",
+                         "url": f"{_share_base()}/og-image.png"},
+            },
+            **({"image": hero} if hero else {}),
+            "articleSection": post.get("category_label") or "",
+        },
+        _breadcrumb_ld([("Home", "/"), ("Guides", BLOG_PATH),
+                        (post.get("title") or "", f"{BLOG_PATH}/{post.get('slug') or ''}")]),
+    )
+
+    hero_html = (
+        f'<span class="cover" style="display:block;border-radius:.5rem;'
+        f'overflow:hidden;margin-top:1.75rem"><img src="{e(hero)}" alt="" '
+        f'width="1200" height="675"></span>'
+        if hero
+        else ""
+    )
+    byline = " · ".join(
+        x for x in (
+            post.get("category_label"),
+            post.get("author_name"),
+            (post.get("published_at") or "")[:10] or None,
+        ) if x
+    )
+    more = (
+        '<section><h2>More guides</h2><div class="grid">'
+        + "".join(_blog_card_html(p, media_base) for p in related)
+        + "</div></section>"
+        if related
+        else ""
+    )
+
+    body = f"""<p class="eyebrow">{e(byline)}</p>
+<h1>{e(post.get("title") or "")}</h1>
+<p class="lede">{e(post.get("summary") or "")}</p>
+{hero_html}
+<section class="prose">{_blog_body_html(post.get("body") or "")}</section>
+{_seo_cta()}
+{more}"""
+
+    return _seo_page(
+        head=_seo_head(
+            title=title, description=description, url=url, ld_json=ld,
+            og_type="article", og_image=hero or None,
+        ),
+        body=body,
+    )
+
+
 @app.get(CASE_STUDY_PATH, include_in_schema=False)
 async def public_work_index(
     request: Request,
@@ -36592,8 +37815,35 @@ async def public_sitemap():
         {"status": "published"}, {"slug": 1, "updated_at": 1}
     ).to_list(length=2000)
 
+    # The findable pages. **Built from the same constants the pages are built
+    # from**, so a taxonomy group added next month gets a page *and* a sitemap
+    # entry from one edit — the failure this closes is the one the marketing
+    # pages already had, where a page existed and nothing pointed at it.
+    #
+    # A city only appears where it has creators behind it, which is the same
+    # floor `public_city_page` enforces: listing a city whose page 404s would
+    # be telling a crawler about a page we refuse to serve.
+    blog_posts = await db.blog_posts.find(
+        {"status": "published"}, {"slug": 1, "updated_at": 1}
+    ).to_list(length=2000)
+    seo_counts = await _seo_creator_counts()
+
     urls = [(f"{_share_base()}{p}".rstrip("/") or _share_base(), None)
             for p in MARKETING_PATHS]
+    urls.append((f"{_share_base()}{FAQ_PATH}", None))
+    urls += [(_category_url(c["slug"]), None) for c in SEO_CATEGORIES]
+    urls += [
+        (_city_url(_slugify(city)), None)
+        for city, n in sorted(seo_counts["cities"].items())
+        if n >= SEO_CITY_FLOOR and _slugify(city) in SEO_CITY_BY_SLUG
+    ]
+    if blog_posts:
+        urls.append((f"{_share_base()}{BLOG_PATH}", None))
+    urls += [
+        (_blog_url(p["slug"]), _iso(p.get("updated_at")))
+        for p in blog_posts
+        if p.get("slug")
+    ]
     if case_studies:
         urls.append((f"{_share_base()}{CASE_STUDY_PATH}", None))
     urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
@@ -36617,6 +37867,334 @@ async def public_sitemap():
             f"{body}</urlset>"
         ),
         media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+
+# --- Admin CRUD for the blog ------------------------------------------------
+#
+# **Admin-only, not `CONSOLE_ROLES`** — the split `POST /admin/brands` and the
+# case studies both make. A post is a claim this operation puts on the open
+# internet under its own name; `weare_team` is scoped to brands, and a scoped
+# role publishing under the company name is not a scope.
+
+
+async def _unique_blog_slug(desired: str, *, exclude: Optional[ObjectId] = None) -> str:
+    """One slug per post, and a taken one gets a suffix rather than a refusal.
+
+    A writer who has typed a whole article should not lose the save because
+    somebody used that title two years ago.
+    """
+    base = _slugify(desired) or "post"
+    slug, n = base, 2
+    while True:
+        clash = await db.blog_posts.find_one(
+            {"slug": slug, **({"_id": {"$ne": exclude}} if exclude else {})},
+            {"_id": 1},
+        )
+        if not clash:
+            return slug
+        slug, n = f"{base}-{n}", n + 1
+
+
+@admin_router.get("/blog")
+async def admin_list_blog(user: dict = Depends(require_roles("admin"))):
+    rows = await db.blog_posts.find({}).sort("created_at", -1).to_list(length=500)
+    return {
+        "posts": [
+            {
+                **_public_blog_post(r, full=False),
+                "id": str(r["_id"]),
+                "status": r.get("status") or "draft",
+                "created_at": _iso(r.get("created_at")),
+            }
+            for r in rows
+        ],
+        "categories": [{"value": k, "label": v} for k, v in BLOG_CATEGORIES],
+    }
+
+
+@admin_router.get("/blog/{post_id}")
+async def admin_read_blog(post_id: str, user: dict = Depends(require_roles("admin"))):
+    doc = await _blog_or_404(post_id)
+    return {
+        **_public_blog_post(doc),
+        "id": str(doc["_id"]),
+        "status": doc.get("status") or "draft",
+    }
+
+
+async def _blog_or_404(post_id: str) -> dict:
+    try:
+        oid = ObjectId(post_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="That post isn't available.")
+    doc = await db.blog_posts.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That post isn't available.")
+    return doc
+
+
+@admin_router.post("/blog")
+async def admin_create_blog(
+    payload: BlogPostPayload, user: dict = Depends(require_roles("admin"))
+):
+    """A new post, always as a draft. Publishing is its own act."""
+    now = datetime.now(timezone.utc)
+    doc = {
+        "_id": ObjectId(),
+        "title": payload.title.strip(),
+        "slug": await _unique_blog_slug(payload.slug or payload.title),
+        "summary": payload.summary.strip(),
+        "body": payload.body,
+        "category": payload.category,
+        "hero_image_url": _our_image_path(payload.hero_image_url),
+        "author_name": (payload.author_name or "").strip() or None,
+        "status": "draft",
+        "published_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.blog_posts.insert_one(doc)
+    await audit(user, "blog.create", "blog_post", doc["_id"],
+                after={"title": doc["title"], "slug": doc["slug"]})
+    return {**_public_blog_post(doc), "id": str(doc["_id"]), "status": "draft"}
+
+
+@admin_router.patch("/blog/{post_id}")
+async def admin_update_blog(
+    post_id: str, payload: BlogPostUpdate, user: dict = Depends(require_roles("admin"))
+):
+    """Partial, like every other edit here: only the keys that were sent."""
+    doc = await _blog_or_404(post_id)
+    update: dict = {}
+    for key in payload.model_fields_set:
+        value = getattr(payload, key)
+        if key == "slug":
+            update["slug"] = await _unique_blog_slug(value or doc["title"],
+                                                     exclude=doc["_id"])
+        elif key == "hero_image_url":
+            update["hero_image_url"] = _our_image_path(value)
+        elif isinstance(value, str):
+            update[key] = value.strip() or None if key == "author_name" else value.strip()
+        else:
+            update[key] = value
+    update["updated_at"] = datetime.now(timezone.utc)
+    await db.blog_posts.update_one({"_id": doc["_id"]}, {"$set": update})
+    await audit(user, "blog.update", "blog_post", doc["_id"],
+                before={"title": doc.get("title")}, after={"fields": sorted(update)})
+    return await admin_read_blog(post_id, user)
+
+
+@admin_router.post("/blog/{post_id}/publish")
+async def admin_publish_blog(
+    post_id: str, user: dict = Depends(require_roles("admin"))
+):
+    """**`published_at` is set once and never moved**, the rule case studies
+    hold: re-publishing after a correction is not a new piece of work, and a
+    date that jumped would tell a reader the article is newer than it is."""
+    doc = await _blog_or_404(post_id)
+    now = datetime.now(timezone.utc)
+    update = {"status": "published", "updated_at": now}
+    if not doc.get("published_at"):
+        update["published_at"] = now
+    await db.blog_posts.update_one({"_id": doc["_id"]}, {"$set": update})
+    await audit(user, "blog.publish", "blog_post", doc["_id"],
+                after={"slug": doc.get("slug")})
+    return await admin_read_blog(post_id, user)
+
+
+@admin_router.post("/blog/{post_id}/unpublish")
+async def admin_unpublish_blog(
+    post_id: str, user: dict = Depends(require_roles("admin"))
+):
+    doc = await _blog_or_404(post_id)
+    await db.blog_posts.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"status": "draft", "updated_at": datetime.now(timezone.utc)}},
+    )
+    await audit(user, "blog.unpublish", "blog_post", doc["_id"])
+    return await admin_read_blog(post_id, user)
+
+
+@admin_router.delete("/blog/{post_id}")
+async def admin_delete_blog(
+    post_id: str, user: dict = Depends(require_roles("admin"))
+):
+    """A published post cannot be deleted outright — the link may already be
+    out there, and the rule `case_studies` settled applies for the same
+    reason. Unpublish it first."""
+    doc = await _blog_or_404(post_id)
+    if (doc.get("status") or "draft") == "published":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Unpublish it first — the link may already be out there.",
+                "code": "post_published",
+            },
+        )
+    await db.blog_posts.delete_one({"_id": doc["_id"]})
+    await audit(user, "blog.delete", "blog_post", doc["_id"],
+                before={"title": doc.get("title")})
+    return {"deleted": True}
+
+
+# --- The public pages -------------------------------------------------------
+
+
+@app.get(CATEGORY_PATH + "/{slug}", include_in_schema=False)
+async def public_category_page(slug: str, request: Request):
+    """One creator category, server-rendered for a crawler that runs no JS."""
+    cat = SEO_CATEGORY_BY_SLUG.get(slug)
+    if not cat:
+        raise HTTPException(status_code=404, detail="No such category.")
+    counts = await _seo_creator_counts()
+    cities = [
+        city
+        for city, n in sorted(counts["cities"].items(), key=lambda kv: -kv[1])
+        if n >= SEO_CITY_FLOOR
+    ][:8]
+    return Response(
+        content=_category_page_html(
+            cat,
+            count=_indicative(counts["categories"].get(slug, 0)),
+            case_studies=await _case_studies_for(campaign_kinds=cat["campaign_kinds"]),
+            cities=cities,
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=900"},
+    )
+
+
+@app.get(CITY_PATH + "/{slug}", include_in_schema=False)
+async def public_city_page(slug: str, request: Request):
+    """One city, and **only where there are creators to back it**.
+
+    A page ranking for a city we cannot serve costs more than not ranking: a
+    brand arrives, finds nothing, and learns something about us. Below the
+    floor this 404s rather than rendering an empty promise.
+    """
+    city = SEO_CITY_BY_SLUG.get(slug)
+    if not city:
+        raise HTTPException(status_code=404, detail="No such city.")
+    counts = await _seo_creator_counts()
+    here = counts["cities"].get(city, 0)
+    if here < SEO_CITY_FLOOR:
+        raise HTTPException(status_code=404, detail="No such city.")
+    return Response(
+        content=_city_page_html(
+            city,
+            count=_indicative(here),
+            case_studies=await _case_studies_for(city=city),
+            categories=[
+                c for c in SEO_CATEGORIES
+                if counts["categories"].get(c["slug"], 0) > 0
+            ][:9],
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=900"},
+    )
+
+
+@app.get(FAQ_PATH, include_in_schema=False)
+async def public_faq_page():
+    return Response(
+        content=_faq_page_html(),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get(BLOG_PATH, include_in_schema=False)
+async def public_blog_index(request: Request, category: Optional[str] = None):
+    query: dict = {"status": "published"}
+    if category in BLOG_CATEGORY_LABELS:
+        query["category"] = category
+    rows = (
+        await db.blog_posts.find(query)
+        .sort("published_at", -1)
+        .to_list(length=60)
+    )
+    return Response(
+        content=_blog_index_html(
+            [_public_blog_post(r, full=False) for r in rows],
+            category=category if category in BLOG_CATEGORY_LABELS else None,
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get(BLOG_PATH + "/{slug}", include_in_schema=False)
+async def public_blog_post(slug: str, request: Request):
+    doc = await db.blog_posts.find_one({"slug": slug, "status": "published"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="That post isn't available.")
+    related = (
+        await db.blog_posts.find(
+            {"status": "published", "slug": {"$ne": slug},
+             "category": doc.get("category")}
+        )
+        .sort("published_at", -1)
+        .to_list(length=2)
+    )
+    return Response(
+        content=_blog_post_html(
+            _public_blog_post(doc),
+            related=[_public_blog_post(r, full=False) for r in related],
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def public_robots():
+    """Served by the backend so it can name the sitemap at the live origin.
+
+    The static copy in `frontend/public/robots.txt` is what Vercel serves if
+    this is not proxied; the two say the same thing, and `PREVIEW.md` records
+    which paths have to reach here.
+    """
+    base = _share_base()
+    findable = "\n".join(
+        f"Allow: {p}"
+        for p in (CATEGORY_PATH + "/", CITY_PATH + "/", FAQ_PATH, BLOG_PATH,
+                  CASE_STUDY_PATH)
+    )
+    return Response(
+        content=(
+            "# WeAre Creators\n"
+            "#\n"
+            "# The pages written to be found rather than sent: creator category\n"
+            "# pages, city pages, the FAQ, the guides and the case studies. All\n"
+            "# are server-rendered precisely so a crawler can read them.\n"
+            "#\n"
+            "# Everything else needs an account and renders nothing without a\n"
+            "# session, so a crawler would index an empty shell.\n\n"
+            "User-agent: *\n"
+            "Allow: /\n"
+            f"{findable}\n\n"
+            "# The brand's own console. The trailing slash matters: it covers\n"
+            "# /brand/dashboard and leaves /brands/{id} — the public page —\n"
+            "# allowed.\n"
+            "Disallow: /brand/\n"
+            "Disallow: /admin\n"
+            "Disallow: /api/\n"
+            "Disallow: /dashboard\n"
+            "Disallow: /onboarding\n"
+            "Disallow: /profile\n"
+            "Disallow: /manager\n"
+            "Disallow: /login\n"
+            "Disallow: /signup\n\n"
+            f"Sitemap: {base}/sitemap.xml\n"
+        ),
+        media_type="text/plain; charset=utf-8",
         headers={"Cache-Control": "public, max-age=3600"},
     )
 

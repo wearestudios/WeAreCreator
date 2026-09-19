@@ -434,6 +434,41 @@ def test_below_md_the_rows_are_a_list_rather_than_a_table():
     )
 
 
+@pytest.mark.parametrize("name", LIST_VIEWS + ["Blog.jsx"])
+def test_every_column_declares_what_it_draws(name):
+    """`DataTable` calls `col.cell` unconditionally; `col.value` is what it
+    sorts on.
+
+    **A column with only a `value` throws on the first render that has rows in
+    it** — and the section boundary catches it, so the screen reads "couldn't
+    load" rather than crashing, which is the version nobody debugs. An empty
+    list never reaches the call, so a screen with no seeded rows looks fine.
+    Caught in a browser on the guides list; pinned here because the shape is
+    generic and the failure is silent.
+    """
+    code = code_of(ADMIN / name)
+    # Each column object between `key:` and the next `key:` (or the end).
+    blocks = re.split(r"\n\s*\{\s*\n(?=\s*key:)", code)
+    offenders = []
+    for block in blocks[1:]:
+        block = block.split("\n            },")[0]
+        m = re.search(r'key:\s*"([\w-]+)"', block)
+        if not m:
+            continue
+        # **`header:` is what tells a column from a filter chip.** Both are
+        # `{key, value, …}` objects in the same file, and a chip legitimately
+        # has no `cell` — it has `label` and `onRemove`. Without this the check
+        # flags four working screens, which is the way a structural test gets
+        # deleted rather than fixed.
+        if "header:" not in block:
+            continue
+        # A column may legitimately have neither — `DataTable` falls back to
+        # `r[col.key]` for reading. What matters is that something draws it.
+        if "cell:" not in block and "value:" in block:
+            offenders.append(m.group(1))
+    assert not offenders, f"{name}: columns with a value and no cell: {offenders}"
+
+
 @pytest.mark.parametrize("name", LIST_VIEWS)
 def test_every_list_says_what_its_phone_row_carries(name):
     """A column with no `mobile` hint is desktop-only, so a screen that

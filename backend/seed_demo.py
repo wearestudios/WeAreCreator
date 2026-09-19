@@ -102,6 +102,7 @@ WIPED = (
     # about — a case study naming creators and a brand the database no longer
     # has is a public page whose every link is broken.
     "case_studies",
+    "blog_posts",
     # The computed homepage ranking. A cache rather than a record, so a reset
     # should leave it empty and let the next pass rebuild it from the seeded
     # rows — keeping it would put yesterday's creators on a homepage whose

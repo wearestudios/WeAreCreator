@@ -276,7 +276,13 @@ Repoint all five at your Railway URL; they must stay **above** the catch-all:
 { "source": "/brands/:id",  "destination": "https://your-api.up.railway.app/brands/:id" },
 { "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" },
 { "source": "/work",        "destination": "https://your-api.up.railway.app/work" },
-{ "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" }
+{ "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" },
+{ "source": "/creators/:slug",    "destination": "https://your-api.up.railway.app/creators/:slug" },
+{ "source": "/creators-in/:slug", "destination": "https://your-api.up.railway.app/creators-in/:slug" },
+{ "source": "/faq",               "destination": "https://your-api.up.railway.app/faq" },
+{ "source": "/blog",              "destination": "https://your-api.up.railway.app/blog" },
+{ "source": "/blog/:slug",        "destination": "https://your-api.up.railway.app/blog/:slug" },
+{ "source": "/robots.txt",        "destination": "https://your-api.up.railway.app/robots.txt" }
 ```
 
 **All five or none.** They are one feature, and shipping part of it means a

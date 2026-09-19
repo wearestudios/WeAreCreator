@@ -28,6 +28,7 @@ import {
     LayoutDashboard,
     MoonStar,
     Newspaper,
+    PenLine,
     Archive,
     Scale,
     ShieldAlert,
@@ -159,6 +160,16 @@ export const ADMIN_SECTIONS = [
         to: "case-studies",
         label: "Case studies",
         Icon: Newspaper,
+        adminOnly: true,
+    },
+    // The guides. **Admin-only for the reason case studies are**: a post is
+    // published under the company's name on the open internet, and a role
+    // scoped to a set of brands is not a role that speaks for the company.
+    {
+        key: "blog",
+        to: "blog",
+        label: "Guides",
+        Icon: PenLine,
         adminOnly: true,
     },
     // Re-engagement, which is nobody's queue — it is the work that only gets

@@ -98,6 +98,47 @@
         }
       })();
     </script>
+
+    <!-- Search Console. %REACT_APP_SEARCH_CONSOLE_TOKEN% is substituted at
+         build time from the environment, so the token is never committed —
+         the rule the Maps key already holds. With the variable unset CRA
+         leaves the placeholder in place, which Google simply does not match,
+         so an unverified build fails closed rather than claiming a property
+         it does not own. Set it in the deploy environment and rebuild. -->
+    <meta
+      name="google-site-verification"
+      content="%REACT_APP_SEARCH_CONSOLE_TOKEN%"
+    />
+
+    <!-- The organisation, for a crawler that reads this shell.
+         Every server-rendered page carries the same block in its own head —
+         these are the only pages a non-JS crawler can read at all, which is
+         why the entity is stated in both places rather than only here. Keep
+         the two in step: a test asserts this one names the same company. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "WeAre Creators",
+        "url": "https://wearecreators.in",
+        "logo": "https://wearecreators.in/og-image.png",
+        "email": "creators@wearemonk.in",
+        "description": "WeAre Creators runs paid influencer campaigns end to end for brands in Bengaluru — casting verified creators, agreeing the rate in writing, running the shoot and reporting what it did.",
+        "areaServed": { "@type": "City", "name": "Bengaluru" },
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Bengaluru",
+          "addressRegion": "Karnataka",
+          "addressCountry": "IN"
+        }
+      }
+    </script>
+
+    <!-- India, said explicitly. Weak signals on their own and free to send;
+         the alternative is letting a crawler guess. -->
+    <meta name="geo.region" content="IN-KA" />
+    <meta name="geo.placename" content="Bengaluru" />
+    <meta name="ICBM" content="12.9716, 77.5946" />
   </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -12,6 +12,7 @@ import { clearTheme, isConsolePath } from "@/lib/consoleTheme";
 import RouteFallback from "@/components/RouteFallback";
 import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
+import { installAnalytics } from "@/lib/analytics";
 import { installOfflineQueue } from "@/lib/offlineQueue";
 import { CONSOLE_ROLES } from "@/lib/consoleScope";
 
@@ -147,6 +148,7 @@ const DisputesRoute = adminRoute("DisputesRoute");
 const CircumventionRoute = adminRoute("CircumventionRoute");
 const RetentionRoute = adminRoute("RetentionRoute");
 const CaseStudiesRoute = adminRoute("CaseStudiesRoute");
+const BlogRoute = adminRoute("BlogRoute");
 const AdminCampaignDetail = load(() =>
     import(/* webpackChunkName: "admin" */ "@/components/admin/CampaignDetailPage"),
 );
@@ -163,6 +165,13 @@ const AdminCollaborationDetail = load(() =>
 // Attached at module load rather than in an effect, so a rejection thrown
 // while the first render is still in flight is already covered.
 installGlobalErrorHandlers();
+
+// The tag manager, at module load rather than in an effect — the same reason
+// the console theme is applied before first paint: a tag that arrives after
+// the page has rendered has already missed the thing it was measuring. With no
+// `REACT_APP_GTM_ID` nothing is injected and nothing is requested, which is the
+// ordinary state of a developer build.
+installAnalytics();
 // Drains anything a previous session left behind before the first render, so a
 // manager whose phone died mid-shift finds their check-ins already sent.
 installOfflineQueue();
@@ -498,6 +507,7 @@ function App() {
                             <Route path="deletions" element={<DeletionsRoute />} />
                             <Route path="settings" element={<SettingsRoute />} />
                             <Route path="case-studies" element={<CaseStudiesRoute />} />
+                            <Route path="blog" element={<BlogRoute />} />
                             <Route path="dormant" element={<DormantRoute />} />
                             <Route path="disputes" element={<DisputesRoute />} />
                             <Route path="circumvention" element={<CircumventionRoute />} />

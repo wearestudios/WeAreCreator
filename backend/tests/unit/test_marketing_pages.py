@@ -179,10 +179,59 @@ def test_the_enemy_named_is_disorganisation_not_a_competitor():
 
 
 def test_the_headline_direction_is_carried():
-    """"Your creator campaigns, handled properly" governs the copy. Home is
-    where it leads, and /why-weare is the page that argues it."""
-    assert "handled properly" in copy_of(*PAGES["home"])
-    assert "handled properly" in copy_of(*PAGES["why"])
+    """One claim governs the copy, and it is the one only we can make.
+
+    **The idea, not the phrase.** This used to pin "handled properly"
+    verbatim, which is exactly the rule the copy audit warns against — a test
+    that names a sentence is a test that fails on its next honest rewrite, and
+    then somebody edits the test to match rather than asking whether the
+    rewrite was right. What has to survive is that home leads with *running
+    the campaign* rather than with booking it, and that /why-weare argues the
+    same thing at length.
+    """
+    home = copy_of(*PAGES["home"]).lower()
+    assert "we run the campaign" in home or "run the campaign" in home
+    assert "not just the booking" in home
+    # /why-weare is the argument for the claim rather than the claim itself,
+    # so it has to carry the idea in its own words rather than repeat the line.
+    why = copy_of(*PAGES["why"]).lower()
+    assert "handed over" in why or "end to end" in why or "we run" in why
+
+
+def test_the_claim_does_not_drift_between_the_two_places_that_render_it():
+    """The React hero and the server-rendered search pages both say it.
+
+    Two copies, because the hero renders before there is anything to fetch and
+    the search pages render with no bundle at all — the arrangement
+    `followerTiers.js` and `platformTerms.js` already use. Two copies of a
+    *promise* left unchecked is how a company ends up with two promises.
+    """
+    import server
+
+    mirror = read("src", "lib", "promise.js")
+    assert f'"{server.CAMPAIGN_CLAIM}"' in mirror, "the claim drifted"
+    for label, line in server.CAMPAIGN_PROOF_POINTS:
+        assert label in mirror, f"proof point missing from the mirror: {label}"
+        # The line is wrapped across source lines on both sides, so compare on
+        # a distinctive fragment rather than on whitespace.
+        assert line.split(" — ")[0].split(",")[0][:28] in mirror, label
+
+
+def test_the_proof_points_are_checkable_rather_than_adjectives():
+    """A claim with nothing verifiable under it is a slogan.
+
+    Each of the three has to be a thing a brand can go and confirm: ask how a
+    creator was checked, ask for the rate in writing, read the refund rule.
+    "Trusted by the best" would pass a spellcheck and fail this.
+    """
+    import server
+
+    joined = " ".join(f"{a} {b}" for a, b in server.CAMPAIGN_PROOF_POINTS).lower()
+    assert "verified" in joined
+    assert "writing" in joined
+    assert "fee back" in joined or "fee comes back" in joined
+    for vague in ("trusted", "world-class", "best-in-class", "leading", "seamless"):
+        assert vague not in joined, vague
 
 
 # --- What each audience has to come away knowing ------------------------------
@@ -917,7 +966,16 @@ def test_the_pending_proxy_decision_is_written_down():
 # budget can be read rather than reconstructed by walking JSX. A section that
 # wants to say more has to argue with a number.
 
-BUDGET = {"home": 120, "brands": 250, "creators": 250, "how": 300, "why": 300}
+# **Home moved from 120 to 130, and the counting got stricter in the same
+# change.** Both halves matter. The page took on new required content — the
+# claim and its three proof points, which the whole go-to-market surface hangs
+# on — and the claim is three words longer than the title it replaced, which is
+# the trade: a headline a brand can repeat back costs more words than one that
+# only describes. At the same time `_copy_strings` started counting
+# `lib/promise.js`, so the words a page renders from a shared constant are on
+# its budget rather than outside it. Moving the number while loosening the
+# count would have been the dishonest version of this.
+BUDGET = {"home": 130, "brands": 250, "creators": 250, "how": 300, "why": 300}
 
 
 def _block_strings(src, marker):
@@ -945,6 +1003,16 @@ def _copy_strings(name):
     a section smuggle in copy by being a component."""
     src = read(*PAGES[name])
     out = _block_strings(src, "const COPY = {")
+    # **The promise counts as copy on the page that renders it.** The claim and
+    # its three proof points live in `lib/promise.js` because the server
+    # renders them too, and a page importing them rather than typing them is
+    # exactly the "smuggle copy in by being a component" route this function
+    # exists to close. Words on the page are words on the page.
+    if "@/lib/promise" in src:
+        promise = read("src", "lib", "promise.js")
+        out.append(_block_strings(promise, "CAMPAIGN_CLAIM =")[0]
+                   if "CAMPAIGN_CLAIM =" in promise else "")
+        out += re.findall(r'label:\s*"((?:[^"\\]|\\.)*)"', promise)
     if "CampaignFilm" in src:
         film = read("src", "components", "marketing", "CampaignFilm.jsx")
         out += [
@@ -1202,8 +1270,12 @@ def test_the_constant_half_of_the_headline_never_animates():
     whole line would say four unrelated headlines are cycling rather than one
     sentence being re-pointed."""
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert 'lead = "Your"' in src
-    assert 'tail = "handled properly."' in src
+    # **The frame is the claim now**, so the constant halves are its two ends.
+    # Pinned as the shape — a lead and a tail that do not animate — rather than
+    # as the words, with the words themselves checked against the server in
+    # `test_the_claim_does_not_drift_between_the_two_places_that_render_it`.
+    assert 'lead = "We run the"' in src
+    assert 'tail = "not just the booking."' in src
     # The tail is rendered outside the AnimatePresence block.
     after = src[src.index("</AnimatePresence>") :]
     assert "{tail}" in after
@@ -1258,7 +1330,11 @@ def test_the_headline_has_one_stable_accessible_name():
     """A screen reader reading four letters at a time as they animate in is
     gibberish, so the animated spans are hidden and the h1 carries a name."""
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "aria-label={`${lead}" in src
+    # **The name is the canonical claim, not the variant currently showing.**
+    # It used to be built from the lead, the first phrase and the tail, which
+    # named whichever kind of campaign happened to be first — a screen reader
+    # and a crawler should get the sentence we actually make.
+    assert "aria-label={CAMPAIGN_CLAIM}" in src
     assert 'aria-hidden className="block"' in src
 
 

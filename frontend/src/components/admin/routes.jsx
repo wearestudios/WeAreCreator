@@ -33,6 +33,7 @@ import CircumventionQueue from "@/components/admin/CircumventionQueue";
 import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
 import CaseStudies from "@/components/admin/CaseStudies";
+import Blog from "@/components/admin/Blog";
 
 /**
  * The overview, with the operational panels above it.
@@ -190,6 +191,15 @@ export function CaseStudiesRoute() {
     return (
         <SafeSection name="case-studies" label="Case studies couldn't load">
             <CaseStudies />
+        </SafeSection>
+    );
+}
+
+/** The guides. Same shape and same reasoning as the case studies above. */
+export function BlogRoute() {
+    return (
+        <SafeSection name="blog" label="Guides couldn't load">
+            <Blog />
         </SafeSection>
     );
 }

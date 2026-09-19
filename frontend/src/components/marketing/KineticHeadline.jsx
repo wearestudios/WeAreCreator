@@ -1,13 +1,19 @@
 // The signature: a headline that morphs at letterform level.
 //
-// "Your launch night" → "Your fashion drop" → "Your travel stay" → "Your menu
-// tasting", each resolving against the constant second line "handled
-// properly." The motion *is* the message — the thing that changes is the kind
-// of campaign, and the thing that does not is how it is run.
+// "We run the launch night" → "the fashion drop" → "the travel stay" → "the
+// menu tasting", each resolving against the constant close "not just the
+// booking." The motion *is* the message — the thing that changes is the kind
+// of campaign, and the thing that does not is who runs it.
 //
-// **"Your" and "handled properly." never move.** Only the tail morphs, which
-// is what makes this read as one sentence being re-pointed rather than four
-// unrelated headlines cycling. Animating the whole line would say the opposite.
+// **The frame is the claim.** It used to be "Your … handled properly", which
+// described what we do and made the reader work out what it meant. The frame
+// now *is* `CAMPAIGN_CLAIM`, leading with the thing only we do: every
+// competitor books a creator, and we run the campaign. A brand can repeat it
+// back after one read, which is the test a hero either passes or fails.
+//
+// **The lead and the tail never move.** Only the middle morphs, which is what
+// makes this read as one sentence being re-pointed rather than four unrelated
+// headlines cycling. Animating the whole line would say the opposite.
 //
 // **Per character, not per word, and never a plain fade.** Outgoing letters
 // rise and dissolve on a stagger; incoming letters arrive from below on the
@@ -30,6 +36,7 @@
 //
 // **Under `prefers-reduced-motion` the first phrase renders and stays.** No
 // timer is started, so there is nothing running in the background either.
+import { CAMPAIGN_CLAIM } from "@/lib/promise";
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
@@ -96,8 +103,8 @@ function Letters({ text }) {
  * @param {string} tail   the line that never changes, after it
  */
 export function KineticHeadline({
-    lead = "Your",
-    tail = "handled properly.",
+    lead = "We run the",
+    tail = "not just the booking.",
     phrases = PHRASES,
 }) {
     const reduced = useReducedMotion();
@@ -125,7 +132,14 @@ export function KineticHeadline({
             // One accessible name, stable across the morph. A screen reader
             // reading four letters at a time as they animate in would be
             // gibberish, so the animated spans are hidden from it entirely.
-            aria-label={`${lead} ${phrases[0]}, ${tail}`}
+            // **The accessible name is the canonical claim, not the variant
+            // currently on screen.** A screen reader and a crawler should get
+            // the sentence we actually make — "the campaign", not whichever of
+            // the four kinds the morph happens to be holding. Sighted readers
+            // get the same claim re-pointed four ways, which is the whole
+            // point of the treatment: what changes is the kind of work, what
+            // does not is who runs it.
+            aria-label={CAMPAIGN_CLAIM}
             className="font-serif tracking-tightest"
             style={poster}
         >

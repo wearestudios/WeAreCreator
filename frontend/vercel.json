@@ -22,6 +22,30 @@
       "destination": "/index.html"
     },
     {
+      "source": "/creators/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/creators-in/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/faq",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/blog",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/blog/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

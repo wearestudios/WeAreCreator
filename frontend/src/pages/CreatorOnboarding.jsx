@@ -57,6 +57,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { FUNNEL, track } from "@/lib/analytics";
 
 // Suggestions come from the shared taxonomy, which spans every category we
 // accept. This file used to carry its own food-only list — cafe, brunch,
@@ -455,6 +456,10 @@ export default function CreatorOnboarding() {
         setError("");
         try {
             await api.post("/creator/profile/submit-for-review");
+            // After the call, not before: a submission that 409'd below 100%
+            // is not a submission, and firing first would count every failed
+            // attempt as a creator entering the queue.
+            track(FUNNEL.profileSubmitted);
             notifySuccess("Sent to the WeAre team — we'll come back within 48 hours");
             navigate("/dashboard", { replace: true, state: { justOnboarded: true } });
         } catch (err) {

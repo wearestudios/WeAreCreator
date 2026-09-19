@@ -69,6 +69,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { FUNNEL, track } from "@/lib/analytics";
 
 // An ISO timestamp back into the yyyy-mm-dd an <input type="date"> expects.
 //
@@ -546,6 +547,16 @@ export default function PostCampaign() {
                     // from the edit screen.
                     notifyError("Campaign saved, but the cover image didn't upload. Add it from Edit.");
                 }
+            }
+            // The event that matters most on the brand side, and it fires
+            // only on a real submission — a draft is a form saved, not a
+            // campaign posted, and counting it would flatter the funnel at the
+            // exact step we are trying to read honestly.
+            if (!isDraft) {
+                track(FUNNEL.campaignPosted, {
+                    campaign_type: campaignType || null,
+                    category: category || null,
+                });
             }
             notifySuccess(
                 isDraft
