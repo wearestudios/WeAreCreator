@@ -115,7 +115,7 @@ function CampaignCard({ campaign: c, prominent }) {
             className={
                 "overflow-hidden rounded-md border grain-surface " +
                 (prominent
-                    ? "border-ember-500/40 bg-card"
+                    ? "border-primary/40 bg-card"
                     : "border-white/10 bg-card")
             }
         >
@@ -132,7 +132,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         {prominent && (
                             <span
                                 data-testid={IDS.cardToday(c.id)}
-                                className="inline-flex items-center gap-1.5 rounded-full bg-ember-500 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-black"
+                                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary-foreground"
                             >
                                 Today
                             </span>
@@ -215,7 +215,7 @@ function CampaignCard({ campaign: c, prominent }) {
                     <Link
                         to={`/manager/campaigns/${c.id}?mode=day-of`}
                         data-testid={IDS.cardDayOf(c.id)}
-                        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-ember-500 text-sm font-medium text-black transition-colors duration-200 hover:bg-ember-400 ${TOUCH}`}
+                        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-primary-hover ${TOUCH}`}
                     >
                         <ClipboardCheck className="h-5 w-5" />
                         Check people in
@@ -225,7 +225,7 @@ function CampaignCard({ campaign: c, prominent }) {
                             href={`tel:${String(c.on_site_contact).replace(/[^\d+]/g, "")}`}
                             data-testid={IDS.cardCall(c.id)}
                             aria-label={`Call the venue contact for ${c.title}`}
-                            className={`inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-5 text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500 sm:flex-none ${TOUCH}`}
+                            className={`inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-5 text-sm text-muted-foreground transition-colors duration-200 hover:text-primary sm:flex-none ${TOUCH}`}
                         >
                             <Phone className="h-5 w-5" />
                             <span className="sm:hidden">Call the venue</span>
@@ -298,7 +298,7 @@ export default function ManagerHome() {
                 <Link
                     to="/calendar"
                     data-testid={IDS.calendar}
-                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-white/10 text-sm text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-white/10 text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                 >
                     <CalendarClock className="h-4 w-4" />
                     Everything by date
@@ -307,7 +307,7 @@ export default function ManagerHome() {
                 {error && (
                     <p
                         data-testid={IDS.error}
-                        className="mt-6 rounded-md border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+                        className="mt-6 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm text-state-rejected"
                     >
                         {error}
                     </p>
@@ -330,7 +330,7 @@ export default function ManagerHome() {
                         {/* What needs you, before what you have. */}
                         {attention.length > 0 && (
                             <SafeSection name="manager-attention" className="mt-8">
-                                <p className="text-xs uppercase tracking-[0.2em] text-amber-200">
+                                <p className="text-xs uppercase tracking-[0.2em] text-state-pending">
                                     Needs a look
                                 </p>
                                 <ul
@@ -350,7 +350,7 @@ export default function ManagerHome() {
 
                         <SafeSection name="manager-today" className="mt-10">
                             <div className="flex items-baseline justify-between gap-3">
-                                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                     Today
                                 </p>
                                 <span

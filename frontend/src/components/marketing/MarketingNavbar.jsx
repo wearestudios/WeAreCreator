@@ -47,13 +47,13 @@ export function MarketingNavbar() {
                     <Link
                         to="/"
                         data-testid={IDS.navLogo}
-                        className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
+                        className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
-                        <span className="grid h-8 w-8 place-items-center rounded-md bg-ember-500 font-serif text-lg font-semibold text-black">
+                        <span className="grid h-8 w-8 place-items-center rounded-md bg-red-500 font-serif text-lg font-semibold text-navy-700">
                             W
                         </span>
                         <span className="font-serif text-xl tracking-tight">
-                            WeAre <span className="text-ember-500">Creators</span>
+                            WeAre <span className="text-primary">Creators</span>
                         </span>
                     </Link>
                     <span aria-hidden className="hidden h-4 w-px bg-white/15 sm:block" />
@@ -92,7 +92,7 @@ export function MarketingNavbar() {
                         pair where one half is clipped reads as a pair somebody
                         stopped proof-reading. */}
                     <Link to="/signup" data-testid={IDS.navJoin}>
-                        <Button className="rounded-full bg-ember-500 px-5 text-black transition-colors duration-200 hover:bg-ember-400">
+                        <Button className="rounded-full bg-primary px-5 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover">
                             Sign up
                         </Button>
                     </Link>
@@ -106,7 +106,7 @@ export function MarketingNavbar() {
                                 type="button"
                                 data-testid={IDS.navMenuButton}
                                 aria-label="Open menu"
-                                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
+                                className="grid h-11 w-11 place-items-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:hidden"
                             >
                                 <Menu className="h-5 w-5" />
                             </button>
@@ -121,7 +121,7 @@ export function MarketingNavbar() {
                             <div className="flex h-full flex-col">
                                 <div className="flex flex-col gap-1 border-b border-white/10 px-6 py-5">
                                     <span className="font-serif text-xl tracking-tight">
-                                        WeAre <span className="text-ember-500">Creators</span>
+                                        WeAre <span className="text-primary">Creators</span>
                                     </span>
                                     <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
@@ -133,7 +133,7 @@ export function MarketingNavbar() {
                                                 <Link
                                                     to={l.to}
                                                     data-testid={`${l.testId}-mobile`}
-                                                    className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-ember-500"
+                                                    className="border-b border-white/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-primary"
                                                 >
                                                     {l.label}
                                                 </Link>
@@ -145,7 +145,7 @@ export function MarketingNavbar() {
                                 <div className="flex flex-col gap-3 border-t border-white/10 px-6 py-6">
                                     <SheetClose asChild>
                                         <Link to="/signup" data-testid={`${IDS.navJoin}-mobile`}>
-                                            <Button className="h-11 w-full rounded-full bg-ember-500 text-black transition-colors duration-200 hover:bg-ember-400">
+                                            <Button className="h-11 w-full rounded-full bg-primary text-primary-foreground transition-colors duration-200 hover:bg-primary-hover">
                                                 Sign up
                                             </Button>
                                         </Link>

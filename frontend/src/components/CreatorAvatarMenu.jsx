@@ -52,7 +52,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                 aria-expanded={open}
                 aria-label="Your account"
                 onClick={() => setOpen((v) => !v)}
-                className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-white/15 bg-card transition-colors duration-200 hover:border-ember-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-white/15 bg-card transition-colors duration-200 hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
                 {profileImageUrl ? (
                     <img

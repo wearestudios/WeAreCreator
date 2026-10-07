@@ -51,7 +51,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                 rows. */}
             <p
                 data-testid={IDS.outstanding}
-                className="mt-4 rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm leading-relaxed text-ember-500/90"
+                className="mt-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-primary/90"
             >
                 {outstanding?.message}
                 {outstanding?.waiting_on === "you" && outstanding?.missing?.length > 0 && (
@@ -82,7 +82,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                         <span className="min-w-0 flex-1">
                             <Link
                                 to={`/campaigns/${row.campaign_id}`}
-                                className="block truncate text-sm transition-colors duration-200 hover:text-ember-500"
+                                className="block truncate text-sm transition-colors duration-200 hover:text-primary"
                             >
                                 {row.campaign_title || "A campaign"}
                             </Link>

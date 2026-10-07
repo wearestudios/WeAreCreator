@@ -91,7 +91,7 @@ const Chip = ({ on, children, testid, ...rest }) => (
         className={
             "min-h-[3rem] rounded-md border px-4 text-sm transition-colors duration-200 " +
             (on
-                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                ? "border-primary bg-primary/10 text-primary"
                 : "border-white/10 bg-background/60 text-foreground hover:border-white/25")
         }
         {...rest}
@@ -212,7 +212,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         {reviewing ? "Check and confirm" : "Pick your slot"}
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -236,7 +236,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                 {error && (
                     <p
                         data-testid={IDS.error}
-                        className="mt-5 flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+                        className="mt-5 flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm text-state-rejected"
                     >
                         <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
                         {error}
@@ -281,7 +281,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                                 className={
                                                     "flex min-h-[3.5rem] w-full items-center justify-between gap-4 rounded-md border px-4 py-3 text-left transition-colors duration-200 " +
                                                     (on
-                                                        ? "border-ember-500 bg-ember-500/10"
+                                                        ? "border-primary bg-primary/10"
                                                         : "border-white/10 bg-background/60 hover:border-white/25")
                                                 }
                                             >
@@ -368,7 +368,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                 data-testid={IDS.review}
                                 disabled={!ready}
                                 onClick={() => setReviewing(true)}
-                                className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 disabled:opacity-40"
+                                className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-40"
                             >
                                 Review your booking
                             </Button>
@@ -387,7 +387,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                     When
                                 </dt>
                                 <dd className="mt-2 inline-flex items-center gap-2 font-serif text-xl leading-tight">
-                                    <CalendarClock className="h-4 w-4 text-ember-500" />
+                                    <CalendarClock className="h-4 w-4 text-primary" />
                                     {formatDay(when?.toISOString())} ·{" "}
                                     {formatTime(when?.toISOString())}
                                 </dd>
@@ -437,7 +437,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                 data-testid={IDS.confirm}
                                 disabled={busy}
                                 onClick={confirm}
-                                className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 {busy ? (
                                     <>

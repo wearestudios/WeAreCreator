@@ -22,17 +22,17 @@ const VERIFICATION_META = {
     pending: {
         Icon: Clock,
         label: "Under review",
-        tone: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+        tone: "bg-state-pending/15 text-state-pending border-state-pending/40",
     },
     verified: {
         Icon: CheckCircle2,
         label: "Verified",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/40",
     },
     rejected: {
         Icon: XCircle,
         label: "Needs changes",
-        tone: "bg-red-500/15 text-red-300 border-red-500/40",
+        tone: "bg-state-rejected/15 text-state-rejected border-state-rejected/40",
     },
 };
 
@@ -73,7 +73,7 @@ export default function Hero({ user, profile, earnings }) {
                     a hardcoded city on the one screen that knows the real
                     answer. Absent falls back to the role alone rather than
                     guessing. */}
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     {profile?.city ? `Creator · ${profile.city}` : "Creator"}
                 </p>
 
@@ -130,7 +130,7 @@ export default function Hero({ user, profile, earnings }) {
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.handle}
-                            className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ember-500"
+                            className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-primary"
                         >
                             <Instagram className="h-4 w-4" />@{handle}
                         </a>
@@ -152,7 +152,7 @@ export default function Hero({ user, profile, earnings }) {
                                 <span
                                     data-testid={IDS.followersVerified}
                                     title="Pulled from Instagram, refreshed every 12 hours"
-                                    className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-300"
+                                    className="inline-flex items-center gap-1 rounded-full border border-state-approved/40 bg-state-approved/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-state-approved"
                                 >
                                     <BadgeCheck className="h-3 w-3" />
                                     Verified
@@ -179,7 +179,7 @@ export default function Hero({ user, profile, earnings }) {
                         </Button>
                     </Link>
                     <Link to="/campaigns" data-testid={IDS.browse}>
-                        <Button className="group h-11 rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                        <Button className="group h-11 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                             Browse campaigns
                             <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                         </Button>
@@ -194,7 +194,7 @@ export default function Hero({ user, profile, earnings }) {
                     </p>
                     <Money
                         symbolClass="h-6 w-6 md:h-7 md:w-7"
-                        className="mt-4 font-serif text-fluid-6xl leading-none tracking-tight"
+                        className="mt-4 font-serif text-fluid-6xl leading-none tracking-tight text-data"
                     >
                         <CountUp value={lifetime} testid={IDS.lifetime} />
                     </Money>

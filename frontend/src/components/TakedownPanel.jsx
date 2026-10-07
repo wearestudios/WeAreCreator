@@ -103,14 +103,14 @@ export default function TakedownPanel({
             data-testid={IDS.panel}
             className={`rounded-md border p-4 ${
                 pending
-                    ? "border-amber-400/40 bg-amber-400/10"
+                    ? "border-state-pending/40 bg-state-pending/10"
                     : "border-white/10 bg-card"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
                 <ShieldAlert
                     aria-hidden="true"
-                    className={`h-4 w-4 ${pending ? "text-amber-300" : "text-muted-foreground"}`}
+                    className={`h-4 w-4 ${pending ? "text-state-pending" : "text-muted-foreground"}`}
                 />
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     Takedown
@@ -160,7 +160,7 @@ export default function TakedownPanel({
                     size="sm"
                     onClick={() => setAsking(true)}
                     data-testid={IDS.open}
-                    className="mt-4 min-h-[2.75rem] border-amber-400/30 bg-transparent text-amber-200 hover:bg-amber-400/10 sm:min-h-0"
+                    className="mt-4 min-h-[2.75rem] border-state-pending/30 bg-transparent text-state-pending hover:bg-state-pending/10 sm:min-h-0"
                 >
                     Ask for it to come down
                 </Button>
@@ -175,9 +175,9 @@ export default function TakedownPanel({
                                 type="button"
                                 onClick={() => setCode(r.code)}
                                 data-testid={IDS.reason(r.code)}
-                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 ${
+                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                                     code === r.code
-                                        ? "border-ember-500 bg-ember-500/10 text-foreground"
+                                        ? "border-primary bg-primary/10 text-foreground"
                                         : "border-white/10 text-muted-foreground hover:border-white/20"
                                 }`}
                             >
@@ -192,7 +192,7 @@ export default function TakedownPanel({
                         onChange={(e) => setDetail(e.target.value)}
                         placeholder="What exactly is wrong with it. The creator reads this."
                         data-testid={IDS.detail}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -200,7 +200,7 @@ export default function TakedownPanel({
                             onClick={request}
                             disabled={busy || detail.trim().length < 10}
                             data-testid={IDS.submit}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             Ask for it to come down
@@ -230,7 +230,7 @@ export default function TakedownPanel({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="Anything you want to say about it — required if it's staying up."
                         data-testid={IDS.note}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -238,7 +238,7 @@ export default function TakedownPanel({
                             onClick={() => respond(true)}
                             disabled={busy}
                             data-testid={IDS.actioned}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             I've taken it down

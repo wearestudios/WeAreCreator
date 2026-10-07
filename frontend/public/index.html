@@ -76,25 +76,55 @@
       agree.
     -->
     <script>
+      /* Which surface this page is on, before first paint.
+         
+         MARKETING is navy and is the absence of the attribute; PRODUCT is
+         light. Getting this wrong for even one frame is the whole reason the
+         script exists — a dashboard that flashes navy before turning light is
+         worse than either surface on its own.
+         
+         **This must agree with `isProductPath` in `lib/surfaceTheme.js`**, and
+         a test fails the two if the prefix lists drift. It is duplicated
+         rather than imported because nothing has loaded yet; that is the
+         trade, and the test is what pays for it. */
       (function () {
         try {
-          if (location.pathname.indexOf("/admin") !== 0) return;
-          var stored = null;
-          try { stored = localStorage.getItem("weare:console-theme"); } catch (e) {}
-          var theme =
-            stored === "light" || stored === "dark"
-              ? stored
-              : window.matchMedia &&
-                window.matchMedia("(prefers-color-scheme: light)").matches
-              ? "light"
-              : "dark";
+          var path = location.pathname;
+          var PRODUCT = [
+            "/dashboard", "/onboarding", "/profile", "/admin",
+            "/manager", "/calendar", "/check-in", "/brand/"
+          ];
+          var isProduct =
+            path === "/campaigns/new" ||
+            /^\/campaigns\/[^/]+\/edit\/?$/.test(path) ||
+            PRODUCT.some(function (p) {
+              return path === p.replace(/\/$/, "") || path.indexOf(p) === 0;
+            });
+          if (!isProduct) return; /* marketing navy is the default document */
+
+          /* Inside the console an admin may have chosen navy. Everywhere else
+             in the product the surface is light and not negotiable. */
+          var theme = "light";
+          if (path.indexOf("/admin") === 0) {
+            var stored = null;
+            try { stored = localStorage.getItem("weare:console-theme"); } catch (e) {}
+            theme =
+              stored === "light" || stored === "dark"
+                ? stored
+                : window.matchMedia &&
+                  window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          }
           if (theme === "light") {
             document.documentElement.setAttribute("data-theme", "light");
             document.documentElement.style.colorScheme = "light";
           }
         } catch (e) {
-          /* Dark is the absence of the attribute, so a throw here lands on
-             the theme the console has always had rather than on nothing. */
+          /* Navy is the absence of the attribute, so a throw lands on the
+             marketing surface rather than on nothing. On a product route that
+             is the wrong surface for a moment, which the guard corrects on
+             mount — a visible correction beats an unstyled page. */
         }
       })();
     </script>

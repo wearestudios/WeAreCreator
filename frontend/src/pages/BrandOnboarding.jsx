@@ -122,21 +122,21 @@ const STATE_PRESENTATION = {
     unsubmitted: {
         Icon: ShieldCheck,
         tone: "border-white/10 bg-card/60 text-muted-foreground",
-        accent: "text-ember-500",
+        accent: "text-primary",
         title: "Not sent for verification yet",
         body: "Fill in the business details below and upload one document. We usually come back within 48 hours.",
     },
     pending_verification: {
         Icon: Clock,
-        tone: "border-ember-500/25 bg-ember-500/10 text-ember-500/90",
-        accent: "text-ember-500",
+        tone: "border-primary/25 bg-primary/10 text-primary",
+        accent: "text-primary",
         title: "With the WeAre team",
         body: "We're checking your business out. You can keep drafting briefs in the meantime — they just can't go live until this clears.",
     },
     verified: {
         Icon: CheckCircle2,
-        tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-        accent: "text-emerald-300",
+        tone: "border-state-approved/30 bg-state-approved/10 text-state-approved",
+        accent: "text-state-approved",
         title: "Verified",
         body: "Your briefs can go live and you can reach creators directly.",
     },
@@ -231,7 +231,7 @@ function Field({
                         (Icon && !multiline ? "pl-9 " : "") +
                         (problem
                             ? "border-destructive/60 focus-visible:ring-destructive"
-                            : "focus-visible:ring-ember-500")
+                            : "focus-visible:ring-primary")
                     }
                     {...rest}
                 />
@@ -581,7 +581,7 @@ export default function BrandOnboarding() {
         >
             <Navbar />
             <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     Brand · Onboarding
                 </p>
                 <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
@@ -602,7 +602,7 @@ export default function BrandOnboarding() {
                         target="_blank"
                         rel="noopener"
                         data-testid={BRAND_PAGE.preview}
-                        className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                        className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
                     >
                         <ExternalLink className="h-4 w-4" />
                         View your public page
@@ -723,7 +723,7 @@ export default function BrandOnboarding() {
                                 maxLength={90}
                                 value={tagline}
                                 onChange={(e) => setTagline(e.target.value)}
-                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                 placeholder="Independent running store, two shops and a weekly club run"
                             />
                             {/* This is the line that goes on every campaign
@@ -752,7 +752,7 @@ export default function BrandOnboarding() {
                                 maxLength={1500}
                                 value={about}
                                 onChange={(e) => setAbout(e.target.value)}
-                                className="mt-2 min-h-[120px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="mt-2 min-h-[120px] border-white/10 bg-card/60 focus-visible:ring-primary"
                                 placeholder="What you make or serve, how long you've been going, what you're known for. Creators read this before deciding whether to pitch."
                             />
                             <p className="mt-2 text-xs text-muted-foreground">
@@ -812,7 +812,7 @@ export default function BrandOnboarding() {
                                         value={o.name || ""}
                                         maxLength={140}
                                         onChange={(e) => patchOutlet(i, { name: e.target.value })}
-                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-ember-500"
+                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-primary"
                                         placeholder="e.g. Indiranagar"
                                     />
                                     <button
@@ -820,7 +820,7 @@ export default function BrandOnboarding() {
                                         data-testid={BRAND_PAGE.outletRemove(i)}
                                         onClick={() => removeOutlet(i)}
                                         aria-label={`Remove outlet ${i + 1}`}
-                                        className="grid h-11 w-11 flex-none place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:text-red-300"
+                                        className="grid h-11 w-11 flex-none place-items-center rounded-full text-muted-foreground transition-colors duration-200 hover:text-state-rejected"
                                     >
                                         <X className="h-4 w-4" />
                                     </button>
@@ -851,7 +851,7 @@ export default function BrandOnboarding() {
                                         value={o.area || ""}
                                         maxLength={120}
                                         onChange={(e) => patchOutlet(i, { area: e.target.value })}
-                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-ember-500"
+                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-primary"
                                         placeholder="Neighbourhood"
                                     />
                                     <Select
@@ -924,9 +924,9 @@ export default function BrandOnboarding() {
                                                 )
                                             }
                                             className={
-                                                "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
-                                                    ? "border-ember-500 bg-ember-500/15 text-ember-500"
+                                                    ? "border-primary bg-primary/15 text-primary"
                                                     : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
                                             }
                                         >
@@ -945,7 +945,7 @@ export default function BrandOnboarding() {
                                 <Select value={followerTier} onValueChange={setFollowerTier}>
                                     <SelectTrigger
                                         data-testid="brand-onb-tier-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
                                     >
                                         <SelectValue placeholder="No preference yet" />
                                     </SelectTrigger>
@@ -973,7 +973,7 @@ export default function BrandOnboarding() {
                                 <Select value={budgetBand} onValueChange={setBudgetBand}>
                                     <SelectTrigger
                                         data-testid="brand-onb-budget-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
                                     >
                                         <SelectValue placeholder="Not sure yet" />
                                     </SelectTrigger>
@@ -1011,14 +1011,14 @@ export default function BrandOnboarding() {
                         </div>
                         <div
                             data-testid="brand-onb-areas-editor"
-                            className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-ember-500/50"
+                            className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-primary/50"
                         >
                             <div className="flex flex-wrap gap-2">
                                 {areas.map((a) => (
                                     <span
                                         key={a}
                                         data-testid={`brand-onb-area-chip-${a}`}
-                                        className="group inline-flex items-center gap-1.5 rounded-full bg-ember-500/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-ember-500"
+                                        className="group inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-primary"
                                     >
                                         <MapPin className="h-3 w-3" />
                                         {a}
@@ -1068,7 +1068,7 @@ export default function BrandOnboarding() {
                                         type="button"
                                         onClick={() => addArea(s)}
                                         data-testid={`brand-onb-area-suggest-${s.replace(/\s+/g, "-")}`}
-                                        className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                                        className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
                                     >
                                         + {s}
                                     </button>
@@ -1223,7 +1223,7 @@ export default function BrandOnboarding() {
                     {!fieldsLocked && (
                         <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <ShieldCheck className="h-4 w-4 flex-none text-ember-500" />
+                                <ShieldCheck className="h-4 w-4 flex-none text-primary" />
                                 Saving keeps what you've filled in — you don't
                                 have to finish in one go.
                             </div>
@@ -1231,7 +1231,7 @@ export default function BrandOnboarding() {
                                 type="submit"
                                 data-testid={IDS.saveBtn}
                                 disabled={saving}
-                                className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400"
+                                className="group h-12 rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover"
                             >
                                 {saving ? (
                                     <>
@@ -1281,9 +1281,9 @@ export default function BrandOnboarding() {
                         {missing.length > 0 && (
                             <div
                                 data-testid={IDS.missingList}
-                                className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4"
+                                className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
                             >
-                                <p className="text-xs uppercase tracking-[0.15em] text-amber-200">
+                                <p className="text-xs uppercase tracking-[0.15em] text-state-pending">
                                     Still needed before we can check you
                                 </p>
                                 <ul className="mt-3 space-y-1.5">
@@ -1291,7 +1291,7 @@ export default function BrandOnboarding() {
                                         <li
                                             key={m.field}
                                             data-testid={IDS.missingField(m.field)}
-                                            className="text-sm text-amber-100/90"
+                                            className="text-sm text-state-pending/90"
                                         >
                                             · {m.label}
                                         </li>
@@ -1319,7 +1319,7 @@ export default function BrandOnboarding() {
                             (verification?.document_count || 0) === 0 && (
                                 <p
                                     data-testid={IDS.submitBlocked}
-                                    className="mt-4 text-sm text-amber-200"
+                                    className="mt-4 text-sm text-state-pending"
                                 >
                                     Everything's filled in — upload one document
                                     above and you're ready to send.
@@ -1340,7 +1340,7 @@ export default function BrandOnboarding() {
                             data-testid={IDS.submitBtn}
                             onClick={onSubmitForVerification}
                             disabled={!canSubmit}
-                            className="mt-6 h-12 w-full rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 disabled:opacity-50 md:w-auto"
+                            className="mt-6 h-12 w-full rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover disabled:opacity-50 md:w-auto"
                         >
                             {submitting ? (
                                 <>

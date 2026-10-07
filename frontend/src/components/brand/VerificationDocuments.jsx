@@ -93,7 +93,7 @@ function ProgressBar({ value, testid }) {
             className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10"
         >
             <div
-                className="h-full rounded-full bg-ember-500 transition-[width] duration-200 ease-out"
+                className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
                 style={{ width: `${value}%` }}
             />
         </div>
@@ -117,7 +117,7 @@ function QueuedFile({ item, onRetry, onDismiss }) {
                 {failed ? (
                     <AlertCircle className="h-4 w-4 text-destructive" />
                 ) : (
-                    <Loader2 className="h-4 w-4 animate-spin text-ember-500" />
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 )}
             </div>
             <div className="min-w-0 flex-1">
@@ -159,7 +159,7 @@ function QueuedFile({ item, onRetry, onDismiss }) {
                             onClick={() => onRetry(item)}
                             data-testid={IDS.queueRetry(item.key)}
                             aria-label={`Try ${item.name} again`}
-                            className="rounded-full p-2 text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                            className="rounded-full p-2 text-muted-foreground transition-colors duration-200 hover:text-primary"
                         >
                             <RotateCw className="h-3.5 w-3.5" />
                         </button>
@@ -215,7 +215,7 @@ function StoredDocument({ doc, onRemoved, disabled }) {
                     {formatBytes(doc.size)}
                 </p>
                 {doc.review_note && (
-                    <p className="mt-2 text-xs leading-relaxed text-amber-300">
+                    <p className="mt-2 text-xs leading-relaxed text-state-pending">
                         {doc.review_note}
                     </p>
                 )}
@@ -548,7 +548,7 @@ export default function VerificationDocuments({
             {full && !readOnly && (
                 <p
                     data-testid={IDS.documentsFull}
-                    className="text-xs text-amber-300"
+                    className="text-xs text-state-pending"
                 >
                     That's the maximum. Remove one before adding another.
                 </p>
@@ -592,7 +592,7 @@ export default function VerificationDocuments({
 
             {readOnly && documents.length > 0 && (
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-state-approved" />
                     Your documents are on file. Get in touch if one needs
                     changing.
                 </p>

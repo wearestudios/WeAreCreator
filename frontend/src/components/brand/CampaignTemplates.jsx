@@ -115,7 +115,7 @@ export default function CampaignTemplates({ onUse }) {
                             onClick={() => use(t)}
                             disabled={busy === t.id}
                             data-testid={IDS.use(t.id)}
-                            className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                            className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                         >
                             {busy === t.id && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                             <Copy className="mr-1.5 h-3.5 w-3.5" />
@@ -127,7 +127,7 @@ export default function CampaignTemplates({ onUse }) {
                             disabled={busy === t.id}
                             data-testid={IDS.remove(t.id)}
                             title="Remove this template"
-                            className="rounded border border-white/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                            className="rounded border border-white/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                         >
                             <Trash2 className="h-3.5 w-3.5" />
                             <span className="sr-only">Remove</span>
@@ -196,7 +196,7 @@ export function SaveAsTemplate({ campaignId, defaultName = "" }) {
                 onClick={save}
                 disabled={busy || !name.trim()}
                 data-testid={IDS.saveSubmit}
-                className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
             >
                 {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                 Save

@@ -61,7 +61,7 @@ const Chips = ({ values, testid }) =>
 
 const Section = ({ title, children, testid }) => (
     <section data-testid={testid} className="mt-10">
-        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">{title}</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-primary">{title}</p>
         <div className="mt-4 rounded-md border border-white/10 bg-card p-6 grain-surface">
             {children}
         </div>
@@ -117,7 +117,7 @@ function FeaturingToggle({ value, onSaved }) {
                 checked={on}
                 disabled={saving}
                 onCheckedChange={change}
-                className="mt-0.5 data-[state=checked]:bg-ember-500"
+                className="mt-0.5 data-[state=checked]:bg-primary"
             />
             <span className="text-sm">
                 <span className="block text-foreground">
@@ -241,11 +241,11 @@ export default function CreatorProfile() {
                         {rechecking && (
                             <div
                                 data-testid={IDS.recheckNotice}
-                                className="mt-8 flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-5"
+                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending/10 p-5"
                             >
-                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-300" />
-                                <div className="min-w-0 text-sm leading-relaxed text-amber-100/90">
-                                    <p className="font-medium text-amber-200">
+                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-state-pending" />
+                                <div className="min-w-0 text-sm leading-relaxed text-state-pending/90">
+                                    <p className="font-medium text-state-pending">
                                         We're taking another look
                                     </p>
                                     <p className="mt-1">
@@ -257,7 +257,7 @@ export default function CreatorProfile() {
                                         , so we're checking it before you pitch on anything
                                         new. Reviews usually finish within 48 hours.
                                     </p>
-                                    <p className="mt-1 text-amber-100/70">
+                                    <p className="mt-1 text-state-pending/70">
                                         Work you've already been accepted for carries on as
                                         normal.
                                     </p>
@@ -284,7 +284,7 @@ export default function CreatorProfile() {
                                             }
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ember-500"
+                                            className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-primary"
                                         >
                                             <Instagram className="h-3.5 w-3.5" />@
                                             {profile.instagram_handle}
@@ -302,7 +302,7 @@ export default function CreatorProfile() {
                                             href={profile.youtube_url}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="inline-flex items-center gap-1.5 break-all transition-colors duration-200 hover:text-ember-500"
+                                            className="inline-flex items-center gap-1.5 break-all transition-colors duration-200 hover:text-primary"
                                         >
                                             <Youtube className="h-3.5 w-3.5 flex-none" />
                                             {profile.youtube_url}
@@ -315,7 +315,7 @@ export default function CreatorProfile() {
                                             href={profile.facebook_url}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="inline-flex items-center gap-1.5 break-all transition-colors duration-200 hover:text-ember-500"
+                                            className="inline-flex items-center gap-1.5 break-all transition-colors duration-200 hover:text-primary"
                                         >
                                             <Facebook className="h-3.5 w-3.5 flex-none" />
                                             {profile.facebook_url}
@@ -389,7 +389,7 @@ export default function CreatorProfile() {
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     data-testid={ADDRESS.openInMaps}
-                                                    className="text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                                                    className="text-primary transition-colors duration-200 hover:text-primary-hover"
                                                 >
                                                     Open in Google Maps
                                                 </a>

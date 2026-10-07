@@ -112,7 +112,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         Submit content
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -143,7 +143,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                                         inputMode="url"
                                         value={u}
                                         onChange={(e) => setAt(i, e.target.value)}
-                                        className="h-12 border-white/10 bg-background/60 pl-9 pr-10 focus-visible:ring-ember-500"
+                                        className="h-12 border-white/10 bg-background/60 pl-9 pr-10 focus-visible:ring-primary"
                                         placeholder="https://instagram.com/p/..."
                                     />
                                     {urls.length > 1 && (
@@ -152,7 +152,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                                             aria-label={`Remove URL ${i + 1}`}
                                             data-testid={IDS.remove(i)}
                                             onClick={() => removeAt(i)}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-red-300"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-state-rejected"
                                         >
                                             <XIcon className="h-3.5 w-3.5" />
                                         </button>
@@ -177,7 +177,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                         data-testid={IDS.add}
                         onClick={addRow}
                         disabled={urls.length >= 25}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                     >
                         <PlusIcon className="h-3.5 w-3.5" />
                         Add another URL
@@ -204,7 +204,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                             type="submit"
                             data-testid={IDS.submit}
                             disabled={busy}
-                            className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {busy ? (
                                 <>

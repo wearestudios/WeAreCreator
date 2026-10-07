@@ -100,7 +100,7 @@ function ProofThumb({ path, proof, onRemove, removing }) {
                     data-testid={IDS.remove(proof.id)}
                     onClick={() => onRemove(proof.id)}
                     disabled={removing}
-                    className="absolute right-1.5 top-1.5 rounded-full bg-background/80 p-2 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 disabled:opacity-40"
+                    className="absolute right-1.5 top-1.5 rounded-full bg-background/80 p-2 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-40"
                 >
                     <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                 </button>
@@ -218,7 +218,7 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
                 className={`inline-flex min-h-[2.75rem] cursor-pointer items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-150 ${
                     busy || full
                         ? "pointer-events-none opacity-40"
-                        : "text-muted-foreground hover:border-ember-500/40 hover:text-ember-500"
+                        : "text-muted-foreground hover:border-primary/40 hover:text-primary"
                 }`}
             >
                 {busy ? (

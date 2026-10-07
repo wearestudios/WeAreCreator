@@ -125,19 +125,53 @@ module.exports = {
                     progress: "hsl(var(--state-progress) / <alpha-value>)",
                     done: "hsl(var(--state-done) / <alpha-value>)",
                 },
-                ember: {
-                    50: "#FFF3EC",
-                    100: "#FFDDC5",
-                    200: "#FFB988",
-                    300: "#FF9450",
-                    400: "#F5751F",
-                    500: "#F05D14",
-                    600: "#C6480A",
-                    700: "#8E3306",
-                    800: "#5A2004",
-                    900: "#2E1002",
+                // -----------------------------------------------------
+                // The brand, as literal scales
+                //
+                //   navy #091426  structure, weight, primary actions
+                //   red  #FF2731  identity, highlights, marketing CTAs
+                //
+                // **These exist for the two places a semantic token cannot
+                // reach**: an asset that is the mark itself (the logo), and
+                // a surface that must stay one colour whichever theme is
+                // mounted. Everything else uses `primary`, `data`, `tint`
+                // and the `state` tokens above, which is what lets the same
+                // component be red on marketing and navy in the product
+                // without knowing which it is.
+                //
+                // `ember` is gone rather than renamed. A deprecated alias
+                // would have let 685 call sites keep pointing at a colour
+                // the brand no longer has, which is how a rebrand ends up
+                // half-applied and nobody can tell which half.
+                // -----------------------------------------------------
+                navy: {
+                    50: "#E8ECF3",
+                    100: "#C6D0E0",
+                    200: "#93A5C1",
+                    300: "#5F77A0",
+                    400: "#2F4874",
+                    500: "#13294B",
+                    600: "#0E1C33", // marketing surface
+                    700: "#091426", // brand navy — canvas, product ink, CTA
+                    800: "#060E1B",
+                    900: "#040911",
                 },
-            },
+                red: {
+                    50: "#FFECEC",
+                    100: "#FFD0D2",
+                    200: "#FFA3A7",
+                    300: "#FF767C",
+                    400: "#FF4A52",
+                    500: "#FF2731", // brand red
+                    600: "#E0121C",
+                    700: "#AD0E15",
+                    800: "#7A090F",
+                    900: "#470508",
+                },
+                // Standout data, and the logo. Red on both surfaces — the one
+                // value that does not flip. See the note in `index.css`:
+                // AA-large only on the light surface, which is what it is for.
+                data: "hsl(var(--data) / <alpha-value>)",            },
             keyframes: {
                 "accordion-down": {
                     from: { height: "0" },

@@ -156,10 +156,10 @@ export default function HowItWorks() {
                         above a 390px column would eat the fold. */}
                     <div className="mt-10 hidden grid-cols-12 gap-6 md:grid">
                         <div className="col-span-2" />
-                        <p className="col-span-5 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                        <p className="col-span-5 text-[10px] uppercase tracking-[0.2em] text-primary">
                             Creator
                         </p>
-                        <p className="col-span-5 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                        <p className="col-span-5 text-[10px] uppercase tracking-[0.2em] text-primary">
                             Brand
                         </p>
                     </div>
@@ -171,7 +171,7 @@ export default function HowItWorks() {
                                 i={i % 3}
                                 className="grid gap-4 md:grid-cols-12 md:items-stretch md:gap-6"
                             >
-                                <p className="font-serif text-fluid-lg leading-tight tracking-tight text-ember-500 md:col-span-2 md:pt-5">
+                                <p className="font-serif text-fluid-lg leading-tight tracking-tight text-primary md:col-span-2 md:pt-5">
                                     {row.step}
                                 </p>
                                 <div className="md:col-span-5">

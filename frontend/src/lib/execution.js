@@ -34,7 +34,7 @@ export const EXECUTION_META = {
             "You'll deal with the brand directly — they review applications and run the day.",
         brandNote: "You're running this one. Applications come to you.",
         adminNote: "The brand runs this. Applications go to their manager.",
-        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        tone: "bg-state-done/15 text-state-done border-state-done/30",
     },
     weare: {
         label: "WeAre-run",
@@ -43,7 +43,7 @@ export const EXECUTION_META = {
             "WeAre runs this one. We review applications, book your slot and settle the payment.",
         brandNote: "WeAre is running this. Applications go to our team, and you're kept posted.",
         adminNote: "Ours to run. Applications come to the assigned manager.",
-        tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
+        tone: "bg-primary/15 text-primary border-primary/40",
     },
 };
 

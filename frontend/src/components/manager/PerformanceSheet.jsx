@@ -111,7 +111,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                                 value={form[m.key]}
                                 onChange={set(m.key)}
                                 data-testid={IDS.field(m.key)}
-                                className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                                className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                             />
                         </label>
                     ))}
@@ -128,7 +128,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                         onChange={set("note")}
                         data-testid={IDS.note}
                         placeholder="e.g. Read 4 days after posting"
-                        className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                     />
                 </label>
 
@@ -144,7 +144,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                         busy={busy}
                         onClick={submit}
                         data-testid={IDS.submit}
-                        className="bg-ember-500 text-black hover:bg-ember-400"
+                        className="bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         Save the numbers
                     </BigButton>

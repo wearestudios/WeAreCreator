@@ -54,8 +54,15 @@ CONSOLE_CHROME = (
     "App.js",
 )
 
+# **`red` and `navy` are the brand's own scales and are deliberately absent.**
+# Everything else here is a colour that pins a component to one surface, which
+# is the whole point of the sweep. The two brand literals exist for the two
+# things a semantic token cannot express: the mark itself, which is red whether
+# somebody is signed in or not, and the ink that sits on it, which is navy for
+# the same reason. `test_brand.py` is what polices *where* those two may appear
+# — this sweep would otherwise force the logo through a token that flips it.
 TAILWIND_PALETTE = (
-    "white|black|slate|gray|grey|zinc|neutral|stone|red|orange|amber|yellow|"
+    "white|black|slate|gray|grey|zinc|neutral|stone|orange|amber|yellow|"
     "lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|"
     "rose|ember"
 )
@@ -193,13 +200,24 @@ class TestTheTokens:
 
     def test_the_accent_has_two_tokens_because_it_has_two_jobs(self, css):
         """`--primary` fills a button and `--primary-ink` is the accent as
-        text. On dark they are the same ember; on light they cannot be —
-        #F05D14 on an off-white page is 3.0:1 and fails AA as body text while
-        the same orange as a fill with white on it is fine."""
-        dark = self._block(css, ":root {")
-        light = self._block(css, ':root[data-theme="light"] {')
-        assert dark["primary"] == dark["primary-ink"]
-        assert light["primary"] != light["primary-ink"]
+        text on a surface.
+
+        **They are allowed to be equal, and under the brand they are on one
+        surface and not the other.** The old rule pinned them *unequal* on
+        light, which was true of ember (#F05D14 as body text was 3.0:1) and is
+        not true of navy — navy is 18:1 as text and as a fill, so splitting it
+        would be inventing a second navy for no reason. Marketing still needs
+        both: red fills a button with navy on it, and red as text on the navy
+        canvas is a different job at 4.9:1.
+
+        What has to hold is that both tokens exist and each passes contrast in
+        its own job, which `TestContrast` measures. This only pins that neither
+        has been deleted.
+        """
+        for sel in (":root {", ':root[data-theme="light"] {'):
+            block = self._block(css, sel)
+            assert block.get("primary"), sel
+            assert block.get("primary-ink"), sel
 
     def test_every_state_the_console_shows_has_a_token(self, css):
         """Four were named in the brief; the audit turned up a fifth. Violet
@@ -226,61 +244,95 @@ class TestTheTokens:
 
 
 class TestScope:
-    def test_the_attribute_is_written_in_exactly_two_places(self):
+    """Which surface a route is on, and who gets to say so.
+
+    **The architecture inverted with the brand.** Light used to be an admin's
+    opt-in on `/admin` and everything else was dark; now the product is light,
+    marketing is navy, and the line is authentication. The machine is the same
+    — an attribute on `<html>` — so these tests moved rather than went.
+    """
+
+    def test_the_attribute_is_written_in_exactly_one_module(self):
         """One is the pre-paint script, the other is `applyTheme`. A third
-        would be a third opinion about what the console looks like."""
+        would be a third opinion about what surface a page is on."""
         writers = []
         for f in list(FRONTEND.rglob("*.js")) + list(FRONTEND.rglob("*.jsx")):
-            if "setAttribute(\"data-theme\"" in f.read_text().replace("'", '"'):
+            if 'setAttribute("data-theme"' in f.read_text().replace("'", '"'):
                 writers.append(f.relative_to(FRONTEND))
-        assert writers == [Path("lib/consoleTheme.js")], writers
+        assert writers == [Path("lib/surfaceTheme.js")], writers
         assert 'setAttribute("data-theme", "light")' in INDEX_HTML.read_text()
 
-    def test_the_pre_paint_script_only_runs_on_the_console(self):
-        """**This is the whole of the scoping.** The marketing site, the
-        creator app, the brand app and the manager screens never get the
-        attribute, so they cannot be affected by what it means."""
+    def test_the_pre_paint_script_puts_the_product_on_light(self):
+        """**This is the whole of the scoping.** Marketing is the absence of
+        the attribute, so a stranger's first paint is navy with no work done,
+        and every product route opts into light before anything renders."""
         html = INDEX_HTML.read_text()
-        assert 'location.pathname.indexOf("/admin") !== 0' in html
-        assert "return" in html
+        assert "/dashboard" in html and "/admin" in html
+        assert 'setAttribute("data-theme", "light")' in html
+        # Marketing returns early rather than setting anything.
+        assert "if (!isProduct) return" in html
 
-    def test_the_pre_paint_script_and_the_module_agree_about_precedence(self):
-        """Two implementations of "which theme" is two answers, and the one
-        that runs first is the one nobody debugs. Both read the stored choice,
-        then the OS, in that order."""
+    def test_the_pre_paint_script_and_the_module_agree_about_which_routes(self):
+        """**Two implementations of "is this the product" is two answers**, and
+        the one that runs first is the one nobody debugs. The script cannot
+        import the module — nothing has loaded yet — so the duplication is the
+        trade and this is what pays for it.
+        """
         html = INDEX_HTML.read_text()
-        js = (FRONTEND / "lib/consoleTheme.js").read_text()
-        for token in ("weare:console-theme", "prefers-color-scheme: light"):
-            assert token in html, token
-            assert token in js, token
+        js = (FRONTEND / "lib/surfaceTheme.js").read_text()
+        prefixes = re.findall(r'"(/[a-z/-]+)"', js.split("PRODUCT_PREFIXES = [")[1]
+                              .split("]")[0])
+        assert prefixes, "no product prefixes declared"
+        for prefix in prefixes:
+            assert f'"{prefix}"' in html, f"{prefix} is in the module and not the script"
+        # And the awkward one: /campaigns is public, but authoring is not.
+        for both in ("/campaigns/new", "prefers-color-scheme: dark",
+                     "weare:console-theme"):
+            assert both in html, both
+            assert both in js, both
 
-    def test_something_clears_it_when_the_console_is_not_mounted(self):
-        """**Found in a browser, not by a test.** A hard load of `/admin`
-        writes the attribute before React runs; if that person is not signed
-        in they are redirected to `/admin/login`, the console never mounts,
-        nothing ever clears it, and the landing page rendered in the light
-        theme. The invariant is maintained by the one thing that sees every
-        route change.
+    def test_one_guard_applies_it_on_every_navigation(self):
+        """**Found in a browser, not by a test**, in its first form: a hard
+        load of `/admin` wrote the attribute before React ran, and if that
+        person was not signed in the console never mounted, nothing cleared
+        it, and the landing page rendered light.
 
-        **And it has to be *rendered*, not merely defined.** The first version
-        of this test asserted the function existed, and stayed green when the
-        element was deleted from the tree — a caller with no mount is as
-        unreachable as a route with no caller, which is a lesson this codebase
-        has already learned twice. Caught by break-testing, not by review.
+        The fix then was a guard that cleared on the way out. The fix now is
+        stronger: the guard is the *only* writer and runs on every path
+        change, so there is no "on the way out" to miss. `AdminConsole` no
+        longer clears anything — an unmount handler racing a navigation is how
+        a dashboard goes navy for a frame.
+
+        **And it has to be rendered, not merely defined.** The first version of
+        this asserted the function existed and stayed green when the element
+        was deleted from the tree.
         """
         app = (FRONTEND / "App.js").read_text()
-        assert "function ConsoleThemeGuard(" in app, "the guard is not defined"
-        assert "<ConsoleThemeGuard />" in app, "the guard is defined but never rendered"
-        assert "isConsolePath" in app and "clearTheme" in app
-        # Inside the router, or `useLocation` throws and the whole app goes
-        # down with it.
-        assert app.index("<BrowserRouter>") < app.index("<ConsoleThemeGuard />")
+        assert "function SurfaceGuard(" in app, "the guard is not defined"
+        assert "<SurfaceGuard />" in app, "the guard is defined but never rendered"
+        assert "surfaceFor" in app
+        # Inside the router, or `useLocation` throws and the app goes with it.
+        assert app.index("<BrowserRouter>") < app.index("<SurfaceGuard />")
 
-    def test_the_console_layout_applies_and_clears_it(self):
+    def test_the_console_only_caches_the_choice_and_never_applies_it(self):
+        """One writer. The console tells the guard what the account chose;
+        it does not paint."""
         src = (FRONTEND / "pages/AdminConsole.jsx").read_text()
-        assert "applyTheme(resolveTheme(" in src
-        # The cleanup, which is what makes leaving the console leave the theme.
-        assert "return clearTheme" in src
+        assert "rememberTheme(accountTheme)" in src
+        assert "return clearTheme" not in src, "the console still clears on unmount"
+
+    def test_marketing_is_never_overridable_by_an_account_preference(self):
+        """An admin's console preference is a preference about their console,
+        not a licence to repaint the home page."""
+        js = (FRONTEND / "lib/surfaceTheme.js").read_text()
+        # The *body*, not the signature — `accountTheme` is a parameter and
+        # appears first there whatever the function does, which is how the
+        # first version of this test failed on correct code.
+        body = js.split("export function surfaceFor")[1].split("{", 1)[1]
+        assert body.index("isProductPath") < body.index("accountTheme"), (
+            "the account preference is read before the surface is decided"
+        )
+        assert 'return "dark"' in body
 
 
 # ---------------------------------------------------------------------------

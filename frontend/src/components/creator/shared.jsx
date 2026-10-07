@@ -109,42 +109,42 @@ export const CAT_LABEL = {
 // a pill naming one state is a different job from a bar naming the journey.
 
 export const STATE_META = {
-    applied: { label: "Applied", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    verified: { label: "With the brand", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
-    accepted: { label: "Accepted", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+    applied: { label: "Applied", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
+    verified: { label: "With the brand", tone: "bg-state-progress/15 text-state-progress border-state-progress/30" },
+    accepted: { label: "Accepted", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
     commercial_agreed: {
         label: "Fee agreed",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
     slot_booked: {
         label: "Slot booked",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
-    attended: { label: "Attended", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
+    attended: { label: "Attended", tone: "bg-state-done/15 text-state-done border-state-done/30" },
     draft_submitted: {
         label: "Draft in review",
-        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        tone: "bg-state-done/15 text-state-done border-state-done/30",
     },
     draft_approved: {
         label: "Draft approved",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
     content_submitted: {
         label: "In review",
-        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        tone: "bg-state-done/15 text-state-done border-state-done/30",
     },
     content_approved: {
         label: "Approved",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
-    in_payment: { label: "In payment", tone: "bg-ember-500/15 text-ember-500 border-ember-500/30" },
+    in_payment: { label: "In payment", tone: "bg-primary/15 text-primary border-primary/30" },
     closed: { label: "Paid", tone: "bg-white/5 text-muted-foreground border-white/15" },
     // Deliberately not "rejected". A brand picking someone else is not a
     // verdict on the creator, and the word it is given shouldn't imply one.
     declined: { label: "Not this time", tone: "bg-white/5 text-muted-foreground border-white/15" },
     cancelled: { label: "Cancelled", tone: "bg-white/5 text-muted-foreground border-white/15" },
-    pending: { label: "Pending", tone: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
-    paid: { label: "Paid", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+    pending: { label: "Pending", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
+    paid: { label: "Paid", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
     refunded: { label: "Refunded", tone: "bg-white/5 text-muted-foreground border-white/15" },
 };
 
@@ -244,7 +244,7 @@ export const CountUp = ({ value = 0, duration = 1100, className = "", testid }) 
 /** A rupee figure with the symbol sized to sit on the baseline of the number. */
 export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => (
     <span className={"inline-flex items-baseline " + className}>
-        <IndianRupee className={"translate-y-[0.1em] text-ember-500 " + symbolClass} />
+        <IndianRupee className={"translate-y-[0.1em] text-primary " + symbolClass} />
         {children}
     </span>
 );
@@ -256,7 +256,7 @@ export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => 
 export const SectionHead = ({ kicker, title, aside, className = "" }) => (
     <div className={"flex flex-wrap items-end justify-between gap-3 " + className}>
         <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">{kicker}</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-primary">{kicker}</p>
             <h2 className="mt-3 font-serif text-fluid-3xl leading-none tracking-tight">
                 {title}
             </h2>
@@ -270,7 +270,7 @@ export const EmptyState = ({ Icon, title, children, testid, action }) => (
         data-testid={testid}
         className="flex flex-col items-center gap-3 rounded-md border border-white/10 bg-card px-6 py-14 text-center grain-surface"
     >
-        {Icon && <Icon className="h-6 w-6 text-ember-500" />}
+        {Icon && <Icon className="h-6 w-6 text-primary" />}
         {title && <p className="font-serif text-xl leading-tight">{title}</p>}
         <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">{children}</p>
         {action}

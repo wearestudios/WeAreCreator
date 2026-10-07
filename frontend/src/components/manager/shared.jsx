@@ -30,11 +30,11 @@ export const ATTENDANCE_META = {
     },
     attended: {
         label: "Checked in",
-        tone: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300",
+        tone: "border-state-approved/30 bg-state-approved/15 text-state-approved",
     },
     no_show: {
         label: "No-show",
-        tone: "border-red-500/25 bg-red-500/10 text-red-300/80",
+        tone: "border-state-rejected/25 bg-state-rejected/10 text-state-rejected/80",
     },
 };
 
@@ -109,7 +109,7 @@ export const CallLink = ({ phone, testid, label, className = "" }) => {
             href={`tel:${phone.replace(/\s+/g, "")}`}
             data-testid={testid}
             className={
-                "inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 " +
+                "inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary " +
                 TOUCH +
                 " " +
                 className
@@ -124,7 +124,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
     <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     {kicker}
                 </p>
                 <h1 className="mt-2 font-serif text-fluid-4xl leading-none tracking-tight">
@@ -143,7 +143,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
                     aria-label="Refresh"
                     data-testid={refreshTestId}
                     className={
-                        "grid w-14 flex-none place-items-center rounded-md border border-white/10 text-muted-foreground transition-colors duration-200 hover:text-ember-500 " +
+                        "grid w-14 flex-none place-items-center rounded-md border border-white/10 text-muted-foreground transition-colors duration-200 hover:text-primary " +
                         TOUCH
                     }
                 >
@@ -160,7 +160,7 @@ export const EmptyState = ({ Icon, children, testid }) => (
         data-testid={testid}
         className="flex flex-col items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-12 text-center text-sm text-muted-foreground grain-surface"
     >
-        {Icon && <Icon className="h-6 w-6 text-ember-500" />}
+        {Icon && <Icon className="h-6 w-6 text-primary" />}
         <p className="max-w-xs leading-relaxed">{children}</p>
     </div>
 );
@@ -328,7 +328,7 @@ export function attentionFor(campaign, now = new Date()) {
 }
 
 export const SEVERITY_TONE = {
-    urgent: "border-red-500/30 bg-red-500/10 text-red-200",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+    urgent: "border-state-rejected/30 bg-state-rejected/10 text-state-rejected",
+    warn: "border-state-pending/30 bg-state-pending/10 text-state-pending",
     info: "border-white/10 bg-white/5 text-muted-foreground",
 };

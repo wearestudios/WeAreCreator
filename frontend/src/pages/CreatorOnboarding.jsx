@@ -100,7 +100,7 @@ const Ring = ({ percent }) => {
                     strokeWidth="3"
                     strokeLinecap="round"
                     strokeDasharray={CIRCUMFERENCE}
-                    className="stroke-ember-500"
+                    className="stroke-primary"
                     initial={false}
                     animate={{ strokeDashoffset: offset }}
                     transition={{ duration: still ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -155,21 +155,21 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
         <div className="space-y-3">
             <div
                 data-testid={editorId}
-                className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-ember-500/50"
+                className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-primary/50"
             >
                 <div className="flex flex-wrap gap-2">
                     {values.map((v) => (
                         <span
                             key={v}
                             data-testid={chipId(v)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-ember-500/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-ember-500"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-primary"
                         >
                             {v}
                             <button
                                 type="button"
                                 onClick={() => remove(v)}
                                 aria-label={`Remove ${v}`}
-                                className="-mr-1 grid h-9 w-9 place-items-center rounded-full opacity-70 transition-opacity duration-200 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 md:-mr-0.5 md:h-5 md:w-5"
+                                className="-mr-1 grid h-9 w-9 place-items-center rounded-full opacity-70 transition-opacity duration-200 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:-mr-0.5 md:h-5 md:w-5"
                             >
                                 <X className="h-3 w-3" />
                             </button>
@@ -204,7 +204,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                                         key={s}
                                         onClick={() => add(s)}
                                         data-testid={suggestId(s.replace(/\s+/g, "-"))}
-                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
+                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
                                     >
                                         + {s}
                                     </button>
@@ -228,7 +228,7 @@ const Field = ({ id, label, hint, children }) => (
     </div>
 );
 
-const inputClass = "mt-2 h-12 border-white/10 bg-card/60 focus-visible:ring-ember-500";
+const inputClass = "mt-2 h-12 border-white/10 bg-card/60 focus-visible:ring-primary";
 
 // ---------------------------------------------------------------------------
 
@@ -495,7 +495,7 @@ export default function CreatorOnboarding() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-12 md:px-6 md:py-16">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     Creator · Your profile
                 </p>
                 <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
@@ -538,7 +538,7 @@ export default function CreatorOnboarding() {
                             </>
                         )}
                         {submittedAt && verificationStatus === "pending" && (
-                            <p data-testid={IDS.statusNote} className="mt-3 text-xs text-ember-500">
+                            <p data-testid={IDS.statusNote} className="mt-3 text-xs text-primary">
                                 Already with the team — reviews usually finish within 48 hours.
                             </p>
                         )}
@@ -604,7 +604,7 @@ export default function CreatorOnboarding() {
                                             disabled={imageBusy}
                                             onClick={onRemoveImage}
                                             data-testid={IDS.photoRemove}
-                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-red-300 disabled:opacity-40"
+                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                                         >
                                             Remove
                                         </button>
@@ -687,7 +687,7 @@ export default function CreatorOnboarding() {
                                         value={form.address}
                                         onChange={setText("address")}
                                         maxLength={500}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. Indiranagar"
                                     />
                                 </div>
@@ -762,7 +762,7 @@ export default function CreatorOnboarding() {
                                         className={
                                             "flex min-h-[3.5rem] items-center gap-3 rounded-md border px-4 text-left transition-colors duration-200 " +
                                             (on
-                                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                ? "border-primary bg-primary/10 text-primary"
                                                 : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
                                         }
                                     >
@@ -793,7 +793,7 @@ export default function CreatorOnboarding() {
                                             data-testid={IDS.igHandle}
                                             value={form.instagram_handle}
                                             onChange={setText("instagram_handle")}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="@your.handle"
                                         />
                                     </div>
@@ -833,7 +833,7 @@ export default function CreatorOnboarding() {
                                             type="url"
                                             value={form.youtube_url}
                                             onChange={setText("youtube_url")}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="https://youtube.com/@yourchannel"
                                         />
                                     </div>
@@ -858,7 +858,7 @@ export default function CreatorOnboarding() {
                                     type="url"
                                     value={form.facebook_url}
                                     onChange={setText("facebook_url")}
-                                    className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                    className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                     placeholder="https://facebook.com/yourpage"
                                 />
                             </div>
@@ -882,7 +882,7 @@ export default function CreatorOnboarding() {
                                 onChange={setText("about")}
                                 rows={5}
                                 maxLength={1500}
-                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-primary"
                                 placeholder="What you make, who watches it, and the kind of work you want more of…"
                             />
                             <p className="mt-1.5 text-right text-xs text-muted-foreground">
@@ -913,7 +913,7 @@ export default function CreatorOnboarding() {
                                 data-testid={IDS.homepageOptIn}
                                 checked={form.homepage_opt_in}
                                 onCheckedChange={set("homepage_opt_in")}
-                                className="mt-0.5 data-[state=checked]:bg-ember-500"
+                                className="mt-0.5 data-[state=checked]:bg-primary"
                             />
                             <span className="text-sm">
                                 <span className="block text-foreground">
@@ -942,7 +942,7 @@ export default function CreatorOnboarding() {
                                         step="100"
                                         value={form.base_rate}
                                         onChange={setText("base_rate")}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 5000"
                                     />
                                 </div>
@@ -962,7 +962,7 @@ export default function CreatorOnboarding() {
                                         step="100"
                                         value={form.follower_count}
                                         onChange={setText("follower_count")}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 12400"
                                     />
                                 </div>
@@ -995,7 +995,7 @@ export default function CreatorOnboarding() {
                                         className={
                                             "min-h-[3.5rem] rounded-md border px-4 py-3 text-left transition-colors duration-200 " +
                                             (form.payout_method === m.value
-                                                ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                ? "border-primary bg-primary/10 text-primary"
                                                 : "border-white/10 text-muted-foreground hover:border-white/20")
                                         }
                                     >
@@ -1019,7 +1019,7 @@ export default function CreatorOnboarding() {
                                             value={form.payout_upi}
                                             onChange={setText("payout_upi")}
                                             maxLength={120}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="e.g. priya@okhdfcbank"
                                         />
                                     </div>
@@ -1103,7 +1103,7 @@ export default function CreatorOnboarding() {
 
                     <div className="space-y-4 border-t border-white/10 pt-8">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <ShieldCheck className="h-4 w-4 flex-none text-ember-500" />
+                            <ShieldCheck className="h-4 w-4 flex-none text-primary" />
                             {verificationStatus === "verified"
                                 ? "You stay live while we review any changes."
                                 : "Nothing is shared with brands until the team has reviewed your profile."}
@@ -1136,7 +1136,7 @@ export default function CreatorOnboarding() {
                                     onClick={submit}
                                     data-testid={IDS.submit}
                                     disabled={!canSubmit || saving || submitting}
-                                    className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 disabled:opacity-40"
+                                    className="group h-12 rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover disabled:opacity-40"
                                 >
                                     {submitting ? (
                                         <>
@@ -1155,7 +1155,7 @@ export default function CreatorOnboarding() {
                             <Link
                                 to="/dashboard"
                                 data-testid={IDS.later}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Finish later
                             </Link>

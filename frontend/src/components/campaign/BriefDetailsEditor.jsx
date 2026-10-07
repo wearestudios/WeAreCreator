@@ -111,7 +111,7 @@ function LineList({ field, rows, onChange }) {
                                 aria-label={`Remove ${line}`}
                                 data-testid={IDS.remove(field, i)}
                                 onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                                className="rounded-full p-1.5 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                className="rounded-full p-1.5 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             >
                                 <X aria-hidden="true" className="h-3 w-3" />
                             </button>
@@ -137,7 +137,7 @@ function LineList({ field, rows, onChange }) {
                             add();
                         }
                     }}
-                    className="h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                    className="h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                     placeholder={full ? "That's the maximum" : sigil ? `${sigil}…` : "Add one"}
                 />
                 <button
@@ -145,7 +145,7 @@ function LineList({ field, rows, onChange }) {
                     data-testid={IDS.add(field)}
                     onClick={add}
                     disabled={full || !draft.trim()}
-                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                 >
                     <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                     Add
@@ -171,7 +171,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
-                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-card/60 px-4 text-left transition-colors duration-150 hover:border-ember-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-card/60 px-4 text-left transition-colors duration-150 hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
                 <span>
                     <span className="block text-xs uppercase tracking-[0.15em] text-muted-foreground">
@@ -228,7 +228,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                             maxLength={2000}
                             value={v.caption_guidance || ""}
                             onChange={(e) => set({ caption_guidance: e.target.value })}
-                            className="mt-2 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                            className="mt-2 border-white/10 bg-card/60 focus-visible:ring-primary"
                             placeholder="Mention the offer runs to the end of the month, and keep it short."
                         />
                     </div>
@@ -255,7 +255,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                                                 ),
                                             })
                                         }
-                                        className="h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500 sm:w-1/3"
+                                        className="h-11 border-white/10 bg-card/60 focus-visible:ring-primary sm:w-1/3"
                                         placeholder="Logo pack"
                                     />
                                     <div className="flex flex-1 gap-2">
@@ -272,7 +272,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                                                     ),
                                                 })
                                             }
-                                            className="h-11 flex-1 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                            className="h-11 flex-1 border-white/10 bg-card/60 focus-visible:ring-primary"
                                             placeholder="https://…"
                                         />
                                         <button
@@ -284,7 +284,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                                                     brand_assets: assets.filter((_, j) => j !== i),
                                                 })
                                             }
-                                            className="rounded-full p-3 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                            className="rounded-full p-3 text-muted-foreground transition-colors duration-150 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                         >
                                             <X aria-hidden="true" className="h-4 w-4" />
                                         </button>
@@ -299,7 +299,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                             onClick={() =>
                                 set({ brand_assets: [...assets, { label: "", url: "" }] })
                             }
-                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                         >
                             <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                             Add a link

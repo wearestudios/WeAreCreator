@@ -93,14 +93,14 @@ const TagBadge = ({ status }) => {
             className={
                 "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
                 (isLive
-                    ? "bg-ember-500/15 text-ember-500"
+                    ? "bg-primary/15 text-primary"
                     : "border border-white/15 bg-white/5 text-muted-foreground")
             }
         >
             <span
                 className={
                     "inline-block h-1.5 w-1.5 rounded-full " +
-                    (isLive ? "bg-ember-500 animate-pulse" : "bg-muted-foreground")
+                    (isLive ? "bg-primary animate-pulse" : "bg-muted-foreground")
                 }
             />
             {isLive ? "Live" : "Upcoming"}
@@ -114,7 +114,7 @@ const InviteOnlyPill = ({ campaign }) =>
     isPrivate(campaign) ? (
         <span
             data-testid={VISIBILITY.badge(campaign.id)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary"
         >
             <Lock className="h-3 w-3" />
             Invite-only
@@ -144,10 +144,10 @@ const CampaignCard = ({ c, index, settleKey }) => (
             one hit area, two destinations, and valid HTML. */}
         <article
             data-testid={`campaign-card-${c.id}`}
-            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-ember-500/50 hover:bg-card-elevated"
+            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-card-elevated"
         >
             {/* editorial accent line */}
-            <span className="absolute inset-x-0 top-0 z-10 h-px origin-left scale-x-0 bg-gradient-to-r from-ember-500 via-ember-400 to-transparent transition-transform duration-500 group-hover:scale-x-100" />
+            <span className="absolute inset-x-0 top-0 z-10 h-px origin-left scale-x-0 bg-gradient-to-r from-primary via-primary-hover to-transparent transition-transform duration-500 group-hover:scale-x-100" />
 
             {/* The box is reserved, so a list of twenty briefs does not reflow
                 as their covers arrive. */}
@@ -192,7 +192,7 @@ const CampaignCard = ({ c, index, settleKey }) => (
                     <Link
                         to={`/campaigns/${c.id}`}
                         data-testid={`campaign-card-open-${c.id}`}
-                        className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                         {c.title}
                     </Link>
@@ -234,13 +234,13 @@ const CampaignCard = ({ c, index, settleKey }) => (
                                 "Barter"
                             ) : (
                                 <>
-                                    <IndianRupee className="h-5 w-5 text-ember-500" />
+                                    <IndianRupee className="h-5 w-5 text-primary" />
                                     {formatCompensation(c).amount ?? "—"}
                                 </>
                             )}
                         </div>
                         {formatCompensation(c).suffix && (
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-primary">
                                 {formatCompensation(c).suffix}
                             </div>
                         )}
@@ -258,7 +258,7 @@ const CampaignCard = ({ c, index, settleKey }) => (
                                 className="relative z-10"
                             />
                         )}
-                        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-ember-500" />
+                        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-1 group-hover:text-primary" />
                     </div>
                 </div>
             </div>
@@ -440,8 +440,8 @@ export default function Campaigns() {
                 {/* Masthead */}
                 <div className="grid gap-8 md:grid-cols-12 md:items-end">
                     <div className="md:col-span-8">
-                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-ember-500">
-                            <span className="h-px w-8 bg-ember-500" />
+                        <p className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-primary">
+                            <span className="h-px w-8 bg-primary" />
                             {HERO_EYEBROW}
                         </p>
                         <h1
@@ -482,7 +482,7 @@ export default function Campaigns() {
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder="Search briefs…"
-                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-ember-500"
+                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-primary"
                         />
                     </div>
 
@@ -639,7 +639,7 @@ export default function Campaigns() {
                             type="button"
                             onClick={resetAll}
                             data-testid="clear-filters-btn"
-                            className="ml-auto rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500"
+                            className="ml-auto rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
                         >
                             Clear all
                         </button>

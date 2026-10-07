@@ -391,9 +391,14 @@ def test_each_page_wears_the_design_system(name):
     # a page states its own overlines through the `eyebrow` prop.
     assert "font-serif" in src or "font-serif" in shell
     assert "text-fluid-" in src or "text-fluid-" in shell
-    assert "ember-500" in src or "ember-500" in shell
+    # **The accent is named semantically, not by colour.** This used to pin
+    # `ember-500`, which is the shape of rule the rebrand broke: the accent is
+    # red on marketing and navy in the product, and a page that names a colour
+    # is a page that only works on one surface. `primary` is the token both
+    # resolve through.
+    assert "primary" in src or "primary" in shell
     assert "Eyebrow" in src or "eyebrow=" in src or "tracking-[0.2em]" in src
-    for rule in ("font-serif", "text-fluid-", "ember-500", "tracking-[0.2em]"):
+    for rule in ("font-serif", "text-fluid-", "primary", "tracking-[0.2em]"):
         assert rule in shell, rule
 
 
@@ -1484,7 +1489,7 @@ def test_the_film_draws_its_own_interfaces_rather_than_screenshotting_ours():
     ui = read("src", "components", "marketing", "filmUI.jsx")
     assert "img" not in _code("src", "components", "marketing", "filmUI.jsx")
     # It borrows the design language, not the components.
-    assert "bg-card" in ui and "grain-surface" in ui and "ember-500" in ui
+    assert "bg-card" in ui and "grain-surface" in ui and "primary" in ui
     for real in ("CampaignCover", "BrandName", "@/pages/", "@/components/ui/"):
         assert real not in ui, real
 

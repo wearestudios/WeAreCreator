@@ -29,9 +29,9 @@ export default function Login() {
                     <Link
                         to="/"
                         data-testid="auth-logo"
-                        className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-ember-500"
+                        className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-primary"
                     >
-                        WeAre <span className="text-ember-500">Creators</span>
+                        WeAre <span className="text-primary">Creators</span>
                     </Link>
                     <div className="max-w-md">
                         {/* Two corrections, in order. It said "Every city
@@ -44,7 +44,7 @@ export default function Login() {
                             product is not for them. It carries the shared
                             eyebrow now, which makes no geographic claim in
                             either direction. */}
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary">
                             {HERO_EYEBROW}
                         </p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
@@ -58,12 +58,12 @@ export default function Login() {
             {/* Right form */}
             <div className="flex items-center justify-center bg-background p-6 md:p-12">
                 <div className="w-full max-w-md">
-                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
-                        WeAre <span className="text-ember-500">Creators</span>
+                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
+                        WeAre <span className="text-primary">Creators</span>
                     </Link>
 
-                    <p className="text-xs uppercase tracking-[0.22em] text-ember-500/90">
-                        <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-ember-500/80 align-middle" />
+                    <p className="text-xs uppercase tracking-[0.22em] text-primary">
+                        <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-primary/80 align-middle" />
                         Welcome back
                     </p>
                     <h1 className="mt-5 font-serif text-fluid-5xl leading-[0.95] tracking-tight">
@@ -74,7 +74,7 @@ export default function Login() {
                         <Link
                             to="/signup"
                             data-testid="link-to-signup"
-                            className="text-ember-500 underline-offset-4 hover:underline"
+                            className="text-primary underline-offset-4 hover:underline"
                         >
                             Create an account
                         </Link>
@@ -97,7 +97,7 @@ export default function Login() {
                         <Link
                             to="/admin/login"
                             data-testid="link-to-admin-login"
-                            className="text-ember-500 underline-offset-4 hover:underline"
+                            className="text-primary underline-offset-4 hover:underline"
                         >
                             Use email login
                         </Link>

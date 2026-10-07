@@ -238,7 +238,7 @@ export default function OtpForm({
                             aria-invalid={showPhoneProblem || undefined}
                             aria-describedby="phone-help"
                             className={
-                                "mt-2 h-11 bg-card/60 text-foreground focus-visible:ring-ember-500 " +
+                                "mt-2 h-11 bg-card/60 text-foreground focus-visible:ring-primary " +
                                 (showPhoneProblem
                                     ? "border-destructive/60"
                                     : "border-white/10")
@@ -275,7 +275,7 @@ export default function OtpForm({
                         type="submit"
                         data-testid={IDS.sendBtn}
                         disabled={sending || !canSubmitPhoneStep || Boolean(phoneProblem)}
-                        className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        className="h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {sending ? (
                             <>
@@ -310,7 +310,7 @@ export default function OtpForm({
                                 setFailure(null);
                                 setNotice("");
                             }}
-                            className="ml-2 text-ember-500 underline-offset-4 transition-colors duration-200 hover:underline"
+                            className="ml-2 text-primary underline-offset-4 transition-colors duration-200 hover:underline"
                         >
                             Change
                         </button>
@@ -338,7 +338,7 @@ export default function OtpForm({
                                 // fixing reads as a verdict on the new ones.
                                 if (failure) setFailure(null);
                             }}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground tracking-[0.35em] focus-visible:ring-ember-500"
+                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground tracking-[0.35em] focus-visible:ring-primary"
                             placeholder="••••••"
                         />
                     </div>
@@ -355,7 +355,7 @@ export default function OtpForm({
                         type="submit"
                         data-testid={IDS.verifyBtn}
                         disabled={verifying || code.length !== 6}
-                        className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        className="h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {verifying ? (
                             <>
@@ -372,7 +372,7 @@ export default function OtpForm({
                         data-testid={IDS.resendBtn}
                         onClick={() => send({ isResend: true })}
                         disabled={cooldown > 0 || sending || verifying}
-                        className="inline-flex min-h-[2.75rem] w-full items-center justify-center gap-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 disabled:text-muted-foreground/50 disabled:hover:text-muted-foreground/50 md:min-h-0"
+                        className="inline-flex min-h-[2.75rem] w-full items-center justify-center gap-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-primary disabled:text-muted-foreground/50 disabled:hover:text-muted-foreground/50 md:min-h-0"
                     >
                         {sending ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />

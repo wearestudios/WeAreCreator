@@ -75,7 +75,7 @@ function Monogram({ name, id }) {
         <div
             data-testid={IDS.leaderboardMonogram(id)}
             aria-hidden="true"
-            className="flex h-full w-full items-center justify-center bg-ember-500/10 font-serif text-3xl text-ember-500/70"
+            className="flex h-full w-full items-center justify-center bg-primary/10 font-serif text-3xl text-primary/70"
         >
             {letter}
         </div>
@@ -143,7 +143,7 @@ function CreatorCard({ creator, i }) {
                         the server's one-word verdict. Neither is a position. */}
                     <p
                         data-testid={IDS.leaderboardSignal(creator.id)}
-                        className="mt-auto pt-3 text-xs uppercase tracking-[0.15em] text-ember-500"
+                        className="mt-auto pt-3 text-xs uppercase tracking-[0.15em] text-primary"
                     >
                         {creator.campaigns_completed}{" "}
                         {creator.campaigns_completed === 1 ? "campaign" : "campaigns"}

@@ -118,12 +118,12 @@ export default function DeleteAccount() {
         return (
             <section
                 data-testid={IDS.deletionPending}
-                className="rounded-md border border-amber-500/30 bg-amber-500/10 p-5"
+                className="rounded-md border border-state-pending/30 bg-state-pending/10 p-5"
             >
-                <p className="text-xs uppercase tracking-[0.2em] text-amber-200">
+                <p className="text-xs uppercase tracking-[0.2em] text-state-pending">
                     Deletion requested
                 </p>
-                <p className="mt-3 text-sm leading-relaxed text-amber-100/90">
+                <p className="mt-3 text-sm leading-relaxed text-state-pending/90">
                     You asked on {formatDateTime(request.requested_at)}. We'll come back
                     to you once somebody has been through your account. You can change
                     your mind until then.
@@ -161,13 +161,13 @@ export default function DeleteAccount() {
             {blocked?.blocking?.length > 0 && (
                 <div
                     data-testid={IDS.deletionBlocked}
-                    className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-4"
+                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
                 >
-                    <p className="flex items-center gap-2 text-sm text-amber-200">
+                    <p className="flex items-center gap-2 text-sm text-state-pending">
                         <AlertTriangle aria-hidden="true" className="h-4 w-4 flex-none" />
                         {blocked.message}
                     </p>
-                    <ul className="mt-3 space-y-1.5 text-sm text-amber-100/90">
+                    <ul className="mt-3 space-y-1.5 text-sm text-state-pending/90">
                         {blocked.blocking.map((b) => (
                             <li key={b.collaboration_id}>
                                 <Link
@@ -205,7 +205,7 @@ export default function DeleteAccount() {
                     <ul className="space-y-2 text-sm leading-relaxed text-muted-foreground">
                         {WHAT_HAPPENS.map((line) => (
                             <li key={line} className="flex gap-2">
-                                <span aria-hidden="true" className="text-ember-500">
+                                <span aria-hidden="true" className="text-primary">
                                     ·
                                 </span>
                                 {line}
@@ -227,7 +227,7 @@ export default function DeleteAccount() {
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                             data-testid={IDS.deletionReason}
-                            className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                            className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                         />
                     </label>
 

@@ -89,13 +89,13 @@ const Shell = ({ kicker, title, standfirst, children }) => (
             <Link
                 to="/"
                 data-testid="legal-back-link"
-                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Home
             </Link>
 
-            <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
+            <p className="mt-6 text-xs uppercase tracking-[0.2em] text-primary">
                 {kicker}
             </p>
             <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
@@ -107,7 +107,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
 
             <div
                 data-testid="legal-draft-notice"
-                className="mt-8 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-200"
+                className="mt-8 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending"
             >
                 This is a plain-English summary of how WeAre Creators works today,
                 published so you can see what you're agreeing to. The full legal
@@ -124,11 +124,11 @@ const Shell = ({ kicker, title, standfirst, children }) => (
             {children}
 
             <div className="mt-14 flex items-center gap-2 border-t border-white/10 pt-8 text-sm text-muted-foreground">
-                <Mail className="h-4 w-4 text-ember-500" />
+                <Mail className="h-4 w-4 text-primary" />
                 Questions about any of this:{" "}
                 <a
                     href={`mailto:${CONTACT}`}
-                    className="text-ember-500 underline-offset-4 hover:underline"
+                    className="text-primary underline-offset-4 hover:underline"
                 >
                     {CONTACT}
                 </a>
@@ -366,7 +366,7 @@ export function Privacy() {
                     Write to{" "}
                     <a
                         href={`mailto:${CONTACT}`}
-                        className="text-ember-500 underline-offset-4 hover:underline"
+                        className="text-primary underline-offset-4 hover:underline"
                     >
                         {CONTACT}
                     </a>{" "}

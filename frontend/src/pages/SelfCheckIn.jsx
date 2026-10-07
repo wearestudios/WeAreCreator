@@ -59,7 +59,7 @@ export default function SelfCheckIn() {
         >
             <Navbar />
             <main className="mx-auto flex max-w-md flex-col px-6 py-16">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     Check in
                 </p>
 
@@ -82,7 +82,7 @@ export default function SelfCheckIn() {
                             refreshes every minute, so there will be a fresh one waiting.
                         </p>
                         <Link to="/login" className="mt-8">
-                            <Button className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                            <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                 Sign in
                             </Button>
                         </Link>
@@ -92,12 +92,12 @@ export default function SelfCheckIn() {
                         data-testid={IDS.pending}
                         className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
                     >
-                        <Loader2 className="h-5 w-5 animate-spin text-ember-500" />
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         Checking you in…
                     </div>
                 ) : state === "done" ? (
                     <div data-testid={IDS.success} className="mt-6">
-                        <CheckCircle2 className="h-10 w-10 text-emerald-400" />
+                        <CheckCircle2 className="h-10 w-10 text-state-approved" />
                         <h1 className="mt-5 font-serif text-fluid-3xl leading-tight">
                             You're checked in.
                         </h1>
@@ -106,14 +106,14 @@ export default function SelfCheckIn() {
                             dashboard when it's yours.
                         </p>
                         <Link to="/dashboard" className="mt-8 block">
-                            <Button className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                            <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                 Back to your dashboard
                             </Button>
                         </Link>
                     </div>
                 ) : (
                     <div data-testid={IDS.failure} className="mt-6">
-                        <XCircle className="h-10 w-10 text-red-400" />
+                        <XCircle className="h-10 w-10 text-state-rejected" />
                         <h1 className="mt-5 font-serif text-fluid-3xl leading-tight">
                             That didn't work.
                         </h1>
@@ -131,7 +131,7 @@ export default function SelfCheckIn() {
                             type="button"
                             data-testid={IDS.retry}
                             onClick={submit}
-                            className="mt-8 h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="mt-8 h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             Try again
                         </Button>

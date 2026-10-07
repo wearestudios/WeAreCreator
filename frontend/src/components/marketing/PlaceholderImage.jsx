@@ -24,10 +24,15 @@ import { IMAGE_ZOOM } from "@/components/marketing/motion";
  * The tint, derived from the slot's own name.
  *
  * A single gradient repeated down a page reads as a template; four unrelated
- * ones read as a mess. So the hue is nudged within a narrow warm band around
- * ember — the same trick `lib/cover.js` uses for campaign covers, and the same
- * reason: neighbouring slots should be visibly different without any of them
- * leaving the palette.
+ * ones read as a mess. So the hue is nudged within a narrow band around the
+ * brand navy — the same trick `lib/cover.js` uses for campaign covers, and the
+ * same reason: neighbouring slots should be visibly different without any of
+ * them leaving the palette.
+ *
+ * **The band moved with the brand.** It used to sit at 14°–40°, which is burnt
+ * orange through deep amber, and on the navy canvas those read as muddy brown
+ * rectangles rather than as part of the page — the tell that a palette has
+ * been changed underneath its derived values.
  */
 function tintFor(seed) {
     let h = 0x811c9dc5;
@@ -35,9 +40,10 @@ function tintFor(seed) {
         h ^= seed.charCodeAt(i);
         h = Math.imul(h, 0x01000193) >>> 0;
     }
-    // 14°–40° spans burnt orange through to a deep amber. Outside that it
-    // stops looking like this brand.
-    return 14 + (h % 27);
+    // 205°–232° spans a cool steel blue through to the brand navy's own hue
+    // (217°). Wide enough that two neighbouring slots are visibly different,
+    // narrow enough that none of them leaves the palette.
+    return 205 + (h % 28);
 }
 
 const RATIO = {
@@ -102,7 +108,7 @@ export function PlaceholderImage({
                     // because the hue is computed.
                     backgroundImage: `linear-gradient(135deg, hsl(${hue} 78% 22%) 0%, hsl(${
                         hue + 6
-                    } 60% 12%) 45%, hsl(24 18% 7%) 100%)`,
+                    } 60% 12%) 45%, hsl(217 62% 9%) 100%)`,
                 }}
             />
             {src ? (
@@ -129,7 +135,7 @@ export function PlaceholderImage({
                 visitor would have to ignore. */}
             <div
                 aria-hidden
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-ember-500/40 to-transparent"
+                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent"
             />
 
             {children}

@@ -120,7 +120,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
                                 data-testid={IDS.date}
-                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500 ${TOUCH}`}
+                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
                             />
                         </div>
                     )}
@@ -139,7 +139,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={startTime}
                                 onChange={(e) => setStartTime(e.target.value)}
                                 data-testid={IDS.startTime}
-                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500 ${TOUCH}`}
+                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
                             />
                         </div>
                         {!isEvent && (
@@ -156,7 +156,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                     value={endTime}
                                     onChange={(e) => setEndTime(e.target.value)}
                                     data-testid={IDS.endTime}
-                                    className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500 ${TOUCH}`}
+                                    className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
                                 />
                             </div>
                         )}
@@ -184,7 +184,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={capacity}
                                 onChange={(e) => setCapacity(e.target.value)}
                                 data-testid={IDS.capacity}
-                                className={`rounded-md border-white/10 bg-background/60 text-center font-serif text-xl focus-visible:ring-ember-500 ${TOUCH}`}
+                                className={`rounded-md border-white/10 bg-background/60 text-center font-serif text-xl focus-visible:ring-primary ${TOUCH}`}
                             />
                             <button
                                 type="button"
@@ -216,7 +216,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         busy={busy}
                         onClick={submit}
                         data-testid={IDS.submit}
-                        className="bg-ember-500 text-black hover:bg-ember-400"
+                        className="bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {editing ? "Save slot" : "Add slot"}
                     </BigButton>

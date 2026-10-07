@@ -48,8 +48,8 @@ const Stars = ({ value, onChange, disabled, testid }) => (
                 data-testid={IDS.star(n)}
                 className={
                     "min-h-[2.75rem] min-w-[2.75rem] rounded transition-colors duration-150 " +
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 " +
-                    (value >= n ? "text-ember-500" : "text-muted-foreground hover:text-foreground")
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
+                    (value >= n ? "text-primary" : "text-muted-foreground hover:text-foreground")
                 }
             >
                 <Star
@@ -134,7 +134,7 @@ export default function RateCollaboration({ collabId }) {
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={copy.placeholder}
                 data-testid={IDS.note}
-                className="mt-4 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                className="mt-4 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
             />
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -142,7 +142,7 @@ export default function RateCollaboration({ collabId }) {
                     onClick={submit}
                     disabled={busy || !score}
                     data-testid={IDS.submit}
-                    className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600"
+                    className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover"
                 >
                     {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {/* **Changeable, and the button says so.** A rating is an

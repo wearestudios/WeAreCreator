@@ -68,7 +68,7 @@ const ACTION_ICON = {
 
 const Detail = ({ Icon, children, testid }) => (
     <div data-testid={testid} className="flex items-start gap-2 text-sm text-muted-foreground">
-        <Icon className="mt-0.5 h-4 w-4 flex-none text-ember-500/80" />
+        <Icon className="mt-0.5 h-4 w-4 flex-none text-primary/80" />
         <span className="min-w-0 leading-relaxed">{children}</span>
     </div>
 );
@@ -128,7 +128,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     data-testid={IDS.primary(collab.id)}
                     disabled={confirming === "address"}
                     onClick={() => confirmDelivery("address")}
-                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {confirming === "address" ? "Confirming…" : "Confirm my address"}
@@ -141,7 +141,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     data-testid={IDS.primary(collab.id)}
                     disabled={confirming === "received"}
                     onClick={() => confirmDelivery("received")}
-                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {confirming === "received" ? "Confirming…" : "It arrived"}
@@ -153,7 +153,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 <Button
                     data-testid={IDS.primary(collab.id)}
                     onClick={() => onBook(collab)}
-                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     Pick your slot
@@ -165,7 +165,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 <Button
                     data-testid={IDS.primary(collab.id)}
                     onClick={() => onDraft(collab)}
-                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {next.action === "resubmit_draft" ? "Replace your draft" : "Send your draft"}
@@ -177,7 +177,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 <Button
                     data-testid={IDS.primary(collab.id)}
                     onClick={() => onSubmit(collab)}
-                    className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto"
+                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {/* **"Upload your content link" is a lie on a brief whose
@@ -204,7 +204,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     rel="noreferrer"
                     data-testid={IDS.primary(collab.id)}
                 >
-                    <Button className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto">
+                    <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto">
                         <MapPin className="mr-2 h-4 w-4" />
                         Get directions
                     </Button>
@@ -214,7 +214,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
         if (next.action === "add_payout_details") {
             return (
                 <Link to="/onboarding/creator" data-testid={IDS.primary(collab.id)}>
-                    <Button className="h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400 sm:w-auto">
+                    <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto">
                         <Icon className="mr-2 h-4 w-4" />
                         Add payout details
                     </Button>
@@ -261,7 +261,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     <Link
                         to={`/campaigns/${collab.campaign_id}`}
                         data-testid={IDS.title(collab.id)}
-                        className="mt-2 block font-serif text-2xl leading-tight transition-colors duration-200 hover:text-ember-500"
+                        className="mt-2 block font-serif text-2xl leading-tight transition-colors duration-200 hover:text-primary"
                     >
                         {collab.campaign_title || "Untitled campaign"}
                     </Link>
@@ -338,7 +338,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     className={
                         "mt-6 rounded-md border px-4 py-3 text-sm leading-relaxed " +
                         (next.waiting_on === "you"
-                            ? "border-ember-500/30 bg-ember-500/10 text-ember-500"
+                            ? "border-primary/30 bg-primary/10 text-primary"
                             : "border-white/10 bg-background/60 text-muted-foreground")
                     }
                 >
@@ -372,7 +372,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                                 <a
                                     href={`tel:${collab.manager.phone.replace(/\s+/g, "")}`}
                                     data-testid={IDS.call(collab.id)}
-                                    className="underline underline-offset-4 transition-colors duration-200 hover:text-ember-500"
+                                    className="underline underline-offset-4 transition-colors duration-200 hover:text-primary"
                                 >
                                     {collab.manager.name} · {collab.manager.phone}
                                 </a>
@@ -393,7 +393,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                             data-testid={IDS.cancelSlot(collab.id)}
                             onClick={cancelSlot}
                             disabled={releasing}
-                            className="inline-flex min-h-[3rem] items-center justify-start gap-2 self-start text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500 disabled:opacity-50"
+                            className="inline-flex min-h-[3rem] items-center justify-start gap-2 self-start text-sm text-muted-foreground transition-colors duration-200 hover:text-primary disabled:opacity-50"
                         >
                             {releasing && <Loader2 className="h-4 w-4 animate-spin" />}
                             {/* Up to the cutoff. The server refuses inside it and
@@ -441,7 +441,7 @@ export default function ActiveCampaigns({ collaborations, onRefresh }) {
                         title="Nothing live yet."
                         action={
                             <Link to="/campaigns" className="mt-2">
-                                <Button className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                     Find a campaign
                                 </Button>
                             </Link>

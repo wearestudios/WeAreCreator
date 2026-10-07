@@ -97,7 +97,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         Draft for review
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -113,7 +113,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                     reason this dialog is open a second time, so it goes above
                     the fields rather than below them. */}
                 {collab?.draft?.revision_note && (
-                    <p className="mt-4 rounded-md border border-ember-500/30 bg-ember-500/10 px-4 py-3 text-sm leading-relaxed text-ember-500">
+                    <p className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary">
                         Changes asked for: {collab.draft.revision_note}
                     </p>
                 )}
@@ -133,7 +133,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                 className={
                                     "inline-flex min-h-[3rem] flex-1 items-center justify-center gap-2 rounded-full border px-4 text-sm transition-colors duration-200 " +
                                     (mode === key
-                                        ? "border-ember-500/40 bg-ember-500/15 text-ember-500"
+                                        ? "border-primary/40 bg-primary/15 text-primary"
                                         : "border-white/10 bg-transparent text-muted-foreground hover:border-white/20")
                                 }
                             >
@@ -157,7 +157,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                 type="file"
                                 accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp"
                                 onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                className="h-12 border-white/10 bg-background/60 file:mr-3 file:rounded-full file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-foreground focus-visible:ring-ember-500"
+                                className="h-12 border-white/10 bg-background/60 file:mr-3 file:rounded-full file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-foreground focus-visible:ring-primary"
                             />
                             <p className="text-xs text-muted-foreground">
                                 MP4, MOV, WebM or a still. Only the reviewer sees it.
@@ -181,7 +181,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
                                     placeholder="https://youtu.be/…"
-                                    className="h-12 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                    className="h-12 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
                                 />
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -205,7 +205,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
                             placeholder="Music is a placeholder, happy to swap it…"
-                            className="min-h-[72px] border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="min-h-[72px] border-white/10 bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
 
@@ -230,7 +230,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                             type="submit"
                             data-testid={IDS.submit}
                             disabled={busy}
-                            className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {busy ? (
                                 <>

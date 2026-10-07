@@ -152,7 +152,7 @@ function Caption({ index, progress }) {
             {/* A real space, not just a margin. Without it the text layer —
                 which is what a screen reader announces and what a copy-paste
                 picks up — reads "01A brief goes up". */}
-            <span className="mr-3 align-middle text-sm text-ember-500">
+            <span className="mr-3 align-middle text-sm text-primary">
                 {String(index + 1).padStart(2, "0")}
             </span>{" "}
             {BEATS[index].caption}
@@ -296,7 +296,7 @@ function SteppedFilm() {
         <ol data-testid={IDS.filmSteps} className="mt-10 space-y-8">
             {BEATS.map((b, i) => (
                 <Reveal key={b.key} as="li" i={i % 3} className="flex gap-4">
-                    <span className="mt-1 shrink-0 font-serif text-sm text-ember-500">
+                    <span className="mt-1 shrink-0 font-serif text-sm text-primary">
                         {String(i + 1).padStart(2, "0")}
                     </span>
                     <div className="min-w-0 flex-1">

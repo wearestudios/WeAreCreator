@@ -110,7 +110,7 @@ export default function DraftReview({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.link}
-                            className="mt-3 inline-flex items-center gap-2 text-sm text-ember-500 underline underline-offset-4"
+                            className="mt-3 inline-flex items-center gap-2 text-sm text-primary underline underline-offset-4"
                         >
                             <ExternalLink className="h-4 w-4" />
                             Open the unlisted link
@@ -127,7 +127,7 @@ export default function DraftReview({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.file}
-                            className="mt-3 inline-flex items-center gap-2 text-sm text-ember-500 underline underline-offset-4"
+                            className="mt-3 inline-flex items-center gap-2 text-sm text-primary underline underline-offset-4"
                         >
                             <Download className="h-4 w-4" />
                             {draft.original_name || "Open the draft"}
@@ -151,7 +151,7 @@ export default function DraftReview({
             {draft.revision_note && draft.state !== "draft_submitted" && (
                 <p
                     data-testid={IDS.revisionNote}
-                    className="rounded-md border border-ember-500/25 bg-ember-500/10 px-4 py-3 text-sm leading-relaxed text-ember-500"
+                    className="rounded-md border border-primary/25 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary"
                 >
                     You asked for: {draft.revision_note}
                 </p>
@@ -174,7 +174,7 @@ export default function DraftReview({
                                 type="checkbox"
                                 checked={disclosureOk}
                                 onChange={(e) => setDisclosureOk(e.target.checked)}
-                                className="mt-0.5 h-4 w-4 flex-none accent-[color:var(--ember-500,#F05D14)]"
+                                className="mt-0.5 h-4 w-4 flex-none accent-[color:hsl(var(--primary))]"
                             />
                             <span>
                                 I've checked this draft carries{" "}
@@ -223,7 +223,7 @@ export default function DraftReview({
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}
                                 placeholder="What needs to change? The creator sees this word for word."
-                                className="min-h-[88px] border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                                className="min-h-[88px] border-white/10 bg-background/60 focus-visible:ring-primary"
                             />
                             <Button
                                 data-testid={IDS.changeSubmit}

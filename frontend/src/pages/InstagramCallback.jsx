@@ -85,14 +85,14 @@ export default function InstagramCallback() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-xl px-5 py-16 md:px-6 md:py-24">
-                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
                     <Instagram className="h-3.5 w-3.5" />
                     Instagram
                 </p>
 
                 {state.phase === "working" && (
                     <div data-testid={IDS.working} className="mt-6 flex items-center gap-3">
-                        <Loader2 className="h-5 w-5 animate-spin text-ember-500" />
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <p className="font-serif text-2xl leading-tight">Connecting your account…</p>
                     </div>
                 )}
@@ -102,7 +102,7 @@ export default function InstagramCallback() {
                         <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
                             Connected.
                         </h1>
-                        <p className="mt-4 inline-flex items-center gap-2 text-sm text-emerald-300">
+                        <p className="mt-4 inline-flex items-center gap-2 text-sm text-state-approved">
                             <BadgeCheck className="h-4 w-4" />
                             {state.username ? `@${state.username}` : "Your account"} is verified.
                         </p>
@@ -125,7 +125,7 @@ export default function InstagramCallback() {
                                 onClick={retry}
                                 disabled={retrying}
                                 data-testid={IDS.retry}
-                                className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 {retrying ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -137,7 +137,7 @@ export default function InstagramCallback() {
                             <Link
                                 to="/onboarding/creator"
                                 data-testid={IDS.back}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Back to my profile
                             </Link>
@@ -150,7 +150,7 @@ export default function InstagramCallback() {
                         <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
                             That didn't go through.
                         </h1>
-                        <p className="flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">
+                        <p className="flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm leading-relaxed text-state-rejected">
                             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
                             {state.message}
                         </p>
@@ -164,7 +164,7 @@ export default function InstagramCallback() {
                                 onClick={retry}
                                 disabled={retrying}
                                 data-testid={IDS.retry}
-                                className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 {retrying ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -176,7 +176,7 @@ export default function InstagramCallback() {
                             <Link
                                 to="/onboarding/creator"
                                 data-testid={IDS.back}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Back to my profile
                             </Link>

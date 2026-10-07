@@ -31,9 +31,9 @@ export const PANEL =
 export function Tag({ children, tone = "muted" }) {
     const colour =
         tone === "ember"
-            ? "border-ember-500/40 text-ember-500"
+            ? "border-primary/40 text-primary"
             : tone === "good"
-              ? "border-emerald-400/40 text-emerald-300"
+              ? "border-state-approved/40 text-state-approved"
               : "border-white/15 text-muted-foreground";
     return (
         <span
@@ -83,7 +83,7 @@ export function ApplicantRow({ name, followers, rate, accepted }) {
     return (
         <div
             className={`${PANEL} flex items-center gap-3 p-3 ${
-                accepted ? "!border-ember-500/60" : ""
+                accepted ? "!border-primary/60" : ""
             }`}
         >
             <CreatorMonogram name={name} />
@@ -115,7 +115,7 @@ export function MessageBubble() {
                 WhatsApp
             </p>
             <p className="mt-1.5 text-sm leading-snug">
-                You&apos;re on. Rate agreed: <span className="text-ember-500">₹12,000</span>
+                You&apos;re on. Rate agreed: <span className="text-primary">₹12,000</span>
             </p>
         </div>
     );
@@ -141,7 +141,7 @@ export function SlotStrip({ booked }) {
                         key={`${d}-${i}`}
                         className={`grid h-8 place-items-center rounded-md text-[11px] ${
                             i === booked
-                                ? "bg-ember-500 text-black"
+                                ? "bg-primary text-primary-foreground"
                                 : "bg-white/5 text-muted-foreground"
                         }`}
                     >
@@ -164,7 +164,7 @@ export function ApprovalCard() {
     return (
         <div className={`${PANEL} w-full p-3`}>
             <div className="flex items-center gap-3">
-                <div className="h-12 w-16 shrink-0 rounded-md bg-gradient-to-br from-ember-700/50 to-black/60" />
+                <div className="h-12 w-16 shrink-0 rounded-md bg-gradient-to-br from-navy-500/60 to-navy-900/80" />
                 <div className="min-w-0">
                     <p className="text-sm">Draft reviewed</p>
                     <p className="text-[11px] text-muted-foreground">
@@ -190,7 +190,7 @@ export function PayoutCard({ amountRef }) {
             <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                 Paid to creator
             </p>
-            <p className="mt-1.5 font-serif text-3xl leading-none tracking-tight text-ember-500">
+            <p className="mt-1.5 font-serif text-3xl leading-none tracking-tight text-primary">
                 ₹<span ref={amountRef} data-testid={PAYOUT_TESTID}>12,000</span>
             </p>
             <p className="mt-2 text-[11px] text-muted-foreground">

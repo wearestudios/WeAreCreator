@@ -30,7 +30,7 @@ import { FOOTER as IDS } from "@/constants/testIds";
  */
 function FooterLink({ link }) {
     const className =
-        "text-sm text-muted-foreground transition-colors duration-200 hover:text-ember-500";
+        "text-sm text-muted-foreground transition-colors duration-200 hover:text-primary";
     const testid = IDS.link(link.to);
 
     if (link.external) {
@@ -64,11 +64,11 @@ export function Footer() {
                             data-testid={IDS.wordmark}
                             className="inline-flex items-center gap-2.5"
                         >
-                            <span className="grid h-7 w-7 place-items-center rounded-md bg-ember-500 font-serif text-sm text-black">
+                            <span className="grid h-7 w-7 place-items-center rounded-md bg-red-500 font-serif text-sm text-navy-700">
                                 W
                             </span>
                             <span className="font-serif text-lg leading-none">
-                                WeAre <span className="text-ember-500">Creators</span>
+                                WeAre <span className="text-primary">Creators</span>
                             </span>
                         </Link>
                         <div className="mt-3">
@@ -113,7 +113,7 @@ export function Footer() {
                     <a
                         href={`mailto:${CONTACT_EMAIL}`}
                         data-testid={IDS.contact}
-                        className="text-xs text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                        className="text-xs text-muted-foreground transition-colors duration-200 hover:text-primary"
                     >
                         {CONTACT_EMAIL}
                     </a>

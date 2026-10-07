@@ -32,7 +32,7 @@ export default function ShootWindowNote({ campaign, className = "" }) {
                 className
             }
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-ember-500">
+            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-primary">
                 <CalendarClock className="h-3.5 w-3.5" />
                 When it shoots
             </p>

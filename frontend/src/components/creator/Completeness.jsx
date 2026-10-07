@@ -40,7 +40,7 @@ const Ring = ({ percent }) => {
                     strokeWidth="3"
                     strokeLinecap="round"
                     strokeDasharray={CIRCUMFERENCE}
-                    className="stroke-ember-500"
+                    className="stroke-primary"
                     initial={still ? false : { strokeDashoffset: CIRCUMFERENCE }}
                     animate={{ strokeDashoffset: offset }}
                     transition={{ duration: still ? 0 : 0.9, ease: [0.22, 1, 0.36, 1] }}
@@ -93,7 +93,7 @@ export default function Completeness({ completeness }) {
                     <Link
                         to="/onboarding/creator"
                         data-testid={IDS.cta}
-                        className="group mt-6 inline-flex items-center gap-2 text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                        className="group mt-6 inline-flex items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
                     >
                         Finish your profile
                         <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

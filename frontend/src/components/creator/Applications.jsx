@@ -60,7 +60,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
             </span>
             <span
                 className={
-                    "mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-ember-500 " +
+                    "mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-primary " +
                     (muted ? "text-muted-foreground" : "")
                 }
             >
@@ -185,7 +185,7 @@ function WithdrawDialog({ row, onClose, onDone }) {
                     onChange={(e) => setReason(e.target.value)}
                     data-testid={IDS.withdrawReason}
                     placeholder="e.g. I've got a clashing shoot that week"
-                    className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                    className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                 />
                 {error && (
                     <p data-testid={IDS.withdrawError} className="text-sm text-destructive">
@@ -253,7 +253,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                         title="You haven't pitched on anything yet."
                         action={
                             <Link to="/campaigns" data-testid={IDS.browse} className="mt-2">
-                                <Button className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                     Browse campaigns
                                 </Button>
                             </Link>
@@ -306,7 +306,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                                     <Link
                                         to="/campaigns"
                                         data-testid={IDS.declinedBrowse}
-                                        className="group mt-4 inline-flex items-center gap-2 text-sm text-ember-500 transition-colors duration-200 hover:text-ember-400"
+                                        className="group mt-4 inline-flex items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
                                     >
                                         See what else is open
                                         <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

@@ -81,7 +81,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="ready"
                 testid="profile-ready-banner"
                 Icon={Send}
-                tone="border-ember-500/30 bg-ember-500/10 text-ember-500/90"
+                tone="border-primary/30 bg-primary/10 text-primary"
             >
                 Your profile is finished but we haven't seen it yet.{" "}
                 <Link
@@ -102,7 +102,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="onboarded"
                 testid="just-onboarded-banner"
                 Icon={Sparkles}
-                tone="border-ember-500/30 bg-ember-500/10 text-ember-500/90"
+                tone="border-primary/30 bg-primary/10 text-primary"
             >
                 Thanks — your profile is with the WeAre team. Reviews usually finish
                 within 48 hours, and briefs open up to you the moment you're approved.
@@ -115,7 +115,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="pending"
                 testid="verification-pending-banner"
                 Icon={Clock}
-                tone="border-amber-500/30 bg-amber-500/10 text-amber-200"
+                tone="border-state-pending/30 bg-state-pending/10 text-state-pending"
             >
                 Your profile is under review. You'll be able to pitch on briefs as
                 soon as the team approves it — usually within 48 hours.
@@ -128,7 +128,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="rejected"
                 testid="verification-rejected-banner"
                 Icon={XCircle}
-                tone="border-red-500/30 bg-red-500/10 text-red-200"
+                tone="border-state-rejected/30 bg-state-rejected/10 text-state-rejected"
             >
                 Your profile wasn't approved yet.{" "}
                 <Link to="/onboarding/creator" className="underline underline-offset-4 hover:no-underline">
@@ -144,7 +144,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="changes"
                 testid="verification-changes-banner"
                 Icon={Clock}
-                tone="border-sky-500/30 bg-sky-500/10 text-sky-200"
+                tone="border-state-progress/30 bg-state-progress/10 text-state-progress"
             >
                 You're still live and visible to brands. We're just taking a second
                 look at the details you changed.
@@ -157,7 +157,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="payout"
                 testid="payout-missing-banner"
                 Icon={Wallet}
-                tone="border-ember-500/30 bg-ember-500/10 text-ember-500/90"
+                tone="border-primary/30 bg-primary/10 text-primary"
             >
                 Add your UPI ID and PAN so we can pay you — we can't release a payout
                 without them.{" "}
@@ -255,7 +255,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                 {error && !data && (
                     <p
                         data-testid={IDS.error}
-                        className="rounded-md border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+                        className="rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm text-state-rejected"
                     >
                         {error}
                     </p>
@@ -359,7 +359,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                                 key={t.value}
                                                 value={t.value}
                                                 data-testid={IDS.tab(t.value)}
-                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 data-[state=active]:bg-ember-500/15 data-[state=active]:text-ember-500"
+                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 data-[state=active]:bg-primary/15 data-[state=active]:text-primary"
                                             >
                                                 {t.label}
                                                 {t.count > 0 && (
@@ -424,7 +424,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                 <span className="text-foreground">Signed in as</span>{" "}
                                 {/* Accounts created over WhatsApp have no email. */}
                                 {data.profile?.email || user.phone || user.name} ·{" "}
-                                <span className="uppercase tracking-[0.15em] text-ember-500">
+                                <span className="uppercase tracking-[0.15em] text-primary">
                                     {user.role}
                                 </span>
                             </p>
@@ -433,7 +433,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                 onClick={load}
                                 disabled={refreshing}
                                 data-testid={IDS.refresh}
-                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-50"
+                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-50"
                             >
                                 <RotateCw
                                     className={"h-3.5 w-3.5 " + (refreshing ? "animate-spin" : "")}

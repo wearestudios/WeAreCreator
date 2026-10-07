@@ -29,12 +29,7 @@ import { Keyboard, Menu } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
 import { consoleLabel, isAllAccess } from "@/lib/consoleScope";
-import {
-    applyTheme,
-    clearTheme,
-    rememberTheme,
-    resolveTheme,
-} from "@/lib/consoleTheme";
+import { applyTheme, rememberTheme, resolveTheme } from "@/lib/surfaceTheme";
 import BrandFilter from "@/components/admin/console/BrandFilter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
@@ -97,11 +92,16 @@ export default function AdminConsole() {
     // The pre-paint script in `public/index.html` has already done this on a
     // hard load; this is what handles a *soft* navigation into the console,
     // and what carries the account's choice once `/auth/me` has answered.
+    // **`SurfaceGuard` applies it; this only caches it.** The guard in
+    // `App.js` is the single writer of the attribute now that the whole
+    // product is on the light surface — an unmount handler here clearing it
+    // would race the guard on the way out of the console and show a navy
+    // dashboard for a frame. What this still owns is the local cache, which
+    // is what lets the pre-paint script know the answer on the next hard load
+    // before any request has been made.
     const accountTheme = user?.console_theme ?? null;
     useEffect(() => {
-        applyTheme(resolveTheme(accountTheme));
         rememberTheme(accountTheme);
-        return clearTheme;
     }, [accountTheme]);
 
     // Somebody on "System" who switches their machine at dusk should see the
@@ -110,7 +110,7 @@ export default function AdminConsole() {
     // sunset would be the preference not being honoured.
     useEffect(() => {
         if (accountTheme) return;
-        const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+        const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
         if (!mq?.addEventListener) return;
         const onChange = () => applyTheme(resolveTheme(null));
         mq.addEventListener("change", onChange);

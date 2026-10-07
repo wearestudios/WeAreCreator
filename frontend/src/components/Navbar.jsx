@@ -175,7 +175,7 @@ export const Navbar = () => {
                         data-testid="nav-logo"
                         className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
-                        <span className="grid h-8 w-8 place-items-center rounded-md bg-primary font-serif text-lg font-semibold text-primary-foreground">
+                        <span className="grid h-8 w-8 place-items-center rounded-md bg-red-500 font-serif text-lg font-semibold text-navy-700">
                             W
                         </span>
                         <span className="font-serif text-xl tracking-tight">

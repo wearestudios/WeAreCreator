@@ -12,12 +12,22 @@
 // borrowing someone else's page rather than building ours.
 //
 // ---------------------------------------------------------------------------
-// NEEDS THE REAL HEX. `CORAL` below is a considered stand-in, not the studio's
-// registered brand colour — nothing in this repository carries that value and
-// inventing precision would be worse than saying so. It is a warm red that
-// sits beside ember (#F05D14) without reading as a second orange, and it
-// clears 4.5:1 against white at this weight. Swap it for the brand value when
-// somebody has it; this is the only line that has to change.
+// NEEDS THE REAL HEX, AND NOW URGENTLY. `CORAL` below is a considered
+// stand-in, not the studio's registered brand colour — nothing in this
+// repository carries that value and inventing precision would be worse than
+// saying so.
+//
+// **The rebrand made this worse rather than better.** The stand-in was picked
+// to sit beside the old ember (#F05D14) without reading as a second orange.
+// Creators' brand red is now #FF2731, and #E1483C beside it does not read as
+// a second brand at all — it reads as the first one rendered wrong. A
+// handshake whose whole job is to say "this comes from somewhere else" cannot
+// be a near-miss of the colour it is standing next to.
+//
+// It is left unchanged rather than nudged, because any value invented here
+// would be a guess competing with a real one, and a guess that *looks*
+// deliberate is harder to dislodge than one flagged as a placeholder. Swap it
+// for the studio's registered value; this is still the only line to change.
 // ---------------------------------------------------------------------------
 
 /** The band's field. */
@@ -28,4 +38,4 @@ export const CORAL_DEEP = "#C33A30";
 
 /** The CTA block sitting on the coral. Near-black, never pure #000 — the
  *  tinted-grey rule holds even inside the handshake. */
-export const CORAL_INK = "#12100F";
+export const CORAL_INK = "#091426";
