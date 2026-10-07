@@ -49,7 +49,7 @@ services:
              uvicorn server:app --host 0.0.0.0 --port 8001 --reload"
 
   frontend:
-    image: node:20-slim
+    image: node:24-slim
     working_dir: /app
     restart: unless-stopped
     depends_on:

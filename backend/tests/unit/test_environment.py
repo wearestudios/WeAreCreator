@@ -16,6 +16,7 @@ production, and the notification templates drift the fastest — they are looked
 up dynamically as `AISENSY_TEMPLATE_{event.upper()}`, so nothing but a test
 notices when a new event ships with no line documenting its template.
 """
+import json
 import ast
 import re
 from pathlib import Path
@@ -351,3 +352,69 @@ def test_the_refusal_deployment_md_describes_is_the_one_in_the_code():
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+# ---------------------------------------------------------------------------
+# The Node pin
+# ---------------------------------------------------------------------------
+#
+# **Four files name the runtime and nothing made them agree.** The frontend's
+# `engines`, the `.nvmrc` that CI reads, the copy of `engines` inside the
+# lockfile, and the image `docker compose` builds in. Moving off Node 20 meant
+# finding all four by hand, and the one that would have been missed is the
+# lockfile's — `npm ci` fails when it disagrees with `package.json`, so the
+# symptom is a red CI step about the lockfile rather than anything mentioning
+# Node.
+#
+# This is the same drift test `followerTiers.js` and the footer columns carry,
+# pointed at the runtime instead of at a constant.
+
+REPO_ROOT = BACKEND_ROOT.parent
+FRONTEND_ROOT = REPO_ROOT / "frontend"
+
+
+def _declared_node_major() -> str:
+    spec = json.loads((FRONTEND_ROOT / "package.json").read_text())["engines"]["node"]
+    return spec.split(".")[0]
+
+
+def test_every_place_that_names_node_names_the_same_major():
+    major = _declared_node_major()
+
+    nvmrc = (FRONTEND_ROOT / ".nvmrc").read_text().strip()
+    assert nvmrc == major, f".nvmrc says {nvmrc}, engines says {major}"
+
+    # The lockfile mirrors the root package's `engines`. Hand-editing
+    # `package.json` without regenerating it is what makes `npm ci` fail.
+    lock = json.loads((FRONTEND_ROOT / "package-lock.json").read_text())
+    mirrored = lock["packages"][""]["engines"]["node"]
+    assert mirrored.split(".")[0] == major, (
+        f"package-lock.json says {mirrored}, package.json says {major}.x — "
+        "run `npm install --package-lock-only`"
+    )
+
+    compose = (REPO_ROOT / "docker-compose.yml").read_text()
+    assert f"node:{major}-slim" in compose, (
+        f"docker-compose.yml does not build on node:{major}-slim"
+    )
+
+
+def test_ci_takes_the_version_from_the_pin_rather_than_repeating_it():
+    """A fifth copy in the workflow would be a fifth thing to remember. CI
+    reads `.nvmrc`, so it follows the pin by construction."""
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    assert "node-version-file: frontend/.nvmrc" in ci
+    assert "node-version:" not in ci, "the workflow pins a version of its own"
+
+
+def test_the_pinned_node_is_a_version_that_still_gets_security_updates():
+    """**The reason this moved.** Node 20 went end-of-life and the deploy
+    platform refuses it. Pinning an unsupported runtime is a decision to stop
+    receiving security patches, so it is worth failing a test over rather than
+    discovering at the next deploy."""
+    major = int(_declared_node_major())
+    assert major >= 22, (
+        f"Node {major} is past end-of-life. Even-numbered majors are the LTS "
+        "line; 20 was discontinued."
+    )
+    assert major % 2 == 0, f"Node {major} is not an LTS line"

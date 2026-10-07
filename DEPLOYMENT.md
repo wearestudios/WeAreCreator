@@ -276,6 +276,34 @@ means rebuilding.
 
 ---
 
+## The runtimes, and the four places that name them
+
+**Node 24** (LTS). The frontend is pinned in four files and they have to agree:
+
+| File | Why it exists |
+| --- | --- |
+| `frontend/package.json` → `engines.node` | What the deploy platform reads. Vercel refuses a discontinued major outright. |
+| `frontend/.nvmrc` | What `nvm` and CI read. The workflow uses `node-version-file:` rather than naming a version, so CI follows this one by construction. |
+| `frontend/package-lock.json` | Mirrors `engines`. **`npm ci` fails when it disagrees with `package.json`**, and the error talks about the lockfile rather than about Node — so this is the copy that gets missed. Regenerate with `npm install --package-lock-only`, never by hand. |
+| `docker-compose.yml` → `node:24-slim` | What `docker compose up` builds in. |
+
+`engines` is advisory here — there is no `.npmrc` setting `engine-strict` — so a
+developer on another major still builds. The pin is what the *platform* honours.
+
+`test_environment.py` fails if any of the four drifts, and fails again if the
+pinned major is past end-of-life: pinning an unsupported runtime is a decision
+to stop receiving security patches, which is worth finding in CI rather than at
+the next deploy.
+
+The backend pins **python-3.11** in `runtime.txt`, matching `python:3.11-slim`
+in `docker-compose.yml`. Without it a host picks its own default, and 3.13 makes
+`pymongo==4.6.3` compile from source.
+
+**When you move Node again:** change `engines`, run `npm install
+--package-lock-only`, update `.nvmrc` and the compose image, then run
+`npm ci && npx craco build` on the new major before believing it. Moving 20 → 24
+produced a byte-identical bundle, which is the check worth repeating.
+
 ## The Vercel rewrites
 
 Five paths are server-rendered by the backend and **must** be proxied, or they
