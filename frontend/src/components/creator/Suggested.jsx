@@ -42,7 +42,7 @@ export default function Suggested({ campaigns }) {
                         title="Nothing matched today."
                         action={
                             <Link to="/campaigns" className="mt-2">
-                                <Button className="h-12 rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                     Browse everything
                                 </Button>
                             </Link>
@@ -79,14 +79,14 @@ export default function Suggested({ campaigns }) {
                                 </p>
                                 <Link
                                     to={`/campaigns/${c.id}`}
-                                    className="mt-2 font-serif text-xl leading-tight transition-colors duration-200 hover:text-ember-500"
+                                    className="mt-2 font-serif text-xl leading-tight transition-colors duration-200 hover:text-primary"
                                 >
                                     {c.title}
                                 </Link>
 
                                 <p
                                     data-testid={IDS.reason(c.id)}
-                                    className="mt-4 inline-flex items-start gap-2 rounded-md border border-ember-500/25 bg-ember-500/10 px-3 py-2 text-xs leading-relaxed text-ember-500"
+                                    className="mt-4 inline-flex items-start gap-2 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-primary"
                                 >
                                     <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-none" />
                                     {c.match_reason}
@@ -136,7 +136,7 @@ export default function Suggested({ campaigns }) {
                                     {/* Applying needs a pitch and a rate, and that
                                         form lives on the brief. */}
                                     <Link to={`/campaigns/${c.id}`} data-testid={IDS.apply(c.id)}>
-                                        <Button className="h-11 rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                        <Button className="h-11 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                             Apply
                                         </Button>
                                     </Link>

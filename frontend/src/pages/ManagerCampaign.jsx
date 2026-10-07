@@ -219,7 +219,7 @@ export default function ManagerCampaign() {
                 <Link
                     to="/manager"
                     data-testid={IDS.back}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -270,8 +270,8 @@ export default function ManagerCampaign() {
                                 TOUCH +
                                 " " +
                                 (dayOf
-                                    ? "border-ember-500 bg-ember-500 text-black hover:bg-ember-400"
-                                    : "border-ember-500/40 bg-ember-500/10 text-ember-500 hover:bg-ember-500/20")
+                                    ? "border-primary bg-primary text-primary-foreground hover:bg-primary-hover"
+                                    : "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20")
                             }
                         >
                             {dayOf ? (
@@ -309,9 +309,9 @@ export default function ManagerCampaign() {
                                                 onClick={() => setTab(t.key)}
                                                 data-testid={IDS.tab(t.key)}
                                                 className={
-                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                     (on
-                                                        ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                        ? "border-primary bg-primary/10 text-primary"
                                                         : "border-white/10 text-muted-foreground")
                                                 }
                                             >
@@ -350,7 +350,7 @@ export default function ManagerCampaign() {
                                             setBroadcast(true);
                                         }}
                                         data-testid={IDS.broadcastOpen}
-                                        className={`rounded-md bg-ember-500 text-black hover:bg-ember-400 ${TOUCH}`}
+                                        className={`rounded-md bg-primary text-primary-foreground hover:bg-primary-hover ${TOUCH}`}
                                     >
                                         <Send className="mr-2 h-4 w-4" />
                                         Message everyone
@@ -361,7 +361,7 @@ export default function ManagerCampaign() {
                                         disabled={busy}
                                         onClick={downloadDaysheet}
                                         data-testid={IDS.daysheet}
-                                        className={`rounded-md border-white/15 bg-transparent hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                                        className={`rounded-md border-white/15 bg-transparent hover:border-primary/40 hover:text-primary ${TOUCH}`}
                                     >
                                         <Download className="mr-2 h-4 w-4" />
                                         Day sheet (CSV)
@@ -449,7 +449,7 @@ function RosterList({ rows, onRecord }) {
                             {r.slot_pending && (
                                 <span
                                     data-testid={ROSTER_IDS.rowPending(r.collaboration_id)}
-                                    className="rounded border border-ember-500/40 bg-ember-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-ember-500"
+                                    className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-primary"
                                 >
                                     Waiting on you
                                 </span>
@@ -458,7 +458,7 @@ function RosterList({ rows, onRecord }) {
                         <Link
                             to={`/manager/applications/${r.collaboration_id}`}
                             data-testid={ROSTER_IDS.rowOpen(r.collaboration_id)}
-                            className="mt-1.5 block truncate text-sm underline decoration-white/20 underline-offset-4 transition-colors duration-200 hover:text-ember-500"
+                            className="mt-1.5 block truncate text-sm underline decoration-white/20 underline-offset-4 transition-colors duration-200 hover:text-primary"
                         >
                             <span data-testid={ROSTER_IDS.rowName(r.collaboration_id)}>
                                 {r.name}
@@ -482,7 +482,7 @@ function RosterList({ rows, onRecord }) {
                             onClick={() => onRecord?.(r)}
                             aria-label={`Record performance for ${r.name}`}
                             data-testid={ROSTER_IDS.rowPerformance(r.collaboration_id)}
-                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500 ${TOUCH}`}
+                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                         >
                             <BarChart3 className="h-5 w-5" />
                         </button>
@@ -492,7 +492,7 @@ function RosterList({ rows, onRecord }) {
                             href={`tel:${r.phone.replace(/\s+/g, "")}`}
                             aria-label={`Call ${r.name}`}
                             data-testid={ROSTER_IDS.rowCall(r.collaboration_id)}
-                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500 ${TOUCH}`}
+                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                         >
                             <Phone className="h-5 w-5" />
                         </a>
@@ -537,7 +537,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                         data-testid={SLOT_IDS.rowFill(s.id)}
                                         className={
                                             "mt-2 text-xs " +
-                                            (full ? "text-ember-500" : "text-muted-foreground")
+                                            (full ? "text-primary" : "text-muted-foreground")
                                         }
                                     >
                                         {s.booked_count}/{s.capacity} taken
@@ -550,7 +550,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                     {s.outside_preferences && (
                                         <p
                                             data-testid={SCHEDULING.slotOutside(s.id)}
-                                            className="mt-2 text-xs leading-relaxed text-amber-300"
+                                            className="mt-2 text-xs leading-relaxed text-state-pending"
                                         >
                                             Outside the brand's shoot days or hours —
                                             it predates the restriction. Worth a call
@@ -563,7 +563,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                     onClick={() => onEdit(s)}
                                     aria-label="Edit slot"
                                     data-testid={SLOT_IDS.rowEdit(s.id)}
-                                    className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500 ${TOUCH}`}
+                                    className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                                 >
                                     <Pencil className="h-4 w-4" />
                                 </button>
@@ -576,7 +576,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                         onClick={() => onDelete(s)}
                                         aria-label="Delete slot"
                                         data-testid={SLOT_IDS.rowDelete(s.id)}
-                                        className={`grid w-14 flex-none place-items-center rounded-md border border-red-500/30 text-red-300 transition-colors duration-200 hover:bg-red-500/10 ${TOUCH}`}
+                                        className={`grid w-14 flex-none place-items-center rounded-md border border-state-rejected/30 text-state-rejected transition-colors duration-200 hover:bg-state-rejected/10 ${TOUCH}`}
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </button>
@@ -591,7 +591,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                 type="button"
                 onClick={onAdd}
                 data-testid={SLOT_IDS.add}
-                className={`w-full rounded-md bg-ember-500 text-black hover:bg-ember-400 ${TOUCH}`}
+                className={`w-full rounded-md bg-primary text-primary-foreground hover:bg-primary-hover ${TOUCH}`}
             >
                 <Plus className="mr-2 h-4 w-4" />
                 Add a slot
@@ -631,7 +631,7 @@ function VenuePanel({ campaign }) {
                         target="_blank"
                         rel="noreferrer"
                         data-testid={VENUE_IDS.map}
-                        className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                        className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                     >
                         <MapPin className="h-4 w-4" />
                         Open in maps
@@ -665,7 +665,7 @@ function VenuePanel({ campaign }) {
                         <a
                             href={`tel:${contactNumber.replace(/[\s-]/g, "")}`}
                             data-testid={VENUE_IDS.contactCall}
-                            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 ${TOUCH}`}
+                            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                         >
                             <Phone className="h-4 w-4" />
                             Call them

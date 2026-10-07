@@ -36,10 +36,10 @@ import {
 
 const chip = (on) =>
     "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 " +
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 " +
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
     "focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
     (on
-        ? "border-ember-500 bg-ember-500/15 text-ember-500"
+        ? "border-primary bg-primary/15 text-primary"
         : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25");
 
 export default function ShootPreferences({ days, windows, onChange }) {
@@ -169,7 +169,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             <li
                                 key={`${w.start}-${w.end}-${i}`}
                                 data-testid={IDS.customRow(i)}
-                                className="flex items-center justify-between gap-3 rounded-md border border-ember-500/25 bg-ember-500/10 px-4 py-2.5 text-sm text-ember-500"
+                                className="flex items-center justify-between gap-3 rounded-md border border-primary/25 bg-primary/10 px-4 py-2.5 text-sm text-primary"
                             >
                                 <span>
                                     {readableTime(w.start)} – {readableTime(w.end)}
@@ -202,7 +202,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             type="time"
                             value={customStart}
                             onChange={(e) => setCustomStart(e.target.value)}
-                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
                     <div className="flex-1">
@@ -218,7 +218,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             type="time"
                             value={customEnd}
                             onChange={(e) => setCustomEnd(e.target.value)}
-                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
                     <button
@@ -226,7 +226,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                         data-testid={IDS.customAdd}
                         onClick={addCustom}
                         disabled={full}
-                        className="inline-flex min-h-[3rem] items-center justify-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-muted-foreground transition-colors duration-200 hover:border-ember-500/40 hover:text-ember-500 disabled:opacity-40"
+                        className="inline-flex min-h-[3rem] items-center justify-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                     >
                         <Plus className="h-4 w-4" />
                         Add

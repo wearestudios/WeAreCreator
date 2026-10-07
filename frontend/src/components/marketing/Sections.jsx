@@ -30,7 +30,7 @@ import { MARKETING as IDS } from "@/constants/testIds";
 /** Uppercase, tiny, wide — the design guidelines' overline rule. */
 export function Eyebrow({ children, className = "" }) {
     return (
-        <p className={`text-xs uppercase tracking-[0.2em] text-ember-500 ${className}`}>
+        <p className={`text-xs uppercase tracking-[0.2em] text-primary ${className}`}>
             {children}
         </p>
     );
@@ -67,7 +67,7 @@ export function MarketingPage({ testid, title, description, path, children }) {
 export function Cta({ to, label, testid, className = "" }) {
     return (
         <Link to={to} data-testid={testid} className={className}>
-            <Button className="group h-12 rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400">
+            <Button className="group h-12 rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover">
                 {label}
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
             </Button>
@@ -130,7 +130,7 @@ export function MarketingHero({ eyebrow, title, line, cta, image, footnote }) {
         >
             <div
                 aria-hidden
-                className="pointer-events-none absolute -right-40 -top-24 h-[520px] w-[520px] rounded-full bg-ember-500/10 blur-[120px]"
+                className="pointer-events-none absolute -right-40 -top-24 h-[520px] w-[520px] rounded-full bg-primary/10 blur-[120px]"
             />
             <div className="relative mx-auto grid max-w-7xl gap-12 px-6 py-16 md:grid-cols-12 md:items-center md:py-20">
                 <div className="group md:col-span-6">
@@ -221,7 +221,7 @@ export function TextImageSection({
                                 >
                                     <span
                                         aria-hidden
-                                        className="mt-2.5 h-1 w-4 shrink-0 rounded-full bg-ember-500/70"
+                                        className="mt-2.5 h-1 w-4 shrink-0 rounded-full bg-primary/70"
                                     />
                                     <span>
                                         <span className="font-serif text-fluid-lg leading-tight">
@@ -269,7 +269,7 @@ export function Steps({ eyebrow, title, items, testid }) {
                             as="li"
                             className="border-t border-white/10 pt-6"
                         >
-                            <span className="font-serif text-sm text-ember-500">
+                            <span className="font-serif text-sm text-primary">
                                 {String(i + 1).padStart(2, "0")}
                             </span>
                             <h3 className="mt-3 font-serif text-fluid-xl leading-tight tracking-tight">
@@ -303,12 +303,12 @@ export function TwoPaths({ testid, tone = "dark" }) {
     const card =
         "group flex-1 rounded-lg p-7 " +
         (onCoral
-            ? "border border-white/25 bg-white/10 hover:border-white/60 "
+            ? "border border-navy-700/25 bg-navy-700/10 hover:border-navy-700/60 "
             : "border border-white/10 bg-card grain-surface ") +
         CARD_HOVER;
-    const heading = onCoral ? "text-white" : "";
-    const bodyClass = onCoral ? "text-white/80" : "text-muted-foreground";
-    const arrow = onCoral ? "text-white" : "text-ember-500";
+    const heading = onCoral ? "text-navy-700" : "";
+    const bodyClass = onCoral ? "text-navy-700" : "text-muted-foreground";
+    const arrow = onCoral ? "text-navy-700" : "text-primary";
     return (
         <div data-testid={testid} className="flex flex-col gap-4 sm:flex-row">
             <Reveal as="div" className="flex flex-1">

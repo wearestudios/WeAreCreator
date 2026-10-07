@@ -31,7 +31,7 @@ import { formatCompact, formatDateTime } from "./shared";
 export const NotProfessionalHelp = ({ testid, message }) => (
     <div
         data-testid={testid}
-        className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-100"
+        className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending"
     >
         <p className="flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
@@ -40,13 +40,13 @@ export const NotProfessionalHelp = ({ testid, message }) => (
                     "Instagram only shares stats with Professional accounts, and yours is still a personal one."}
             </span>
         </p>
-        <ol className="mt-4 list-decimal space-y-1 pl-8 text-amber-100/90">
+        <ol className="mt-4 list-decimal space-y-1 pl-8 text-state-pending/90">
             <li>Open Instagram and go to your profile</li>
-            <li>Tap the menu, then <span className="text-amber-50">Settings and privacy</span></li>
-            <li>Tap <span className="text-amber-50">Account type and tools</span></li>
-            <li>Tap <span className="text-amber-50">Switch to professional account</span> and pick <span className="text-amber-50">Creator</span></li>
+            <li>Tap the menu, then <span className="text-state-pending">Settings and privacy</span></li>
+            <li>Tap <span className="text-state-pending">Account type and tools</span></li>
+            <li>Tap <span className="text-state-pending">Switch to professional account</span> and pick <span className="text-state-pending">Creator</span></li>
         </ol>
-        <p className="mt-4 text-xs text-amber-100/80">
+        <p className="mt-4 text-xs text-state-pending/80">
             {/* The actual worry, answered before they ask it. */}
             It's free, your account stays public, and nothing about your posts or
             followers changes.
@@ -161,7 +161,7 @@ export default function InstagramConnect({ onChanged }) {
                 {connected && (
                     <span
                         data-testid={IDS.badge}
-                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-300"
+                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-state-approved/40 bg-state-approved/15 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-state-approved"
                     >
                         <BadgeCheck className="h-3.5 w-3.5" />
                         Verified
@@ -194,7 +194,7 @@ export default function InstagramConnect({ onChanged }) {
             {stale && (
                 <p
                     data-testid={IDS.stale}
-                    className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-100"
+                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 px-4 py-3 text-sm leading-relaxed text-state-pending"
                 >
                     {data.stale_reason || "Instagram access lapsed."} Your self-reported
                     figure is showing in the meantime.
@@ -237,7 +237,7 @@ export default function InstagramConnect({ onChanged }) {
                             // inert, so it looks inert: no brand colour, no
                             // hover, and a cursor that says so.
                             (data.configured
-                                ? "bg-ember-500 text-black hover:bg-ember-400 disabled:opacity-60"
+                                ? "bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-60"
                                 : "cursor-not-allowed border border-white/10 bg-white/5 text-muted-foreground hover:bg-white/5")
                         }
                     >
@@ -277,7 +277,7 @@ export default function InstagramConnect({ onChanged }) {
                             onClick={disconnect}
                             disabled={busy}
                             data-testid={IDS.disconnect}
-                            className="inline-flex min-h-[3rem] items-center gap-2 text-sm text-muted-foreground transition-colors duration-200 hover:text-red-300 disabled:opacity-50"
+                            className="inline-flex min-h-[3rem] items-center gap-2 text-sm text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-50"
                         >
                             <Unlink className="h-4 w-4" />
                             Disconnect

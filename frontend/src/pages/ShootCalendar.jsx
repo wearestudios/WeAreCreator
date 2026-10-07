@@ -80,9 +80,9 @@ function EntryRow({ entry }) {
         <li data-testid={IDS.entry(entry.id)}>
             <Link
                 to={entry.href}
-                className="flex items-start gap-3 rounded-md border border-white/10 bg-card/60 p-4 transition-colors duration-200 hover:border-ember-500/40"
+                className="flex items-start gap-3 rounded-md border border-white/10 bg-card/60 p-4 transition-colors duration-200 hover:border-primary/40"
             >
-                <span className="w-16 flex-none font-serif text-sm leading-tight text-ember-500">
+                <span className="w-16 flex-none font-serif text-sm leading-tight text-primary">
                     {timeOf(entry.starts_at)}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -177,7 +177,7 @@ export default function ShootCalendar() {
             <main className="mx-auto max-w-6xl px-6 py-12 md:py-16">
                 <header className="flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary">
                             Calendar
                         </p>
                         <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
@@ -192,7 +192,7 @@ export default function ShootCalendar() {
                             onClick={() =>
                                 setMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
                             }
-                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </button>
@@ -209,7 +209,7 @@ export default function ShootCalendar() {
                             onClick={() =>
                                 setMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
                             }
-                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </button>
@@ -230,7 +230,7 @@ export default function ShootCalendar() {
                         <Select value={campaign} onValueChange={setCampaign}>
                             <SelectTrigger
                                 data-testid={IDS.campaignFilter}
-                                className="h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                className="h-11 border-white/10 bg-card/60 focus:ring-primary"
                             >
                                 <SelectValue placeholder="All campaigns" />
                             </SelectTrigger>
@@ -290,7 +290,7 @@ export default function ShootCalendar() {
                                                 "min-h-[7rem] bg-card/60 p-2 " +
                                                 (otherMonth ? "opacity-40" : "") +
                                                 (key === todayKey
-                                                    ? " ring-1 ring-inset ring-ember-500/50"
+                                                    ? " ring-1 ring-inset ring-primary/50"
                                                     : "")
                                             }
                                         >
@@ -301,7 +301,7 @@ export default function ShootCalendar() {
                                                 {rows.length > 0 && (
                                                     <span
                                                         data-testid={IDS.dayCount(key)}
-                                                        className="rounded-full bg-ember-500/15 px-1.5 text-[10px] text-ember-500"
+                                                        className="rounded-full bg-primary/15 px-1.5 text-[10px] text-primary"
                                                     >
                                                         {rows.length}
                                                     </span>
@@ -312,7 +312,7 @@ export default function ShootCalendar() {
                                                     <li key={e.id}>
                                                         <Link
                                                             to={e.href}
-                                                            className="block truncate rounded-sm bg-white/5 px-1.5 py-1 text-[11px] leading-tight transition-colors duration-200 hover:bg-ember-500/15 hover:text-ember-500"
+                                                            className="block truncate rounded-sm bg-white/5 px-1.5 py-1 text-[11px] leading-tight transition-colors duration-200 hover:bg-primary/15 hover:text-primary"
                                                         >
                                                             {timeOf(e.starts_at)}{" "}
                                                             {e.creator_name}
@@ -353,7 +353,7 @@ export default function ShootCalendar() {
                                             className={
                                                 "text-xs uppercase tracking-[0.2em] " +
                                                 (key === todayKey
-                                                    ? "text-ember-500"
+                                                    ? "text-primary"
                                                     : "text-muted-foreground")
                                             }
                                         >

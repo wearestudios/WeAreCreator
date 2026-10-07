@@ -79,7 +79,7 @@ function CaseStudyCard({ study, i }) {
                             className="h-full w-full object-cover"
                         />
                     ) : (
-                        <div aria-hidden="true" className="h-full w-full bg-ember-500/10" />
+                        <div aria-hidden="true" className="h-full w-full bg-primary/10" />
                     )}
                 </div>
 
@@ -97,7 +97,7 @@ function CaseStudyCard({ study, i }) {
                     {study.headline_result && (
                         <p
                             data-testid={IDS.caseStudyResult(study.slug)}
-                            className="mt-auto pt-2 font-serif text-fluid-xl leading-tight text-ember-500"
+                            className="mt-auto pt-2 font-serif text-fluid-xl leading-tight text-primary"
                         >
                             {study.headline_result}
                         </p>
@@ -216,7 +216,7 @@ export default function CaseStudyStrip() {
                     <a
                         href={WORK_PATH}
                         data-testid={IDS.caseStudyAll}
-                        className="mt-8 inline-flex items-center gap-2 border-b border-ember-500/40 pb-1 text-sm text-ember-500 transition-colors duration-150 hover:border-ember-500"
+                        className="mt-8 inline-flex items-center gap-2 border-b border-primary/40 pb-1 text-sm text-primary transition-colors duration-150 hover:border-primary"
                     >
                         {COPY.all}
                         <span aria-hidden="true">→</span>

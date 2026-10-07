@@ -237,7 +237,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                 </div>
                 <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
                     <div
-                        className="h-full rounded-full bg-ember-500 transition-[width] duration-300"
+                        className="h-full rounded-full bg-primary transition-[width] duration-300"
                         style={{ width: total ? `${(done / total) * 100}%` : "0%" }}
                     />
                 </div>
@@ -267,7 +267,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                             className={
                                 "flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
                                 (on
-                                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                    ? "border-primary bg-primary/10 text-primary"
                                     : "border-white/10 text-muted-foreground")
                             }
                         >
@@ -317,7 +317,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             {row._queued && (
                                                 <span
                                                     data-testid={IDS.queued(row.collaboration_id)}
-                                                    className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-amber-200"
+                                                    className="inline-flex items-center gap-1 rounded-full border border-state-pending/30 bg-state-pending/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-state-pending"
                                                 >
                                                     <UploadCloud className="h-3 w-3" />
                                                     Waiting
@@ -337,7 +337,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             href={`tel:${row.phone.replace(/\s+/g, "")}`}
                                             aria-label={`Call ${row.name}`}
                                             data-testid={IDS.call(row.collaboration_id)}
-                                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-ember-500 ${TOUCH}`}
+                                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                                         >
                                             <Phone className="h-5 w-5" />
                                         </a>
@@ -350,12 +350,12 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             onClick={() => checkIn(row)}
                                             aria-label={`Check in ${row.name}`}
                                             data-testid={IDS.checkIn(row.collaboration_id)}
-                                            className={`grid w-16 flex-none place-items-center rounded-md bg-ember-500 text-black transition-colors duration-200 hover:bg-ember-400 disabled:opacity-50 ${TOUCH}`}
+                                            className={`grid w-16 flex-none place-items-center rounded-md bg-primary text-primary-foreground transition-colors duration-200 hover:bg-primary-hover disabled:opacity-50 ${TOUCH}`}
                                         >
                                             <Check className="h-6 w-6" />
                                         </button>
                                     ) : (
-                                        <div className="grid w-16 flex-none place-items-center rounded-md border border-white/10 text-emerald-300">
+                                        <div className="grid w-16 flex-none place-items-center rounded-md border border-white/10 text-state-approved">
                                             <Check className="h-5 w-5" />
                                         </div>
                                     )}
@@ -398,7 +398,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                                     disabled={busy}
                                                     onClick={() => setNoShowFor(row)}
                                                     data-testid={IDS.noShow(row.collaboration_id)}
-                                                    className={`rounded-md border-red-500/30 bg-transparent text-red-300 hover:bg-red-500/10 ${TOUCH}`}
+                                                    className={`rounded-md border-state-rejected/30 bg-transparent text-state-rejected hover:bg-state-rejected/10 ${TOUCH}`}
                                                 >
                                                     <UserX className="mr-2 h-4 w-4" />
                                                     No-show
@@ -494,7 +494,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={NO_SHOW_IDS.note}
                     placeholder="e.g. Waited an hour, no answer on the phone"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                 />
                 {err && (
                     <p data-testid={NO_SHOW_IDS.error} className="mt-3 text-sm text-destructive">
@@ -508,7 +508,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                         busy={busy}
                         onClick={submit}
                         data-testid={NO_SHOW_IDS.submit}
-                        className="border border-red-500/40 bg-transparent text-red-300 hover:bg-red-500/10"
+                        className="border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
                     >
                         Report no-show
                     </BigButton>
@@ -581,7 +581,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                                             TOUCH +
                                             " " +
                                             (on
-                                                ? "border-ember-500 bg-ember-500/10"
+                                                ? "border-primary bg-primary/10"
                                                 : "border-white/10 hover:border-white/25")
                                         }
                                     >
@@ -605,7 +605,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={RESCHEDULE_IDS.reason}
                     placeholder="Why (optional) — e.g. stuck in traffic"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                 />
 
                 <div className="mt-6 flex flex-col gap-3">
@@ -615,7 +615,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                         disabled={!picked}
                         onClick={() => onSubmit({ slot_id: picked, reason: reason.trim() || null })}
                         data-testid={RESCHEDULE_IDS.submit}
-                        className="bg-ember-500 text-black hover:bg-ember-400"
+                        className="bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         Move them
                     </BigButton>

@@ -27,7 +27,7 @@ export default function PlatformProtections({ protections }) {
 
     return (
         <section data-testid={IDS.protections}>
-            <p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-ember-500">
+            <p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-primary">
                 <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />
                 What you get here
             </p>

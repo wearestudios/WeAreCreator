@@ -3,12 +3,12 @@ import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TOAST_DURATION } from "@/lib/feedback";
-import { AuthProvider, BRAND_ROLES } from "@/context/AuthContext";
+import { AuthProvider, BRAND_ROLES, useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import RouteFade from "@/components/motion/RouteFade";
-import { clearTheme, isConsolePath } from "@/lib/consoleTheme";
+import { applyTheme, surfaceFor } from "@/lib/surfaceTheme";
 import RouteFallback from "@/components/RouteFallback";
 import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
@@ -202,11 +202,27 @@ function RouteBoundary({ children }) {
  * theme that is already absent costs nothing, so this does nothing at all on
  * the overwhelming majority of navigations.
  */
-function ConsoleThemeGuard() {
+/**
+ * The only thing that writes the surface attribute.
+ *
+ * **One writer, because the alternative is two and they drift.** The console
+ * used to apply its own theme on mount and clear it on unmount, which worked
+ * while light was a single opt-in screen; with the whole product on the light
+ * surface, an unmount handler racing a navigation guard is how a dashboard
+ * ends up navy for a frame. This runs on every path change and the console
+ * only ever *tells* it what the account chose.
+ *
+ * The pre-paint script in `public/index.html` has already done this on a hard
+ * load. This is what handles a soft navigation, and what carries the account's
+ * console choice once `/auth/me` has answered.
+ */
+function SurfaceGuard() {
     const { pathname } = useLocation();
+    const { user } = useAuth();
+    const accountTheme = user?.console_theme ?? null;
     React.useEffect(() => {
-        if (!isConsolePath(pathname)) clearTheme();
-    }, [pathname]);
+        applyTheme(surfaceFor(pathname, accountTheme));
+    }, [pathname, accountTheme]);
     return null;
 }
 
@@ -257,7 +273,7 @@ function App() {
                         same pixels animated twice at two durations. */}
                     {/* Takes `data-theme` off anything that is not the
                         console — see the component. */}
-                    <ConsoleThemeGuard />
+                    <SurfaceGuard />
                     <RouteFade>
                     <Routes>
                         <Route path="/" element={<Landing />} />

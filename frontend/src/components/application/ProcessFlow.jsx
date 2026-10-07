@@ -27,9 +27,9 @@ import useWide from "@/lib/useWide";
 // Who is being waited on. The creator gets the accent because those are the
 // steps where nobody at WeAre can do anything except chase.
 const OWNER = {
-    admin: { label: "WeAre", tone: "text-sky-300 border-sky-500/30 bg-sky-500/10" },
-    brand: { label: "The brand", tone: "text-violet-300 border-violet-500/30 bg-violet-500/10" },
-    creator: { label: "The creator", tone: "text-ember-500 border-ember-500/40 bg-ember-500/15" },
+    admin: { label: "WeAre", tone: "text-state-progress border-state-progress/30 bg-state-progress/10" },
+    brand: { label: "The brand", tone: "text-state-done border-state-done/30 bg-state-done/10" },
+    creator: { label: "The creator", tone: "text-primary border-primary/40 bg-primary/15" },
 };
 
 const BANNER_TONE = {
@@ -44,8 +44,8 @@ const BANNER_TONE = {
     // Something came back. This one *is* a call to action.
     attention: {
         icon: AlertTriangle,
-        className: "border-amber-500/30 bg-amber-500/10 text-amber-200",
-        iconClass: "text-amber-300",
+        className: "border-state-pending/30 bg-state-pending/10 text-state-pending",
+        iconClass: "text-state-pending",
     },
 };
 
@@ -58,7 +58,7 @@ const Stage = ({ stage, index }) => (
         className={
             "flex flex-1 flex-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition-colors duration-150 " +
             (stage.current
-                ? "border-ember-500/40 bg-ember-500/15 text-ember-500"
+                ? "border-primary/40 bg-primary/15 text-primary"
                 : stage.done
                   ? "border-white/10 bg-white/5 text-muted-foreground"
                   : "border-white/10 bg-transparent text-muted-foreground/50")
@@ -113,20 +113,20 @@ export default function ProcessFlow({ process, className = "" }) {
                         aria-expanded={open}
                         onClick={() => setOpen((v) => !v)}
                         data-testid={APPLICATION.processToggle}
-                        className="flex min-h-[2.75rem] w-full items-center gap-3 rounded-md border border-ember-500/40 bg-ember-500/15 px-4 py-2 text-left transition-colors duration-150"
+                        className="flex min-h-[2.75rem] w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-left transition-colors duration-150"
                     >
                         <span className="min-w-0 flex-1">
-                            <span className="block text-[10px] uppercase tracking-[0.2em] text-ember-500/80">
+                            <span className="block text-[10px] uppercase tracking-[0.2em] text-primary/80">
                                 {number ? `Stage ${number} of ${count}` : "Not on the line"}
                             </span>
-                            <span className="mt-0.5 block truncate text-sm text-ember-500">
+                            <span className="mt-0.5 block truncate text-sm text-primary">
                                 {current?.label || "—"}
                             </span>
                         </span>
                         <ChevronDown
                             aria-hidden="true"
                             className={
-                                "h-4 w-4 flex-none text-ember-500 transition-transform duration-150 " +
+                                "h-4 w-4 flex-none text-primary transition-transform duration-150 " +
                                 (open ? "rotate-180" : "")
                             }
                         />

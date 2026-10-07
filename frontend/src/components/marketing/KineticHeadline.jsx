@@ -138,7 +138,7 @@ export function KineticHeadline({
                     <span className="invisible" aria-hidden>
                         {longest}
                     </span>
-                    <span className="absolute inset-0 whitespace-nowrap text-ember-500">
+                    <span className="absolute inset-0 whitespace-nowrap text-primary">
                         {reduced ? (
                             phrases[0]
                         ) : (

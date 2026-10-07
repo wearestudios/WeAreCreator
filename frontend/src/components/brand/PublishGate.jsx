@@ -34,7 +34,7 @@ export default function PublishGate({ verification, trust }) {
         return (
             <p
                 data-testid={IDS.trusted}
-                className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-100/90"
+                className="rounded-md border border-state-approved/30 bg-state-approved/10 p-4 text-sm text-state-approved/90"
             >
                 This one goes live as soon as you send it — you've had{" "}
                 {trust.approvals} campaigns approved without a single one sent back,
@@ -85,12 +85,12 @@ export default function PublishGate({ verification, trust }) {
     return (
         <div
             data-testid={IDS.gate}
-            className="rounded-md border border-amber-400/30 bg-amber-400/10 p-4"
+            className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
         >
-            <p className="flex items-start gap-2 text-sm text-amber-100/90">
+            <p className="flex items-start gap-2 text-sm text-state-pending/90">
                 <ShieldAlert
                     aria-hidden="true"
-                    className="mt-0.5 h-4 w-4 flex-none text-amber-300"
+                    className="mt-0.5 h-4 w-4 flex-none text-state-pending"
                 />
                 <span>
                     <span className="block font-medium text-foreground">
@@ -103,7 +103,7 @@ export default function PublishGate({ verification, trust }) {
                 <Link
                     to="/onboarding/brand"
                     data-testid={IDS.gateLink}
-                    className="mt-3 inline-block text-sm text-ember-500 underline underline-offset-4 hover:no-underline"
+                    className="mt-3 inline-block text-sm text-primary underline underline-offset-4 hover:no-underline"
                 >
                     {state === "rejected" ? "Fix your details" : "Verify your business"}
                 </Link>

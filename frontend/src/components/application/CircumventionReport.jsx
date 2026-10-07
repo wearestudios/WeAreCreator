@@ -46,7 +46,7 @@ export default function CircumventionReport({ collabId, actions = {}, open, onRe
         return (
             <p
                 data-testid={IDS.reportPending}
-                className="flex items-start gap-2 text-xs text-amber-300/90"
+                className="flex items-start gap-2 text-xs text-state-pending/90"
             >
                 <ShieldAlert aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
@@ -116,7 +116,7 @@ export default function CircumventionReport({ collabId, actions = {}, open, onRe
                                 data-testid={IDS.reportReason}
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
-                                className="min-h-[2.75rem] w-full rounded-lg border border-white/10 bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                className="min-h-[2.75rem] w-full rounded-lg border border-white/10 bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             >
                                 {CIRCUMVENTION_REASONS.map((r) => (
                                     <option key={r.value} value={r.value}>

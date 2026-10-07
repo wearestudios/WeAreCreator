@@ -108,8 +108,8 @@ export default function Signup() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-background/40 via-background/60 to-background" />
                 <div className="relative flex h-full flex-col justify-between p-12">
-                    <Link to="/" className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-ember-500">
-                        WeAre <span className="text-ember-500">Creators</span>
+                    <Link to="/" className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center font-serif text-2xl transition-colors duration-200 hover:text-primary">
+                        WeAre <span className="text-primary">Creators</span>
                     </Link>
                     <div className="max-w-md">
                         {/* Was "Invite-only" over "Get on the list", which
@@ -120,7 +120,7 @@ export default function Signup() {
                             says. Telling somebody they are queueing for
                             admission at the moment they are filling in the
                             form is also the worst possible place to say it. */}
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">Free to join</p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary">Free to join</p>
                         <p className="mt-4 font-serif text-4xl leading-tight">
                             Sign up in a minute. Every profile is reviewed by our team
                             before you can apply to a brief.
@@ -131,11 +131,11 @@ export default function Signup() {
 
             <div className="flex items-center justify-center bg-background p-6 md:p-12">
                 <div className="w-full max-w-md">
-                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
-                        WeAre <span className="text-ember-500">Creators</span>
+                    <Link to="/" className="mb-10 -my-2 inline-flex min-h-[2.75rem] items-center py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background font-serif text-xl md:hidden">
+                        WeAre <span className="text-primary">Creators</span>
                     </Link>
-                    <p className="text-xs uppercase tracking-[0.22em] text-ember-500/90">
-                        <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-ember-500/80 align-middle" />
+                    <p className="text-xs uppercase tracking-[0.22em] text-primary">
+                        <span className="mr-2 inline-block h-px w-6 translate-y-[-3px] bg-primary/80 align-middle" />
                         Create account
                     </p>
                     <h1 className="mt-5 font-serif text-fluid-5xl leading-[0.95] tracking-tight">
@@ -146,7 +146,7 @@ export default function Signup() {
                         <Link
                             to="/login"
                             data-testid="link-to-login"
-                            className="text-ember-500 underline-offset-4 hover:underline"
+                            className="text-primary underline-offset-4 hover:underline"
                         >
                             Log in
                         </Link>
@@ -167,11 +167,11 @@ export default function Signup() {
                                         className={
                                             "group relative rounded-md border p-4 text-left transition-colors duration-200 " +
                                             (active
-                                                ? "border-ember-500 bg-ember-500/10"
+                                                ? "border-primary bg-primary/10"
                                                 : "border-white/10 bg-card grain-surface hover:border-white/25")
                                         }
                                     >
-                                        <Icon className={"h-5 w-5 " + (active ? "text-ember-500" : "text-muted-foreground")} />
+                                        <Icon className={"h-5 w-5 " + (active ? "text-primary" : "text-muted-foreground")} />
                                         <div className="mt-3 text-sm font-medium text-foreground">{title}</div>
                                         <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
                                     </button>
@@ -229,7 +229,7 @@ export default function Signup() {
                                         onBlur={() => touch("name")}
                                         aria-invalid={(touched.name && Boolean(nameProblem)) || undefined}
                                         className={
-                                            "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                            "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                             (touched.name && nameProblem
                                                 ? "border-destructive/60"
                                                 : "border-white/10")
@@ -275,7 +275,7 @@ export default function Signup() {
                                                     undefined
                                                 }
                                                 className={
-                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                                     (touched.managerName && managerNameProblem
                                                         ? "border-destructive/60"
                                                         : "border-white/10")
@@ -305,7 +305,7 @@ export default function Signup() {
                                                 <SelectTrigger
                                                     id="manager-designation"
                                                     data-testid="signup-manager-designation-input"
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-ember-500"
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
                                                 >
                                                     <SelectValue placeholder="Pick one" />
                                                 </SelectTrigger>
@@ -333,7 +333,7 @@ export default function Signup() {
                                                     data-testid="signup-manager-role-other"
                                                     value={roleOther}
                                                     onChange={(e) => setRoleOther(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                                     placeholder="e.g. Head of Partnerships"
                                                 />
                                             )}
@@ -360,7 +360,7 @@ export default function Signup() {
                                                     undefined
                                                 }
                                                 className={
-                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-ember-500 " +
+                                                    "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                                     (touched.managerEmail && managerEmailProblem
                                                         ? "border-destructive/60"
                                                         : "border-white/10")
@@ -395,7 +395,7 @@ export default function Signup() {
                                         data-testid={CIRCUMVENTION.terms}
                                         className="rounded-lg border border-white/10 bg-card p-4 text-xs leading-relaxed text-muted-foreground"
                                     >
-                                        <span className="mb-1.5 block text-[10px] uppercase tracking-[0.2em] text-ember-500">
+                                        <span className="mb-1.5 block text-[10px] uppercase tracking-[0.2em] text-primary">
                                             One rule worth reading
                                         </span>
                                         {CIRCUMVENTION_TERMS}
@@ -410,14 +410,14 @@ export default function Signup() {
                                         data-testid="signup-terms-checkbox"
                                         checked={acceptedTerms}
                                         onCheckedChange={(v) => setAcceptedTerms(v === true)}
-                                        className="mt-0.5 h-5 w-5 flex-none border-white/25 focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[state=checked]:border-ember-500 data-[state=checked]:bg-ember-500 data-[state=checked]:text-black"
+                                        className="mt-0.5 h-5 w-5 flex-none border-white/25 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                                     />
                                     <span>
                                         I agree to the{" "}
                                         <Link
                                             to="/terms"
                                             data-testid="signup-terms-link"
-                                            className="text-ember-500 underline-offset-4 hover:underline"
+                                            className="text-primary underline-offset-4 hover:underline"
                                         >
                                             terms
                                         </Link>{" "}
@@ -425,7 +425,7 @@ export default function Signup() {
                                         <Link
                                             to="/privacy"
                                             data-testid="signup-privacy-link"
-                                            className="text-ember-500 underline-offset-4 hover:underline"
+                                            className="text-primary underline-offset-4 hover:underline"
                                         >
                                             privacy policy
                                         </Link>

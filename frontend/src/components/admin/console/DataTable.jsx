@@ -332,7 +332,7 @@ export function DataTable({
                                               // a colour — it has to be legible
                                               // beside a status colour without
                                               // competing with it.
-                                              "bg-tint/[0.06] shadow-[inset_2px_0_0_0_theme(colors.ember.500)]"
+                                              "bg-tint/[0.06] shadow-[inset_2px_0_0_0_hsl(var(--primary))]"
                                             : "hover:bg-tint/[0.03]"
                                     }`}
                                 >

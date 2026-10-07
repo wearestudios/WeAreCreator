@@ -108,13 +108,13 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                 onClick={() => setOpen((v) => !v)}
                 data-testid={WORK_NOTES.toggle(collaborationId)}
                 aria-expanded={open}
-                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ember-500"
+                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
             >
                 <span className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                     <MessageSquare className="h-3.5 w-3.5" />
                     Work notes
                     {notes.length > 0 && (
-                        <span className="text-ember-500">{notes.length}</span>
+                        <span className="text-primary">{notes.length}</span>
                     )}
                 </span>
                 <span className="text-xs text-muted-foreground">
@@ -133,7 +133,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                             {agreed != null ? "Agreed" : "They quoted"}
                         </span>
                         <span className="inline-flex items-baseline font-serif text-2xl">
-                            <IndianRupee className="h-4 w-4 text-ember-500" />
+                            <IndianRupee className="h-4 w-4 text-primary" />
                             {formatRupees(agreed ?? quoted)}
                         </span>
                         {agreed != null && quoted != null && agreed !== quoted && (

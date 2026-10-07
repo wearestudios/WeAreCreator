@@ -81,7 +81,7 @@ export const VIEWPORT = { once: true, margin: "-60px" };
  */
 export const CARD_HOVER =
     "transition-[transform,border-color] duration-200 ease-out " +
-    "hover:-translate-y-0.5 hover:border-ember-500/40 " +
+    "hover:-translate-y-0.5 hover:border-primary/40 " +
     "motion-reduce:transform-none motion-reduce:transition-none";
 
 /**

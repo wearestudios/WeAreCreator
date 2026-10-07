@@ -99,7 +99,7 @@ function Hero() {
 
             <div
                 aria-hidden
-                className="pointer-events-none absolute -right-40 -top-32 h-[560px] w-[560px] rounded-full bg-ember-500/10 blur-[130px]"
+                className="pointer-events-none absolute -right-40 -top-32 h-[560px] w-[560px] rounded-full bg-primary/10 blur-[130px]"
             />
 
             <div className="relative mx-auto max-w-7xl px-6 pb-16 pt-14 md:pb-24 md:pt-20">
@@ -108,7 +108,7 @@ function Hero() {
                         data-testid={HERO_IDS.eyebrow}
                         className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                     >
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500" />
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
                         {HERO_EYEBROW}
                     </p>
                 </Reveal>
@@ -133,7 +133,7 @@ function Hero() {
                         <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
                             <Button
                                 size="lg"
-                                className="group h-12 w-full rounded-full bg-ember-500 px-7 text-black transition-colors duration-200 hover:bg-ember-400 sm:w-auto"
+                                className="group h-12 w-full rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover sm:w-auto"
                             >
                                 I&apos;m a creator
                                 <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
@@ -189,7 +189,7 @@ function Problem() {
                         <Link
                             to="/how-it-works"
                             data-testid={PAGE_IDS.howItWorksLink}
-                            className="text-ember-500 underline-offset-4 transition-colors duration-200 hover:underline"
+                            className="text-primary underline-offset-4 transition-colors duration-200 hover:underline"
                         >
                             See how
                         </Link>

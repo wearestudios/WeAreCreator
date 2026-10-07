@@ -79,28 +79,28 @@ const STATUS_META = {
     // With us, not with creators — see publish_brand_campaign on the server.
     pending_review: {
         label: "In review",
-        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
     },
     upcoming: {
         label: "Upcoming",
-        tone: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+        tone: "bg-state-progress/15 text-state-progress border-state-progress/30",
     },
     open: {
         label: "Live",
-        tone: "bg-ember-500/15 text-ember-500 border-ember-500/30",
+        tone: "bg-primary/15 text-primary border-primary/30",
     },
     // Stopped by us, not over — see pause_campaign on the server.
     paused: {
         label: "Paused",
-        tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
     },
     in_progress: {
         label: "In progress",
-        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        tone: "bg-state-done/15 text-state-done border-state-done/30",
     },
     completed: {
         label: "Completed",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
     closed: {
         label: "Closed",
@@ -122,7 +122,7 @@ const StatusPill = ({ status }) => {
             }
         >
             {status === "open" && (
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-ember-500 animate-pulse" />
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
             )}
             {meta.label}
         </span>
@@ -150,7 +150,7 @@ const StatTile = ({ label, value, Icon, highlight }) => (
         className={
             "rounded-md border p-5 transition-colors duration-200 " +
             (highlight
-                ? "border-ember-500/40 bg-ember-500/10"
+                ? "border-primary/40 bg-primary/10"
                 : "border-white/10 bg-card grain-surface")
         }
     >
@@ -158,12 +158,12 @@ const StatTile = ({ label, value, Icon, highlight }) => (
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                 {label}
             </p>
-            {Icon && <Icon className="h-4 w-4 text-ember-500" />}
+            {Icon && <Icon className="h-4 w-4 text-primary" />}
         </div>
         <div
             className={
                 "mt-4 font-serif text-3xl md:text-4xl " +
-                (highlight ? "text-ember-500" : "")
+                (highlight ? "text-primary" : "")
             }
         >
             {value}
@@ -377,7 +377,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                     creator's header follows: a hardcoded one
                                     is wrong for everybody it is not about, and
                                     this screen already knows the answer. */}
-                                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                     {data?.profile?.city
                                         ? `Brand · ${data.profile.city}`
                                         : "Brand"}
@@ -421,7 +421,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                     so the way to them starts with the brief —
                                     which is the button beside this one. */}
                                 <Link to="/campaigns/new" data-testid="brand-header-post-btn">
-                                    <Button className="group rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                    <Button className="group rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                         <Plus className="mr-1 h-4 w-4" />
                                         Post a campaign
                                         <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
@@ -440,25 +440,25 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         {justOnboarded && (
                             <div
                                 data-testid="brand-what-happens-next"
-                                className="mt-8 rounded-md border border-ember-500/30 bg-ember-500/10 p-5 md:p-6"
+                                className="mt-8 rounded-md border border-primary/30 bg-primary/10 p-5 md:p-6"
                             >
-                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
                                     <Sparkles className="h-4 w-4" />
                                     What happens next
                                 </p>
                                 <ol className="mt-4 space-y-3 text-sm leading-relaxed text-foreground/90">
                                     <li>
-                                        <span className="text-ember-500">1 ·</span> We check
+                                        <span className="text-primary">1 ·</span> We check
                                         your business details. That usually takes a working
                                         day, and we'll WhatsApp you either way.
                                     </li>
                                     <li>
-                                        <span className="text-ember-500">2 ·</span> Post your
+                                        <span className="text-primary">2 ·</span> Post your
                                         first brief. You can write and save it now — it goes
                                         in front of creators once you're verified.
                                     </li>
                                     <li>
-                                        <span className="text-ember-500">3 ·</span> Expect the
+                                        <span className="text-primary">3 ·</span> Expect the
                                         first applications within a day or two of going live,
                                         and most of them inside the first week. A brief with a
                                         cover image and a clear fee fills faster than one
@@ -474,7 +474,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         {profileMissing && (
                             <div
                                 data-testid="brand-profile-incomplete"
-                                className="mt-8 flex items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-300"
+                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm text-state-pending"
                             >
                                 <Sparkles className="mt-0.5 h-4 w-4 flex-none" />
                                 <p>
@@ -530,7 +530,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         <section data-testid="brand-campaigns-section" className="mt-14">
                             <div className="flex items-baseline justify-between">
                                 <div>
-                                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                         Your campaigns
                                     </p>
                                     <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
@@ -572,9 +572,9 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                             data-testid={EXECUTION.filterOption(opt.value)}
                                             onClick={() => setExecution(opt.value)}
                                             className={
-                                                "min-h-[2.75rem] rounded-full border px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
+                                                "min-h-[2.75rem] rounded-full border px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
                                                 (on
-                                                    ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                                    ? "border-primary bg-primary/10 text-primary"
                                                     : "border-white/10 text-muted-foreground hover:border-white/25")
                                             }
                                         >
@@ -597,7 +597,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         <button
                                             type="button"
                                             onClick={() => setExecution("all")}
-                                            className="mt-3 min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-ember-500 transition-colors duration-200 hover:text-ember-400 md:min-h-0"
+                                            className="mt-3 min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-primary transition-colors duration-200 hover:text-primary-hover md:min-h-0"
                                         >
                                             Show all campaigns
                                         </button>
@@ -607,7 +607,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         data-testid="brand-campaigns-empty"
                                         className="flex flex-col items-center gap-3 px-6 py-16 text-center"
                                     >
-                                        <Compass className="h-6 w-6 text-ember-500" />
+                                        <Compass className="h-6 w-6 text-primary" />
                                         <p className="font-serif text-2xl">
                                             No campaigns yet.
                                         </p>
@@ -616,7 +616,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                             reaching verified creators across Bengaluru immediately.
                                         </p>
                                         <Link to="/campaigns/new" className="mt-4">
-                                            <Button className="rounded-full bg-ember-500 text-black hover:bg-ember-400">
+                                            <Button className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
                                                 <Plus className="mr-1 h-4 w-4" />
                                                 Post a campaign
                                             </Button>
@@ -667,7 +667,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                     className={
                                                                         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] " +
                                                                         (isPrivate(c)
-                                                                            ? "border-ember-500/40 bg-ember-500/10 text-ember-500"
+                                                                            ? "border-primary/40 bg-primary/10 text-primary"
                                                                             : "border-white/10 text-muted-foreground")
                                                                     }
                                                                 >
@@ -707,7 +707,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             <Link
                                                                 to={`/brand/campaigns/${c.id}/applicants`}
                                                                 data-testid={`brand-campaign-applicants-link-${c.id}`}
-                                                                className="group text-right transition-colors duration-200 hover:text-ember-500"
+                                                                className="group text-right transition-colors duration-200 hover:text-primary"
                                                             >
                                                                 <div
                                                                     data-testid={`brand-campaign-applicants-${c.id}`}
@@ -715,7 +715,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 >
                                                                     {c.applicant_count}
                                                                 </div>
-                                                                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground group-hover:text-ember-500">
+                                                                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground group-hover:text-primary">
                                                                     {c.applicant_count === 1
                                                                         ? "applicant"
                                                                         : "applicants"}
@@ -727,7 +727,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 {c.awaiting_decision > 0 && (
                                                                     <span
                                                                         data-testid={`brand-campaign-awaiting-${c.id}`}
-                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary"
                                                                     >
                                                                         {c.awaiting_decision} waiting on you
                                                                     </span>
@@ -758,7 +758,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 disabled={busy}
                                                                 data-testid={`brand-campaign-publish-${c.id}`}
                                                                 onClick={() => publish(c)}
-                                                                className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                                                className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                                                             >
                                                                 <Send className="mr-1.5 h-3.5 w-3.5" />
                                                                 Send for review
@@ -907,7 +907,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 onClick={() =>
                                                                     setConfirm({ kind: "delete", campaign: c })
                                                                 }
-                                                                className="rounded-full border-red-500/40 bg-transparent text-red-300 hover:bg-red-500/10"
+                                                                className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
                                                             >
                                                                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                                                                 Delete
@@ -930,7 +930,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             <span className="text-foreground">Signed in as</span>{" "}
                             {/* Accounts created over WhatsApp have no email. */}
                             {user.email || user.phone || user.name} ·{" "}
-                            <span className="uppercase tracking-[0.15em] text-ember-500">
+                            <span className="uppercase tracking-[0.15em] text-primary">
                                 {user.role}
                             </span>
                         </div>
@@ -988,7 +988,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             onClick={() =>
                                 pauseCampaign(pausing.campaign, pausing.reason.trim())
                             }
-                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             Pause campaign
                         </Button>
@@ -1042,8 +1042,8 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             }
                             className={
                                 confirm.kind === "delete"
-                                    ? "rounded-full bg-red-500/90 text-black hover:bg-red-400"
-                                    : "rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                    ? "rounded-full bg-state-rejected/90 text-primary-foreground hover:bg-state-rejected"
+                                    : "rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             }
                         >
                             {confirm.kind === "delete" ? "Delete draft" : "Close campaign"}

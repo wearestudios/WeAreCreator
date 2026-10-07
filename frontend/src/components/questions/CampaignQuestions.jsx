@@ -43,7 +43,7 @@ export function QuestionBubble({ q }) {
                 className={
                     "max-w-[85%] rounded-lg border px-4 py-3 " +
                     (mine
-                        ? "border-ember-500/25 bg-ember-500/10"
+                        ? "border-primary/25 bg-primary/10"
                         : "border-white/10 bg-white/5")
                 }
             >
@@ -106,7 +106,7 @@ export default function CampaignQuestions({ campaignId }) {
             data-testid={QUESTIONS.section}
             className="mt-12 rounded-md border border-white/10 bg-card p-6 md:p-8 grain-surface"
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
                 <MessageCircleQuestion className="h-4 w-4" />
                 Questions
             </p>
@@ -144,7 +144,7 @@ export default function CampaignQuestions({ campaignId }) {
                                 value={draft}
                                 onChange={(e) => setDraft(e.target.value)}
                                 placeholder={`Ask ${sideInline(thread.answered_by)} anything about this brief…`}
-                                className="min-h-[72px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="min-h-[72px] border-white/10 bg-card/60 focus-visible:ring-primary"
                             />
                             <div className="mt-3 flex items-center justify-between gap-3">
                                 <p className="text-xs text-muted-foreground">
@@ -155,7 +155,7 @@ export default function CampaignQuestions({ campaignId }) {
                                     onClick={send}
                                     disabled={sending || !draft.trim()}
                                     data-testid={QUESTIONS.send}
-                                    className="h-11 rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400"
+                                    className="h-11 rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary-hover"
                                 >
                                     {sending ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />

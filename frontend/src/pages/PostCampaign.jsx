@@ -603,7 +603,7 @@ export default function PostCampaign() {
                     type="button"
                     onClick={() => navigate("/dashboard")}
                     data-testid="post-back-btn"
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Dashboard
@@ -620,7 +620,7 @@ export default function PostCampaign() {
                     </div>
                 )}
 
-                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-primary">
                     {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
                 <h1 className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight">
@@ -678,14 +678,14 @@ export default function PostCampaign() {
                                         className={
                                             "rounded-md border p-5 text-left transition-colors duration-200 disabled:opacity-50 " +
                                             (on
-                                                ? "border-ember-500 bg-ember-500/10"
+                                                ? "border-primary bg-primary/10"
                                                 : "border-white/10 bg-card/60 hover:border-white/25")
                                         }
                                     >
                                         <span
                                             className={
                                                 "block text-sm " +
-                                                (on ? "text-ember-500" : "text-foreground")
+                                                (on ? "text-primary" : "text-foreground")
                                             }
                                         >
                                             {opt.label}
@@ -721,7 +721,7 @@ export default function PostCampaign() {
                                             type="date"
                                             value={startDate}
                                             onChange={(e) => setStartDate(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         />
                                     </div>
                                 </div>
@@ -737,7 +737,7 @@ export default function PostCampaign() {
                                             type="date"
                                             value={endDate}
                                             onChange={(e) => setEndDate(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         />
                                     </div>
                                 </div>
@@ -757,7 +757,7 @@ export default function PostCampaign() {
                                                 type="date"
                                                 value={eventDate}
                                                 onChange={(e) => setEventDate(e.target.value)}
-                                                className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                                className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                             />
                                         </div>
                                     </div>
@@ -777,7 +777,7 @@ export default function PostCampaign() {
                                                     type="time"
                                                     value={eventTime}
                                                     onChange={(e) => setEventTime(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                                 />
                                             </div>
                                             <div>
@@ -794,7 +794,7 @@ export default function PostCampaign() {
                                                     placeholder="Minutes"
                                                     value={durationMinutes}
                                                     onChange={(e) => setDurationMinutes(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                                 />
                                             </div>
                                         </>
@@ -825,7 +825,7 @@ export default function PostCampaign() {
                                                             next[i] = { ...next[i], time: e.target.value };
                                                             setSittings(next);
                                                         }}
-                                                        className="h-11 w-36 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                        className="h-11 w-36 border-white/10 bg-card/60 focus-visible:ring-primary"
                                                     />
                                                     <Input
                                                         type="number"
@@ -838,7 +838,7 @@ export default function PostCampaign() {
                                                             next[i] = { ...next[i], capacity: e.target.value };
                                                             setSittings(next);
                                                         }}
-                                                        className="h-11 w-24 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                                        className="h-11 w-24 border-white/10 bg-card/60 focus-visible:ring-primary"
                                                     />
                                                     <span className="text-xs text-muted-foreground">places</span>
                                                     {sittings.length > 1 && (
@@ -862,7 +862,7 @@ export default function PostCampaign() {
                                             onClick={() =>
                                                 setSittings([...sittings, { time: "", capacity: "4" }])
                                             }
-                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-xs uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:text-ember-400 sm:min-h-0"
+                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-xs uppercase tracking-[0.15em] text-primary transition-colors duration-200 hover:text-primary-hover sm:min-h-0"
                                         >
                                             Add a sitting
                                         </button>
@@ -890,7 +890,7 @@ export default function PostCampaign() {
                                     data-testid="pc-disclosure"
                                     value={requiredDisclosure}
                                     onChange={(e) => setRequiredDisclosure(e.target.value)}
-                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     {Object.entries(DISCLOSURE_LABELS).map(([k, label]) => (
                                         <option key={k} value={k}>
@@ -919,7 +919,7 @@ export default function PostCampaign() {
                                         setUsageRights(e.target.value);
                                         if (!needsDuration(e.target.value)) setUsageDuration("");
                                     }}
-                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     {Object.entries(USAGE_RIGHTS).map(([k, label]) => (
                                         <option key={k} value={k}>
@@ -948,7 +948,7 @@ export default function PostCampaign() {
                                             placeholder="e.g. 90"
                                             value={usageDuration}
                                             onChange={(e) => setUsageDuration(e.target.value)}
-                                            className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                            className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                         />
                                     </div>
                                 )}
@@ -987,7 +987,7 @@ export default function PostCampaign() {
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 maxLength={140}
-                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                 placeholder="e.g. Two reels for the spring range"
                             />
                         </div>
@@ -1002,7 +1002,7 @@ export default function PostCampaign() {
                                 maxLength={5000}
                                 value={brief}
                                 onChange={(e) => setBrief(e.target.value)}
-                                className="mt-2 min-h-[140px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                className="mt-2 min-h-[140px] border-white/10 bg-card/60 focus-visible:ring-primary"
                                 placeholder="What the campaign is about, the vibe you're after, dates, and anything creators should know upfront."
                             />
                         </div>
@@ -1088,7 +1088,7 @@ export default function PostCampaign() {
                                 data-testid="pc-compensation-barter-note"
                                 className="rounded-md border border-white/10 bg-card/60 p-5"
                             >
-                                <p className="text-sm text-ember-500">Barter</p>
+                                <p className="text-sm text-primary">Barter</p>
                                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                                     We set this campaign up as barter. The rest of the brief
                                     is yours to edit — talk to us if you want it paid.
@@ -1112,16 +1112,16 @@ export default function PostCampaign() {
                                             data-testid={`pc-compensation-${opt.value}`}
                                             onClick={() => setCompensationType(opt.value)}
                                             className={
-                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
-                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    ? "border-primary bg-primary/10"
                                                     : "border-white/10 bg-card/60 hover:border-white/25")
                                             }
                                         >
                                             <span
                                                 className={
                                                     "block text-sm " +
-                                                    (on ? "text-ember-500" : "text-foreground")
+                                                    (on ? "text-primary" : "text-foreground")
                                                 }
                                             >
                                                 {opt.label}
@@ -1159,20 +1159,20 @@ export default function PostCampaign() {
                             both are ours, and only one of them has something
                             particular to say about why. */}
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                 Who runs it
                             </p>
                             <div
                                 data-testid={EXECUTION.weareRun}
-                                className="mt-3 rounded-md border border-ember-500/40 bg-ember-500/10 p-5"
+                                className="mt-3 rounded-md border border-primary/40 bg-primary/10 p-5"
                             >
-                                <p className="text-sm text-ember-500">
+                                <p className="text-sm text-primary">
                                     {weareRun ? weareRun.title : "Our team runs this campaign"}
                                 </p>
                                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                                     {weareRun ? weareRun.line : MANAGED_NOTE}
                                 </p>
-                                <p className="mt-3 border-t border-ember-500/20 pt-3 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-3 border-t border-primary/20 pt-3 text-xs leading-relaxed text-muted-foreground">
                                     {REFUND_TERMS}
                                 </p>
                                 {/* **The third promise, and the one that was
@@ -1187,7 +1187,7 @@ export default function PostCampaign() {
                                     not a note about one input. */}
                                 <p
                                     data-testid={EXECUTION.commissionTerms}
-                                    className="mt-3 border-t border-ember-500/20 pt-3 text-xs leading-relaxed text-muted-foreground"
+                                    className="mt-3 border-t border-primary/20 pt-3 text-xs leading-relaxed text-muted-foreground"
                                 >
                                     {COMMISSION_TERMS}
                                 </p>
@@ -1215,16 +1215,16 @@ export default function PostCampaign() {
                                             data-testid={VISIBILITY.option(opt.value)}
                                             onClick={() => setVisibility(opt.value)}
                                             className={
-                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
-                                                    ? "border-ember-500 bg-ember-500/10"
+                                                    ? "border-primary bg-primary/10"
                                                     : "border-white/10 bg-card/60 hover:border-white/25")
                                             }
                                         >
                                             <span
                                                 className={
                                                     "block text-sm " +
-                                                    (on ? "text-ember-500" : "text-foreground")
+                                                    (on ? "text-primary" : "text-foreground")
                                                 }
                                             >
                                                 {opt.label}
@@ -1258,7 +1258,7 @@ export default function PostCampaign() {
                                 className={
                                     "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
                                     (requiresDraft
-                                        ? "border-ember-500 bg-ember-500/10"
+                                        ? "border-primary bg-primary/10"
                                         : "border-white/10 bg-card/60 hover:border-white/25")
                                 }
                             >
@@ -1268,13 +1268,13 @@ export default function PostCampaign() {
                                     type="checkbox"
                                     checked={requiresDraft}
                                     onChange={(e) => setRequiresDraft(e.target.checked)}
-                                    className="mt-0.5 h-4 w-4 flex-none accent-ember-500"
+                                    className="mt-0.5 h-4 w-4 flex-none accent-primary"
                                 />
                                 <span className="min-w-0">
                                     <span
                                         className={
                                             "block text-sm " +
-                                            (requiresDraft ? "text-ember-500" : "text-foreground")
+                                            (requiresDraft ? "text-primary" : "text-foreground")
                                         }
                                     >
                                         Review the draft first
@@ -1297,7 +1297,7 @@ export default function PostCampaign() {
                                 className={
                                     "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
                                     (requiresSlotConfirmation
-                                        ? "border-ember-500 bg-ember-500/10"
+                                        ? "border-primary bg-primary/10"
                                         : "border-white/10 bg-card/60 hover:border-white/25")
                                 }
                             >
@@ -1309,14 +1309,14 @@ export default function PostCampaign() {
                                     onChange={(e) =>
                                         setRequiresSlotConfirmation(e.target.checked)
                                     }
-                                    className="mt-0.5 h-4 w-4 flex-none accent-ember-500"
+                                    className="mt-0.5 h-4 w-4 flex-none accent-primary"
                                 />
                                 <span className="min-w-0">
                                     <span
                                         className={
                                             "block text-sm " +
                                             (requiresSlotConfirmation
-                                                ? "text-ember-500"
+                                                ? "text-primary"
                                                 : "text-foreground")
                                         }
                                     >
@@ -1356,7 +1356,7 @@ export default function PostCampaign() {
                                             step="500"
                                             value={budget}
                                             onChange={(e) => setBudget(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="e.g. 8000"
                                         />
                                     </div>
@@ -1382,7 +1382,7 @@ export default function PostCampaign() {
                                         step="1"
                                         value={creatorsNeeded}
                                         onChange={(e) => setCreatorsNeeded(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                     />
                                 </div>
                             </div>
@@ -1414,7 +1414,7 @@ export default function PostCampaign() {
                                         step="1000"
                                         value={totalBudget}
                                         onChange={(e) => setTotalBudget(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-ember-500"
+                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 80000"
                                     />
                                 </div>
@@ -1515,7 +1515,7 @@ export default function PostCampaign() {
                                     onChange={(e) => setVenueAddress(e.target.value)}
                                     maxLength={500}
                                     placeholder="Where creators should show up"
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                 />
                             </div>
                             <div className="grid gap-5 md:grid-cols-2">
@@ -1530,7 +1530,7 @@ export default function PostCampaign() {
                                         onChange={(e) => setVenueInstructions(e.target.value)}
                                         maxLength={1000}
                                         placeholder="e.g. Ask for the events desk"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                     />
                                 </div>
                                 <div>
@@ -1544,7 +1544,7 @@ export default function PostCampaign() {
                                         onChange={(e) => setOnSiteContact(e.target.value)}
                                         maxLength={200}
                                         placeholder="Name and number at the venue"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
                                     />
                                 </div>
                             </div>
@@ -1603,7 +1603,7 @@ export default function PostCampaign() {
                                 (brandProfile?.verification &&
                                     brandProfile.verification.state !== "verified")
                             }
-                            className="group h-12 rounded-full bg-ember-500 px-7 text-black hover:bg-ember-400 md:ml-auto"
+                            className="group h-12 rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover md:ml-auto"
                         >
                             {submitting ? (
                                 <>

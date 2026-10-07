@@ -96,8 +96,8 @@ export default function Invitations({ invitations, onChanged }) {
 
     return (
         <>
-            <div className="overflow-hidden rounded-md border border-ember-500/30 bg-ember-500/[0.06]">
-                <p className="flex items-center gap-2 border-b border-ember-500/20 px-5 py-4 text-xs uppercase tracking-[0.2em] text-ember-500 sm:px-6">
+            <div className="overflow-hidden rounded-md border border-primary/30 bg-primary/[0.06]">
+                <p className="flex items-center gap-2 border-b border-primary/20 px-5 py-4 text-xs uppercase tracking-[0.2em] text-primary sm:px-6">
                     <MailOpen className="h-3.5 w-3.5" />
                     {rows.length === 1 ? "You've been invited" : `${rows.length} invitations`}
                 </p>
@@ -119,7 +119,7 @@ export default function Invitations({ invitations, onChanged }) {
                                         {invite.area ? ` · ${invite.area}` : ""}
                                     </span>
                                 </span>
-                                <span className="mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-ember-500">
+                                <span className="mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-primary">
                                     {invite.campaign_title || "Untitled campaign"}
                                 </span>
                                 <span className="mt-2 block text-xs text-muted-foreground">
@@ -163,7 +163,7 @@ export default function Invitations({ invitations, onChanged }) {
                                     type="button"
                                     onClick={() => openAccept(invite)}
                                     data-testid={IDS.invitationAccept(invite.id)}
-                                    className="h-11 rounded-full bg-ember-500 px-5 text-sm text-black hover:bg-ember-400"
+                                    className="h-11 rounded-full bg-primary px-5 text-sm text-primary-foreground hover:bg-primary-hover"
                                 >
                                     Accept
                                 </Button>
@@ -216,7 +216,7 @@ export default function Invitations({ invitations, onChanged }) {
                                 className="mt-2 border-white/10 bg-background/60"
                             />
                         </div>
-                        {error && <p className="text-sm text-red-300">{error}</p>}
+                        {error && <p className="text-sm text-state-rejected">{error}</p>}
                     </div>
 
                     <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -233,7 +233,7 @@ export default function Invitations({ invitations, onChanged }) {
                             onClick={accept}
                             disabled={submitting}
                             data-testid={IDS.invitationSubmit}
-                            className="h-12 rounded-full bg-ember-500 px-6 text-black hover:bg-ember-400 sm:h-11"
+                            className="h-12 rounded-full bg-primary px-6 text-primary-foreground hover:bg-primary-hover sm:h-11"
                         >
                             {submitting ? (
                                 <>

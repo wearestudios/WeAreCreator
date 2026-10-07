@@ -712,12 +712,19 @@ class TestThemeFollowsTheAccount:
         assert "weare:console-theme" in html
         assert "/admin" in html, "the pre-paint script must not touch other surfaces"
 
-    def test_the_console_is_the_only_surface_it_touches(self):
-        lib = read("lib", "consoleTheme.js")
+    def test_the_surface_follows_the_route_and_the_console_keeps_its_choice(self):
+        """**This guarantee inverted with the brand and is still a guarantee.**
+
+        It used to be "light touches only the console". The product is light
+        now and marketing is navy, so what has to hold is the other half: an
+        admin's stored choice reaches the console and reaches nothing else.
+        """
+        lib = read("lib", "surfaceTheme.js")
         assert 'CONSOLE_PATH_PREFIX = "/admin"' in lib
-        assert "<ConsoleThemeGuard />" in read("App.js"), (
-            "without the guard the attribute survives a redirect away from /admin "
-            "and the landing page renders light"
+        assert "PRODUCT_PREFIXES" in lib
+        assert "<SurfaceGuard />" in read("App.js"), (
+            "without the guard the attribute survives a navigation and a "
+            "marketing page renders on the product surface"
         )
 
 

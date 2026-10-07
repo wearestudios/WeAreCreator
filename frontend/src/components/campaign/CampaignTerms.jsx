@@ -134,7 +134,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
             data-testid={IDS.card}
             className="rounded-md border border-white/10 bg-card p-5 grain-surface sm:p-6"
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-ember-500">
+            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
                 <FileText aria-hidden="true" className="h-4 w-4" />
                 What was agreed
             </p>
@@ -196,7 +196,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
             {terms.accepted ? (
                 <p
                     data-testid={IDS.accepted}
-                    className="mt-5 flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"
+                    className="mt-5 flex items-center gap-2 rounded-md border border-state-approved/30 bg-state-approved/10 px-4 py-3 text-sm text-state-approved"
                 >
                     <Check aria-hidden="true" className="h-4 w-4 flex-none" />
                     Accepted by the creator on {formatDate(terms.accepted_at)}.
@@ -207,7 +207,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
                         onClick={accept}
                         disabled={busy}
                         data-testid={IDS.acceptBtn}
-                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600"
+                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                         I agree to these terms
@@ -249,7 +249,7 @@ export function DisclosureChecks({ disclosure }) {
                     key={label}
                     className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
                 >
-                    <Check aria-hidden="true" className="h-3.5 w-3.5 text-emerald-400" />
+                    <Check aria-hidden="true" className="h-3.5 w-3.5 text-state-approved" />
                     <span className="uppercase tracking-[0.15em]">{label}</span>
                     <span className="text-foreground/80">
                         {row.label} confirmed by {row.confirmed_by_name || "a reviewer"}
@@ -287,7 +287,7 @@ export function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onCon
                 className="max-w-md rounded-md border border-white/10 bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         Approve the content
                     </p>
                     <DialogTitle className="mt-2 font-serif text-fluid-2xl leading-tight">
@@ -306,7 +306,7 @@ export function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onCon
                         type="checkbox"
                         checked={ok}
                         onChange={(e) => setOk(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 flex-none accent-[color:var(--ember-500,#F05D14)]"
+                        className="mt-0.5 h-4 w-4 flex-none accent-[color:hsl(var(--primary))]"
                     />
                     <span>
                         I've checked the live post carries{" "}
@@ -324,7 +324,7 @@ export function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onCon
                         onClick={onConfirm}
                         disabled={!ok || busy}
                         data-testid="approve-content-confirm"
-                        className="min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
                     >
                         {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                         Approve

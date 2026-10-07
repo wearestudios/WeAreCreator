@@ -27,13 +27,13 @@ import { budgetPercent, budgetTone, formatMoney } from "@/lib/budget";
 // act on take a colour — the same rule `STATUS_TONE` holds in the console.
 const BAR = {
     calm: "bg-foreground/40",
-    warning: "bg-amber-400/80",
-    exhausted: "bg-rose-400/80",
+    warning: "bg-state-pending/80",
+    exhausted: "bg-state-rejected/80",
 };
 
 const NOTE = {
-    warning: "text-amber-300/90",
-    exhausted: "text-rose-300/90",
+    warning: "text-state-pending/90",
+    exhausted: "text-state-rejected/90",
 };
 
 function Figure({ label, value, testId, emphasis }) {

@@ -68,7 +68,7 @@ export function HandshakeBand({ title, line, cta, children }) {
             <div className="relative mx-auto max-w-7xl px-6 py-20 md:py-28">
                 <Reveal>
                     <h2
-                        className="max-w-3xl font-serif text-white"
+                        className="max-w-3xl font-serif text-navy-700"
                         // Poster scale, a step below the hero — the band is the
                         // second-loudest thing on the page and must not argue
                         // with the first.
@@ -78,7 +78,7 @@ export function HandshakeBand({ title, line, cta, children }) {
                     </h2>
                 </Reveal>
                 <Reveal i={1}>
-                    <p className="mt-6 max-w-xl text-base leading-relaxed text-white/85 md:text-lg">
+                    <p className="mt-6 max-w-xl text-base leading-relaxed text-navy-700 md:text-lg">
                         {line}
                     </p>
                 </Reveal>
@@ -96,7 +96,7 @@ export function HandshakeBand({ title, line, cta, children }) {
                         component, same words. */}
                     <StudioEndorsement
                         testid={IDS.handshakeStudio}
-                        className="!text-white/75 hover:!text-white"
+                        className="!text-navy-700 hover:!text-navy-900"
                     />
                 </Reveal>
             </div>

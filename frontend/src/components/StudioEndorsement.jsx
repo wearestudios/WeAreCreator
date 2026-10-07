@@ -15,14 +15,18 @@ export function StudioEndorsement({ testid, className = "" }) {
     // **The alpha is dropped in the light console and kept everywhere else.**
     // At 10px, `text-muted-foreground/80` measures 3.53:1 on an off-white page
     // — below AA — and 7.2:1 on the dark one, where it is doing the job it was
-    // chosen for. Taking it off globally would have been the tidier rule
-    // ("alpha belongs on a fill, never on ink") and it changes 681 pixels of
-    // the marketing navbar, which is a surface this work is not allowed to
-    // touch. So it is conditional on the theme rather than on the surface:
-    // `data-theme` is only ever present inside the console.
+    // chosen for. The conditional version this replaced was scoped on
+    // `data-theme` because the attribute only ever appeared inside the
+    // console — which stopped being true when the product moved onto the
+    // light surface, so the condition would now fire on every authenticated
+    // screen and never on the one it was written for.
+    //
+    // **The alpha is simply gone**, which is the rule the old comment already
+    // named and deferred: alpha belongs on a fill, never on ink. On the brand
+    // navy it measured 2.89:1 — the softening was buying a look at the cost of
+    // a line nobody could read.
     const base =
-        "text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80 " +
-        "[:root[data-theme=light]_&]:text-muted-foreground " +
+        "text-[10px] uppercase tracking-[0.18em] text-muted-foreground " +
         className;
 
     // A link only when the studio URL is configured. A line of text that does

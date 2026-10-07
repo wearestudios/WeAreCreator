@@ -65,7 +65,7 @@ export default function NotFound() {
                                     data-testid={`not-found-link-${w.to.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "home"}`}
                                     className={`group block rounded-lg border border-white/10 bg-card grain-surface p-5 ${CARD_HOVER}`}
                                 >
-                                    <p className="font-serif text-fluid-xl leading-tight tracking-tight transition-colors duration-200 group-hover:text-ember-500">
+                                    <p className="font-serif text-fluid-xl leading-tight tracking-tight transition-colors duration-200 group-hover:text-primary">
                                         {w.label}
                                     </p>
                                     <p className="mt-1.5 text-sm text-muted-foreground">

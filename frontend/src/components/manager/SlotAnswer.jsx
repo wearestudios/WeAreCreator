@@ -72,9 +72,9 @@ export default function SlotAnswer({ rows, onChanged }) {
     return (
         <section
             data-testid={IDS.band}
-            className="mt-6 rounded-md border border-ember-500/40 bg-ember-500/10 p-4"
+            className="mt-6 rounded-md border border-primary/40 bg-primary/10 p-4"
         >
-            <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-ember-500">
+            <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-primary">
                 <CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />
                 {waiting.length === 1
                     ? "A booking is waiting on you"
@@ -94,12 +94,12 @@ export default function SlotAnswer({ rows, onChanged }) {
                                 there. */}
                             <Link
                                 to={`/manager/applications/${r.collaboration_id}`}
-                                className="underline decoration-white/20 underline-offset-4 hover:text-ember-500"
+                                className="underline decoration-white/20 underline-offset-4 hover:text-primary"
                             >
                                 {r.name || "A creator"}
                             </Link>{" "}
                             asked for{" "}
-                            <span className="text-ember-500">
+                            <span className="text-primary">
                                 {r.slot_time
                                     ? `${formatDay(r.slot_time)}, ${formatTime(r.slot_time)}`
                                     : "a time"}
@@ -111,7 +111,7 @@ export default function SlotAnswer({ rows, onChanged }) {
                                 busy={busyId === r.collaboration_id}
                                 onClick={() => confirm(r)}
                                 data-testid={IDS.confirm(r.collaboration_id)}
-                                className="bg-ember-500 text-black hover:bg-ember-400 sm:flex-1"
+                                className="bg-primary text-primary-foreground hover:bg-primary-hover sm:flex-1"
                             >
                                 <Check className="mr-2 h-4 w-4" />
                                 Confirm
@@ -190,7 +190,7 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={IDS.reason}
                     placeholder="e.g. Kitchen is closed Monday evenings — any lunchtime works"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                 />
                 {err && (
                     <p data-testid={IDS.error} className={`mt-3 text-sm text-destructive`}>

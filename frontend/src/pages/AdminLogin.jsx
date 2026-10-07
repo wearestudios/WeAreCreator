@@ -36,7 +36,7 @@ export default function AdminLogin() {
         <div data-testid="admin-login-page" className="grid min-h-screen place-items-center bg-background p-6 grain-page">
             <div className="w-full max-w-md">
                 <Link to="/" className="mb-8 inline-block font-serif text-2xl">
-                    WeAre <span className="text-ember-500">Creators</span>
+                    WeAre <span className="text-primary">Creators</span>
                 </Link>
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Team admin</p>
                 <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
@@ -44,7 +44,7 @@ export default function AdminLogin() {
                 </h1>
                 <p className="mt-4 text-sm text-muted-foreground">
                     Creators and brands, please{" "}
-                    <Link to="/login" data-testid="link-to-login" className="text-ember-500 underline-offset-4 hover:underline">
+                    <Link to="/login" data-testid="link-to-login" className="text-primary underline-offset-4 hover:underline">
                         log in with WhatsApp
                     </Link>
                     .
@@ -63,7 +63,7 @@ export default function AdminLogin() {
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-ember-500"
+                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-primary"
                             placeholder="you@wearemonk.in"
                         />
                     </div>
@@ -79,7 +79,7 @@ export default function AdminLogin() {
                             required
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-ember-500"
+                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-primary"
                             placeholder="••••••••"
                         />
                     </div>
@@ -94,7 +94,7 @@ export default function AdminLogin() {
                         type="submit"
                         data-testid="admin-login-submit-btn"
                         disabled={submitting}
-                        className="h-11 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        className="h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {submitting ? (
                             <>

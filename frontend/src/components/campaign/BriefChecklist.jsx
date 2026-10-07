@@ -33,8 +33,8 @@ const ICONS = {
 // a hashtag is not a warning. Ember stays out of it — on this platform ember
 // is the primary action, and a checklist is something to read.
 const TONES = {
-    brief_dos: "text-emerald-300/90",
-    brief_donts: "text-rose-300/90",
+    brief_dos: "text-state-approved/90",
+    brief_donts: "text-state-rejected/90",
     mandatory_hashtags: "text-foreground/80",
     mandatory_mentions: "text-foreground/80",
 };
@@ -84,7 +84,7 @@ export default function BriefChecklist({
     const body = (
         <>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary">
                     {title}
                 </p>
                 {count > 0 && (
@@ -138,7 +138,7 @@ export default function BriefChecklist({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     data-testid={IDS.asset(i)}
-                                    className="inline-flex min-h-[2.25rem] items-center gap-1.5 text-sm text-ember-500 transition-colors duration-150 hover:text-ember-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500"
+                                    className="inline-flex min-h-[2.25rem] items-center gap-1.5 text-sm text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     <Link2 aria-hidden="true" className="h-3.5 w-3.5" />
                                     {asset.label}

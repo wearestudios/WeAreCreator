@@ -76,50 +76,50 @@ const STATE_META = {
     },
     verified: {
         label: "Waiting on you",
-        tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
+        tone: "bg-primary/15 text-primary border-primary/40",
         note: "Verified by our team. Your call.",
     },
     accepted: {
         label: "Accepted",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
         note: "Confirmed. We'll agree the fee and book the slot.",
     },
     commercial_agreed: {
         label: "Fee agreed",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
     slot_booked: {
         label: "Slot booked",
-        tone: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+        tone: "bg-state-progress/15 text-state-progress border-state-progress/30",
     },
     attended: {
         label: "Shoot done",
-        tone: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+        tone: "bg-state-done/15 text-state-done border-state-done/30",
         note: "Waiting on the creator to publish and submit links.",
     },
     draft_submitted: {
         label: "Review draft",
-        tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
+        tone: "bg-primary/15 text-primary border-primary/40",
         note: "A draft is in. Approve it, or send it back with a note — nothing is public yet.",
     },
     draft_approved: {
         label: "Draft approved",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
         note: "Approved. The creator is publishing it now.",
     },
     content_submitted: {
         label: "Review content",
-        tone: "bg-ember-500/15 text-ember-500 border-ember-500/40",
+        tone: "bg-primary/15 text-primary border-primary/40",
         note: "Content is in. Approve it or ask for a change.",
     },
     content_approved: {
         label: "Approved",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
         note: "Approved — payment is being processed.",
     },
     in_payment: {
         label: "In payment",
-        tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
     },
     closed: {
         label: "Complete",
@@ -131,7 +131,7 @@ const STATE_META = {
     },
     cancelled: {
         label: "Cancelled",
-        tone: "bg-red-500/10 text-red-300/80 border-red-500/25",
+        tone: "bg-state-rejected/10 text-state-rejected/80 border-state-rejected/25",
     },
 };
 
@@ -232,7 +232,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                 className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         Accept creator
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -262,7 +262,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                                 step="500"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
-                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
                             />
                         </div>
                         {/* `budget` is null on a barter brief, where the stored
@@ -290,7 +290,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             maxLength={500}
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
-                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-primary"
                             placeholder="Anything we should know when we book the slot?"
                         />
                     </div>
@@ -315,7 +315,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             type="submit"
                             data-testid="accept-confirm-btn"
                             disabled={busy}
-                            className="rounded-full bg-emerald-500/90 text-black hover:bg-emerald-400"
+                            className="rounded-full bg-state-approved/90 text-primary-foreground hover:bg-state-approved"
                         >
                             {busy ? (
                                 <>
@@ -386,7 +386,7 @@ function ReasonDialog({
                 className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
                         {kicker}
                     </p>
                     <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
@@ -412,7 +412,7 @@ function ReasonDialog({
                             maxLength={500}
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
-                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-primary"
                             placeholder={placeholder}
                         />
                     </div>
@@ -439,8 +439,8 @@ function ReasonDialog({
                             disabled={busy}
                             className={
                                 destructive
-                                    ? "rounded-full border border-red-500/40 bg-transparent text-red-300 hover:bg-red-500/10"
-                                    : "rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                                    ? "rounded-full border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
+                                    : "rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             }
                         >
                             {busy ? (
@@ -502,7 +502,7 @@ const ApplicantCard = ({
                         <Link
                             to={`/brand/applications/${a.id}`}
                             data-testid={`applicant-open-${a.id}`}
-                            className="font-serif text-2xl leading-tight transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            className="font-serif text-2xl leading-tight transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             {c.name || "Creator"}
                         </Link>
@@ -532,7 +532,7 @@ const ApplicantCard = ({
                                 target="_blank"
                                 rel="noreferrer"
                                 data-testid={`applicant-ig-${a.id}`}
-                                className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ember-500"
+                                className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-primary"
                             >
                                 <Instagram className="h-3.5 w-3.5" />@{c.instagram_handle}
                                 <ExternalLink className="h-3 w-3" />
@@ -560,7 +560,7 @@ const ApplicantCard = ({
                             {c.niches.map((n) => (
                                 <span
                                     key={n}
-                                    className="rounded-full bg-ember-500/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-ember-500"
+                                    className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-primary"
                                 >
                                     {n}
                                 </span>
@@ -575,13 +575,13 @@ const ApplicantCard = ({
                             {a.agreed_amount != null ? "Agreed" : "They quoted"}
                         </div>
                         <div className="mt-1 flex items-baseline font-serif text-3xl">
-                            <IndianRupee className="h-5 w-5 text-ember-500" />
+                            <IndianRupee className="h-5 w-5 text-primary" />
                             {formatRupees(a.agreed_amount ?? a.quoted_rate)}
                         </div>
                         {overBudget && a.agreed_amount == null && (
                             <div
                                 data-testid={`applicant-over-budget-${a.id}`}
-                                className="mt-1 text-[11px] text-amber-300"
+                                className="mt-1 text-[11px] text-state-pending"
                             >
                                 ₹{formatRupees(a.quoted_rate - budget)} over budget
                             </div>
@@ -593,7 +593,7 @@ const ApplicantCard = ({
             {a.pitch && (
                 <blockquote
                     data-testid={`applicant-pitch-${a.id}`}
-                    className="border-l-2 border-ember-500/40 pl-4 text-sm leading-relaxed text-foreground/85"
+                    className="border-l-2 border-primary/40 pl-4 text-sm leading-relaxed text-foreground/85"
                 >
                     {a.pitch}
                 </blockquote>
@@ -613,7 +613,7 @@ const ApplicantCard = ({
             {a.scheduled_at && (
                 <div
                     data-testid={`applicant-slot-${a.id}`}
-                    className="flex flex-wrap items-center gap-2 text-sm text-sky-300"
+                    className="flex flex-wrap items-center gap-2 text-sm text-state-progress"
                 >
                     <Clock className="h-4 w-4" />
                     {formatDateTime(a.scheduled_at)}
@@ -635,7 +635,7 @@ const ApplicantCard = ({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={`applicant-content-${a.id}-${i}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-ember-500 transition-colors duration-200 hover:border-ember-500/40"
+                            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-primary transition-colors duration-200 hover:border-primary/40"
                         >
                             <LinkIcon className="h-3 w-3" />
                             Post {i + 1}
@@ -648,7 +648,7 @@ const ApplicantCard = ({
             {a.revision_note && (
                 <p
                     data-testid={`applicant-revision-${a.id}`}
-                    className="rounded-md border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                    className="rounded-md border border-state-pending/25 bg-state-pending/10 px-4 py-3 text-sm text-state-pending"
                 >
                     <span className="uppercase tracking-[0.15em] text-[10px]">
                         You asked for
@@ -676,7 +676,7 @@ const ApplicantCard = ({
                             data-testid={`applicant-accept-btn-${a.id}`}
                             disabled={busy}
                             onClick={() => onAccept(a)}
-                            className="rounded-full bg-emerald-500/90 text-black hover:bg-emerald-400"
+                            className="rounded-full bg-state-approved/90 text-primary-foreground hover:bg-state-approved"
                         >
                             <Check className="mr-1.5 h-4 w-4" />
                             Accept
@@ -698,7 +698,7 @@ const ApplicantCard = ({
                                 data-testid={`applicant-approve-btn-${a.id}`}
                                 disabled={busy}
                                 onClick={() => onApprove(a)}
-                                className="rounded-full bg-emerald-500/90 text-black hover:bg-emerald-400"
+                                className="rounded-full bg-state-approved/90 text-primary-foreground hover:bg-state-approved"
                             >
                                 <CheckCircle2 className="mr-1.5 h-4 w-4" />
                                 Approve content
@@ -725,7 +725,7 @@ const ApplicantCard = ({
                                     disabled={busy}
                                     variant="outline"
                                     onClick={() => onAcceptPartial(a)}
-                                    className="rounded-full border-amber-400/40 bg-transparent text-amber-200 hover:bg-amber-400/10"
+                                    className="rounded-full border-state-pending/40 bg-transparent text-state-pending hover:bg-state-pending/10"
                                 >
                                     <PackageOpen className="mr-1.5 h-4 w-4" />
                                     Accept what arrived
@@ -739,7 +739,7 @@ const ApplicantCard = ({
                             disabled={busy}
                             variant="outline"
                             onClick={() => onDecline(a)}
-                            className="rounded-full border-red-500/40 bg-transparent text-red-300 hover:bg-red-500/10 hover:text-red-200"
+                            className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10 hover:text-state-rejected"
                         >
                             <X className="mr-1.5 h-4 w-4" />
                             Decline
@@ -771,7 +771,7 @@ const InvitedStrip = ({ invited }) => {
         <section data-testid="applicants-invited" className="mt-10">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                 Invited, waiting to hear back
-                <span className="ml-2 text-ember-500">{rows.length}</span>
+                <span className="ml-2 text-primary">{rows.length}</span>
             </p>
             <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
                 {rows.map((i) => (
@@ -932,7 +932,7 @@ export default function BrandCampaignApplicants() {
                     <p className="mt-4 text-sm text-muted-foreground">{error}</p>
                     <Button
                         onClick={() => navigate("/dashboard")}
-                        className="mt-8 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        className="mt-8 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         Back to dashboard
                     </Button>
@@ -954,13 +954,13 @@ export default function BrandCampaignApplicants() {
                 <Link
                     to="/dashboard"
                     data-testid="applicants-back-link"
-                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Your campaigns
                 </Link>
 
-                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-ember-500">
+                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-primary">
                     Applicants
                 </p>
                 <h1
@@ -1006,7 +1006,7 @@ export default function BrandCampaignApplicants() {
                 {totals.awaiting_you > 0 && (
                     <div
                         data-testid="applicants-action-banner"
-                        className="mt-8 flex items-start gap-3 rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm text-ember-500/90"
+                        className="mt-8 flex items-start gap-3 rounded-md border border-primary/30 bg-primary/10 p-4 text-sm text-primary/90"
                     >
                         <Send className="mt-0.5 h-4 w-4 flex-none" />
                         <p>
@@ -1045,9 +1045,9 @@ export default function BrandCampaignApplicants() {
                                 data-testid={`applicants-filter-${f.key}`}
                                 onClick={() => setFilter(f.key)}
                                 className={
-                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (active
-                                        ? "border-ember-500 bg-ember-500/10 text-ember-500"
+                                        ? "border-primary bg-primary/10 text-primary"
                                         : "border-white/10 bg-transparent text-muted-foreground hover:border-white/25 hover:text-foreground")
                                 }
                             >

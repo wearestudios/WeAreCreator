@@ -18911,7 +18911,7 @@ def _report_html(report: dict) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(c['title'] or 'Campaign report')} — WeAre Creators</title>
 <style>
-  :root {{ --ink:#141210; --mute:#6b6560; --line:#e6e1dc; --ember:#F05D14; }}
+  :root {{ --ink:#0E1C33; --mute:#7485A5; --line:#D7DEEA; --ember:#FF2731; }}
   * {{ box-sizing:border-box; }}
   body {{ margin:0; padding:48px 40px; background:#fff; color:var(--ink);
     font:15px/1.5 "Inter Tight",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }}
@@ -35508,7 +35508,7 @@ def _share_page_html(
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title} — {brand_name} | WeAre Creators</title>
 <meta name="description" content="{summary}">
-<meta name="theme-color" content="#0B0A09">
+<meta name="theme-color" content="#091426">
 <link rel="canonical" href="{url}">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="WeAre Creators">
@@ -35523,9 +35523,9 @@ def _share_page_html(
 <meta name="twitter:image" content="{og_image}">
 <style>
 *{{box-sizing:border-box}}
-body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
+body{{margin:0;background:#091426;color:#EDF1F7;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
 .wrap{{max-width:44rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}}
-.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B}}
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0}}
 /* The box is reserved before the image arrives, so the headline below it does
    not jump when it does. */
 .cover{{aspect-ratio:16/9;margin-bottom:2rem;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03)}}
@@ -35536,18 +35536,18 @@ body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',syst
   linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
 .fallback span{{font-family:Fraunces,Georgia,serif;font-size:clamp(3rem,12vw,5.5rem);color:rgba(245,241,236,.55);line-height:1}}
 h1{{font-family:Fraunces,Georgia,serif;font-size:clamp(2rem,6vw,3rem);line-height:1.05;margin:.75rem 0 0;letter-spacing:-.02em}}
-.brand{{margin-top:.75rem;color:#F05D14;font-size:.9rem}}
+.brand{{margin-top:.75rem;color:#FF2731;font-size:.9rem}}
 .card{{margin-top:2rem;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.5rem}}
 .row{{display:flex;gap:1rem;padding:.7rem 0;border-bottom:1px solid rgba(255,255,255,.07)}}
 .row:last-child{{border-bottom:0}}
-dt{{flex:0 0 9.5rem;font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:#9C938B}}
+dt{{flex:0 0 9.5rem;font-size:.68rem;letter-spacing:.18em;text-transform:uppercase;color:#8294B0}}
 dd{{margin:0;flex:1;min-width:0}}
 .brief{{margin-top:2rem;white-space:pre-line;color:rgba(245,241,236,.9)}}
 .cta{{margin-top:2.5rem;display:flex;flex-wrap:wrap;gap:.75rem}}
 .btn{{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}}
-.primary{{background:#F05D14;color:#0B0A09}}
-.ghost{{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}}
-footer{{margin-top:3rem;color:#7d766f;font-size:.78rem}}
+.primary{{background:#FF2731;color:#091426}}
+.ghost{{border:1px solid rgba(255,255,255,.18);color:#EDF1F7}}
+footer{{margin-top:3rem;color:#7584A3;font-size:.78rem}}
 a{{color:inherit}}
 </style></head><body><div class="wrap">
 {cover_html}
@@ -35876,7 +35876,7 @@ def _brand_page_html(
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{name} — briefs on WeAre Creators</title>
 <meta name="description" content="{summary}">
-<meta name="theme-color" content="#0B0A09">
+<meta name="theme-color" content="#091426">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="{url}">
 <meta property="og:type" content="website">
@@ -35893,28 +35893,28 @@ def _brand_page_html(
 <script type="application/ld+json">{ld_json}</script>
 <style>
 *{{box-sizing:border-box}}
-body{{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
+body{{margin:0;background:#091426;color:#EDF1F7;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}}
 .wrap{{max-width:44rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}}
 .head{{display:flex;gap:1.25rem;align-items:center}}
 .logo{{width:5rem;height:5rem;flex:none;border-radius:.5rem;border:1px solid rgba(255,255,255,.1);object-fit:contain;background:rgba(255,255,255,.04)}}
 .mono{{display:grid;place-items:center;font-family:Fraunces,Georgia,serif;font-size:2.25rem;color:rgba(245,241,236,.6);
   background:linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
-.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B}}
+.eyebrow{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0}}
 h1{{font-family:Fraunces,Georgia,serif;font-size:clamp(1.9rem,5.5vw,2.75rem);line-height:1.05;margin:.4rem 0 0;letter-spacing:-.02em}}
-h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1rem}}
+h2{{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0;font-weight:500;margin:0 0 1rem}}
 section{{margin-top:2.5rem}}
 .chips{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}}
-.chip{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}}
-.tick{{color:#F05D14}}
+.chip{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#B6C2D6}}
+.tick{{color:#FF2731}}
 .tagline{{font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.4;color:rgba(245,241,236,.95);margin-bottom:.75rem}}
 .about{{white-space:pre-line;color:rgba(245,241,236,.9)}}
 .links{{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.75rem}}
-.out{{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}}
+.out{{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#EDF1F7}}
 .outlets{{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}}
 .outlets li{{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem 1.15rem}}
 .oname{{margin:0;font-family:Fraunces,Georgia,serif;font-size:1.05rem}}
-.oaddr{{margin:.35rem 0 0;color:#9C938B;font-size:.88rem}}
-.pin{{display:inline-block;margin-top:.6rem;font-size:.78rem;color:#F5F1EC;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.2)}}
+.oaddr{{margin:.35rem 0 0;color:#8294B0;font-size:.88rem}}
+.pin{{display:inline-block;margin-top:.6rem;font-size:.78rem;color:#EDF1F7;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.2)}}
 .briefs{{display:grid;gap:.75rem}}
 .brief{{display:block;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;text-decoration:none;color:inherit;background:rgba(255,255,255,.02)}}
 .cover{{display:block;aspect-ratio:16/9;background:rgba(255,255,255,.03)}}
@@ -35923,13 +35923,13 @@ section{{margin-top:2.5rem}}
   radial-gradient(120% 120% at 20% 0%,hsl(var(--h) 42% 32%) 0%,transparent 62%),
   linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}}
 .btitle{{display:block;padding:1rem 1.15rem .2rem;font-family:Fraunces,Georgia,serif;font-size:1.2rem;line-height:1.2}}
-.bmeta{{display:block;padding:0 1.15rem 1.1rem;color:#9C938B;font-size:.82rem}}
-.none{{color:#9C938B;margin:0}}
+.bmeta{{display:block;padding:0 1.15rem 1.1rem;color:#8294B0;font-size:.82rem}}
+.none{{color:#8294B0;margin:0}}
 .cta{{margin-top:2.5rem;display:flex;flex-wrap:wrap;gap:.75rem}}
 .btn{{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}}
-.primary{{background:#F05D14;color:#0B0A09}}
-.ghost{{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}}
-footer{{margin-top:3rem;color:#7d766f;font-size:.78rem}}
+.primary{{background:#FF2731;color:#091426}}
+.ghost{{border:1px solid rgba(255,255,255,.18);color:#EDF1F7}}
+footer{{margin-top:3rem;color:#7584A3;font-size:.78rem}}
 a{{color:inherit}}
 @media(min-width:40rem){{.briefs{{grid-template-columns:1fr 1fr}}}}
 </style></head><body><div class="wrap">
@@ -36202,52 +36202,52 @@ def _case_study_summary(cs: dict) -> str:
 
 _WORK_CSS = """
 *{box-sizing:border-box}
-body{margin:0;background:#0B0A09;color:#F5F1EC;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}
+body{margin:0;background:#091426;color:#EDF1F7;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}
 .wrap{max-width:52rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}
-.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;margin:0}
+.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0;margin:0}
 h1{font-family:Fraunces,Georgia,serif;font-size:clamp(1.9rem,5.5vw,3rem);line-height:1.05;margin:.5rem 0 0;letter-spacing:-.02em}
-h2{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#9C938B;font-weight:500;margin:0 0 1rem}
+h2{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0;font-weight:500;margin:0 0 1rem}
 section{margin-top:2.75rem}
 p{margin:0 0 1rem}
-.lede{font-family:Fraunces,Georgia,serif;font-size:1.3rem;line-height:1.4;color:#F05D14;margin-top:1rem}
+.lede{font-family:Fraunces,Georgia,serif;font-size:1.3rem;line-height:1.4;color:#FF2731;margin-top:1rem}
 .chips{margin-top:1.25rem;display:flex;flex-wrap:wrap;gap:.5rem}
-.chip{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#C9C1B8}
+.chip{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:.3rem .8rem;font-size:.72rem;letter-spacing:.06em;color:#B6C2D6}
 .hero{display:block;aspect-ratio:16/9;margin-top:1.75rem;border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1)}
 .hero img{width:100%;height:100%;object-fit:cover;display:block}
 .fallback{background:radial-gradient(120% 120% at 20% 0%,hsl(var(--h) 42% 32%) 0%,transparent 62%),linear-gradient(140deg,hsl(var(--h) 30% 20%),hsl(var(--h) 22% 11%))}
 .prose{white-space:pre-line;color:rgba(245,241,236,.9)}
 .figures{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr))}
 .fig{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1.1rem 1.15rem}
-.fignum{display:block;font-family:Fraunces,Georgia,serif;font-size:1.75rem;line-height:1.1;color:#F05D14}
-.figlab{display:block;margin-top:.35rem;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#9C938B}
+.fignum{display:block;font-family:Fraunces,Georgia,serif;font-size:1.75rem;line-height:1.1;color:#FF2731}
+.figlab{display:block;margin-top:.35rem;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#8294B0}
 .roster{list-style:none;margin:0;padding:0;display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))}
 .roster li{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.02);padding:1rem;text-align:center}
 .avatar{display:block;width:4rem;height:4rem;margin:0 auto .65rem;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .mono{display:grid;place-items:center;width:100%;height:100%;font-family:Fraunces,Georgia,serif;font-size:1.4rem;color:rgba(245,241,236,.6)}
 .cname{margin:0;font-size:.92rem}
-.chandle{margin:.2rem 0 0;font-size:.78rem;color:#9C938B}
-.cfoll{margin:.25rem 0 0;font-size:.72rem;color:#C9C1B8}
+.chandle{margin:.2rem 0 0;font-size:.78rem;color:#8294B0}
+.cfoll{margin:.25rem 0 0;font-size:.72rem;color:#B6C2D6}
 .gallery{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))}
 .shot{display:block;aspect-ratio:4/5;border-radius:.5rem;overflow:hidden;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1)}
 .shot img{width:100%;height:100%;object-fit:cover;display:block}
-blockquote{margin:0;border-left:2px solid #F05D14;padding:.25rem 0 .25rem 1.25rem;font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.45}
-.attrib{margin:.75rem 0 0;font-size:.82rem;color:#9C938B}
+blockquote{margin:0;border-left:2px solid #FF2731;padding:.25rem 0 .25rem 1.25rem;font-family:Fraunces,Georgia,serif;font-size:1.25rem;line-height:1.45}
+.attrib{margin:.75rem 0 0;font-size:.82rem;color:#8294B0}
 .links{display:flex;flex-wrap:wrap;gap:.75rem}
-.out{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#F5F1EC}
+.out{display:inline-flex;align-items:center;min-height:2.5rem;padding:0 1rem;border:1px solid rgba(255,255,255,.15);border-radius:999px;font-size:.8rem;text-decoration:none;color:#EDF1F7}
 .grid{display:grid;gap:1rem}
 .card{display:block;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;overflow:hidden;text-decoration:none;color:inherit;background:rgba(255,255,255,.02)}
 .cover{display:block;aspect-ratio:16/9;background:rgba(255,255,255,.03)}
 .cover img{width:100%;height:100%;object-fit:cover;display:block}
 .ctitle{display:block;padding:1rem 1.15rem .2rem;font-family:Fraunces,Georgia,serif;font-size:1.2rem;line-height:1.2}
-.cmeta{display:block;padding:0 1.15rem 1.1rem;color:#9C938B;font-size:.82rem}
-.cres{display:block;padding:0 1.15rem .3rem;color:#F05D14;font-size:.88rem}
+.cmeta{display:block;padding:0 1.15rem 1.1rem;color:#8294B0;font-size:.82rem}
+.cres{display:block;padding:0 1.15rem .3rem;color:#FF2731;font-size:.88rem}
 .cta{margin-top:3rem;display:flex;flex-wrap:wrap;gap:.75rem}
 .btn{display:inline-flex;align-items:center;min-height:2.9rem;padding:0 1.4rem;border-radius:999px;text-decoration:none;font-size:.85rem}
-.primary{background:#F05D14;color:#0B0A09}
-.ghost{border:1px solid rgba(255,255,255,.18);color:#F5F1EC}
-.none{color:#9C938B;margin:0}
-footer{margin-top:3rem;color:#7d766f;font-size:.78rem}
+.primary{background:#FF2731;color:#091426}
+.ghost{border:1px solid rgba(255,255,255,.18);color:#EDF1F7}
+.none{color:#8294B0;margin:0}
+footer{margin-top:3rem;color:#7584A3;font-size:.78rem}
 a{color:inherit}
 @media(min-width:40rem){.grid{grid-template-columns:1fr 1fr}}
 """
@@ -36263,7 +36263,7 @@ def _work_head(
     return f"""<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title>
 <meta name="description" content="{e(summary)}">
-<meta name="theme-color" content="#0B0A09">
+<meta name="theme-color" content="#091426">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="{e(url)}">
 <meta property="og:type" content="article">

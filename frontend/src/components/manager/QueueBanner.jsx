@@ -58,9 +58,9 @@ export default function QueueBanner({ className = "" }) {
     // tells the manager both that the network is down and what it cost.
     const queued = pending > 0;
     const tone = blocked
-        ? "border-red-500/30 bg-red-500/10 text-red-200"
+        ? "border-state-rejected/30 bg-state-rejected/10 text-state-rejected"
         : queued
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+          ? "border-state-pending/30 bg-state-pending/10 text-state-pending"
           : "border-white/15 bg-white/5 text-muted-foreground";
     const Icon = blocked ? CloudOff : queued ? UploadCloud : WifiOff;
 

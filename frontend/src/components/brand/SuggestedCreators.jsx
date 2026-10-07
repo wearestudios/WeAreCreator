@@ -71,7 +71,7 @@ function ScoreBreakdown({ row }) {
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-ember-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
             >
                 Why this score
                 <ChevronDown
@@ -344,7 +344,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
             </form>
 
             {error ? (
-                <p data-testid={T.error} className="mt-8 text-sm text-amber-300">
+                <p data-testid={T.error} className="mt-8 text-sm text-state-pending">
                     {error}
                 </p>
             ) : loading && !data ? (
@@ -405,7 +405,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                                         }
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="inline-flex items-center gap-1 transition-colors duration-200 hover:text-ember-500"
+                                                        className="inline-flex items-center gap-1 transition-colors duration-200 hover:text-primary"
                                                     >
                                                         <Instagram className="h-3 w-3" />@
                                                         {row.instagram_handle}
@@ -418,7 +418,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                                         {formatCompact(row.follower_count)}
                                                         {row.follower_count_verified && (
                                                             <span
-                                                                className="text-ember-500"
+                                                                className="text-primary"
                                                                 title="Verified via Instagram"
                                                             >
                                                                 ✓
@@ -439,7 +439,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                             className="flex-none text-right"
                                             title="Match score out of 100"
                                         >
-                                            <div className="inline-flex items-baseline gap-0.5 font-serif text-2xl text-ember-500">
+                                            <div className="inline-flex items-baseline gap-0.5 font-serif text-2xl text-primary">
                                                 <Sparkles className="h-3.5 w-3.5" />
                                                 {Math.round(row.match_score)}
                                             </div>

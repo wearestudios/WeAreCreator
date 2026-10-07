@@ -59,9 +59,9 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                     className="flex items-start gap-3 py-3"
                                 >
                                     {r.delivered ? (
-                                        <Check className="mt-0.5 h-4 w-4 flex-none text-emerald-300" />
+                                        <Check className="mt-0.5 h-4 w-4 flex-none text-state-approved" />
                                     ) : (
-                                        <AlertCircle className="mt-0.5 h-4 w-4 flex-none text-amber-300" />
+                                        <AlertCircle className="mt-0.5 h-4 w-4 flex-none text-state-pending" />
                                     )}
                                     <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm">{r.name}</p>
@@ -79,7 +79,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                             type="button"
                             onClick={onClose}
                             data-testid={IDS.done}
-                            className="mt-6 bg-ember-500 text-black hover:bg-ember-400"
+                            className="mt-6 bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             Done
                         </BigButton>
@@ -115,7 +115,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                 busy={busy}
                                 onClick={() => onSend(message.trim())}
                                 data-testid={IDS.confirm}
-                                className="bg-ember-500 text-black hover:bg-ember-400"
+                                className="bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 <Send className="mr-2 h-4 w-4" />
                                 Send it
@@ -148,7 +148,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                             maxLength={1000}
                             data-testid={IDS.message}
                             placeholder="e.g. Parking is round the back today — ask for Riya at the events desk."
-                            className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                            className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                         />
                         <p className="mt-2 text-right text-xs text-muted-foreground">
                             {message.length}/1000
@@ -165,7 +165,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                 disabled={count === 0}
                                 onClick={toReview}
                                 data-testid={IDS.review + "-next"}
-                                className="bg-ember-500 text-black hover:bg-ember-400"
+                                className="bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
                                 Review
                             </BigButton>

@@ -400,7 +400,7 @@ export default function ApplicationDetail({
                                 {overBudget !== null && (
                                     <p
                                         data-testid={BUDGET.warning}
-                                        className="text-xs text-amber-300"
+                                        className="text-xs text-state-pending"
                                     >
                                         That is {formatMoney(overBudget)} more than this
                                         brief has left. Raise the campaign budget, or agree
@@ -421,7 +421,7 @@ export default function ApplicationDetail({
                                 {amountMissing && (
                                     <p
                                         data-testid={APPLICATION.amountError}
-                                        className="text-xs text-amber-300"
+                                        className="text-xs text-state-pending"
                                     >
                                         This brief is negotiated, so it has no fee until
                                         somebody agrees one. Enter the amount to continue.
@@ -521,7 +521,7 @@ export default function ApplicationDetail({
                                     <Link
                                         to={`/campaigns/${app.campaign?.id}`}
                                         data-testid={APPLICATION.campaignLink}
-                                        className="transition-colors duration-200 hover:text-ember-500"
+                                        className="transition-colors duration-200 hover:text-primary"
                                     >
                                         {app.campaign?.title || "Untitled campaign"}
                                     </Link>

@@ -152,7 +152,7 @@ export default function PartialDeliveryDialog({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="e.g. Two stories went up, the third clashed with their own launch."
                         data-testid={IDS.note}
-                        className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-ember-500"
+                        className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
                     />
                 </label>
 
@@ -174,7 +174,7 @@ export default function PartialDeliveryDialog({
                         }
                         disabled={busy || !note.trim()}
                         data-testid={IDS.submit}
-                        className="bg-ember-500 text-white hover:bg-ember-600"
+                        className="bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Accept {totals.gotTotal} of {totals.askedTotal}

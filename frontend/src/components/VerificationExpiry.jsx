@@ -66,13 +66,13 @@ export default function VerificationExpiry({ verification, kind, onConfirmed }) 
             className={`rounded-md border p-4 ${
                 lapsed
                     ? "border-destructive/40 bg-destructive/10"
-                    : "border-amber-400/30 bg-amber-400/10"
+                    : "border-state-pending/30 bg-state-pending/10"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
                 <ShieldCheck
                     aria-hidden="true"
-                    className={`h-4 w-4 ${lapsed ? "text-destructive" : "text-amber-300"}`}
+                    className={`h-4 w-4 ${lapsed ? "text-destructive" : "text-state-pending"}`}
                 />
                 <p className="text-sm font-medium">
                     {lapsed
@@ -106,7 +106,7 @@ export default function VerificationExpiry({ verification, kind, onConfirmed }) 
                 onClick={confirm}
                 disabled={busy}
                 data-testid={IDS.confirm}
-                className="mt-3 min-h-[2.75rem] bg-ember-500 text-white hover:bg-ember-600 sm:min-h-0"
+                className="mt-3 min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
             >
                 {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                 Yes, this is all still right

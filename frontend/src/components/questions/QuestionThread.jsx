@@ -35,7 +35,7 @@ function Row({ q }) {
                     "max-w-[85%] rounded-lg border px-4 py-3 " +
                     (theirs
                         ? "border-white/10 bg-white/5"
-                        : "border-ember-500/25 bg-ember-500/10")
+                        : "border-primary/25 bg-primary/10")
                 }
             >
                 <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -146,7 +146,7 @@ export default function QuestionThread({
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         placeholder="Answer the creator — they'll see it here and on WhatsApp"
-                        className="min-h-[64px] border-white/10 bg-card/60 focus-visible:ring-ember-500"
+                        className="min-h-[64px] border-white/10 bg-card/60 focus-visible:ring-primary"
                     />
                     <div className="mt-3 flex justify-end">
                         <Button
@@ -154,7 +154,7 @@ export default function QuestionThread({
                             onClick={reply}
                             disabled={sending || !draft.trim()}
                             data-testid={QUESTIONS.replySend}
-                            className="h-11 rounded-full bg-ember-500 px-5 text-black hover:bg-ember-400"
+                            className="h-11 rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary-hover"
                         >
                             {sending ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

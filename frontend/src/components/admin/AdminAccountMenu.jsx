@@ -17,7 +17,7 @@ import {
     rememberTheme,
     resolveTheme,
     systemTheme,
-} from "@/lib/consoleTheme";
+} from "@/lib/surfaceTheme";
 
 /** Initials, for a menu button with no photograph behind it. */
 const initials = (name) =>

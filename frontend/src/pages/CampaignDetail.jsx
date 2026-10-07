@@ -166,7 +166,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
             >
                 <div className="border-b border-white/10 bg-background/50 px-6 pt-6 pb-5">
                     <DialogHeader className="text-left">
-                        <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                        <p className="text-xs uppercase tracking-[0.2em] text-primary">
                             Apply to campaign
                         </p>
                         <DialogTitle className="mt-3 font-serif text-fluid-3xl leading-tight tracking-tight text-foreground">
@@ -193,7 +193,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                             maxLength={1000}
                             value={pitch}
                             onChange={(e) => setPitch(e.target.value)}
-                            className="mt-2 min-h-[92px] border-white/10 bg-background/60 focus-visible:ring-ember-500"
+                            className="mt-2 min-h-[92px] border-white/10 bg-background/60 focus-visible:ring-primary"
                             placeholder="Why you're the right creator for this brief."
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
@@ -219,13 +219,13 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                                 inputMode="numeric"
                                 value={rate}
                                 onChange={(e) => setRate(e.target.value)}
-                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-ember-500"
+                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
                                 placeholder="e.g. 8000"
                             />
                         </div>
                         <p
                             data-testid="apply-fee-note"
-                            className="mt-3 flex items-start gap-2 rounded-md border border-ember-500/25 bg-ember-500/10 p-3 text-xs leading-relaxed text-ember-500/90"
+                            className="mt-3 flex items-start gap-2 rounded-md border border-primary/25 bg-primary/10 p-3 text-xs leading-relaxed text-primary/90"
                         >
                             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none" />
                             {isBarter(campaign)
@@ -267,7 +267,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                             type="submit"
                             data-testid="apply-submit-btn"
                             disabled={submitting}
-                            className="rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                         >
                             {submitting ? (
                                 <>
@@ -298,9 +298,9 @@ function AppliedCard({ application, outstanding }) {
     return (
         <div
             data-testid="applied-status-card"
-            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-5"
+            className="rounded-md border border-state-approved/30 bg-state-approved/10 p-5"
         >
-            <div className="flex items-center gap-2 text-emerald-300">
+            <div className="flex items-center gap-2 text-state-approved">
                 <Check className="h-4 w-4" />
                 <span className="text-xs uppercase tracking-[0.2em]">
                     {held ? "Pitch received" : "Application submitted"}
@@ -324,14 +324,14 @@ function AppliedCard({ application, outstanding }) {
                 </Link>
             )}
 
-            <dl className="mt-5 space-y-3 border-t border-emerald-500/20 pt-4 text-sm">
+            <dl className="mt-5 space-y-3 border-t border-state-approved/20 pt-4 text-sm">
                 <div>
-                    <dt className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+                    <dt className="text-[10px] uppercase tracking-[0.2em] text-state-approved/80">
                         Status
                     </dt>
                     <dd
                         data-testid="applied-state"
-                        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs uppercase tracking-[0.15em] text-emerald-300"
+                        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-state-approved/15 px-2.5 py-0.5 text-xs uppercase tracking-[0.15em] text-state-approved"
                     >
                         <Clock className="h-3 w-3" />
                         {STATE_LABEL[application.state] || application.state}
@@ -339,7 +339,7 @@ function AppliedCard({ application, outstanding }) {
                 </div>
                 {application.pitch && (
                     <div>
-                        <dt className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+                        <dt className="text-[10px] uppercase tracking-[0.2em] text-state-approved/80">
                             Your pitch
                         </dt>
                         <dd
@@ -352,20 +352,20 @@ function AppliedCard({ application, outstanding }) {
                 )}
                 {application.quoted_rate != null && (
                     <div>
-                        <dt className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+                        <dt className="text-[10px] uppercase tracking-[0.2em] text-state-approved/80">
                             Your quoted rate
                         </dt>
                         <dd
                             data-testid="applied-rate"
                             className="mt-1 flex items-baseline font-serif text-2xl text-foreground"
                         >
-                            <IndianRupee className="h-4 w-4 text-emerald-300" />
+                            <IndianRupee className="h-4 w-4 text-state-approved" />
                             {formatRupees(application.quoted_rate)}
                         </dd>
                     </div>
                 )}
                 <div>
-                    <dt className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/80">
+                    <dt className="text-[10px] uppercase tracking-[0.2em] text-state-approved/80">
                         Submitted
                     </dt>
                     <dd className="mt-1 text-sm text-foreground/85">
@@ -450,9 +450,9 @@ export default function CampaignDetail() {
         if (!isCreator) {
             return (
                 <div className="rounded-md border border-white/10 bg-background/60 p-4 text-xs leading-relaxed text-muted-foreground">
-                    <Info className="mb-2 h-4 w-4 text-ember-500" />
+                    <Info className="mb-2 h-4 w-4 text-primary" />
                     You're signed in as{" "}
-                    <span className="uppercase tracking-[0.15em] text-ember-500">
+                    <span className="uppercase tracking-[0.15em] text-primary">
                         {user?.role}
                     </span>
                     . Only creator accounts can apply to campaigns.
@@ -472,7 +472,7 @@ export default function CampaignDetail() {
             return (
                 <div
                     data-testid="detail-apply-blocked"
-                    className="rounded-md border border-amber-500/30 bg-amber-500/10 p-5 text-sm leading-relaxed text-amber-200"
+                    className="rounded-md border border-state-pending/30 bg-state-pending/10 p-5 text-sm leading-relaxed text-state-pending"
                 >
                     <Info className="mb-2 h-4 w-4" />
                     {campaign.apply_blocked_reason}
@@ -496,7 +496,7 @@ export default function CampaignDetail() {
                 {campaign.apply_holds && (
                     <p
                         data-testid="detail-apply-holds"
-                        className="rounded-md border border-ember-500/30 bg-ember-500/10 p-4 text-sm leading-relaxed text-ember-500/90"
+                        className="rounded-md border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-primary/90"
                     >
                         You can pitch now. It waits with us and goes to the brand the
                         moment you're verified — you won't need to send it again.
@@ -505,7 +505,7 @@ export default function CampaignDetail() {
                 <Button
                     data-testid="detail-apply-btn"
                     onClick={() => setDialogOpen(true)}
-                    className="group h-12 w-full rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                    className="group h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                 >
                     <Send className="mr-2 h-4 w-4" />
                     Apply
@@ -544,7 +544,7 @@ export default function CampaignDetail() {
                     </p>
                     <Button
                         onClick={() => navigate("/campaigns")}
-                        className="mt-8 rounded-full bg-ember-500 text-black hover:bg-ember-400"
+                        className="mt-8 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                     >
                         Back to campaigns
                     </Button>
@@ -566,7 +566,7 @@ export default function CampaignDetail() {
                 <Link
                     to="/campaigns"
                     data-testid="detail-back-link"
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-ember-500"
+                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -578,7 +578,7 @@ export default function CampaignDetail() {
                         className={
                             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
                             (isLive
-                                ? "bg-ember-500/15 text-ember-500"
+                                ? "bg-primary/15 text-primary"
                                 : "border border-white/15 bg-white/5 text-muted-foreground")
                         }
                     >
@@ -586,7 +586,7 @@ export default function CampaignDetail() {
                             className={
                                 "inline-block h-1.5 w-1.5 rounded-full " +
                                 (isLive
-                                    ? "bg-ember-500 animate-pulse"
+                                    ? "bg-primary animate-pulse"
                                     : "bg-muted-foreground")
                             }
                         />
@@ -602,7 +602,7 @@ export default function CampaignDetail() {
                     {isPrivate(campaign) && (
                         <span
                             data-testid={VISIBILITY.badge(campaign.id)}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-ember-500/40 bg-ember-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-ember-500"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary"
                         >
                             <Lock className="h-3 w-3" />
                             Invite-only
@@ -647,7 +647,7 @@ export default function CampaignDetail() {
                 <div className="mt-10 grid gap-10 md:grid-cols-12">
                     <div className="md:col-span-8">
                         <section>
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                 The brief
                             </p>
                             <p
@@ -659,7 +659,7 @@ export default function CampaignDetail() {
                         </section>
 
                         <section className="mt-12 rounded-md border border-white/10 bg-card p-8 grain-surface">
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                 Deliverables
                             </p>
                             {/* Counted pieces rather than a paragraph. A
@@ -692,7 +692,7 @@ export default function CampaignDetail() {
                             learns about a twelve-month paid-usage grant at
                             delivery has already done the job. */}
                         <section className="mt-12">
-                            <p className="text-xs uppercase tracking-[0.2em] text-ember-500">
+                            <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                 Terms
                             </p>
                             <div className="mt-4">
@@ -741,7 +741,7 @@ export default function CampaignDetail() {
                                         "Barter"
                                     ) : (
                                         <>
-                                            <IndianRupee className="h-6 w-6 text-ember-500" />
+                                            <IndianRupee className="h-6 w-6 text-primary" />
                                             {formatRupees(campaign.budget_per_creator)}
                                         </>
                                     )}
