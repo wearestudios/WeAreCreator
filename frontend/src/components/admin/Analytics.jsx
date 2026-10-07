@@ -17,7 +17,8 @@
 // says how old the answer is, because a dashboard that looks live and is an
 // hour old is worse than one that admits it.
 import React, { useCallback, useEffect, useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowRight, Download, RefreshCw } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
@@ -176,11 +177,60 @@ function Bars({ rows, valueKey, format = pct, max }) {
     );
 }
 
+/**
+ * One supply-or-demand row, and a way through to the records behind it.
+ *
+ * **Naming a problem with nothing to do about it is how a panel becomes a list
+ * people scroll past** — the lesson `Health.jsx` records. So each row opens the
+ * list it is about, pre-filtered to exactly the set the figure counted.
+ *
+ * A button rather than an `<a>`: the destination is a list whose filters live
+ * in session state rather than in the URL, so arriving is `navigate(..., {
+ * state: { savedFilter } })` — the mechanism the sidebar's saved sets already
+ * use. An anchor would promise a URL somebody could paste, and that URL would
+ * open the list unfiltered.
+ */
+function SupplyRow({ row, right, onOpen, opens, testId }) {
+    return (
+        <li>
+            <button
+                type="button"
+                data-testid={testId}
+                onClick={onOpen}
+                title={`Open the ${opens} this counted`}
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-primary/40 hover:bg-tint/[0.06]"
+            >
+                <span>
+                    {row.category} · {row.city}
+                </span>
+                <span className="flex shrink-0 items-center gap-2 tabular-nums text-muted-foreground">
+                    {right}
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+            </button>
+        </li>
+    );
+}
+
 export default function Analytics() {
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);
     const [days, setDays] = useState(DEFAULT_WINDOW);
+    const navigate = useNavigate();
+
+    // **The category goes through as a category, not as a search term.** The
+    // creators list resolves it server-side through the same synonym table the
+    // count used, so "14 fitness creators" opens those fourteen — a literal
+    // search for the word would find whoever typed it, which is nobody.
+    const openCreators = (r) =>
+        navigate("/admin/creators", {
+            state: { savedFilter: { category: r.category, area: r.city, page: 1 } },
+        });
+    const openCampaigns = (r) =>
+        navigate("/admin/campaigns", {
+            state: { savedFilter: { category: r.category, city: r.city, page: 1 } },
+        });
 
     const load = useCallback(
         async (refresh = false) => {
@@ -423,17 +473,14 @@ export default function Analytics() {
                         {supply.sell_into.length ? (
                             <ul className="mt-3 space-y-2">
                                 {supply.sell_into.slice(0, 8).map((r) => (
-                                    <li
+                                    <SupplyRow
                                         key={`${r.category}-${r.city}`}
-                                        className="flex items-center justify-between rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-sm"
-                                    >
-                                        <span>
-                                            {r.category} · {r.city}
-                                        </span>
-                                        <span className="tabular-nums text-muted-foreground">
-                                            {num(r.creators)} creators
-                                        </span>
-                                    </li>
+                                        row={r}
+                                        testId={`analytics-sell-into-${r.category}-${r.city}`}
+                                        right={`${num(r.creators)} creators`}
+                                        onOpen={() => openCreators(r)}
+                                        opens="creators"
+                                    />
                                 ))}
                             </ul>
                         ) : (
@@ -450,18 +497,14 @@ export default function Analytics() {
                         {supply.recruit_for.length ? (
                             <ul className="mt-3 space-y-2">
                                 {supply.recruit_for.slice(0, 8).map((r) => (
-                                    <li
+                                    <SupplyRow
                                         key={`${r.category}-${r.city}`}
-                                        className="flex items-center justify-between rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-sm"
-                                    >
-                                        <span>
-                                            {r.category} · {r.city}
-                                        </span>
-                                        <span className="tabular-nums text-muted-foreground">
-                                            {num(r.unfilled_campaigns)} unfilled ·{" "}
-                                            {num(r.creators)} creators
-                                        </span>
-                                    </li>
+                                        row={r}
+                                        testId={`analytics-recruit-for-${r.category}-${r.city}`}
+                                        right={`${num(r.unfilled_campaigns)} unfilled · ${num(r.creators)} creators`}
+                                        onOpen={() => openCampaigns(r)}
+                                        opens="campaigns"
+                                    />
                                 ))}
                             </ul>
                         ) : (

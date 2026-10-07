@@ -75,6 +75,11 @@ const LIVE_STATUSES = ["upcoming", "open", "in_progress"];
 const DEFAULTS = {
     q: "",
     status: "",
+    // Set by arriving from the analytics supply panel, which counted briefs
+    // by exactly these two. A keyword search over titles would open a
+    // different set from the figure that offered the link.
+    category: "",
+    city: "",
     // "" = every campaign, "1" = only the ones we would show a prospect.
     showcase: "",
     execution: "",
@@ -108,7 +113,7 @@ export default function AdminCampaigns({
         "campaigns",
         DEFAULTS,
     );
-    const { q, status, showcase, execution, from, to, page, sort } = state;
+    const { q, status, category, city, showcase, execution, from, to, page, sort } = state;
     const [typed, setTyped] = useState(q);
     const location = useLocation();
 
@@ -143,6 +148,8 @@ export default function AdminCampaigns({
                     page_size: PAGE_SIZE,
                     ...(q ? { q } : {}),
                     ...(status ? { status } : {}),
+                    ...(category ? { category } : {}),
+                    ...(city ? { city } : {}),
                     ...(showcase ? { showcase: true } : {}),
                     ...(execution ? { execution_owner: execution } : {}),
                     ...(brandFilter ? { brand_id: brandFilter } : {}),
@@ -155,7 +162,7 @@ export default function AdminCampaigns({
             notifyError(e);
             setData({ campaigns: [], total: 0, pages: 0 });
         }
-    }, [page, q, status, showcase, execution, brandFilter, from, to]);
+    }, [page, q, status, category, city, showcase, execution, brandFilter, from, to]);
 
     useEffect(() => {
         load();
@@ -511,6 +518,8 @@ export default function AdminCampaigns({
             value: brandFilter ? brandName || "Selected brand" : "",
             onRemove: () => onClearBrand?.(),
         },
+        { key: "category", label: "Category", value: category, onRemove: () => patch({ category: "", page: 1 }) },
+        { key: "city", label: "City", value: city, onRemove: () => patch({ city: "", page: 1 }) },
         { key: "showcase", label: "Showcase", value: showcase ? "Showcase only" : "", onRemove: () => patch({ showcase: "" }) },
         {
             key: "execution",

@@ -56,6 +56,12 @@ const DEFAULTS = {
     q: "",
     status: "",
     niche: "",
+    // A campaign category, resolved server-side through
+    // `CAMPAIGN_CATEGORY_SYNONYMS` — the bridge the analytics supply panel
+    // counted with, so the link it offers lands on the people it counted.
+    // Set by arriving from there; there is no control for it, because a
+    // category is not how an admin thinks about a creator's own words.
+    category: "",
     area: "",
     page: 1,
     sort: { key: "name", dir: "asc" },
@@ -70,7 +76,7 @@ export default function AdminCreators() {
         "creators",
         DEFAULTS,
     );
-    const { q, status, niche, area, page, sort } = state;
+    const { q, status, niche, category, area, page, sort } = state;
     const [typed, setTyped] = useState(q);
     const location = useLocation();
 
@@ -98,6 +104,7 @@ export default function AdminCreators() {
                     ...(q ? { q } : {}),
                     ...(status ? { verification_status: status } : {}),
                     ...(niche ? { niche } : {}),
+                    ...(category ? { category } : {}),
                     ...(area ? { area } : {}),
                 },
             });
@@ -106,7 +113,7 @@ export default function AdminCreators() {
             notifyError(e);
             setData({ creators: [], total: 0, pages: 0 });
         }
-    }, [page, q, status, niche, area]);
+    }, [page, q, status, niche, category, area]);
 
     useEffect(() => {
         load();
@@ -258,6 +265,7 @@ export default function AdminCreators() {
         { key: "search", label: "Search", value: q, onRemove: () => { setTyped(""); patch({ q: "", page: 1 }); } },
         { key: "status", label: "Status", value: status, onRemove: () => patch({ status: "", page: 1 }) },
         { key: "niche", label: "Niche", value: niche, onRemove: () => patch({ niche: "", page: 1 }) },
+        { key: "category", label: "Category", value: category, onRemove: () => patch({ category: "", page: 1 }) },
         { key: "area", label: "City", value: area, onRemove: () => patch({ area: "", page: 1 }) },
     ];
 
