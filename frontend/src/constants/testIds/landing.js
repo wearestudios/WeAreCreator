@@ -18,6 +18,11 @@ export const LANDING = {
 export const LANDING_PAGE = {
 	page: 'landing-page',
 	problem: 'landing-problem-section',
+	// The two image slots. Home was the only marketing page with none — the
+	// audience pages carry two each and /why-weare four — so the strongest
+	// claim on the site was three lines of type with nothing beside them.
+	problemImage: 'landing-problem-image',
+	bandImage: 'landing-band-image',
 	promise: 'landing-promise',
 	howItWorksLink: 'landing-how-it-works-link',
 };

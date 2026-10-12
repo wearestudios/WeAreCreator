@@ -428,6 +428,42 @@
     will-change: auto;
 }
 
+/* ---------------------------------------------------------------------------
+ * The hero's Ken Burns
+ *
+ * **Transform only, and on the image layer rather than the container.** The
+ * container is the clipping box; scaling it would grow the hole it reserves.
+ * Transform is one of the two properties a compositor can animate without
+ * touching layout, which is what makes a full-viewport drift affordable at
+ * all — the previous slider was removed for the cost of the layer, not for
+ * the idea.
+ *
+ * **Four directions, because one is a loop.** Consecutive slides pan the same
+ * way if they share a keyframe set, and four identical drifts read as a
+ * single clip repeating rather than as four photographs.
+ *
+ * 1.0 → 1.08 gives 4% of overscan on each edge, so the 1.5% translate never
+ * exposes one. No easing is named here: the timing function is set at the call
+ * site to `linear`, because a drift that decelerates reads as a camera being
+ * stopped rather than as one still moving when the next slide arrives.
+ * ------------------------------------------------------------------------- */
+@keyframes heroDriftLeftUp {
+    from { transform: scale(1) translate3d(0, 0, 0); }
+    to   { transform: scale(1.08) translate3d(-1.5%, -1.5%, 0); }
+}
+@keyframes heroDriftRightDown {
+    from { transform: scale(1) translate3d(0, 0, 0); }
+    to   { transform: scale(1.08) translate3d(1.5%, 1.5%, 0); }
+}
+@keyframes heroDriftLeftDown {
+    from { transform: scale(1) translate3d(0, 0, 0); }
+    to   { transform: scale(1.08) translate3d(-1.5%, 1.5%, 0); }
+}
+@keyframes heroDriftRightUp {
+    from { transform: scale(1) translate3d(0, 0, 0); }
+    to   { transform: scale(1.08) translate3d(1.5%, -1.5%, 0); }
+}
+
 /* A route arriving. Same shape, its own duration so the two can be tuned
    apart — a whole screen and one row inside it are different distances. */
 .weare-route {
@@ -468,6 +504,16 @@
         opacity: 1;
         transform: none;
         will-change: auto;
+    }
+    /* The hero drift is applied inline by `HeroSlider`, which already checks
+       `useReducedMotion` and does not apply it at all under `reduce`. This is
+       the backstop for the case the hook is wrong — a stale media query in an
+       embedded webview, say — so the end state is the first paint rather than
+       a 0.01ms pan. */
+    [style*="heroDrift"] {
+        animation: none !important;
+        transform: none !important;
+        will-change: auto !important;
     }
 }
 

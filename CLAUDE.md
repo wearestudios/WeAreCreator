@@ -1386,10 +1386,66 @@ page behind it is the one inline element that really is floating, and without
 the shadow the tilt reads as a mistake. Soft, and in black rather than the
 default grey. A test fails any other marketing file that grows one.
 
-The hero's full-bleed photo slider is gone. Its job was to say "we do all of
-these", which the cards now do better — and it cost a full-viewport layer
+### The slider came back, under the budget that removed it
+
+The hero's full-bleed photo slider was removed once: its job was to say "we do
+all of these", which the cards do better, and it cost a full-viewport layer
 cross-fading every seven seconds on the page most likely to be opened on
-mobile data.
+mobile data. `HeroSlider.jsx` is the reversal, and the original measurement is
+the budget it had to come in under rather than a decision it overrode.
+
+- **At most two layers are painted, ever.** The deck is four slides and the
+  DOM holds the outgoing one and the incoming one; `peakLayersOverTenSeconds`
+  measured 2. Rendering all four with three at `opacity: 0` would pay the
+  original cost in full — an invisible full-viewport layer still composites.
+- **The slides come from the headline.** One per `PHRASES` entry, in the
+  headline's order, so the picture changes as the words morph. The old deck
+  carried a headline per slide, which made the page appear to sell four
+  products; this carries **no copy at all**, which is also what keeps home
+  inside its 120-word budget.
+- **Ken Burns rides the image layer, never the container** — scaling the
+  container grows the hole it reserves — and the four drifts alternate
+  direction so the sequence does not read as one looping clip. Transform and
+  opacity only, so the compositor owns both.
+- **The outgoing slide paints last**, which is the opposite of the obvious
+  order: it sits on top and dissolves to reveal the incoming one. Painting the
+  incoming above would cover the old slide at full opacity on the frame it
+  mounts — a hard cut with a 600ms fade running invisibly underneath — and
+  dissolving one layer is half the work of fading two.
+- **The pause listeners go on the hero, not on the slider.** The slider is
+  `absolute inset-0` *behind* the content, so a pointer over the headline is
+  never over this element; handlers on the slider would pause only for the few
+  pixels of background either side of the type. `focusin`/`focusout` rather
+  than `focus`/`blur`, which do not bubble.
+- `will-change` is released on `animationend`, the rule the app's motion layer
+  already holds, and `EASE_CSS` is built from `EASE` rather than retyped so a
+  second curve cannot be introduced.
+- Under `prefers-reduced-motion`: slide one, no timer, no pan, no dots, the end
+  state on first paint.
+
+**Measured against the pre-slider build on the identical harness** — 4× CPU
+throttle, Fast-3G, API delayed, at 390 and 1280. The hero's own cost is
+**unchanged**: hero-only CLS 0.0001 vs 0.0001 at 390 and 0.0000 vs 0.0000 at
+1280, with the same six to seven long tasks over 50ms in both, which are React
+bootstrapping. So it ships at every width and there is no `md:` gate.
+
+Two measurement traps found getting there, both worth keeping:
+
+- **A contrast check that crops the text's own bounding box samples the
+  glyphs.** The first version reported 1.00:1 and named the "lightest ground"
+  as `#EDF1F7`, which is the foreground colour. Screenshot the hero twice —
+  once as it looks, once with the content column `visibility: hidden` — and
+  sample the second. Against the true composited ground, worst case across a
+  full slide cycle: headline 12.00:1 (390) / 10.13:1 (1280), subheading
+  8.13 / 6.79, eyebrow 5.16 / 5.52, all past AA.
+- **A whole-page scroll walk measures the lazy-load boundary, not the hero.**
+  `CreatorLeaderboard` and `CaseStudyStrip` fetch on an IntersectionObserver,
+  and the document grows from ~4,400px to ~7,300px when they land. Whether
+  that growth scores depends on where a synthetic walk is standing when it
+  happens, so the taller build reads worse while the mechanism is identical —
+  the control scores 0.0427 at 1280 on exactly the same event. The hero phase
+  is therefore reported apart from the scroll phase. The growth itself is
+  pre-existing and real; it is not the slider's.
 
 ### The scroll film
 
