@@ -6,13 +6,27 @@
 // earn the click, and the detail it wants to add lives on the audience pages,
 // in onboarding, and in the product.
 //
-// The slider is four category labels and nothing else now. Each slide used to
-// carry its own headline as well ("A full room on opening night"), which is a
-// second idea on a screen that already has one, and four of them meant the
-// page appeared to be selling four products.
+// **The hero slider is back, and the terms it came back on are the record.**
+// It was removed once, on a measurement rather than a taste: four
+// full-viewport layers cross-fading every seven seconds, on the page most
+// likely to be opened on mobile data. `FloatingCards` replaced it and said
+// the same thing better — four categories at once instead of one at a time.
 //
-// **Nothing here is fetched from a third party.** The slider hotlinked four
-// stock photographs until the image slots replaced them.
+// It returns carrying no copy of its own. Each slide used to have a headline
+// ("A full room on opening night"), which is a second idea on a screen that
+// already has one, and four of them made the page look like it was selling
+// four products. The deck is now built from `PHRASES` — the same four kinds
+// of work the headline morphs through — so the picture changes *with* the
+// words rather than beside them. One idea, moving.
+//
+// What it costs is written down in `HeroSlider.jsx` and was measured before
+// it shipped: at most two layers in the DOM, the pan on the image layer and
+// never the container, `will-change` released on `animationend`, and nothing
+// at all under `prefers-reduced-motion`.
+//
+// **Nothing here is fetched from a third party.** The old slider hotlinked
+// four stock photographs; every slot on this page is a `PlaceholderImage` — a
+// computed tint and a brief somebody could hand to a photographer.
 import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -26,10 +40,13 @@ import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
 import { HERO_EYEBROW } from "@/lib/siteNav";
 import FloatingCards from "@/components/marketing/FloatingCards";
+import HeroSlider from "@/components/marketing/HeroSlider";
+import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
 import CreatorLeaderboard from "@/components/marketing/CreatorLeaderboard";
 import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
+import BrandWall from "@/components/marketing/BrandWall";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -73,17 +90,23 @@ const COPY = {
 };
 
 /**
- * The hero — the kinetic headline, floating cards, two doors.
+ * The hero — a moving photograph, the kinetic headline, floating cards, two
+ * doors.
  *
- * This replaced a full-bleed photo slider that cross-faded four category
- * images behind the text. The slider's job was to say "we do all of these",
- * and the floating cards now say it better: four categories visible *at once*
- * rather than one at a time behind a scrim heavy enough to keep the headline
- * readable. It also cost a full-viewport compositing layer cross-fading every
- * seven seconds, on the page most likely to be opened on mobile data.
+ * **The slider was removed from here and has been put back.** The reason it
+ * went is still the reason it is built the way it is: a full-bleed deck cost
+ * four compositing layers cross-fading every seven seconds, and
+ * `FloatingCards` said "we do all of these" better by showing four categories
+ * at once. So the cards stay, and the slider sits behind them under a budget
+ * — see `HeroSlider.jsx`, which holds two layers at most and stops entirely
+ * when somebody hovers or tabs in.
  *
- * What is left is the signature: poster type that morphs at letterform level
- * against a line that never moves.
+ * The two say different things now rather than the same thing twice: the
+ * cards are the range, the slider is one of them at a time, in step with the
+ * headline morphing through the same four phrases.
+ *
+ * Everything in the content column is fixed across slides. Only the
+ * background moves, which is what keeps this one idea instead of two.
  */
 function Hero() {
     return (
@@ -91,10 +114,14 @@ function Hero() {
             data-testid={HERO_IDS.section}
             className="relative overflow-hidden border-b border-white/10"
         >
+            {/* Behind everything, including the cards. It carries its own
+                scrim — on its own layer, not on the slide, because the slide
+                already sets `background-image` and one of the two would
+                silently win. */}
+            <HeroSlider />
+
             {/* Decorative and absolutely positioned, so they never move the
-                headline. Behind it in the stacking order for the same reason
-                the scrim used to exist — except a tilted card at 26% width
-                does not need one. */}
+                headline. Above the slider and below the type. */}
             <FloatingCards />
 
             <div
@@ -176,8 +203,26 @@ function Problem() {
                     </h2>
                 </Reveal>
 
-                <div className="mt-8">
+                {/* **The points and a picture, side by side.** The strongest
+                    claim on the page was three lines of type alone. No copy
+                    comes with the slot — home is at 105 words against 120,
+                    and a caption here would be the page explaining a
+                    photograph instead of showing one.
+
+                    The picture is second in the DOM and first is the text, so
+                    a phone reads the claim before the illustration rather
+                    than scrolling past a tint to reach it. */}
+                <div className="mt-8 grid items-start gap-8 md:grid-cols-[1fr_minmax(0,22rem)] md:gap-12">
                     <Points items={COPY.problems} />
+                    <Reveal i={2}>
+                        {/* PLACEHOLDER IMAGE: A creator shooting on location,
+                            phone on a gimbal, venue staff visible behind */}
+                        <PlaceholderImage
+                            testid={PAGE_IDS.problemImage}
+                            note="A creator shooting on location, phone on a gimbal, venue staff visible behind"
+                            ratio="3/2"
+                        />
+                    </Reveal>
                 </div>
 
                 <Reveal i={1}>
@@ -208,7 +253,14 @@ export default function Landing() {
         >
             <PageMeta
                 title="Creator campaigns, handled properly"
-                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns in Bengaluru."
+                // **No city in the meta description.** It named Bengaluru,
+                // which was accurate and is the one claim on this page that
+                // nothing re-checks — a meta description is written once and
+                // read by strangers for years. The geography that *is* said on
+                // this site is rendered from counted supply
+                // (`CountedGeography`); a description cannot do that, so it
+                // says nothing about place rather than something stale.
+                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns, run end to end."
                 path="/"
             />
             <MarketingNavbar />
@@ -219,10 +271,42 @@ export default function Landing() {
                 "500+ verified creators" until this replaced it. */}
             <ProofStrip only={["creators", "campaigns", "cities"]} />
 
+            {/* **Directly under the figures and well above the case studies**,
+                which is the order a sceptical brand reads in: the figures say
+                there is an operation, the logos say businesses like theirs
+                use it, and the write-ups further down say it works. Logos
+                before the proof would be decoration; logos after the
+                write-ups would be a footnote.
+
+                Every brand here has finished at least one campaign and has
+                given written permission for its mark — both decided
+                server-side, and consent re-read on every request so a
+                withdrawal is gone from the next page load. Absent entirely
+                below the floor: one withdrawal taking the row down is
+                correct, because the floor is about whether the claim is worth
+                making at all. */}
+            <BrandWall />
+
             {/* The centrepiece: the product performing itself. Pinned and
                 scroll-driven where that runs well, the identical seven beats
                 as a stepped list everywhere else. */}
             <CampaignFilm title={COPY.filmTitle} />
+
+            {/* A full-bleed band between the film and the problem — the film
+                ends on a drawn interface and the problem opens on type, and
+                one photograph between them is the beat that stops the page
+                reading as a diagram followed by an argument. No words: the
+                120-word budget is the constraint, and this is doing the job
+                a sentence would have done badly. */}
+            <div className="mx-auto max-w-7xl px-6">
+                {/* PLACEHOLDER IMAGE: Wide shot of a busy venue mid-campaign,
+                    creators and guests mixed, shot from above */}
+                <PlaceholderImage
+                    testid={PAGE_IDS.bandImage}
+                    note="Wide shot of a busy venue mid-campaign, creators and guests mixed, shot from above"
+                    ratio="21/9"
+                />
+            </div>
 
             <Problem />
 

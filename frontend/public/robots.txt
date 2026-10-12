@@ -29,7 +29,18 @@ Disallow: /profile
 Disallow: /manager
 Disallow: /login
 Disallow: /signup
+# The anonymous creator research survey. **Research, not a page we want
+# indexed**: a survey in a search index collects answers from whoever wandered
+# in, which is a different population from the one we are asking about. The
+# page itself also sends `noindex`, for a crawler that arrives anyway.
+Disallow: /survey
 
-# Replace the host when the site is on its own domain. Served by the backend
-# and proxied at /sitemap.xml, so this and vercel.json have to agree.
+# Point this at the host that actually serves the sitemap.
+#
+# The deploy uses PUBLIC_SHARE_BASE_URL rather than Vercel rewrites (see
+# PREVIEW.md), so /sitemap.xml is served by the API host and not by this one.
+# A crawler asking for it here gets the SPA's catch-all, which is XML-shaped
+# only in the sense that HTML has angle brackets. This is a static file, so no
+# environment variable can set it — change it by hand to the same origin as
+# PUBLIC_SHARE_BASE_URL.
 Sitemap: https://wearecreators.in/sitemap.xml

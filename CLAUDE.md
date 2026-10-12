@@ -1130,11 +1130,60 @@ and spreadsheets, nobody checked, no rate in writing, no proof of what it
 achieved. `_FORBIDDEN_MARKETING_PHRASES` in `server.py` holds the line and
 `test_marketing_pages.py` fails any page for any of them.
 
-**Bengaluru is evidence of network depth, never identity.** "The network runs
-deepest in Bengaluru, and creators sign up from anywhere in India" is the
-sentence; "every city", "pan-India" and "nationwide" are banned on every page,
-including the login and signup screens, which sat outside these tests long
-enough to keep "Every city that matters" months after it was removed elsewhere.
+**Geography is counted, never typed.** Depth is still the claim and identity
+is still banned — but the *place* is now rendered from `_platform_proof` at
+request time rather than written into a `COPY` block, which is the rule every
+other figure on this site already follows.
+
+- `_deepest_supply_city()` is the reader: the city with the most **verified**
+  creators, grouped on the canonical `city` field (free text could not be
+  ranked at all — "Bangalore", "bangalore" and "BLR" would be three cities and
+  one place). `_id`-ascending breaks a tie, so the sentence cannot flicker
+  between requests. Unverified signups do not count: supply means creators a
+  brand can actually book, and this claim tells brands where to post.
+- **It rides inside the same floor gate as the figures.** `_platform_proof`
+  returns `{}` as a set, so a page cannot name a city while the counts that
+  would give the name a denominator are absent. "Deepest in Kochi" with
+  nothing beside it is a smaller claim than silence, not a bigger one.
+  `deepest_city` is deliberately *not* in `PROOF_FLOORS` — it is a name, and
+  there is no floor to hold a name to.
+- `components/marketing/CountedGeography.jsx` is the frontend half, as a
+  render prop: what is worth centralising is *whether there is a city to
+  name*, not how it reads. Three states, because in-flight and
+  resolved-with-nothing are different — a caller collapsing them would render
+  its absent branch on every first paint. On `/for-brands` the whole section
+  is behind it (an eyebrow reading "Where we are" above a sentence with the
+  place removed is worse than no section); on `/why-weare` only the one point
+  is, because the section it sits in is not about a place.
+- **The literals stay banned.** "every city", "pan-India", "across India" and
+  "nationwide" are still in `_FORBIDDEN_MARKETING_PHRASES`, and the mechanism
+  only changed direction: a hardcoded *national* claim is still hardcoded, and
+  now a hardcoded *local* one is caught too. `test_no_page_names_a_city_in_its_copy`
+  sweeps every `COPY` block and every image note, and a second test sweeps the
+  page title and meta description — the longest-lived copy on the site, written
+  once and read by strangers for years, and the one place a `COPY` sweep would
+  not look. Home's said "Paid brand campaigns in Bengaluru."
+- `test_geography_is_stated_as_depth_rather_than_identity` **used to require
+  the literal** "bengaluru" and "anywhere in india" on both pages, and was
+  right to: the risk then was claiming a footprint we could not staff. It pins
+  the mechanism now, not the sentence, because a test naming a phrase is a
+  test that fails on its next honest rewrite.
+
+Two things that fell out of reading the copy by machine rather than by eye:
+
+- **The budget helper only saw double-quoted strings.** Rendered copy is a
+  template literal, so `reachTitle: (city) => \`…\`` would have escaped both
+  the word budget and the eight-word headline cap — exactly the way the
+  `moment`/`step` rename nearly lost the cap. `_literals` reads both shapes
+  and counts `${city}` as the one word it renders as.
+- **Reading backticks meant reading comments.** The convention here is to
+  backtick code identifiers in prose, so "see `CountedGeography`" landed in
+  the word budget as page copy. `_literals` strips whole comment lines first —
+  the same cut `copy_of` makes, and deliberately not everything from `//`
+  onward, which would also truncate at the `//` in a `https://` inside a real
+  string. Stripping them revealed that **`/for-brands` was 240 words, not
+  250**: ten words of its documented "exactly on budget, no headroom" were
+  double-quoted strings inside comments. The figure below is corrected.
 
 What each audience must come away knowing is pinned there too — for creators,
 that briefs are real and paid, the rate is agreed in writing before they shoot,
@@ -1310,11 +1359,17 @@ both spellings so the cap survived the rename rather than silently stopping at
 it.
 
 **The register pass is not a licence to lengthen.** Every page came out of it
-inside the same budget — home 105/120, `/for-brands` 250/250, `/for-creators`
+inside the same budget — home 105/120, `/for-brands` 240/250, `/for-creators`
 244/250, `/how-it-works` 288/300, `/why-weare` 257/300 — which is the
-constraint that forces a rewrite to be better rather than merely longer. On
-`/for-brands`, which has no headroom at all, the new hero is a word shorter
-than the one it replaced and that is what paid for the fixes below it.
+constraint that forces a rewrite to be better rather than merely longer.
+
+`/for-brands` read **250/250** here for as long as this paragraph has existed,
+and the claim built on it — that the page had no headroom, so the register
+pass had to pay for each fix with a cut elsewhere — was measuring ten words of
+comment text as copy. The counter only started stripping comments when it
+learned to read template literals; see the geography section above. The
+rewrites it describes all still happened and the page is still the tightest of
+the five, but it was never actually on its limit.
 
 **What the tests pin, and what they must not.** Several of these lines were
 asserted verbatim, so the audit had to move five assertions. Each now pins the
@@ -1386,10 +1441,66 @@ page behind it is the one inline element that really is floating, and without
 the shadow the tilt reads as a mistake. Soft, and in black rather than the
 default grey. A test fails any other marketing file that grows one.
 
-The hero's full-bleed photo slider is gone. Its job was to say "we do all of
-these", which the cards now do better — and it cost a full-viewport layer
+### The slider came back, under the budget that removed it
+
+The hero's full-bleed photo slider was removed once: its job was to say "we do
+all of these", which the cards do better, and it cost a full-viewport layer
 cross-fading every seven seconds on the page most likely to be opened on
-mobile data.
+mobile data. `HeroSlider.jsx` is the reversal, and the original measurement is
+the budget it had to come in under rather than a decision it overrode.
+
+- **At most two layers are painted, ever.** The deck is four slides and the
+  DOM holds the outgoing one and the incoming one; `peakLayersOverTenSeconds`
+  measured 2. Rendering all four with three at `opacity: 0` would pay the
+  original cost in full — an invisible full-viewport layer still composites.
+- **The slides come from the headline.** One per `PHRASES` entry, in the
+  headline's order, so the picture changes as the words morph. The old deck
+  carried a headline per slide, which made the page appear to sell four
+  products; this carries **no copy at all**, which is also what keeps home
+  inside its 120-word budget.
+- **Ken Burns rides the image layer, never the container** — scaling the
+  container grows the hole it reserves — and the four drifts alternate
+  direction so the sequence does not read as one looping clip. Transform and
+  opacity only, so the compositor owns both.
+- **The outgoing slide paints last**, which is the opposite of the obvious
+  order: it sits on top and dissolves to reveal the incoming one. Painting the
+  incoming above would cover the old slide at full opacity on the frame it
+  mounts — a hard cut with a 600ms fade running invisibly underneath — and
+  dissolving one layer is half the work of fading two.
+- **The pause listeners go on the hero, not on the slider.** The slider is
+  `absolute inset-0` *behind* the content, so a pointer over the headline is
+  never over this element; handlers on the slider would pause only for the few
+  pixels of background either side of the type. `focusin`/`focusout` rather
+  than `focus`/`blur`, which do not bubble.
+- `will-change` is released on `animationend`, the rule the app's motion layer
+  already holds, and `EASE_CSS` is built from `EASE` rather than retyped so a
+  second curve cannot be introduced.
+- Under `prefers-reduced-motion`: slide one, no timer, no pan, no dots, the end
+  state on first paint.
+
+**Measured against the pre-slider build on the identical harness** — 4× CPU
+throttle, Fast-3G, API delayed, at 390 and 1280. The hero's own cost is
+**unchanged**: hero-only CLS 0.0001 vs 0.0001 at 390 and 0.0000 vs 0.0000 at
+1280, with the same six to seven long tasks over 50ms in both, which are React
+bootstrapping. So it ships at every width and there is no `md:` gate.
+
+Two measurement traps found getting there, both worth keeping:
+
+- **A contrast check that crops the text's own bounding box samples the
+  glyphs.** The first version reported 1.00:1 and named the "lightest ground"
+  as `#EDF1F7`, which is the foreground colour. Screenshot the hero twice —
+  once as it looks, once with the content column `visibility: hidden` — and
+  sample the second. Against the true composited ground, worst case across a
+  full slide cycle: headline 12.00:1 (390) / 10.13:1 (1280), subheading
+  8.13 / 6.79, eyebrow 5.16 / 5.52, all past AA.
+- **A whole-page scroll walk measures the lazy-load boundary, not the hero.**
+  `CreatorLeaderboard` and `CaseStudyStrip` fetch on an IntersectionObserver,
+  and the document grows from ~4,400px to ~7,300px when they land. Whether
+  that growth scores depends on where a synthetic walk is standing when it
+  happens, so the taller build reads worse while the mechanism is identical —
+  the control scores 0.0427 at 1280 on exactly the same event. The hero phase
+  is therefore reported apart from the scroll phase. The growth itself is
+  pre-existing and real; it is not the slider's.
 
 ### The scroll film
 
@@ -1637,6 +1748,112 @@ so what the preview promised is what opens.
   only `/c/*` is proxied to the frontend. The declared `og:image:width/height`
   are emitted **only for the site card**, whose size we know — a wrong one is
   worse than none, because some crawlers lay the card out from it.
+
+## The landing page matrix
+
+`/influencer-marketing/{slug}` — four shapes off one route, server-rendered by
+the backend like `/work`, and for `/work`'s reason: these are written to be
+**found** by search rather than sent, and a crawler that runs no JavaScript
+cannot read a React route.
+
+- `india` — the national hub
+- `mumbai` — a city
+- `food-drink-india` — a sector, nationally
+- `food-drink-mumbai` — a sector in a city
+
+**Generated from live supply, never from the enums, and that is the whole
+design.** Eight sectors times twenty cities plus the hubs is 189 URLs that are
+trivial to emit and would be a lie on most of them. A page saying "fashion
+creators in Guwahati" is a page a brand lands on, posts a brief from, and
+waits — and then the campaign fee comes back under `REFUND_POLICY_TERMS`,
+because we advertised as fillable a brief we could not fill. **The gate is the
+product promise, not an SEO preference**, which is why the reasoning is in the
+module docstring and a test reads it: nobody should later "fix" this by
+generating all 189.
+
+- A **city** page exists once that city has `CITY_PAGE_MIN_CREATORS` (15)
+  verified creators; a **sector × city** page needs `SECTOR_PAGE_MIN_CREATORS`
+  (5) in that sector *and* the city over its own floor — both, because a
+  sector can clear five in a city we cannot staff for anything else. Stored
+  and admin-editable, and **1 is the floor on the floor**: zero would generate
+  every combination, the one thing this gate exists to prevent.
+- **Counted per request**, so a page that loses its supply stops being
+  generated and leaves the sitemap with nothing to remember to remove.
+  `_landing_pages_from` is the one decider, shared by the route and the
+  sitemap, so a URL cannot be advertised to a crawler and then refused when it
+  follows it.
+- `SEO_SECTOR_SLUGS` and `SEO_CITY_SLUGS` are **derived** from
+  `CATEGORY_LABELS` and `INDIAN_CITIES`. No third list of either — the drift
+  `lib/categories.js` exists to prevent.
+- **The parser matches the longest sector prefix.** Both vocabularies contain
+  hyphens, so splitting on the first one reads `real-estate-mumbai` as the
+  sector "real" in the city "estate-mumbai". Both lists are closed, so longest
+  sector then a known city is unambiguous. `_landing_slug_for` is the inverse,
+  so a link and the route it points at cannot disagree.
+- Each page carries a **unique title and meta description** naming the sector
+  and the place — structural rather than checked, since the (sector, place)
+  pair *is* the URL — one H1, the counted supply for that cut, what a campaign
+  in that sector looks like, both commercial terms, published case studies
+  through `_public_case_study` (never a second projection), and internal links
+  to the national hub, the city hub and sibling sectors. **A link is only ever
+  offered to a page the supply currently justifies**, because a cross-link to
+  a 404 is worse than no cross-link.
+- JSON-LD is one `@graph` with a `Service` whose `areaServed` comes from the
+  real cut, plus a `FAQPage`. **Every FAQ answer is on the page** — markup
+  whose questions are not is a claim the page does not make, which Google
+  treats as a violation and a reader as bait. A test asserts both halves.
+- **These pages are not held to the five marketing pages' word budgets.** They
+  are search surfaces and need depth. Every claim on them is still checkable.
+
+**The sectors are this product's own vocabulary, which is a deliberate
+departure from the brief.** The brief asked for regulated-sector pages for
+finance (SEBI), healthcare (the Drugs & Magic Remedies Act and the NMC code),
+education (ASCI claims) and alcohol (surrogate only). **None of those four is
+in `CATEGORY_LITERAL`**, so a page offering one could never match a real
+campaign, a real case study or a real creator — exactly the drift the
+case-study vocabulary note records, and a second category list besides. The
+substance was kept where it genuinely applies to a sector we run:
+`SECTOR_RULES` puts surrogate advertising under `hospitality` and `fnb`, the
+Drugs & Magic Remedies Act and health claims under `wellness`, RERA
+registration numbers under `real_estate`, and claim substantiation under the
+rest. A `NEEDS A LAWYER` block above it names what review is still owed. If
+the operation starts running finance campaigns, `CATEGORY_LITERAL` moves and
+this moves with it.
+
+### The deploy arrangement, and why it is not the rewrites
+
+`frontend/vercel.json` rewrote `/sitemap.xml`, `/work`, `/work/:slug`,
+`/c/:id` and `/brands/:id` to `/index.html` — which is what the catch-all
+below them already does, so every server-rendered page was served as the SPA
+and a crawler asking for the sitemap got the React shell.
+
+**The chosen fix is `PUBLIC_SHARE_BASE_URL`, not repointing them**, and the
+reason is a property of the platform rather than a preference: **Vercel parses
+`vercel.json` at deploy time, before the build runs**, so a rewrite
+destination cannot come from an environment variable and has to be a literal
+hostname committed to the repository. Nothing here knows the API origin —
+`frontend/.env.example` has `http://localhost:8001` and that is all.
+
+So `PUBLIC_SHARE_BASE_URL` is set to the backend's own origin and every link
+the server generates — shared briefs, brand pages, case studies, landing
+pages, every `<loc>` and every canonical — points straight at the host that
+serves them. The cost is that the URL a brand reads is the API hostname.
+`setupProxy.js` still carries all six paths so `docker compose up` behaves
+like the deployed site, and the inert `vercel.json` entries are kept as the
+record of the other route.
+
+**One static file cannot be templated and so has to be changed by hand:**
+`frontend/public/robots.txt` ends with `Sitemap: https://wearecreators.in/sitemap.xml`,
+which under this arrangement sends a crawler to the SPA's catch-all — a 200
+with HTML, the worst shape of failure because nothing looks broken. A test
+requires the file to name `PUBLIC_SHARE_BASE_URL` and say it is static, so the
+next person reads the instruction where the problem is.
+
+`test_the_pending_proxy_decision_is_written_down` **used to require the words
+"pending decision" in `PREVIEW.md`** and has been inverted: it now asserts
+which way it went, that the deploy-time parsing reason is stated, and that
+`robots.txt` is named — while still checking every server-rendered path
+appears, which is the half worth keeping.
 
 ## A picture on the brief, a mark on the brand
 
@@ -3112,6 +3329,131 @@ Performance Observer, at 390 and 1280:
   a band that renders nothing most of the time and therefore cannot reserve
   height. Reserving one on every load to avoid it would be the worse trade.
 
+## The anonymous creator survey
+
+`/survey`, server-rendered, and `creator_survey_responses`. It asks creators
+about brands that went quiet, fees that changed after being agreed, and work
+they were never paid for — so **anonymity is the design constraint rather than
+a setting on top of it**, and several decisions cost analytical convenience on
+purpose.
+
+- **No auth, no cookie, no session, no account.** `POST /public/survey/creator`
+  sits on the public router beside the other unauthenticated reads, and a test
+  asserts the handler declares no `Depends` at all.
+- **The stored row is the answers, a date and a schema version.** Nothing
+  derived from the request: no `request.client.host`, no header, no user agent.
+  `_SURVEY_STORED_KEYS` is the whole shape and a test asserts the written keys
+  equal it exactly, so a field added to the payload cannot reach the database
+  without somebody adding it there on purpose.
+- **The rate limit is in memory and the IP is never written.** `_SURVEY_RATE`
+  is a module dict keyed by address that forgets on restart; three an hour,
+  twenty a day. The comment says plainly that the next person here will reach
+  for storing it — for a better limit, for abuse forensics, for deduplication
+  — and that a durable limit means a smaller window, not a stored address. A
+  missing address is allowed through: refusing would turn a proxy
+  configuration into a wall in front of the survey.
+- **`submitted_on` is a date, not a timestamp.** A precise instant plus a
+  known WhatsApp send time singles somebody out in a small sample, which is
+  the sample size this will have.
+- **One submission per device is a `localStorage` flag and nothing else.** No
+  fingerprinting — a test sweeps the page for `canvas`, `getContext`,
+  `AudioContext`, `webgl`, `screen.width`, `navigator.plugins` and
+  `hardwareConcurrency`. It is bypassable and that is correct: the alternative
+  is identifying people in order to stop them answering twice.
+- **Nothing is audited.** The one write path in the product that leaves no log
+  line, because `audit()` has an actor field. Driven and read back rather than
+  grepped, so a call added inside a helper still fails.
+- **No field anywhere can hold a government ID.** Question 13 asks *whether*
+  somebody has a PAN; `_survey_id_refusal` refuses a PAN or Aadhaar typed into
+  free text, with a message saying which, because a respondent who typed one
+  needs to know we are not keeping it. Refused rather than stripped — silently
+  removing it would store a sanitised answer while they believe they sent the
+  number.
+- **The limit we cannot promise is stated in the module.** Railway's proxy and
+  Atlas record connection metadata including IPs, outside this application. We
+  neither store nor read them and nothing joins them to a response. Written
+  down so nobody tells a respondent something stronger than the truth.
+
+**An Indian mobile with its country code is also twelve digits**, and the first
+Aadhaar pattern refused `+919876500042` — an honest answer thrown away with a
+confusing message, caught by the test that plants a phone number. So the
+pattern requires the run to start 2-9 (an Aadhaar never begins 0 or 1) and lets
+through a run beginning `91` followed by 6-9. That overlaps a real Aadhaar
+starting `916`-`919`, and the trade is deliberate: a phone number somebody
+typed is personal data of the same kind as the name they signed — kept as
+typed and warned about — whereas refusing it loses the answer. Each candidate
+run is checked at its own position, so one phone number in a long answer does
+not excuse a real Aadhaar later in the same one.
+
+### Two doors, one decider
+
+`_survey_refusal` and `_store_survey_response` are shared by the JSON endpoint
+the page's `fetch` uses and the plain `POST /survey` it falls back to, so the
+two cannot disagree about what a valid response is. **The page works with
+JavaScript disabled** — verified in a browser with `javaScriptEnabled: false`:
+fourteen questions render, the form posts the ordinary way and the thank-you
+page comes back. Refusals are **plain sentences rather than codes**, because
+the thing reading them may be running no script.
+
+- One page, one scroll, no pagination: a multi-step form on a phone loses
+  people at every step, and this one is opened from a WhatsApp message by
+  somebody who has not decided to spend four minutes yet. The length is said
+  honestly above the first question instead.
+- Native radios and checkboxes, no custom widgets. Measured in a browser at
+  390px: minimum touch target exactly 44px, no horizontal scroll, **zero
+  external requests** — no analytics, no pixel, no font fetch. An analytics
+  script on an anonymous survey is a contradiction, and a font request hands
+  an IP to a third party from a page whose whole promise is that we are not
+  collecting one.
+- **Exactly three on question 11, in the browser and on the server.** A
+  top-three that accepts seven gives a frequency count rather than a ranking,
+  and the ranking is the point. Counted on the distinct set, so three copies
+  of one choice is not three. An *omitted* top-three is a skipped question —
+  every field is optional, because a half-finished anonymous response is still
+  data and the browser is where required-ness belongs.
+- `noindex` on the page and `Disallow: /survey` in `robots.txt`. Research, not
+  a page we want found: a survey in a search index collects answers from
+  whoever wandered in, which is a different population from the one we asked.
+- **The copy says nothing about a platform, an app or anything being built.** A
+  survey that reveals the product gets answers about the product instead of
+  answers about people's lives. A test sweeps `SURVEY_COPY` for "we are
+  building", "our platform", "waitlist", "beta" and the rest.
+- The privacy note is exactly the agreed sentence and **a test refuses to let
+  it get stronger**: it must not claim answers cannot be connected to each
+  other, because within one response they obviously can, and that would be the
+  one false sentence on the page.
+
+### Reading the results
+
+`GET /admin/survey/creator` and `GET /admin/exports/survey`, both **admin-only
+and not `CONSOLE_ROLES`** — a respondent is not a creator we know and is
+attached to no brand, so there is nothing for a scoped console to be scoped
+*to*; narrowing it is not a smaller document but an empty one. `survey` joins
+`creators` and `audit` in `ADMIN_ONLY_EXPORTS` for that reason, and the two
+tests that pinned that set as exactly two now name it and say why.
+
+**The rows come back intact and are deliberately not shuffled or decoupled.**
+Splitting the free text away from the closed answers would protect nothing that
+is not already protected — no row identifies anybody — while destroying the
+entire analytical value, which is correlation *within* one response: that the
+people who were never paid are the same people who agreed the fee verbally. A
+survey you cannot cross-tabulate is a set of bar charts. `SURVEY_OPEN_TEXT_WARNING`
+rides on the payload because the open answers are the one part that may still
+carry a name somebody typed voluntarily.
+
+`RETENTION_DAYS["survey_responses"]` is 24 months, and **the period is a
+housekeeping decision rather than a legal one**: these rows identify nobody, so
+no erasure duty attaches and nothing is held against somebody's wishes. Two
+years is chosen so a wave can be compared against the next one.
+
+**`Legal.jsx` does not actually read that table**, which the spec assumed it
+did — it mirrors the periods in prose, with a comment conceding that if the two
+disagree "this page is the lie". So the survey needed its own sentence there as
+well as the row, and it is said separately from the list above it because that
+list is about data we hold *because it is yours*. The console's Retention panel
+does read the endpoint, and needed a label or it would have rendered the raw
+key.
+
 ## Being forgotten
 
 `deletion_router` at `/account`, and the admin half at
@@ -3411,6 +3753,80 @@ about whether the claim is worth making.
   renders only once the request is in flight: earlier, and a visitor who never
   scrolls gets a permanent section-shaped hole, which is what a browser check
   caught.
+
+### The brand wall
+
+A row of logos on home, for brands actually running campaigns here.
+`_public_brand_wall` **mirrors `_public_leaderboard`** rather than solving any
+of it again: a cached ordering so the front door computes nothing, eligibility
+re-read on every request so withdrawal is immediate, an allow-list built by
+naming keys, and absence below a floor rather than a thin row.
+
+- **The gate is having actually finished a campaign** — at least one in
+  `_CLOSED_CAMPAIGN_STATUSES`, derived on read, never stored. A wall of logos
+  says "these businesses are our customers", and the cheap version of that is
+  a wall of everybody who ever signed up; a brand that registered and never
+  posted is not a customer, and a brief still running is not evidence that
+  anything was delivered. Derived for the usual reason: a stored flag needs a
+  sweep, and a rule that depends on cron is true on Tuesdays. The count is
+  re-derived in `_public_brand_wall` too, not read off the cache — it is the
+  whole claim, so it is the last thing that may go stale.
+- **Consent and approval are both required and are different questions.** The
+  brand says we may use its mark (`homepage_logo_opt_in`, default off, absent
+  off); an admin says we are willing to make the claim
+  (`homepage_logo_approved_at`). Consent alone means the wall vouches for
+  whoever ticks a box, including a business we have since fallen out with;
+  approval alone publishes a trademark nobody agreed to. **No route can tick
+  the brand's box for it**, the reason there is no endpoint that mints a
+  second brand manager — `approve_brand_homepage_logo` writes only our half,
+  and a test reads its source to hold that.
+- **The consent text is frozen into the record**, the arrangement
+  `platform_terms` uses: a logo is a trademark, so what matters in a year is
+  not what `BRAND_LOGO_CONSENT_TERMS` says then but what it said when the box
+  was ticked. Written **once** — re-saving with the box still ticked must not
+  move the timestamp, or the record of consent becomes a record of the last
+  time somebody pressed Save. Withdrawing keeps the record and adds
+  `withdrawn_at`, because the history is what says the logo was published with
+  permission at the time, and it deliberately does **not** clear the admin's
+  approval: withdrawal is the brand's decision about its own mark, not a
+  reversal of ours.
+- `_public_brand_card` is **narrower than `_public_brand`**, and reusing the
+  latter was the obvious move that would have shipped outlets, a tagline, an
+  about paragraph and the social handles onto home. The public brand page is
+  *about* one brand somebody arrived at on purpose; a wall card is a mark in a
+  grid of twelve. `PUBLIC_BRAND_CARD_FORBIDDEN` names what must never appear,
+  money in both directions included, and a leak test plants values on the
+  profile *and* its campaigns then searches the rendered output.
+- `brand_wall_settings()` is floor 6, size 12, stored and admin-editable.
+  **Absent below the floor, not short** — one withdrawal taking the whole row
+  down is correct, because the floor is about whether the claim is worth
+  making at all. Boundaries measured: 5 → absent, 6 → 6, 13 → 12.
+- **Admin-only, not `CONSOLE_ROLES`** — the split case studies make. A logo on
+  the home page is a claim this operation puts on the open internet under its
+  own name, and a role scoped to assigned brands putting a brand there is not
+  a scope. Revoking costs a reason; approving does not, because "we took them
+  off" is the decision somebody asks about later.
+- `refresh_brand_wall` **rides the leaderboard loop** rather than getting its
+  own: same cadence, same kind of work, two cached orderings behind two public
+  sections. Each failure is caught separately so one cannot take the other
+  down. Approving refreshes immediately, because approval is the one half that
+  is *not* re-read live — a brand nobody approved was never in the cache to be
+  re-checked.
+- **Below the proof strip and above the case studies**, which is the order a
+  sceptical brand reads in: the figures say there is an operation, the logos
+  say businesses like theirs use it, the write-ups say it works.
+
+**Where it reserves its shape is the opposite of the leaderboard's rule, and
+the difference is where the two sections sit.** The leaderboard draws nothing
+until its observer fires because it is at the bottom of the page. This sits
+directly under the proof strip, which at 390px is right at the fold — so the
+observer fires on load whatever it is told, and gating the shape on it bought
+nothing while costing a 0-to-full growth that pushed the whole page down.
+Measured against a control build: gated on `near`, **0.0823 CLS at 390px
+against 0.0000**, and 0.1644 when the server withheld the row (appearing, then
+collapsing, counted twice). Held from first paint it is 0.0001 at 390 and
+0.0000 at 1280. What remains is one collapse on a deployment below the floor,
+which is the right way round — the `ProofStrip` trade.
 
 ## People you would ask again
 

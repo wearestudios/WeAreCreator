@@ -14,6 +14,7 @@ import re
 import sys
 import logging
 import tempfile
+import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
 from typing import Optional, Literal, Annotated, get_args
@@ -44,7 +45,15 @@ from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    Field,
+    BeforeValidator,
+    ConfigDict,
+    ValidationError,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -954,6 +963,17 @@ class BrandProfileUpdate(BaseModel):
     contact_person_designation: Optional[str] = Field(default=None, max_length=140)
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = Field(default=None, max_length=20)
+
+    # **Permission to use the brand's mark on the public site.** A bool here
+    # and a frozen record in the handler: a logo is a trademark, so what
+    # matters later is not what the consent text says then but what it said
+    # when the box was ticked. The handler pops this out of the generic copy
+    # loop for that reason — see `update_brand_profile`.
+    #
+    # Default off and absent reads off. This is the one thing a brand can
+    # change about its own public presence, and the only honest default for a
+    # permission is "not given".
+    homepage_logo_opt_in: Optional[bool] = None
 
 
 # The shape of the work decides the shape of the dates. A launch or a group
@@ -5862,7 +5882,11 @@ def compute_fee(
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="WeAre Creators API")
-api_router = APIRouter(prefix="/api")
+# Named so anything building a URL for the browser reads it from the same
+# place the routes are mounted from — the survey page's `fetch` is the
+# first caller, and a hardcoded "/api" there is a second copy to keep.
+API_PREFIX = "/api"
+api_router = APIRouter(prefix=API_PREFIX)
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -11422,6 +11446,30 @@ async def _brand_profile_response(profile: dict) -> dict:
         "max_image_bytes": max_upload_bytes(),
         "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
     }
+    # **The brand wall, decided server-side like every other action here.**
+    #
+    # The form asks nothing for itself: whether they have consented, whether
+    # we have approved, whether they have actually finished a campaign, and
+    # the consent text itself all arrive from here. A checkbox that worked out
+    # its own eligibility would be a second copy of `_brand_wall_eligible`.
+    #
+    # `terms` is the live constant, because this is the text somebody is about
+    # to agree to. What was agreed *before* is frozen on the profile and is
+    # deliberately not what the form renders — showing the old wording to
+    # somebody being asked again would be the wrong way round.
+    consent = profile.get("homepage_logo_consent") or {}
+    campaigns_run = (await _campaigns_run_by_brand([profile["user_id"]])).get(
+        profile["user_id"], 0
+    )
+    out["homepage_logo"] = {
+        "opted_in": bool(profile.get("homepage_logo_opt_in")),
+        "approved": bool(profile.get("homepage_logo_approved_at")),
+        "campaigns_run": campaigns_run,
+        "eligible": _brand_wall_eligible(profile, campaigns_run),
+        "terms": BRAND_LOGO_CONSENT_TERMS,
+        "consented_at": _iso(consent.get("accepted_at")),
+        "withdrawn_at": _iso(consent.get("withdrawn_at")),
+    }
     # **Which briefs are ours to run, from the server.** The post form has to
     # explain the rule *before* the brand picks a type or types a headcount —
     # after the fact it is a surprise, and a form that worked the threshold out
@@ -11538,6 +11586,57 @@ async def update_brand_profile(
     if "contact_phone" in sent:
         raw = (payload.contact_phone or "").strip()
         update["contact_phone"] = _normalize_phone(raw) if raw else None
+
+    # **Consent to the brand wall, which is not an ordinary field.**
+    #
+    # It is popped out of the generic shape above because granting it has to
+    # freeze *what was agreed to* beside the fact that it was — the same
+    # arrangement `platform_terms` uses at acceptance. A logo is a trademark,
+    # and a permission somebody can later be shown a different version of is
+    # not a permission anybody can rely on.
+    #
+    # **The grant is written once and never rewritten.** Re-saving the profile
+    # with the box still ticked must not move the timestamp, or the record of
+    # when permission was given becomes the record of the last time somebody
+    # pressed Save.
+    #
+    # Withdrawing sets the flag false and **keeps the record**, adding
+    # `withdrawn_at`. The history is the point: it is what says the logo was
+    # published with permission at the time. It deliberately does not clear
+    # the admin's approval either — withdrawal is the brand's decision about
+    # its own mark, not a reversal of ours, and re-ticking the box should not
+    # need a second trip through the queue.
+    if "homepage_logo_opt_in" in sent:
+        wants = bool(payload.homepage_logo_opt_in)
+        update["homepage_logo_opt_in"] = wants
+        consent = existing.get("homepage_logo_consent") or {}
+        if wants:
+            if not consent.get("accepted_at"):
+                update["homepage_logo_consent"] = {
+                    "accepted_at": now,
+                    "accepted_by": user["_id"],
+                    # Frozen. Not a pointer at the constant — the constant is
+                    # what it says *today*.
+                    "terms": BRAND_LOGO_CONSENT_TERMS,
+                }
+            else:
+                # Re-granting after a withdrawal: the original grant stands,
+                # and the withdrawal stops being current.
+                update["homepage_logo_consent"] = {
+                    **consent,
+                    "withdrawn_at": None,
+                }
+        elif consent.get("accepted_at"):
+            update["homepage_logo_consent"] = {**consent, "withdrawn_at": now}
+        await audit(
+            user,
+            "brand.homepage_logo_consent",
+            "brand_profile",
+            existing["user_id"],
+            before={"homepage_logo_opt_in": bool(existing.get("homepage_logo_opt_in"))},
+            after={"homepage_logo_opt_in": wants},
+            brand_id=existing["user_id"],
+        )
 
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": _brand_scope(user)},
@@ -15048,6 +15147,300 @@ async def _public_leaderboard() -> dict:
         "creators": cards,
         # So the page can say when this was worked out rather than implying it
         # is live. It is a day old by design.
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
+
+
+# --- The brand wall -----------------------------------------------------------
+#
+# A row of logos on the homepage, for brands actually running campaigns here.
+#
+# **Mirrored on `_public_leaderboard`, which already solved every hard part of
+# this**: a cached ordering so the front door does not compute anything, an
+# eligibility check re-run on every request so withdrawal is immediate rather
+# than eventual, an allow-list built by naming keys, and absence below a floor
+# rather than a thin row. The two differ only in what they are a claim about.
+#
+# **What this must not become.** A wall of logos says "these businesses are our
+# customers", and the cheap version of that is a wall of everybody who ever
+# signed up. So the gate is **having actually run a campaign** — at least one
+# in `_CLOSED_CAMPAIGN_STATUSES`, derived on read, never stored. A brand that
+# registered and never posted is not a customer, and a brand that posted one
+# brief still running is not evidence of anything finished. Derived rather than
+# stored for the usual reason: a stored flag needs a sweep, and a rule that
+# depends on cron is true on Tuesdays.
+#
+# **Consent and approval are both required, and they are different questions.**
+# The brand says we may use its mark; we say we are willing to make the claim.
+# Either one alone is wrong — using a logo nobody agreed to is a trademark
+# problem, and publishing whatever anybody ticks is how a marketing page ends
+# up vouching for a business we fell out with.
+BRAND_WALL_MIN_DEFAULT = 6
+BRAND_WALL_SIZE_DEFAULT = 12
+# A ceiling on what an operator can type, the same shape `LEADERBOARD_MAX` is.
+# Four rows of twelve is already a wall; past that it is a directory.
+BRAND_WALL_MAX = 48
+_BRAND_WALL_SETTINGS_ID = "brand_wall"
+
+# **The consent text, frozen into the record at the moment it is given.**
+#
+# The same arrangement `platform_terms` uses, for the same reason: a permission
+# somebody can be shown a *different* version of later is not a permission
+# anybody can rely on. A logo is a trademark, so what matters in a year is not
+# what this constant says then — it is what it said when the box was ticked.
+#
+# It has to state both halves plainly: what appears where, and that it can be
+# taken back with immediate effect. The second is only true because
+# `_brand_wall_eligible` is re-read on every request, so the sentence is a
+# description of the mechanism rather than a promise on top of it.
+BRAND_LOGO_CONSENT_TERMS = (
+    "You give WeAre Creators permission to show your business name and logo on "
+    "its public website as a customer, including on the home page. Nothing "
+    "else about your account is published: no contact details, no addresses, "
+    "and no commercial terms in either direction. You can withdraw this "
+    "permission at any time from your brand profile, and it takes effect "
+    "immediately — the next page load will not include you."
+)
+
+# Named so the leak test can look for them by name as well as by value.
+#
+# **A narrower list than `_public_brand`'s, and that is the point.** The public
+# brand page is a page *about* one brand, which somebody arrived at on purpose;
+# a wall card is a mark in a grid of twelve. So it carries no outlets, no
+# tagline, no about paragraph and no social handles — and reusing
+# `_public_brand` wholesale, which was the obvious move, would have shipped all
+# four onto the homepage.
+#
+# Money is absent in both directions, the rule `CASE_STUDY_FORBIDDEN_FIELDS`
+# holds: what a brand spends is the brand's, and what we charge them is the
+# relationship.
+PUBLIC_BRAND_CARD_FORBIDDEN = (
+    # The manager as a person
+    "contact_phone", "contact_email", "contact_person_name",
+    "contact_person_designation", "manager_phone", "manager_email",
+    "phone", "email",
+    # The paperwork
+    "registered_address", "gst_number", "verification_reason", "legal_entity_name",
+    # Money, in either direction
+    "campaign_fee", "commission_percent", "total_budget", "typical_budget_band",
+    "budget_per_creator",
+)
+
+
+async def brand_wall_settings() -> dict:
+    """The floor and the size. Stored, and never raises.
+
+    A settings read that fails must not take down the homepage, so it falls
+    back to the defaults the way `leaderboard_settings` does.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _BRAND_WALL_SETTINGS_ID})
+    except Exception as exc:  # pragma: no cover - defensive, logged
+        logger.error("could not read the brand wall settings: %s", exc)
+        doc = None
+    doc = doc or {}
+
+    def _read(key, default):
+        try:
+            value = int(doc.get(key))
+        except (TypeError, ValueError):
+            return default
+        return value if 1 <= value <= BRAND_WALL_MAX else default
+
+    return {
+        "minimum": _read("minimum", BRAND_WALL_MIN_DEFAULT),
+        "size": _read("size", BRAND_WALL_SIZE_DEFAULT),
+    }
+
+
+def _brand_wall_eligible(profile: Optional[dict], campaigns_run: int) -> bool:
+    """Whether this brand's logo may appear on the homepage.
+
+    **Consent first, because it is the only one of these that is not ours to
+    decide.** A brand that has not opted in is not one we rejected; it is one
+    we never had permission to feature.
+
+    Then our own half — an admin has approved it — then verified, then not
+    trust-revoked, and finally that they have actually finished a campaign
+    here.
+
+    `campaigns_run` is passed in rather than counted here so one aggregation
+    covers the whole wall; it is derived on read in both callers, never stored.
+
+    **Re-read on every request**, not baked into the cache, which is what makes
+    "withdrawal takes effect immediately" true rather than true-by-tomorrow.
+    """
+    profile = profile or {}
+    if not profile.get("homepage_logo_opt_in"):
+        return False
+    # Our half of the same decision. Absent means nobody has approved it, which
+    # is not the same as refused — and both read as "not on the wall".
+    if not profile.get("homepage_logo_approved_at"):
+        return False
+    if not profile.get("verified"):
+        return False
+    if _trust_revoked(profile):
+        return False
+    # **The claim the wall actually makes.** A signup is not a customer.
+    if campaigns_run < 1:
+        return False
+    # A logo is the whole card, so there is nothing to draw without one.
+    if not (profile.get("logo_url") or "").strip():
+        return False
+    return True
+
+
+async def _campaigns_run_by_brand(brand_ids: list) -> dict:
+    """How many campaigns each of these brands has actually finished.
+
+    One aggregation for the whole wall rather than a count per card. Only
+    `_CLOSED_CAMPAIGN_STATUSES`: a brief still running is not evidence that
+    anything was delivered, and the wall is a claim about finished work.
+    """
+    if not brand_ids:
+        return {}
+    rows = await db.campaigns.aggregate(
+        [
+            {
+                "$match": {
+                    "brand_id": {"$in": list(brand_ids)},
+                    "status": {"$in": list(_CLOSED_CAMPAIGN_STATUSES)},
+                }
+            },
+            {"$group": {"_id": "$brand_id", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=len(brand_ids))
+    return {r["_id"]: int(r.get("n") or 0) for r in rows}
+
+
+def _public_brand_card(profile: dict, campaigns_run: int) -> dict:
+    """One brand, as the homepage draws it.
+
+    Built by naming every key, never by copying a document and deleting from
+    it — so a column added to `brand_profiles` next month cannot reach a
+    public page because nobody remembered to exclude it. The rule
+    `_public_case_study` and `_public_creator_card` both hold.
+
+    **`public_page` decides whether the card is a link**, server-side, and it
+    is the leaderboard's rule: link through where a public page exists and
+    leave the card inert otherwise. `/brands/{id}` serves verified brands
+    only, so an unverified one would be a card linking to a 404 — and a brand
+    cannot be on this wall unverified anyway, which makes this belt and braces
+    on purpose rather than by accident.
+    """
+    return {
+        "id": str(profile["user_id"]),
+        "name": profile.get("business_name"),
+        "logo_url": profile.get("logo_url"),
+        "city": profile.get("city"),
+        "category": profile.get("category"),
+        # The signal, and the thing that earned the slot.
+        "campaigns_run": int(campaigns_run or 0),
+        "public_page": f"/brands/{profile['user_id']}" if profile.get("verified") else None,
+    }
+
+
+async def refresh_brand_wall() -> dict:
+    """Work out the ordering and leave it in `brand_wall_cache`.
+
+    **Its own collection, not `platform_settings`** — the same separation
+    `leaderboard_cache` makes, and for the same reason: settings hold what an
+    operator typed, and a nightly job writing into that collection is one bad
+    `_id` away from overwriting it.
+
+    The ordering is most campaigns run first, then name. There is no score
+    here and no visible ordinal — a logo wall has no positions — so the order
+    only decides *which* brands appear when there are more than fit.
+    """
+    candidates = await db.brand_profiles.find(
+        {
+            "homepage_logo_opt_in": True,
+            "homepage_logo_approved_at": {"$ne": None},
+            "verified": True,
+        }
+    ).to_list(length=None)
+
+    ids = [p["user_id"] for p in candidates if p.get("user_id") is not None]
+    run = await _campaigns_run_by_brand(ids)
+
+    ranked = []
+    for profile in candidates:
+        n = run.get(profile.get("user_id"), 0)
+        if not _brand_wall_eligible(profile, n):
+            continue
+        ranked.append(
+            {
+                "user_id": profile["user_id"],
+                "campaigns_run": n,
+                "name": (profile.get("business_name") or "").lower(),
+            }
+        )
+    ranked.sort(key=lambda r: (-r["campaigns_run"], r["name"]))
+
+    await db.brand_wall_cache.update_one(
+        {"_id": "current"},
+        {
+            "$set": {
+                "ranked": ranked,
+                "computed_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True,
+    )
+    return {"ranked": len(ranked)}
+
+
+async def _public_brand_wall() -> dict:
+    """The brand wall, or nothing at all.
+
+    The same two properties `_public_leaderboard` holds, pulling the same way:
+    the ordering comes out of the cache so the homepage computes nothing, and
+    eligibility is re-read live so a brand that withdraws consent is gone from
+    the next page load rather than the next nightly pass.
+
+    **`campaigns_run` is re-derived here too**, not read off the cache. A
+    cached count would mean a brand whose only campaign was reopened still
+    reads as having finished one — and that count is the whole claim the wall
+    makes, so it is the last thing that should be allowed to go stale.
+
+    **Returns `{}` below the floor**, and the section disappears with it. One
+    withdrawal taking the whole row down is correct: the floor is about whether
+    the claim is worth making at all.
+    """
+    settings = await brand_wall_settings()
+    cached = await db.brand_wall_cache.find_one({"_id": "current"})
+    entries = (cached or {}).get("ranked") or []
+    if not entries:
+        return {}
+
+    ids = [e["user_id"] for e in entries if e.get("user_id") is not None]
+    if not ids:
+        return {}
+    profiles = {
+        p["user_id"]: p
+        for p in await db.brand_profiles.find({"user_id": {"$in": ids}}).to_list(
+            length=len(ids)
+        )
+    }
+    run = await _campaigns_run_by_brand(ids)
+
+    cards = []
+    for entry in entries:
+        profile = profiles.get(entry.get("user_id"))
+        if not profile:
+            # Erased, or deleted between the ranking and now.
+            continue
+        n = run.get(entry["user_id"], 0)
+        if not _brand_wall_eligible(profile, n):
+            continue
+        cards.append(_public_brand_card(profile, n))
+        if len(cards) >= settings["size"]:
+            break
+
+    if len(cards) < settings["minimum"]:
+        return {}
+    return {
+        "brands": cards,
         "computed_at": _iso((cached or {}).get("computed_at")),
     }
 
@@ -19770,12 +20163,20 @@ async def admin_export(
 
 EXPORT_KINDS = (
     "creators", "brands", "campaigns", "collaborations", "payments", "audit",
+    # The anonymous creator research survey. Admin-only like the creator and
+    # audit exports, and for a different reason from either: there is nobody
+    # for it to be scoped *to*. A respondent is not a creator we know.
+    "survey",
 )
 # Which of them carry a way to reach somebody. Named so the audit line can say
 # so, and so a reviewer can see the answer without reading six builders.
 EXPORTS_WITH_CONTACT = ("creators", "brands", "collaborations", "payments")
 # And which are the platform's rather than a brand's. See admin_export.
-ADMIN_ONLY_EXPORTS = ("creators", "audit")
+#
+# `survey` is here because the respondents are anonymous: there is no brand to
+# scope it to and no creator id to match against `_console_creator_ids`, so a
+# scoped console asking for it could only be handed everything or nothing.
+ADMIN_ONLY_EXPORTS = ("creators", "audit", "survey")
 
 
 def _scoped_brand_filter(query: dict, field: str, brand_scope) -> dict:
@@ -20176,6 +20577,52 @@ async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q,
         ]
         for d in docs
     ]
+    return rows, headers
+
+
+async def _export_survey(*, date_from, date_to, **_):
+    """The anonymous survey, one intact row per response.
+
+    **Intact and in the model's own order**, for the reason
+    `admin_creator_survey` documents: the value of this survey is correlation
+    *within* a response, and a file that decoupled the free text from the
+    closed answers would protect nothing — no row identifies anybody — while
+    making the data unanalysable.
+
+    The window is on `submitted_on`, which is a **date string** rather than a
+    datetime, so the usual `_export_window` helper does not apply: an ISO date
+    compares correctly as a string, which is the one thing that format is good
+    for.
+    """
+    query: dict = {}
+    if date_from or date_to:
+        bounds = {}
+        if date_from:
+            bounds["$gte"] = date_from.date().isoformat()
+        if date_to:
+            bounds["$lte"] = date_to.date().isoformat()
+        query["submitted_on"] = bounds
+    docs = (
+        await db.creator_survey_responses.find(query)
+        .sort([("submitted_on", -1), ("_id", -1)])
+        .to_list(length=20000)
+    )
+    fields = list(CreatorSurveyPayload.model_fields)
+    headers = ["Submitted on", "Schema"] + [f.replace("_", " ").capitalize() for f in fields]
+    rows = []
+    for d in docs:
+        row = [str(d.get("submitted_on") or ""), str(d.get("schema_version") or "")]
+        for f in fields:
+            value = d.get(f)
+            # A multi-select joins with a separator rather than becoming JSON:
+            # this opens in a spreadsheet, and `["a","b"]` in a cell is us
+            # showing our working.
+            row.append(
+                " | ".join(str(v) for v in value)
+                if isinstance(value, list)
+                else ("" if value is None else str(value))
+            )
+        rows.append(row)
     return rows, headers
 
 
@@ -23356,6 +23803,30 @@ async def get_admin_brand_detail(
             "at": _iso(profile.get("invoice_override_at")),
             "by_name": profile.get("invoice_override_by_name"),
         },
+        # **Both halves of the brand wall decision, side by side.** The brand's
+        # consent is theirs and ours is the approval, and a panel showing one
+        # without the other invites an admin to approve a logo nobody has
+        # agreed to let us use. `campaigns_run` is here because it is the
+        # claim the wall actually makes and the one reason a brand can be
+        # consented, approved and still absent.
+        "homepage_logo": {
+            "opted_in": bool(profile.get("homepage_logo_opt_in")),
+            "consented_at": _iso(
+                (profile.get("homepage_logo_consent") or {}).get("accepted_at")
+            ),
+            "withdrawn_at": _iso(
+                (profile.get("homepage_logo_consent") or {}).get("withdrawn_at")
+            ),
+            # The text they actually agreed to, not today's constant. On a
+            # trademark permission that difference is the whole record.
+            "consent_terms": (profile.get("homepage_logo_consent") or {}).get("terms"),
+            "approved": bool(profile.get("homepage_logo_approved_at")),
+            "approved_at": _iso(profile.get("homepage_logo_approved_at")),
+            "revoked_at": _iso(profile.get("homepage_logo_revoked_at")),
+            "revoked_reason": profile.get("homepage_logo_revoked_reason"),
+            "campaigns_run": (await _campaigns_run_by_brand([oid])).get(oid, 0),
+            "has_logo": bool((profile.get("logo_url") or "").strip()),
+        },
         "documents": documents,
         "campaigns": campaign_rows,
         # How often work has fallen over around this brand, and on whose call.
@@ -26362,6 +26833,13 @@ RETENTION_DAYS = {
     # what, and a log with a shorter life than the thing it describes cannot
     # answer questions about it.
     "audit_records": 8 * 365,
+    # Anonymous survey responses. **Twenty-four months, and the period is a
+    # housekeeping decision rather than a legal one** — these rows identify
+    # nobody, so no erasure duty attaches to them and nothing here is holding
+    # somebody's data against their wishes. Two years is chosen to be long
+    # enough to compare a wave against the next one: a survey whose previous
+    # round has been deleted can describe this year and cannot show a change.
+    "survey_responses": 24 * 30,
 }
 
 # What erasure removes immediately regardless of any of the above, because it
@@ -26448,6 +26926,78 @@ async def admin_retention(user: dict = Depends(require_roles("admin"))):
         # Said out loud on the screen, not just in a comment: an operator
         # reading this needs to know which half is settled.
         "needs_legal_review": True,
+    }
+
+
+# The warning the console prints above the responses, from the server so the
+# screen and the rule cannot drift. It is a real limit: question 7, 12 and 14
+# are free text, and somebody will sign their answer however clearly the help
+# text asks them not to.
+SURVEY_OPEN_TEXT_WARNING = (
+    "Open answers are exactly as they were typed. We ask people to leave names "
+    "and handles out, and some will put them in anyway — so treat these as "
+    "possibly self-identifying even though nothing else here is."
+)
+
+
+def _survey_aggregate(rows: list) -> dict:
+    """Counts per closed question, over the rows given.
+
+    Multi-select questions count each choice once per response, so a column
+    sums to more than the response count — which is the honest shape for "choose
+    all that apply" and is why `SURVEY_CLOSED_FIELDS` records which is which.
+    """
+    out: dict = {}
+    for field, multi in SURVEY_CLOSED_FIELDS:
+        counts: dict = {}
+        for row in rows:
+            value = row.get(field)
+            if value in (None, "", []):
+                continue
+            for one in (value if multi else [value]):
+                counts[one] = counts.get(one, 0) + 1
+        out[field] = {
+            "multi_select": multi,
+            # Commonest first, then alphabetically, so two runs of the same
+            # data read the same way round.
+            "counts": dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+            "answered": sum(
+                1 for r in rows if r.get(field) not in (None, "", [])
+            ),
+        }
+    return out
+
+
+@admin_router.get("/survey/creator")
+async def admin_creator_survey(user: dict = Depends(require_roles("admin"))):
+    """The survey results: aggregates, and every response as one intact row.
+
+    **Admin-only, not `CONSOLE_ROLES`.** A respondent is not a creator we know
+    and not attached to a brand, so there is nothing for a scoped console to be
+    scoped *to* — the same reasoning `ADMIN_ONLY_EXPORTS` applies.
+
+    **The rows are intact and deliberately not shuffled or decoupled.**
+    Splitting the free text away from the closed answers, or ordering the
+    columns independently, would protect nothing that is not already protected
+    — nothing in the row identifies anybody — while destroying the entire
+    analytical value, which is *correlation within one response*: that the
+    people who were never paid are the same people who agreed the fee verbally.
+    A survey you cannot cross-tabulate is a set of bar charts.
+    """
+    rows = (
+        await db.creator_survey_responses.find({})
+        .sort([("submitted_on", -1), ("_id", -1)])
+        .to_list(length=5000)
+    )
+    for row in rows:
+        row["id"] = str(row.pop("_id"))
+    return {
+        "total": len(rows),
+        "schema_version": SURVEY_SCHEMA_VERSION,
+        "aggregates": _survey_aggregate(rows),
+        "responses": rows,
+        "open_text_fields": list(SURVEY_FREE_TEXT_FIELDS),
+        "open_text_warning": SURVEY_OPEN_TEXT_WARNING,
     }
 
 
@@ -28084,13 +28634,19 @@ def _lifecycle_interval_seconds() -> int:
 
 
 async def _leaderboard_loop():
-    """Recompute the homepage ranking on a timer.
+    """Recompute the homepage's two cached orderings on a timer.
 
     **Once on start, then on the interval.** The other loops sleep first
-    because nothing depends on them having run; this one is what a public
-    section renders from, and a fresh deployment with an empty cache would
+    because nothing depends on them having run; this one is what two public
+    sections render from, and a fresh deployment with an empty cache would
     show nothing until the first tick — which for a daily interval is a day of
     an empty homepage section.
+
+    **The brand wall rides this loop rather than getting its own.** They are
+    the same cadence, the same kind of work and the same kind of claim — two
+    cached orderings behind two public sections — and a second timer would be
+    a second interval constant to keep in step for no gain. A failure in
+    either is caught separately so one cannot take the other down.
     """
     interval = _leaderboard_interval_seconds()
     while True:
@@ -28100,6 +28656,12 @@ async def _leaderboard_loop():
             raise
         except Exception as exc:
             logger.error("leaderboard refresh failed: %s", exc)
+        try:
+            await refresh_brand_wall()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("brand wall refresh failed: %s", exc)
         try:
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
@@ -28406,6 +28968,178 @@ async def set_leaderboard_settings(
         after=update,
     )
     return await leaderboard_settings()
+
+
+# --- The brand wall, from the console ---------------------------------------
+#
+# **Admin-only throughout, not `CONSOLE_ROLES`** — the split case studies
+# make, and for the same reason. A logo on the home page is a claim this
+# operation puts on the open internet under its own name, about a business.
+# `weare_team` is scoped to assigned brands, and a scoped role that could put
+# a brand on the national home page is not a scope.
+
+
+@admin_router.post("/jobs/brand-wall")
+async def run_brand_wall_job(user: dict = Depends(require_roles("admin"))):
+    """Recompute the brand wall ordering now.
+
+    Same function the timer calls. Worth having by hand for the reason the
+    leaderboard's is: the row is a public statement, so after approving a
+    brand an operator should be able to make the page agree without waiting a
+    day. Withdrawal does not need this — that is re-read live.
+    """
+    report = await refresh_brand_wall()
+    await audit(user, "job.brand_wall", "job", "brand_wall", after=report)
+    return report
+
+
+class BrandWallSettingsPayload(BaseModel):
+    """The floor and the size, both optional so one can be changed alone."""
+
+    minimum: Optional[int] = Field(default=None, ge=1, le=BRAND_WALL_MAX)
+    size: Optional[int] = Field(default=None, ge=1, le=BRAND_WALL_MAX)
+
+
+@admin_router.get("/settings/brand-wall")
+async def get_brand_wall_settings(user: dict = Depends(require_roles("admin"))):
+    settings = await brand_wall_settings()
+    cached = await db.brand_wall_cache.find_one({"_id": "current"})
+    return {
+        **settings,
+        "defaults": {
+            "minimum": BRAND_WALL_MIN_DEFAULT,
+            "size": BRAND_WALL_SIZE_DEFAULT,
+        },
+        "maximum": BRAND_WALL_MAX,
+        "ranked": len((cached or {}).get("ranked") or []),
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
+
+
+@admin_router.put("/settings/brand-wall")
+async def set_brand_wall_settings(
+    payload: BrandWallSettingsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Move the floor or the size.
+
+    The floor is the honesty rule — how few logos is too few to be worth
+    showing — and one withdrawal taking the whole row down is the correct
+    behaviour rather than a bug to tune around.
+    """
+    sent = payload.model_fields_set
+    update = {k: getattr(payload, k) for k in ("minimum", "size") if k in sent}
+    if not update:
+        raise HTTPException(status_code=422, detail="Nothing to change.")
+    before = await brand_wall_settings()
+    await db.platform_settings.update_one(
+        {"_id": _BRAND_WALL_SETTINGS_ID}, {"$set": update}, upsert=True
+    )
+    await audit(
+        user,
+        "settings.brand_wall",
+        "settings",
+        _BRAND_WALL_SETTINGS_ID,
+        before=before,
+        after=update,
+    )
+    return await brand_wall_settings()
+
+
+@admin_router.post("/brands/{user_id}/homepage-logo/approve")
+async def approve_brand_homepage_logo(
+    user_id: str, user: dict = Depends(require_roles("admin"))
+):
+    """Agree that this brand's logo may go on the home page.
+
+    **Our half of a two-sided decision.** The brand's consent says we may use
+    its mark; this says we are willing to make the claim. Approving without
+    consent publishes a trademark nobody agreed to; publishing on consent
+    alone means the wall vouches for whoever ticks a box, including a business
+    we have since fallen out with.
+
+    It is deliberately **not** a toggle that also grants consent — there is no
+    route here that can tick the brand's box for it, the same reason there is
+    no endpoint that mints a second brand manager.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {
+            "$set": {
+                "homepage_logo_approved_at": now,
+                "homepage_logo_approved_by": user["_id"],
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "brand.homepage_logo_approve",
+        "brand_profile",
+        oid,
+        after={"homepage_logo_approved_at": _iso(now)},
+        brand_id=oid,
+    )
+    # So the page agrees without waiting for the nightly pass. Approval is the
+    # one half that is *not* re-read live — the cache holds the ordering, and a
+    # brand nobody has approved was never in it to be re-checked.
+    await refresh_brand_wall()
+    return {"homepage_logo_approved": True}
+
+
+@admin_router.post("/brands/{user_id}/homepage-logo/revoke")
+async def revoke_brand_homepage_logo(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take our approval back. Costs a reason, in either direction.
+
+    Separate from the brand withdrawing consent, and the two must not be
+    collapsed: "they asked to come off" and "we took them off" are different
+    facts about the same empty slot, and only one of them is ours to explain.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422, detail="Say why this brand is coming off the wall."
+        )
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {
+            "$set": {
+                "homepage_logo_approved_at": None,
+                "homepage_logo_revoked_at": now,
+                "homepage_logo_revoked_reason": reason,
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "brand.homepage_logo_revoke",
+        "brand_profile",
+        oid,
+        after={"reason": reason},
+        note=reason,
+        brand_id=oid,
+    )
+    await refresh_brand_wall()
+    return {"homepage_logo_approved": False}
 
 
 # ---------------------------------------------------------------------------
@@ -32671,6 +33405,378 @@ async def public_leaderboard():
     return await _public_leaderboard()
 
 
+@public_router.get("/brand-wall")
+async def public_brand_wall():
+    """The brands whose logos the homepage shows, or `{}`.
+
+    Unauthenticated, like the page that reads it. `_public_brand_card` is its
+    own allow-list and a narrower one than `_public_brand` — no outlets, no
+    tagline, no handles, and no money in either direction.
+
+    Read from a cache, with eligibility and the campaign count re-derived on
+    every request so a brand withdrawing consent is gone from the next page
+    load. `refresh_brand_wall` does the ordering.
+
+    Declared above `include_router` for the reason `/proof` documents.
+    """
+    return await _public_brand_wall()
+
+
+# ---------------------------------------------------------------------------
+# The creator research survey
+#
+# **Anonymity is the design constraint here, not a setting on top of it.** This
+# asks creators about brands that went quiet, fees that changed after being
+# agreed, and work they were never paid for. Honest answers depend on them
+# believing nothing traces back, so every decision below is made that way and
+# several of them cost us analytical convenience on purpose.
+#
+# What that means concretely:
+#
+#   - **No auth, no cookie, no session, no account.** The route is on the
+#     public router beside the other unauthenticated reads.
+#   - **The stored document holds the answers and a date. Nothing else.** No
+#     `request.client.host`, no header, no user agent, nothing derived from any
+#     of them. `_SURVEY_STORED_KEYS` is the whole shape and a test plants an IP,
+#     a user agent, a name, a handle, a phone number and an email in a request
+#     and searches the stored row for every one of them.
+#   - **The rate limit is in memory and the IP never reaches the database.**
+#     `_SURVEY_RATE` is a module dict keyed by IP that forgets everything on a
+#     restart. The next person here will reach for storing it — for a better
+#     limit, for abuse forensics, for deduplication — and that is exactly the
+#     thing this survey cannot have. If you need a durable limit, the answer is
+#     a smaller window, not a stored address.
+#   - **`submitted_on` is a date, not a timestamp.** A precise instant plus a
+#     known WhatsApp send time singles somebody out in a small sample, which is
+#     the sample size this will have.
+#   - **One submission per device is a `localStorage` flag and nothing else.**
+#     No fingerprinting. It is trivially bypassable and that is the correct
+#     trade: the alternative is identifying people to stop them answering
+#     twice, which defeats the survey to protect a statistic.
+#   - **Nothing here is audited.** `audit()` has an actor field, and a line
+#     naming who submitted is precisely what must not exist. This is the one
+#     write path in the product that deliberately leaves no log line.
+#   - **No field anywhere can hold a government ID.** Question 13 asks *whether*
+#     somebody has a PAN and never the number, and `_survey_id_refusal` rejects
+#     a submission whose free text matches a PAN or Aadhaar pattern — because
+#     somebody will type one into a box that did not ask for it.
+#
+# **The one thing we cannot promise, stated plainly:** Railway's proxy and
+# MongoDB Atlas record connection metadata, including IP addresses, outside
+# this application and outside our control. We neither store nor read them, and
+# nothing in this codebase joins them to a response. That is a limit of running
+# on somebody else's infrastructure rather than a gap in this design, and it is
+# written here so nobody tells a respondent something stronger than the truth.
+SURVEY_PATH = "/survey"
+
+# Bumped when the questions change. Old rows stay readable as the version they
+# were written under rather than being silently reinterpreted under new
+# questions — the point of storing it at all.
+SURVEY_SCHEMA_VERSION = 1
+
+SURVEY_FREE_TEXT_MAX = 1000
+SURVEY_TOP_THREE = 3
+
+# In memory, per IP, and never written down. Low enough to stop somebody
+# sitting on the form and high enough that a shared office NAT does not lock
+# out the second person to answer.
+SURVEY_MAX_PER_HOUR = 3
+SURVEY_MAX_PER_DAY = 20
+
+# {ip: [epoch seconds, ...]} — forgotten on restart, which is the point.
+_SURVEY_RATE: dict = {}
+
+
+def _survey_rate_refusal(ip: Optional[str], now: Optional[float] = None) -> Optional[str]:
+    """Whether this address has answered too often, as a sentence or `None`.
+
+    **Returns the sentence rather than raising** (the `_scheduling_refusal`
+    shape) and the sentence is plain English rather than a code: the page is
+    server-rendered HTML that may be running no JavaScript at all, so there is
+    nothing on the other end to interpret a code.
+
+    The address is the dict key and nothing else. It is not returned, not
+    logged, and not written — see the block above.
+    """
+    if not ip:
+        # No address to limit by. Allowing it is the right direction: refusing
+        # would turn a proxy configuration into a wall in front of the survey.
+        return None
+    now = now if now is not None else time.time()
+    seen = [t for t in _SURVEY_RATE.get(ip, []) if now - t < 86400]
+    # Trim as we read, so the dict does not grow for the life of the process.
+    if seen:
+        _SURVEY_RATE[ip] = seen
+    else:
+        _SURVEY_RATE.pop(ip, None)
+    if len([t for t in seen if now - t < 3600]) >= SURVEY_MAX_PER_HOUR:
+        return (
+            "That is a few answers from this connection in the last hour. "
+            "Please try again later."
+        )
+    if len(seen) >= SURVEY_MAX_PER_DAY:
+        return (
+            "That is a lot of answers from this connection today. "
+            "Please try again tomorrow."
+        )
+    return None
+
+
+def _survey_rate_record(ip: Optional[str], now: Optional[float] = None) -> None:
+    """Remember the submission, in memory only."""
+    if not ip:
+        return
+    _SURVEY_RATE.setdefault(ip, []).append(now if now is not None else time.time())
+
+
+# A PAN is five letters, four digits, a letter. An Aadhaar is twelve digits,
+# written in groups of four about as often as not.
+#
+# **Both are refused in free text rather than stripped**, because a respondent
+# who typed one needs to know we are not keeping it — silently removing it
+# would store a sanitised answer and leave them believing they had sent the
+# number. The refusal says which it looked like, so somebody who typed a
+# twelve-digit order number can see why.
+_PAN_RE = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", re.I)
+
+# **Twelve digits, and an Indian mobile with its country code is also twelve
+# digits** — `+919876500042` is `91` plus a ten-digit number. The first version
+# of this pattern refused exactly that, which would have thrown away an honest
+# answer with a confusing message about Aadhaar. Caught by a test that planted
+# a phone number.
+#
+# So two narrowings, both from how the numbers are actually shaped:
+#
+#   - **An Aadhaar never begins with 0 or 1**, so the run has to start 2-9.
+#   - **A run beginning `91` followed by a 6-9 is a `+91` mobile**, and is let
+#     through. That overlaps a genuine Aadhaar starting `916`-`919`, and the
+#     trade is deliberate: a phone number somebody typed is personal data of
+#     the same kind as the name they signed — kept as typed, and warned about
+#     on the admin screen — whereas refusing it loses the answer entirely.
+#
+# A leading `+` is also excluded, because nothing writes a `+` before an
+# Aadhaar.
+_AADHAAR_RE = re.compile(r"(?<![\d+])[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?!\d)")
+_IN_MOBILE_WITH_CODE_RE = re.compile(r"(?<!\d)91[\s-]?[6-9]\d{9}(?!\d)")
+
+
+def _looks_like_aadhaar(value: str) -> bool:
+    """Whether this text carries something Aadhaar-shaped.
+
+    Each candidate twelve-digit run is checked against the `+91` mobile shape
+    at its own position, rather than asking whether the whole answer contains a
+    phone number anywhere — otherwise one phone number in a long answer would
+    excuse a real Aadhaar later in the same answer.
+    """
+    for match in _AADHAAR_RE.finditer(value):
+        digits_only = re.sub(r"[\s-]", "", match.group(0))
+        if _IN_MOBILE_WITH_CODE_RE.fullmatch(digits_only):
+            continue
+        return True
+    return False
+
+
+def _survey_id_refusal(texts: list) -> Optional[str]:
+    """A sentence if any free text looks like a government ID, else `None`."""
+    for text in texts:
+        value = (text or "").strip()
+        if not value:
+            continue
+        if _PAN_RE.search(value):
+            return (
+                "One of your answers looks like it contains a PAN. We do not "
+                "collect PAN numbers anywhere in this survey — please take it "
+                "out and send again."
+            )
+        if _looks_like_aadhaar(value):
+            return (
+                "One of your answers looks like it contains an Aadhaar number. "
+                "We do not collect government ID numbers anywhere in this "
+                "survey — please take it out and send again."
+            )
+    return None
+
+
+# --- The questions, as closed lists ----------------------------------------
+#
+# **Typed as `Literal`s so a junk value is refused rather than stored.** An
+# aggregate built over a column somebody can write anything into is an
+# aggregate with an "other" bucket nobody can interpret.
+#
+# The first two are built from the vocabularies the product already has
+# (`INDIAN_CITIES`, `CREATOR_TAXONOMY`) rather than retyped, for the reason
+# `SEO_CITY_SLUGS` is: a second list of either is the drift `lib/categories.js`
+# exists to prevent. `Literal` accepts a tuple subscript, so the derivation is
+# the type.
+SURVEY_ELSEWHERE = "Somewhere else"
+SURVEY_OTHER_FOCUS = "Something else"
+
+SurveyCity = Literal[INDIAN_CITIES + (SURVEY_ELSEWHERE,)]
+SURVEY_FOCUS_GROUPS = tuple(label for label, _ in CREATOR_TAXONOMY)
+SurveyFocus = Literal[SURVEY_FOCUS_GROUPS + (SURVEY_OTHER_FOCUS,)]
+
+SurveyCollabCount = Literal["0", "1-2", "3-5", "6-10", "more_than_10"]
+SurveyPaidShare = Literal[
+    "all_money", "mostly_money", "half_and_half", "mostly_barter",
+    "all_barter", "none",
+]
+SurveyReach = Literal[
+    "brand_messages_me", "i_pitch", "agency", "whatsapp_group", "app_or_website",
+    "referral", "other",
+]
+SurveyYesNo = Literal["yes", "no"]
+SurveyFeeAgreed = Literal[
+    "brand_stated_fixed", "i_quoted_accepted", "negotiated", "verbal_only",
+    "do_not_remember", "no_paid_collab",
+]
+SurveyPaidWhen = Literal[
+    "before_posting", "within_a_week", "2_4_weeks", "1_2_months",
+    "more_than_2_months", "still_waiting", "never_paid", "not_applicable",
+]
+SurveyWentWrong = Literal[
+    "changes_after_posting", "used_in_ads_unasked", "fee_changed",
+    "went_quiet", "asked_for_free_after", "more_deliverables", "nothing", "other",
+]
+SurveyFrustration = Literal[
+    "finding_briefs", "brands_not_serious", "haggling", "late_payment",
+    "unclear_deliverables", "content_rejected", "unclear_wants",
+    "no_long_term", "chasing_replies",
+]
+SurveyPanStance = Literal[
+    "have_and_share", "have_prefer_not", "no_pan", "not_sure",
+]
+
+
+class CreatorSurveyPayload(BaseModel):
+    """One response. **Every field optional, which is deliberate.**
+
+    The browser marks most of these required, and that is where required-ness
+    belongs: a half-finished anonymous response is still data, and refusing it
+    server-side would throw away the one answer somebody was willing to give.
+    What the server refuses is a submission that is *entirely* empty, and a
+    top-three that is present but is not three.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    city: Optional[SurveyCity] = None
+    focus: Optional[SurveyFocus] = None
+    collabs_3m: Optional[SurveyCollabCount] = None
+    paid_share: Optional[SurveyPaidShare] = None
+    how_reach: Optional[list[SurveyReach]] = Field(default=None, max_length=8)
+    used_a_platform: Optional[SurveyYesNo] = None
+    platform_story: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+    fee_agreed: Optional[SurveyFeeAgreed] = None
+    paid_when: Optional[SurveyPaidWhen] = None
+    went_wrong: Optional[list[SurveyWentWrong]] = Field(default=None, max_length=8)
+    top_three: Optional[list[SurveyFrustration]] = Field(default=None, max_length=9)
+    walked_away: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+    pan_stance: Optional[SurveyPanStance] = None
+    wish_brands_knew: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+
+
+# The free-text questions, named once so the ID sweep and the admin warning
+# cannot fall out of step with the model.
+SURVEY_FREE_TEXT_FIELDS = ("platform_story", "walked_away", "wish_brands_knew")
+
+# The closed questions that get an aggregate, and whether each is multi-select.
+SURVEY_CLOSED_FIELDS = (
+    ("city", False),
+    ("focus", False),
+    ("collabs_3m", False),
+    ("paid_share", False),
+    ("how_reach", True),
+    ("used_a_platform", False),
+    ("fee_agreed", False),
+    ("paid_when", False),
+    ("went_wrong", True),
+    ("top_three", True),
+    ("pan_stance", False),
+)
+
+# **The whole shape of a stored row.** A test asserts the keys of what is
+# written are exactly these, so a field added to the payload cannot reach the
+# database without somebody adding it here on purpose — and nothing about a
+# request can arrive by a `**spread` from somewhere else.
+_SURVEY_STORED_KEYS = frozenset(
+    set(CreatorSurveyPayload.model_fields) | {"submitted_on", "schema_version"}
+)
+
+
+def _survey_refusal(payload: CreatorSurveyPayload) -> Optional[str]:
+    """Why this submission cannot be stored, as a sentence, or `None`.
+
+    One decider for both doors — the JSON endpoint the page's `fetch` uses and
+    the plain form POST it falls back to without JavaScript — so the two cannot
+    disagree about what a valid response is.
+    """
+    answered = {
+        k: v
+        for k, v in payload.model_dump(exclude_none=True).items()
+        if v not in ("", [], None)
+    }
+    if not answered:
+        return "It looks like nothing was filled in. Answer what you can and send again."
+
+    # **Exactly three, refused here as well as in the browser.** A top-three
+    # that accepts seven gives a frequency count rather than a ranking, and the
+    # ranking is the point of the question. An *omitted* top-three is a skipped
+    # question, which every question here is allowed to be.
+    top = payload.top_three
+    if top is not None and len(top) and len(set(top)) != SURVEY_TOP_THREE:
+        return (
+            f"Please pick exactly {SURVEY_TOP_THREE} of the most frustrating "
+            "things, so we can rank them."
+        )
+
+    return _survey_id_refusal([getattr(payload, f) for f in SURVEY_FREE_TEXT_FIELDS])
+
+
+async def _store_survey_response(payload: CreatorSurveyPayload) -> None:
+    """Write the answers and the date. **Nothing else, ever.**
+
+    Built by naming keys off the payload, never by copying anything that came
+    from the request — the rule `_public_case_study` holds, for a stronger
+    reason. There is deliberately no `audit()` call: the log has an actor
+    field.
+    """
+    doc = payload.model_dump(exclude_none=True)
+    # A date, not a datetime. See the block at the top of this section.
+    doc["submitted_on"] = datetime.now(SHOOT_TZ).date().isoformat()
+    doc["schema_version"] = SURVEY_SCHEMA_VERSION
+    await db.creator_survey_responses.insert_one(doc)
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """The caller's address, for the in-memory rate limit **only**.
+
+    Read at the moment it is needed and never returned, never logged and never
+    stored. It exists inside the lifetime of one request plus a timestamp in a
+    module dict, and nothing else in this file may take it.
+    """
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return forwarded or (request.client.host if request.client else None)
+
+
+@public_router.post("/survey/creator")
+async def submit_creator_survey(payload: CreatorSurveyPayload, request: Request):
+    """Take one anonymous survey response.
+
+    Unauthenticated by design, not by omission — see the section header. The
+    refusals come back as plain sentences rather than codes, because the page
+    that reads them may be running no JavaScript.
+    """
+    refusal = _survey_rate_refusal(_client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
+    refusal = _survey_refusal(payload)
+    if refusal:
+        raise HTTPException(status_code=422, detail=refusal)
+    await _store_survey_response(payload)
+    _survey_rate_record(_client_ip(request))
+    return {"stored": True}
+
+
 
 # --- Case studies, for anybody --------------------------------------------
 #
@@ -36122,6 +37228,37 @@ PROOF_FLOORS = {
 }
 
 
+async def _deepest_supply_city() -> Optional[str]:
+    """The city with the most verified creators, or `None`.
+
+    **This is what makes a geographic claim sayable without typing one.** The
+    pages used to carry "The network runs deepest in Bengaluru" as a literal,
+    which was true when it was written and is a sentence nobody re-checks. The
+    operation is going national, so the one thing that must not happen is the
+    copy getting ahead of the supply — and the fix is the rule every other
+    figure on this site already follows: count it.
+
+    Counted off `city`, which is a closed list folded through `_canonical_city`
+    — free text could not be ranked at all, because "Bangalore", "bangalore"
+    and "BLR" would be three cities and one place.
+
+    `None` when nobody is verified anywhere, which the caller turns into
+    silence rather than into a sentence with a hole in it.
+    """
+    rows = await db.creator_profiles.aggregate(
+        [
+            {"$match": {"verification_status": "verified", "city": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$city", "n": {"$sum": 1}}},
+            # `_id` as the tiebreak, so two cities on the same count order
+            # stably rather than flipping between requests — the same reason
+            # every thread read here sorts on `(created_at, _id)`.
+            {"$sort": {"n": -1, "_id": 1}},
+            {"$limit": 1},
+        ]
+    ).to_list(1)
+    return (rows[0].get("_id") or None) if rows else None
+
+
 async def _platform_proof() -> dict:
     """Real numbers for the proof strip, or nothing at all.
 
@@ -36137,6 +37274,14 @@ async def _platform_proof() -> dict:
     is the deliberate trade — the alternative is a lifetime total, which stays
     comfortably large forever and stops describing anything. Silence on a
     quiet week is the honest version of the same page.
+
+    **`deepest_city` rides along so geography can be rendered rather than
+    typed.** It is inside the same floor gate on purpose: below the floor the
+    whole payload is `{}`, so a page cannot name a city while the strip that
+    would give that name a denominator is absent. "We are deepest in Kochi"
+    with no counts beside it is a smaller claim than silence, not a bigger one.
+    It is not in `PROOF_FLOORS` itself — it is a name, and there is no floor to
+    hold a name to.
     """
     creators = await db.creator_profiles.count_documents(
         {"verification_status": "verified"}
@@ -36163,7 +37308,7 @@ async def _platform_proof() -> dict:
     counted = {"cities": cities, "creators": creators, "campaigns": campaigns}
     if any(counted[k] < floor for k, floor in PROOF_FLOORS.items()):
         return {}
-    return counted
+    return {**counted, "deepest_city": await _deepest_supply_city()}
 
 
 
@@ -36518,6 +37663,534 @@ def _work_detail_html(cs: dict, media_base: str = "") -> str:
 </div></body></html>"""
 
 
+# --- The survey page -------------------------------------------------------
+#
+# Server-rendered like `/work`, and for a third reason beyond that page's two:
+# this is a link we send over WhatsApp to somebody on mobile data who may have
+# a tab open for thirty seconds, and a form that needs a React bundle to lay
+# itself out is a form that loses people before it draws.
+#
+# **It works with JavaScript disabled.** `fetch` swaps in the thank-you state
+# without a reload where it can; where it cannot, the form is an ordinary
+# `POST /survey` that returns a thank-you page. Both doors go through
+# `_survey_refusal` and `_store_survey_response`, so they cannot disagree about
+# what a valid response is.
+#
+# **No third-party anything.** No analytics, no pixel, no external font — the
+# families are named with system fallbacks exactly as `_WORK_CSS` does, so the
+# page makes zero outbound requests. An analytics script on an anonymous survey
+# is a contradiction, and a font request is an IP handed to a third party by a
+# page whose whole promise is that we are not collecting one.
+_SURVEY_CSS = """
+*{box-sizing:border-box}
+body{margin:0;background:#091426;color:#EDF1F7;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}
+.wrap{max-width:40rem;margin:0 auto;padding:2rem 1.25rem 4rem}
+.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0;margin:0}
+h1{font-family:Fraunces,Georgia,serif;font-size:clamp(1.8rem,6vw,2.6rem);line-height:1.08;margin:.6rem 0 0;letter-spacing:-.02em}
+.intro{margin-top:1rem;color:#C6D0E0}
+.howlong{margin-top:1rem;font-family:Fraunces,Georgia,serif;font-size:1.1rem;color:#FF2731}
+.privacy{margin-top:1.5rem;border:1px solid rgba(255,255,255,.12);border-left:2px solid #FF2731;border-radius:.4rem;background:#0E1C33;padding:1rem 1.1rem;color:#C6D0E0;font-size:.95rem}
+.q{margin-top:2.25rem;border-top:1px solid rgba(255,255,255,.09);padding-top:1.5rem}
+.q:first-of-type{border-top:0}
+.qnum{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0}
+.qtext{display:block;margin:.35rem 0 .2rem;font-size:1.08rem;font-weight:500}
+.help{margin:.2rem 0 .75rem;font-size:.88rem;color:#8294B0}
+.opts{margin-top:.75rem;display:flex;flex-direction:column;gap:.1rem}
+/* 44px touch targets, and the whole row is the target rather than the dot. */
+.opt{display:flex;align-items:flex-start;gap:.7rem;min-height:44px;padding:.55rem .6rem;border-radius:.4rem;cursor:pointer}
+.opt:hover{background:rgba(255,255,255,.04)}
+.opt input{margin:.3rem 0 0;width:1.15rem;height:1.15rem;flex:0 0 auto;accent-color:#FF2731}
+.opt span{flex:1}
+select,textarea{width:100%;margin-top:.5rem;background:#0E1C33;color:#EDF1F7;border:1px solid rgba(255,255,255,.16);border-radius:.4rem;padding:.7rem .75rem;font:inherit;min-height:44px}
+textarea{min-height:6.5rem;resize:vertical}
+select:focus,textarea:focus,.opt input:focus{outline:2px solid #FF2731;outline-offset:1px}
+.count{margin-top:.4rem;font-size:.8rem;color:#8294B0}
+.send{margin-top:2.5rem}
+button{width:100%;min-height:52px;background:#FF2731;color:#091426;border:0;border-radius:.4rem;font:inherit;font-weight:600;font-size:1.02rem;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+button[disabled]{opacity:.55;cursor:default}
+.err{margin-top:1rem;border:1px solid #FF2731;border-radius:.4rem;padding:.8rem .9rem;color:#FFD9DB;background:rgba(255,39,49,.08)}
+.done{margin-top:3rem;text-align:left}
+.done h2{font-family:Fraunces,Georgia,serif;font-size:1.7rem;color:#EDF1F7;text-transform:none;letter-spacing:-.01em;margin:0 0 .75rem}
+footer{margin-top:3rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.09);font-size:.82rem;color:#8294B0}
+@media (min-width:40rem){.wrap{padding:3rem 1.5rem 5rem}}
+"""
+
+# The copy, in one place so it can be read rather than reconstructed from the
+# markup — and so the privacy note is quotable.
+#
+# **It says nothing about a platform, an app, or anything being built.** This is
+# studio research: a survey that reveals the product gets answers about the
+# product instead of answers about people's lives, which is the one failure
+# that would make the whole exercise worthless.
+SURVEY_COPY = {
+    "eyebrow": "WeAre Studios research",
+    "heading": "How brand collaborations actually work",
+    "intro": (
+        "WeAre Studios runs influencer campaigns for brands across India. We "
+        "are trying to understand the creator side of this properly - how work "
+        "reaches you, how money gets agreed, and what goes wrong. 14 "
+        "questions, about 4 minutes. There are no right answers and nothing "
+        "here is a pitch. We will publish a summary of what we find."
+    ),
+    "howlong": "14 questions, about 4 minutes.",
+    # **Exactly this, and nothing stronger.** In particular it does not say
+    # answers cannot be connected to each other — within one response they
+    # obviously can, and that is what makes the survey worth running. Claiming
+    # otherwise would be the one sentence here that is false.
+    "privacy": (
+        "We store your answers and the date. No name, no number, no email, and "
+        "no record of your device or where you are. We cannot tell who sent "
+        "what."
+    ),
+    "submit": "Send my answers",
+    "thanks_title": "Thank you - this is genuinely useful.",
+    "thanks_line": (
+        "We will publish the summary once enough people have answered."
+    ),
+    "no_names": (
+        "A line or two is plenty, and please leave your name and handle out of "
+        "it."
+    ),
+}
+
+# Every question, in order. One table so the page, the model and the admin
+# screen cannot drift into three different surveys.
+#
+# `kind` is `select`, `radio`, `checkbox` or `text`; `options` are
+# `(value, label)` pairs whose values are the `Literal`s above, so a control
+# cannot offer something the payload would refuse.
+def _survey_questions() -> list:
+    return [
+        {
+            "field": "city", "kind": "select", "required": True,
+            "text": "Which city are you based in?",
+            "options": [(c, c) for c in INDIAN_CITIES] + [(SURVEY_ELSEWHERE, SURVEY_ELSEWHERE)],
+        },
+        {
+            "field": "focus", "kind": "select", "required": True,
+            "text": "What do you mostly make content about?",
+            "options": [(g, g) for g in SURVEY_FOCUS_GROUPS] + [(SURVEY_OTHER_FOCUS, SURVEY_OTHER_FOCUS)],
+        },
+        {
+            "field": "collabs_3m", "kind": "radio", "required": True,
+            "text": "In the last 3 months, how many brand collaborations did you do?",
+            "options": [
+                ("0", "0"), ("1-2", "1-2"), ("3-5", "3-5"), ("6-10", "6-10"),
+                ("more_than_10", "More than 10"),
+            ],
+        },
+        {
+            "field": "paid_share", "kind": "radio", "required": True,
+            "text": "Of those, how many were paid in money rather than product or barter?",
+            "options": [
+                ("all_money", "All were paid in money"),
+                ("mostly_money", "Mostly paid in money"),
+                ("half_and_half", "About half and half"),
+                ("mostly_barter", "Mostly barter or product"),
+                ("all_barter", "All were barter or product"),
+                ("none", "I did not do any"),
+            ],
+        },
+        {
+            "field": "how_reach", "kind": "checkbox", "required": True,
+            "text": "How do brand collaborations usually reach you?",
+            "help": "Choose all that apply.",
+            "options": [
+                ("brand_messages_me", "The brand messages me directly"),
+                ("i_pitch", "I pitch brands myself"),
+                ("agency", "An agency contacts me"),
+                ("whatsapp_group", "Through a WhatsApp group"),
+                ("app_or_website", "Through an app or website"),
+                ("referral", "A friend or another creator refers me"),
+                ("other", "Other"),
+            ],
+        },
+        {
+            "field": "used_a_platform", "kind": "radio", "required": True,
+            "text": "Have you ever used an app or website to find brand collaborations?",
+            "options": [("yes", "Yes"), ("no", "No")],
+        },
+        {
+            "field": "platform_story", "kind": "text", "required": False,
+            "text": "If yes - which one, and what happened?",
+            "help": SURVEY_COPY["no_names"],
+        },
+        {
+            "field": "fee_agreed", "kind": "radio", "required": True,
+            "text": "Think about your most recent paid collaboration. How was the fee agreed?",
+            "options": [
+                ("brand_stated_fixed", "The brand stated a fixed fee"),
+                ("i_quoted_accepted", "I quoted my rate and they accepted"),
+                ("negotiated", "We negotiated and settled somewhere"),
+                ("verbal_only", "Agreed verbally, nothing written down"),
+                ("do_not_remember", "I do not remember"),
+                ("no_paid_collab", "I have not done a paid collaboration"),
+            ],
+        },
+        {
+            "field": "paid_when", "kind": "radio", "required": True,
+            "text": "How long after you delivered did you get paid?",
+            "options": [
+                ("before_posting", "Before I posted"),
+                ("within_a_week", "Within a week"),
+                ("2_4_weeks", "2-4 weeks"),
+                ("1_2_months", "1-2 months"),
+                ("more_than_2_months", "More than 2 months"),
+                ("still_waiting", "Still waiting"),
+                ("never_paid", "Never got paid"),
+                ("not_applicable", "Not applicable"),
+            ],
+        },
+        {
+            "field": "went_wrong", "kind": "checkbox", "required": True,
+            "text": "In that collaboration, did any of these happen?",
+            "help": "Choose all that apply.",
+            "options": [
+                ("changes_after_posting", "The brand asked for changes after I had already posted"),
+                ("used_in_ads_unasked", "They used my content in ads without asking me"),
+                ("fee_changed", "The fee changed after we had agreed it"),
+                ("went_quiet", "They went quiet and stopped replying"),
+                ("asked_for_free_after", "I was asked to do it free or for barter after money had been discussed"),
+                ("more_deliverables", "They asked for more deliverables than we agreed"),
+                ("nothing", "Nothing went wrong"),
+                ("other", "Other"),
+            ],
+        },
+        {
+            "field": "top_three", "kind": "checkbox", "required": True,
+            "text": "Pick the three most frustrating things about brand work.",
+            "help": f"Exactly {SURVEY_TOP_THREE}, so we can rank them.",
+            "limit": SURVEY_TOP_THREE,
+            "options": [
+                ("finding_briefs", "Finding briefs at all"),
+                ("brands_not_serious", "Brands that are not serious"),
+                ("haggling", "Haggling over rates"),
+                ("late_payment", "Late payment"),
+                ("unclear_deliverables", "Unclear deliverables"),
+                ("content_rejected", "Content rejected after I had shot it"),
+                ("unclear_wants", "Not knowing what the brand actually wanted"),
+                ("no_long_term", "No long-term relationship, every job starts from zero"),
+                ("chasing_replies", "Chasing people for replies"),
+            ],
+        },
+        {
+            "field": "walked_away", "kind": "text", "required": False,
+            "text": "Have you ever said no to a collaboration? What made you walk away?",
+            "help": SURVEY_COPY["no_names"],
+        },
+        {
+            # **Whether, never the number.** There is no field anywhere in this
+            # survey that could hold a government ID, and `_survey_id_refusal`
+            # refuses one typed into a box that did not ask.
+            "field": "pan_stance", "kind": "radio", "required": True,
+            "text": "For payments, which of these is true for you?",
+            "options": [
+                ("have_and_share", "I have a PAN and do not mind sharing it to get paid"),
+                ("have_prefer_not", "I have a PAN but would rather not share it"),
+                ("no_pan", "I do not have a PAN"),
+                ("not_sure", "Not sure"),
+            ],
+        },
+        {
+            "field": "wish_brands_knew", "kind": "text", "required": False,
+            "text": "Anything you wish brands understood about working with creators?",
+            "help": SURVEY_COPY["no_names"],
+        },
+    ]
+
+
+def _survey_question_html(q: dict, index: int) -> str:
+    """One question. Real controls, no custom widgets.
+
+    Radios and checkboxes rather than JavaScript look-alikes, because a native
+    control is the one thing guaranteed to work with a screen reader, with a
+    keyboard, with autofill off and with no JavaScript at all — which is the
+    state this page has to survive.
+    """
+    e = html_escape
+    field = q["field"]
+    head = (
+        f'<p class="qnum">Question {index}</p>'
+        f'<span class="qtext" id="{e(field)}-label">{e(q["text"])}</span>'
+        + (f'<p class="help">{e(q["help"])}</p>' if q.get("help") else "")
+    )
+
+    if q["kind"] == "select":
+        opts = "".join(
+            f'<option value="{e(v)}">{e(label)}</option>' for v, label in q["options"]
+        )
+        body = (
+            f'<select name="{e(field)}" id="{e(field)}"'
+            f'{" required" if q.get("required") else ""}>'
+            f'<option value="">Choose one</option>{opts}</select>'
+        )
+    elif q["kind"] == "text":
+        body = (
+            f'<textarea name="{e(field)}" id="{e(field)}" rows="4" '
+            f'maxlength="{SURVEY_FREE_TEXT_MAX}" '
+            f'aria-labelledby="{e(field)}-label"></textarea>'
+        )
+    else:
+        kind = "radio" if q["kind"] == "radio" else "checkbox"
+        limit = f' data-limit="{q["limit"]}"' if q.get("limit") else ""
+        rows = "".join(
+            f'<label class="opt"><input type="{kind}" name="{e(field)}" '
+            f'value="{e(v)}"{limit}'
+            f'{" required" if kind == "radio" and q.get("required") else ""}>'
+            f"<span>{e(label)}</span></label>"
+            for v, label in q["options"]
+        )
+        body = (
+            f'<div class="opts" role="group" aria-labelledby="{e(field)}-label"'
+            f'{limit} data-field="{e(field)}">{rows}</div>'
+            + (
+                f'<p class="count" data-count-for="{e(field)}"></p>'
+                if q.get("limit")
+                else ""
+            )
+        )
+
+    return f'<fieldset class="q">{head}{body}</fieldset>'
+
+
+def _survey_head(*, title: str, url: str) -> str:
+    """Deliberately thinner than `_work_head`.
+
+    **No Open Graph image and `noindex`.** This is research we send to people,
+    not a page we want found: a survey in a search index collects answers from
+    whoever wandered in, which is a different population from the one we are
+    asking about. `robots.txt` disallows it too; this is the half a crawler
+    reads if it arrives anyway.
+    """
+    e = html_escape
+    return f"""<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="theme-color" content="#091426">
+<meta name="robots" content="noindex, nofollow">
+<link rel="canonical" href="{e(url)}">
+<style>{_SURVEY_CSS}</style>"""
+
+
+def _survey_thanks_html() -> str:
+    """The thank-you page the no-JavaScript POST lands on.
+
+    The same words the in-page swap shows, from the same constant, so the two
+    paths cannot thank somebody differently.
+    """
+    e = html_escape
+    url = f"{_share_base()}{SURVEY_PATH}"
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{_survey_head(title="Thank you — WeAre Studios research", url=url)}</head>
+<body><div class="wrap">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<div class="done">
+  <h2>{e(SURVEY_COPY["thanks_title"])}</h2>
+  <p>{e(SURVEY_COPY["thanks_line"])}</p>
+</div>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</div></body></html>"""
+
+
+def _survey_html(error: Optional[str] = None) -> str:
+    """The survey, as one page and one scroll.
+
+    **No pagination.** A multi-step form on a phone loses people at every step,
+    and this one is being opened from a WhatsApp message by somebody who has
+    not decided to spend four minutes yet. Saying the length honestly near the
+    top is the alternative to hiding it behind "Next".
+    """
+    e = html_escape
+    url = f"{_share_base()}{SURVEY_PATH}"
+    questions = "".join(
+        _survey_question_html(q, i) for i, q in enumerate(_survey_questions(), start=1)
+    )
+    err = f'<p class="err" role="alert">{e(error)}</p>' if error else ""
+
+    # **The script is an enhancement and the form works without it.** Without
+    # JavaScript the browser posts to `/survey` and gets the thank-you page;
+    # with it, the same values go to the JSON endpoint and the thank-you state
+    # swaps in. The only thing the script adds beyond that is the exactly-three
+    # counter, which the server refuses anyway.
+    script = """
+(function () {
+  var form = document.getElementById('survey');
+  if (!form) return;
+  var LIMIT = %d;
+
+  // The exactly-three counter. The server refuses a wrong count too, so this
+  // is a courtesy rather than the rule — but being told after a four-minute
+  // form is the version that loses people.
+  function wire(group) {
+    var field = group.getAttribute('data-field');
+    var out = document.querySelector('[data-count-for="' + field + '"]');
+    var boxes = group.querySelectorAll('input[type=checkbox]');
+    function sync() {
+      var n = 0;
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) n++;
+      for (var j = 0; j < boxes.length; j++) {
+        boxes[j].disabled = !boxes[j].checked && n >= LIMIT;
+      }
+      if (out) out.textContent = n + ' of ' + LIMIT + ' chosen';
+    }
+    for (var k = 0; k < boxes.length; k++) boxes[k].addEventListener('change', sync);
+    sync();
+  }
+  var limited = form.querySelectorAll('.opts[data-limit]');
+  for (var i = 0; i < limited.length; i++) wire(limited[i]);
+
+  form.addEventListener('submit', function (ev) {
+    if (!window.fetch) return;            // let the plain POST happen
+    ev.preventDefault();
+    var btn = form.querySelector('button');
+    var errBox = document.getElementById('survey-error');
+    var data = new FormData(form);
+    var body = {};
+    var multi = %s;
+    data.forEach(function (value, key) {
+      if (value === '') return;
+      if (multi.indexOf(key) !== -1) {
+        (body[key] = body[key] || []).push(value);
+      } else {
+        body[key] = value;
+      }
+    });
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    fetch(%s, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(
+          (data && data.detail) || 'That did not send. Please try again.'
+        );
+      });
+    }).then(function () {
+      // One submission per device, and this is the whole mechanism: a
+      // localStorage flag. No fingerprinting. It is bypassable and that is
+      // the correct trade here — the alternative is identifying people in
+      // order to stop them answering twice.
+      try { localStorage.setItem('weare-survey-done', '1'); } catch (e) {}
+      document.getElementById('survey-page').innerHTML =
+        document.getElementById('survey-thanks').innerHTML;
+      window.scrollTo(0, 0);
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = %s;
+      if (errBox) {
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+        errBox.scrollIntoView({ block: 'center' });
+      }
+    });
+  });
+})();
+""" % (
+        SURVEY_TOP_THREE,
+        json.dumps([q["field"] for q in _survey_questions() if q["kind"] == "checkbox"]),
+        json.dumps(f"{API_PREFIX}/public/survey/creator"),
+        json.dumps(SURVEY_COPY["submit"]),
+    )
+
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{_survey_head(title=SURVEY_COPY["heading"] + " — WeAre Studios research", url=url)}</head>
+<body><div class="wrap" id="survey-page">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<h1>{e(SURVEY_COPY["heading"])}</h1>
+<p class="intro">{e(SURVEY_COPY["intro"])}</p>
+<p class="howlong">{e(SURVEY_COPY["howlong"])}</p>
+<p class="privacy">{e(SURVEY_COPY["privacy"])}</p>
+{err}
+<form id="survey" method="post" action="{e(SURVEY_PATH)}" novalidate>
+{questions}
+<p class="err" id="survey-error" role="alert" hidden></p>
+<div class="send"><button type="submit">{e(SURVEY_COPY["submit"])}</button></div>
+</form>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</div>
+<template id="survey-thanks">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<div class="done">
+  <h2>{e(SURVEY_COPY["thanks_title"])}</h2>
+  <p>{e(SURVEY_COPY["thanks_line"])}</p>
+</div>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</template>
+<script>{script}</script>
+</body></html>"""
+
+
+@app.get(SURVEY_PATH, include_in_schema=False)
+async def public_survey_page():
+    """The survey. No account, no cookie, no session — see the section header."""
+    return Response(
+        content=_survey_html(),
+        media_type="text/html; charset=utf-8",
+        # Short, because the question table is code and a stale copy of this
+        # page is a form posting fields the server no longer accepts.
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.post(SURVEY_PATH, include_in_schema=False)
+async def submit_survey_form(request: Request):
+    """The no-JavaScript door. **Same decider, same store, different shape.**
+
+    A plain `application/x-www-form-urlencoded` POST from the browser's own
+    form submission, answered with HTML rather than JSON because there is
+    nothing on the other end to read JSON. It re-renders the form with the
+    refusal at the top on a failure, which is what a form without JavaScript
+    has instead of an inline error.
+    """
+    form = await request.form()
+    raw: dict = {}
+    for q in _survey_questions():
+        field = q["field"]
+        if q["kind"] == "checkbox":
+            values = [v for v in form.getlist(field) if v]
+            if values:
+                raw[field] = values
+        else:
+            value = (form.get(field) or "").strip()
+            if value:
+                raw[field] = value
+
+    def _page(message: str, status: int) -> Response:
+        return Response(
+            content=_survey_html(error=message),
+            media_type="text/html; charset=utf-8",
+            status_code=status,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    refusal = _survey_rate_refusal(_client_ip(request))
+    if refusal:
+        return _page(refusal, 429)
+    try:
+        payload = CreatorSurveyPayload(**raw)
+    except ValidationError:
+        # A junk value in a closed list, which from a browser form means a
+        # hand-edited page. The sentence is plain for the same reason the
+        # others are.
+        return _page(
+            "Some of those answers were not ones we offered. Please reload the "
+            "page and try again.",
+            422,
+        )
+    refusal = _survey_refusal(payload)
+    if refusal:
+        return _page(refusal, 422)
+    await _store_survey_response(payload)
+    _survey_rate_record(_client_ip(request))
+    return Response(
+        content=_survey_thanks_html(),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get(CASE_STUDY_PATH, include_in_schema=False)
 async def public_work_index(
     request: Request,
@@ -36548,6 +38221,653 @@ async def public_work_page(slug: str, request: Request):
     return Response(
         content=_work_detail_html(
             await _public_case_study(doc), media_base=str(request.base_url)
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# The landing page matrix — /influencer-marketing/...
+#
+# Server-rendered, like `/work`, `/c/{id}` and `/brands/{id}`, and for the
+# reason `/work` is: these are the pages on this site written to be **found**
+# by search rather than sent, and a crawler that runs no JavaScript cannot
+# read a React route. They link outward rather than sideways, so they lose
+# nothing by living outside the SPA.
+#
+# **GENERATED FROM LIVE SUPPLY, NEVER FROM THE ENUMS ALONE, AND THAT IS THE
+# WHOLE DESIGN.** Eight sectors times twenty cities plus the hubs is 189 URLs
+# that are trivial to emit and would be a lie on most of them. A page saying
+# "fashion creators in Guwahati" is a page a brand lands on, posts a brief
+# from, and waits — and then the campaign fee comes back under
+# `REFUND_POLICY_TERMS`, because we could not fill a brief we advertised as
+# fillable. **The gate is the product promise, not an SEO preference.** So:
+#
+#   - a city page exists once that city has `CITY_PAGE_MIN_CREATORS` verified
+#     creators;
+#   - a sector x city page exists once that city has `SECTOR_PAGE_MIN_CREATORS`
+#     verified creators whose niches match that sector;
+#   - a page that loses its supply stops being generated and leaves the
+#     sitemap, because the supply is counted per request rather than stored.
+#
+# **Do not "fix" this by generating all 189.** The thin pages are not a
+# missed opportunity; they are a refund and a brand that does not come back.
+#
+# **The slugs derive from `CATEGORY_LABELS` and `INDIAN_CITIES`.** There is no
+# third list of either — the drift `lib/categories.js` exists to prevent, and
+# the same rule `FOLLOWER_TIERS` and `shootWindows.js` hold.
+#
+# **The sectors are this product's own vocabulary, which is a deliberate
+# departure from the brief.** The brief asked for regulated-sector pages for
+# finance (SEBI), healthcare (the Drugs & Magic Remedies Act and the NMC
+# code), education (ASCI claims) and alcohol (surrogate only). **None of those
+# four is in `CATEGORY_LITERAL`**, so a page offering one could never match a
+# real campaign, a real case study or a real creator — exactly the drift the
+# case-study vocabulary note records. Inventing them would also mean a second
+# category list, which is the thing `lib/categories.js` exists to stop.
+#
+# The substance was kept where it genuinely applies to a sector we actually
+# run: surrogate advertising under `hospitality` and `fnb`, the Drugs & Magic
+# Remedies Act and health claims under `wellness`, and RERA registration
+# numbers under `real_estate`. If the operation starts running finance or
+# education campaigns, `CATEGORY_LITERAL` moves and this moves with it.
+LANDING_PATH = "/influencer-marketing"
+
+# The national hub's slug, and the suffix a sector-national page carries.
+NATIONAL_SLUG = "india"
+
+CITY_PAGE_MIN_CREATORS_DEFAULT = 15
+SECTOR_PAGE_MIN_CREATORS_DEFAULT = 5
+# A ceiling on what an operator can type. Zero would generate every
+# combination, which is the one thing this gate exists to prevent, so the
+# floor on the floor is 1.
+LANDING_MIN_MAX = 500
+_LANDING_SETTINGS_ID = "landing_pages"
+
+
+def _landing_slug(text: str) -> str:
+    """A URL fragment from a display label.
+
+    One function for both vocabularies, so "Delhi NCR" and "Food & drink"
+    cannot be slugged two different ways in two places.
+    """
+    out = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return out
+
+
+# Derived, never typed. `CATEGORY_LABELS` is the display vocabulary and
+# `INDIAN_CITIES` is the closed city list; these are the same values in URL
+# form, so a category renamed or a city added shows up here by itself.
+SEO_SECTOR_SLUGS = {
+    _landing_slug(label): key for key, label in CATEGORY_LABELS.items()
+}
+SEO_CITY_SLUGS = {_landing_slug(city): city for city in INDIAN_CITIES}
+
+
+# What a creator has to say about themselves to count toward a sector.
+#
+# **Built on `CAMPAIGN_CATEGORY_SYNONYMS`, which already exists for exactly
+# this problem** — nobody writes "fnb" about themselves — plus the words in
+# the label itself. A second synonym table would be a second answer to "is
+# this creator a food creator".
+def _sector_terms(key: str) -> tuple:
+    label_words = tuple(
+        w for w in re.split(r"[^a-z0-9]+", (CATEGORY_LABELS.get(key) or "").lower()) if len(w) > 2
+    )
+    return tuple(dict.fromkeys(CAMPAIGN_CATEGORY_SYNONYMS.get(key, ()) + label_words + (key,)))
+
+
+# **The regulated constraints, per sector we actually run.** Genuinely useful
+# content nobody else writes, and the reason a brand reads one of these pages
+# twice.
+#
+# NEEDS A LAWYER: every line below is a plain-English summary of a published
+# rule, written to tell a brand what to expect rather than to advise them. The
+# citations are deliberately named so somebody can check them. Before this is
+# used as compliance guidance it needs review on: whether the ASCI influencer
+# guidelines' disclosure wording is fully met by `DISCLOSURE_LABELS`; whether
+# surrogate-advertising exposure attaches to us as the advertiser's agent as
+# well as to the brand; and whether a RERA number is required on an
+# influencer's post or only on the developer's own advertisement.
+SECTOR_RULES = {
+    "fnb": (
+        "Food claims have to be substantiated. A post calling something "
+        "healthy, organic, sugar-free or immunity-boosting is a claim under "
+        "the FSSAI advertising and claims regulations, and ASCI expects it to "
+        "be backed by the label. Where the venue serves alcohol, the brief "
+        "cannot ask for the drink to be the subject — see hospitality.",
+    ),
+    "hospitality": (
+        "Alcohol cannot be advertised directly. If the brand is a bar, a "
+        "brewery or a hotel with a bar, the brief is for the room, the food "
+        "and the service, and surrogate advertising — using a related product "
+        "to sell the drink — is what the rule exists to catch. We write the "
+        "brief so the question does not arise.",
+    ),
+    "wellness": (
+        "Health claims are the most regulated thing on this list. The Drugs "
+        "and Magic Remedies (Objectionable Advertisements) Act 1954 bars "
+        "advertising a cure for a listed condition outright, and ASCI expects "
+        "any health or efficacy claim to be substantiated. Where a "
+        "practitioner appears, the NMC's professional conduct rules restrict "
+        "what a registered doctor may endorse.",
+    ),
+    "real_estate": (
+        "Every advertisement for a registered project has to carry its RERA "
+        "registration number, and projected returns or appreciation are "
+        "claims somebody has to be able to stand behind. A creator walking a "
+        "show flat is advertising the project.",
+    ),
+    "retail": (
+        "Price and discount claims are the ones that get challenged. ASCI "
+        "expects a “was” price to be a price the thing was actually sold "
+        "at, and a “from” price to be available in a meaningful quantity.",
+    ),
+    "fashion": (
+        "Claims about material, origin or sustainability have to be "
+        "substantiated the same way a price claim does, and ASCI has been "
+        "active on vague environmental wording. A gifted outfit is a material "
+        "connection whether or not money moved.",
+    ),
+    "travel": (
+        "What is included has to be what is included. A stay described as "
+        "all-inclusive, or a tariff quoted without taxes, is a claim ASCI "
+        "treats as misleading by omission — and a hosted stay is a material "
+        "connection that has to be disclosed.",
+    ),
+    "lifestyle": (
+        "The general rule, which applies to every brief here: the disclosure "
+        "is mandatory because the connection is material, and every factual "
+        "claim in the caption is the advertiser's to substantiate.",
+    ),
+}
+
+
+async def landing_page_settings() -> dict:
+    """The two floors. Stored, admin-editable, and never raises.
+
+    A settings read that fails must not take down a public page, so it falls
+    back to the defaults exactly the way `leaderboard_settings` does.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _LANDING_SETTINGS_ID})
+    except Exception as exc:  # pragma: no cover - defensive, logged
+        logger.error("could not read the landing page settings: %s", exc)
+        doc = None
+    doc = doc or {}
+
+    def _read(key, default):
+        try:
+            value = int(doc.get(key))
+        except (TypeError, ValueError):
+            return default
+        # **1 is the floor on the floor.** Zero would generate every
+        # combination, which is the single thing this gate exists to prevent.
+        return value if 1 <= value <= LANDING_MIN_MAX else default
+
+    return {
+        "city_minimum": _read("city_minimum", CITY_PAGE_MIN_CREATORS_DEFAULT),
+        "sector_minimum": _read("sector_minimum", SECTOR_PAGE_MIN_CREATORS_DEFAULT),
+    }
+
+
+async def _landing_supply() -> dict:
+    """Verified creators per city, and per (sector, city), counted now.
+
+    One pass over verified creators, projecting only city and niches. The
+    sector match is done in Python against `_sector_terms` because niches are
+    free text — a database regex per sector per city would be sixty queries
+    answering what one scan answers, and the set this walks is verified
+    creators rather than every signup.
+
+    **Counted per request, which is what makes "a page that loses its supply
+    leaves the sitemap" true** rather than true-until-somebody-reruns-a-job.
+    """
+    rows = await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"city": 1, "niches": 1}
+    ).to_list(length=None)
+
+    by_city: dict = {}
+    by_sector_city: dict = {}
+    national: dict = {}
+    terms = {key: _sector_terms(key) for key in CATEGORY_LABELS}
+
+    for row in rows:
+        city = (row.get("city") or "").strip()
+        if city:
+            by_city[city] = by_city.get(city, 0) + 1
+        # One lowered haystack per creator rather than per sector.
+        said = " ".join(str(n).lower() for n in (row.get("niches") or []) if n)
+        for key, words in terms.items():
+            if not any(w in said for w in words):
+                continue
+            national[key] = national.get(key, 0) + 1
+            if city:
+                by_sector_city[(key, city)] = by_sector_city.get((key, city), 0) + 1
+
+    return {
+        "by_city": by_city,
+        "by_sector_city": by_sector_city,
+        "by_sector": national,
+        "total": len(rows),
+    }
+
+
+def _parse_landing_slug(slug: str) -> Optional[dict]:
+    """Read a URL fragment back into `{sector, city}`, or `None`.
+
+    Four shapes off one route, which is deliberate: `/{slug}` with the parsing
+    here cannot suffer the route-ordering bug `pending`-as-an-id causes, and
+    there is one place that knows what a landing URL looks like.
+
+    **Longest sector prefix first.** Both vocabularies contain hyphens
+    ("real-estate", "delhi-ncr"), so splitting on the first hyphen would read
+    "real-estate-mumbai" as the sector "real" in the city "estate-mumbai".
+    Matching the longest known sector slug and then requiring the remainder to
+    be a known city makes it unambiguous, because both lists are closed.
+    """
+    slug = (slug or "").strip().lower()
+    if not slug:
+        return None
+    if slug == NATIONAL_SLUG:
+        return {"sector": None, "city": None}
+    if slug in SEO_CITY_SLUGS:
+        return {"sector": None, "city": SEO_CITY_SLUGS[slug]}
+    for sector_slug in sorted(SEO_SECTOR_SLUGS, key=len, reverse=True):
+        if not slug.startswith(sector_slug + "-"):
+            continue
+        rest = slug[len(sector_slug) + 1 :]
+        sector = SEO_SECTOR_SLUGS[sector_slug]
+        if rest == NATIONAL_SLUG:
+            return {"sector": sector, "city": None}
+        if rest in SEO_CITY_SLUGS:
+            return {"sector": sector, "city": SEO_CITY_SLUGS[rest]}
+    return None
+
+
+def _landing_slug_for(sector: Optional[str], city: Optional[str]) -> str:
+    """The inverse of `_parse_landing_slug`. One speller, so a link and the
+    route it points at cannot disagree."""
+    sector_part = (
+        next(s for s, k in SEO_SECTOR_SLUGS.items() if k == sector) if sector else None
+    )
+    city_part = (
+        next(s for s, c in SEO_CITY_SLUGS.items() if c == city) if city else NATIONAL_SLUG
+    )
+    return f"{sector_part}-{city_part}" if sector_part else city_part
+
+
+def _landing_url(sector: Optional[str], city: Optional[str]) -> str:
+    return f"{_share_base()}{LANDING_PATH}/{_landing_slug_for(sector, city)}"
+
+
+def _landing_pages_from(supply: dict, settings: dict) -> list:
+    """Which pages the current supply generates, in sitemap order.
+
+    The national hub always exists — it is the one page whose claim is about
+    the operation rather than about a place we have to staff.
+    """
+    city_min = settings["city_minimum"]
+    sector_min = settings["sector_minimum"]
+    pages = [{"sector": None, "city": None}]
+
+    cities = [c for c, n in supply["by_city"].items() if n >= city_min]
+    # Deepest first, so the sitemap leads with the pages worth crawling.
+    cities.sort(key=lambda c: (-supply["by_city"][c], c))
+    pages += [{"sector": None, "city": c} for c in cities]
+
+    # A sector-national page needs the sector to clear the *city* floor
+    # nationally: it is a page about the whole country, so a handful of
+    # creators spread thin is exactly the page this gate is about.
+    sectors = [k for k in CATEGORY_LABELS if supply["by_sector"].get(k, 0) >= city_min]
+    sectors.sort(key=lambda k: (-supply["by_sector"][k], k))
+    pages += [{"sector": k, "city": None} for k in sectors]
+
+    combos = [
+        (k, c)
+        for (k, c), n in supply["by_sector_city"].items()
+        if n >= sector_min and supply["by_city"].get(c, 0) >= city_min
+    ]
+    combos.sort(key=lambda kc: (-supply["by_sector_city"][kc], kc[1], kc[0]))
+    pages += [{"sector": k, "city": c} for k, c in combos]
+    return pages
+
+
+def _landing_counts(page: dict, supply: dict) -> dict:
+    """The counted supply for this exact cut. Nothing here is typed."""
+    sector, city = page["sector"], page["city"]
+    if sector and city:
+        creators = supply["by_sector_city"].get((sector, city), 0)
+    elif sector:
+        creators = supply["by_sector"].get(sector, 0)
+    elif city:
+        creators = supply["by_city"].get(city, 0)
+    else:
+        creators = supply["total"]
+    return {"creators": creators, "cities": len([c for c in supply["by_city"] if c])}
+
+
+def _landing_place(page: dict) -> str:
+    return page["city"] or "India"
+
+
+def _landing_titles(page: dict) -> tuple:
+    """The title and the meta description, and **no two pages share either.**
+
+    Uniqueness is structural rather than checked: every title carries the
+    sector label and the place, and the (sector, place) pair is what the URL
+    is. A test drives the real generator and asserts both sets are unique, so
+    a future title that drops one of the two fails there.
+    """
+    place = _landing_place(page)
+    label = CATEGORY_LABELS.get(page["sector"]) if page["sector"] else None
+    if label and page["city"]:
+        title = f"{label} influencer marketing in {place} — WeAre Creators"
+        summary = (
+            f"Run a {label.lower()} creator campaign in {place}. Verified creators, "
+            f"the rate agreed in writing before anyone shoots, and the campaign fee "
+            f"back if we cannot fill the brief."
+        )
+    elif label:
+        title = f"{label} influencer marketing in India — WeAre Creators"
+        summary = (
+            f"Run a {label.lower()} creator campaign in India, managed end to end. "
+            f"Verified creators, every rate agreed before the shoot, and the campaign "
+            f"fee back if we cannot fill the brief."
+        )
+    elif page["city"]:
+        title = f"Influencer marketing in {place} — WeAre Creators"
+        summary = (
+            f"Run a creator campaign in {place}, managed end to end. Verified "
+            f"creators, the rate agreed in writing before anyone shoots, and a report "
+            f"at the end."
+        )
+    else:
+        title = "Influencer marketing in India, run end to end — WeAre Creators"
+        summary = (
+            "Run a creator campaign in India, managed end to end. We run the "
+            "campaign, not just the booking: verified creators, the rate agreed in "
+            "writing before anyone shoots, and the campaign fee back if we cannot "
+            "fill the brief."
+        )
+    return title, summary
+
+
+def _landing_siblings(page: dict, pages: list) -> list:
+    """The internal links: the national hub, the city hub, and sibling sectors.
+
+    **Search value compounds through this**, which is the only reason these
+    pages are worth having as a set rather than individually. Built from the
+    generated list, so a link is never offered to a page the supply does not
+    currently justify — a cross-link to a 404 is worse than no cross-link.
+    """
+    out = []
+    if page != {"sector": None, "city": None}:
+        out.append(({"sector": None, "city": None}, "Influencer marketing in India"))
+    if page["city"] and page["sector"]:
+        city_hub = {"sector": None, "city": page["city"]}
+        if city_hub in pages:
+            out.append((city_hub, f"All creators in {page['city']}"))
+    if page["sector"] and not page["city"]:
+        pass
+    elif page["sector"]:
+        national = {"sector": page["sector"], "city": None}
+        if national in pages:
+            out.append(
+                (national, f"{CATEGORY_LABELS[page['sector']]} creators across India")
+            )
+
+    # Two or three siblings, picked from the same city where there is one, so
+    # the links are to pages a reader of this one plausibly wants.
+    siblings = [
+        p
+        for p in pages
+        if p != page
+        and p["sector"]
+        and p["city"] == page["city"]
+        and p["sector"] != page["sector"]
+    ][:3]
+    for p in siblings:
+        where = f" in {p['city']}" if p["city"] else " across India"
+        out.append((p, f"{CATEGORY_LABELS[p['sector']]} creators{where}"))
+    return out
+
+
+def _landing_html(
+    page: dict,
+    *,
+    counts: dict,
+    rules: tuple,
+    studies: list,
+    siblings: list,
+    media_base: str = "",
+) -> str:
+    """One landing page.
+
+    Everything typed is escaped, every image sits in a ratio container, and
+    everything below the hero is lazy — the rules `/work` already holds.
+    """
+    e = html_escape
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    url = _landing_url(page["sector"], page["city"])
+    title, summary = _landing_titles(page)
+    place = _landing_place(page)
+    label = CATEGORY_LABELS.get(page["sector"]) if page["sector"] else None
+
+    h1 = (
+        f"{label} influencer marketing in {place}"
+        if label
+        else f"Influencer marketing in {place}"
+    )
+
+    # **Counted, never written down**, the rule every figure on this site
+    # follows. `_landing_supply` is the reader.
+    noun = "creator" if counts["creators"] == 1 else "creators"
+    figures = (
+        f'<ul class="figs">'
+        f'<li><b>{counts["creators"]}</b><span>verified {e(noun)}'
+        + (f" in {e(place)}" if page["city"] else "")
+        + "</span></li>"
+        + (
+            f'<li><b>{counts["cities"]}</b><span>cities with verified creators</span></li>'
+            if not page["city"]
+            else ""
+        )
+        + "</ul>"
+    )
+
+    rules_html = (
+        "<h2>What the rules say in this sector</h2>"
+        + "".join(f"<p>{e(r)}</p>" for r in rules)
+        if rules
+        else ""
+    )
+
+    cards = []
+    for cs in studies:
+        hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
+        art = (
+            f'<span class="cover"><img src="{e(hero)}" alt="" loading="lazy"></span>'
+            if hero
+            else f'<span class="cover fallback" style="--h:{_cover_hue(cs.get("slug") or "")}"></span>'
+        )
+        meta = e(" · ".join(x for x in (cs.get("brand_name"), cs.get("category_label"),
+                                        cs.get("city")) if x))
+        cards.append(
+            f'<a class="card" href="{e(_case_study_url(cs["slug"]))}">{art}'
+            f'<span class="ctitle">{e(cs.get("title") or "A campaign")}</span>'
+            f'<span class="cmeta">{meta}</span></a>'
+        )
+    studies_html = (
+        f"<h2>Campaigns we ran{(' in ' + e(place)) if page['city'] else ''}</h2>"
+        f'<div class="grid">{"".join(cards)}</div>'
+        if cards
+        else ""
+    )
+
+    links_html = (
+        "<h2>More on this</h2><ul class=\"links\">"
+        + "".join(
+            f'<li><a href="{e(_landing_url(p["sector"], p["city"]))}">{e(text)}</a></li>'
+            for p, text in siblings
+        )
+        + f'<li><a href="{app_base}/for-brands">How it works for brands</a></li></ul>'
+    )
+
+    # **`Service` with `areaServed` from the real city**, plus a `FAQPage` for
+    # the questions the page actually answers. A `FAQPage` whose questions are
+    # not on the page is the markup equivalent of a claim nobody can check.
+    faqs = [
+        (
+            "What does it cost?",
+            "Our fee is charged to the brand on top of the creator's rate, never "
+            "taken out of it, so a creator who quotes a fee is paid that fee.",
+        ),
+        (
+            "What happens if you cannot fill the brief?",
+            "The campaign fee comes back, unless the brand turned down everyone we "
+            "shortlisted.",
+        ),
+        (
+            "How are creators checked?",
+            "Every creator on a brief is verified before they can apply, and their "
+            "audience figures come from the platform's own API rather than a "
+            "screenshot.",
+        ),
+    ]
+    if rules:
+        faqs.append((f"What are the rules for {(label or 'this').lower()} campaigns?", rules[0]))
+
+    ld = {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Service",
+                "name": h1,
+                "serviceType": "Influencer marketing",
+                "url": url,
+                "areaServed": {
+                    "@type": "City" if page["city"] else "Country",
+                    "name": place,
+                },
+                "provider": {
+                    "@type": "Organization",
+                    "name": "WeAre Creators",
+                    "url": _share_base(),
+                },
+            },
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": q,
+                        "acceptedAnswer": {"@type": "Answer", "text": a},
+                    }
+                    for q, a in faqs
+                ],
+            },
+        ],
+    }
+
+    faq_html = "<h2>Questions brands ask</h2>" + "".join(
+        f"<h3>{e(q)}</h3><p>{e(a)}</p>" for q, a in faqs
+    )
+
+    head = _work_head(
+        title=title,
+        summary=summary,
+        url=url,
+        og_image=f"{app_base}/og-image.png",
+        image_size='\n<meta property="og:image:width" content="1200">'
+        '\n<meta property="og:image:height" content="630">',
+        ld_json=json.dumps(ld).replace("<", "\\u003c"),
+    )
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{head}</head><body><div class="wrap">
+<p class="eyebrow">{e(label or "Influencer marketing")}</p>
+<h1>{e(h1)}</h1>
+<p class="lede">{e(summary)}</p>
+{figures}
+<h2>What a campaign here looks like</h2>
+<p>
+  You post the brief and we run it. We shortlist creators against it, agree
+  each rate in writing before anyone shoots, brief them, staff the shoot where
+  there is one, review the content before it goes live, and send a report at
+  the end.
+</p>
+<p>
+  Briefs ask for counted deliverables rather than a sentence — a number of
+  reels, stories, posts or videos — and pay a fixed fee, a negotiated one, or
+  barter where we have arranged it. Creators are matched on what they actually
+  post, the city they are in, and how they have delivered here before.
+</p>
+<h2>What it costs, and what comes back</h2>
+<p>
+  Our fee is charged to the brand <b>on top of</b> the creator's rate, never
+  taken out of it. A creator who quotes a rate is paid that rate.
+</p>
+<p>
+  If we cannot fill the brief, the campaign fee comes back — unless the brand
+  turned down everyone we shortlisted.
+</p>
+{rules_html}
+{studies_html}
+{faq_html}
+{links_html}
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
+  <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
+</div>
+<footer>
+  WeAre Creators runs paid creator campaigns end to end — casting, fees, the
+  shoot and delivery. Every figure on this page is counted from the platform
+  at the moment it loaded.
+</footer>
+</div></body></html>"""
+
+
+@app.get(LANDING_PATH + "/{slug}", include_in_schema=False)
+async def public_landing_page(slug: str, request: Request):
+    """One landing page, or a 404 where the supply does not justify one.
+
+    **The 404 is the feature.** A page we cannot staff is a page that earns a
+    refund, so a slug that parses perfectly but has too little supply behind
+    it is not served — and because the supply is counted per request, a page
+    stops existing the moment it stops being true.
+    """
+    page = _parse_landing_slug(slug)
+    if page is None:
+        raise HTTPException(status_code=404, detail="That page isn't available.")
+
+    settings = await landing_page_settings()
+    supply = await _landing_supply()
+    pages = _landing_pages_from(supply, settings)
+    if page not in pages:
+        raise HTTPException(status_code=404, detail="That page isn't available.")
+
+    # Case studies for this cut, through `_public_case_study` — never a second
+    # projection, which is the rule that keeps money and a creator's consent
+    # out of a public page by construction.
+    query = _published_case_study_query(
+        category=page["sector"], city=page["city"]
+    )
+    rows = (
+        await db.case_studies.find(query)
+        .sort([("display_order", 1), ("published_at", -1)])
+        .to_list(length=6)
+    )
+    studies = [await _public_case_study(r, full=False) for r in rows]
+
+    return Response(
+        content=_landing_html(
+            page,
+            counts=_landing_counts(page, supply),
+            rules=SECTOR_RULES.get(page["sector"]) or (),
+            studies=studies,
+            siblings=_landing_siblings(page, pages),
+            media_base=str(request.base_url),
         ),
         media_type="text/html; charset=utf-8",
         headers={"Cache-Control": "public, max-age=300"},
@@ -36596,6 +38916,14 @@ async def public_sitemap():
             for p in MARKETING_PATHS]
     if case_studies:
         urls.append((f"{_share_base()}{CASE_STUDY_PATH}", None))
+
+    # **The landing page matrix, generated from live supply rather than from
+    # the enums.** `_landing_pages_from` is the one decider, shared with the
+    # route, so a URL can never be listed here and 404 when a crawler follows
+    # it — and a page whose city or sector has dropped below its floor leaves
+    # the sitemap by not being generated, with nothing to remember to remove.
+    landing = _landing_pages_from(await _landing_supply(), await landing_page_settings())
+    urls += [(_landing_url(p["sector"], p["city"]), None) for p in landing]
     urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
     urls += [

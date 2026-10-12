@@ -48,6 +48,15 @@ const LABELS = {
         label: "Audit log",
         blurb: "Who did what and when, against the record it happened to.",
     },
+    survey_responses: {
+        label: "Anonymous survey answers",
+        // **The one row here whose period is not a compliance question.**
+        // These responses identify nobody, so no erasure duty attaches and
+        // nothing is being held against somebody's wishes — two years is
+        // chosen so a wave can be compared against the next one.
+        blurb:
+            "Creator research answers and the date they were sent, with nothing identifying attached. Kept long enough to compare one wave against the next.",
+    },
 };
 
 /** Days, said the way somebody thinks about them. */

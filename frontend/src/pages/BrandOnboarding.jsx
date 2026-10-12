@@ -77,6 +77,7 @@ import { IST } from "@/lib/time";
 // its public page then prints.
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import DeleteAccount from "@/components/account/DeleteAccount";
+import HomepageLogoConsent from "@/components/brand/HomepageLogoConsent";
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
@@ -288,6 +289,12 @@ export default function BrandOnboarding() {
     // it is locked once verified and none of it is required to submit — it is
     // what a creator reads on the brand's public page.
     const [tagline, setTagline] = useState("");
+    // Permission for the logo on the public home page, plus the block the
+    // server decides it from — approval, campaigns finished, eligibility and
+    // the consent text itself. Held together so the control cannot work any
+    // of it out for itself.
+    const [logoOptIn, setLogoOptIn] = useState(false);
+    const [logoBlock, setLogoBlock] = useState(null);
     const [about, setAbout] = useState("");
     const [city, setCity] = useState("");
     const [outlets, setOutlets] = useState([]);
@@ -337,6 +344,8 @@ export default function BrandOnboarding() {
             setLogoUrl(data.logo_url || null);
             setUploads(data.uploads || null);
             setTagline(data.tagline || "");
+            setLogoOptIn(!!data.homepage_logo?.opted_in);
+            setLogoBlock(data.homepage_logo || null);
             setAbout(data.about || "");
             setCity(data.city || "");
             setOutlets(data.outlets || []);
@@ -484,9 +493,15 @@ export default function BrandOnboarding() {
                 contact_person_name: contactName.trim() || null,
                 contact_person_designation: contactDesignation.trim() || null,
                 contact_email: contactEmail.trim() || null,
+                // Sent on every save, which is safe because the handler
+                // writes the consent record *once* — re-saving with the box
+                // still ticked must not move the timestamp that says when
+                // permission was actually given.
+                homepage_logo_opt_in: logoOptIn,
             });
             await refresh();
             setVerification(data?.verification || null);
+            setLogoBlock(data?.homepage_logo || null);
             if (!silent) notifySuccess("Brand profile saved");
             if (!silent && firstRun.current) {
                 navigate("/dashboard", {
@@ -883,6 +898,31 @@ export default function BrandOnboarding() {
                             <MapPin className="mr-2 h-4 w-4" />
                             Add an outlet
                         </Button>
+                    </section>
+
+                    {/* **The one thing a brand can change about its public
+                        presence.** Everything else on this page is either for
+                        creators reading a brief or for a reviewer checking the
+                        business; this is permission to use the brand's mark on
+                        our own marketing, which is a different kind of ask and
+                        belongs on its own.
+
+                        Here rather than buried in a settings screen because a
+                        permission somebody has to go looking for is one they
+                        meet for the first time when it is already being
+                        exercised — and it sits beside the public half of the
+                        profile, which is the half it is about. */}
+                    <section className="space-y-5">
+                        <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                Being named as a customer
+                            </p>
+                        </div>
+                        <HomepageLogoConsent
+                            block={logoBlock}
+                            checked={logoOptIn}
+                            onChange={setLogoOptIn}
+                        />
                     </section>
 
                     {/* What you're looking for. Not evidence of anything and

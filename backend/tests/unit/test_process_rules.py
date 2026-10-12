@@ -69,6 +69,15 @@ class TestVerificationStatusIsOneWord:
                         # value, so it cannot cause the mismatch this guard is
                         # about — the marker keeps the exemption that narrow.
                         "_APPLICANT",
+                        # The brand wall reports whether *we* have approved a
+                        # brand's logo for the home page. That "approved" is a
+                        # decision about a trademark on a marketing page, never
+                        # a `verification_status` value, so it cannot cause the
+                        # mismatch this guard exists for — which was approved
+                        # creators being invisible to brands. The marker is the
+                        # field name rather than the bare word, so it stays as
+                        # narrow as `_APPLICANT`.
+                        "homepage_logo",
                     )
                 ), f"stray legacy status {legacy} outside the migration: {line.strip()}"
 

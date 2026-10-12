@@ -22,6 +22,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/influencer-marketing/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/survey",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

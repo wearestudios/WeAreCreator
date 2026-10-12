@@ -235,13 +235,41 @@ Full list with comments: `backend/.env.example`.
 
 ### The three server-rendered pages, and the deploy step they need
 
-> **This is a pending decision, not a finished setup.** Three paths in
-> `frontend/vercel.json` currently point at `/index.html`, which is exactly
-> what the catch-all below them already does — so today they are inert
-> placeholders and those pages open the React app instead. The entries are
-> there to be *repointed*, and this section is the record of why they exist.
-> (They used to carry `"//"` keys explaining themselves inline; Vercel rejects
-> unknown properties on a rewrite object, so the notes live here instead.)
+> **The decision has been taken, and it is the second option below:
+> `PUBLIC_SHARE_BASE_URL`, not the rewrites.**
+>
+> Set `PUBLIC_SHARE_BASE_URL` to the backend's own origin. Every link the
+> server generates — a shared brief, a brand page, a case study, a landing
+> page, every `<loc>` in the sitemap and every `<link rel="canonical">` — is
+> then built from that origin and points straight at the API host, which
+> serves those pages itself. **No proxying is required and the six rewrite
+> entries below stay inert.**
+>
+> Why not the rewrites: **Vercel parses `vercel.json` at deploy time, before
+> the build runs**, so a destination cannot come from an environment variable
+> and has to be a literal URL committed to the repository. Nothing in this
+> repository knows the API origin — `frontend/.env.example` has
+> `http://localhost:8001` and that is all — so repointing them means hardcoding
+> a production hostname here. That is the trade that was declined.
+>
+> **What it costs:** the URLs a brand reads are the API hostname rather than
+> `wearecreators.in`, which is uglier to read out over the phone. Nothing else
+> changes — the pages are identical, the previews are identical, and search
+> indexes them normally.
+>
+> **One thing to change by hand:** `frontend/public/robots.txt` ends with
+> `Sitemap: https://wearecreators.in/sitemap.xml`, and under this arrangement
+> the sitemap is served by the API host instead. Point that line at the same
+> origin you set `PUBLIC_SHARE_BASE_URL` to, or a crawler asking for the
+> sitemap at the site origin gets the SPA's catch-all. It is a static file, so
+> no environment variable can do it for you.
+>
+> The seven entries in `frontend/vercel.json` point at `/index.html`, which is
+> exactly what the catch-all below them already does — so they are inert
+> placeholders, kept as the record of the other route and in case the
+> hostname question is ever answered. (They used to carry `"//"` keys
+> explaining themselves inline; Vercel rejects unknown properties on a rewrite
+> object, so the notes live here instead.)
 
 Five pages are **server-rendered by the backend**, not by the React app, and
 that is not a style choice: the crawlers that build a WhatsApp, Instagram or
@@ -257,6 +285,8 @@ not show.
 | `/sitemap.xml` | Every marketing page, public brand page, live brief and published case study, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
 | `/work` | The case-study shelf. |
 | `/work/:slug` | One campaign we ran, written up. |
+| `/survey` | The anonymous creator research survey, `GET` and `POST`. Server-rendered because it is a WhatsApp link opened on mobile data **and** because it must work with JavaScript disabled — without a script the browser posts the form straight back to this path and gets a thank-you page. Disallowed in `robots.txt` and `noindex` on the page: a survey in a search index answers from whoever wandered in. |
+| `/influencer-marketing/:slug` | The landing page matrix: the national hub (`india`), a city (`mumbai`), a sector nationally (`food-drink-india`) or a sector in a city (`food-drink-mumbai`). **Generated from live supply** — a slug that parses but has too few verified creators behind it 404s on purpose, because a page we cannot staff is a page that earns a refund. |
 
 The last two are the only pages on this site written to be **found** rather
 than sent: a brand searching for the kind of campaign they want to run should
@@ -269,17 +299,30 @@ It was five, then three when the marketing site moved into the SPA, and five
 again with case studies. `/for-brands` and `/for-creators` are ordinary React
 routes now — see below.
 
-Repoint all five at your Railway URL; they must stay **above** the catch-all:
+If you ever take the other route, repoint all seven at your Railway URL; they
+must stay **above** the catch-all:
 
 ```json
 { "source": "/c/:id",       "destination": "https://your-api.up.railway.app/c/:id" },
 { "source": "/brands/:id",  "destination": "https://your-api.up.railway.app/brands/:id" },
 { "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" },
 { "source": "/work",        "destination": "https://your-api.up.railway.app/work" },
-{ "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" }
+{ "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" },
+{ "source": "/influencer-marketing/:slug", "destination": "https://your-api.up.railway.app/influencer-marketing/:slug" },
+{ "source": "/survey",     "destination": "https://your-api.up.railway.app/survey" }
 ```
 
-**All five or none.** They are one feature, and shipping part of it means a
+Verify either arrangement by asking for the sitemap and reading what comes
+back, rather than by reading the config — an inert rewrite and a working one
+are indistinguishable in the file:
+
+```bash
+curl -sS https://<the origin you chose>/sitemap.xml | head -c 200
+```
+
+XML means it reached the backend. `<!doctype html>` means it did not.
+
+**All seven or none.** They are one feature, and shipping part of it means a
 link into a page that does not exist: the brief page links to the brand page,
 the brand page lists the briefs, the case study links to both, and the sitemap
 points at all of them.

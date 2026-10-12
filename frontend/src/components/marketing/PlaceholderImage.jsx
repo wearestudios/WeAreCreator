@@ -67,6 +67,12 @@ const RATIO = {
  *                         the only version of this that cannot reflow the
  *                         page. `group-hover` rather than `hover` so the whole
  *                         card responds, not just the picture.
+ * @param {boolean=} eager  fetch this one immediately rather than lazily.
+ *                         For a slot that is above the fold on arrival — the
+ *                         hero's first slide. Everything else stays lazy:
+ *                         `loading="eager"` on a slot nobody scrolls to is a
+ *                         request bought for nothing, which on mobile data is
+ *                         the whole argument.
  * @param {boolean=} fill  fill a positioned parent instead of reserving a
  *                         ratio. For a slot whose height something else has
  *                         already decided — a section background. An aspect
@@ -78,6 +84,7 @@ export function PlaceholderImage({
     ratio = "16/9",
     src,
     alt = "",
+    eager = false,
     fill = false,
     zoom = false,
     className = "",
@@ -115,7 +122,8 @@ export function PlaceholderImage({
                 <img
                     src={src}
                     alt={alt}
-                    loading="lazy"
+                    loading={eager ? "eager" : "lazy"}
+                    fetchPriority={eager ? "high" : undefined}
                     decoding="async"
                     className={`absolute inset-0 h-full w-full object-cover ${
                         zoom ? IMAGE_ZOOM : ""

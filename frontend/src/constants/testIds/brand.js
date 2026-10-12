@@ -119,3 +119,16 @@ export const BRAND_VERIFICATION = {
     submitBlocked: "brand-verification-submit-blocked",
     submitError: "brand-verification-submit-error",
 };
+
+// The brand's permission for its logo on the public home page. One control,
+// and the states it has to tell apart each get an id: a brand that has said
+// yes and is not yet on the wall needs to see *why*, and a test asserting
+// that must be able to tell "live" from "waiting on us" from "waiting on
+// your first campaign".
+export const BRAND_WALL_CONSENT = {
+    consent: "brand-homepage-logo-consent",
+    consentCheckbox: "brand-homepage-logo-checkbox",
+    consentTerms: "brand-homepage-logo-terms",
+    consentLive: "brand-homepage-logo-live",
+    consentPending: "brand-homepage-logo-pending",
+};

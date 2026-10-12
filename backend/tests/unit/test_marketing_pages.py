@@ -94,6 +94,93 @@ def test_no_page_positions_us_against_agencies(name):
         assert phrase not in text, f"{name}: {phrase!r}"
 
 
+# --- Geography, counted rather than typed -------------------------------------
+#
+# **The mechanism changed; the ban did not.** The old rule was a word
+# blacklist: "every city", "pan-India", "across India" and "nationwide" were
+# banned because the operation could not back them, and the pages said
+# "deepest in Bengaluru" instead. That was right at the time and does not
+# survive going national — a page naming one city tells everybody else they
+# are in the wrong place, and a page claiming the country is a claim the
+# supply has to earn.
+#
+# So the rule is now: **a geographic claim is rendered from `_platform_proof`
+# or it is not made.** The literals stay banned (above) because a hardcoded
+# national claim is still hardcoded; what is new is that a hardcoded *local*
+# one is banned too.
+
+
+# Named here rather than derived from `server.INDIAN_CITIES` on purpose. The
+# city list is twenty entries long and several are also ordinary words in
+# other contexts ("Goa" is not, "Indore" is not, but a sweep that grows with
+# the list is a sweep that starts failing on a city added next year for a
+# reason that has nothing to do with marketing copy). These are the ones the
+# copy has actually reached for.
+_CITIES_COPY_MUST_NOT_NAME = ("bengaluru", "bangalore", "mumbai", "delhi", "blr")
+
+
+@pytest.mark.parametrize("name", list(PAGES))
+def test_no_page_names_a_city_in_its_copy(name):
+    """A city in a `COPY` block is a geographic claim nobody re-checks.
+
+    `/for-brands` and `/why-weare` both said "The network runs deepest in
+    Bengaluru" as a literal. Both render it from counted supply now, so the
+    sentence stays true if the deepest city changes and disappears entirely
+    below `PROOF_FLOORS` — the same gate the figures are behind, because a
+    city named with no counts beside it is a smaller claim than silence.
+
+    Image notes are deliberately in scope: a note briefing "Bengaluru
+    shopfronts" for a section whose city is counted at request time briefs a
+    photograph of the wrong place.
+    """
+    for text in _copy_strings(name):
+        low = text.lower()
+        for city in _CITIES_COPY_MUST_NOT_NAME:
+            assert city not in low, f"{name}: {city!r} typed in copy — {text!r}"
+
+
+@pytest.mark.parametrize("name", list(PAGES))
+def test_no_page_names_a_city_in_its_title_or_description(name):
+    """The meta description is the longest-lived copy on the site.
+
+    It is written once and read by strangers for years, and it is the one
+    place a `COPY`-block sweep would not look. Home's said "Paid brand
+    campaigns in Bengaluru."
+    """
+    src = copy_of(*PAGES[name])
+    for m in re.finditer(r'(?:title|description)=\{?"((?:[^"\\]|\\.)*)"', src):
+        low = m.group(1).lower()
+        for city in _CITIES_COPY_MUST_NOT_NAME:
+            assert city not in low, f"{name}: {city!r} in page meta — {m.group(1)!r}"
+
+
+def test_the_geography_sentence_is_rendered_from_the_counted_city():
+    """Both call sites take the city as an argument rather than naming one.
+
+    The shape is the assertion: a `COPY` entry that is a function of `city`
+    cannot be written without a city being passed in, and the only thing that
+    passes one is `CountedGeography`, which has counted it.
+    """
+    brands = read(*PAGES["brands"])
+    why = read(*PAGES["why"])
+    assert "reachTitle: (city) =>" in brands
+    assert "CountedGeography" in brands
+    assert "pedigreeReach: (city) =>" in why
+    assert "useDeepestCity" in why
+
+
+def test_the_counted_geography_component_says_nothing_without_a_city():
+    """Absent and in-flight are drawn the same way, and neither invents copy.
+
+    The component returns `null` unless there is a city, so a page below the
+    proof floor has no geography section rather than one with a hole in it.
+    """
+    src = read("src", "components", "marketing", "CountedGeography.jsx")
+    assert "if (!city) return null;" in src
+    # Three states, not two: `undefined` in flight is not `null` resolved.
+    assert "useState(undefined)" in src
+
+
 def test_the_managed_offer_is_stated_rather_than_offered_as_a_choice():
     """**The product is managed-only, so there is no choice to describe.**
 
@@ -586,7 +673,127 @@ def test_all_three_appear_once_every_one_of_them_clears(monkeypatch):
         _proof_db(creators=12, campaigns=7, cities=("Bengaluru", "Mumbai", "Pune")),
         monkeypatch,
     )
-    assert out == {"cities": 3, "creators": 12, "campaigns": 7}
+    # `deepest_city` rides along so the marketing pages can render a
+    # geographic claim instead of typing one. Twelve creators over three
+    # cities is four each, a three-way tie, which `_id`-ascending breaks
+    # deterministically — a figure that flipped between requests would make
+    # the sentence it feeds flicker.
+    assert out == {
+        "cities": 3,
+        "creators": 12,
+        "campaigns": 7,
+        "deepest_city": "Bengaluru",
+    }
+
+
+def _deepest(monkeypatch, by_city, campaigns=7):
+    """Seed an explicit creator count per city and read the deepest back."""
+    db = AsyncMongoMockClient()["proof"]
+
+    async def build():
+        for city, n in by_city.items():
+            for _ in range(n):
+                await db.creator_profiles.insert_one(
+                    {
+                        "user_id": ObjectId(),
+                        "verification_status": "verified",
+                        "city": city,
+                    }
+                )
+        for _ in range(campaigns):
+            await db.campaigns.insert_one({"status": "open", "visibility": "public"})
+
+    asyncio.get_event_loop().run_until_complete(build())
+    return _proof(db, monkeypatch)
+
+
+def test_the_deepest_city_is_the_one_with_the_most_verified_creators(monkeypatch):
+    """**Counted, so the sentence survives the operation moving.**
+
+    The pages said "deepest in Bengaluru" as a literal. It was true when it
+    was written, which is exactly the property that makes it dangerous — the
+    copy outlives the fact. Here Mumbai is deepest and the page has to say
+    so without anybody editing it.
+    """
+    out = _deepest(monkeypatch, {"Bengaluru": 5, "Mumbai": 9, "Pune": 4})
+    assert out["deepest_city"] == "Mumbai"
+    assert out["cities"] == 3
+
+
+def test_an_unverified_crowd_does_not_make_a_city_deepest(monkeypatch):
+    """Supply means creators a brand can actually book.
+
+    A city full of half-finished signups is not depth, and the geography
+    claim is the one place that difference is load-bearing: we would be
+    telling brands to post there.
+    """
+    db = AsyncMongoMockClient()["proof"]
+
+    async def build():
+        for _ in range(30):
+            await db.creator_profiles.insert_one(
+                {"user_id": ObjectId(), "verification_status": "pending",
+                 "city": "Jaipur"}
+            )
+        for city, n in {"Bengaluru": 7, "Mumbai": 5}.items():
+            for _ in range(n):
+                await db.creator_profiles.insert_one(
+                    {"user_id": ObjectId(), "verification_status": "verified",
+                     "city": city}
+                )
+        # A third verified city so the `cities` floor of 3 is cleared.
+        await db.creator_profiles.insert_one(
+            {"user_id": ObjectId(), "verification_status": "verified", "city": "Pune"}
+        )
+        for _ in range(7):
+            await db.campaigns.insert_one({"status": "open", "visibility": "public"})
+
+    asyncio.get_event_loop().run_until_complete(build())
+    out = _proof(db, monkeypatch)
+    assert out["deepest_city"] == "Bengaluru"
+
+
+def test_below_the_floor_there_is_no_city_either(monkeypatch):
+    """**The city is inside the same gate as the figures, deliberately.**
+
+    `_platform_proof` returns `{}` as a set, so a page cannot name a city
+    while the counts that would give that name a denominator are absent. "We
+    are deepest in Kochi" with nothing beside it is a smaller claim than
+    silence, not a bigger one — and `CountedGeography` renders nothing without
+    a city, so the section disappears rather than losing its noun.
+    """
+    out = _deepest(monkeypatch, {"Kochi": 2}, campaigns=1)
+    assert out == {}
+    assert "deepest_city" not in out
+
+
+def test_a_creator_with_no_city_is_not_a_city(monkeypatch):
+    """City is optional on a profile that is built over several sittings, so
+    blank is the ordinary state of a half-finished one. Grouping on it would
+    make the empty string the deepest "city" on the platform."""
+    db = AsyncMongoMockClient()["proof"]
+
+    async def build():
+        for blank in ("", None):
+            for _ in range(20):
+                await db.creator_profiles.insert_one(
+                    {"user_id": ObjectId(), "verification_status": "verified",
+                     "city": blank}
+                )
+        for city, n in {"Bengaluru": 3, "Mumbai": 2, "Pune": 2}.items():
+            for _ in range(n):
+                await db.creator_profiles.insert_one(
+                    {"user_id": ObjectId(), "verification_status": "verified",
+                     "city": city}
+                )
+        for _ in range(7):
+            await db.campaigns.insert_one({"status": "open", "visibility": "public"})
+
+    asyncio.get_event_loop().run_until_complete(build())
+    out = _proof(db, monkeypatch)
+    assert out["deepest_city"] == "Bengaluru"
+    # And the blanks are not counted as a city in the figure either.
+    assert out["cities"] == 3
 
 
 @pytest.mark.parametrize(
@@ -664,10 +871,35 @@ def test_no_page_claims_a_reach_the_operation_does_not_have(name):
 
 
 def test_geography_is_stated_as_depth_rather_than_identity():
+    """**Inverted, and the inversion is the point.**
+
+    This used to require the literal "bengaluru" and the literal "anywhere in
+    india" on both pages, and it was right to: the risk then was the site
+    claiming a national footprint the operation could not staff, so naming the
+    one city we were deep in was the honest version.
+
+    Going national changes which way that cuts. A page naming one city tells
+    every other city it is in the wrong place, and the sentence outlives the
+    fact — nobody re-reads a `COPY` block to check whether Bengaluru is still
+    deepest. So depth is still the claim and identity is still banned; what
+    changed is that **the place is rendered from counted supply** rather than
+    typed, which is the rule every other figure on this site already follows.
+
+    The assertion therefore pins the mechanism that keeps it true rather than
+    the sentence it currently produces — a test naming a phrase is a test that
+    fails on its next honest rewrite.
+    """
     for name in ("brands", "why"):
         text = copy_of(*PAGES[name]).lower()
-        assert "bengaluru" in text, name
-        assert "anywhere in india" in text, name
+        # Depth, not identity: still the claim.
+        assert "runs deepest" in text, name
+        # And the breadth half, which is what makes depth a comparison rather
+        # than a boundary. Said without a banned absolute — "across the
+        # country" is checkable, "pan-India" is a promise.
+        assert "across the country" in text, name
+        # The place itself arrives as an argument. Nothing in the file names
+        # one, which `test_no_page_names_a_city_in_its_copy` enforces.
+        assert "(city) =>" in read(*PAGES[name]), name
 
 
 @pytest.mark.parametrize("word", ["vets", "vetted", "vetting"])
@@ -853,6 +1085,13 @@ SERVER_RENDERED_PATHS = (
     "/sitemap.xml",
     "/work",
     "/work/:slug",
+    # The landing page matrix — four shapes off one route, generated from
+    # live supply. See `LANDING_PATH` in server.py for why a slug that parses
+    # can still 404.
+    "/influencer-marketing/:slug",
+    # The anonymous creator research survey. Server-rendered because it has to
+    # work with no JavaScript — the form posts back to the same path.
+    "/survey",
 )
 
 
@@ -900,15 +1139,46 @@ def test_the_dev_server_proxies_the_same_paths_vercel_does():
     assert "/^\\/for-brands" not in proxy
 
 
-def test_the_pending_proxy_decision_is_written_down():
-    """The rewrites point at /index.html, which is what the catch-all does
-    anyway — they are placeholders waiting to be repointed at the API host,
-    and an inert rewrite is indistinguishable from a working one by reading
-    the file."""
+def test_the_proxy_decision_is_written_down_and_is_no_longer_pending():
+    """**Inverted, because the decision was taken.**
+
+    This used to require the words "pending decision" in `PREVIEW.md`: the
+    rewrites pointed at `/index.html`, which is what the catch-all does
+    anyway, so they were placeholders and an inert rewrite is
+    indistinguishable from a working one by reading the file.
+
+    The arrangement chosen is `PUBLIC_SHARE_BASE_URL` rather than the
+    rewrites, for a reason that is a property of the platform rather than a
+    preference: **Vercel parses `vercel.json` at deploy time, before the build
+    runs**, so a rewrite destination cannot come from an environment variable
+    and has to be a literal hostname committed here. So the assertion moves
+    from "say this is unfinished" to "say which way it went, and what it
+    costs" — and the paths are still all named, because a page added to the
+    server-rendered set with no line in the record is the next silent one.
+    """
     preview = (FRONTEND.parent / "PREVIEW.md").read_text()
-    assert "pending decision" in preview.lower()
+    low = preview.lower()
+    # Which way it went, and the cost stated rather than glossed.
+    assert "public_share_base_url" in low
+    assert "deploy time" in low
+    # The static file nothing can template, named where somebody will read it.
+    assert "robots.txt" in low
+    # And every server-rendered path still appears, the half worth keeping.
     for path in SERVER_RENDERED_PATHS:
         assert path in preview, path
+
+
+def test_robots_txt_does_not_claim_the_site_origin_serves_the_sitemap():
+    """Under `PUBLIC_SHARE_BASE_URL` the sitemap is served by the API host.
+
+    A `Sitemap:` line pointing at the site origin sends a crawler to the SPA's
+    catch-all, which answers 200 with HTML — the worst shape of failure,
+    because nothing looks broken. The file is static, so no environment
+    variable can fix it; the comment above the line has to say so.
+    """
+    robots = (FRONTEND.parent / "frontend" / "public" / "robots.txt").read_text()
+    assert "PUBLIC_SHARE_BASE_URL" in robots
+    assert "static file" in robots, path
 
 
 # --- The copy budget ----------------------------------------------------------
@@ -938,7 +1208,41 @@ def _block_strings(src, marker):
                 break
         i += 1
     block = src[start : i + 1]
-    return re.findall(r'"((?:[^"\\]|\\.)*)"', block)
+    return _literals(block)
+
+
+# A copy string in one of these blocks is double-quoted, or — since geography
+# became rendered rather than typed — a template literal inside an arrow
+# function of the city.
+#
+# **Both shapes have to be read or the budget silently stops covering them.**
+# `reachTitle: (city) => \`The network runs deepest in ${city}.\`` is copy by
+# every measure that matters, and a helper that only saw `"..."` would have let
+# the geography rewrite escape the word budget and the eight-word headline cap
+# at the same time — which is precisely how a cap goes missing, the thing the
+# `moment`/`step` comment below was written about.
+#
+# `${city}` counts as the one word it renders as. Dropping it would undercount
+# by exactly the word the sentence is about.
+def _literals(block):
+    # **Comment lines come out first, and reading backticks is what made that
+    # necessary.** The convention in this codebase is to backtick code
+    # identifiers in prose, so a comment saying "see `CountedGeography`" would
+    # otherwise land in the word budget as a word of page copy — which is how
+    # explaining a change makes the change look over budget.
+    #
+    # Whole lines whose first non-space characters are `//`, the same cut
+    # `copy_of` makes, rather than everything from `//` onward: the latter also
+    # truncates at the `//` in `https://` inside a real string.
+    block = "\n".join(
+        line for line in block.splitlines() if not line.lstrip().startswith("//")
+    )
+    out = re.findall(r'"((?:[^"\\]|\\.)*)"', block)
+    out += [
+        re.sub(r"\$\{[^}]*\}", "city", t)
+        for t in re.findall(r"`((?:[^`\\]|\\.)*)`", block)
+    ]
+    return out
 
 
 def _copy_strings(name):
@@ -981,9 +1285,19 @@ def test_no_headline_runs_past_eight_words(name):
     # not moments in one, and the visible heading above them says so. Both
     # spellings are matched so the rule holds through the rename rather than
     # silently stopping at it — which is how a headline cap goes missing.
-    for m in re.finditer(r'(\w*[Tt]itle|label|moment|step):\s*"((?:[^"\\]|\\.)*)"', block):
-        n = len(_words(m.group(2)))
-        assert n <= 8, f"{name}: {n} words — {m.group(2)!r}"
+    # Double-quoted, or a template literal behind an arrow function of the
+    # city — see `_literals`. A heading is a heading whichever way it is
+    # spelled, and the cap has to follow the copy rather than the syntax.
+    pattern = (
+        r'(\w*[Tt]itle|label|moment|step):\s*'
+        r'(?:"((?:[^"\\]|\\.)*)"|\([^)]*\)\s*=>\s*`((?:[^`\\]|\\.)*)`)'
+    )
+    for m in re.finditer(pattern, block):
+        text = m.group(2) if m.group(2) is not None else re.sub(
+            r"\$\{[^}]*\}", "city", m.group(3)
+        )
+        n = len(_words(text))
+        assert n <= 8, f"{name}: {n} words — {text!r}"
 
 
 @pytest.mark.parametrize("name", list(BUDGET))
