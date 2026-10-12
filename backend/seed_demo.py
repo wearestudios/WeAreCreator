@@ -111,6 +111,10 @@ WIPED = (
     # cache rather than a record, and keeping it would put logos of brands
     # this database no longer contains on the home page.
     "brand_wall_cache",
+    # Anonymous survey responses. Cleared with everything else because a demo
+    # reset should leave no real answers behind — and because they are not
+    # seeded, so keeping them would mix genuine research into a fixture.
+    "creator_survey_responses",
     # Derived and rebuilt on a schedule, so a stale one over fresh demo data
     # would show yesterday's business against today's records.
     "analytics_cache",

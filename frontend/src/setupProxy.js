@@ -46,6 +46,10 @@ const SERVER_RENDERED = [
     // exist without JavaScript — and generated from live supply, so a slug
     // that parses but has too little supply behind it 404s by design.
     /^\/influencer-marketing\/[^/]+\/?$/,
+    // The anonymous creator research survey, GET and POST. Server-rendered
+    // because it is a WhatsApp link opened on mobile data, and because it has
+    // to work with no JavaScript at all — the form posts straight back here.
+    /^\/survey\/?$/,
 ];
 
 module.exports = function (app) {

@@ -186,11 +186,17 @@ class TestAdminExportsMayCarryContact:
         assert "brand_scope=_console_brand_ids(user)" in src
 
     def test_the_platform_wide_exports_stay_with_admin(self):
-        """**Two of the six cannot be narrowed without becoming a different
-        document.** The creator roster is the global directory in CSV form and
-        the audit log is the whole platform's history — neither is a brand's
-        work, so neither is a scoped role's to download."""
-        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit"}
+        """**Three of the seven cannot be narrowed without becoming a
+        different document.** The creator roster is the global directory in
+        CSV form and the audit log is the whole platform's history — neither is
+        a brand's work, so neither is a scoped role's to download.
+
+        The anonymous survey is the third, and for a different reason: there is
+        nothing for it to be *scoped to*. A respondent is not a creator we know
+        and is attached to no brand, so narrowing it is not a smaller document
+        but an empty one.
+        """
+        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit", "survey"}
         src = inspect.getsource(server.admin_export)
         assert "kind in ADMIN_ONLY_EXPORTS and not is_all_access(user)" in src
 

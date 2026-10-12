@@ -410,6 +410,23 @@ export function Privacy() {
                     erasure, immediately and permanently.
                 </p>
                 <p>
+                    {/* **The survey is the one thing on this page that holds
+                        nothing about you**, so it is said separately rather
+                        than folded into the list above — which is about data
+                        we hold *because it is yours*. Stating the period here
+                        keeps the page level with RETENTION_DAYS, which this
+                        prose mirrors rather than reads. */}
+                    <span className="text-foreground">
+                        If you answer our creator research survey.
+                    </span>{" "}
+                    We store your answers and the date you sent them, and nothing else
+                    — no name, no number, no email, and no record of your device or
+                    where you are. There is no account involved and we cannot tell who
+                    sent what, so there is nothing there to look up or erase. Those
+                    answers are kept for two years, so we can compare one round of the
+                    research against the next.
+                </p>
+                <p>
                     {/* Said plainly rather than buried: a page that implies
                         certainty it does not have is worse than one that
                         admits the gap, and somebody reading this is entitled

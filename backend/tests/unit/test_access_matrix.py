@@ -511,8 +511,16 @@ class TestWhatStaysAdminOnly:
             head = inspect.getsource(getattr(server, fn)).split("):", 1)[0]
             assert "CONSOLE_ROLES" not in head
 
-    def test_the_creator_and_audit_exports_are_admin_only(self, world):
-        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit"}
+    def test_the_platform_wide_exports_are_admin_only(self, world):
+        """Three now. The survey joined them because its respondents are
+        anonymous: there is no brand to scope it to and no creator id to match
+        against `_console_creator_ids`, so a scoped console asking for it
+        could only be handed everything or nothing.
+
+        Pinned as an exact set rather than a subset, so an export added to it
+        by accident still fails here.
+        """
+        assert set(server.ADMIN_ONLY_EXPORTS) == {"creators", "audit", "survey"}
         for kind in server.ADMIN_ONLY_EXPORTS:
             assert refuses(server.admin_export(kind, user=world.team)).status_code in (
                 403,

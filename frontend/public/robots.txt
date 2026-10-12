@@ -29,6 +29,11 @@ Disallow: /profile
 Disallow: /manager
 Disallow: /login
 Disallow: /signup
+# The anonymous creator research survey. **Research, not a page we want
+# indexed**: a survey in a search index collects answers from whoever wandered
+# in, which is a different population from the one we are asking about. The
+# page itself also sends `noindex`, for a crawler that arrives anyway.
+Disallow: /survey
 
 # Point this at the host that actually serves the sitemap.
 #

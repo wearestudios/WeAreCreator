@@ -1089,6 +1089,9 @@ SERVER_RENDERED_PATHS = (
     # live supply. See `LANDING_PATH` in server.py for why a slug that parses
     # can still 404.
     "/influencer-marketing/:slug",
+    # The anonymous creator research survey. Server-rendered because it has to
+    # work with no JavaScript — the form posts back to the same path.
+    "/survey",
 )
 
 

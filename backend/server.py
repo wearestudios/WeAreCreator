@@ -14,6 +14,7 @@ import re
 import sys
 import logging
 import tempfile
+import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlencode
 from typing import Optional, Literal, Annotated, get_args
@@ -44,7 +45,15 @@ from fastapi.encoders import jsonable_encoder
 from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
-from pydantic import BaseModel, EmailStr, Field, BeforeValidator, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    Field,
+    BeforeValidator,
+    ConfigDict,
+    ValidationError,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -5873,7 +5882,11 @@ def compute_fee(
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="WeAre Creators API")
-api_router = APIRouter(prefix="/api")
+# Named so anything building a URL for the browser reads it from the same
+# place the routes are mounted from — the survey page's `fetch` is the
+# first caller, and a hardcoded "/api" there is a second copy to keep.
+API_PREFIX = "/api"
+api_router = APIRouter(prefix=API_PREFIX)
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -20150,12 +20163,20 @@ async def admin_export(
 
 EXPORT_KINDS = (
     "creators", "brands", "campaigns", "collaborations", "payments", "audit",
+    # The anonymous creator research survey. Admin-only like the creator and
+    # audit exports, and for a different reason from either: there is nobody
+    # for it to be scoped *to*. A respondent is not a creator we know.
+    "survey",
 )
 # Which of them carry a way to reach somebody. Named so the audit line can say
 # so, and so a reviewer can see the answer without reading six builders.
 EXPORTS_WITH_CONTACT = ("creators", "brands", "collaborations", "payments")
 # And which are the platform's rather than a brand's. See admin_export.
-ADMIN_ONLY_EXPORTS = ("creators", "audit")
+#
+# `survey` is here because the respondents are anonymous: there is no brand to
+# scope it to and no creator id to match against `_console_creator_ids`, so a
+# scoped console asking for it could only be handed everything or nothing.
+ADMIN_ONLY_EXPORTS = ("creators", "audit", "survey")
 
 
 def _scoped_brand_filter(query: dict, field: str, brand_scope) -> dict:
@@ -20556,6 +20577,52 @@ async def _export_audit(*, date_from, date_to, brand_id, campaign_id, action, q,
         ]
         for d in docs
     ]
+    return rows, headers
+
+
+async def _export_survey(*, date_from, date_to, **_):
+    """The anonymous survey, one intact row per response.
+
+    **Intact and in the model's own order**, for the reason
+    `admin_creator_survey` documents: the value of this survey is correlation
+    *within* a response, and a file that decoupled the free text from the
+    closed answers would protect nothing — no row identifies anybody — while
+    making the data unanalysable.
+
+    The window is on `submitted_on`, which is a **date string** rather than a
+    datetime, so the usual `_export_window` helper does not apply: an ISO date
+    compares correctly as a string, which is the one thing that format is good
+    for.
+    """
+    query: dict = {}
+    if date_from or date_to:
+        bounds = {}
+        if date_from:
+            bounds["$gte"] = date_from.date().isoformat()
+        if date_to:
+            bounds["$lte"] = date_to.date().isoformat()
+        query["submitted_on"] = bounds
+    docs = (
+        await db.creator_survey_responses.find(query)
+        .sort([("submitted_on", -1), ("_id", -1)])
+        .to_list(length=20000)
+    )
+    fields = list(CreatorSurveyPayload.model_fields)
+    headers = ["Submitted on", "Schema"] + [f.replace("_", " ").capitalize() for f in fields]
+    rows = []
+    for d in docs:
+        row = [str(d.get("submitted_on") or ""), str(d.get("schema_version") or "")]
+        for f in fields:
+            value = d.get(f)
+            # A multi-select joins with a separator rather than becoming JSON:
+            # this opens in a spreadsheet, and `["a","b"]` in a cell is us
+            # showing our working.
+            row.append(
+                " | ".join(str(v) for v in value)
+                if isinstance(value, list)
+                else ("" if value is None else str(value))
+            )
+        rows.append(row)
     return rows, headers
 
 
@@ -26766,6 +26833,13 @@ RETENTION_DAYS = {
     # what, and a log with a shorter life than the thing it describes cannot
     # answer questions about it.
     "audit_records": 8 * 365,
+    # Anonymous survey responses. **Twenty-four months, and the period is a
+    # housekeeping decision rather than a legal one** — these rows identify
+    # nobody, so no erasure duty attaches to them and nothing here is holding
+    # somebody's data against their wishes. Two years is chosen to be long
+    # enough to compare a wave against the next one: a survey whose previous
+    # round has been deleted can describe this year and cannot show a change.
+    "survey_responses": 24 * 30,
 }
 
 # What erasure removes immediately regardless of any of the above, because it
@@ -26852,6 +26926,78 @@ async def admin_retention(user: dict = Depends(require_roles("admin"))):
         # Said out loud on the screen, not just in a comment: an operator
         # reading this needs to know which half is settled.
         "needs_legal_review": True,
+    }
+
+
+# The warning the console prints above the responses, from the server so the
+# screen and the rule cannot drift. It is a real limit: question 7, 12 and 14
+# are free text, and somebody will sign their answer however clearly the help
+# text asks them not to.
+SURVEY_OPEN_TEXT_WARNING = (
+    "Open answers are exactly as they were typed. We ask people to leave names "
+    "and handles out, and some will put them in anyway — so treat these as "
+    "possibly self-identifying even though nothing else here is."
+)
+
+
+def _survey_aggregate(rows: list) -> dict:
+    """Counts per closed question, over the rows given.
+
+    Multi-select questions count each choice once per response, so a column
+    sums to more than the response count — which is the honest shape for "choose
+    all that apply" and is why `SURVEY_CLOSED_FIELDS` records which is which.
+    """
+    out: dict = {}
+    for field, multi in SURVEY_CLOSED_FIELDS:
+        counts: dict = {}
+        for row in rows:
+            value = row.get(field)
+            if value in (None, "", []):
+                continue
+            for one in (value if multi else [value]):
+                counts[one] = counts.get(one, 0) + 1
+        out[field] = {
+            "multi_select": multi,
+            # Commonest first, then alphabetically, so two runs of the same
+            # data read the same way round.
+            "counts": dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+            "answered": sum(
+                1 for r in rows if r.get(field) not in (None, "", [])
+            ),
+        }
+    return out
+
+
+@admin_router.get("/survey/creator")
+async def admin_creator_survey(user: dict = Depends(require_roles("admin"))):
+    """The survey results: aggregates, and every response as one intact row.
+
+    **Admin-only, not `CONSOLE_ROLES`.** A respondent is not a creator we know
+    and not attached to a brand, so there is nothing for a scoped console to be
+    scoped *to* — the same reasoning `ADMIN_ONLY_EXPORTS` applies.
+
+    **The rows are intact and deliberately not shuffled or decoupled.**
+    Splitting the free text away from the closed answers, or ordering the
+    columns independently, would protect nothing that is not already protected
+    — nothing in the row identifies anybody — while destroying the entire
+    analytical value, which is *correlation within one response*: that the
+    people who were never paid are the same people who agreed the fee verbally.
+    A survey you cannot cross-tabulate is a set of bar charts.
+    """
+    rows = (
+        await db.creator_survey_responses.find({})
+        .sort([("submitted_on", -1), ("_id", -1)])
+        .to_list(length=5000)
+    )
+    for row in rows:
+        row["id"] = str(row.pop("_id"))
+    return {
+        "total": len(rows),
+        "schema_version": SURVEY_SCHEMA_VERSION,
+        "aggregates": _survey_aggregate(rows),
+        "responses": rows,
+        "open_text_fields": list(SURVEY_FREE_TEXT_FIELDS),
+        "open_text_warning": SURVEY_OPEN_TEXT_WARNING,
     }
 
 
@@ -33276,6 +33422,361 @@ async def public_brand_wall():
     return await _public_brand_wall()
 
 
+# ---------------------------------------------------------------------------
+# The creator research survey
+#
+# **Anonymity is the design constraint here, not a setting on top of it.** This
+# asks creators about brands that went quiet, fees that changed after being
+# agreed, and work they were never paid for. Honest answers depend on them
+# believing nothing traces back, so every decision below is made that way and
+# several of them cost us analytical convenience on purpose.
+#
+# What that means concretely:
+#
+#   - **No auth, no cookie, no session, no account.** The route is on the
+#     public router beside the other unauthenticated reads.
+#   - **The stored document holds the answers and a date. Nothing else.** No
+#     `request.client.host`, no header, no user agent, nothing derived from any
+#     of them. `_SURVEY_STORED_KEYS` is the whole shape and a test plants an IP,
+#     a user agent, a name, a handle, a phone number and an email in a request
+#     and searches the stored row for every one of them.
+#   - **The rate limit is in memory and the IP never reaches the database.**
+#     `_SURVEY_RATE` is a module dict keyed by IP that forgets everything on a
+#     restart. The next person here will reach for storing it — for a better
+#     limit, for abuse forensics, for deduplication — and that is exactly the
+#     thing this survey cannot have. If you need a durable limit, the answer is
+#     a smaller window, not a stored address.
+#   - **`submitted_on` is a date, not a timestamp.** A precise instant plus a
+#     known WhatsApp send time singles somebody out in a small sample, which is
+#     the sample size this will have.
+#   - **One submission per device is a `localStorage` flag and nothing else.**
+#     No fingerprinting. It is trivially bypassable and that is the correct
+#     trade: the alternative is identifying people to stop them answering
+#     twice, which defeats the survey to protect a statistic.
+#   - **Nothing here is audited.** `audit()` has an actor field, and a line
+#     naming who submitted is precisely what must not exist. This is the one
+#     write path in the product that deliberately leaves no log line.
+#   - **No field anywhere can hold a government ID.** Question 13 asks *whether*
+#     somebody has a PAN and never the number, and `_survey_id_refusal` rejects
+#     a submission whose free text matches a PAN or Aadhaar pattern — because
+#     somebody will type one into a box that did not ask for it.
+#
+# **The one thing we cannot promise, stated plainly:** Railway's proxy and
+# MongoDB Atlas record connection metadata, including IP addresses, outside
+# this application and outside our control. We neither store nor read them, and
+# nothing in this codebase joins them to a response. That is a limit of running
+# on somebody else's infrastructure rather than a gap in this design, and it is
+# written here so nobody tells a respondent something stronger than the truth.
+SURVEY_PATH = "/survey"
+
+# Bumped when the questions change. Old rows stay readable as the version they
+# were written under rather than being silently reinterpreted under new
+# questions — the point of storing it at all.
+SURVEY_SCHEMA_VERSION = 1
+
+SURVEY_FREE_TEXT_MAX = 1000
+SURVEY_TOP_THREE = 3
+
+# In memory, per IP, and never written down. Low enough to stop somebody
+# sitting on the form and high enough that a shared office NAT does not lock
+# out the second person to answer.
+SURVEY_MAX_PER_HOUR = 3
+SURVEY_MAX_PER_DAY = 20
+
+# {ip: [epoch seconds, ...]} — forgotten on restart, which is the point.
+_SURVEY_RATE: dict = {}
+
+
+def _survey_rate_refusal(ip: Optional[str], now: Optional[float] = None) -> Optional[str]:
+    """Whether this address has answered too often, as a sentence or `None`.
+
+    **Returns the sentence rather than raising** (the `_scheduling_refusal`
+    shape) and the sentence is plain English rather than a code: the page is
+    server-rendered HTML that may be running no JavaScript at all, so there is
+    nothing on the other end to interpret a code.
+
+    The address is the dict key and nothing else. It is not returned, not
+    logged, and not written — see the block above.
+    """
+    if not ip:
+        # No address to limit by. Allowing it is the right direction: refusing
+        # would turn a proxy configuration into a wall in front of the survey.
+        return None
+    now = now if now is not None else time.time()
+    seen = [t for t in _SURVEY_RATE.get(ip, []) if now - t < 86400]
+    # Trim as we read, so the dict does not grow for the life of the process.
+    if seen:
+        _SURVEY_RATE[ip] = seen
+    else:
+        _SURVEY_RATE.pop(ip, None)
+    if len([t for t in seen if now - t < 3600]) >= SURVEY_MAX_PER_HOUR:
+        return (
+            "That is a few answers from this connection in the last hour. "
+            "Please try again later."
+        )
+    if len(seen) >= SURVEY_MAX_PER_DAY:
+        return (
+            "That is a lot of answers from this connection today. "
+            "Please try again tomorrow."
+        )
+    return None
+
+
+def _survey_rate_record(ip: Optional[str], now: Optional[float] = None) -> None:
+    """Remember the submission, in memory only."""
+    if not ip:
+        return
+    _SURVEY_RATE.setdefault(ip, []).append(now if now is not None else time.time())
+
+
+# A PAN is five letters, four digits, a letter. An Aadhaar is twelve digits,
+# written in groups of four about as often as not.
+#
+# **Both are refused in free text rather than stripped**, because a respondent
+# who typed one needs to know we are not keeping it — silently removing it
+# would store a sanitised answer and leave them believing they had sent the
+# number. The refusal says which it looked like, so somebody who typed a
+# twelve-digit order number can see why.
+_PAN_RE = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", re.I)
+
+# **Twelve digits, and an Indian mobile with its country code is also twelve
+# digits** — `+919876500042` is `91` plus a ten-digit number. The first version
+# of this pattern refused exactly that, which would have thrown away an honest
+# answer with a confusing message about Aadhaar. Caught by a test that planted
+# a phone number.
+#
+# So two narrowings, both from how the numbers are actually shaped:
+#
+#   - **An Aadhaar never begins with 0 or 1**, so the run has to start 2-9.
+#   - **A run beginning `91` followed by a 6-9 is a `+91` mobile**, and is let
+#     through. That overlaps a genuine Aadhaar starting `916`-`919`, and the
+#     trade is deliberate: a phone number somebody typed is personal data of
+#     the same kind as the name they signed — kept as typed, and warned about
+#     on the admin screen — whereas refusing it loses the answer entirely.
+#
+# A leading `+` is also excluded, because nothing writes a `+` before an
+# Aadhaar.
+_AADHAAR_RE = re.compile(r"(?<![\d+])[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?!\d)")
+_IN_MOBILE_WITH_CODE_RE = re.compile(r"(?<!\d)91[\s-]?[6-9]\d{9}(?!\d)")
+
+
+def _looks_like_aadhaar(value: str) -> bool:
+    """Whether this text carries something Aadhaar-shaped.
+
+    Each candidate twelve-digit run is checked against the `+91` mobile shape
+    at its own position, rather than asking whether the whole answer contains a
+    phone number anywhere — otherwise one phone number in a long answer would
+    excuse a real Aadhaar later in the same answer.
+    """
+    for match in _AADHAAR_RE.finditer(value):
+        digits_only = re.sub(r"[\s-]", "", match.group(0))
+        if _IN_MOBILE_WITH_CODE_RE.fullmatch(digits_only):
+            continue
+        return True
+    return False
+
+
+def _survey_id_refusal(texts: list) -> Optional[str]:
+    """A sentence if any free text looks like a government ID, else `None`."""
+    for text in texts:
+        value = (text or "").strip()
+        if not value:
+            continue
+        if _PAN_RE.search(value):
+            return (
+                "One of your answers looks like it contains a PAN. We do not "
+                "collect PAN numbers anywhere in this survey — please take it "
+                "out and send again."
+            )
+        if _looks_like_aadhaar(value):
+            return (
+                "One of your answers looks like it contains an Aadhaar number. "
+                "We do not collect government ID numbers anywhere in this "
+                "survey — please take it out and send again."
+            )
+    return None
+
+
+# --- The questions, as closed lists ----------------------------------------
+#
+# **Typed as `Literal`s so a junk value is refused rather than stored.** An
+# aggregate built over a column somebody can write anything into is an
+# aggregate with an "other" bucket nobody can interpret.
+#
+# The first two are built from the vocabularies the product already has
+# (`INDIAN_CITIES`, `CREATOR_TAXONOMY`) rather than retyped, for the reason
+# `SEO_CITY_SLUGS` is: a second list of either is the drift `lib/categories.js`
+# exists to prevent. `Literal` accepts a tuple subscript, so the derivation is
+# the type.
+SURVEY_ELSEWHERE = "Somewhere else"
+SURVEY_OTHER_FOCUS = "Something else"
+
+SurveyCity = Literal[INDIAN_CITIES + (SURVEY_ELSEWHERE,)]
+SURVEY_FOCUS_GROUPS = tuple(label for label, _ in CREATOR_TAXONOMY)
+SurveyFocus = Literal[SURVEY_FOCUS_GROUPS + (SURVEY_OTHER_FOCUS,)]
+
+SurveyCollabCount = Literal["0", "1-2", "3-5", "6-10", "more_than_10"]
+SurveyPaidShare = Literal[
+    "all_money", "mostly_money", "half_and_half", "mostly_barter",
+    "all_barter", "none",
+]
+SurveyReach = Literal[
+    "brand_messages_me", "i_pitch", "agency", "whatsapp_group", "app_or_website",
+    "referral", "other",
+]
+SurveyYesNo = Literal["yes", "no"]
+SurveyFeeAgreed = Literal[
+    "brand_stated_fixed", "i_quoted_accepted", "negotiated", "verbal_only",
+    "do_not_remember", "no_paid_collab",
+]
+SurveyPaidWhen = Literal[
+    "before_posting", "within_a_week", "2_4_weeks", "1_2_months",
+    "more_than_2_months", "still_waiting", "never_paid", "not_applicable",
+]
+SurveyWentWrong = Literal[
+    "changes_after_posting", "used_in_ads_unasked", "fee_changed",
+    "went_quiet", "asked_for_free_after", "more_deliverables", "nothing", "other",
+]
+SurveyFrustration = Literal[
+    "finding_briefs", "brands_not_serious", "haggling", "late_payment",
+    "unclear_deliverables", "content_rejected", "unclear_wants",
+    "no_long_term", "chasing_replies",
+]
+SurveyPanStance = Literal[
+    "have_and_share", "have_prefer_not", "no_pan", "not_sure",
+]
+
+
+class CreatorSurveyPayload(BaseModel):
+    """One response. **Every field optional, which is deliberate.**
+
+    The browser marks most of these required, and that is where required-ness
+    belongs: a half-finished anonymous response is still data, and refusing it
+    server-side would throw away the one answer somebody was willing to give.
+    What the server refuses is a submission that is *entirely* empty, and a
+    top-three that is present but is not three.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    city: Optional[SurveyCity] = None
+    focus: Optional[SurveyFocus] = None
+    collabs_3m: Optional[SurveyCollabCount] = None
+    paid_share: Optional[SurveyPaidShare] = None
+    how_reach: Optional[list[SurveyReach]] = Field(default=None, max_length=8)
+    used_a_platform: Optional[SurveyYesNo] = None
+    platform_story: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+    fee_agreed: Optional[SurveyFeeAgreed] = None
+    paid_when: Optional[SurveyPaidWhen] = None
+    went_wrong: Optional[list[SurveyWentWrong]] = Field(default=None, max_length=8)
+    top_three: Optional[list[SurveyFrustration]] = Field(default=None, max_length=9)
+    walked_away: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+    pan_stance: Optional[SurveyPanStance] = None
+    wish_brands_knew: Optional[str] = Field(default=None, max_length=SURVEY_FREE_TEXT_MAX)
+
+
+# The free-text questions, named once so the ID sweep and the admin warning
+# cannot fall out of step with the model.
+SURVEY_FREE_TEXT_FIELDS = ("platform_story", "walked_away", "wish_brands_knew")
+
+# The closed questions that get an aggregate, and whether each is multi-select.
+SURVEY_CLOSED_FIELDS = (
+    ("city", False),
+    ("focus", False),
+    ("collabs_3m", False),
+    ("paid_share", False),
+    ("how_reach", True),
+    ("used_a_platform", False),
+    ("fee_agreed", False),
+    ("paid_when", False),
+    ("went_wrong", True),
+    ("top_three", True),
+    ("pan_stance", False),
+)
+
+# **The whole shape of a stored row.** A test asserts the keys of what is
+# written are exactly these, so a field added to the payload cannot reach the
+# database without somebody adding it here on purpose — and nothing about a
+# request can arrive by a `**spread` from somewhere else.
+_SURVEY_STORED_KEYS = frozenset(
+    set(CreatorSurveyPayload.model_fields) | {"submitted_on", "schema_version"}
+)
+
+
+def _survey_refusal(payload: CreatorSurveyPayload) -> Optional[str]:
+    """Why this submission cannot be stored, as a sentence, or `None`.
+
+    One decider for both doors — the JSON endpoint the page's `fetch` uses and
+    the plain form POST it falls back to without JavaScript — so the two cannot
+    disagree about what a valid response is.
+    """
+    answered = {
+        k: v
+        for k, v in payload.model_dump(exclude_none=True).items()
+        if v not in ("", [], None)
+    }
+    if not answered:
+        return "It looks like nothing was filled in. Answer what you can and send again."
+
+    # **Exactly three, refused here as well as in the browser.** A top-three
+    # that accepts seven gives a frequency count rather than a ranking, and the
+    # ranking is the point of the question. An *omitted* top-three is a skipped
+    # question, which every question here is allowed to be.
+    top = payload.top_three
+    if top is not None and len(top) and len(set(top)) != SURVEY_TOP_THREE:
+        return (
+            f"Please pick exactly {SURVEY_TOP_THREE} of the most frustrating "
+            "things, so we can rank them."
+        )
+
+    return _survey_id_refusal([getattr(payload, f) for f in SURVEY_FREE_TEXT_FIELDS])
+
+
+async def _store_survey_response(payload: CreatorSurveyPayload) -> None:
+    """Write the answers and the date. **Nothing else, ever.**
+
+    Built by naming keys off the payload, never by copying anything that came
+    from the request — the rule `_public_case_study` holds, for a stronger
+    reason. There is deliberately no `audit()` call: the log has an actor
+    field.
+    """
+    doc = payload.model_dump(exclude_none=True)
+    # A date, not a datetime. See the block at the top of this section.
+    doc["submitted_on"] = datetime.now(SHOOT_TZ).date().isoformat()
+    doc["schema_version"] = SURVEY_SCHEMA_VERSION
+    await db.creator_survey_responses.insert_one(doc)
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """The caller's address, for the in-memory rate limit **only**.
+
+    Read at the moment it is needed and never returned, never logged and never
+    stored. It exists inside the lifetime of one request plus a timestamp in a
+    module dict, and nothing else in this file may take it.
+    """
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return forwarded or (request.client.host if request.client else None)
+
+
+@public_router.post("/survey/creator")
+async def submit_creator_survey(payload: CreatorSurveyPayload, request: Request):
+    """Take one anonymous survey response.
+
+    Unauthenticated by design, not by omission — see the section header. The
+    refusals come back as plain sentences rather than codes, because the page
+    that reads them may be running no JavaScript.
+    """
+    refusal = _survey_rate_refusal(_client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
+    refusal = _survey_refusal(payload)
+    if refusal:
+        raise HTTPException(status_code=422, detail=refusal)
+    await _store_survey_response(payload)
+    _survey_rate_record(_client_ip(request))
+    return {"stored": True}
+
+
 
 # --- Case studies, for anybody --------------------------------------------
 #
@@ -37160,6 +37661,534 @@ def _work_detail_html(cs: dict, media_base: str = "") -> str:
   delivery. Creators appear here only where they have agreed to be featured.
 </footer>
 </div></body></html>"""
+
+
+# --- The survey page -------------------------------------------------------
+#
+# Server-rendered like `/work`, and for a third reason beyond that page's two:
+# this is a link we send over WhatsApp to somebody on mobile data who may have
+# a tab open for thirty seconds, and a form that needs a React bundle to lay
+# itself out is a form that loses people before it draws.
+#
+# **It works with JavaScript disabled.** `fetch` swaps in the thank-you state
+# without a reload where it can; where it cannot, the form is an ordinary
+# `POST /survey` that returns a thank-you page. Both doors go through
+# `_survey_refusal` and `_store_survey_response`, so they cannot disagree about
+# what a valid response is.
+#
+# **No third-party anything.** No analytics, no pixel, no external font — the
+# families are named with system fallbacks exactly as `_WORK_CSS` does, so the
+# page makes zero outbound requests. An analytics script on an anonymous survey
+# is a contradiction, and a font request is an IP handed to a third party by a
+# page whose whole promise is that we are not collecting one.
+_SURVEY_CSS = """
+*{box-sizing:border-box}
+body{margin:0;background:#091426;color:#EDF1F7;font:16px/1.6 'Inter Tight',system-ui,-apple-system,sans-serif}
+.wrap{max-width:40rem;margin:0 auto;padding:2rem 1.25rem 4rem}
+.eyebrow{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0;margin:0}
+h1{font-family:Fraunces,Georgia,serif;font-size:clamp(1.8rem,6vw,2.6rem);line-height:1.08;margin:.6rem 0 0;letter-spacing:-.02em}
+.intro{margin-top:1rem;color:#C6D0E0}
+.howlong{margin-top:1rem;font-family:Fraunces,Georgia,serif;font-size:1.1rem;color:#FF2731}
+.privacy{margin-top:1.5rem;border:1px solid rgba(255,255,255,.12);border-left:2px solid #FF2731;border-radius:.4rem;background:#0E1C33;padding:1rem 1.1rem;color:#C6D0E0;font-size:.95rem}
+.q{margin-top:2.25rem;border-top:1px solid rgba(255,255,255,.09);padding-top:1.5rem}
+.q:first-of-type{border-top:0}
+.qnum{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#8294B0}
+.qtext{display:block;margin:.35rem 0 .2rem;font-size:1.08rem;font-weight:500}
+.help{margin:.2rem 0 .75rem;font-size:.88rem;color:#8294B0}
+.opts{margin-top:.75rem;display:flex;flex-direction:column;gap:.1rem}
+/* 44px touch targets, and the whole row is the target rather than the dot. */
+.opt{display:flex;align-items:flex-start;gap:.7rem;min-height:44px;padding:.55rem .6rem;border-radius:.4rem;cursor:pointer}
+.opt:hover{background:rgba(255,255,255,.04)}
+.opt input{margin:.3rem 0 0;width:1.15rem;height:1.15rem;flex:0 0 auto;accent-color:#FF2731}
+.opt span{flex:1}
+select,textarea{width:100%;margin-top:.5rem;background:#0E1C33;color:#EDF1F7;border:1px solid rgba(255,255,255,.16);border-radius:.4rem;padding:.7rem .75rem;font:inherit;min-height:44px}
+textarea{min-height:6.5rem;resize:vertical}
+select:focus,textarea:focus,.opt input:focus{outline:2px solid #FF2731;outline-offset:1px}
+.count{margin-top:.4rem;font-size:.8rem;color:#8294B0}
+.send{margin-top:2.5rem}
+button{width:100%;min-height:52px;background:#FF2731;color:#091426;border:0;border-radius:.4rem;font:inherit;font-weight:600;font-size:1.02rem;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+button[disabled]{opacity:.55;cursor:default}
+.err{margin-top:1rem;border:1px solid #FF2731;border-radius:.4rem;padding:.8rem .9rem;color:#FFD9DB;background:rgba(255,39,49,.08)}
+.done{margin-top:3rem;text-align:left}
+.done h2{font-family:Fraunces,Georgia,serif;font-size:1.7rem;color:#EDF1F7;text-transform:none;letter-spacing:-.01em;margin:0 0 .75rem}
+footer{margin-top:3rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.09);font-size:.82rem;color:#8294B0}
+@media (min-width:40rem){.wrap{padding:3rem 1.5rem 5rem}}
+"""
+
+# The copy, in one place so it can be read rather than reconstructed from the
+# markup — and so the privacy note is quotable.
+#
+# **It says nothing about a platform, an app, or anything being built.** This is
+# studio research: a survey that reveals the product gets answers about the
+# product instead of answers about people's lives, which is the one failure
+# that would make the whole exercise worthless.
+SURVEY_COPY = {
+    "eyebrow": "WeAre Studios research",
+    "heading": "How brand collaborations actually work",
+    "intro": (
+        "WeAre Studios runs influencer campaigns for brands across India. We "
+        "are trying to understand the creator side of this properly - how work "
+        "reaches you, how money gets agreed, and what goes wrong. 14 "
+        "questions, about 4 minutes. There are no right answers and nothing "
+        "here is a pitch. We will publish a summary of what we find."
+    ),
+    "howlong": "14 questions, about 4 minutes.",
+    # **Exactly this, and nothing stronger.** In particular it does not say
+    # answers cannot be connected to each other — within one response they
+    # obviously can, and that is what makes the survey worth running. Claiming
+    # otherwise would be the one sentence here that is false.
+    "privacy": (
+        "We store your answers and the date. No name, no number, no email, and "
+        "no record of your device or where you are. We cannot tell who sent "
+        "what."
+    ),
+    "submit": "Send my answers",
+    "thanks_title": "Thank you - this is genuinely useful.",
+    "thanks_line": (
+        "We will publish the summary once enough people have answered."
+    ),
+    "no_names": (
+        "A line or two is plenty, and please leave your name and handle out of "
+        "it."
+    ),
+}
+
+# Every question, in order. One table so the page, the model and the admin
+# screen cannot drift into three different surveys.
+#
+# `kind` is `select`, `radio`, `checkbox` or `text`; `options` are
+# `(value, label)` pairs whose values are the `Literal`s above, so a control
+# cannot offer something the payload would refuse.
+def _survey_questions() -> list:
+    return [
+        {
+            "field": "city", "kind": "select", "required": True,
+            "text": "Which city are you based in?",
+            "options": [(c, c) for c in INDIAN_CITIES] + [(SURVEY_ELSEWHERE, SURVEY_ELSEWHERE)],
+        },
+        {
+            "field": "focus", "kind": "select", "required": True,
+            "text": "What do you mostly make content about?",
+            "options": [(g, g) for g in SURVEY_FOCUS_GROUPS] + [(SURVEY_OTHER_FOCUS, SURVEY_OTHER_FOCUS)],
+        },
+        {
+            "field": "collabs_3m", "kind": "radio", "required": True,
+            "text": "In the last 3 months, how many brand collaborations did you do?",
+            "options": [
+                ("0", "0"), ("1-2", "1-2"), ("3-5", "3-5"), ("6-10", "6-10"),
+                ("more_than_10", "More than 10"),
+            ],
+        },
+        {
+            "field": "paid_share", "kind": "radio", "required": True,
+            "text": "Of those, how many were paid in money rather than product or barter?",
+            "options": [
+                ("all_money", "All were paid in money"),
+                ("mostly_money", "Mostly paid in money"),
+                ("half_and_half", "About half and half"),
+                ("mostly_barter", "Mostly barter or product"),
+                ("all_barter", "All were barter or product"),
+                ("none", "I did not do any"),
+            ],
+        },
+        {
+            "field": "how_reach", "kind": "checkbox", "required": True,
+            "text": "How do brand collaborations usually reach you?",
+            "help": "Choose all that apply.",
+            "options": [
+                ("brand_messages_me", "The brand messages me directly"),
+                ("i_pitch", "I pitch brands myself"),
+                ("agency", "An agency contacts me"),
+                ("whatsapp_group", "Through a WhatsApp group"),
+                ("app_or_website", "Through an app or website"),
+                ("referral", "A friend or another creator refers me"),
+                ("other", "Other"),
+            ],
+        },
+        {
+            "field": "used_a_platform", "kind": "radio", "required": True,
+            "text": "Have you ever used an app or website to find brand collaborations?",
+            "options": [("yes", "Yes"), ("no", "No")],
+        },
+        {
+            "field": "platform_story", "kind": "text", "required": False,
+            "text": "If yes - which one, and what happened?",
+            "help": SURVEY_COPY["no_names"],
+        },
+        {
+            "field": "fee_agreed", "kind": "radio", "required": True,
+            "text": "Think about your most recent paid collaboration. How was the fee agreed?",
+            "options": [
+                ("brand_stated_fixed", "The brand stated a fixed fee"),
+                ("i_quoted_accepted", "I quoted my rate and they accepted"),
+                ("negotiated", "We negotiated and settled somewhere"),
+                ("verbal_only", "Agreed verbally, nothing written down"),
+                ("do_not_remember", "I do not remember"),
+                ("no_paid_collab", "I have not done a paid collaboration"),
+            ],
+        },
+        {
+            "field": "paid_when", "kind": "radio", "required": True,
+            "text": "How long after you delivered did you get paid?",
+            "options": [
+                ("before_posting", "Before I posted"),
+                ("within_a_week", "Within a week"),
+                ("2_4_weeks", "2-4 weeks"),
+                ("1_2_months", "1-2 months"),
+                ("more_than_2_months", "More than 2 months"),
+                ("still_waiting", "Still waiting"),
+                ("never_paid", "Never got paid"),
+                ("not_applicable", "Not applicable"),
+            ],
+        },
+        {
+            "field": "went_wrong", "kind": "checkbox", "required": True,
+            "text": "In that collaboration, did any of these happen?",
+            "help": "Choose all that apply.",
+            "options": [
+                ("changes_after_posting", "The brand asked for changes after I had already posted"),
+                ("used_in_ads_unasked", "They used my content in ads without asking me"),
+                ("fee_changed", "The fee changed after we had agreed it"),
+                ("went_quiet", "They went quiet and stopped replying"),
+                ("asked_for_free_after", "I was asked to do it free or for barter after money had been discussed"),
+                ("more_deliverables", "They asked for more deliverables than we agreed"),
+                ("nothing", "Nothing went wrong"),
+                ("other", "Other"),
+            ],
+        },
+        {
+            "field": "top_three", "kind": "checkbox", "required": True,
+            "text": "Pick the three most frustrating things about brand work.",
+            "help": f"Exactly {SURVEY_TOP_THREE}, so we can rank them.",
+            "limit": SURVEY_TOP_THREE,
+            "options": [
+                ("finding_briefs", "Finding briefs at all"),
+                ("brands_not_serious", "Brands that are not serious"),
+                ("haggling", "Haggling over rates"),
+                ("late_payment", "Late payment"),
+                ("unclear_deliverables", "Unclear deliverables"),
+                ("content_rejected", "Content rejected after I had shot it"),
+                ("unclear_wants", "Not knowing what the brand actually wanted"),
+                ("no_long_term", "No long-term relationship, every job starts from zero"),
+                ("chasing_replies", "Chasing people for replies"),
+            ],
+        },
+        {
+            "field": "walked_away", "kind": "text", "required": False,
+            "text": "Have you ever said no to a collaboration? What made you walk away?",
+            "help": SURVEY_COPY["no_names"],
+        },
+        {
+            # **Whether, never the number.** There is no field anywhere in this
+            # survey that could hold a government ID, and `_survey_id_refusal`
+            # refuses one typed into a box that did not ask.
+            "field": "pan_stance", "kind": "radio", "required": True,
+            "text": "For payments, which of these is true for you?",
+            "options": [
+                ("have_and_share", "I have a PAN and do not mind sharing it to get paid"),
+                ("have_prefer_not", "I have a PAN but would rather not share it"),
+                ("no_pan", "I do not have a PAN"),
+                ("not_sure", "Not sure"),
+            ],
+        },
+        {
+            "field": "wish_brands_knew", "kind": "text", "required": False,
+            "text": "Anything you wish brands understood about working with creators?",
+            "help": SURVEY_COPY["no_names"],
+        },
+    ]
+
+
+def _survey_question_html(q: dict, index: int) -> str:
+    """One question. Real controls, no custom widgets.
+
+    Radios and checkboxes rather than JavaScript look-alikes, because a native
+    control is the one thing guaranteed to work with a screen reader, with a
+    keyboard, with autofill off and with no JavaScript at all — which is the
+    state this page has to survive.
+    """
+    e = html_escape
+    field = q["field"]
+    head = (
+        f'<p class="qnum">Question {index}</p>'
+        f'<span class="qtext" id="{e(field)}-label">{e(q["text"])}</span>'
+        + (f'<p class="help">{e(q["help"])}</p>' if q.get("help") else "")
+    )
+
+    if q["kind"] == "select":
+        opts = "".join(
+            f'<option value="{e(v)}">{e(label)}</option>' for v, label in q["options"]
+        )
+        body = (
+            f'<select name="{e(field)}" id="{e(field)}"'
+            f'{" required" if q.get("required") else ""}>'
+            f'<option value="">Choose one</option>{opts}</select>'
+        )
+    elif q["kind"] == "text":
+        body = (
+            f'<textarea name="{e(field)}" id="{e(field)}" rows="4" '
+            f'maxlength="{SURVEY_FREE_TEXT_MAX}" '
+            f'aria-labelledby="{e(field)}-label"></textarea>'
+        )
+    else:
+        kind = "radio" if q["kind"] == "radio" else "checkbox"
+        limit = f' data-limit="{q["limit"]}"' if q.get("limit") else ""
+        rows = "".join(
+            f'<label class="opt"><input type="{kind}" name="{e(field)}" '
+            f'value="{e(v)}"{limit}'
+            f'{" required" if kind == "radio" and q.get("required") else ""}>'
+            f"<span>{e(label)}</span></label>"
+            for v, label in q["options"]
+        )
+        body = (
+            f'<div class="opts" role="group" aria-labelledby="{e(field)}-label"'
+            f'{limit} data-field="{e(field)}">{rows}</div>'
+            + (
+                f'<p class="count" data-count-for="{e(field)}"></p>'
+                if q.get("limit")
+                else ""
+            )
+        )
+
+    return f'<fieldset class="q">{head}{body}</fieldset>'
+
+
+def _survey_head(*, title: str, url: str) -> str:
+    """Deliberately thinner than `_work_head`.
+
+    **No Open Graph image and `noindex`.** This is research we send to people,
+    not a page we want found: a survey in a search index collects answers from
+    whoever wandered in, which is a different population from the one we are
+    asking about. `robots.txt` disallows it too; this is the half a crawler
+    reads if it arrives anyway.
+    """
+    e = html_escape
+    return f"""<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="theme-color" content="#091426">
+<meta name="robots" content="noindex, nofollow">
+<link rel="canonical" href="{e(url)}">
+<style>{_SURVEY_CSS}</style>"""
+
+
+def _survey_thanks_html() -> str:
+    """The thank-you page the no-JavaScript POST lands on.
+
+    The same words the in-page swap shows, from the same constant, so the two
+    paths cannot thank somebody differently.
+    """
+    e = html_escape
+    url = f"{_share_base()}{SURVEY_PATH}"
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{_survey_head(title="Thank you — WeAre Studios research", url=url)}</head>
+<body><div class="wrap">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<div class="done">
+  <h2>{e(SURVEY_COPY["thanks_title"])}</h2>
+  <p>{e(SURVEY_COPY["thanks_line"])}</p>
+</div>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</div></body></html>"""
+
+
+def _survey_html(error: Optional[str] = None) -> str:
+    """The survey, as one page and one scroll.
+
+    **No pagination.** A multi-step form on a phone loses people at every step,
+    and this one is being opened from a WhatsApp message by somebody who has
+    not decided to spend four minutes yet. Saying the length honestly near the
+    top is the alternative to hiding it behind "Next".
+    """
+    e = html_escape
+    url = f"{_share_base()}{SURVEY_PATH}"
+    questions = "".join(
+        _survey_question_html(q, i) for i, q in enumerate(_survey_questions(), start=1)
+    )
+    err = f'<p class="err" role="alert">{e(error)}</p>' if error else ""
+
+    # **The script is an enhancement and the form works without it.** Without
+    # JavaScript the browser posts to `/survey` and gets the thank-you page;
+    # with it, the same values go to the JSON endpoint and the thank-you state
+    # swaps in. The only thing the script adds beyond that is the exactly-three
+    # counter, which the server refuses anyway.
+    script = """
+(function () {
+  var form = document.getElementById('survey');
+  if (!form) return;
+  var LIMIT = %d;
+
+  // The exactly-three counter. The server refuses a wrong count too, so this
+  // is a courtesy rather than the rule — but being told after a four-minute
+  // form is the version that loses people.
+  function wire(group) {
+    var field = group.getAttribute('data-field');
+    var out = document.querySelector('[data-count-for="' + field + '"]');
+    var boxes = group.querySelectorAll('input[type=checkbox]');
+    function sync() {
+      var n = 0;
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) n++;
+      for (var j = 0; j < boxes.length; j++) {
+        boxes[j].disabled = !boxes[j].checked && n >= LIMIT;
+      }
+      if (out) out.textContent = n + ' of ' + LIMIT + ' chosen';
+    }
+    for (var k = 0; k < boxes.length; k++) boxes[k].addEventListener('change', sync);
+    sync();
+  }
+  var limited = form.querySelectorAll('.opts[data-limit]');
+  for (var i = 0; i < limited.length; i++) wire(limited[i]);
+
+  form.addEventListener('submit', function (ev) {
+    if (!window.fetch) return;            // let the plain POST happen
+    ev.preventDefault();
+    var btn = form.querySelector('button');
+    var errBox = document.getElementById('survey-error');
+    var data = new FormData(form);
+    var body = {};
+    var multi = %s;
+    data.forEach(function (value, key) {
+      if (value === '') return;
+      if (multi.indexOf(key) !== -1) {
+        (body[key] = body[key] || []).push(value);
+      } else {
+        body[key] = value;
+      }
+    });
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    fetch(%s, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(
+          (data && data.detail) || 'That did not send. Please try again.'
+        );
+      });
+    }).then(function () {
+      // One submission per device, and this is the whole mechanism: a
+      // localStorage flag. No fingerprinting. It is bypassable and that is
+      // the correct trade here — the alternative is identifying people in
+      // order to stop them answering twice.
+      try { localStorage.setItem('weare-survey-done', '1'); } catch (e) {}
+      document.getElementById('survey-page').innerHTML =
+        document.getElementById('survey-thanks').innerHTML;
+      window.scrollTo(0, 0);
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = %s;
+      if (errBox) {
+        errBox.textContent = err.message;
+        errBox.hidden = false;
+        errBox.scrollIntoView({ block: 'center' });
+      }
+    });
+  });
+})();
+""" % (
+        SURVEY_TOP_THREE,
+        json.dumps([q["field"] for q in _survey_questions() if q["kind"] == "checkbox"]),
+        json.dumps(f"{API_PREFIX}/public/survey/creator"),
+        json.dumps(SURVEY_COPY["submit"]),
+    )
+
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{_survey_head(title=SURVEY_COPY["heading"] + " — WeAre Studios research", url=url)}</head>
+<body><div class="wrap" id="survey-page">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<h1>{e(SURVEY_COPY["heading"])}</h1>
+<p class="intro">{e(SURVEY_COPY["intro"])}</p>
+<p class="howlong">{e(SURVEY_COPY["howlong"])}</p>
+<p class="privacy">{e(SURVEY_COPY["privacy"])}</p>
+{err}
+<form id="survey" method="post" action="{e(SURVEY_PATH)}" novalidate>
+{questions}
+<p class="err" id="survey-error" role="alert" hidden></p>
+<div class="send"><button type="submit">{e(SURVEY_COPY["submit"])}</button></div>
+</form>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</div>
+<template id="survey-thanks">
+<p class="eyebrow">{e(SURVEY_COPY["eyebrow"])}</p>
+<div class="done">
+  <h2>{e(SURVEY_COPY["thanks_title"])}</h2>
+  <p>{e(SURVEY_COPY["thanks_line"])}</p>
+</div>
+<footer>{e(SURVEY_COPY["privacy"])}</footer>
+</template>
+<script>{script}</script>
+</body></html>"""
+
+
+@app.get(SURVEY_PATH, include_in_schema=False)
+async def public_survey_page():
+    """The survey. No account, no cookie, no session — see the section header."""
+    return Response(
+        content=_survey_html(),
+        media_type="text/html; charset=utf-8",
+        # Short, because the question table is code and a stale copy of this
+        # page is a form posting fields the server no longer accepts.
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@app.post(SURVEY_PATH, include_in_schema=False)
+async def submit_survey_form(request: Request):
+    """The no-JavaScript door. **Same decider, same store, different shape.**
+
+    A plain `application/x-www-form-urlencoded` POST from the browser's own
+    form submission, answered with HTML rather than JSON because there is
+    nothing on the other end to read JSON. It re-renders the form with the
+    refusal at the top on a failure, which is what a form without JavaScript
+    has instead of an inline error.
+    """
+    form = await request.form()
+    raw: dict = {}
+    for q in _survey_questions():
+        field = q["field"]
+        if q["kind"] == "checkbox":
+            values = [v for v in form.getlist(field) if v]
+            if values:
+                raw[field] = values
+        else:
+            value = (form.get(field) or "").strip()
+            if value:
+                raw[field] = value
+
+    def _page(message: str, status: int) -> Response:
+        return Response(
+            content=_survey_html(error=message),
+            media_type="text/html; charset=utf-8",
+            status_code=status,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    refusal = _survey_rate_refusal(_client_ip(request))
+    if refusal:
+        return _page(refusal, 429)
+    try:
+        payload = CreatorSurveyPayload(**raw)
+    except ValidationError:
+        # A junk value in a closed list, which from a browser form means a
+        # hand-edited page. The sentence is plain for the same reason the
+        # others are.
+        return _page(
+            "Some of those answers were not ones we offered. Please reload the "
+            "page and try again.",
+            422,
+        )
+    refusal = _survey_refusal(payload)
+    if refusal:
+        return _page(refusal, 422)
+    await _store_survey_response(payload)
+    _survey_rate_record(_client_ip(request))
+    return Response(
+        content=_survey_thanks_html(),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get(CASE_STUDY_PATH, include_in_schema=False)

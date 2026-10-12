@@ -264,7 +264,7 @@ Full list with comments: `backend/.env.example`.
 > sitemap at the site origin gets the SPA's catch-all. It is a static file, so
 > no environment variable can do it for you.
 >
-> The six entries in `frontend/vercel.json` point at `/index.html`, which is
+> The seven entries in `frontend/vercel.json` point at `/index.html`, which is
 > exactly what the catch-all below them already does — so they are inert
 > placeholders, kept as the record of the other route and in case the
 > hostname question is ever answered. (They used to carry `"//"` keys
@@ -285,6 +285,7 @@ not show.
 | `/sitemap.xml` | Every marketing page, public brand page, live brief and published case study, so a crawler has something to follow. `robots.txt` names it, so both have to resolve to the same host. |
 | `/work` | The case-study shelf. |
 | `/work/:slug` | One campaign we ran, written up. |
+| `/survey` | The anonymous creator research survey, `GET` and `POST`. Server-rendered because it is a WhatsApp link opened on mobile data **and** because it must work with JavaScript disabled — without a script the browser posts the form straight back to this path and gets a thank-you page. Disallowed in `robots.txt` and `noindex` on the page: a survey in a search index answers from whoever wandered in. |
 | `/influencer-marketing/:slug` | The landing page matrix: the national hub (`india`), a city (`mumbai`), a sector nationally (`food-drink-india`) or a sector in a city (`food-drink-mumbai`). **Generated from live supply** — a slug that parses but has too few verified creators behind it 404s on purpose, because a page we cannot staff is a page that earns a refund. |
 
 The last two are the only pages on this site written to be **found** rather
@@ -298,7 +299,7 @@ It was five, then three when the marketing site moved into the SPA, and five
 again with case studies. `/for-brands` and `/for-creators` are ordinary React
 routes now — see below.
 
-If you ever take the other route, repoint all six at your Railway URL; they
+If you ever take the other route, repoint all seven at your Railway URL; they
 must stay **above** the catch-all:
 
 ```json
@@ -307,7 +308,8 @@ must stay **above** the catch-all:
 { "source": "/sitemap.xml", "destination": "https://your-api.up.railway.app/sitemap.xml" },
 { "source": "/work",        "destination": "https://your-api.up.railway.app/work" },
 { "source": "/work/:slug",  "destination": "https://your-api.up.railway.app/work/:slug" },
-{ "source": "/influencer-marketing/:slug", "destination": "https://your-api.up.railway.app/influencer-marketing/:slug" }
+{ "source": "/influencer-marketing/:slug", "destination": "https://your-api.up.railway.app/influencer-marketing/:slug" },
+{ "source": "/survey",     "destination": "https://your-api.up.railway.app/survey" }
 ```
 
 Verify either arrangement by asking for the sitemap and reading what comes
@@ -320,7 +322,7 @@ curl -sS https://<the origin you chose>/sitemap.xml | head -c 200
 
 XML means it reached the backend. `<!doctype html>` means it did not.
 
-**All six or none.** They are one feature, and shipping part of it means a
+**All seven or none.** They are one feature, and shipping part of it means a
 link into a page that does not exist: the brief page links to the brand page,
 the brand page lists the briefs, the case study links to both, and the sitemap
 points at all of them.

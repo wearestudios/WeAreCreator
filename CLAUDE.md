@@ -3329,6 +3329,131 @@ Performance Observer, at 390 and 1280:
   a band that renders nothing most of the time and therefore cannot reserve
   height. Reserving one on every load to avoid it would be the worse trade.
 
+## The anonymous creator survey
+
+`/survey`, server-rendered, and `creator_survey_responses`. It asks creators
+about brands that went quiet, fees that changed after being agreed, and work
+they were never paid for — so **anonymity is the design constraint rather than
+a setting on top of it**, and several decisions cost analytical convenience on
+purpose.
+
+- **No auth, no cookie, no session, no account.** `POST /public/survey/creator`
+  sits on the public router beside the other unauthenticated reads, and a test
+  asserts the handler declares no `Depends` at all.
+- **The stored row is the answers, a date and a schema version.** Nothing
+  derived from the request: no `request.client.host`, no header, no user agent.
+  `_SURVEY_STORED_KEYS` is the whole shape and a test asserts the written keys
+  equal it exactly, so a field added to the payload cannot reach the database
+  without somebody adding it there on purpose.
+- **The rate limit is in memory and the IP is never written.** `_SURVEY_RATE`
+  is a module dict keyed by address that forgets on restart; three an hour,
+  twenty a day. The comment says plainly that the next person here will reach
+  for storing it — for a better limit, for abuse forensics, for deduplication
+  — and that a durable limit means a smaller window, not a stored address. A
+  missing address is allowed through: refusing would turn a proxy
+  configuration into a wall in front of the survey.
+- **`submitted_on` is a date, not a timestamp.** A precise instant plus a
+  known WhatsApp send time singles somebody out in a small sample, which is
+  the sample size this will have.
+- **One submission per device is a `localStorage` flag and nothing else.** No
+  fingerprinting — a test sweeps the page for `canvas`, `getContext`,
+  `AudioContext`, `webgl`, `screen.width`, `navigator.plugins` and
+  `hardwareConcurrency`. It is bypassable and that is correct: the alternative
+  is identifying people in order to stop them answering twice.
+- **Nothing is audited.** The one write path in the product that leaves no log
+  line, because `audit()` has an actor field. Driven and read back rather than
+  grepped, so a call added inside a helper still fails.
+- **No field anywhere can hold a government ID.** Question 13 asks *whether*
+  somebody has a PAN; `_survey_id_refusal` refuses a PAN or Aadhaar typed into
+  free text, with a message saying which, because a respondent who typed one
+  needs to know we are not keeping it. Refused rather than stripped — silently
+  removing it would store a sanitised answer while they believe they sent the
+  number.
+- **The limit we cannot promise is stated in the module.** Railway's proxy and
+  Atlas record connection metadata including IPs, outside this application. We
+  neither store nor read them and nothing joins them to a response. Written
+  down so nobody tells a respondent something stronger than the truth.
+
+**An Indian mobile with its country code is also twelve digits**, and the first
+Aadhaar pattern refused `+919876500042` — an honest answer thrown away with a
+confusing message, caught by the test that plants a phone number. So the
+pattern requires the run to start 2-9 (an Aadhaar never begins 0 or 1) and lets
+through a run beginning `91` followed by 6-9. That overlaps a real Aadhaar
+starting `916`-`919`, and the trade is deliberate: a phone number somebody
+typed is personal data of the same kind as the name they signed — kept as
+typed and warned about — whereas refusing it loses the answer. Each candidate
+run is checked at its own position, so one phone number in a long answer does
+not excuse a real Aadhaar later in the same one.
+
+### Two doors, one decider
+
+`_survey_refusal` and `_store_survey_response` are shared by the JSON endpoint
+the page's `fetch` uses and the plain `POST /survey` it falls back to, so the
+two cannot disagree about what a valid response is. **The page works with
+JavaScript disabled** — verified in a browser with `javaScriptEnabled: false`:
+fourteen questions render, the form posts the ordinary way and the thank-you
+page comes back. Refusals are **plain sentences rather than codes**, because
+the thing reading them may be running no script.
+
+- One page, one scroll, no pagination: a multi-step form on a phone loses
+  people at every step, and this one is opened from a WhatsApp message by
+  somebody who has not decided to spend four minutes yet. The length is said
+  honestly above the first question instead.
+- Native radios and checkboxes, no custom widgets. Measured in a browser at
+  390px: minimum touch target exactly 44px, no horizontal scroll, **zero
+  external requests** — no analytics, no pixel, no font fetch. An analytics
+  script on an anonymous survey is a contradiction, and a font request hands
+  an IP to a third party from a page whose whole promise is that we are not
+  collecting one.
+- **Exactly three on question 11, in the browser and on the server.** A
+  top-three that accepts seven gives a frequency count rather than a ranking,
+  and the ranking is the point. Counted on the distinct set, so three copies
+  of one choice is not three. An *omitted* top-three is a skipped question —
+  every field is optional, because a half-finished anonymous response is still
+  data and the browser is where required-ness belongs.
+- `noindex` on the page and `Disallow: /survey` in `robots.txt`. Research, not
+  a page we want found: a survey in a search index collects answers from
+  whoever wandered in, which is a different population from the one we asked.
+- **The copy says nothing about a platform, an app or anything being built.** A
+  survey that reveals the product gets answers about the product instead of
+  answers about people's lives. A test sweeps `SURVEY_COPY` for "we are
+  building", "our platform", "waitlist", "beta" and the rest.
+- The privacy note is exactly the agreed sentence and **a test refuses to let
+  it get stronger**: it must not claim answers cannot be connected to each
+  other, because within one response they obviously can, and that would be the
+  one false sentence on the page.
+
+### Reading the results
+
+`GET /admin/survey/creator` and `GET /admin/exports/survey`, both **admin-only
+and not `CONSOLE_ROLES`** — a respondent is not a creator we know and is
+attached to no brand, so there is nothing for a scoped console to be scoped
+*to*; narrowing it is not a smaller document but an empty one. `survey` joins
+`creators` and `audit` in `ADMIN_ONLY_EXPORTS` for that reason, and the two
+tests that pinned that set as exactly two now name it and say why.
+
+**The rows come back intact and are deliberately not shuffled or decoupled.**
+Splitting the free text away from the closed answers would protect nothing that
+is not already protected — no row identifies anybody — while destroying the
+entire analytical value, which is correlation *within* one response: that the
+people who were never paid are the same people who agreed the fee verbally. A
+survey you cannot cross-tabulate is a set of bar charts. `SURVEY_OPEN_TEXT_WARNING`
+rides on the payload because the open answers are the one part that may still
+carry a name somebody typed voluntarily.
+
+`RETENTION_DAYS["survey_responses"]` is 24 months, and **the period is a
+housekeeping decision rather than a legal one**: these rows identify nobody, so
+no erasure duty attaches and nothing is held against somebody's wishes. Two
+years is chosen so a wave can be compared against the next one.
+
+**`Legal.jsx` does not actually read that table**, which the spec assumed it
+did — it mirrors the periods in prose, with a comment conceding that if the two
+disagree "this page is the lie". So the survey needed its own sentence there as
+well as the row, and it is said separately from the list above it because that
+list is about data we hold *because it is yours*. The console's Retention panel
+does read the endpoint, and needed a label or it would have rendered the raw
+key.
+
 ## Being forgotten
 
 `deletion_router` at `/account`, and the admin half at
