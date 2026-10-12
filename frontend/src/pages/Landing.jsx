@@ -46,6 +46,7 @@ import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
 import CreatorLeaderboard from "@/components/marketing/CreatorLeaderboard";
 import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
+import BrandWall from "@/components/marketing/BrandWall";
 import { Eyebrow, Points, TwoPaths } from "@/components/marketing/Sections";
 import {
     LANDING_HERO as HERO_IDS,
@@ -269,6 +270,22 @@ export default function Landing() {
             {/* Counted, never written down. The hero carried a hardcoded
                 "500+ verified creators" until this replaced it. */}
             <ProofStrip only={["creators", "campaigns", "cities"]} />
+
+            {/* **Directly under the figures and well above the case studies**,
+                which is the order a sceptical brand reads in: the figures say
+                there is an operation, the logos say businesses like theirs
+                use it, and the write-ups further down say it works. Logos
+                before the proof would be decoration; logos after the
+                write-ups would be a footnote.
+
+                Every brand here has finished at least one campaign and has
+                given written permission for its mark — both decided
+                server-side, and consent re-read on every request so a
+                withdrawal is gone from the next page load. Absent entirely
+                below the floor: one withdrawal taking the row down is
+                correct, because the floor is about whether the claim is worth
+                making at all. */}
+            <BrandWall />
 
             {/* The centrepiece: the product performing itself. Pinned and
                 scroll-driven where that runs well, the identical seven beats

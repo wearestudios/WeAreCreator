@@ -567,3 +567,19 @@ export const CREATOR_LISTS = {
 	add: (listId) => `creator-list-add-${listId}`,
 	empty: 'creator-lists-empty',
 };
+
+// The brand wall decision on the admin's brand page. Both halves are
+// addressable: `state` is whether the logo is live, `blockers` is why not,
+// and `terms` is the text the brand actually agreed to rather than today's
+// wording — on a trademark permission that difference is the record.
+export const ADMIN_BRAND_LOGO = {
+    panel: "admin-brand-homepage-logo",
+    state: "admin-brand-homepage-logo-state",
+    blockers: "admin-brand-homepage-logo-blockers",
+    terms: "admin-brand-homepage-logo-terms",
+    approve: "admin-brand-homepage-logo-approve",
+    revoke: "admin-brand-homepage-logo-revoke",
+    confirmRevoke: "admin-brand-homepage-logo-confirm-revoke",
+    reason: "admin-brand-homepage-logo-reason",
+    revoked: "admin-brand-homepage-logo-revoked",
+};

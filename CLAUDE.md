@@ -3523,6 +3523,80 @@ about whether the claim is worth making.
   scrolls gets a permanent section-shaped hole, which is what a browser check
   caught.
 
+### The brand wall
+
+A row of logos on home, for brands actually running campaigns here.
+`_public_brand_wall` **mirrors `_public_leaderboard`** rather than solving any
+of it again: a cached ordering so the front door computes nothing, eligibility
+re-read on every request so withdrawal is immediate, an allow-list built by
+naming keys, and absence below a floor rather than a thin row.
+
+- **The gate is having actually finished a campaign** — at least one in
+  `_CLOSED_CAMPAIGN_STATUSES`, derived on read, never stored. A wall of logos
+  says "these businesses are our customers", and the cheap version of that is
+  a wall of everybody who ever signed up; a brand that registered and never
+  posted is not a customer, and a brief still running is not evidence that
+  anything was delivered. Derived for the usual reason: a stored flag needs a
+  sweep, and a rule that depends on cron is true on Tuesdays. The count is
+  re-derived in `_public_brand_wall` too, not read off the cache — it is the
+  whole claim, so it is the last thing that may go stale.
+- **Consent and approval are both required and are different questions.** The
+  brand says we may use its mark (`homepage_logo_opt_in`, default off, absent
+  off); an admin says we are willing to make the claim
+  (`homepage_logo_approved_at`). Consent alone means the wall vouches for
+  whoever ticks a box, including a business we have since fallen out with;
+  approval alone publishes a trademark nobody agreed to. **No route can tick
+  the brand's box for it**, the reason there is no endpoint that mints a
+  second brand manager — `approve_brand_homepage_logo` writes only our half,
+  and a test reads its source to hold that.
+- **The consent text is frozen into the record**, the arrangement
+  `platform_terms` uses: a logo is a trademark, so what matters in a year is
+  not what `BRAND_LOGO_CONSENT_TERMS` says then but what it said when the box
+  was ticked. Written **once** — re-saving with the box still ticked must not
+  move the timestamp, or the record of consent becomes a record of the last
+  time somebody pressed Save. Withdrawing keeps the record and adds
+  `withdrawn_at`, because the history is what says the logo was published with
+  permission at the time, and it deliberately does **not** clear the admin's
+  approval: withdrawal is the brand's decision about its own mark, not a
+  reversal of ours.
+- `_public_brand_card` is **narrower than `_public_brand`**, and reusing the
+  latter was the obvious move that would have shipped outlets, a tagline, an
+  about paragraph and the social handles onto home. The public brand page is
+  *about* one brand somebody arrived at on purpose; a wall card is a mark in a
+  grid of twelve. `PUBLIC_BRAND_CARD_FORBIDDEN` names what must never appear,
+  money in both directions included, and a leak test plants values on the
+  profile *and* its campaigns then searches the rendered output.
+- `brand_wall_settings()` is floor 6, size 12, stored and admin-editable.
+  **Absent below the floor, not short** — one withdrawal taking the whole row
+  down is correct, because the floor is about whether the claim is worth
+  making at all. Boundaries measured: 5 → absent, 6 → 6, 13 → 12.
+- **Admin-only, not `CONSOLE_ROLES`** — the split case studies make. A logo on
+  the home page is a claim this operation puts on the open internet under its
+  own name, and a role scoped to assigned brands putting a brand there is not
+  a scope. Revoking costs a reason; approving does not, because "we took them
+  off" is the decision somebody asks about later.
+- `refresh_brand_wall` **rides the leaderboard loop** rather than getting its
+  own: same cadence, same kind of work, two cached orderings behind two public
+  sections. Each failure is caught separately so one cannot take the other
+  down. Approving refreshes immediately, because approval is the one half that
+  is *not* re-read live — a brand nobody approved was never in the cache to be
+  re-checked.
+- **Below the proof strip and above the case studies**, which is the order a
+  sceptical brand reads in: the figures say there is an operation, the logos
+  say businesses like theirs use it, the write-ups say it works.
+
+**Where it reserves its shape is the opposite of the leaderboard's rule, and
+the difference is where the two sections sit.** The leaderboard draws nothing
+until its observer fires because it is at the bottom of the page. This sits
+directly under the proof strip, which at 390px is right at the fold — so the
+observer fires on load whatever it is told, and gating the shape on it bought
+nothing while costing a 0-to-full growth that pushed the whole page down.
+Measured against a control build: gated on `near`, **0.0823 CLS at 390px
+against 0.0000**, and 0.1644 when the server withheld the row (appearing, then
+collapsing, counted twice). Held from first paint it is 0.0001 at 390 and
+0.0000 at 1280. What remains is one collapse on a deployment below the floor,
+which is the right way round — the `ProofStrip` trade.
+
 ## People you would ask again
 
 `creator_lists` — named lists for a brand or for WeAre, and `POST

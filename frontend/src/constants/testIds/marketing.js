@@ -48,6 +48,16 @@ export const MARKETING = {
 	leaderboardSignal: (id) => `marketing-leaderboard-signal-${id}`,
 	leaderboardMonogram: (id) => `marketing-leaderboard-monogram-${id}`,
 
+	// The brand wall — logos of businesses that have actually finished a
+	// campaign here. Same two-id arrangement as the leaderboard, and for the
+	// same reason: the section is absent entirely below the floor, so a test
+	// asserting it is missing must not be satisfied by the skeleton standing
+	// in for it before anybody knows.
+	brandWall: 'marketing-brand-wall',
+	brandWallSkeleton: 'marketing-brand-wall-skeleton',
+	brandWallCard: (id) => `marketing-brand-wall-card-${id}`,
+	brandWallLogo: (id) => `marketing-brand-wall-logo-${id}`,
+
 	// The family handshake — the one place the studio palette appears.
 	handshake: 'marketing-handshake',
 	handshakeCta: 'marketing-handshake-cta',

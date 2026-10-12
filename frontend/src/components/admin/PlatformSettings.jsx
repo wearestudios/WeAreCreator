@@ -182,6 +182,33 @@ export default function PlatformSettings() {
                     blurb="A creator can move a booking this many times on their own. Past it, whoever runs the campaign has to agree — and every one is counted against reliability either way."
                     unit="times"
                 />
+
+                {/* **The two halves of the brand wall's honesty rule.** The
+                    floor is the one that matters: below it the section is
+                    absent rather than short, so one brand withdrawing takes
+                    the whole row down — which is correct, because the floor is
+                    about whether the claim is worth making at all. The size is
+                    only a cap on how many of the eligible get drawn.
+
+                    Both rows are single-line, so they belong above
+                    `SlaSettings` with the rest of the shape this page knows. */}
+                <NumberSetting
+                    settingKey="brand-wall-minimum"
+                    endpoint="/admin/settings/brand-wall"
+                    field="minimum"
+                    label="Fewest logos worth showing"
+                    blurb="Below this the brand wall is absent from the home page rather than short. A row of three advertises an operation with three customers."
+                    unit="brands"
+                />
+
+                <NumberSetting
+                    settingKey="brand-wall-size"
+                    endpoint="/admin/settings/brand-wall"
+                    field="size"
+                    label="Most logos on the brand wall"
+                    blurb="A cap on how many eligible brands get drawn. Only brands that have given permission and finished a campaign are ever eligible."
+                    unit="brands"
+                />
             </div>
 
             <SlaSettings />

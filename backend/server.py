@@ -955,6 +955,17 @@ class BrandProfileUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = Field(default=None, max_length=20)
 
+    # **Permission to use the brand's mark on the public site.** A bool here
+    # and a frozen record in the handler: a logo is a trademark, so what
+    # matters later is not what the consent text says then but what it said
+    # when the box was ticked. The handler pops this out of the generic copy
+    # loop for that reason — see `update_brand_profile`.
+    #
+    # Default off and absent reads off. This is the one thing a brand can
+    # change about its own public presence, and the only honest default for a
+    # permission is "not given".
+    homepage_logo_opt_in: Optional[bool] = None
+
 
 # The shape of the work decides the shape of the dates. A launch or a group
 # event happens on one day; a personal table runs over a window a creator books
@@ -11422,6 +11433,30 @@ async def _brand_profile_response(profile: dict) -> dict:
         "max_image_bytes": max_upload_bytes(),
         "accepted_image_mime_types": sorted(ACCEPTED_IMAGE_MIMES),
     }
+    # **The brand wall, decided server-side like every other action here.**
+    #
+    # The form asks nothing for itself: whether they have consented, whether
+    # we have approved, whether they have actually finished a campaign, and
+    # the consent text itself all arrive from here. A checkbox that worked out
+    # its own eligibility would be a second copy of `_brand_wall_eligible`.
+    #
+    # `terms` is the live constant, because this is the text somebody is about
+    # to agree to. What was agreed *before* is frozen on the profile and is
+    # deliberately not what the form renders — showing the old wording to
+    # somebody being asked again would be the wrong way round.
+    consent = profile.get("homepage_logo_consent") or {}
+    campaigns_run = (await _campaigns_run_by_brand([profile["user_id"]])).get(
+        profile["user_id"], 0
+    )
+    out["homepage_logo"] = {
+        "opted_in": bool(profile.get("homepage_logo_opt_in")),
+        "approved": bool(profile.get("homepage_logo_approved_at")),
+        "campaigns_run": campaigns_run,
+        "eligible": _brand_wall_eligible(profile, campaigns_run),
+        "terms": BRAND_LOGO_CONSENT_TERMS,
+        "consented_at": _iso(consent.get("accepted_at")),
+        "withdrawn_at": _iso(consent.get("withdrawn_at")),
+    }
     # **Which briefs are ours to run, from the server.** The post form has to
     # explain the rule *before* the brand picks a type or types a headcount —
     # after the fact it is a surprise, and a form that worked the threshold out
@@ -11538,6 +11573,57 @@ async def update_brand_profile(
     if "contact_phone" in sent:
         raw = (payload.contact_phone or "").strip()
         update["contact_phone"] = _normalize_phone(raw) if raw else None
+
+    # **Consent to the brand wall, which is not an ordinary field.**
+    #
+    # It is popped out of the generic shape above because granting it has to
+    # freeze *what was agreed to* beside the fact that it was — the same
+    # arrangement `platform_terms` uses at acceptance. A logo is a trademark,
+    # and a permission somebody can later be shown a different version of is
+    # not a permission anybody can rely on.
+    #
+    # **The grant is written once and never rewritten.** Re-saving the profile
+    # with the box still ticked must not move the timestamp, or the record of
+    # when permission was given becomes the record of the last time somebody
+    # pressed Save.
+    #
+    # Withdrawing sets the flag false and **keeps the record**, adding
+    # `withdrawn_at`. The history is the point: it is what says the logo was
+    # published with permission at the time. It deliberately does not clear
+    # the admin's approval either — withdrawal is the brand's decision about
+    # its own mark, not a reversal of ours, and re-ticking the box should not
+    # need a second trip through the queue.
+    if "homepage_logo_opt_in" in sent:
+        wants = bool(payload.homepage_logo_opt_in)
+        update["homepage_logo_opt_in"] = wants
+        consent = existing.get("homepage_logo_consent") or {}
+        if wants:
+            if not consent.get("accepted_at"):
+                update["homepage_logo_consent"] = {
+                    "accepted_at": now,
+                    "accepted_by": user["_id"],
+                    # Frozen. Not a pointer at the constant — the constant is
+                    # what it says *today*.
+                    "terms": BRAND_LOGO_CONSENT_TERMS,
+                }
+            else:
+                # Re-granting after a withdrawal: the original grant stands,
+                # and the withdrawal stops being current.
+                update["homepage_logo_consent"] = {
+                    **consent,
+                    "withdrawn_at": None,
+                }
+        elif consent.get("accepted_at"):
+            update["homepage_logo_consent"] = {**consent, "withdrawn_at": now}
+        await audit(
+            user,
+            "brand.homepage_logo_consent",
+            "brand_profile",
+            existing["user_id"],
+            before={"homepage_logo_opt_in": bool(existing.get("homepage_logo_opt_in"))},
+            after={"homepage_logo_opt_in": wants},
+            brand_id=existing["user_id"],
+        )
 
     result = await db.brand_profiles.find_one_and_update(
         {"user_id": _brand_scope(user)},
@@ -15048,6 +15134,300 @@ async def _public_leaderboard() -> dict:
         "creators": cards,
         # So the page can say when this was worked out rather than implying it
         # is live. It is a day old by design.
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
+
+
+# --- The brand wall -----------------------------------------------------------
+#
+# A row of logos on the homepage, for brands actually running campaigns here.
+#
+# **Mirrored on `_public_leaderboard`, which already solved every hard part of
+# this**: a cached ordering so the front door does not compute anything, an
+# eligibility check re-run on every request so withdrawal is immediate rather
+# than eventual, an allow-list built by naming keys, and absence below a floor
+# rather than a thin row. The two differ only in what they are a claim about.
+#
+# **What this must not become.** A wall of logos says "these businesses are our
+# customers", and the cheap version of that is a wall of everybody who ever
+# signed up. So the gate is **having actually run a campaign** — at least one
+# in `_CLOSED_CAMPAIGN_STATUSES`, derived on read, never stored. A brand that
+# registered and never posted is not a customer, and a brand that posted one
+# brief still running is not evidence of anything finished. Derived rather than
+# stored for the usual reason: a stored flag needs a sweep, and a rule that
+# depends on cron is true on Tuesdays.
+#
+# **Consent and approval are both required, and they are different questions.**
+# The brand says we may use its mark; we say we are willing to make the claim.
+# Either one alone is wrong — using a logo nobody agreed to is a trademark
+# problem, and publishing whatever anybody ticks is how a marketing page ends
+# up vouching for a business we fell out with.
+BRAND_WALL_MIN_DEFAULT = 6
+BRAND_WALL_SIZE_DEFAULT = 12
+# A ceiling on what an operator can type, the same shape `LEADERBOARD_MAX` is.
+# Four rows of twelve is already a wall; past that it is a directory.
+BRAND_WALL_MAX = 48
+_BRAND_WALL_SETTINGS_ID = "brand_wall"
+
+# **The consent text, frozen into the record at the moment it is given.**
+#
+# The same arrangement `platform_terms` uses, for the same reason: a permission
+# somebody can be shown a *different* version of later is not a permission
+# anybody can rely on. A logo is a trademark, so what matters in a year is not
+# what this constant says then — it is what it said when the box was ticked.
+#
+# It has to state both halves plainly: what appears where, and that it can be
+# taken back with immediate effect. The second is only true because
+# `_brand_wall_eligible` is re-read on every request, so the sentence is a
+# description of the mechanism rather than a promise on top of it.
+BRAND_LOGO_CONSENT_TERMS = (
+    "You give WeAre Creators permission to show your business name and logo on "
+    "its public website as a customer, including on the home page. Nothing "
+    "else about your account is published: no contact details, no addresses, "
+    "and no commercial terms in either direction. You can withdraw this "
+    "permission at any time from your brand profile, and it takes effect "
+    "immediately — the next page load will not include you."
+)
+
+# Named so the leak test can look for them by name as well as by value.
+#
+# **A narrower list than `_public_brand`'s, and that is the point.** The public
+# brand page is a page *about* one brand, which somebody arrived at on purpose;
+# a wall card is a mark in a grid of twelve. So it carries no outlets, no
+# tagline, no about paragraph and no social handles — and reusing
+# `_public_brand` wholesale, which was the obvious move, would have shipped all
+# four onto the homepage.
+#
+# Money is absent in both directions, the rule `CASE_STUDY_FORBIDDEN_FIELDS`
+# holds: what a brand spends is the brand's, and what we charge them is the
+# relationship.
+PUBLIC_BRAND_CARD_FORBIDDEN = (
+    # The manager as a person
+    "contact_phone", "contact_email", "contact_person_name",
+    "contact_person_designation", "manager_phone", "manager_email",
+    "phone", "email",
+    # The paperwork
+    "registered_address", "gst_number", "verification_reason", "legal_entity_name",
+    # Money, in either direction
+    "campaign_fee", "commission_percent", "total_budget", "typical_budget_band",
+    "budget_per_creator",
+)
+
+
+async def brand_wall_settings() -> dict:
+    """The floor and the size. Stored, and never raises.
+
+    A settings read that fails must not take down the homepage, so it falls
+    back to the defaults the way `leaderboard_settings` does.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _BRAND_WALL_SETTINGS_ID})
+    except Exception as exc:  # pragma: no cover - defensive, logged
+        logger.error("could not read the brand wall settings: %s", exc)
+        doc = None
+    doc = doc or {}
+
+    def _read(key, default):
+        try:
+            value = int(doc.get(key))
+        except (TypeError, ValueError):
+            return default
+        return value if 1 <= value <= BRAND_WALL_MAX else default
+
+    return {
+        "minimum": _read("minimum", BRAND_WALL_MIN_DEFAULT),
+        "size": _read("size", BRAND_WALL_SIZE_DEFAULT),
+    }
+
+
+def _brand_wall_eligible(profile: Optional[dict], campaigns_run: int) -> bool:
+    """Whether this brand's logo may appear on the homepage.
+
+    **Consent first, because it is the only one of these that is not ours to
+    decide.** A brand that has not opted in is not one we rejected; it is one
+    we never had permission to feature.
+
+    Then our own half — an admin has approved it — then verified, then not
+    trust-revoked, and finally that they have actually finished a campaign
+    here.
+
+    `campaigns_run` is passed in rather than counted here so one aggregation
+    covers the whole wall; it is derived on read in both callers, never stored.
+
+    **Re-read on every request**, not baked into the cache, which is what makes
+    "withdrawal takes effect immediately" true rather than true-by-tomorrow.
+    """
+    profile = profile or {}
+    if not profile.get("homepage_logo_opt_in"):
+        return False
+    # Our half of the same decision. Absent means nobody has approved it, which
+    # is not the same as refused — and both read as "not on the wall".
+    if not profile.get("homepage_logo_approved_at"):
+        return False
+    if not profile.get("verified"):
+        return False
+    if _trust_revoked(profile):
+        return False
+    # **The claim the wall actually makes.** A signup is not a customer.
+    if campaigns_run < 1:
+        return False
+    # A logo is the whole card, so there is nothing to draw without one.
+    if not (profile.get("logo_url") or "").strip():
+        return False
+    return True
+
+
+async def _campaigns_run_by_brand(brand_ids: list) -> dict:
+    """How many campaigns each of these brands has actually finished.
+
+    One aggregation for the whole wall rather than a count per card. Only
+    `_CLOSED_CAMPAIGN_STATUSES`: a brief still running is not evidence that
+    anything was delivered, and the wall is a claim about finished work.
+    """
+    if not brand_ids:
+        return {}
+    rows = await db.campaigns.aggregate(
+        [
+            {
+                "$match": {
+                    "brand_id": {"$in": list(brand_ids)},
+                    "status": {"$in": list(_CLOSED_CAMPAIGN_STATUSES)},
+                }
+            },
+            {"$group": {"_id": "$brand_id", "n": {"$sum": 1}}},
+        ]
+    ).to_list(length=len(brand_ids))
+    return {r["_id"]: int(r.get("n") or 0) for r in rows}
+
+
+def _public_brand_card(profile: dict, campaigns_run: int) -> dict:
+    """One brand, as the homepage draws it.
+
+    Built by naming every key, never by copying a document and deleting from
+    it — so a column added to `brand_profiles` next month cannot reach a
+    public page because nobody remembered to exclude it. The rule
+    `_public_case_study` and `_public_creator_card` both hold.
+
+    **`public_page` decides whether the card is a link**, server-side, and it
+    is the leaderboard's rule: link through where a public page exists and
+    leave the card inert otherwise. `/brands/{id}` serves verified brands
+    only, so an unverified one would be a card linking to a 404 — and a brand
+    cannot be on this wall unverified anyway, which makes this belt and braces
+    on purpose rather than by accident.
+    """
+    return {
+        "id": str(profile["user_id"]),
+        "name": profile.get("business_name"),
+        "logo_url": profile.get("logo_url"),
+        "city": profile.get("city"),
+        "category": profile.get("category"),
+        # The signal, and the thing that earned the slot.
+        "campaigns_run": int(campaigns_run or 0),
+        "public_page": f"/brands/{profile['user_id']}" if profile.get("verified") else None,
+    }
+
+
+async def refresh_brand_wall() -> dict:
+    """Work out the ordering and leave it in `brand_wall_cache`.
+
+    **Its own collection, not `platform_settings`** — the same separation
+    `leaderboard_cache` makes, and for the same reason: settings hold what an
+    operator typed, and a nightly job writing into that collection is one bad
+    `_id` away from overwriting it.
+
+    The ordering is most campaigns run first, then name. There is no score
+    here and no visible ordinal — a logo wall has no positions — so the order
+    only decides *which* brands appear when there are more than fit.
+    """
+    candidates = await db.brand_profiles.find(
+        {
+            "homepage_logo_opt_in": True,
+            "homepage_logo_approved_at": {"$ne": None},
+            "verified": True,
+        }
+    ).to_list(length=None)
+
+    ids = [p["user_id"] for p in candidates if p.get("user_id") is not None]
+    run = await _campaigns_run_by_brand(ids)
+
+    ranked = []
+    for profile in candidates:
+        n = run.get(profile.get("user_id"), 0)
+        if not _brand_wall_eligible(profile, n):
+            continue
+        ranked.append(
+            {
+                "user_id": profile["user_id"],
+                "campaigns_run": n,
+                "name": (profile.get("business_name") or "").lower(),
+            }
+        )
+    ranked.sort(key=lambda r: (-r["campaigns_run"], r["name"]))
+
+    await db.brand_wall_cache.update_one(
+        {"_id": "current"},
+        {
+            "$set": {
+                "ranked": ranked,
+                "computed_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True,
+    )
+    return {"ranked": len(ranked)}
+
+
+async def _public_brand_wall() -> dict:
+    """The brand wall, or nothing at all.
+
+    The same two properties `_public_leaderboard` holds, pulling the same way:
+    the ordering comes out of the cache so the homepage computes nothing, and
+    eligibility is re-read live so a brand that withdraws consent is gone from
+    the next page load rather than the next nightly pass.
+
+    **`campaigns_run` is re-derived here too**, not read off the cache. A
+    cached count would mean a brand whose only campaign was reopened still
+    reads as having finished one — and that count is the whole claim the wall
+    makes, so it is the last thing that should be allowed to go stale.
+
+    **Returns `{}` below the floor**, and the section disappears with it. One
+    withdrawal taking the whole row down is correct: the floor is about whether
+    the claim is worth making at all.
+    """
+    settings = await brand_wall_settings()
+    cached = await db.brand_wall_cache.find_one({"_id": "current"})
+    entries = (cached or {}).get("ranked") or []
+    if not entries:
+        return {}
+
+    ids = [e["user_id"] for e in entries if e.get("user_id") is not None]
+    if not ids:
+        return {}
+    profiles = {
+        p["user_id"]: p
+        for p in await db.brand_profiles.find({"user_id": {"$in": ids}}).to_list(
+            length=len(ids)
+        )
+    }
+    run = await _campaigns_run_by_brand(ids)
+
+    cards = []
+    for entry in entries:
+        profile = profiles.get(entry.get("user_id"))
+        if not profile:
+            # Erased, or deleted between the ranking and now.
+            continue
+        n = run.get(entry["user_id"], 0)
+        if not _brand_wall_eligible(profile, n):
+            continue
+        cards.append(_public_brand_card(profile, n))
+        if len(cards) >= settings["size"]:
+            break
+
+    if len(cards) < settings["minimum"]:
+        return {}
+    return {
+        "brands": cards,
         "computed_at": _iso((cached or {}).get("computed_at")),
     }
 
@@ -23356,6 +23736,30 @@ async def get_admin_brand_detail(
             "at": _iso(profile.get("invoice_override_at")),
             "by_name": profile.get("invoice_override_by_name"),
         },
+        # **Both halves of the brand wall decision, side by side.** The brand's
+        # consent is theirs and ours is the approval, and a panel showing one
+        # without the other invites an admin to approve a logo nobody has
+        # agreed to let us use. `campaigns_run` is here because it is the
+        # claim the wall actually makes and the one reason a brand can be
+        # consented, approved and still absent.
+        "homepage_logo": {
+            "opted_in": bool(profile.get("homepage_logo_opt_in")),
+            "consented_at": _iso(
+                (profile.get("homepage_logo_consent") or {}).get("accepted_at")
+            ),
+            "withdrawn_at": _iso(
+                (profile.get("homepage_logo_consent") or {}).get("withdrawn_at")
+            ),
+            # The text they actually agreed to, not today's constant. On a
+            # trademark permission that difference is the whole record.
+            "consent_terms": (profile.get("homepage_logo_consent") or {}).get("terms"),
+            "approved": bool(profile.get("homepage_logo_approved_at")),
+            "approved_at": _iso(profile.get("homepage_logo_approved_at")),
+            "revoked_at": _iso(profile.get("homepage_logo_revoked_at")),
+            "revoked_reason": profile.get("homepage_logo_revoked_reason"),
+            "campaigns_run": (await _campaigns_run_by_brand([oid])).get(oid, 0),
+            "has_logo": bool((profile.get("logo_url") or "").strip()),
+        },
         "documents": documents,
         "campaigns": campaign_rows,
         # How often work has fallen over around this brand, and on whose call.
@@ -28084,13 +28488,19 @@ def _lifecycle_interval_seconds() -> int:
 
 
 async def _leaderboard_loop():
-    """Recompute the homepage ranking on a timer.
+    """Recompute the homepage's two cached orderings on a timer.
 
     **Once on start, then on the interval.** The other loops sleep first
-    because nothing depends on them having run; this one is what a public
-    section renders from, and a fresh deployment with an empty cache would
+    because nothing depends on them having run; this one is what two public
+    sections render from, and a fresh deployment with an empty cache would
     show nothing until the first tick — which for a daily interval is a day of
     an empty homepage section.
+
+    **The brand wall rides this loop rather than getting its own.** They are
+    the same cadence, the same kind of work and the same kind of claim — two
+    cached orderings behind two public sections — and a second timer would be
+    a second interval constant to keep in step for no gain. A failure in
+    either is caught separately so one cannot take the other down.
     """
     interval = _leaderboard_interval_seconds()
     while True:
@@ -28100,6 +28510,12 @@ async def _leaderboard_loop():
             raise
         except Exception as exc:
             logger.error("leaderboard refresh failed: %s", exc)
+        try:
+            await refresh_brand_wall()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("brand wall refresh failed: %s", exc)
         try:
             await asyncio.sleep(interval)
         except asyncio.CancelledError:
@@ -28406,6 +28822,178 @@ async def set_leaderboard_settings(
         after=update,
     )
     return await leaderboard_settings()
+
+
+# --- The brand wall, from the console ---------------------------------------
+#
+# **Admin-only throughout, not `CONSOLE_ROLES`** — the split case studies
+# make, and for the same reason. A logo on the home page is a claim this
+# operation puts on the open internet under its own name, about a business.
+# `weare_team` is scoped to assigned brands, and a scoped role that could put
+# a brand on the national home page is not a scope.
+
+
+@admin_router.post("/jobs/brand-wall")
+async def run_brand_wall_job(user: dict = Depends(require_roles("admin"))):
+    """Recompute the brand wall ordering now.
+
+    Same function the timer calls. Worth having by hand for the reason the
+    leaderboard's is: the row is a public statement, so after approving a
+    brand an operator should be able to make the page agree without waiting a
+    day. Withdrawal does not need this — that is re-read live.
+    """
+    report = await refresh_brand_wall()
+    await audit(user, "job.brand_wall", "job", "brand_wall", after=report)
+    return report
+
+
+class BrandWallSettingsPayload(BaseModel):
+    """The floor and the size, both optional so one can be changed alone."""
+
+    minimum: Optional[int] = Field(default=None, ge=1, le=BRAND_WALL_MAX)
+    size: Optional[int] = Field(default=None, ge=1, le=BRAND_WALL_MAX)
+
+
+@admin_router.get("/settings/brand-wall")
+async def get_brand_wall_settings(user: dict = Depends(require_roles("admin"))):
+    settings = await brand_wall_settings()
+    cached = await db.brand_wall_cache.find_one({"_id": "current"})
+    return {
+        **settings,
+        "defaults": {
+            "minimum": BRAND_WALL_MIN_DEFAULT,
+            "size": BRAND_WALL_SIZE_DEFAULT,
+        },
+        "maximum": BRAND_WALL_MAX,
+        "ranked": len((cached or {}).get("ranked") or []),
+        "computed_at": _iso((cached or {}).get("computed_at")),
+    }
+
+
+@admin_router.put("/settings/brand-wall")
+async def set_brand_wall_settings(
+    payload: BrandWallSettingsPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Move the floor or the size.
+
+    The floor is the honesty rule — how few logos is too few to be worth
+    showing — and one withdrawal taking the whole row down is the correct
+    behaviour rather than a bug to tune around.
+    """
+    sent = payload.model_fields_set
+    update = {k: getattr(payload, k) for k in ("minimum", "size") if k in sent}
+    if not update:
+        raise HTTPException(status_code=422, detail="Nothing to change.")
+    before = await brand_wall_settings()
+    await db.platform_settings.update_one(
+        {"_id": _BRAND_WALL_SETTINGS_ID}, {"$set": update}, upsert=True
+    )
+    await audit(
+        user,
+        "settings.brand_wall",
+        "settings",
+        _BRAND_WALL_SETTINGS_ID,
+        before=before,
+        after=update,
+    )
+    return await brand_wall_settings()
+
+
+@admin_router.post("/brands/{user_id}/homepage-logo/approve")
+async def approve_brand_homepage_logo(
+    user_id: str, user: dict = Depends(require_roles("admin"))
+):
+    """Agree that this brand's logo may go on the home page.
+
+    **Our half of a two-sided decision.** The brand's consent says we may use
+    its mark; this says we are willing to make the claim. Approving without
+    consent publishes a trademark nobody agreed to; publishing on consent
+    alone means the wall vouches for whoever ticks a box, including a business
+    we have since fallen out with.
+
+    It is deliberately **not** a toggle that also grants consent — there is no
+    route here that can tick the brand's box for it, the same reason there is
+    no endpoint that mints a second brand manager.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {
+            "$set": {
+                "homepage_logo_approved_at": now,
+                "homepage_logo_approved_by": user["_id"],
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "brand.homepage_logo_approve",
+        "brand_profile",
+        oid,
+        after={"homepage_logo_approved_at": _iso(now)},
+        brand_id=oid,
+    )
+    # So the page agrees without waiting for the nightly pass. Approval is the
+    # one half that is *not* re-read live — the cache holds the ordering, and a
+    # brand nobody has approved was never in it to be re-checked.
+    await refresh_brand_wall()
+    return {"homepage_logo_approved": True}
+
+
+@admin_router.post("/brands/{user_id}/homepage-logo/revoke")
+async def revoke_brand_homepage_logo(
+    user_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Take our approval back. Costs a reason, in either direction.
+
+    Separate from the brand withdrawing consent, and the two must not be
+    collapsed: "they asked to come off" and "we took them off" are different
+    facts about the same empty slot, and only one of them is ours to explain.
+    """
+    oid = _as_oid(user_id)
+    if oid is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    profile = await db.brand_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=422, detail="Say why this brand is coming off the wall."
+        )
+    now = datetime.now(timezone.utc)
+    await db.brand_profiles.update_one(
+        {"user_id": oid},
+        {
+            "$set": {
+                "homepage_logo_approved_at": None,
+                "homepage_logo_revoked_at": now,
+                "homepage_logo_revoked_reason": reason,
+                "updated_at": now,
+            }
+        },
+    )
+    await audit(
+        user,
+        "brand.homepage_logo_revoke",
+        "brand_profile",
+        oid,
+        after={"reason": reason},
+        note=reason,
+        brand_id=oid,
+    )
+    await refresh_brand_wall()
+    return {"homepage_logo_approved": False}
 
 
 # ---------------------------------------------------------------------------
@@ -32669,6 +33257,23 @@ async def public_leaderboard():
     it registers nothing and 404s with no error anywhere.
     """
     return await _public_leaderboard()
+
+
+@public_router.get("/brand-wall")
+async def public_brand_wall():
+    """The brands whose logos the homepage shows, or `{}`.
+
+    Unauthenticated, like the page that reads it. `_public_brand_card` is its
+    own allow-list and a narrower one than `_public_brand` — no outlets, no
+    tagline, no handles, and no money in either direction.
+
+    Read from a cache, with eligibility and the campaign count re-derived on
+    every request so a brand withdrawing consent is gone from the next page
+    load. `refresh_brand_wall` does the ordering.
+
+    Declared above `include_router` for the reason `/proof` documents.
+    """
+    return await _public_brand_wall()
 
 
 

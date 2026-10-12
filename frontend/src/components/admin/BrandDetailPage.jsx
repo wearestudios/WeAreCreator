@@ -40,6 +40,7 @@ import CancellationHistory from "@/components/admin/CancellationHistory";
 import BrandInvoices from "@/components/admin/BrandInvoices";
 import BrandDocuments from "@/components/admin/BrandDocuments";
 import BrandTrust from "@/components/admin/BrandTrust";
+import BrandHomepageLogo from "@/components/admin/BrandHomepageLogo";
 import { CommissionControl } from "@/components/admin/CommercialTerms";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
@@ -431,6 +432,21 @@ export default function BrandDetailPage() {
                                 setBy={data.brand.commission_set_by_name}
                                 setReason={data.brand.commission_reason}
                                 onSaved={load}
+                            />
+                        </Section>
+                    )}
+
+                    {/* **Admin-only, not CONSOLE_ROLES** — the split case
+                        studies make. A logo on the home page is a claim this
+                        operation puts on the open internet under its own name,
+                        and a role scoped to assigned brands putting one there
+                        is not a scope. */}
+                    {allAccess && (
+                        <Section id="homepage-logo" title="On the home page">
+                            <BrandHomepageLogo
+                                userId={id}
+                                block={data.homepage_logo}
+                                onChanged={load}
                             />
                         </Section>
                     )}
