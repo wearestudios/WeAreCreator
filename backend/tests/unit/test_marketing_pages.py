@@ -1085,6 +1085,10 @@ SERVER_RENDERED_PATHS = (
     "/sitemap.xml",
     "/work",
     "/work/:slug",
+    # The landing page matrix — four shapes off one route, generated from
+    # live supply. See `LANDING_PATH` in server.py for why a slug that parses
+    # can still 404.
+    "/influencer-marketing/:slug",
 )
 
 
@@ -1132,15 +1136,46 @@ def test_the_dev_server_proxies_the_same_paths_vercel_does():
     assert "/^\\/for-brands" not in proxy
 
 
-def test_the_pending_proxy_decision_is_written_down():
-    """The rewrites point at /index.html, which is what the catch-all does
-    anyway — they are placeholders waiting to be repointed at the API host,
-    and an inert rewrite is indistinguishable from a working one by reading
-    the file."""
+def test_the_proxy_decision_is_written_down_and_is_no_longer_pending():
+    """**Inverted, because the decision was taken.**
+
+    This used to require the words "pending decision" in `PREVIEW.md`: the
+    rewrites pointed at `/index.html`, which is what the catch-all does
+    anyway, so they were placeholders and an inert rewrite is
+    indistinguishable from a working one by reading the file.
+
+    The arrangement chosen is `PUBLIC_SHARE_BASE_URL` rather than the
+    rewrites, for a reason that is a property of the platform rather than a
+    preference: **Vercel parses `vercel.json` at deploy time, before the build
+    runs**, so a rewrite destination cannot come from an environment variable
+    and has to be a literal hostname committed here. So the assertion moves
+    from "say this is unfinished" to "say which way it went, and what it
+    costs" — and the paths are still all named, because a page added to the
+    server-rendered set with no line in the record is the next silent one.
+    """
     preview = (FRONTEND.parent / "PREVIEW.md").read_text()
-    assert "pending decision" in preview.lower()
+    low = preview.lower()
+    # Which way it went, and the cost stated rather than glossed.
+    assert "public_share_base_url" in low
+    assert "deploy time" in low
+    # The static file nothing can template, named where somebody will read it.
+    assert "robots.txt" in low
+    # And every server-rendered path still appears, the half worth keeping.
     for path in SERVER_RENDERED_PATHS:
         assert path in preview, path
+
+
+def test_robots_txt_does_not_claim_the_site_origin_serves_the_sitemap():
+    """Under `PUBLIC_SHARE_BASE_URL` the sitemap is served by the API host.
+
+    A `Sitemap:` line pointing at the site origin sends a crawler to the SPA's
+    catch-all, which answers 200 with HTML — the worst shape of failure,
+    because nothing looks broken. The file is static, so no environment
+    variable can fix it; the comment above the line has to say so.
+    """
+    robots = (FRONTEND.parent / "frontend" / "public" / "robots.txt").read_text()
+    assert "PUBLIC_SHARE_BASE_URL" in robots
+    assert "static file" in robots, path
 
 
 # --- The copy budget ----------------------------------------------------------

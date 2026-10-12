@@ -1749,6 +1749,112 @@ so what the preview promised is what opens.
   are emitted **only for the site card**, whose size we know — a wrong one is
   worse than none, because some crawlers lay the card out from it.
 
+## The landing page matrix
+
+`/influencer-marketing/{slug}` — four shapes off one route, server-rendered by
+the backend like `/work`, and for `/work`'s reason: these are written to be
+**found** by search rather than sent, and a crawler that runs no JavaScript
+cannot read a React route.
+
+- `india` — the national hub
+- `mumbai` — a city
+- `food-drink-india` — a sector, nationally
+- `food-drink-mumbai` — a sector in a city
+
+**Generated from live supply, never from the enums, and that is the whole
+design.** Eight sectors times twenty cities plus the hubs is 189 URLs that are
+trivial to emit and would be a lie on most of them. A page saying "fashion
+creators in Guwahati" is a page a brand lands on, posts a brief from, and
+waits — and then the campaign fee comes back under `REFUND_POLICY_TERMS`,
+because we advertised as fillable a brief we could not fill. **The gate is the
+product promise, not an SEO preference**, which is why the reasoning is in the
+module docstring and a test reads it: nobody should later "fix" this by
+generating all 189.
+
+- A **city** page exists once that city has `CITY_PAGE_MIN_CREATORS` (15)
+  verified creators; a **sector × city** page needs `SECTOR_PAGE_MIN_CREATORS`
+  (5) in that sector *and* the city over its own floor — both, because a
+  sector can clear five in a city we cannot staff for anything else. Stored
+  and admin-editable, and **1 is the floor on the floor**: zero would generate
+  every combination, the one thing this gate exists to prevent.
+- **Counted per request**, so a page that loses its supply stops being
+  generated and leaves the sitemap with nothing to remember to remove.
+  `_landing_pages_from` is the one decider, shared by the route and the
+  sitemap, so a URL cannot be advertised to a crawler and then refused when it
+  follows it.
+- `SEO_SECTOR_SLUGS` and `SEO_CITY_SLUGS` are **derived** from
+  `CATEGORY_LABELS` and `INDIAN_CITIES`. No third list of either — the drift
+  `lib/categories.js` exists to prevent.
+- **The parser matches the longest sector prefix.** Both vocabularies contain
+  hyphens, so splitting on the first one reads `real-estate-mumbai` as the
+  sector "real" in the city "estate-mumbai". Both lists are closed, so longest
+  sector then a known city is unambiguous. `_landing_slug_for` is the inverse,
+  so a link and the route it points at cannot disagree.
+- Each page carries a **unique title and meta description** naming the sector
+  and the place — structural rather than checked, since the (sector, place)
+  pair *is* the URL — one H1, the counted supply for that cut, what a campaign
+  in that sector looks like, both commercial terms, published case studies
+  through `_public_case_study` (never a second projection), and internal links
+  to the national hub, the city hub and sibling sectors. **A link is only ever
+  offered to a page the supply currently justifies**, because a cross-link to
+  a 404 is worse than no cross-link.
+- JSON-LD is one `@graph` with a `Service` whose `areaServed` comes from the
+  real cut, plus a `FAQPage`. **Every FAQ answer is on the page** — markup
+  whose questions are not is a claim the page does not make, which Google
+  treats as a violation and a reader as bait. A test asserts both halves.
+- **These pages are not held to the five marketing pages' word budgets.** They
+  are search surfaces and need depth. Every claim on them is still checkable.
+
+**The sectors are this product's own vocabulary, which is a deliberate
+departure from the brief.** The brief asked for regulated-sector pages for
+finance (SEBI), healthcare (the Drugs & Magic Remedies Act and the NMC code),
+education (ASCI claims) and alcohol (surrogate only). **None of those four is
+in `CATEGORY_LITERAL`**, so a page offering one could never match a real
+campaign, a real case study or a real creator — exactly the drift the
+case-study vocabulary note records, and a second category list besides. The
+substance was kept where it genuinely applies to a sector we run:
+`SECTOR_RULES` puts surrogate advertising under `hospitality` and `fnb`, the
+Drugs & Magic Remedies Act and health claims under `wellness`, RERA
+registration numbers under `real_estate`, and claim substantiation under the
+rest. A `NEEDS A LAWYER` block above it names what review is still owed. If
+the operation starts running finance campaigns, `CATEGORY_LITERAL` moves and
+this moves with it.
+
+### The deploy arrangement, and why it is not the rewrites
+
+`frontend/vercel.json` rewrote `/sitemap.xml`, `/work`, `/work/:slug`,
+`/c/:id` and `/brands/:id` to `/index.html` — which is what the catch-all
+below them already does, so every server-rendered page was served as the SPA
+and a crawler asking for the sitemap got the React shell.
+
+**The chosen fix is `PUBLIC_SHARE_BASE_URL`, not repointing them**, and the
+reason is a property of the platform rather than a preference: **Vercel parses
+`vercel.json` at deploy time, before the build runs**, so a rewrite
+destination cannot come from an environment variable and has to be a literal
+hostname committed to the repository. Nothing here knows the API origin —
+`frontend/.env.example` has `http://localhost:8001` and that is all.
+
+So `PUBLIC_SHARE_BASE_URL` is set to the backend's own origin and every link
+the server generates — shared briefs, brand pages, case studies, landing
+pages, every `<loc>` and every canonical — points straight at the host that
+serves them. The cost is that the URL a brand reads is the API hostname.
+`setupProxy.js` still carries all six paths so `docker compose up` behaves
+like the deployed site, and the inert `vercel.json` entries are kept as the
+record of the other route.
+
+**One static file cannot be templated and so has to be changed by hand:**
+`frontend/public/robots.txt` ends with `Sitemap: https://wearecreators.in/sitemap.xml`,
+which under this arrangement sends a crawler to the SPA's catch-all — a 200
+with HTML, the worst shape of failure because nothing looks broken. A test
+requires the file to name `PUBLIC_SHARE_BASE_URL` and say it is static, so the
+next person reads the instruction where the problem is.
+
+`test_the_pending_proxy_decision_is_written_down` **used to require the words
+"pending decision" in `PREVIEW.md`** and has been inverted: it now asserts
+which way it went, that the deploy-time parsing reason is stated, and that
+`robots.txt` is named — while still checking every server-rendered path
+appears, which is the half worth keeping.
+
 ## A picture on the brief, a mark on the brand
 
 `cover_image_url` on a campaign and `logo_url` on a brand profile. Before them

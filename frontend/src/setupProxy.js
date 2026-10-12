@@ -40,6 +40,12 @@ const SERVER_RENDERED = [
     /^\/work\/?$/,
     /^\/work\/[^/]+\/?$/,
     /^\/sitemap\.xml$/,
+    // The landing page matrix: the national hub, a city, a sector, or a
+    // sector in a city, all off one route. Server-rendered for the same two
+    // reasons /work is — found by search rather than sent, so the page has to
+    // exist without JavaScript — and generated from live supply, so a slug
+    // that parses but has too little supply behind it 404s by design.
+    /^\/influencer-marketing\/[^/]+\/?$/,
 ];
 
 module.exports = function (app) {

@@ -37198,6 +37198,653 @@ async def public_work_page(slug: str, request: Request):
     )
 
 
+# ---------------------------------------------------------------------------
+# The landing page matrix — /influencer-marketing/...
+#
+# Server-rendered, like `/work`, `/c/{id}` and `/brands/{id}`, and for the
+# reason `/work` is: these are the pages on this site written to be **found**
+# by search rather than sent, and a crawler that runs no JavaScript cannot
+# read a React route. They link outward rather than sideways, so they lose
+# nothing by living outside the SPA.
+#
+# **GENERATED FROM LIVE SUPPLY, NEVER FROM THE ENUMS ALONE, AND THAT IS THE
+# WHOLE DESIGN.** Eight sectors times twenty cities plus the hubs is 189 URLs
+# that are trivial to emit and would be a lie on most of them. A page saying
+# "fashion creators in Guwahati" is a page a brand lands on, posts a brief
+# from, and waits — and then the campaign fee comes back under
+# `REFUND_POLICY_TERMS`, because we could not fill a brief we advertised as
+# fillable. **The gate is the product promise, not an SEO preference.** So:
+#
+#   - a city page exists once that city has `CITY_PAGE_MIN_CREATORS` verified
+#     creators;
+#   - a sector x city page exists once that city has `SECTOR_PAGE_MIN_CREATORS`
+#     verified creators whose niches match that sector;
+#   - a page that loses its supply stops being generated and leaves the
+#     sitemap, because the supply is counted per request rather than stored.
+#
+# **Do not "fix" this by generating all 189.** The thin pages are not a
+# missed opportunity; they are a refund and a brand that does not come back.
+#
+# **The slugs derive from `CATEGORY_LABELS` and `INDIAN_CITIES`.** There is no
+# third list of either — the drift `lib/categories.js` exists to prevent, and
+# the same rule `FOLLOWER_TIERS` and `shootWindows.js` hold.
+#
+# **The sectors are this product's own vocabulary, which is a deliberate
+# departure from the brief.** The brief asked for regulated-sector pages for
+# finance (SEBI), healthcare (the Drugs & Magic Remedies Act and the NMC
+# code), education (ASCI claims) and alcohol (surrogate only). **None of those
+# four is in `CATEGORY_LITERAL`**, so a page offering one could never match a
+# real campaign, a real case study or a real creator — exactly the drift the
+# case-study vocabulary note records. Inventing them would also mean a second
+# category list, which is the thing `lib/categories.js` exists to stop.
+#
+# The substance was kept where it genuinely applies to a sector we actually
+# run: surrogate advertising under `hospitality` and `fnb`, the Drugs & Magic
+# Remedies Act and health claims under `wellness`, and RERA registration
+# numbers under `real_estate`. If the operation starts running finance or
+# education campaigns, `CATEGORY_LITERAL` moves and this moves with it.
+LANDING_PATH = "/influencer-marketing"
+
+# The national hub's slug, and the suffix a sector-national page carries.
+NATIONAL_SLUG = "india"
+
+CITY_PAGE_MIN_CREATORS_DEFAULT = 15
+SECTOR_PAGE_MIN_CREATORS_DEFAULT = 5
+# A ceiling on what an operator can type. Zero would generate every
+# combination, which is the one thing this gate exists to prevent, so the
+# floor on the floor is 1.
+LANDING_MIN_MAX = 500
+_LANDING_SETTINGS_ID = "landing_pages"
+
+
+def _landing_slug(text: str) -> str:
+    """A URL fragment from a display label.
+
+    One function for both vocabularies, so "Delhi NCR" and "Food & drink"
+    cannot be slugged two different ways in two places.
+    """
+    out = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return out
+
+
+# Derived, never typed. `CATEGORY_LABELS` is the display vocabulary and
+# `INDIAN_CITIES` is the closed city list; these are the same values in URL
+# form, so a category renamed or a city added shows up here by itself.
+SEO_SECTOR_SLUGS = {
+    _landing_slug(label): key for key, label in CATEGORY_LABELS.items()
+}
+SEO_CITY_SLUGS = {_landing_slug(city): city for city in INDIAN_CITIES}
+
+
+# What a creator has to say about themselves to count toward a sector.
+#
+# **Built on `CAMPAIGN_CATEGORY_SYNONYMS`, which already exists for exactly
+# this problem** — nobody writes "fnb" about themselves — plus the words in
+# the label itself. A second synonym table would be a second answer to "is
+# this creator a food creator".
+def _sector_terms(key: str) -> tuple:
+    label_words = tuple(
+        w for w in re.split(r"[^a-z0-9]+", (CATEGORY_LABELS.get(key) or "").lower()) if len(w) > 2
+    )
+    return tuple(dict.fromkeys(CAMPAIGN_CATEGORY_SYNONYMS.get(key, ()) + label_words + (key,)))
+
+
+# **The regulated constraints, per sector we actually run.** Genuinely useful
+# content nobody else writes, and the reason a brand reads one of these pages
+# twice.
+#
+# NEEDS A LAWYER: every line below is a plain-English summary of a published
+# rule, written to tell a brand what to expect rather than to advise them. The
+# citations are deliberately named so somebody can check them. Before this is
+# used as compliance guidance it needs review on: whether the ASCI influencer
+# guidelines' disclosure wording is fully met by `DISCLOSURE_LABELS`; whether
+# surrogate-advertising exposure attaches to us as the advertiser's agent as
+# well as to the brand; and whether a RERA number is required on an
+# influencer's post or only on the developer's own advertisement.
+SECTOR_RULES = {
+    "fnb": (
+        "Food claims have to be substantiated. A post calling something "
+        "healthy, organic, sugar-free or immunity-boosting is a claim under "
+        "the FSSAI advertising and claims regulations, and ASCI expects it to "
+        "be backed by the label. Where the venue serves alcohol, the brief "
+        "cannot ask for the drink to be the subject — see hospitality.",
+    ),
+    "hospitality": (
+        "Alcohol cannot be advertised directly. If the brand is a bar, a "
+        "brewery or a hotel with a bar, the brief is for the room, the food "
+        "and the service, and surrogate advertising — using a related product "
+        "to sell the drink — is what the rule exists to catch. We write the "
+        "brief so the question does not arise.",
+    ),
+    "wellness": (
+        "Health claims are the most regulated thing on this list. The Drugs "
+        "and Magic Remedies (Objectionable Advertisements) Act 1954 bars "
+        "advertising a cure for a listed condition outright, and ASCI expects "
+        "any health or efficacy claim to be substantiated. Where a "
+        "practitioner appears, the NMC's professional conduct rules restrict "
+        "what a registered doctor may endorse.",
+    ),
+    "real_estate": (
+        "Every advertisement for a registered project has to carry its RERA "
+        "registration number, and projected returns or appreciation are "
+        "claims somebody has to be able to stand behind. A creator walking a "
+        "show flat is advertising the project.",
+    ),
+    "retail": (
+        "Price and discount claims are the ones that get challenged. ASCI "
+        "expects a “was” price to be a price the thing was actually sold "
+        "at, and a “from” price to be available in a meaningful quantity.",
+    ),
+    "fashion": (
+        "Claims about material, origin or sustainability have to be "
+        "substantiated the same way a price claim does, and ASCI has been "
+        "active on vague environmental wording. A gifted outfit is a material "
+        "connection whether or not money moved.",
+    ),
+    "travel": (
+        "What is included has to be what is included. A stay described as "
+        "all-inclusive, or a tariff quoted without taxes, is a claim ASCI "
+        "treats as misleading by omission — and a hosted stay is a material "
+        "connection that has to be disclosed.",
+    ),
+    "lifestyle": (
+        "The general rule, which applies to every brief here: the disclosure "
+        "is mandatory because the connection is material, and every factual "
+        "claim in the caption is the advertiser's to substantiate.",
+    ),
+}
+
+
+async def landing_page_settings() -> dict:
+    """The two floors. Stored, admin-editable, and never raises.
+
+    A settings read that fails must not take down a public page, so it falls
+    back to the defaults exactly the way `leaderboard_settings` does.
+    """
+    try:
+        doc = await db.platform_settings.find_one({"_id": _LANDING_SETTINGS_ID})
+    except Exception as exc:  # pragma: no cover - defensive, logged
+        logger.error("could not read the landing page settings: %s", exc)
+        doc = None
+    doc = doc or {}
+
+    def _read(key, default):
+        try:
+            value = int(doc.get(key))
+        except (TypeError, ValueError):
+            return default
+        # **1 is the floor on the floor.** Zero would generate every
+        # combination, which is the single thing this gate exists to prevent.
+        return value if 1 <= value <= LANDING_MIN_MAX else default
+
+    return {
+        "city_minimum": _read("city_minimum", CITY_PAGE_MIN_CREATORS_DEFAULT),
+        "sector_minimum": _read("sector_minimum", SECTOR_PAGE_MIN_CREATORS_DEFAULT),
+    }
+
+
+async def _landing_supply() -> dict:
+    """Verified creators per city, and per (sector, city), counted now.
+
+    One pass over verified creators, projecting only city and niches. The
+    sector match is done in Python against `_sector_terms` because niches are
+    free text — a database regex per sector per city would be sixty queries
+    answering what one scan answers, and the set this walks is verified
+    creators rather than every signup.
+
+    **Counted per request, which is what makes "a page that loses its supply
+    leaves the sitemap" true** rather than true-until-somebody-reruns-a-job.
+    """
+    rows = await db.creator_profiles.find(
+        {"verification_status": "verified"}, {"city": 1, "niches": 1}
+    ).to_list(length=None)
+
+    by_city: dict = {}
+    by_sector_city: dict = {}
+    national: dict = {}
+    terms = {key: _sector_terms(key) for key in CATEGORY_LABELS}
+
+    for row in rows:
+        city = (row.get("city") or "").strip()
+        if city:
+            by_city[city] = by_city.get(city, 0) + 1
+        # One lowered haystack per creator rather than per sector.
+        said = " ".join(str(n).lower() for n in (row.get("niches") or []) if n)
+        for key, words in terms.items():
+            if not any(w in said for w in words):
+                continue
+            national[key] = national.get(key, 0) + 1
+            if city:
+                by_sector_city[(key, city)] = by_sector_city.get((key, city), 0) + 1
+
+    return {
+        "by_city": by_city,
+        "by_sector_city": by_sector_city,
+        "by_sector": national,
+        "total": len(rows),
+    }
+
+
+def _parse_landing_slug(slug: str) -> Optional[dict]:
+    """Read a URL fragment back into `{sector, city}`, or `None`.
+
+    Four shapes off one route, which is deliberate: `/{slug}` with the parsing
+    here cannot suffer the route-ordering bug `pending`-as-an-id causes, and
+    there is one place that knows what a landing URL looks like.
+
+    **Longest sector prefix first.** Both vocabularies contain hyphens
+    ("real-estate", "delhi-ncr"), so splitting on the first hyphen would read
+    "real-estate-mumbai" as the sector "real" in the city "estate-mumbai".
+    Matching the longest known sector slug and then requiring the remainder to
+    be a known city makes it unambiguous, because both lists are closed.
+    """
+    slug = (slug or "").strip().lower()
+    if not slug:
+        return None
+    if slug == NATIONAL_SLUG:
+        return {"sector": None, "city": None}
+    if slug in SEO_CITY_SLUGS:
+        return {"sector": None, "city": SEO_CITY_SLUGS[slug]}
+    for sector_slug in sorted(SEO_SECTOR_SLUGS, key=len, reverse=True):
+        if not slug.startswith(sector_slug + "-"):
+            continue
+        rest = slug[len(sector_slug) + 1 :]
+        sector = SEO_SECTOR_SLUGS[sector_slug]
+        if rest == NATIONAL_SLUG:
+            return {"sector": sector, "city": None}
+        if rest in SEO_CITY_SLUGS:
+            return {"sector": sector, "city": SEO_CITY_SLUGS[rest]}
+    return None
+
+
+def _landing_slug_for(sector: Optional[str], city: Optional[str]) -> str:
+    """The inverse of `_parse_landing_slug`. One speller, so a link and the
+    route it points at cannot disagree."""
+    sector_part = (
+        next(s for s, k in SEO_SECTOR_SLUGS.items() if k == sector) if sector else None
+    )
+    city_part = (
+        next(s for s, c in SEO_CITY_SLUGS.items() if c == city) if city else NATIONAL_SLUG
+    )
+    return f"{sector_part}-{city_part}" if sector_part else city_part
+
+
+def _landing_url(sector: Optional[str], city: Optional[str]) -> str:
+    return f"{_share_base()}{LANDING_PATH}/{_landing_slug_for(sector, city)}"
+
+
+def _landing_pages_from(supply: dict, settings: dict) -> list:
+    """Which pages the current supply generates, in sitemap order.
+
+    The national hub always exists — it is the one page whose claim is about
+    the operation rather than about a place we have to staff.
+    """
+    city_min = settings["city_minimum"]
+    sector_min = settings["sector_minimum"]
+    pages = [{"sector": None, "city": None}]
+
+    cities = [c for c, n in supply["by_city"].items() if n >= city_min]
+    # Deepest first, so the sitemap leads with the pages worth crawling.
+    cities.sort(key=lambda c: (-supply["by_city"][c], c))
+    pages += [{"sector": None, "city": c} for c in cities]
+
+    # A sector-national page needs the sector to clear the *city* floor
+    # nationally: it is a page about the whole country, so a handful of
+    # creators spread thin is exactly the page this gate is about.
+    sectors = [k for k in CATEGORY_LABELS if supply["by_sector"].get(k, 0) >= city_min]
+    sectors.sort(key=lambda k: (-supply["by_sector"][k], k))
+    pages += [{"sector": k, "city": None} for k in sectors]
+
+    combos = [
+        (k, c)
+        for (k, c), n in supply["by_sector_city"].items()
+        if n >= sector_min and supply["by_city"].get(c, 0) >= city_min
+    ]
+    combos.sort(key=lambda kc: (-supply["by_sector_city"][kc], kc[1], kc[0]))
+    pages += [{"sector": k, "city": c} for k, c in combos]
+    return pages
+
+
+def _landing_counts(page: dict, supply: dict) -> dict:
+    """The counted supply for this exact cut. Nothing here is typed."""
+    sector, city = page["sector"], page["city"]
+    if sector and city:
+        creators = supply["by_sector_city"].get((sector, city), 0)
+    elif sector:
+        creators = supply["by_sector"].get(sector, 0)
+    elif city:
+        creators = supply["by_city"].get(city, 0)
+    else:
+        creators = supply["total"]
+    return {"creators": creators, "cities": len([c for c in supply["by_city"] if c])}
+
+
+def _landing_place(page: dict) -> str:
+    return page["city"] or "India"
+
+
+def _landing_titles(page: dict) -> tuple:
+    """The title and the meta description, and **no two pages share either.**
+
+    Uniqueness is structural rather than checked: every title carries the
+    sector label and the place, and the (sector, place) pair is what the URL
+    is. A test drives the real generator and asserts both sets are unique, so
+    a future title that drops one of the two fails there.
+    """
+    place = _landing_place(page)
+    label = CATEGORY_LABELS.get(page["sector"]) if page["sector"] else None
+    if label and page["city"]:
+        title = f"{label} influencer marketing in {place} — WeAre Creators"
+        summary = (
+            f"Run a {label.lower()} creator campaign in {place}. Verified creators, "
+            f"the rate agreed in writing before anyone shoots, and the campaign fee "
+            f"back if we cannot fill the brief."
+        )
+    elif label:
+        title = f"{label} influencer marketing in India — WeAre Creators"
+        summary = (
+            f"Run a {label.lower()} creator campaign in India, managed end to end. "
+            f"Verified creators, every rate agreed before the shoot, and the campaign "
+            f"fee back if we cannot fill the brief."
+        )
+    elif page["city"]:
+        title = f"Influencer marketing in {place} — WeAre Creators"
+        summary = (
+            f"Run a creator campaign in {place}, managed end to end. Verified "
+            f"creators, the rate agreed in writing before anyone shoots, and a report "
+            f"at the end."
+        )
+    else:
+        title = "Influencer marketing in India, run end to end — WeAre Creators"
+        summary = (
+            "Run a creator campaign in India, managed end to end. We run the "
+            "campaign, not just the booking: verified creators, the rate agreed in "
+            "writing before anyone shoots, and the campaign fee back if we cannot "
+            "fill the brief."
+        )
+    return title, summary
+
+
+def _landing_siblings(page: dict, pages: list) -> list:
+    """The internal links: the national hub, the city hub, and sibling sectors.
+
+    **Search value compounds through this**, which is the only reason these
+    pages are worth having as a set rather than individually. Built from the
+    generated list, so a link is never offered to a page the supply does not
+    currently justify — a cross-link to a 404 is worse than no cross-link.
+    """
+    out = []
+    if page != {"sector": None, "city": None}:
+        out.append(({"sector": None, "city": None}, "Influencer marketing in India"))
+    if page["city"] and page["sector"]:
+        city_hub = {"sector": None, "city": page["city"]}
+        if city_hub in pages:
+            out.append((city_hub, f"All creators in {page['city']}"))
+    if page["sector"] and not page["city"]:
+        pass
+    elif page["sector"]:
+        national = {"sector": page["sector"], "city": None}
+        if national in pages:
+            out.append(
+                (national, f"{CATEGORY_LABELS[page['sector']]} creators across India")
+            )
+
+    # Two or three siblings, picked from the same city where there is one, so
+    # the links are to pages a reader of this one plausibly wants.
+    siblings = [
+        p
+        for p in pages
+        if p != page
+        and p["sector"]
+        and p["city"] == page["city"]
+        and p["sector"] != page["sector"]
+    ][:3]
+    for p in siblings:
+        where = f" in {p['city']}" if p["city"] else " across India"
+        out.append((p, f"{CATEGORY_LABELS[p['sector']]} creators{where}"))
+    return out
+
+
+def _landing_html(
+    page: dict,
+    *,
+    counts: dict,
+    rules: tuple,
+    studies: list,
+    siblings: list,
+    media_base: str = "",
+) -> str:
+    """One landing page.
+
+    Everything typed is escaped, every image sits in a ratio container, and
+    everything below the hero is lazy — the rules `/work` already holds.
+    """
+    e = html_escape
+    app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
+    url = _landing_url(page["sector"], page["city"])
+    title, summary = _landing_titles(page)
+    place = _landing_place(page)
+    label = CATEGORY_LABELS.get(page["sector"]) if page["sector"] else None
+
+    h1 = (
+        f"{label} influencer marketing in {place}"
+        if label
+        else f"Influencer marketing in {place}"
+    )
+
+    # **Counted, never written down**, the rule every figure on this site
+    # follows. `_landing_supply` is the reader.
+    noun = "creator" if counts["creators"] == 1 else "creators"
+    figures = (
+        f'<ul class="figs">'
+        f'<li><b>{counts["creators"]}</b><span>verified {e(noun)}'
+        + (f" in {e(place)}" if page["city"] else "")
+        + "</span></li>"
+        + (
+            f'<li><b>{counts["cities"]}</b><span>cities with verified creators</span></li>'
+            if not page["city"]
+            else ""
+        )
+        + "</ul>"
+    )
+
+    rules_html = (
+        "<h2>What the rules say in this sector</h2>"
+        + "".join(f"<p>{e(r)}</p>" for r in rules)
+        if rules
+        else ""
+    )
+
+    cards = []
+    for cs in studies:
+        hero = _absolute_media_url(cs.get("hero_image_url"), media_base)
+        art = (
+            f'<span class="cover"><img src="{e(hero)}" alt="" loading="lazy"></span>'
+            if hero
+            else f'<span class="cover fallback" style="--h:{_cover_hue(cs.get("slug") or "")}"></span>'
+        )
+        meta = e(" · ".join(x for x in (cs.get("brand_name"), cs.get("category_label"),
+                                        cs.get("city")) if x))
+        cards.append(
+            f'<a class="card" href="{e(_case_study_url(cs["slug"]))}">{art}'
+            f'<span class="ctitle">{e(cs.get("title") or "A campaign")}</span>'
+            f'<span class="cmeta">{meta}</span></a>'
+        )
+    studies_html = (
+        f"<h2>Campaigns we ran{(' in ' + e(place)) if page['city'] else ''}</h2>"
+        f'<div class="grid">{"".join(cards)}</div>'
+        if cards
+        else ""
+    )
+
+    links_html = (
+        "<h2>More on this</h2><ul class=\"links\">"
+        + "".join(
+            f'<li><a href="{e(_landing_url(p["sector"], p["city"]))}">{e(text)}</a></li>'
+            for p, text in siblings
+        )
+        + f'<li><a href="{app_base}/for-brands">How it works for brands</a></li></ul>'
+    )
+
+    # **`Service` with `areaServed` from the real city**, plus a `FAQPage` for
+    # the questions the page actually answers. A `FAQPage` whose questions are
+    # not on the page is the markup equivalent of a claim nobody can check.
+    faqs = [
+        (
+            "What does it cost?",
+            "Our fee is charged to the brand on top of the creator's rate, never "
+            "taken out of it, so a creator who quotes a fee is paid that fee.",
+        ),
+        (
+            "What happens if you cannot fill the brief?",
+            "The campaign fee comes back, unless the brand turned down everyone we "
+            "shortlisted.",
+        ),
+        (
+            "How are creators checked?",
+            "Every creator on a brief is verified before they can apply, and their "
+            "audience figures come from the platform's own API rather than a "
+            "screenshot.",
+        ),
+    ]
+    if rules:
+        faqs.append((f"What are the rules for {(label or 'this').lower()} campaigns?", rules[0]))
+
+    ld = {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Service",
+                "name": h1,
+                "serviceType": "Influencer marketing",
+                "url": url,
+                "areaServed": {
+                    "@type": "City" if page["city"] else "Country",
+                    "name": place,
+                },
+                "provider": {
+                    "@type": "Organization",
+                    "name": "WeAre Creators",
+                    "url": _share_base(),
+                },
+            },
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": q,
+                        "acceptedAnswer": {"@type": "Answer", "text": a},
+                    }
+                    for q, a in faqs
+                ],
+            },
+        ],
+    }
+
+    faq_html = "<h2>Questions brands ask</h2>" + "".join(
+        f"<h3>{e(q)}</h3><p>{e(a)}</p>" for q, a in faqs
+    )
+
+    head = _work_head(
+        title=title,
+        summary=summary,
+        url=url,
+        og_image=f"{app_base}/og-image.png",
+        image_size='\n<meta property="og:image:width" content="1200">'
+        '\n<meta property="og:image:height" content="630">',
+        ld_json=json.dumps(ld).replace("<", "\\u003c"),
+    )
+    return f"""<!doctype html>
+<html lang="en-IN"><head>{head}</head><body><div class="wrap">
+<p class="eyebrow">{e(label or "Influencer marketing")}</p>
+<h1>{e(h1)}</h1>
+<p class="lede">{e(summary)}</p>
+{figures}
+<h2>What a campaign here looks like</h2>
+<p>
+  You post the brief and we run it. We shortlist creators against it, agree
+  each rate in writing before anyone shoots, brief them, staff the shoot where
+  there is one, review the content before it goes live, and send a report at
+  the end.
+</p>
+<p>
+  Briefs ask for counted deliverables rather than a sentence — a number of
+  reels, stories, posts or videos — and pay a fixed fee, a negotiated one, or
+  barter where we have arranged it. Creators are matched on what they actually
+  post, the city they are in, and how they have delivered here before.
+</p>
+<h2>What it costs, and what comes back</h2>
+<p>
+  Our fee is charged to the brand <b>on top of</b> the creator's rate, never
+  taken out of it. A creator who quotes a rate is paid that rate.
+</p>
+<p>
+  If we cannot fill the brief, the campaign fee comes back — unless the brand
+  turned down everyone we shortlisted.
+</p>
+{rules_html}
+{studies_html}
+{faq_html}
+{links_html}
+<div class="cta">
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
+  <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
+</div>
+<footer>
+  WeAre Creators runs paid creator campaigns end to end — casting, fees, the
+  shoot and delivery. Every figure on this page is counted from the platform
+  at the moment it loaded.
+</footer>
+</div></body></html>"""
+
+
+@app.get(LANDING_PATH + "/{slug}", include_in_schema=False)
+async def public_landing_page(slug: str, request: Request):
+    """One landing page, or a 404 where the supply does not justify one.
+
+    **The 404 is the feature.** A page we cannot staff is a page that earns a
+    refund, so a slug that parses perfectly but has too little supply behind
+    it is not served — and because the supply is counted per request, a page
+    stops existing the moment it stops being true.
+    """
+    page = _parse_landing_slug(slug)
+    if page is None:
+        raise HTTPException(status_code=404, detail="That page isn't available.")
+
+    settings = await landing_page_settings()
+    supply = await _landing_supply()
+    pages = _landing_pages_from(supply, settings)
+    if page not in pages:
+        raise HTTPException(status_code=404, detail="That page isn't available.")
+
+    # Case studies for this cut, through `_public_case_study` — never a second
+    # projection, which is the rule that keeps money and a creator's consent
+    # out of a public page by construction.
+    query = _published_case_study_query(
+        category=page["sector"], city=page["city"]
+    )
+    rows = (
+        await db.case_studies.find(query)
+        .sort([("display_order", 1), ("published_at", -1)])
+        .to_list(length=6)
+    )
+    studies = [await _public_case_study(r, full=False) for r in rows]
+
+    return Response(
+        content=_landing_html(
+            page,
+            counts=_landing_counts(page, supply),
+            rules=SECTOR_RULES.get(page["sector"]) or (),
+            studies=studies,
+            siblings=_landing_siblings(page, pages),
+            media_base=str(request.base_url),
+        ),
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 @app.get("/sitemap.xml", include_in_schema=False)
 async def public_sitemap():
     """Every public page, so "indexable" means something.
@@ -37240,6 +37887,14 @@ async def public_sitemap():
             for p in MARKETING_PATHS]
     if case_studies:
         urls.append((f"{_share_base()}{CASE_STUDY_PATH}", None))
+
+    # **The landing page matrix, generated from live supply rather than from
+    # the enums.** `_landing_pages_from` is the one decider, shared with the
+    # route, so a URL can never be listed here and 404 when a crawler follows
+    # it — and a page whose city or sector has dropped below its floor leaves
+    # the sitemap by not being generated, with nothing to remember to remove.
+    landing = _landing_pages_from(await _landing_supply(), await landing_page_settings())
+    urls += [(_landing_url(p["sector"], p["city"]), None) for p in landing]
     urls += [(_brand_page_url(str(b)), None) for b in brand_ids]
     urls += [(_share_url(str(c["_id"])), _iso(c.get("updated_at"))) for c in campaigns]
     urls += [
