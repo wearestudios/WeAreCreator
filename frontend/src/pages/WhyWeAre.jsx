@@ -34,6 +34,7 @@ import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import Reveal from "@/components/marketing/Reveal";
+import { useDeepestCity } from "@/components/marketing/CountedGeography";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
@@ -49,11 +50,16 @@ const COPY = {
             label: "Built on real campaigns",
             line: "Every screen answers a question somebody had mid-shoot.",
         },
-        {
-            label: "The network runs deepest in Bengaluru",
-            line: "Which is why briefs fill fastest. Creators sign up from anywhere in India.",
-        },
     ],
+
+    // **The geography point is counted, so it is a function of the city.**
+    // Unlike `/for-brands`, only the *point* drops below the proof floor here
+    // rather than the whole section — "Built by the people who do the work"
+    // stands on its own, and the other point is not about a place.
+    pedigreeReach: (city) => ({
+        label: `The network runs deepest in ${city}`,
+        line: "Which is why briefs fill fastest. Creators sign up from across the country.",
+    }),
 
     // **This was the self-serve choice and the product no longer has one.**
     // It read as run it yourself or hand it over, with a third point insisting
@@ -106,6 +112,7 @@ const COPY = {
 };
 
 export default function WhyWeAre() {
+    const deepestCity = useDeepestCity();
     return (
         <MarketingPage
             testid={IDS.whyWeAre}
@@ -138,7 +145,11 @@ export default function WhyWeAre() {
                 eyebrow="The pedigree"
                 title={COPY.pedigreeTitle}
                 line={COPY.pedigreeLine}
-                points={COPY.pedigree}
+                points={
+                    deepestCity
+                        ? [...COPY.pedigree, COPY.pedigreeReach(deepestCity)]
+                        : COPY.pedigree
+                }
                 image={{
                     // PLACEHOLDER IMAGE: the WeAre Studios office or a
                     // production meeting — whiteboard with a campaign plan,

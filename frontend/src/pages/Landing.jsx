@@ -252,7 +252,14 @@ export default function Landing() {
         >
             <PageMeta
                 title="Creator campaigns, handled properly"
-                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns in Bengaluru."
+                // **No city in the meta description.** It named Bengaluru,
+                // which was accurate and is the one claim on this page that
+                // nothing re-checks — a meta description is written once and
+                // read by strangers for years. The geography that *is* said on
+                // this site is rendered from counted supply
+                // (`CountedGeography`); a description cannot do that, so it
+                // says nothing about place rather than something stale.
+                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns, run end to end."
                 path="/"
             />
             <MarketingNavbar />

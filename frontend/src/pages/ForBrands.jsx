@@ -34,6 +34,7 @@ import {
 import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
+import CountedGeography from "@/components/marketing/CountedGeography";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
@@ -120,8 +121,14 @@ const COPY = {
         },
     ],
 
-    reachTitle: "The network runs deepest in Bengaluru.",
-    reachLine: "That is where briefs fill fastest. Creators sign up from anywhere in India.",
+    // **Rendered, not typed.** The city is counted off verified supply at
+    // request time (`CountedGeography`), so this sentence stays true if the
+    // deepest city ever changes — and says nothing at all below the proof
+    // floor. The old line named Bengaluru as a literal, which was accurate
+    // when it was written and is exactly the kind of claim that goes stale
+    // without anybody noticing.
+    reachTitle: (city) => `The network runs deepest in ${city}.`,
+    reachLine: "That is where briefs fill fastest. Creators sign up from across the country.",
 
     closeTitle: "Post your first brief.",
     closeLine: "About ten minutes. We check your business before anything reaches a creator.",
@@ -202,18 +209,29 @@ export default function ForBrands() {
                 testid={IDS.choice}
             />
 
-            <TextImageSection
-                eyebrow="Where we are"
-                title={COPY.reachTitle}
-                line={COPY.reachLine}
-                image={{
-                    // PLACEHOLDER IMAGE: a recognisable Bengaluru neighbourhood
-                    // at dusk — Indiranagar or Koramangala shopfronts lit up.
-                    // Landscape 3:2.
-                    note: "Bengaluru shopfronts at dusk, Indiranagar or Koramangala, landscape 3:2",
-                    ratio: "3/2",
-                }}
-            />
+            {/* The whole section is behind the counted city, not just the
+                noun in its title: an eyebrow reading "Where we are" above a
+                sentence with the place removed is a worse answer than no
+                section. */}
+            <CountedGeography>
+                {(city) => (
+                    <TextImageSection
+                        eyebrow="Where we are"
+                        title={COPY.reachTitle(city)}
+                        line={COPY.reachLine}
+                        image={{
+                            // PLACEHOLDER IMAGE: shopfronts in the deepest-supply
+                            // city at dusk, lit up, landscape 3:2. Deliberately
+                            // not a named neighbourhood — the city this section
+                            // names is counted at request time, so a note
+                            // naming Indiranagar would brief a photograph for
+                            // a city the page may not be talking about.
+                            note: "City shopfronts at dusk, lit up, people on the street, landscape 3:2",
+                            ratio: "3/2",
+                        }}
+                    />
+                )}
+            </CountedGeography>
 
             <ClosingSection
                 title={COPY.closeTitle}

@@ -1130,11 +1130,60 @@ and spreadsheets, nobody checked, no rate in writing, no proof of what it
 achieved. `_FORBIDDEN_MARKETING_PHRASES` in `server.py` holds the line and
 `test_marketing_pages.py` fails any page for any of them.
 
-**Bengaluru is evidence of network depth, never identity.** "The network runs
-deepest in Bengaluru, and creators sign up from anywhere in India" is the
-sentence; "every city", "pan-India" and "nationwide" are banned on every page,
-including the login and signup screens, which sat outside these tests long
-enough to keep "Every city that matters" months after it was removed elsewhere.
+**Geography is counted, never typed.** Depth is still the claim and identity
+is still banned — but the *place* is now rendered from `_platform_proof` at
+request time rather than written into a `COPY` block, which is the rule every
+other figure on this site already follows.
+
+- `_deepest_supply_city()` is the reader: the city with the most **verified**
+  creators, grouped on the canonical `city` field (free text could not be
+  ranked at all — "Bangalore", "bangalore" and "BLR" would be three cities and
+  one place). `_id`-ascending breaks a tie, so the sentence cannot flicker
+  between requests. Unverified signups do not count: supply means creators a
+  brand can actually book, and this claim tells brands where to post.
+- **It rides inside the same floor gate as the figures.** `_platform_proof`
+  returns `{}` as a set, so a page cannot name a city while the counts that
+  would give the name a denominator are absent. "Deepest in Kochi" with
+  nothing beside it is a smaller claim than silence, not a bigger one.
+  `deepest_city` is deliberately *not* in `PROOF_FLOORS` — it is a name, and
+  there is no floor to hold a name to.
+- `components/marketing/CountedGeography.jsx` is the frontend half, as a
+  render prop: what is worth centralising is *whether there is a city to
+  name*, not how it reads. Three states, because in-flight and
+  resolved-with-nothing are different — a caller collapsing them would render
+  its absent branch on every first paint. On `/for-brands` the whole section
+  is behind it (an eyebrow reading "Where we are" above a sentence with the
+  place removed is worse than no section); on `/why-weare` only the one point
+  is, because the section it sits in is not about a place.
+- **The literals stay banned.** "every city", "pan-India", "across India" and
+  "nationwide" are still in `_FORBIDDEN_MARKETING_PHRASES`, and the mechanism
+  only changed direction: a hardcoded *national* claim is still hardcoded, and
+  now a hardcoded *local* one is caught too. `test_no_page_names_a_city_in_its_copy`
+  sweeps every `COPY` block and every image note, and a second test sweeps the
+  page title and meta description — the longest-lived copy on the site, written
+  once and read by strangers for years, and the one place a `COPY` sweep would
+  not look. Home's said "Paid brand campaigns in Bengaluru."
+- `test_geography_is_stated_as_depth_rather_than_identity` **used to require
+  the literal** "bengaluru" and "anywhere in india" on both pages, and was
+  right to: the risk then was claiming a footprint we could not staff. It pins
+  the mechanism now, not the sentence, because a test naming a phrase is a
+  test that fails on its next honest rewrite.
+
+Two things that fell out of reading the copy by machine rather than by eye:
+
+- **The budget helper only saw double-quoted strings.** Rendered copy is a
+  template literal, so `reachTitle: (city) => \`…\`` would have escaped both
+  the word budget and the eight-word headline cap — exactly the way the
+  `moment`/`step` rename nearly lost the cap. `_literals` reads both shapes
+  and counts `${city}` as the one word it renders as.
+- **Reading backticks meant reading comments.** The convention here is to
+  backtick code identifiers in prose, so "see `CountedGeography`" landed in
+  the word budget as page copy. `_literals` strips whole comment lines first —
+  the same cut `copy_of` makes, and deliberately not everything from `//`
+  onward, which would also truncate at the `//` in a `https://` inside a real
+  string. Stripping them revealed that **`/for-brands` was 240 words, not
+  250**: ten words of its documented "exactly on budget, no headroom" were
+  double-quoted strings inside comments. The figure below is corrected.
 
 What each audience must come away knowing is pinned there too — for creators,
 that briefs are real and paid, the rate is agreed in writing before they shoot,
@@ -1310,11 +1359,17 @@ both spellings so the cap survived the rename rather than silently stopping at
 it.
 
 **The register pass is not a licence to lengthen.** Every page came out of it
-inside the same budget — home 105/120, `/for-brands` 250/250, `/for-creators`
+inside the same budget — home 105/120, `/for-brands` 240/250, `/for-creators`
 244/250, `/how-it-works` 288/300, `/why-weare` 257/300 — which is the
-constraint that forces a rewrite to be better rather than merely longer. On
-`/for-brands`, which has no headroom at all, the new hero is a word shorter
-than the one it replaced and that is what paid for the fixes below it.
+constraint that forces a rewrite to be better rather than merely longer.
+
+`/for-brands` read **250/250** here for as long as this paragraph has existed,
+and the claim built on it — that the page had no headroom, so the register
+pass had to pay for each fix with a cut elsewhere — was measuring ten words of
+comment text as copy. The counter only started stripping comments when it
+learned to read template literals; see the geography section above. The
+rewrites it describes all still happened and the page is still the tightest of
+the five, but it was never actually on its limit.
 
 **What the tests pin, and what they must not.** Several of these lines were
 asserted verbatim, so the audit had to move five assertions. Each now pins the

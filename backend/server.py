@@ -36122,6 +36122,37 @@ PROOF_FLOORS = {
 }
 
 
+async def _deepest_supply_city() -> Optional[str]:
+    """The city with the most verified creators, or `None`.
+
+    **This is what makes a geographic claim sayable without typing one.** The
+    pages used to carry "The network runs deepest in Bengaluru" as a literal,
+    which was true when it was written and is a sentence nobody re-checks. The
+    operation is going national, so the one thing that must not happen is the
+    copy getting ahead of the supply — and the fix is the rule every other
+    figure on this site already follows: count it.
+
+    Counted off `city`, which is a closed list folded through `_canonical_city`
+    — free text could not be ranked at all, because "Bangalore", "bangalore"
+    and "BLR" would be three cities and one place.
+
+    `None` when nobody is verified anywhere, which the caller turns into
+    silence rather than into a sentence with a hole in it.
+    """
+    rows = await db.creator_profiles.aggregate(
+        [
+            {"$match": {"verification_status": "verified", "city": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$city", "n": {"$sum": 1}}},
+            # `_id` as the tiebreak, so two cities on the same count order
+            # stably rather than flipping between requests — the same reason
+            # every thread read here sorts on `(created_at, _id)`.
+            {"$sort": {"n": -1, "_id": 1}},
+            {"$limit": 1},
+        ]
+    ).to_list(1)
+    return (rows[0].get("_id") or None) if rows else None
+
+
 async def _platform_proof() -> dict:
     """Real numbers for the proof strip, or nothing at all.
 
@@ -36137,6 +36168,14 @@ async def _platform_proof() -> dict:
     is the deliberate trade — the alternative is a lifetime total, which stays
     comfortably large forever and stops describing anything. Silence on a
     quiet week is the honest version of the same page.
+
+    **`deepest_city` rides along so geography can be rendered rather than
+    typed.** It is inside the same floor gate on purpose: below the floor the
+    whole payload is `{}`, so a page cannot name a city while the strip that
+    would give that name a denominator is absent. "We are deepest in Kochi"
+    with no counts beside it is a smaller claim than silence, not a bigger one.
+    It is not in `PROOF_FLOORS` itself — it is a name, and there is no floor to
+    hold a name to.
     """
     creators = await db.creator_profiles.count_documents(
         {"verification_status": "verified"}
@@ -36163,7 +36202,7 @@ async def _platform_proof() -> dict:
     counted = {"cities": cities, "creators": creators, "campaigns": campaigns}
     if any(counted[k] < floor for k, floor in PROOF_FLOORS.items()):
         return {}
-    return counted
+    return {**counted, "deepest_city": await _deepest_supply_city()}
 
 
 
