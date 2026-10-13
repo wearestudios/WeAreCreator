@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import Logo from "@/components/brand/Logo";
 
 export default function AdminLogin() {
     const { loginAdmin } = useAuth();
@@ -35,8 +36,8 @@ export default function AdminLogin() {
     return (
         <div data-testid="admin-login-page" className="grid min-h-screen place-items-center bg-background p-6 grain-page">
             <div className="w-full max-w-md">
-                <Link to="/" className="mb-8 inline-block font-serif text-2xl">
-                    WeAre <span className="text-primary">Creators</span>
+                <Link to="/" className="mb-8 inline-block">
+                    <Logo variant="horizontal" height={30} />
                 </Link>
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Team admin</p>
                 <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">

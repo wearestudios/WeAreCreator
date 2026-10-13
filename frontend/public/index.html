@@ -20,9 +20,19 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
-        <!-- Icons. SVG for anything current, PNG for Safari and home screens. -->
+        <!-- Icons. SVG for anything current, PNG for Safari and home screens.
+             All of them are the tree knocked out of a brand-red tile, generated
+             by `scripts/trace-logo.py` alongside the lockups in /brand.
+
+             The tree's negative-space hairlines need about 32px to read as a
+             tree; below that it is a light mark on a red tile. That is why the
+             smallest declared bitmap is 32 and there is no 16 — a browser that
+             wants 16 renders the SVG down rather than being handed a bitmap
+             built to fail at it. -->
         <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
         <link rel="icon" href="%PUBLIC_URL%/favicon-32.png" sizes="32x32" type="image/png" />
+        <link rel="icon" href="%PUBLIC_URL%/favicon-192.png" sizes="192x192" type="image/png" />
+        <link rel="icon" href="%PUBLIC_URL%/favicon-512.png" sizes="512x512" type="image/png" />
         <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
 
         <!-- Link previews. Most of our traffic arrives as a link pasted into
@@ -41,6 +51,12 @@
             property="og:description"
             content="Verified Bengaluru creators, paid briefs from cafés, restaurants, hotels, retail and fashion brands. Brief to booking to payment, in one place."
         />
+        <!-- STALE: og-image.png still carries the old ember square and serif
+             W. It was deliberately not regenerated with the rest of the icons
+             — this is the site card a stranger sees when a link is pasted into
+             WhatsApp, so it wants laying out by somebody rather than tracing,
+             and the real vector is still to come. Regenerate it with the tree
+             and the stacked lockup when that lands. -->
         <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />

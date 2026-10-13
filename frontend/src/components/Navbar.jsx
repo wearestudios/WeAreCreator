@@ -9,6 +9,7 @@ import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
 import AdminAccountMenu from "@/components/admin/AdminAccountMenu";
 import { api } from "@/lib/api";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
+import Logo from "@/components/brand/Logo";
 import { LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
 import {
     Sheet,
@@ -175,12 +176,7 @@ export const Navbar = () => {
                         data-testid="nav-logo"
                         className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
-                        <span className="grid h-8 w-8 place-items-center rounded-md bg-red-500 font-serif text-lg font-semibold text-navy-700">
-                            W
-                        </span>
-                        <span className="font-serif text-xl tracking-tight">
-                            WeAre <span className="text-primary-ink">Creators</span>
-                        </span>
+                        <Logo variant="horizontal" height={30} />
                     </Link>
                     <span aria-hidden className="hidden h-4 w-px bg-tint/15 sm:block" />
                     <StudioEndorsement
@@ -325,9 +321,7 @@ export const Navbar = () => {
 
                             <div className="flex h-full flex-col">
                                 <div className="flex flex-col gap-1 border-b border-tint/10 px-6 py-5">
-                                    <span className="font-serif text-xl tracking-tight">
-                                        WeAre <span className="text-primary-ink">Creators</span>
-                                    </span>
+                                    <Logo variant="horizontal" height={30} />
                                     <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
 

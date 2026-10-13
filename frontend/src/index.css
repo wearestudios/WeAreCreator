@@ -529,3 +529,37 @@
         display: contents !important;
     }
 }
+
+/* ---------------------------------------------------------------------
+ * The logo's ink
+ *
+ * `<Logo>` inlines its SVG and paints `currentColor`, so which surface the
+ * page is on is the only thing that decides the mark's colour — and the
+ * surface is already written on `<html>` before first paint. These two rules
+ * are the whole of "white on marketing, red on the product": no path list, no
+ * second source of truth, and nothing for a component to get wrong for a
+ * frame while it works out where it is.
+ *
+ * Marketing navy is the absence of the attribute, so white is the default and
+ * the light product surface is the override — the same way round as every
+ * other token above, and a bug that applies nothing applies white to navy.
+ *
+ * **The ink is a literal and deliberately not `--primary`.** On marketing the
+ * two are the same value; on the product they are not, because `--primary`
+ * flips to navy there — navy is the primary *action* on a light canvas. A mark
+ * painted with the token would be red on the home page and navy in the app,
+ * which is the thing the brand tests have refused since the palette landed.
+ * --------------------------------------------------------------------- */
+@layer base {
+    :root {
+        --weare-logo-ink: #ff2731;
+    }
+
+    .weare-logo {
+        color: #fff;
+    }
+
+    :root[data-theme="light"] .weare-logo {
+        color: var(--weare-logo-ink);
+    }
+}
