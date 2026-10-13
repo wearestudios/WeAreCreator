@@ -46,7 +46,7 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const COPY = {
     eyebrow: "Who is working",
     title: "Creators the work keeps coming back to.",
-    line: "Featured with their permission, ranked on how they work rather than what they charge.",
+    line: "Featured with their permission, and ranked on how they deliver rather than on what they charge.",
 };
 
 // How many card-shaped holes to reserve while the request is in flight.

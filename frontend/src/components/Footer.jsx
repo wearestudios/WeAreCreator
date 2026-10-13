@@ -71,9 +71,9 @@ export function Footer() {
                             <StudioEndorsement testid={IDS.studio} />
                         </div>
                         <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                            Creator campaigns with the rate agreed in writing, the
-                            content approved before it goes live, and a report at the
-                            end.
+                            Influencer marketing across India, run end to end — every
+                            rate agreed in writing, the content approved before it goes
+                            live, and a report at the end.
                         </p>
                     </div>
 

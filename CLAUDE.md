@@ -1130,10 +1130,23 @@ and spreadsheets, nobody checked, no rate in writing, no proof of what it
 achieved. `_FORBIDDEN_MARKETING_PHRASES` in `server.py` holds the line and
 `test_marketing_pages.py` fails any page for any of them.
 
-**Geography is counted, never typed.** Depth is still the claim and identity
-is still banned — but the *place* is now rendered from `_platform_proof` at
-request time rather than written into a `COPY` block, which is the rule every
-other figure on this site already follows.
+**The positioning is pan-India, and that reversed a documented guard.**
+"every city", "across india", "pan-india" and "nationwide" were in
+`_FORBIDDEN_MARKETING_PHRASES` because the claim was one the operation could
+not back: the network was deepest in Bengaluru and a footprint we could not
+staff is worse than the city it replaces. The operation is stated to run
+across India now, so the ban was refusing a true sentence — and a guard that
+refuses the truth is a guard somebody works around. The four are lifted; the
+anti-agency half and "guarantee" are untouched, because those are a different
+kind of rule.
+
+**What did not change is the mechanism underneath it.** Depth and scope are
+different claims and only the first needs a count. `_deepest_supply_city`
+still ranks verified creators by canonical city and `CountedGeography` still
+renders that name at request time inside the `PROOF_FLOORS` gate, so where a
+page names *one* place it is still counted rather than typed. The literal-city
+sweeps (`test_no_page_names_a_city_in_its_copy`, and the one over titles and
+meta descriptions) are untouched.
 
 - `_deepest_supply_city()` is the reader: the city with the most **verified**
   creators, grouped on the canonical `city` field (free text could not be
@@ -1155,14 +1168,19 @@ other figure on this site already follows.
   is behind it (an eyebrow reading "Where we are" above a sentence with the
   place removed is worse than no section); on `/why-weare` only the one point
   is, because the section it sits in is not about a place.
-- **The literals stay banned.** "every city", "pan-India", "across India" and
-  "nationwide" are still in `_FORBIDDEN_MARKETING_PHRASES`, and the mechanism
-  only changed direction: a hardcoded *national* claim is still hardcoded, and
-  now a hardcoded *local* one is caught too. `test_no_page_names_a_city_in_its_copy`
-  sweeps every `COPY` block and every image note, and a second test sweeps the
-  page title and meta description — the longest-lived copy on the site, written
-  once and read by strangers for years, and the one place a `COPY` sweep would
-  not look. Home's said "Paid brand campaigns in Bengaluru."
+- **A hardcoded *local* claim is still caught**, which is the half that
+  matters now. `test_no_page_names_a_city_in_its_copy` sweeps every `COPY`
+  block and every image note, and a second test sweeps the page title and meta
+  description — the longest-lived copy on the site, written once and read by
+  strangers for years, and the one place a `COPY` sweep would not look. Home's
+  said "Paid brand campaigns in Bengaluru"; `index.html` said "Paid campaigns
+  for verified creators in Bengaluru", which is the same mistake outside the
+  reach of either sweep until somebody looked.
+- `test_no_page_claims_more_than_the_operation_does` **reads
+  `_FORBIDDEN_MARKETING_PHRASES` rather than re-listing it.** It carried its
+  own copy of the four geography strings, so lifting them on the server left
+  them banned in the test — which is exactly how a list maintained twice
+  behaves, and why this one is now read from the source.
 - `test_geography_is_stated_as_depth_rather_than_identity` **used to require
   the literal** "bengaluru" and "anywhere in india" on both pages, and was
   right to: the risk then was claiming a footprint we could not staff. It pins
@@ -1298,10 +1316,27 @@ preview identically, which is the whole reason for separate pages.
 
 ### The copy budget
 
-**One idea per screen-height, and a word count per page**: home under 120,
-`/for-brands` and `/for-creators` under 250 each, `/how-it-works` and
-`/why-weare` under 300. Headlines to eight words, supporting lines to twenty.
-`test_marketing_pages.py` enforces all of it.
+**One idea per screen-height, and a word count per page**: home under 260,
+`/for-brands` and `/for-creators` under 320 each, `/how-it-works` and
+`/why-weare` under 360. Headlines to twelve words (`HEADLINE_WORDS`),
+supporting lines to thirty-two (`LINE_WORDS`). `test_marketing_pages.py`
+enforces all of it.
+
+**The budget was raised, and the old one was writing the copy.** 120/8/20
+bought compression, and what compression produced was the aphorism: "A
+follower count in a DM is a number somebody typed", "It ends, and nobody can
+say what it actually did". Both fit a twenty-word line because they say almost
+nothing — they are observations about the reader's situation, delivered
+knowingly, and a marketing head evaluating a vendor reads them as a put-down.
+The sentence that replaces the first is "A person reviews every creator, and
+connected accounts have their audience read from Instagram's official API",
+which is checkable and does not fit.
+
+So the cap moved to where a concrete claim can live. The rule it enforces is
+unchanged — one idea per screen-height, and a section that wants to say more
+has to argue with a number — the number is just no longer set below the length
+of a specific sentence. Measured after: home 137/260, `/for-brands` 303/320,
+`/for-creators` 306/320, `/how-it-works` 347/360, `/why-weare` 306/360.
 
 Every page keeps its words in one `COPY` object so the budget can be read
 rather than reconstructed by walking JSX — and so a section that wants to say
@@ -1326,12 +1361,25 @@ lines were confident and precise; others were clipped for punch and landed as
 curt, which on a page asking a business to spend money reads as cheap rather
 than as brisk.
 
+**The whole-site copy rewrite went further and is the current state.** The
+register pass treated the voice as a tone problem; the rewrite treated it as a
+positioning one. What came out: the hero names the category and the sector
+(see "The kinetic hero"), home states the service before it names a problem,
+the word budget moved so a checkable sentence fits, and the geography claim
+became national (see "Geography"). The four faults below are still faults and
+the rules under them still hold — what changed is that fixing them is no
+longer the whole job.
+
 Four faults, all of them the same instinct taken too far:
 
 - **Sentence fragments used for punch.** "Nobody checked" was the charge the
   whole home page is built on, delivered as a shrug with the noun missing. It
-  is "Creators nobody has checked" — same length class, same claim, and it
-  names who.
+  became "Creators nobody has checked" — same length class, same claim, and it
+  names who. **It is now "Creators are verified", with the mechanism beside
+  it**, because the whole three-negative framing went: a page that opens by
+  listing what the reader is doing wrong is a put-down from a vendor they are
+  still evaluating, and home spent its first screen on it before saying what
+  this company does.
 - **Dropped articles.** "Find it and pitch", "Post it, we cast" — telegraphic
   in a way that reads as notes toward copy rather than copy. They are "Find a
   brief and pitch" and "Post the brief and we cast".
@@ -1358,10 +1406,15 @@ which made a sequence somebody can follow read as atmosphere. The key is
 both spellings so the cap survived the rename rather than silently stopping at
 it.
 
-**The register pass is not a licence to lengthen.** Every page came out of it
-inside the same budget — home 105/120, `/for-brands` 240/250, `/for-creators`
-244/250, `/how-it-works` 288/300, `/why-weare` 257/300 — which is the
-constraint that forces a rewrite to be better rather than merely longer.
+**The register pass was not a licence to lengthen, and the budget it ran
+against has since been raised.** See "The copy budget" above: the register
+pass fixed how the site *sounded*, and left in place the thing that was making
+it sound that way. A twenty-word cap cannot hold a specific claim, so the
+site kept reaching for the aphorism — "Nobody checked" became "Creators nobody
+has checked", which is better English for the same non-statement. The figures
+below are the pre-rewrite ones and are kept as the record of that pass.
+Home 105/120, `/for-brands` 240/250, `/for-creators` 244/250,
+`/how-it-works` 288/300, `/why-weare` 257/300.
 
 `/for-brands` read **250/250** here for as long as this paragraph has existed,
 and the claim built on it — that the page had no headroom, so the register
@@ -1410,14 +1463,34 @@ inside frames that clip.
 ### The kinetic hero, and the imagery
 
 **The signature is the headline.** `KineticHeadline` morphs at letterform
-level between four kinds of campaign — launch night, fashion drop, travel
-stay, menu tasting — each resolving against a line that never moves. The
-motion *is* the message: what changes is the kind of work, what does not is
-how it is run.
+level between the eight sectors — "Influencer marketing for F&B", "...for
+Hospitality", on through the list — each resolving against "We run it end to
+end.", which never moves. The motion *is* the message: what changes is the
+sector, what does not is that we run the campaign.
 
-- **"Your" and "handled properly." are outside the morph.** Animating the
-  whole line would say four unrelated headlines are cycling rather than one
-  sentence being re-pointed.
+- **It was a possessive on a campaign noun and all three defects are the
+  reason it changed.** "Your launch night" → "Your menu tasting" against the
+  tail "handled properly." — "your travel stay" and "your menu tasting" are
+  not phrases anybody says, so they read as machine-assembled; the possessive
+  addressed a marketing head as if about their own evening rather than their
+  campaign; and "properly" is the hedge the register rules ban everywhere
+  else, carrying the whole claim.
+- **"Influencer marketing" is in the H1 because it is the category term**, and
+  before this it appeared in no headline anywhere on the site.
+- **`PHRASES` is `CATEGORY_OPTIONS.map(c => c.label)`, derived rather than
+  written out.** The old four were hand-written kinds of work that happened to
+  correspond to categories, held in line by a reviewer noticing — and a phrase
+  naming a sector `CampaignCategory` does not have is an invitation to read
+  the headline, open the brief feed, filter to it and find nothing. Mapping
+  the enum means that cannot be written, and `lib/categories.js` is already
+  drift-tested against `CATEGORY_LITERAL`. Eight rather than four, so the
+  morph says "every sector" rather than "these four"; every label is inside
+  the twelve-character ceiling the letter animation is budgeted for, "Food &
+  drink" at exactly twelve.
+- **The lead and the tail are outside the morph.** Animating the whole line
+  would say eight unrelated headlines are cycling rather than one sentence
+  being re-pointed. Verified across a full cycle at 390, 768 and 1280: the
+  `h1` holds one height at each width and nothing overflows horizontally.
 - **Per letter, on a stagger, moving as well as fading.** A single opacity
   tween on the phrase is the thing this is specified not to be. ~4s a phrase;
   the swap itself is under a second, so the phrase is still for most of its
@@ -1454,10 +1527,14 @@ the budget it had to come in under rather than a decision it overrode.
   measured 2. Rendering all four with three at `opacity: 0` would pay the
   original cost in full — an invisible full-viewport layer still composites.
 - **The slides come from the headline.** One per `PHRASES` entry, in the
-  headline's order, so the picture changes as the words morph. The old deck
+  headline's order, so the picture changes as the words morph — eight now that
+  the headline runs the sector list, and **it costs nothing at runtime**,
+  because the budget this came back under is *painted layers* and the DOM
+  holds the outgoing slide and the incoming one whatever the deck length. The
+  alternative was letting the deck fall out of step, and a photograph of a
+  restaurant under the word "Retail" is worse than no photograph. The old deck
   carried a headline per slide, which made the page appear to sell four
-  products; this carries **no copy at all**, which is also what keeps home
-  inside its 120-word budget.
+  products; this carries **no copy at all**.
 - **Ken Burns rides the image layer, never the container** — scaling the
   container grows the hole it reserves — and the four drifts alternate
   direction so the sequence does not read as one looping clip. Transform and

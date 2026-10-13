@@ -61,36 +61,52 @@ const EASE_CSS = `cubic-bezier(${EASE.join(", ")})`;
  * same way. Four identical drifts read as one looping clip rather than as a
  * sequence.
  */
-export const SLIDES = [
-    {
-        phrase: PHRASES[0],
-        // PLACEHOLDER IMAGE: Restaurant on opening night, full tables, warm
-        // service light, shot wide from the pass
-        note: "Restaurant on opening night, full tables, warm service light, shot wide from the pass",
-        drift: "leftUp",
-    },
-    {
-        phrase: PHRASES[1],
-        // PLACEHOLDER IMAGE: Fashion creator mid-shoot against a plain wall,
-        // outfit caught in motion
-        note: "Fashion creator mid-shoot against a plain wall, outfit caught in motion",
-        drift: "rightDown",
-    },
-    {
-        phrase: PHRASES[2],
-        // PLACEHOLDER IMAGE: Boutique hotel room at golden hour, balcony doors
-        // open to the city
-        note: "Boutique hotel room at golden hour, balcony doors open to the city",
-        drift: "leftDown",
-    },
-    {
-        phrase: PHRASES[3],
-        // PLACEHOLDER IMAGE: Tasting menu plated on a dark counter, overhead,
-        // hands in frame
-        note: "Tasting menu plated on a dark counter, overhead, hands in frame",
-        drift: "rightUp",
-    },
+// One per sector, in `PHRASES` order, so the picture changes as the word does.
+//
+// **Eight rather than four, and it costs nothing at runtime.** The budget this
+// slider came back under is *painted layers* — the DOM holds the outgoing
+// slide and the incoming one and never more, whatever the deck length — so
+// matching the headline's eight is four more placeholder notes and zero extra
+// compositing. Letting the deck fall out of step with the words was the other
+// option, and a picture of a restaurant under the word "Retail" is worse than
+// no picture.
+//
+// `drift` alternates so consecutive slides do not pan the same way: identical
+// drifts read as one looping clip rather than as a sequence.
+const DRIFTS = ["leftUp", "rightDown", "leftDown", "rightUp"];
+
+const NOTES = [
+    // PLACEHOLDER IMAGE: Restaurant on opening night, full tables, warm
+    // service light, shot wide from the pass
+    "Restaurant on opening night, full tables, warm service light, shot wide from the pass",
+    // PLACEHOLDER IMAGE: Boutique hotel room at golden hour, balcony doors
+    // open to the city
+    "Boutique hotel room at golden hour, balcony doors open to the city",
+    // PLACEHOLDER IMAGE: Shop floor mid-afternoon, a creator filming a product
+    // wall, staff serving behind
+    "Shop floor mid-afternoon, a creator filming a product wall, staff serving behind",
+    // PLACEHOLDER IMAGE: Show flat with the balcony doors open, a creator
+    // filming the room from the hallway
+    "Show flat with the balcony doors open, a creator filming the room from the hallway",
+    // PLACEHOLDER IMAGE: Fashion creator mid-shoot against a plain wall,
+    // outfit caught in motion
+    "Fashion creator mid-shoot against a plain wall, outfit caught in motion",
+    // PLACEHOLDER IMAGE: Train window at first light, a phone filming the
+    // landscape, bags on the seat
+    "Train window at first light, a phone filming the landscape, bags on the seat",
+    // PLACEHOLDER IMAGE: Studio class mid-session, one participant filming
+    // from the back of the room
+    "Studio class mid-session, one participant filming from the back of the room",
+    // PLACEHOLDER IMAGE: Flat-lay of a morning routine on a linen bed, hands
+    // arranging the last object
+    "Flat-lay of a morning routine on a linen bed, hands arranging the last object",
 ];
+
+export const SLIDES = PHRASES.map((phrase, i) => ({
+    phrase,
+    note: NOTES[i % NOTES.length],
+    drift: DRIFTS[i % DRIFTS.length],
+}));
 
 /** The four Ken Burns keyframe names, defined in `index.css`. */
 const DRIFT_ANIMATION = {

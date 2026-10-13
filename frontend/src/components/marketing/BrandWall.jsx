@@ -30,7 +30,7 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const COPY = {
     eyebrow: "The brands",
     title: "Businesses that run campaigns with us.",
-    line: "Each of these has finished at least one, and asked to be named here.",
+    line: "Each of these has finished at least one campaign here, and has given written permission to be named.",
 };
 
 // How many boxes the skeleton draws. The server's default size is 12; the

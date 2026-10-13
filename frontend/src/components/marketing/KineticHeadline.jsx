@@ -1,13 +1,25 @@
 // The signature: a headline that morphs at letterform level.
 //
-// "Your launch night" → "Your fashion drop" → "Your travel stay" → "Your menu
-// tasting", each resolving against the constant second line "handled
-// properly." The motion *is* the message — the thing that changes is the kind
-// of campaign, and the thing that does not is how it is run.
+// "Influencer marketing for F&B" → "...for Hospitality" → "...for Retail", and
+// on through the sector list, each resolving against the constant second line
+// "We run it end to end." The motion *is* the message — what changes is the
+// sector, and what does not is that we run the campaign.
 //
-// **"Your" and "handled properly." never move.** Only the tail morphs, which
-// is what makes this read as one sentence being re-pointed rather than four
-// unrelated headlines cycling. Animating the whole line would say the opposite.
+// **The lead and the tail never move.** Only the middle morphs, which is what
+// makes this read as one sentence being re-pointed rather than eight unrelated
+// headlines cycling. Animating the whole line would say the opposite.
+//
+// **It used to be a possessive on a campaign noun** — "Your launch night",
+// "Your menu tasting" — against the tail "handled properly." Three things were
+// wrong with it and all three are the reason this changed. "Your travel stay"
+// and "your menu tasting" are not phrases anybody says, so they read as
+// machine-assembled. The possessive addressed a marketing head as if about
+// their own evening rather than their campaign. And "properly" is the hedge
+// the register rules ban everywhere else on this site, carrying the whole
+// claim.
+//
+// **"Influencer marketing" is in the H1 because it is the category term**, and
+// before this it appeared in no headline anywhere on the site.
 //
 // **Per character, not per word, and never a plain fade.** Outgoing letters
 // rise and dissolve on a stagger; incoming letters arrive from below on the
@@ -34,12 +46,25 @@ import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import { EASE } from "@/components/marketing/motion";
+import { CATEGORY_OPTIONS } from "@/lib/categories";
 import { MARKETING as IDS } from "@/constants/testIds";
 
-/** Four kinds of campaign, four real categories. Same rule as the hero deck:
- *  a phrase naming a category `CampaignCategory` does not have is an invitation
- *  to filter the brief list and find nothing. */
-export const PHRASES = ["launch night", "fashion drop", "travel stay", "menu tasting"];
+/**
+ * The sectors, straight off the live category list.
+ *
+ * **Derived rather than written out, which is the whole point.** The old
+ * phrases were four hand-written kinds of work that happened to correspond to
+ * categories, held in line by a reviewer noticing — and a phrase naming a
+ * sector `CampaignCategory` does not have is an invitation to read the
+ * headline, open the brief feed, filter to it and find nothing. Mapping the
+ * enum means that cannot be written. `lib/categories.js` is already drift-
+ * tested against `CATEGORY_LITERAL`, so this inherits that guarantee.
+ *
+ * Eight rather than four, so the morph says "every sector" rather than
+ * "these four" — every label is inside the twelve-character ceiling the
+ * letter animation is budgeted for, "Food & drink" at exactly twelve.
+ */
+export const PHRASES = CATEGORY_OPTIONS.map((c) => c.label);
 
 const HOLD_MS = 4000;
 
@@ -96,8 +121,8 @@ function Letters({ text }) {
  * @param {string} tail   the line that never changes, after it
  */
 export function KineticHeadline({
-    lead = "Your",
-    tail = "handled properly.",
+    lead = "Influencer marketing for",
+    tail = "We run it end to end.",
     phrases = PHRASES,
 }) {
     const reduced = useReducedMotion();

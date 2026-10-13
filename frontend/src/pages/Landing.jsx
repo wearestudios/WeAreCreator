@@ -1,10 +1,18 @@
 // Home — a router, not a story.
 //
-// Four screens: what this is, the counted proof, what is wrong with the
-// alternative, and two doors. **Under 120 words of body copy**, which is the
-// constraint that made the rest of the decisions — every sentence here has to
-// earn the click, and the detail it wants to add lives on the audience pages,
-// in onboarding, and in the product.
+// Four screens: what this is, the counted proof, what we run, and two doors.
+// The detail it wants to add lives on the audience pages, in onboarding, and
+// in the product.
+//
+// **The word budget was raised from 120 and the reason belongs here**, because
+// 120 is what wrote the copy this replaced. A twenty-word line and an
+// eight-word heading will not hold "Every creator is verified through
+// Instagram's official API before they reach a brief" — so what fitted was the
+// aphorism, and the page filled up with sentences that sounded considered and
+// named nothing: "A follower count in a DM is a number somebody typed." The
+// budget is 260 now and the rule it enforces is the same one: a section that
+// wants to say more still has to argue with a number, and the number is just
+// no longer set below the length of a specific claim.
 //
 // **The hero slider is back, and the terms it came back on are the record.**
 // It was removed once, on a measurement rather than a taste: four
@@ -15,9 +23,9 @@
 // It returns carrying no copy of its own. Each slide used to have a headline
 // ("A full room on opening night"), which is a second idea on a screen that
 // already has one, and four of them made the page look like it was selling
-// four products. The deck is now built from `PHRASES` — the same four kinds
-// of work the headline morphs through — so the picture changes *with* the
-// words rather than beside them. One idea, moving.
+// four products. The deck is built from `PHRASES` — the sectors the headline
+// morphs through — so the picture changes *with* the words rather than beside
+// them. One idea, moving.
 //
 // What it costs is written down in `HeroSlider.jsx` and was measured before
 // it shipped: at most two layers in the DOM, the pan on the image layer and
@@ -59,34 +67,47 @@ import {
 // ---------------------------------------------------------------------------
 //
 // Kept together so the word budget can be read in one place rather than
-// counted across a file. A unit test enforces it — headlines to eight words,
-// lines to twenty, and the page total under 120.
+// counted across a file. A unit test enforces it — see `BUDGET` and the two
+// caps beside it in `test_marketing_pages.py`, and the note above on why they
+// moved.
 
 const COPY = {
-    title: "Your creator campaigns, handled properly.",
-    line: "Verified creators, the rate agreed before anyone shoots, and results you can show.",
+    title: "Influencer marketing, run end to end",
+    line: "Brands post a brief. We cast the creators, agree every rate in writing, run the shoot and send the report — across India, in every sector we run.",
 
-    problemTitle: "Most campaigns run on DMs and spreadsheets.",
-    problems: [
+    // **This section states the service; it used to open on three failures.**
+    // "Most campaigns run on DMs and spreadsheets", then three lines about
+    // creators nobody checked and proof nobody had. Every one was true and
+    // all three were about the reader: a marketing head evaluating a vendor
+    // reads a list of things they are doing wrong as a put-down, and home was
+    // spending its first screen on it before saying what this company does.
+    //
+    // Same three subjects, stated as what the operation runs. The claims are
+    // stronger this way round because each one is now checkable rather than
+    // knowing: "a follower count in a DM is a number somebody typed" is an
+    // observation, "verified through Instagram's official API" is a fact
+    // somebody can hold us to.
+    serviceTitle: "One team runs the whole campaign.",
+    service: [
         {
-            label: "Creators nobody has checked",
-            line: "A follower count in a DM is a number somebody typed.",
+            label: "Creators are verified",
+            line: "A person reviews every creator, and connected accounts report their audience through Instagram's official API.",
         },
         {
-            label: "No rate in writing",
-            line: "Settled on the day, or argued about three weeks later.",
+            label: "Rates are agreed in writing",
+            line: "We negotiate each fee and record it against the booking before anyone shoots.",
         },
         {
-            label: "No proof it worked",
-            line: "It ends, and nobody can say what it actually did.",
+            label: "Every campaign ends in a report",
+            line: "The posts that ran, the reach they got, and what the campaign cost, in one place.",
         },
     ],
-    promise: "We built the process that closes all three.",
+    promise: "Follow one campaign, brief to payment.",
 
     filmTitle: "One campaign, start to finish.",
 
     closeTitle: "Where would you like to begin?",
-    closeLine: "Creators join free. We check a brand before it reaches anyone.",
+    closeLine: "Creators join free and keep their full rate. Every brand is checked before it reaches anyone.",
 };
 
 /**
@@ -103,7 +124,7 @@ const COPY = {
  *
  * The two say different things now rather than the same thing twice: the
  * cards are the range, the slider is one of them at a time, in step with the
- * headline morphing through the same four phrases.
+ * headline morphing through the same sectors.
  *
  * Everything in the content column is fixed across slides. Only the
  * background moves, which is what keeps this one idea instead of two.
@@ -184,22 +205,29 @@ function Hero() {
 }
 
 /**
- * The problem, and the promise — one screen, one idea.
+ * What the operation actually does — one screen, one idea.
  *
- * **What is named is disorganisation, never agencies.** WeAre Studios is one
- * and the managed service is a real offering, so "without an agency" would be
- * home arguing against a thing /why-weare sells two clicks away.
+ * **This was `Problem`, and it opened on three things the reader was getting
+ * wrong.** Naming a failure is only worth a screen when the reader has not
+ * already lived it; a marketing head who has run a campaign over DMs knows
+ * what that cost, and being told reads as a put-down from a vendor they are
+ * evaluating. The three subjects survived — verification, the rate, the
+ * report — stated as the three things this company runs.
+ *
+ * **Agencies are still never named.** WeAre Studios is one and the managed
+ * service is the product, so "without an agency" would be home arguing
+ * against a thing /why-weare sells two clicks away.
  */
-function Problem() {
+function WhatWeRun() {
     return (
         <section data-testid={PAGE_IDS.problem} className="border-t border-white/10">
             <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
                 <Reveal>
-                    <Eyebrow>The problem</Eyebrow>
+                    <Eyebrow>What we run</Eyebrow>
                 </Reveal>
                 <Reveal i={1}>
                     <h2 className="mt-4 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">
-                        {COPY.problemTitle}
+                        {COPY.serviceTitle}
                     </h2>
                 </Reveal>
 
@@ -213,7 +241,7 @@ function Problem() {
                     a phone reads the claim before the illustration rather
                     than scrolling past a tint to reach it. */}
                 <div className="mt-8 grid items-start gap-8 md:grid-cols-[1fr_minmax(0,22rem)] md:gap-12">
-                    <Points items={COPY.problems} />
+                    <Points items={COPY.service} />
                     <Reveal i={2}>
                         {/* PLACEHOLDER IMAGE: A creator shooting on location,
                             phone on a gimbal, venue staff visible behind */}
@@ -252,7 +280,7 @@ export default function Landing() {
             className="min-h-screen bg-background text-foreground grain-page"
         >
             <PageMeta
-                title="Creator campaigns, handled properly"
+                title="Influencer marketing across India, run end to end"
                 // **No city in the meta description.** It named Bengaluru,
                 // which was accurate and is the one claim on this page that
                 // nothing re-checks — a meta description is written once and
@@ -260,7 +288,7 @@ export default function Landing() {
                 // this site is rendered from counted supply
                 // (`CountedGeography`); a description cannot do that, so it
                 // says nothing about place rather than something stale.
-                description="Verified creators, the rate agreed in writing before anyone shoots, and a report at the end. Paid brand campaigns, run end to end."
+                description="Influencer marketing across India, run end to end. Brands post a brief; WeAre Creators casts verified creators, agrees every rate in writing, runs the shoot and sends the report."
                 path="/"
             />
             <MarketingNavbar />
@@ -308,7 +336,7 @@ export default function Landing() {
                 />
             </div>
 
-            <Problem />
+            <WhatWeRun />
 
             {/* **Three campaigns we actually ran**, which is the strongest
                 thing this operation has to say and had been on no page. The

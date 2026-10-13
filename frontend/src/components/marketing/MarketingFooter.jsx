@@ -59,7 +59,8 @@ export function MarketingFooter() {
                             <StudioEndorsement testid={STUDIO_IDS.footer} />
                         </div>
                         <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                            Creator campaigns, handled properly.
+                            Influencer marketing across India, run end to end — casting,
+                            rates, the shoot and the report.
                         </p>
                     </div>
 

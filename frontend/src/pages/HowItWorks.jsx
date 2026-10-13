@@ -32,14 +32,14 @@ import { MARKETING as IDS } from "@/constants/testIds";
 
 const COPY = {
     title: "Both sides of the same campaign.",
-    line: "A creator from signing up to being paid, and a brand from brief to report.",
+    line: "A creator from signing up to being paid, and a brand from brief to report. The same six steps, seen from each side.",
 
     tracksTitle: "Six steps, seen from both sides.",
     tracks: [
         {
             step: "Signing up",
-            creator: { label: "Build a profile", line: "Reviewed by a person before you can pitch." },
-            brand: { label: "Register the business", line: "Checked against your paperwork before you reach anyone." },
+            creator: { label: "Build a profile", line: "A person reviews it before you can pitch for work." },
+            brand: { label: "Register the business", line: "Checked against your paperwork before anything you post reaches a creator." },
         },
         {
             step: "The brief",
@@ -48,27 +48,27 @@ const COPY = {
             // arrive with their rate, which described a board a brand worked
             // through — the self-serve reading of a managed product. Nobody
             // unshortlisted reaches them.
-            brand: { label: "Post the brief and we cast", line: "We shortlist creators and agree their fees before you see anyone." },
+            brand: { label: "Post the brief and we cast", line: "We shortlist creators and agree each fee before you see anyone." },
         },
         {
             step: "The money",
-            creator: { label: "Rate agreed first", line: "Recorded against the booking, not left in a DM." },
-            brand: { label: "You pay us", line: "Creator's rate plus our fee, both shown before you confirm." },
+            creator: { label: "Rate agreed first", line: "Recorded against the booking in writing, not left in a DM." },
+            brand: { label: "You pay us", line: "The creator rate plus our fee, both itemised before you confirm." },
         },
         {
             step: "The shoot",
-            creator: { label: "Book a slot", line: "Inside the hours the venue can take people." },
-            brand: { label: "See the roster", line: "Who is booked, when, and what changes." },
+            creator: { label: "Book a slot", line: "Inside the days and hours the venue said it can take people." },
+            brand: { label: "See the roster", line: "Who is booked, when they arrive, and anything that moves." },
         },
         {
             step: "Before it is live",
-            creator: { label: "Send the draft", line: "Publish once it is approved. Nothing gets taken down." },
-            brand: { label: "Approve it or ask for changes", line: "Nothing is published until you have said yes." },
+            creator: { label: "Send the draft", line: "Publish once it is approved, so nothing has to be taken down." },
+            brand: { label: "Approve it or ask for changes", line: "Nothing is published until you have said yes to it." },
         },
         {
             step: "Afterwards",
-            creator: { label: "Paid on delivery", line: "Released once the brand approves. No invoice to chase." },
-            brand: { label: "Read the report", line: "Reach, engagement and cost per thousand, in one place." },
+            creator: { label: "Paid on delivery", line: "Released once the work is approved. There is no invoice to chase." },
+            brand: { label: "Read the report", line: "The posts that ran, their reach and engagement, and cost per thousand." },
         },
     ],
 
@@ -76,28 +76,29 @@ const COPY = {
     trust: [
         {
             label: "Verified both ways",
-            line: "Neither side is taking the other's word for it.",
+            line: "A person checks every creator and every business, so neither side is taking the other’s word for it.",
         },
         {
             label: "Rate in writing",
-            line: "Agreed before the shoot, because it is what gets argued about after.",
+            line: "Agreed and recorded before the shoot, because it is what gets argued about after.",
         },
         {
             label: "Approval before it is public",
-            line: "The brand sees the content before the creator's followers do.",
+            line: "The brand sees the content before the creator’s followers do.",
         },
         {
             label: "Paid on approved delivery",
-            line: "The brand pays us; we release once the work is approved.",
+            line: "The brand pays us, and we release the creator’s fee once the work is approved.",
         },
     ],
 
     ownerTitle: "Every brief says who runs it.",
-    ownerLine: "The brand, or the WeAre Studios team. That decides who answers you and who reviews the draft.",
+    ownerLine: "The WeAre Studios team runs every brief a brand posts, which is who answers a creator’s question and who reviews the draft.",
 
     closeTitle: "Start on either side.",
-    closeLine: "Creators join free. We check a brand before it reaches anyone.",
+    closeLine: "Creators join free and keep their full rate. Every brand is checked before it reaches anyone.",
 };
+
 
 /** One side of one step. A label, a line, and nothing else. */
 function Track({ side, entry, testid }) {
@@ -123,8 +124,8 @@ export default function HowItWorks() {
     return (
         <MarketingPage
             testid={IDS.howItWorks}
-            title="How it works, for creators and brands"
-            description="The whole journey side by side: a creator from signup to paid, a brand from brief to report, with verification, rates in writing, draft approval and payment on delivery."
+            title="How influencer marketing works here, for creators and brands"
+            description="The whole campaign side by side: a creator from signup to paid, a brand from brief to report — verification, rates agreed in writing, draft approval before publication, and payment on approved delivery."
             path="/how-it-works"
         >
             <MarketingHero
