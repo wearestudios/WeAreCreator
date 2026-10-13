@@ -171,6 +171,25 @@ def _app_files():
             yield p
 
 
+def _code(src: str) -> str:
+    """Source with `//` lines and `/* */` blocks removed.
+
+    The convention here is to explain a removal where it happened, which means
+    the explanation quotes the thing removed — so a sweep that reads prose
+    fails on its own documentation. `Logo.jsx` says in its header that it
+    replaced a `bg-red-500` tile, and that sentence is the reason the file is
+    right rather than evidence that it is wrong.
+
+    Whole `//` lines rather than everything from `//` onward, which would also
+    truncate at the `//` in a `https://` inside a real string. The same cut
+    `test_brand_wall.py` and `test_marketing_pages.py` make.
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("//")
+    )
+
+
 class TestNothingNamesAColour:
     def test_no_component_uses_a_raw_tailwind_palette_class(self):
         """**This is what makes one component correct on both surfaces.**
@@ -219,27 +238,114 @@ class TestNothingNamesAColour:
 
 
 class TestRedIsLogoAndStandoutData:
-    def test_the_logo_is_red_on_both_surfaces(self):
-        """**The mark does not change colour depending on whether somebody is
-        signed in.** `bg-primary` would have made it navy in the product."""
-        marks = []
-        for name in ("Navbar.jsx", "Footer.jsx",
-                     "marketing/MarketingNavbar.jsx", "marketing/MarketingFooter.jsx"):
-            src = (SRC / "components" / name).read_text()
-            assert "bg-red-500" in src, f"{name} does not carry the brand mark"
-            marks.append(name)
-        assert len(marks) == 4
+    """**These two tests were rewritten when the real artwork arrived**, and
+    the first of them was inverted, which is worth stating rather than
+    burying.
 
-    def test_the_mark_carries_navy_ink_rather_than_the_flipping_token(self):
-        """The ground is red on both surfaces, so the letter is navy on both.
-        `text-primary-foreground` flips to white in the product, which on red
-        is 3.76:1."""
-        for name in ("Navbar.jsx", "Footer.jsx",
-                     "marketing/MarketingNavbar.jsx", "marketing/MarketingFooter.jsx"):
+    They used to pin the *drawn stand-in*: a `bg-red-500` tile with a serif W
+    in `text-navy-700`, asserted present in four files. Both the tile and the
+    letter are gone — the mark is now the tree and the wordmark, traced from
+    `src/assets/brand/wearecreators-logo.png` — so a test naming those classes
+    could only ever have failed here.
+
+    The first one also asserted the opposite of what the brand now asks for.
+    "The mark does not change colour depending on whether somebody is signed
+    in" was right about the *stand-in*, whose red tile worked on both grounds.
+    The real logo is a one-colour mark with no ground of its own, so on the
+    navy marketing surface it is white and on the light product surface it is
+    red — and the thing worth protecting is no longer "one colour everywhere"
+    but "the surface decides, through the mechanism that already decides it".
+
+    What survives intact is the fear underneath both: **`--primary` flips.**
+    It is #FF2731 on marketing and navy on the product, so a mark painted with
+    the token is red on the home page and navy in the app. That was the whole
+    point of the original and it is still the point here.
+    """
+
+    LOGO_SURFACES = (
+        "Navbar.jsx",
+        "Footer.jsx",
+        "marketing/MarketingNavbar.jsx",
+        "marketing/MarketingFooter.jsx",
+    )
+
+    def test_every_surface_renders_the_one_logo_component(self):
+        """The stand-in was nine inline copies in two spellings, which is how
+        a mark becomes whatever each file happens to say it is. One component,
+        or the next edit lands on three of the four."""
+        for name in self.LOGO_SURFACES:
             src = (SRC / "components" / name).read_text()
-            mark = re.search(r'bg-red-500[^"]*', src).group(0)
-            assert "text-navy-700" in mark, f"{name}: {mark}"
-            assert "text-primary-foreground" not in mark, name
+            assert "components/brand/Logo" in src, f"{name} does not import <Logo>"
+            assert "<Logo" in src, f"{name} imports it and does not render it"
+
+    def test_no_drawn_stand_in_survives_anywhere(self):
+        """Half a rebrand is worse than none: a leftover tile sits next to the
+        real mark in the same header. Swept over the whole app rather than the
+        four files above, because the stand-in was also on the auth screens."""
+        offenders = []
+        for p in _app_files():
+            code = _code(p.read_text())
+            if "bg-red-500" in code or "WeAre <span" in code:
+                offenders.append(str(p.relative_to(SRC)))
+        assert not offenders, offenders
+
+    def test_that_stand_in_sweep_can_actually_fail(self):
+        """It reads code and not prose, so it has to still catch the real
+        thing — and has to go on ignoring the sentence explaining it."""
+        assert "bg-red-500" in _code('<span className="bg-red-500">W</span>')
+        assert "bg-red-500" not in _code("// replaced the bg-red-500 tile")
+        assert "bg-red-500" not in _code("/* the old bg-red-500 mark */")
+        # The cut that would break the sweep: truncating from `//` onward.
+        assert "u" in _code('const u = "https://example.com";')
+
+    def test_the_surface_decides_the_logo_colour_and_primary_never_does(self):
+        """**White on marketing, red on the product, from the attribute that
+        already says which is which.**
+
+        Marketing navy is the *absence* of `data-theme`, so white is the
+        default rule and light is the override — the same way round as every
+        other token, and a bug that applies neither applies white to navy.
+
+        `--primary` is banned from the mark for the reason the original test
+        existed: it is the brand red on marketing and navy on the product, so
+        it would repaint the logo on sign-in.
+        """
+        css = (FRONTEND / "src" / "index.css").read_text()
+        assert ".weare-logo {\n        color: #fff;\n    }" in css, (
+            "the default rule is not white — marketing is the default document"
+        )
+        assert ':root[data-theme="light"] .weare-logo' in css, (
+            "nothing overrides the logo on the product surface"
+        )
+        assert "--weare-logo-ink: #ff2731" in css
+
+        logo = (SRC / "components" / "brand" / "Logo.jsx").read_text()
+        assert "#FF2731" in logo, "the forced tone is not the brand red"
+        for token in ("bg-primary", "text-primary", "var(--primary)"):
+            assert token not in logo, f"the mark is painted with {token}, which flips"
+
+    def test_the_logo_never_works_out_the_surface_for_itself(self):
+        """**No third source of truth for which surface a page is on.** There
+        are two — the pre-paint script and `isProductPath` — and a test already
+        fails them if they drift. A component asking a third time would also be
+        wrong for a frame on every first paint, which is the one thing the
+        pre-paint script exists to prevent.
+        """
+        logo = (SRC / "components" / "brand" / "Logo.jsx").read_text()
+        for reader in ("useLocation", "isProductPath", "PRODUCT_PREFIXES",
+                       "pathname", "data-theme"):
+            assert reader not in logo.split("*/")[-1], (
+                f"<Logo> reads {reader} rather than inheriting the surface"
+            )
+
+    def test_that_colour_rule_can_actually_fail(self):
+        """Break-tested, because an `in` against a stylesheet is exactly the
+        shape of assertion that passes on a file that no longer does the job.
+        """
+        good = ':root[data-theme="light"] .weare-logo {\n  color: red;\n}'
+        assert ':root[data-theme="light"] .weare-logo' in good
+        # The failure this guards: colouring the mark with the flipping token.
+        assert "var(--primary)" in 'style={{ color: "var(--primary)" }}'
 
     def test_standout_red_is_never_used_below_the_size_it_can_carry(self):
         """**The constraint the brand-exact red is bought with.**

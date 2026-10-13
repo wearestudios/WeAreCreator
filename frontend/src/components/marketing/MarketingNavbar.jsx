@@ -27,6 +27,7 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
+import Logo from "@/components/brand/Logo";
 
 const LINK =
     "text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground";
@@ -49,12 +50,7 @@ export function MarketingNavbar() {
                         data-testid={IDS.navLogo}
                         className="-my-1 flex min-h-[2.75rem] items-center gap-2 py-1 transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0"
                     >
-                        <span className="grid h-8 w-8 place-items-center rounded-md bg-red-500 font-serif text-lg font-semibold text-navy-700">
-                            W
-                        </span>
-                        <span className="font-serif text-xl tracking-tight">
-                            WeAre <span className="text-primary">Creators</span>
-                        </span>
+                        <Logo variant="horizontal" height={30} />
                     </Link>
                     <span aria-hidden className="hidden h-4 w-px bg-white/15 sm:block" />
                     {/* Outside the <Link>, so tapping the logo can only ever go
@@ -120,9 +116,7 @@ export function MarketingNavbar() {
                             <SheetTitle className="sr-only">Menu</SheetTitle>
                             <div className="flex h-full flex-col">
                                 <div className="flex flex-col gap-1 border-b border-white/10 px-6 py-5">
-                                    <span className="font-serif text-xl tracking-tight">
-                                        WeAre <span className="text-primary">Creators</span>
-                                    </span>
+                                    <Logo variant="horizontal" height={30} />
                                     <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
 

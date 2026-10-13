@@ -16,6 +16,7 @@ import { Link } from "react-router-dom";
 import { StudioEndorsement } from "@/components/StudioEndorsement";
 import { CONTACT_EMAIL, FOOTER_COLUMNS, copyrightYear } from "@/lib/siteNav";
 import { FOOTER as IDS, LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
+import Logo from "@/components/brand/Logo";
 
 const LINK =
     "text-sm text-muted-foreground transition-colors duration-200 hover:text-primary";
@@ -52,12 +53,7 @@ export function MarketingFooter() {
                             data-testid={IDS.wordmark}
                             className="inline-flex items-center gap-2.5"
                         >
-                            <span className="grid h-7 w-7 place-items-center rounded-md bg-red-500 font-serif text-sm text-navy-700">
-                                W
-                            </span>
-                            <span className="font-serif text-lg leading-none">
-                                WeAre <span className="text-primary">Creators</span>
-                            </span>
+                            <Logo variant="horizontal" height={26} />
                         </Link>
                         <div className="mt-3">
                             <StudioEndorsement testid={STUDIO_IDS.footer} />
