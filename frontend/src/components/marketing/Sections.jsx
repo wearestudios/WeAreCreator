@@ -318,7 +318,9 @@ export function TwoPaths({ testid, tone = "dark" }) {
                         <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
                     </p>
                     <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
-                        Paid briefs, your rate in writing, paid on approved delivery.
+                        Paid briefs from businesses we have checked. You quote your
+                        rate, it goes in writing before you shoot, and you keep all of
+                        it.
                     </p>
                 </Link>
             </Reveal>
@@ -329,8 +331,8 @@ export function TwoPaths({ testid, tone = "dark" }) {
                         <ArrowRight className={`h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 ${arrow}`} />
                     </p>
                     <p className={`mt-3 text-sm leading-relaxed ${bodyClass}`}>
-                        Checked creators, approval before publication, a report at the
-                        end.
+                        Post a brief and we run the campaign — casting, rates,
+                        scheduling and delivery. You approve the work.
                     </p>
                 </Link>
             </Reveal>

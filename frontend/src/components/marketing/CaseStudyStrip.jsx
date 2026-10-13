@@ -42,7 +42,7 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const COPY = {
     eyebrow: "Our work",
     title: "Campaigns we ran, end to end.",
-    line: "What the brand needed, who shot it, and what it reached.",
+    line: "What the brand needed, which creators shot it, what it reached, and what it cost.",
     all: "See all of our work",
 };
 

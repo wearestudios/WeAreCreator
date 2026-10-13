@@ -40,7 +40,7 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
 
 const COPY = {
-    title: "Your creator campaigns, handled properly.",
+    title: "Influencer marketing, run end to end.",
     line: "A studio that runs campaigns for a living, running yours on a platform you can see into.",
 
     pedigreeTitle: "Built by the people who do the work.",
@@ -48,17 +48,17 @@ const COPY = {
     pedigree: [
         {
             label: "Built on real campaigns",
-            line: "Every screen answers a question somebody had mid-shoot.",
+            line: "Every screen here answers a question somebody actually had mid-shoot.",
         },
     ],
 
     // **The geography point is counted, so it is a function of the city.**
     // Unlike `/for-brands`, only the *point* drops below the proof floor here
-    // rather than the whole section — "Built by the people who do the work"
-    // stands on its own, and the other point is not about a place.
+    // rather than the whole section — the pedigree claim stands on its own,
+    // and the other point is not about a place.
     pedigreeReach: (city) => ({
-        label: `The network runs deepest in ${city}`,
-        line: "Which is why briefs fill fastest. Creators sign up from across the country.",
+        label: `Deepest supply in ${city}`,
+        line: "Which is why briefs fill fastest there. We run campaigns across India, in every sector we list.",
     }),
 
     // **This was the self-serve choice and the product no longer has one.**
@@ -67,57 +67,58 @@ const COPY = {
     // product now, so the section argues what that costs instead — which is
     // the thing a sceptic with another tab open is actually weighing.
     termsTitle: "What handing it over costs.",
-    termsLine: "Our fee sits on top of the creator rate, and comes back if we cannot fill the brief.",
+    termsLine: "Our fee sits on top of the creator rate rather than coming out of it, and the campaign fee comes back if we cannot fill the brief.",
     terms: [
         {
             label: "No retainer, no markup",
-            line: "On creator fees. You pay per campaign, nothing between them.",
+            line: "You pay per campaign and nothing between them. We add no margin to a creator fee.",
         },
         {
             label: "Creators keep their full rate",
-            line: "Our fee is charged to you, never taken out of theirs.",
+            line: "Our fee is charged to you, never taken out of theirs. A squeezed creator is one who leaves.",
         },
         {
             label: "A named manager",
-            line: "Holding the roster, and at the door on the day.",
+            line: "One person holds the roster, briefs the creators and is at the door on the day.",
         },
         {
             label: "Refunded if we cannot fill it",
-            line: "Unless you turned down everyone we shortlisted.",
+            line: "The campaign fee comes back, unless you turned down everyone we shortlisted.",
         },
     ],
 
-    problemTitle: "Badly organised, not badly judged.",
-    problemLine: "Each of these has a mechanism here rather than a good intention.",
+    problemTitle: "Three things we run, rather than hope for.",
+    problemLine: "Each of these is a mechanism in the product rather than a good intention.",
     problems: [
         {
-            label: "Creators nobody has checked",
-            line: "A person reviews every creator. Connected stats are read from Instagram.",
+            label: "Creators are verified",
+            line: "A person reviews every creator, and connected accounts report their audience through Instagram’s official API.",
         },
         {
-            label: "No rate in writing",
-            line: "Agreed and recorded against the booking before anyone shoots.",
+            label: "Rates are agreed in writing",
+            line: "Negotiated and recorded against the booking before anyone shoots.",
         },
         {
-            label: "No proof it worked",
-            line: "Reach and cost per thousand, collected from the posts that ran.",
+            label: "Results are collected",
+            line: "Reach and cost per thousand, taken from the posts that actually ran.",
         },
     ],
 
     moneyTitle: "Nobody is guessing what it costs.",
-    moneyLine: "The creator keeps their rate. You pay us that plus our fee, and we release on approved delivery.",
+    moneyLine: "The creator keeps their rate. You pay us that plus our fee, and we release the money on approved delivery.",
 
     closeTitle: "Post your first brief.",
     closeLine: "About ten minutes. We check your business before anything reaches a creator.",
 };
+
 
 export default function WhyWeAre() {
     const deepestCity = useDeepestCity();
     return (
         <MarketingPage
             testid={IDS.whyWeAre}
-            title="Why WeAre Creators"
-            description="A studio that runs campaigns for a living, running yours end to end. Verified people on both sides, rates and fees in the open, and a report at the end."
+            title="Why brands choose WeAre Creators"
+            description="A studio that runs influencer campaigns for a living, running yours end to end across India. Verified people on both sides, rates and fees in the open, and a report at the end."
             path="/why-weare"
         >
             <MarketingHero
@@ -179,7 +180,7 @@ export default function WhyWeAre() {
             <section className="border-b border-white/10 py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <Reveal>
-                        <Eyebrow>What we are fixing</Eyebrow>
+                        <Eyebrow>What we run</Eyebrow>
                     </Reveal>
                     <Reveal i={1}>
                         <h2 className="mt-4 max-w-2xl font-serif text-fluid-4xl leading-tight tracking-tight">

@@ -36827,7 +36827,7 @@ def _brand_summary(brand: dict, live: int) -> str:
     if about:
         first = about.split("\n")[0].strip()
         return first[:180] + ("…" if len(first) > 180 else "")
-    return " · ".join(bits) or "A verified brand on WeAre Creators."
+    return " · ".join(bits) or "A verified brand running campaigns on WeAre Creators."
 
 
 def _brand_page_html(
@@ -37053,8 +37053,8 @@ a{{color:inherit}}
   <a class="btn ghost" href="{app_base}/campaigns">See every open brief</a>
 </div>
 <footer>
-  WeAre Creators connects verified creators with brands running paid campaigns
-  in Bengaluru. Brands are checked by our team before their briefs go public.
+  WeAre Creators runs influencer marketing campaigns across India, end to end.
+  Brands are checked by our team before any brief of theirs goes public.
 </footer>
 </div></body></html>"""
 
@@ -37145,6 +37145,27 @@ MARKETING_PATHS = (
 
 # Phrases that would position us against agencies, or promise more than the
 # operation can do. Checked against the rendered HTML of every marketing page.
+#
+# **The four geography bans were lifted, and that is a reversal worth reading
+# before anybody reinstates them.** "every city", "across india", "pan-india"
+# and "nationwide" were banned because the claim they made was one the
+# operation could not back: the network was deepest in Bengaluru and a footprint
+# we could not staff is worse than the city it replaces. The business is now
+# stated to operate across India, which is a fact about the operation rather
+# than about the copy — so the ban was forbidding a true sentence, and a guard
+# that refuses the truth is a guard that gets worked around.
+#
+# What did **not** change is the mechanism underneath it. `_deepest_supply_city`
+# still counts verified creators per city and `CountedGeography` still renders
+# that name from live supply inside the `PROOF_FLOORS` gate, so where a page
+# names *one* place it is still counted rather than typed. The scope claim and
+# the depth claim are different claims and only the first is now sayable
+# without a count behind it.
+#
+# The anti-agency half is untouched and is not the same kind of rule: WeAre
+# Studios *is* an agency and the managed service is the product, so those lines
+# would have the site arguing against its own offering. "guarantee" stays for
+# the original reason — it is a promise about an outcome nobody controls.
 _FORBIDDEN_MARKETING_PHRASES = (
     "without an agency",
     "without agencies",
@@ -37154,10 +37175,6 @@ _FORBIDDEN_MARKETING_PHRASES = (
     "skip the agency",
     "agency fees",
     "middleman",
-    "every city",
-    "across india",
-    "pan-india",
-    "nationwide",
     "guarantee",
     "guaranteed",
 )
@@ -37431,10 +37448,10 @@ def _work_index_html(rows: list, media_base: str = "") -> str:
     e = html_escape
     app_base = e((os.environ.get("CORS_ORIGINS", "").split(",")[0] or "").strip().rstrip("/"))
     url = f"{_share_base()}{CASE_STUDY_PATH}"
-    title = "Campaigns we ran, and what they did — WeAre Creators"
+    title = "Influencer marketing campaigns we ran, and what they did — WeAre Creators"
     summary = (
-        "Real campaigns from start to finish: what the brand needed, who shot it, "
-        "and what it reached."
+        "Influencer marketing campaigns we ran from start to finish: what the brand "
+        "needed, which creators shot it, what it reached, and what it cost."
     )
 
     cards = []
@@ -37463,7 +37480,7 @@ def _work_index_html(rows: list, media_base: str = "") -> str:
     ld = {
         "@context": "https://schema.org",
         "@type": "CollectionPage",
-        "name": "Campaigns we ran",
+        "name": "Influencer marketing campaigns we ran",
         "url": url,
         "hasPart": [
             {"@type": "Article", "headline": cs.get("title") or "",
@@ -37483,17 +37500,17 @@ def _work_index_html(rows: list, media_base: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en-IN"><head>{head}</head><body><div class="wrap">
 <p class="eyebrow">Our work</p>
-<h1>Campaigns we ran, end to end.</h1>
-<p class="lede">What the brand needed, who shot it, and what it reached.</p>
+<h1>Influencer marketing campaigns we ran, end to end.</h1>
+<p class="lede">What the brand needed, which creators shot it, what it reached, and what it cost.</p>
 {grid}
 <div class="cta">
-  <a class="btn primary" href="{app_base}/signup?role=brand">Post a campaign</a>
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
   <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
 </div>
 <footer>
-  WeAre Creators runs paid creator campaigns end to end — casting, fees, the
-  shoot and delivery. Creators appear here only where they have agreed to be
-  featured.
+  WeAre Creators runs influencer marketing campaigns across India, end to end —
+  casting, rates, the shoot and the report. Creators appear here only where they
+  have agreed to be featured.
 </footer>
 </div></body></html>"""
 
@@ -37653,12 +37670,13 @@ def _work_detail_html(cs: dict, media_base: str = "") -> str:
 {links}
 {quote_html}
 <div class="cta">
-  <a class="btn primary" href="{app_base}/signup?role=brand">Post a campaign</a>
+  <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
   <a class="btn ghost" href="{_share_base()}{CASE_STUDY_PATH}">See more of our work</a>
 </div>
 <footer>
-  We run paid creator campaigns end to end — casting, fees, the shoot and
-  delivery. Creators appear here only where they have agreed to be featured.
+  We run influencer marketing campaigns across India, end to end — casting,
+  rates, the shoot and the report. Creators appear here only where they have
+  agreed to be featured.
 </footer>
 </div></body></html>"""
 
@@ -38821,9 +38839,9 @@ def _landing_html(
   <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
 </div>
 <footer>
-  WeAre Creators runs paid creator campaigns end to end — casting, fees, the
-  shoot and delivery. Every figure on this page is counted from the platform
-  at the moment it loaded.
+  WeAre Creators runs influencer marketing campaigns across India, end to end —
+  casting, rates, the shoot and the report. Every figure on this page is counted
+  from the platform at the moment it loaded.
 </footer>
 </div></body></html>"""
 

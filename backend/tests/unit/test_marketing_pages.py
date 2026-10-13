@@ -260,16 +260,43 @@ def test_the_enemy_named_is_disorganisation_not_a_competitor():
     # same charge with the noun restored — so what is pinned now is the idea
     # rather than the two words it happened to be written in. A rule that
     # names a phrase is a rule that fails on its next honest rewrite.
+    #
+    # **Both halves were replaced and the test turned around with them.** It
+    # pinned "DMs and spreadsheets" and "nobody has checked" — the charge the
+    # page used to open on. Leading with three things the reader is doing
+    # wrong, before saying what this company does, is the defect the rewrite
+    # was for: a marketing head evaluating a vendor reads it as a put-down.
+    #
+    # So home states the service first. What still has to be true is that the
+    # three things the operation actually fixes are named somewhere on it —
+    # verification, the rate in writing, and the report — because those are
+    # the claims every other page is built on.
     home = copy_of(*PAGES["home"]).lower()
-    assert "dms and spreadsheets" in home
-    assert "nobody has checked" in home
+    assert "verified" in home
+    assert "in writing" in home
+    assert "report" in home
 
 
 def test_the_headline_direction_is_carried():
-    """"Your creator campaigns, handled properly" governs the copy. Home is
-    where it leads, and /why-weare is the page that argues it."""
-    assert "handled properly" in copy_of(*PAGES["home"])
-    assert "handled properly" in copy_of(*PAGES["why"])
+    """The H1 governs the copy: home is where it leads and /why-weare argues
+    it.
+
+    **This used to pin "handled properly", which was the old tail.** It went
+    with the hero rewrite — a possessive morph ("Your menu tasting") addressed
+    a marketing head about their personal evening, and "properly" is the kind
+    of hedge the register rules ban everywhere else on this site. What the
+    headline says now is the managed model and the category the business sells
+    in, so that is what the two pages have to carry.
+
+    Pinned as the idea rather than the sentence, the rule this file already
+    holds everywhere else: a test naming a phrase is a test that fails on its
+    next honest rewrite.
+    """
+    for page in ("home", "why"):
+        text = copy_of(*PAGES[page]).lower()
+        assert "end to end" in text, page
+    # The category term the business needs to rank for, in the page title.
+    assert "influencer marketing" in copy_of(*PAGES["home"]).lower()
 
 
 # --- What each audience has to come away knowing ------------------------------
@@ -861,12 +888,25 @@ def test_an_invite_only_brief_is_not_counted_in_a_public_figure(monkeypatch):
 
 
 @pytest.mark.parametrize("name", list(PAGES))
-def test_no_page_claims_a_reach_the_operation_does_not_have(name):
-    """Bengaluru is evidence of network depth, never identity — so the pages
-    that mention geography say where the network is deepest, and none of them
-    claims more."""
+def test_no_page_claims_more_than_the_operation_does(name):
+    """**The geography half of this was lifted and the rest was not.**
+
+    It banned "every city", "pan-India", "across India" and "nationwide" as a
+    set, because the claim they made was one the operation could not back: the
+    network was deepest in Bengaluru and a footprint we could not staff is
+    worse than the city it replaces. The operation is stated to run across
+    India now, so the ban was refusing a true sentence — and a guard that
+    refuses the truth is a guard somebody works around.
+
+    What is still banned is the promise nobody controls. "Guaranteed" reach,
+    or a guaranteed result, is an outcome claim on somebody else's audience.
+
+    Read off `_FORBIDDEN_MARKETING_PHRASES` rather than re-listed here, so the
+    server's list and this sweep cannot disagree about what is sayable — which
+    is exactly how the four geography strings survived in two places.
+    """
     text = copy_of(*PAGES[name]).lower()
-    for phrase in ("every city", "pan-india", "across india", "nationwide"):
+    for phrase in server._FORBIDDEN_MARKETING_PHRASES:
         assert phrase not in text, f"{name}: {phrase}"
 
 
@@ -891,12 +931,11 @@ def test_geography_is_stated_as_depth_rather_than_identity():
     """
     for name in ("brands", "why"):
         text = copy_of(*PAGES[name]).lower()
-        # Depth, not identity: still the claim.
-        assert "runs deepest" in text, name
-        # And the breadth half, which is what makes depth a comparison rather
-        # than a boundary. Said without a banned absolute — "across the
-        # country" is checkable, "pan-India" is a promise.
-        assert "across the country" in text, name
+        # Depth, not identity: still the claim, and still the half that needs
+        # a count behind it. The scope claim beside it ("across India") is a
+        # fact about the operation and is no longer banned — see
+        # `test_no_page_claims_more_than_the_operation_does`.
+        assert "deepest" in text, name
         # The place itself arrives as an argument. Nothing in the file names
         # one, which `test_no_page_names_a_city_in_its_copy` enforces.
         assert "(city) =>" in read(*PAGES[name]), name
@@ -937,7 +976,7 @@ def test_home_keeps_only_what_routes():
     )
     assert "<Hero />" in code
     assert "<ProofStrip" in code
-    assert "<Problem />" in code
+    assert "<WhatWeRun />" in code
     assert "TwoPaths" in code
     for gone in ("LiveBriefs", "function Reach", "TRUST_POINTS", "verticals"):
         assert gone not in code, gone
@@ -1183,16 +1222,36 @@ def test_robots_txt_does_not_claim_the_site_origin_serves_the_sitemap():
 
 # --- The copy budget ----------------------------------------------------------
 #
-# "One idea per screen-height. Headlines up to eight words, supporting lines up
-# to twenty, no paragraph over three rendered lines." Those are rules about a
-# rendered page, and most of them can only be checked in a browser — but the
-# word counts can be checked here, and the word counts are the ones that drift.
+# "One idea per screen-height, headlines short, supporting lines short, no
+# paragraph over three rendered lines." Those are rules about a rendered page,
+# and most of them can only be checked in a browser — but the word counts can
+# be checked here, and the word counts are the ones that drift.
 #
 # Every page keeps its copy in one `COPY` object for exactly this reason: the
 # budget can be read rather than reconstructed by walking JSX. A section that
 # wants to say more has to argue with a number.
 
-BUDGET = {"home": 120, "brands": 250, "creators": 250, "how": 300, "why": 300}
+# **The budget was raised, and the reason is that the old one was writing the
+# copy.** 120 words on home, headlines to eight and lines to twenty, bought
+# compression — and what compression actually produced was the aphorism: "A
+# follower count in a DM is a number somebody typed", "It ends, and nobody can
+# say what it actually did". Those fit a twenty-word line because they say
+# almost nothing. "Every creator is verified through Instagram's official API
+# before they reach a brief" is the sentence that replaces the first, and it
+# does not fit.
+#
+# So the cap moved to where a concrete claim can live: a headline naming a
+# thing (12), a line that states a fact with its qualifier (32), and a home
+# page that can say what the company does before it routes (260). The rule it
+# is still enforcing is unchanged — one idea per screen-height, and a section
+# that wants to say more has to argue with a number. The number is just no
+# longer set below the length of a specific sentence.
+BUDGET = {"home": 260, "brands": 320, "creators": 320, "how": 360, "why": 360}
+
+# A heading may name a sector and a verb; a line may carry a fact and the
+# qualifier that makes it checkable. Both were 8/20.
+HEADLINE_WORDS = 12
+LINE_WORDS = 32
 
 
 def _block_strings(src, marker):
@@ -1275,7 +1334,7 @@ def test_every_page_stays_inside_its_word_budget(name):
 
 
 @pytest.mark.parametrize("name", list(BUDGET))
-def test_no_headline_runs_past_eight_words(name):
+def test_no_headline_runs_past_the_headline_cap(name):
     """Keys ending in `title` or named `label` are the headings and the
     four-word labels that replaced the paragraphs."""
     src = read(*PAGES[name])
@@ -1297,17 +1356,17 @@ def test_no_headline_runs_past_eight_words(name):
             r"\$\{[^}]*\}", "city", m.group(3)
         )
         n = len(_words(text))
-        assert n <= 8, f"{name}: {n} words — {text!r}"
+        assert n <= HEADLINE_WORDS, f"{name}: {n} words — {text!r}"
 
 
 @pytest.mark.parametrize("name", list(BUDGET))
-def test_no_supporting_line_runs_past_twenty_words(name):
+def test_no_supporting_line_runs_past_the_line_cap(name):
     src = read(*PAGES[name])
     start = src.index("const COPY = {")
     block = src[start:]
     for m in re.finditer(r'\b(line|\w+Line|footnote):\s*"((?:[^"\\]|\\.)*)"', block):
         n = len(_words(m.group(2)))
-        assert n <= 20, f"{name}: {n} words — {m.group(2)!r}"
+        assert n <= LINE_WORDS, f"{name}: {n} words — {m.group(2)!r}"
 
 
 def _code(*parts):
@@ -1505,24 +1564,44 @@ def test_the_marketing_footer_names_terms_privacy_and_a_human():
 # is run.
 
 
-def test_the_headline_morphs_between_four_real_campaign_categories():
+def test_the_headline_morphs_between_real_campaign_categories():
     """A phrase naming a category `CampaignCategory` does not have is an
-    invitation to filter the brief list and find nothing. Same rule the hero
-    deck already followed."""
+    invitation to filter the brief list and find nothing.
+
+    **The rule is the same and it is now structural rather than watched.** The
+    phrases were four hand-written kinds of work ("launch night", "menu
+    tasting") that happened to correspond to categories; they are the sector
+    list itself now, mapped straight off `CATEGORY_OPTIONS`, so a phrase that
+    the brief feed cannot filter to is no longer something a reviewer has to
+    notice. `lib/categories.js` is already drift-tested against
+    `CATEGORY_LITERAL`, which is what makes that worth doing.
+    """
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    phrases = re.findall(r'"([a-z ]+)"', src[src.index("export const PHRASES") : src.index("const HOLD_MS")])
-    assert len(phrases) == 4, phrases
-    for banned in ("tech", "gadgets", "gaming", "automotive"):
-        assert not any(banned in p for p in phrases), banned
+    block = src[src.index("export const PHRASES") : src.index("const HOLD_MS")]
+    assert "CATEGORY_OPTIONS" in block, (
+        "the phrases are hand-written again rather than derived from the enum"
+    )
+    assert "categories" in src, "the enum is not imported"
+    # And nothing hand-written alongside it.
+    assert not re.findall(r'"([a-z][a-z ]{3,})"', block), block
 
 
 def test_the_constant_half_of_the_headline_never_animates():
-    """"Your" and "handled properly." are outside the morph. Animating the
-    whole line would say four unrelated headlines are cycling rather than one
-    sentence being re-pointed."""
+    """The lead and the tail are outside the morph. Animating the whole line
+    would say several unrelated headlines are cycling rather than one sentence
+    being re-pointed.
+
+    **The two strings changed and the structure did not.** The lead was "Your"
+    — a possessive on a campaign noun, which addressed a brand manager as if
+    about their own evening — and the tail was "handled properly.", which
+    hedged the claim with the adverb the register rules ban. They are the
+    category term the business sells in and the managed model now. What this
+    test is for is the arrangement, so it pins that both halves are literals
+    outside the morph rather than pinning what they say.
+    """
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert 'lead = "Your"' in src
-    assert 'tail = "handled properly."' in src
+    assert 'lead = "Influencer marketing for"' in src
+    assert 'tail = "We run it end to end."' in src
     # The tail is rendered outside the AnimatePresence block.
     after = src[src.index("</AnimatePresence>") :]
     assert "{tail}" in after

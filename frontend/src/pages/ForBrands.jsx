@@ -42,27 +42,22 @@ const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
 // All of the page's words, in one place, so the budget can be read rather
 // than counted across a file. A unit test enforces it.
 const COPY = {
-    title: "Campaigns that fill the room.",
-    line: "Creators we have checked, the rate agreed before anyone shoots, and nothing published until you approve it.",
+    title: "Influencer marketing, run end to end.",
+    line: "You post the brief. We cast the creators, agree every rate in writing, schedule the shoots, run the day and send you the report.",
     footnote: "No retainer. No markup on creator fees.",
 
     props: [
         {
-            label: "Every creator is checked",
-            line: "A person reviews every one, and connected stats are read from Instagram.",
+            label: "Every creator is verified",
+            line: "A person reviews each profile, and audience numbers are read from Instagram’s official API rather than typed in.",
         },
         {
             label: "Every rate, in front of you",
-            line: "You see what each creator quoted, with our fee on top.",
+            line: "You see what each creator quoted and what our fee adds, before you confirm anything.",
         },
         {
-            // **The product is managed-only, so this is the offer rather than
-            // a choice.** This slot used to say "yours to run, or ours", which
-            // described a self-serve mode that no longer exists — a brand
-            // reading it would arrive expecting a dashboard to work an
-            // applicant board from and find a shortlist instead.
-            label: "We run it end to end",
-            line: "The WeAre Studios team casts, negotiates and shortlists. You approve the work.",
+            label: "You never chase a creator",
+            line: "Casting, negotiation, scheduling and delivery sit with the WeAre Studios team. You approve the work.",
         },
     ],
 
@@ -77,20 +72,19 @@ const COPY = {
             // line used to say applicants arrive ranked alongside verified
             // creators who fit, which read as a roster to shop through —
             // never what a brand could reach, and now not even what exists.
-            // It then said applicants arrive with their rate, which was the
-            // raw-application reading of the same screen. What a brand
-            // receives is a shortlist: people we checked and agreed a fee
-            // with. Nobody unshortlisted reaches them on a brief we run.
+            // What a brand receives is a shortlist: people we verified and
+            // agreed a fee with. Nobody unshortlisted reaches them on a brief
+            // we run.
             //
             // Keep quotation marks out of this block — the word-budget test
             // regexes every double-quoted string inside COPY, so a quoted
             // phrase in a comment is charged to the page.
             label: "We bring the shortlist",
-            line: "Creators we checked and negotiated with, each with a rate agreed.",
+            line: "Creators we verified and negotiated with, each one arriving with a rate already agreed.",
         },
         {
             label: "The creators shoot",
-            line: "On slots they booked, inside the days and hours you set.",
+            line: "On slots they booked, inside the days and hours your venue set.",
         },
         {
             label: "Approve, then read the numbers",
@@ -99,47 +93,49 @@ const COPY = {
     ],
 
     // **The commercial terms, which are the strongest thing we have to say
-    // and appeared nowhere.** This slot used to be "self-serve, or we run
-    // it" — a choice the product no longer offers. What replaces it is what
-    // a brand is actually deciding on: our fee sits on top of the creator's
-    // rate rather than out of it, and it comes back if we cannot fill the
-    // brief. Both are checkable, which is the standard this page is held to.
+    // and appeared nowhere.** This slot used to be a choice between running
+    // it yourself and handing it over, which the product no longer offers.
+    // What replaces it is what a brand is actually deciding on: our fee sits
+    // on top of the creator rate rather than out of it, and it comes back if
+    // we cannot fill the brief. Both are checkable, which is the standard
+    // this page is held to.
     termsTitle: "What we charge, and what comes back.",
-    termsLine: "Charged on top, and refunded if we cannot fill the brief.",
+    termsLine: "Our fee is charged on top of the creator rate, and the campaign fee is refunded if we cannot fill the brief.",
     terms: [
         {
             label: "Creators keep their full rate",
-            line: "Our fee is yours to pay, never theirs.",
+            line: "A creator who quotes a fee is paid that fee. Our margin is yours to pay, never theirs.",
         },
         {
             label: "Refunded if we cannot fill it",
-            line: "Unless you turned down everyone we shortlisted.",
+            line: "The campaign fee comes back, unless you turned down everyone we shortlisted.",
         },
         {
             label: "A named manager, every time",
-            line: "Holding the roster, and at the door.",
+            line: "One person holds the roster, briefs the creators and is at the door on the day.",
         },
     ],
 
     // **Rendered, not typed.** The city is counted off verified supply at
     // request time (`CountedGeography`), so this sentence stays true if the
     // deepest city ever changes — and says nothing at all below the proof
-    // floor. The old line named Bengaluru as a literal, which was accurate
-    // when it was written and is exactly the kind of claim that goes stale
-    // without anybody noticing.
-    reachTitle: (city) => `The network runs deepest in ${city}.`,
-    reachLine: "That is where briefs fill fastest. Creators sign up from across the country.",
+    // floor. The scope claim beside it is a fact about the operation; the
+    // depth claim is the one that needs a count behind it, which is why only
+    // this half is rendered.
+    reachTitle: (city) => `Deepest in ${city}, running across India.`,
+    reachLine: "Briefs fill fastest where supply is deepest, and we run campaigns in every sector on this page.",
 
     closeTitle: "Post your first brief.",
     closeLine: "About ten minutes. We check your business before anything reaches a creator.",
 };
 
+
 export default function ForBrands() {
     return (
         <MarketingPage
             testid={IDS.forBrands}
-            title="Creator campaigns for brands, handled properly"
-            description="Verified creators, every rate visible before you book, approval before anything is published, and a report at the end. The WeAre Studios team runs it end to end."
+            title="Influencer marketing for brands, run end to end"
+            description="Post a brief and the WeAre Studios team runs the campaign: verified creators, every rate visible before you book, approval before anything is published, and a report at the end. Across India, in every sector we run."
             path="/for-brands"
         >
             <MarketingHero

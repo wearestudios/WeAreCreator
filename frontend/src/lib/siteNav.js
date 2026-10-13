@@ -128,4 +128,4 @@ export const copyrightYear = () => new Date().getFullYear();
  * inventing a bigger one. Where depth is genuinely the point, the pages say it
  * in a sentence that can be defended — see the positioning note in CLAUDE.md.
  */
-export const HERO_EYEBROW = "Paid briefs · Verified creators";
+export const HERO_EYEBROW = "Paid briefs · Verified creators · India";

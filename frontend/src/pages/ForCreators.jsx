@@ -26,18 +26,18 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const ASK = { to: "/signup?role=creator", label: "Join as a creator" };
 
 const COPY = {
-    title: "Paid work, agreed in writing.",
-    line: "Paid briefs from businesses we checked. You quote your rate and keep all of it.",
-    footnote: "Free to join, and it stays free.",
+    title: "Paid work, your rate agreed up front.",
+    line: "Briefs from businesses we have checked. You quote your rate, it goes in writing before you shoot, and you keep every rupee of it.",
+    footnote: "Free to join, and we never charge you a fee.",
 
     props: [
         {
             label: "Real paid briefs",
-            line: "Every brand is checked before it can reach you.",
+            line: "Every brand is checked against its paperwork before it can post a brief you can see.",
         },
         {
             label: "Your rate, before you shoot",
-            line: "In writing, recorded against the booking, before you shoot.",
+            line: "Agreed in writing and recorded against the booking, so there is nothing to argue about afterwards.",
         },
         {
             label: "You keep all of it",
@@ -49,52 +49,53 @@ const COPY = {
     steps: [
         {
             label: "Build your profile",
-            line: "A name and a WhatsApp number to start. Fill in the rest whenever you like.",
+            line: "A name and a WhatsApp number to start. Fill in the rest over as many sittings as you like.",
         },
         {
             label: "Get verified",
-            line: "Send it for review. Somebody reads it and comes back to you.",
+            line: "Send it for review. A person reads it and comes back to you, and you can pitch while you wait.",
         },
         {
             label: "Pitch your rate",
-            line: "Apply with a note and a figure. Agreed in writing before anything is booked.",
+            line: "Apply with a note and a figure. It is agreed in writing before anything is booked.",
         },
         {
             label: "Shoot, deliver, get paid",
-            line: "Drafts approved before you publish. Payment follows approval, to your UPI ID.",
+            line: "Drafts are approved before you publish. Payment follows approval, to your UPI ID or bank account.",
         },
     ],
 
     askTitle: "What we ask of you.",
-    askLine: "Nothing you would not put in a media kit — and saving never puts you in a queue.",
+    askLine: "Nothing you would not put in a media kit — and saving a half-finished profile never puts you in a queue.",
     asks: [
         {
             label: "A profile worth shortlisting",
-            line: "Your city, what you make, and links to your work.",
+            line: "Your city, the formats you post, and links to work a brand can look at.",
         },
         {
             label: "Payout details come later",
-            line: "UPI and PAN before your first payment. Never part of being looked at.",
+            line: "UPI and PAN before your first payment, and never part of being looked at.",
         },
         {
             label: "Connecting Instagram is optional",
-            line: "Connect it and your numbers are read from Instagram rather than typed in.",
+            line: "Connect it and your audience is read from Instagram’s official API rather than typed in by you.",
         },
     ],
 
     costTitle: "It costs nothing.",
-    costLine: "No subscription, and nothing deducted from your rate. That is not an introductory offer.",
+    costLine: "No subscription, no joining fee, and nothing deducted from your rate. That is not an introductory offer.",
 
     closeTitle: "Join as a creator.",
     closeLine: "A name and a WhatsApp number. Everything else can wait.",
 };
 
+
 export default function ForCreators() {
     return (
         <MarketingPage
             testid={IDS.forCreators}
-            title="Paid brand campaigns for creators"
-            description="Real paid briefs from businesses we have checked, your rate agreed in writing before you shoot, and payment on approved delivery. Free to join."
+            title="Paid influencer campaigns for creators"
+            description="Paid briefs from businesses we have checked, your rate agreed in writing before you shoot, and payment on approved delivery. Free to join, and we never take a cut of your fee."
             path="/for-creators"
         >
             <MarketingHero
