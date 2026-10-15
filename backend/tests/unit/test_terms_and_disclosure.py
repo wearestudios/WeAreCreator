@@ -123,7 +123,7 @@ class TestEveryCampaignCarriesADisclosure:
             "_id": ObjectId(), "brand_id": ObjectId(), "title": "x",
             "status": "open", "required_disclosure": "ad",
         }
-        out = server._serialize_campaign(doc, None)
+        out = server._serialize_campaign(doc, None, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert out["required_disclosure"] == "ad"
         assert out["disclosure_label"] == server.DISCLOSURE_LABELS["ad"]
 
@@ -338,7 +338,7 @@ class TestUsageRights:
             "_id": ObjectId(), "brand_id": ObjectId(), "title": "x", "status": "open",
             "usage_rights": "paid_usage", "usage_duration_days": 60,
         }
-        block = server._serialize_campaign(doc, None)["usage"]
+        block = server._serialize_campaign(doc, None, payout_default=server.CREATOR_PAYOUT_DAYS)["usage"]
         assert block["kind"] == "paid_usage"
         assert block["duration_days"] == 60
         # Past 60 days the sentence reads in months, which is how somebody

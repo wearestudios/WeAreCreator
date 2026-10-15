@@ -174,6 +174,32 @@ export default function PlatformSettings() {
                     unit="days"
                 />
 
+                {/* **The other direction, and the one this page has to keep
+                    apart from the row above it.** That one is how long a
+                    *brand* has to pay *us*; this is how long *we* take to pay
+                    a *creator*. Two windows, two settings, two stored ids —
+                    reusing one for the other would tie a promise made to
+                    creators to a commercial term negotiated with brands, so
+                    that giving one client a longer rope silently lengthened
+                    the wait for everybody who did the work.
+
+                    Deliberately adjacent rather than hidden apart: somebody
+                    editing the wrong one is the failure, and the two blurbs
+                    side by side is what stops it. */}
+                <NumberSetting
+                    settingKey="creator-payout"
+                    endpoint="/admin/settings/creator-payout"
+                    field="days"
+                    label="How long we take to pay a creator"
+                    // Only new briefs and the ones that never set their own.
+                    // A campaign carries its own window where staff set one,
+                    // and a collaboration freezes whatever applied at
+                    // acceptance — so moving this cannot reach backwards
+                    // into a promise somebody already accepted.
+                    blurb="Counted from the day their delivery is approved, and printed on every brief as a promise. A campaign can carry its own window instead; an accepted collaboration keeps whatever applied when it was accepted."
+                    unit="days"
+                />
+
                 <NumberSetting
                     settingKey="reschedule-limit"
                     endpoint="/admin/settings/reschedule-limit"

@@ -1098,7 +1098,7 @@ class TestTheRefundDecision:
         # A refund policy somebody meets for the first time during an argument
         # is a surprise rather than a policy. Said at creation and frozen into
         # the terms both sides accept.
-        terms = server._build_terms({"title": "Tasting"}, {})
+        terms = server._build_terms({"title": "Tasting"}, {}, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert terms["refund_terms"] == server.REFUND_POLICY_TERMS
         assert "refundable" in server.REFUND_POLICY_TERMS
         assert "turn down" in server.REFUND_POLICY_TERMS

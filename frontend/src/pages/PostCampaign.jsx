@@ -26,7 +26,13 @@ import {
 } from "@/lib/execution";
 import { dayKey, timeKey } from "@/lib/time";
 import { VISIBILITY_OPTIONS } from "@/lib/visibility";
-import { BUDGET, COVER, EXECUTION, VISIBILITY } from "@/constants/testIds";
+import {
+    BUDGET,
+    COVER,
+    EXECUTION,
+    PAYOUT as PAYOUT_IDS,
+    VISIBILITY,
+} from "@/constants/testIds";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
@@ -99,8 +105,31 @@ export default function PostCampaign() {
     // The cap on the whole brief. Empty string is "no cap" — the payload
     // turns it into `null`, which is what the server reads as unlimited.
     const [totalBudget, setTotalBudget] = useState("");
-    // Fixed or negotiated. A brand brief is paid work either way.
+    // Fixed, negotiated or barter. **Barter used to be admin-only and is
+    // not any more** — the market runs on it and a brand that cannot post
+    // one posts it over WhatsApp instead, where nothing is recorded. What
+    // ships with it are the two things the survey said were missing: a brief
+    // has to say what is actually on offer, and whether getting there is
+    // covered.
     const [compensationType, setCompensationType] = useState("fixed");
+    // What the creator actually gets. Required on a barter brief, on every
+    // write path — `_refuse_unstated_barter` is the server's half and this
+    // is the form's, so somebody finds out before pressing Post rather than
+    // after.
+    const [barterDescription, setBarterDescription] = useState("");
+    // Whether travel is covered, and roughly how much. **Three answers, not
+    // two**: `null` is "nobody said", which is what every brief written
+    // before this field carries, and the brief draws nothing in that case
+    // rather than claiming travel is not covered.
+    const [travelAllowance, setTravelAllowance] = useState(null);
+    const [travelAmount, setTravelAmount] = useState("");
+    // **The stored compensation, not the picked one.** A brand may post
+    // barter and may not rewrite the compensation of a brief that already is
+    // barter — the half of `_refuse_brand_barter` that survived the
+    // reversal. Reading the picker here instead would hide the picker the
+    // moment somebody chose barter on a new brief, so they could never
+    // change their mind.
+    const [lockedBarter, setLockedBarter] = useState(false);
     // **No `executionOwner` state, because there is nothing to choose.** This
     // comment used to explain why the form defaulted to the brand running it;
     // the product is managed-only and the server forces `weare` on every
@@ -267,9 +296,19 @@ export default function PostCampaign() {
                     );
                     setCategory(data.category || "");
                     setArea(data.area || "");
-                    // A campaign WeAre set to barter keeps that value here so
-                    // the form never round-trips it back to "fixed".
+                    // A barter campaign keeps that value here so the form
+                    // never round-trips it back to "fixed" — and locks the
+                    // picker, because the server refuses a brand rewriting
+                    // the compensation of a brief that already is barter.
                     setCompensationType(data.compensation_type || "fixed");
+                    setLockedBarter(data.compensation_type === "barter");
+                    setBarterDescription(data.barter_description || "");
+                    setTravelAllowance(
+                        data.travel?.stated ? Boolean(data.travel.covered) : null,
+                    );
+                    setTravelAmount(
+                        data.travel?.amount == null ? "" : String(data.travel.amount),
+                    );
                     setVisibility(data.visibility === "private" ? "private" : "public");
                     // Re-seeded rather than defaulted, or fixing a typo on a
                     // brief that doesn't review drafts would quietly turn the
@@ -356,10 +395,11 @@ export default function PostCampaign() {
         return list;
     }, [brandProfile]);
 
-    // Only ever true on a campaign WeAre converted — this form cannot set it.
-    // The brand edit route refuses any write to the compensation of a barter
-    // campaign, so sending one would fail the whole save over a field the brand
-    // was never shown.
+    // **A brand may set this now.** It could not before: barter was
+    // admin-only, so the only way to reach one was a campaign WeAre had
+    // converted. What has not changed is that a brief which already *is*
+    // barter cannot have its compensation rewritten here — `lockedBarter`
+    // is that, read off the stored campaign rather than off the picker.
     const isBarter = compensationType === "barter";
 
     // Whether this brief is ours to run whatever the picker says, and why. The
@@ -382,6 +422,13 @@ export default function PostCampaign() {
             const budgetNum = Number(budget);
             if (!Number.isFinite(budgetNum) || budgetNum < 0)
                 return "Please enter a valid budget per creator.";
+        } else if (!barterDescription.trim()) {
+            // The server refuses this too (`_refuse_unstated_barter`), on
+            // every write path. Here so a brand hears it with the box in
+            // front of them rather than after pressing Post — and the
+            // sentence is the form's own, because the server's is written
+            // for an API response.
+            return "Say what the creator gets — the meal, the stay, the product, and roughly what it is worth.";
         }
         if (needsDuration(usageRights) && !Number(usageDuration))
             return "Paid usage runs for a set period — say how many days.";
@@ -420,7 +467,7 @@ export default function PostCampaign() {
         // alone" and an empty list as "clear it", so a payload carrying only
         // what was typed could add a hashtag and never remove one.
         ...toBriefDetails(briefDetails),
-        // Both omitted on a barter campaign: the field isn't rendered, so
+        // Both omitted on a barter brief: the fields aren't rendered, so
         // Number("") would silently write the fee down to zero.
         ...(isBarter
             ? {}
@@ -432,12 +479,35 @@ export default function PostCampaign() {
                   // mistake needs the null to actually travel.
                   total_budget:
                       String(totalBudget).trim() === "" ? null : Number(totalBudget),
-                  compensation_type: compensationType,
-                  // **The field is not sent at all.** The create path
-                  // ignores it and the edit path refuses any change, so a
-                  // form still posting a value would at best be noise and at
-                  // worst a 409 on a field it no longer shows.
+                  // **The execution owner is not sent at all.** The create
+                  // path ignores it and the edit path refuses any change, so
+                  // a form still posting a value would at best be noise and
+                  // at worst a 409 on a field it no longer shows.
               }),
+        // **Sent on everything except a brief that is already barter.** A
+        // brand may now choose barter; what it may not do is rewrite the
+        // compensation of one — and the server refuses the key whatever
+        // value it carries, so re-posting the same word would fail the whole
+        // save. Keyed on the stored campaign, never on the picker.
+        ...(lockedBarter ? {} : { compensation_type: compensationType }),
+        // What is on offer, and whether getting there is covered. Only on a
+        // barter brief: `barter_description` on a paid one is a field
+        // nothing reads, and the travel question is asked where it is the
+        // live complaint.
+        ...(isBarter
+            ? {
+                  barter_description: barterDescription.trim(),
+                  // **`null` travels, because it is an answer.** "Nobody has
+                  // said" is a real state and the brief renders nothing for
+                  // it; an omitted key would mean "leave it alone", so a
+                  // brand taking a travel line back off a brief could not.
+                  travel_allowance: travelAllowance,
+                  travel_allowance_amount:
+                      travelAllowance === true && String(travelAmount).trim() !== ""
+                          ? Number(travelAmount)
+                          : null,
+              }
+            : {}),
         visibility,
         requires_draft_approval: requiresDraft,
         requires_slot_confirmation: requiresSlotConfirmation,
@@ -624,7 +694,10 @@ export default function PostCampaign() {
                     {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
                 <h1 className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight">
-                    {isEditing ? "Change the brief." : "Post a paid brief."}
+                    {/* Not "a paid brief" any more: barter is postable here,
+                        and a header saying otherwise is the page arguing
+                        with the picker three sections down. */}
+                    {isEditing ? "Change the brief." : "Post a brief."}
                 </h1>
                 <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
                     {isEditing
@@ -1080,18 +1153,19 @@ export default function PostCampaign() {
                             Money & scope
                         </p>
 
-                        {isBarter ? (
-                            // Only reachable on a campaign WeAre converted. Say
-                            // so plainly rather than showing a picker that the
-                            // server would refuse.
+                        {lockedBarter ? (
+                            // A brief that is *already* barter. The picker is
+                            // absent rather than disabled, because the server
+                            // refuses the change outright and a control that
+                            // posts a 422 is worse than no control.
                             <div
                                 data-testid="pc-compensation-barter-note"
                                 className="rounded-md border border-white/10 bg-card/60 p-5"
                             >
                                 <p className="text-sm text-primary">Barter</p>
                                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                                    We set this campaign up as barter. The rest of the brief
-                                    is yours to edit — talk to us if you want it paid.
+                                    This brief is set up as barter. The rest of it is yours
+                                    to edit — talk to us if you want it paid.
                                 </p>
                             </div>
                         ) : (
@@ -1132,6 +1206,101 @@ export default function PostCampaign() {
                                         </button>
                                     );
                                 })}
+                            </div>
+                        )}
+
+                        {/* **What a barter brief is actually offering.**
+                            Required, and the reason is the survey: barter is
+                            the single most-cited reason a creator walks away
+                            from a collaboration, and almost every account of
+                            it is the same shape — "a free meal" turned out
+                            to mean one dish, or the value was never said at
+                            all. A brief that has to name the thing is a
+                            brief somebody can decline before travelling to
+                            it rather than after. */}
+                        {isBarter && (
+                            <div className="space-y-5 rounded-md border border-white/10 bg-card/60 p-5">
+                                <div className="space-y-2">
+                                    <Label htmlFor="barter-description">
+                                        What the creator gets
+                                    </Label>
+                                    <Textarea
+                                        id="barter-description"
+                                        data-testid={PAYOUT_IDS.barterInput}
+                                        value={barterDescription}
+                                        onChange={(e) =>
+                                            setBarterDescription(e.target.value)
+                                        }
+                                        maxLength={500}
+                                        rows={3}
+                                        // Neutral on purpose. A placeholder
+                                        // naming one sector tells everybody
+                                        // else they are in the wrong place
+                                        // before they have typed anything —
+                                        // the rule `test_form_neutrality.py`
+                                        // holds across these forms.
+                                        placeholder="Two seats at the Saturday session, about ₹4,000 each. Extras not included."
+                                    />
+                                    <p className="text-xs leading-relaxed text-muted-foreground">
+                                        Name the thing and roughly what it is worth. A
+                                        creator is deciding whether it covers their day.
+                                    </p>
+                                </div>
+
+                                {/* **Travel came straight off the survey
+                                    too**, raised unprompted by five
+                                    respondents — the complaint is never the
+                                    barter on its own, it is crossing the
+                                    city for it at their own cost. Three
+                                    answers, because "we have not said" and
+                                    "no" read differently on a brief and only
+                                    one of them is honest about silence. */}
+                                <div className="space-y-2">
+                                    <Label>Travel</Label>
+                                    <div
+                                        role="radiogroup"
+                                        aria-label="Is travel covered?"
+                                        data-testid={PAYOUT_IDS.travelToggle}
+                                        className="grid gap-2 sm:grid-cols-3"
+                                    >
+                                        {[
+                                            { value: null, label: "Not stated" },
+                                            { value: true, label: "Covered" },
+                                            { value: false, label: "Not covered" },
+                                        ].map((opt) => {
+                                            const on = travelAllowance === opt.value;
+                                            return (
+                                                <button
+                                                    key={String(opt.value)}
+                                                    type="button"
+                                                    role="radio"
+                                                    aria-checked={on}
+                                                    onClick={() =>
+                                                        setTravelAllowance(opt.value)
+                                                    }
+                                                    className={
+                                                        "min-h-[2.75rem] rounded-md border px-4 py-2 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
+                                                        (on
+                                                            ? "border-primary bg-primary/10 text-primary"
+                                                            : "border-white/10 bg-background/60 text-muted-foreground hover:border-white/25")
+                                                    }
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {travelAllowance === true && (
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            data-testid={PAYOUT_IDS.travelAmount}
+                                            value={travelAmount}
+                                            onChange={(e) => setTravelAmount(e.target.value)}
+                                            placeholder="Amount in ₹ (optional)"
+                                        />
+                                    )}
+                                </div>
                             </div>
                         )}
 

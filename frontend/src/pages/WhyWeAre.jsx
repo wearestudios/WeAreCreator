@@ -131,6 +131,8 @@ export default function WhyWeAre() {
                     // at a venue — lighting being set, a creator briefed in the
                     // background. Landscape 16:9.
                     note: "WeAre Studios team mid-production at a venue, lighting being set, 16:9",
+                    src: "/img/marketing/why-production.webp",
+                    alt: "A production crew setting lighting at a venue, with a creator being briefed behind them.",
                     ratio: "16/9",
                 }}
             />
@@ -156,6 +158,8 @@ export default function WhyWeAre() {
                     // production meeting — whiteboard with a campaign plan,
                     // people mid-conversation. 4:3.
                     note: "WeAre Studios production meeting, whiteboard with a campaign plan, 4:3",
+                    src: "/img/marketing/why-planning.webp",
+                    alt: "A production meeting in progress, a campaign plan on the whiteboard behind the table.",
                     ratio: "4/3",
                 }}
                 testid={IDS.pedigree}
@@ -171,6 +175,8 @@ export default function WhyWeAre() {
                     // side by side at the venue before doors, going through
                     // the roster on a tablet. 3:2.
                     note: "WeAre manager and brand owner going through the roster on a tablet before doors, 3:2",
+                    src: "/img/marketing/why-roster-tablet.webp",
+                    alt: "A campaign manager and a venue owner side by side before doors, going through the roster on a tablet.",
                     ratio: "3/2",
                 }}
                 flip
@@ -202,6 +208,8 @@ export default function WhyWeAre() {
                             // check-in desk, manager with a tablet. Banner
                             // proportions, 21:9.
                             note="Shoot day running to plan, creators at a check-in desk, manager with a tablet, 21:9"
+                            src="/img/marketing/why-shoot-day.webp"
+                            alt="A shoot day running to plan: creators queuing at a check-in desk while a manager works through a tablet."
                             ratio="21/9"
                             zoom
                         />
@@ -218,6 +226,8 @@ export default function WhyWeAre() {
                     // summary with fees and payouts itemised, pen resting on
                     // it. 5:4.
                     note: "Close crop of a printed campaign summary with fees itemised, pen resting on it, 5:4",
+                    src: "/img/marketing/why-fees-closeup.webp",
+                    alt: "A close crop of a printed campaign summary with the fees and payouts itemised, a pen resting on the page.",
                     ratio: "5/4",
                 }}
             />

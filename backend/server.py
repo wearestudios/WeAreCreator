@@ -2040,14 +2040,33 @@ def _reference_of(doc: Optional[dict]) -> Optional[str]:
 #               recorded against the collaboration (see work notes)
 #   barter      no money — a meal, a stay, a product
 #
-# The distinction is not cosmetic. Barter is the arrangement most likely to
-# waste a creator's day for nothing, so it is ours to make and not a checkbox on
-# a self-serve form: a brand posts paid work or it does not post.
+# **Barter was admin-only and is not any more. This is a reversal, and the
+# reasoning it reverses was not wrong.** The rule used to read: barter is the
+# arrangement most likely to waste a creator's day for nothing, so it is ours
+# to make and not a checkbox on a self-serve form. The creator survey is the
+# strongest evidence for that there has ever been — barter is the single
+# most-cited reason creators walk away from a collaboration, raised unprompted
+# by eight of thirty-eight.
+#
+# It opened anyway, because barter is unavoidable in this market and a brand
+# that cannot post it posts nothing, or posts it as "negotiated" and settles
+# the truth over WhatsApp — which is the same arrangement with none of the
+# record. So it is a reversal **with mitigations shipped alongside it**, not a
+# deletion:
+#
+#   - `barter_description` is required on a barter brief, on every write path.
+#     "Barter" with no statement of what is actually on offer is exactly the
+#     brief creators told us they reject.
+#   - `travel_allowance` says whether getting there is covered. Five
+#     respondents raised it unprompted; it is the specific fact that decides
+#     whether somebody says yes to a meal two hours away.
+#   - `_refuse_brand_barter` keeps its second half: a brand still cannot
+#     rewrite the compensation of a brief WeAre set up as barter.
 CompensationType = Literal["fixed", "negotiated", "barter"]
-# The only two a brand may put on its own brief. Named as the allow-list rather
-# than as "not barter" so that adding a fourth kind later has to be a decision
-# about who can post it, not something that quietly inherits brand access.
-BRAND_COMPENSATION_TYPES = ("fixed", "negotiated")
+# What a brand may put on its own brief. Named as the allow-list rather than as
+# "not barter" so that adding a fourth kind later has to be a decision about
+# who can post it, not something that quietly inherits brand access.
+BRAND_COMPENSATION_TYPES = ("fixed", "negotiated", "barter")
 # Campaigns written before this field existed were all brand briefs with a cash
 # budget, so this is what they were, not merely a safe guess.
 DEFAULT_COMPENSATION_TYPE = "fixed"
@@ -2572,9 +2591,24 @@ class PostCampaignPayload(BriefDetailFields):
     required_disclosure: DisclosureLabel = DEFAULT_DISCLOSURE
     usage_rights: UsageRights = DEFAULT_USAGE_RIGHTS
     usage_duration_days: Optional[int] = Field(default=None, ge=1, le=3650)
-    # A barter arrangement in prose is a barter arrangement nobody can hold
-    # anybody to. Admin-only in practice, because barter is.
+    # **What is actually on offer, and required on a barter brief.** Enforced
+    # in `_refuse_unstated_barter` rather than by a validator, because the
+    # validator cannot see the stored campaign on an edit that changes only
+    # the compensation.
     barter_description: Optional[str] = Field(default=None, max_length=500)
+    # **Whether getting there is paid for.** Raised unprompted by five survey
+    # respondents — "Travelling 25 kms in hectic traffic just to have one
+    # meal", "no TA provided. Most of them are like that." It is the fact
+    # that decides whether a creator says yes to a barter brief across town,
+    # and it cost nothing to ask.
+    #
+    # A boolean *and* an amount, because they answer different questions:
+    # `True` with no figure is "yes, we'll sort it out", and a figure is a
+    # number somebody can budget against. `None` on the boolean is "nobody
+    # said", which is why `_travel_block` reads it as unstated rather than
+    # as no.
+    travel_allowance: Optional[bool] = None
+    travel_allowance_amount: Optional[float] = Field(default=None, ge=0, le=100000)
     # Where creators actually show up. Optional at draft time — a brand can
     # brief before the venue is confirmed — but part of the campaign, not the
     # chat thread it would otherwise live in.
@@ -2688,6 +2722,20 @@ class UpdateCampaignPayload(BriefDetailFields):
     venue_address: Optional[str] = Field(default=None, max_length=500)
     venue_instructions: Optional[str] = Field(default=None, max_length=1000)
     on_site_contact: Optional[str] = Field(default=None, max_length=200)
+    # **The barter half, which this payload did not carry at all.** An admin
+    # could switch a brief to barter and had no way to say what the barter
+    # *was* on the same request — so the one field that makes a barter brief
+    # answerable was unreachable from the only route that could create one.
+    # Now that a brand can post barter too, it has to be here.
+    barter_description: Optional[str] = Field(default=None, max_length=500)
+    travel_allowance: Optional[bool] = None
+    travel_allowance_amount: Optional[float] = Field(default=None, ge=0, le=100000)
+    # How long after approved delivery the creator is paid, overriding the
+    # platform promise for this brief alone. **Staff only** — this model is
+    # the brand's edit route as well as the admin's, so the brand path refuses
+    # it through `_refuse_brand_payout_window`, the same shape
+    # `execution_owner` and barter already use. `None` clears the override.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
 
 
 class CreateTeamMemberPayload(BaseModel):
@@ -5475,6 +5523,13 @@ def _serialize_commission(doc: Optional[dict]) -> dict:
 # `_draft_is_stale` and `_invitation_lapsed`.
 # ---------------------------------------------------------------------------
 
+# **Brand → us.** How long a brand has to settle an invoice we issued. Feeds
+# `_invoice_due_at` and `_brand_overdue_invoices`, and nothing else.
+#
+# There is a second, opposite window a few lines below — `creator_payout_days`,
+# how long *we* take to pay the *creator*. The two are named apart and stored
+# apart on purpose: they govern different directions, they are owed by
+# different parties, and one being 14 says nothing about the other.
 _PAYMENT_TERMS_SETTINGS_ID = "payment_terms"
 PAYMENT_TERMS_DAYS = 14
 _PAYMENT_TERMS_MIN, _PAYMENT_TERMS_MAX = 0, 180
@@ -5497,6 +5552,194 @@ async def payment_terms_days() -> int:
         logger.error("could not read the payment terms: %s", exc)
         return PAYMENT_TERMS_DAYS
     return value if _PAYMENT_TERMS_MIN <= value <= _PAYMENT_TERMS_MAX else PAYMENT_TERMS_DAYS
+
+
+# ---------------------------------------------------------------------------
+# What a creator is told about when they get paid
+# ---------------------------------------------------------------------------
+#
+# **Us → creator, and deliberately not the setting above.** How many days after
+# approved delivery we undertake to pay. `payment_terms_days` is the other leg
+# — a brand settling an invoice to us — and reusing it here would tie a promise
+# we make to creators to a commercial term we negotiate with brands, so that
+# giving a client a longer rope silently lengthened the wait for the people who
+# did the work.
+#
+# It exists because the survey said so. Late payment is the thing creators name
+# most often, and the striking half is that creators who *were* paid within a
+# week still name it: the fear runs ahead of the frequency, and it does that
+# because no brief has ever said when payment comes. A number on the page is
+# the whole fix — it converts an open-ended wait into a date somebody can hold
+# us to, which is also why it is frozen into the terms snapshot and measured in
+# the health panel rather than merely displayed.
+_CREATOR_PAYOUT_SETTINGS_ID = "creator_payout_days"
+CREATOR_PAYOUT_DAYS = 7
+
+# Zero is a real answer — "same day as approval" is a promise somebody might
+# make — so the floor is 0 rather than 1. The ceiling is a sanity bound on a
+# number typed into a form, not a policy.
+_CREATOR_PAYOUT_MIN, _CREATOR_PAYOUT_MAX = 0, 180
+
+# Read on every campaign serialize and every collaboration row, changed about
+# never — so cached with a short life, the arrangement `sla_targets` uses, and
+# cleared by the writer for the same reason: an admin who changes it and
+# reloads has to see it.
+_CREATOR_PAYOUT_CACHE: dict = {"at": None, "value": None}
+CREATOR_PAYOUT_CACHE_SECONDS = 30
+
+
+def _clean_payout_days(value) -> Optional[int]:
+    """A payout window, or `None` if that is not what this is.
+
+    **`None` rather than the default**, because the callers mean different
+    things by a bad value: the platform setting falls back to the default and
+    a campaign override falls back to the platform setting, and collapsing
+    them here would make an unparseable campaign value silently overwrite a
+    platform number somebody set on purpose.
+    """
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        return None
+    return days if _CREATOR_PAYOUT_MIN <= days <= _CREATOR_PAYOUT_MAX else None
+
+
+async def creator_payout_days(*, fresh: bool = False) -> int:
+    """The platform-wide promise, in days after approved delivery.
+
+    Never raises. A settings read that fails must not take down every brief on
+    the site — the default is a working answer and is what we were promising
+    before anybody stored an override.
+    """
+    now = datetime.now(timezone.utc)
+    cached = _CREATOR_PAYOUT_CACHE.get("value")
+    if not fresh and cached is not None:
+        at = _CREATOR_PAYOUT_CACHE.get("at")
+        if at and (now - at).total_seconds() < CREATOR_PAYOUT_CACHE_SECONDS:
+            return cached
+
+    value = CREATOR_PAYOUT_DAYS
+    try:
+        doc = await db.platform_settings.find_one({"_id": _CREATOR_PAYOUT_SETTINGS_ID})
+        stored = _clean_payout_days((doc or {}).get("days"))
+        if stored is not None:
+            value = stored
+    except Exception as exc:
+        logger.error("could not read the creator payout window: %s", exc)
+        return CREATOR_PAYOUT_DAYS
+
+    _CREATOR_PAYOUT_CACHE["at"] = now
+    _CREATOR_PAYOUT_CACHE["value"] = value
+    return value
+
+
+def _creator_payout_days(campaign: Optional[dict], default_days: int) -> int:
+    """How long this brief says payment takes. **The single reader.**
+
+    Pure and DB-free so that a list of forty campaigns resolves the platform
+    default once and asks this per row — the arrangement `_budget_of` holds.
+
+    **Absent reads as the platform default, never as zero.** Every campaign
+    written before this field existed carries no override, and reading that as
+    "paid the same day" would publish a promise nobody made on the entire back
+    catalogue. The usual absent-reads-safe rule.
+    """
+    override = _clean_payout_days((campaign or {}).get("creator_payout_days"))
+    return override if override is not None else default_days
+
+
+def _payout_promise(days: int) -> str:
+    """The sentence a creator reads on a brief.
+
+    **The promise, not the policy.** "Our standard creator payment term is 7
+    days" describes a document; "Paid within 7 days of approved delivery" is
+    something somebody can hold us to, and the difference is the entire point
+    of putting it on the page.
+    """
+    if days <= 0:
+        return "Paid the same day your delivery is approved."
+    return f"Paid within {days} {'day' if days == 1 else 'days'} of approved delivery."
+
+
+# The sentence a brand sees when it tries to set the window itself. Staff
+# decide it: it is a promise this operation makes with its own money, and a
+# brand shortening it would be committing us to a payment run we do not
+# control. The brand still *reads* it on every brief it posts.
+PAYOUT_WINDOW_IS_OURS = (
+    "When creators are paid is set by the WeAre team — it's our commitment, not "
+    "a field on the brief. Talk to us if this campaign needs a different window."
+)
+
+
+def _refuse_brand_payout_window(update: dict) -> None:
+    """Keep the payout window off every path a brand can write.
+
+    The same asymmetry `_refuse_brand_execution_choice` holds, for the same
+    reason: both edit loops copy the payload generically, so an unguarded key
+    rides along with the title and the budget. Refused rather than silently
+    dropped — a value that vanishes is a brand believing it set something.
+    """
+    if "creator_payout_days" in update:
+        raise HTTPException(status_code=422, detail=PAYOUT_WINDOW_IS_OURS)
+
+
+def _resolve_payout_window(supplied: dict) -> dict:
+    """What to write for the per-campaign override. **The only writer**, shared
+    by the admin create and the admin edit — the rule `_resolve_deliverables`
+    and `_resolve_brief_details` already hold.
+
+    Takes only the key that was actually sent, so an omitted key means "leave
+    it alone". An explicit `null` **clears the override**, putting the brief
+    back on the platform default, which is a different edit from never having
+    set one and has to stay reachable: a window typed by mistake must be
+    removable, and `0` is a different claim ("paid the day it is approved").
+
+    An unparseable value clears rather than refuses, which is the safe
+    direction here — the brief falls back to the promise we make everywhere
+    else rather than carrying a number nobody can read.
+    """
+    if "creator_payout_days" not in supplied:
+        return {}
+    return {"creator_payout_days": _clean_payout_days(supplied["creator_payout_days"])}
+
+
+# The states in which money is actually owed and has not yet gone out. A
+# creator at `content_approved` has delivered and been approved; one at
+# `in_payment` is in the run. `closed` is deliberately absent — it is paid,
+# and a due date on a settled row is a clock with nothing to count.
+_AWAITING_PAYOUT_STATES = ("content_approved", "in_payment")
+
+
+def _payout_due_at(collab: Optional[dict], campaign: Optional[dict], default_days: int):
+    """When this creator is owed their money, as an instant, or `None`.
+
+    **A date rather than a duration, and only once it means something.**
+    "Within 7 days" is the policy and belongs on the brief; "due by 3 Nov" is
+    the thing a creator can act on, and it only exists once there is an
+    approval to count from.
+
+    `content_approved_at` is the anchor, falling back to `state_since` for
+    rows approved before that stamp existed. The fallback is the safe
+    direction: `state_since` moves when the row reaches `in_payment`, so it
+    can only ever place the due date *later* than the truth, and a promise
+    that reads later than it was is a promise we are still keeping.
+    """
+    if (collab or {}).get("state") not in _AWAITING_PAYOUT_STATES:
+        return None
+    anchor = (collab or {}).get("content_approved_at") or _state_since(collab or {})
+    if not anchor:
+        return None
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    return anchor + timedelta(days=_creator_payout_days(campaign, default_days))
+
+
+def _payout_block(campaign: Optional[dict], default_days: int) -> dict:
+    """What every brief-reading surface renders. One shape, so the campaign
+    page, the share page and the manager's brief panel cannot word the same
+    promise three ways."""
+    days = _creator_payout_days(campaign, default_days)
+    return {"days": days, "promise": _payout_promise(days)}
 
 
 def _invoice_due_at(payment: Optional[dict], days: Optional[int] = None):
@@ -8586,9 +8829,17 @@ def _serialize_collab_row(
     campaign: Optional[dict],
     brand_name: Optional[str],
     brand_logo_url: Optional[str] = None,
+    *,
+    payout_default: int,
 ) -> dict:
     state = collab.get("state", "applied")
     return {
+        # **The payment date, once there is one.** `None` on every row that
+        # has not been approved yet, which is what tells the card not to draw
+        # a payment line rather than drawing an empty one. A duration belongs
+        # on the brief; by the time somebody has delivered, the useful thing
+        # is a date.
+        "payout_due_at": _iso(_payout_due_at(collab, campaign, payout_default)),
         "id": str(collab["_id"]),
         "reference": _reference_of(collab),
         # The same eight stages the brand and the admin see, in the creator's
@@ -8686,11 +8937,21 @@ def _serialize_collab_row(
 # Payout details (UPI, PAN) are deliberately absent. They are needed before we
 # can pay somebody, not before we can look at them, and putting them here would
 # make bank details the price of being reviewed at all.
+#
+# **`full_address` came out for the same reason**, and the survey is why it was
+# looked at: it is the most invasive question on the form, it was being asked
+# with no stated purpose, and it was holding a creator who posts nothing but
+# venue content below 100% — so they could not submit for review at all over a
+# field their work will never need. It is asked where it is actually needed
+# instead: `needs_delivery_address` on a delivery brief says a creator cannot
+# be shortlisted without one, which is a consequence rather than a nag.
+# Removing a field from this tuple is the safe direction — it can only raise
+# somebody's percentage, never drop them below 100% and silently un-submit
+# them, which is the trap that keeps `about` out.
 _PROFILE_COMPLETENESS_FIELDS = (
     ("genres", "What you make"),
     ("platforms", "Where you post"),
     ("city", "City"),
-    ("full_address", "Full address"),
     ("email", "Email address"),
     ("niches", "What you cover for brands"),
     ("base_rate", "Your usual rate"),
@@ -8961,9 +9222,12 @@ async def _suggested_campaigns(
     scored.sort(key=lambda row: row[0], reverse=True)
     top = scored[:limit]
     brand_map = await _load_brand_map([doc["brand_id"] for _, doc, _ in top])
+    payout_default = await creator_payout_days()
     return [
         {
-            **_serialize_campaign(doc, brand_map.get(doc["brand_id"])),
+            **_serialize_campaign(
+                doc, brand_map.get(doc["brand_id"]), payout_default=payout_default
+            ),
             "match_reason": " · ".join(reasons),
             "match_score": score,
         }
@@ -9036,12 +9300,18 @@ async def get_creator_dashboard(
         campaign_map = {c["_id"]: c for c in campaigns}
         brand_map = await _load_brand_map([c["brand_id"] for c in campaigns])
 
+    payout_default = await creator_payout_days()
+
     def _row(collab: dict) -> dict:
         camp = campaign_map.get(collab["campaign_id"])
         brand = brand_map.get(camp["brand_id"]) if camp else None
         brand_name = (brand or {}).get("business_name") or (brand or {}).get("name")
         return _serialize_collab_row(
-            collab, camp, brand_name, (brand or {}).get("logo_url")
+            collab,
+            camp,
+            brand_name,
+            (brand or {}).get("logo_url"),
+            payout_default=payout_default,
         )
 
     applications = [_row(c) for c in collabs]
@@ -9140,6 +9410,7 @@ async def get_creator_dashboard(
         ).to_list(length=len(slot_ids))
         slot_map = {d["_id"]: d for d in slot_docs}
 
+    payout_default = await creator_payout_days()
     can_be_paid = payout_ready(profile or {})
     active_rows = []
     for c in grouped["active"]:
@@ -9149,7 +9420,9 @@ async def get_creator_dashboard(
             {
                 **row_by_id[str(c["_id"])],
                 "campaign": _serialize_campaign(
-                    camp, brand_map.get(camp.get("brand_id"))
+                    camp,
+                    brand_map.get(camp.get("brand_id")),
+                    payout_default=payout_default,
                 )
                 if camp
                 else None,
@@ -10746,7 +11019,12 @@ def _serialize_brand_campaign(
     filled: int = 0,
     awaiting: int = 0,
     budget: Optional[dict] = None,
+    *,
+    payout_default: int,
 ) -> dict:
+    """The owner's shape. `payout_default` is keyword-only with no default for
+    the reason `_serialize_campaign` states: the brand reads the window here
+    read-only, and a stale number is worse than none."""
     status = doc.get("status")
     needed = int(doc.get("creators_needed") or 1)
     return {
@@ -10771,6 +11049,17 @@ def _serialize_brand_campaign(
         "required_disclosure": _required_disclosure(doc),
         "disclosure_label": _disclosure_text(doc),
         "usage": _usage_block(doc),
+        # **When the creator gets paid, on the brief itself.** The survey's
+        # loudest finding: creators who were paid inside a week still name
+        # late payment in their top three, because no brief has ever said
+        # when payment comes and an unstated wait is assumed to be a long
+        # one. Read-only for the brand — staff set it.
+        "payout": _payout_block(doc, payout_default),
+        # **Whether getting there is paid for.** On every brief rather than
+        # only the barter ones: a creator crossing a city for a fixed fee is
+        # weighing the same thing, and `stated: False` tells a surface to
+        # draw nothing rather than to draw "not covered".
+        "travel": _travel_block(doc),
         "barter_description": doc.get("barter_description"),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
@@ -11102,34 +11391,117 @@ def _refuse_dates_foreign_to_type(campaign: dict, update: dict) -> None:
                 )
 
 
-# A brand brief is paid work. Barter — a meal, a stay, a product, and no money —
-# is an arrangement WeAre makes, because it is the one most easily used to get a
-# day's work out of a creator for nothing, and because whether the thing on
-# offer is worth the shoot is a judgement somebody here has to have made.
+# **This guard used to have two refusals and now has one.** The first —
+# refusing a brand that asked for barter at all — is gone; see the note on
+# `BRAND_COMPENSATION_TYPES` for why that reversed and what shipped with it.
 #
-# Both brand write paths funnel through this. There is no admin *create* route
-# for campaigns, so in practice barter is reached by an admin editing a brief —
-# `admin_update_campaign` is deliberately the only caller that skips this.
-BARTER_IS_OURS = (
-    "Barter campaigns are arranged by the WeAre team. Post this as paid work — "
-    "a fixed fee, or a budget you'll negotiate — and talk to us if barter is "
-    "what you had in mind."
+# What survives is the half that was never about self-serve: a brand may not
+# rewrite the compensation of a brief **WeAre** set up as barter. That one
+# stops a WeAre arrangement being silently turned back into a cash liability,
+# which is a different mistake from posting barter of your own and is still a
+# mistake. `admin_update_campaign` and `admin_create_campaign` skip the guard,
+# the asymmetry that lets us convert a brief in either direction.
+BARTER_NEEDS_A_DESCRIPTION = (
+    "Say what the creator actually gets — the meal, the stay, the product and "
+    "roughly what it is worth. A barter brief with nothing on offer written "
+    "down is the one creators tell us they skip."
 )
+
+# The three keys that describe a barter arrangement. Spread into the
+# campaign-brief tuple below so a duplicate and a template carry them, the
+# rule `BRIEF_DETAIL_FIELDS` already holds: a brand that runs the same tasting
+# every month is exactly the brand that duplicates it.
+BARTER_FIELDS = ("barter_description", "travel_allowance", "travel_allowance_amount")
+
+
+def _resolve_barter(supplied: dict) -> dict:
+    """What to write for the barter half. **The only writer**, shared by the
+    brand's create, the brand's edit and the admin's edit — the rule
+    `_resolve_deliverables` and `_resolve_brief_details` hold.
+
+    Takes only the keys that were sent, so an omitted key means "leave it
+    alone". An explicit `null` clears, which on `travel_allowance` is the
+    difference between "we said no" and "nobody said" — and those read
+    differently on the brief, which is the whole reason the field is a
+    tri-state rather than a bool.
+    """
+    out: dict = {}
+    if "barter_description" in supplied:
+        value = supplied["barter_description"]
+        out["barter_description"] = (value or "").strip()[:500] or None
+    if "travel_allowance" in supplied:
+        value = supplied["travel_allowance"]
+        out["travel_allowance"] = None if value is None else bool(value)
+    if "travel_allowance_amount" in supplied:
+        value = supplied["travel_allowance_amount"]
+        try:
+            out["travel_allowance_amount"] = (
+                None if value is None else round(max(0.0, float(value)), 2)
+            )
+        except (TypeError, ValueError):
+            out["travel_allowance_amount"] = None
+    # An amount with the boolean turned off is a figure describing nothing.
+    # Dropped rather than refused, the shape `_usage_duration_days` uses.
+    if out.get("travel_allowance") is False:
+        out["travel_allowance_amount"] = None
+    return out
+
+
+def _refuse_unstated_barter(campaign: Optional[dict], update: dict) -> None:
+    """A barter brief has to say what is on offer, on every write path.
+
+    **Reads the campaign under the update, not the update alone.** The three
+    ways to arrive at an unstated barter brief are posting one, switching an
+    existing brief to barter without adding a description, and clearing the
+    description on a brief that already is barter — and only the first is
+    visible from the payload by itself.
+
+    Absent on a non-barter brief is fine and stays fine: a fixed-fee campaign
+    has nothing to describe.
+    """
+    merged = {**(campaign or {}), **update}
+    if _compensation_type(merged) != "barter":
+        return
+    if not (merged.get("barter_description") or "").strip():
+        raise HTTPException(status_code=422, detail=BARTER_NEEDS_A_DESCRIPTION)
+
+
+def _travel_block(campaign: Optional[dict]) -> dict:
+    """Whether getting there is covered, in the shape every brief renders.
+
+    **Three answers, not two.** `None` is "nobody said", which is what every
+    campaign written before this field carries and is honestly different from
+    "no" — a creator reading "Travel: not covered" on a brief that was never
+    asked the question has been told something we did not say. Absent reads
+    as unstated, the usual rule.
+    """
+    stated = (campaign or {}).get("travel_allowance")
+    if stated is None:
+        return {"stated": False, "covered": None, "amount": None, "text": None}
+    amount = (campaign or {}).get("travel_allowance_amount")
+    if not stated:
+        return {"stated": True, "covered": False, "amount": None,
+                "text": "Travel is not covered."}
+    return {
+        "stated": True,
+        "covered": True,
+        "amount": amount,
+        "text": (
+            f"Travel covered up to \u20b9{float(amount):,.0f}."
+            if amount is not None
+            else "Travel is covered."
+        ),
+    }
 
 
 def _refuse_brand_barter(campaign: Optional[dict], update: dict) -> None:
-    """Keep barter out of everything a brand can write.
+    """Stop a brand undoing a barter arrangement we made.
 
-    Two separate refusals, because they are two different mistakes:
-      - asking for barter on a brief of your own, and
-      - rewriting the compensation on one we already made barter, which would
-        turn a WeAre arrangement back into cash without anyone deciding to.
-    `campaign` is None at creation time, where only the first can happen.
+    `campaign` is None at creation time, where this cannot happen — there is
+    no existing arrangement to undo.
     """
     if "compensation_type" not in update:
         return
-    if update["compensation_type"] == "barter":
-        raise HTTPException(status_code=422, detail=BARTER_IS_OURS)
     if campaign is not None and _is_barter(campaign):
         raise HTTPException(
             status_code=422,
@@ -12047,7 +12419,7 @@ async def duplicate_brand_campaign(
     """
     campaign = await _own_campaign_or_404(campaign_id, user)
     doc = await _duplicate_campaign(campaign, user, title=(payload.title if payload else None))
-    return _serialize_brand_campaign(doc, 0)
+    return _serialize_brand_campaign(doc, 0, payout_default=await creator_payout_days())
 
 
 @brand_router.get("/campaigns")
@@ -12075,12 +12447,14 @@ async def list_brand_campaigns(
     count_map = await _brand_applicant_counts_for(docs)
     filled_map = await _filled_counts_for(ids)
     awaiting_map = await _awaiting_brand_counts(ids)
+    payout_default = await creator_payout_days()
     return [
         _serialize_brand_campaign(
             d,
             count_map.get(d["_id"], 0),
             filled_map.get(d["_id"], 0),
             awaiting_map.get(d["_id"], 0),
+            payout_default=payout_default,
         )
         for d in docs
     ]
@@ -12107,9 +12481,18 @@ async def create_brand_campaign(
     if payload.status == CAMPAIGN_REVIEW_STATUS:
         await _verified_brand_or_403(user)
 
-    # A brand posts paid work. Checked here rather than in the payload model so
-    # the refusal explains itself — see _refuse_brand_barter.
+    # A brand may post barter now; what it may not do is post barter without
+    # saying what is on offer. `_refuse_brand_barter` is still called with
+    # `None` for the campaign — at creation there is no WeAre arrangement to
+    # undo, so it is a no-op here and stays for the edit path's sake.
     _refuse_brand_barter(None, {"compensation_type": payload.compensation_type})
+    _refuse_unstated_barter(
+        None,
+        {
+            "compensation_type": payload.compensation_type,
+            "barter_description": payload.barter_description,
+        },
+    )
 
     # **Forced rather than refused.** A launch, or a brief for more creators
     # than we let a brand coordinate alone, is ours to run — so the campaign is
@@ -12197,7 +12580,13 @@ async def create_brand_campaign(
         "required_disclosure": payload.required_disclosure,
         "usage_rights": payload.usage_rights,
         "usage_duration_days": payload.usage_duration_days,
-        "barter_description": (payload.barter_description or "").strip() or None,
+        **_resolve_barter(
+            {
+                f: getattr(payload, f)
+                for f in BARTER_FIELDS
+                if f in payload.model_fields_set
+            }
+        ),
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -12264,7 +12653,7 @@ async def create_brand_campaign(
             **_campaign_audit_context(doc),
         )
     return {
-        **_serialize_brand_campaign(doc, 0),
+        **_serialize_brand_campaign(doc, 0, payout_default=await creator_payout_days()),
         # **What the brand is getting, said at the moment they post.** All
         # three are read as a trust signal rather than small print: our team
         # runs this, if we do not fill it the campaign fee comes back, and our
@@ -12344,7 +12733,19 @@ async def update_brand_campaign(
     update.update(
         _resolve_brief_details({f: update.pop(f) for f in BRIEF_DETAIL_FIELDS if f in update})
     )
+    # The barter half, popped out of the generic loop and resolved, for the
+    # reason the deliverables are: the loop copies verbatim and these need
+    # normalising — and an explicit `null` on `travel_allowance` means
+    # "nobody said" rather than "leave it alone".
+    update.update(_resolve_barter({f: update.pop(f) for f in BARTER_FIELDS if f in update}))
     _refuse_brand_barter(doc, update)
+    # A barter brief must say what is on offer. Checked against the campaign
+    # under the update, so switching an existing brief to barter without a
+    # description is refused as well as posting one that way.
+    _refuse_unstated_barter(doc, update)
+    # When creators get paid is ours, the same way who runs it is. Refused
+    # here rather than popped, so a brand that somehow posts it is told.
+    _refuse_brand_payout_window(update)
     # Read once and used twice: the guard below asks whether this campaign is
     # already ours by rule, and the block further down asks whether this edit
     # makes it so. Two reads could disagree if the setting changed between
@@ -12470,6 +12871,7 @@ async def update_brand_campaign(
         filled_map.get(doc["_id"], 0),
         awaiting.get(doc["_id"], 0),
         await _campaign_budget(updated),
+        payout_default=await creator_payout_days(),
     )
 
 
@@ -13769,6 +14171,12 @@ async def brand_approve_content(
         {"$set": {
             **_state_stamp("content_approved", now),
             "revision_note": None,
+            # **Stamped here rather than read off `state_since`**, because
+            # `state_since` moves again the moment the row reaches
+            # `in_payment` — and the payment clock starts at approval, not at
+            # whenever somebody got round to raising the payment. The due
+            # date a creator is shown has to be the one they were promised.
+            "content_approved_at": now,
             "content_disclosure_check": _disclosure_record(user, campaign, now),
         }},
     )
@@ -13881,6 +14289,10 @@ async def accept_partial_delivery(
             "$set": {
                 **_state_stamp("content_approved", now),
                 "revision_note": None,
+                # The payment clock starts here too — a partial acceptance is
+                # still an approval, and the creator is owed the agreed
+                # figure on the same terms.
+                "content_approved_at": now,
                 "delivered_items": delivered,
                 # **Only when something is actually missing.** A runner using
                 # this dialog and then finding everything did arrive should
@@ -14003,6 +14415,7 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
     awaiting_map = await _awaiting_brand_counts(ids)
     # One aggregation for the whole list, not one per row.
     budget_map = await _budgets_for(campaigns)
+    payout_default = await creator_payout_days()
     campaign_rows = [
         _serialize_brand_campaign(
             c,
@@ -14010,6 +14423,7 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
             filled_map.get(c["_id"], 0),
             awaiting_map.get(c["_id"], 0),
             budget_map.get(c["_id"]),
+            payout_default=payout_default,
         )
         for c in campaigns
     ]
@@ -19780,6 +20194,68 @@ async def admin_health(user: dict = Depends(require_roles("admin"))):
         }
     )
 
+    # 4b. The payout window, measured against the promise each brief made.
+    #
+    # **The promise is only worth putting on a brief if we can see when we
+    # are breaking it.** The check above is "money we are sitting on" against
+    # one flat platform number; this one asks each collaboration against the
+    # window *its own campaign* advertised, which is the thing the creator
+    # was actually told.
+    awaiting_payout = await db.collaborations.find(
+        {"state": {"$in": list(_AWAITING_PAYOUT_STATES)}}
+    ).to_list(length=1000)
+    payout_default = await creator_payout_days()
+    payout_campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": [c["campaign_id"] for c in awaiting_payout]}}
+        ).to_list(length=len(awaiting_payout) or 1)
+    }
+    payout_names = await _creator_names_for([c["creator_id"] for c in awaiting_payout])
+    late_payouts = []
+    for c in awaiting_payout:
+        camp = payout_campaigns.get(c["campaign_id"]) or {}
+        due = _payout_due_at(c, camp, payout_default)
+        if not due or due >= now:
+            continue
+        days = _creator_payout_days(camp, payout_default)
+        over = (now - due).total_seconds() / 3600.0
+        # The fraction of the allowance used, which is what the rows are
+        # ordered on — the reading `_overdue_check` settled on. A row one day
+        # past a same-day promise has burnt more of its allowance than one a
+        # day past a fortnight, and absolute days over cannot say that.
+        allowance = max(days * 24.0, 1.0)
+        late_payouts.append(
+            {
+                "id": str(c["_id"]),
+                "label": payout_names.get(c["creator_id"]) or "Creator",
+                "detail": (
+                    f"{(camp.get('title') or 'Campaign')} · promised within "
+                    f"{days} {'day' if days == 1 else 'days'} · "
+                    f"{int(over // 24)}d over"
+                ),
+                "href": f"/admin/collaborations/{c['_id']}",
+                # The one promise on the brief with a date attached to it.
+                "severity": "critical",
+                "at": _iso(due),
+                "hours": allowance + over,
+                "sla_hours": allowance,
+            }
+        )
+    late_payouts.sort(key=lambda r: r["hours"] / r["sla_hours"], reverse=True)
+    checks.append(
+        {
+            "key": "payouts_late",
+            "label": "Past the payout window",
+            "blurb": "Approved work past the window its own brief promised.",
+            # Already ordered by fraction of allowance used, which is not the
+            # panel's severity-then-oldest default and is the right order
+            # here — the same exception the overdue list takes.
+            "presorted": True,
+            "items": late_payouts,
+        }
+    )
+
     # 5. Brands waiting on a decision from us.
     waiting = await db.brand_profiles.find(
         {
@@ -22116,7 +22592,12 @@ async def get_admin_campaign_detail(
         "performance": performance,
         "campaign": {
             **_serialize_brand_campaign(
-                campaign, 0, filled, 0, await _campaign_budget(campaign)
+                campaign,
+                0,
+                filled,
+                0,
+                await _campaign_budget(campaign),
+                payout_default=await creator_payout_days(),
             ),
             # The rate that actually applies, with which level it came from —
             # `_serialize_brand_campaign` can only report the campaign's own,
@@ -22672,6 +23153,11 @@ _CAMPAIGN_BRIEF_FIELDS = (
     # exactly the brand that duplicates a brief, and dropping these would make
     # a copy quietly weaker than the thing it copied.
     *BRIEF_DETAIL_FIELDS,
+    # And the barter half, for the same reason: a brand that runs the same
+    # tasting every month duplicates it, and a copy that dropped what was on
+    # offer would be a barter brief with nothing in it — which the write
+    # paths now refuse, so the duplicate would fail rather than be weaker.
+    *BARTER_FIELDS,
     "budget_per_creator",
     "category",
     "area",
@@ -23037,7 +23523,18 @@ async def admin_update_campaign(
         # that could only ever lower it would be stuck with a number it
         # never meant, and `0` is a different claim ("this brief has no
         # money behind it") rather than a way of saying no cap.
-        if value is None and key not in ("start_date", "end_date", "total_budget"):
+        #
+        # `creator_payout_days` is on it for the same reason and one
+        # more: the check below refuses an edit that resolved to
+        # nothing, so dropping the key here would make "clear this
+        # brief's payout override" the one edit that answers 422. It is
+        # resolved properly further down either way.
+        if value is None and key not in (
+            "start_date",
+            "end_date",
+            "total_budget",
+            "creator_payout_days",
+        ):
             continue
         if isinstance(value, str):
             value = value.strip()
@@ -23059,11 +23556,25 @@ async def admin_update_campaign(
     update.update(
         _resolve_brief_details({f: update.pop(f) for f in BRIEF_DETAIL_FIELDS if f in update})
     )
+    # The payout window, popped out of the loop above and resolved, so an
+    # explicit `null` clears the override rather than being skipped as "leave
+    # it alone" — the one edit the generic loop cannot express.
+    if "creator_payout_days" in fields:
+        update.pop("creator_payout_days", None)
+        update.update(_resolve_payout_window({"creator_payout_days": fields["creator_payout_days"]}))
 
-    # No _refuse_brand_barter here, and that is the whole point of the feature:
-    # this route is the only way a campaign becomes barter. There is no admin
-    # campaign-create endpoint, so an admin makes a barter brief by taking one
-    # that exists and setting it — which also means somebody read it first.
+    # The barter half, through the same one writer the brand's edit uses.
+    update.update(_resolve_barter({f: update.pop(f) for f in BARTER_FIELDS if f in update}))
+
+    # No _refuse_brand_barter here, and that is the whole point of the
+    # asymmetry: an admin may convert a brief to barter and a brand may not
+    # undo one. `POST /admin/campaigns` skips the guard for the same reason.
+    #
+    # `_refuse_unstated_barter` is **not** skipped: who may make a brief
+    # barter is a question about authority, and whether a barter brief says
+    # what is on offer is a question about whether it is answerable. A
+    # creator reading a brief we posted is owed the same statement.
+    _refuse_unstated_barter(doc, update)
     _refuse_dates_foreign_to_type(doc, update)
     start = update.get("start_date", doc.get("start_date"))
     end = update.get("end_date", doc.get("end_date"))
@@ -23116,7 +23627,9 @@ async def admin_update_campaign(
     await _sync_campaign_fill(doc["_id"])
 
     counts = await _applicant_counts_for([doc["_id"]])
-    return _serialize_brand_campaign(updated, counts.get(doc["_id"], 0))
+    return _serialize_brand_campaign(
+        updated, counts.get(doc["_id"], 0), payout_default=await creator_payout_days()
+    )
 
 
 # Campaigns you can still usefully invite someone to. A finished campaign gives
@@ -25503,6 +26016,47 @@ async def put_payment_terms(
     return await get_payment_terms(user)
 
 
+class CreatorPayoutPayload(BaseModel):
+    days: int = Field(ge=_CREATOR_PAYOUT_MIN, le=_CREATOR_PAYOUT_MAX)
+
+
+@admin_router.get("/settings/creator-payout")
+async def get_creator_payout_window(user: dict = Depends(require_roles("admin"))):
+    """**The other direction from `/settings/payment-terms`** — how long we
+    take to pay a creator, not how long a brand has to pay us."""
+    return {"days": await creator_payout_days(), "default": CREATOR_PAYOUT_DAYS,
+            "min": _CREATOR_PAYOUT_MIN, "max": _CREATOR_PAYOUT_MAX}
+
+
+@admin_router.put("/settings/creator-payout")
+async def put_creator_payout_window(
+    payload: CreatorPayoutPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """**Only new arrangements.** Every collaboration that reached acceptance
+    carries the window it was promised, frozen in its terms snapshot, so
+    lengthening this cannot reach backwards into a brief somebody already
+    accepted — the rule `CANCELLATION_TERMS` and the refund policy hold.
+
+    Admin-only, not `CONSOLE_ROLES`: this is a promise the operation makes
+    with its own money across every brand, so it is not scoped work.
+    """
+    before = await creator_payout_days()
+    await db.platform_settings.update_one(
+        {"_id": _CREATOR_PAYOUT_SETTINGS_ID},
+        {"$set": {"days": int(payload.days), "updated_at": datetime.now(timezone.utc),
+                  "updated_by": ObjectId(user["_id"]), "updated_by_name": user.get("name")}},
+        upsert=True,
+    )
+    # Cleared rather than waited out, the discipline `put_sla_targets` holds:
+    # an admin who changes a number and reloads has to see it.
+    _CREATOR_PAYOUT_CACHE["at"] = None
+    _CREATOR_PAYOUT_CACHE["value"] = None
+    await audit(user, "settings.creator_payout", "settings", _CREATOR_PAYOUT_SETTINGS_ID,
+                before={"days": before}, after={"days": int(payload.days)})
+    return await get_creator_payout_window(user)
+
+
 class InvoiceOverridePayload(BaseModel):
     """Why this brand may post while it owes us money."""
 
@@ -27549,6 +28103,10 @@ class AdminCreateCampaignPayload(PostCampaignPayload):
     # brief before creators do; a brief an admin just typed has been read.
     # `draft` is still available for one that is not finished.
     status: Literal["draft", "open"] = "open"
+    # The payout window, staff-settable here because this route is staff. The
+    # brand's own `PostCampaignPayload` deliberately has no such key, so the
+    # generic copy loop on its create path has nothing to let through.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
 
 
 @admin_router.post("/campaigns")
@@ -27568,6 +28126,15 @@ async def admin_create_campaign(
     guard here would make a barter brief impossible to *create*, leaving the
     edit route as the only way to reach one.
     """
+    # Not `_refuse_brand_barter` — this route may make a barter brief — but
+    # a barter brief we post still has to say what is on offer.
+    _refuse_unstated_barter(
+        None,
+        {
+            "compensation_type": payload.compensation_type,
+            "barter_description": payload.barter_description,
+        },
+    )
     brand_oid = _as_oid(payload.brand_id)
     profile = (
         await db.brand_profiles.find_one({"user_id": brand_oid}) if brand_oid else None
@@ -27635,7 +28202,18 @@ async def admin_create_campaign(
         "required_disclosure": payload.required_disclosure,
         "usage_rights": payload.usage_rights,
         "usage_duration_days": payload.usage_duration_days,
-        "barter_description": (payload.barter_description or "").strip() or None,
+        **_resolve_barter(
+            {
+                f: getattr(payload, f)
+                for f in BARTER_FIELDS
+                if f in payload.model_fields_set
+            }
+        ),
+        **_resolve_payout_window(
+            {"creator_payout_days": payload.creator_payout_days}
+            if "creator_payout_days" in payload.model_fields_set
+            else {}
+        ),
         "venue_address": (payload.venue_address or "").strip() or None,
         "venue_instructions": (payload.venue_instructions or "").strip() or None,
         "on_site_contact": (payload.on_site_contact or "").strip() or None,
@@ -27680,7 +28258,7 @@ async def admin_create_campaign(
         },
         **_campaign_audit_context(doc),
     )
-    return _serialize_brand_campaign(doc, 0)
+    return _serialize_brand_campaign(doc, 0, payout_default=await creator_payout_days())
 
 
 class AdminCreateBrandPayload(BaseModel):
@@ -30660,6 +31238,12 @@ async def campaign_roster(
         # creator is owed.
         "budget_per_creator": campaign.get("budget_per_creator"),
         "compensation_type": _compensation_type(campaign),
+        # When the creator gets paid, on the screen of the person a creator
+        # standing in the venue will actually ask. Same block as the brief,
+        # so the manager cannot answer it differently from the page.
+        "payout": _payout_block(campaign, await creator_payout_days()),
+        "travel": _travel_block(campaign),
+        "barter_description": campaign.get("barter_description"),
         # The manager is the runner on a weare-run brief and is therefore the
         # one agreeing fees against this cap, so they read the same three
         # figures the brand and the admin do.
@@ -31351,7 +31935,16 @@ campaigns_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 _LIVE_STATUSES = LIVE_CAMPAIGN_STATUSES
 
 
-def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
+def _serialize_campaign(
+    doc: dict, brand: Optional[dict] = None, *, payout_default: int
+) -> dict:
+    """The creator's shape — this is what the brief renders from.
+
+    `payout_default` is **keyword-only and has no default**, so a caller that
+    forgets it raises rather than quietly publishing the module constant on a
+    deployment whose stored window says something else. A promise on a brief
+    is the one figure that must not be a stale guess.
+    """
     return {
         "id": str(doc["_id"]),
         "reference": _reference_of(doc),
@@ -31385,6 +31978,24 @@ def _serialize_campaign(doc: dict, brand: Optional[dict] = None) -> dict:
         "required_disclosure": _required_disclosure(doc),
         "disclosure_label": _disclosure_text(doc),
         "usage": _usage_block(doc),
+        # **When the creator gets paid, on the brief itself.** The survey's
+        # loudest finding: creators who were paid inside a week still name
+        # late payment in their top three, because no brief has ever said
+        # when payment comes and an unstated wait is assumed to be a long
+        # one. Read-only for the brand — staff set it.
+        "payout": _payout_block(doc, payout_default),
+        # **Whether getting there is paid for.** On every brief rather than
+        # only the barter ones: a creator crossing a city for a fixed fee is
+        # weighing the same thing, and `stated: False` tells a surface to
+        # draw nothing rather than to draw "not covered".
+        "travel": _travel_block(doc),
+        # **What a barter brief is actually offering, on the brief itself.**
+        # This is the whole mitigation that shipped with letting brands post
+        # barter: "a free meal" that turns out to be one dish is the shape
+        # almost every bad account of barter takes, and the only moment it
+        # can be declined cheaply is before anybody travels. `None` on a
+        # paid brief, where there is nothing to describe.
+        "barter_description": doc.get("barter_description"),
         # The checkable half of the brief, on the shape the brief renders from.
         # A do or a don't that only reaches the creator at draft review is one
         # they find out about after the shoot, which is the whole reason these
@@ -31919,12 +32530,16 @@ def _terms_money(campaign: Optional[dict], collab: Optional[dict]) -> dict:
     }
 
 
-def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
+def _build_terms(
+    campaign: Optional[dict], collab: Optional[dict], *, payout_default: int
+) -> dict:
     """The terms as they stand right now, ready to be frozen.
 
     Pure and DB-free so the same function can build a snapshot and render a
     preview — a creator being asked to accept terms should be reading the same
-    object that gets stored, not a summary of it.
+    object that gets stored, not a summary of it. `payout_default` is handed
+    in for that reason, and is keyword-only with no default so a caller cannot
+    freeze the module constant onto a deployment that stores another number.
     """
     campaign = campaign or {}
     return {
@@ -31945,6 +32560,15 @@ def _build_terms(campaign: Optional[dict], collab: Optional[dict]) -> dict:
             "label": _disclosure_text(campaign),
         },
         "cancellation_terms": CANCELLATION_TERMS,
+        # **When they get paid, frozen with everything else.** The same reason
+        # the cancellation policy is here: a later change to the platform
+        # window must not reach backwards into an arrangement somebody has
+        # already accepted. `_build_terms` is pure, so the resolved number is
+        # handed in rather than read — see `_issue_terms_snapshot`.
+        "payout": _payout_block(campaign, payout_default),
+        # Frozen too: whether travel was covered is part of what somebody
+        # accepted, and on a barter brief it is most of the consideration.
+        "travel": _travel_block(campaign),
         # **In the snapshot, not only at signup.** Acceptance is the moment
         # the introduction actually happens — the creator now has a brand's
         # name and a shoot date — so it is the moment the rule becomes
@@ -32012,7 +32636,7 @@ async def _issue_terms_snapshot(collab: dict, campaign: Optional[dict]) -> Optio
     against.
     """
     terms = {
-        **_build_terms(campaign, collab),
+        **_build_terms(campaign, collab, payout_default=await creator_payout_days()),
         "issued_at": datetime.now(timezone.utc),
         "accepted_at": None,
         "accepted_by": None,
@@ -32345,7 +32969,11 @@ async def list_campaigns(
         docs = pool[offset : offset + limit]
 
     brand_map = await _load_brand_map([d["brand_id"] for d in docs])
-    rows = [_serialize_campaign(d, brand_map.get(d["brand_id"])) for d in docs]
+    payout_default = await creator_payout_days()
+    rows = [
+        _serialize_campaign(d, brand_map.get(d["brand_id"]), payout_default=payout_default)
+        for d in docs
+    ]
     # The list used to be a bare array capped at 200 with no way to know
     # whether anything was cut off. Still an array for anything already reading
     # it that way — the count rides in a header, which is additive.
@@ -32447,7 +33075,9 @@ async def get_campaign(
             raise HTTPException(status_code=404, detail="Campaign not found")
 
     brand_map = await _load_brand_map([doc["brand_id"]])
-    payload = _serialize_campaign(doc, brand_map.get(doc["brand_id"]))
+    payload = _serialize_campaign(
+        doc, brand_map.get(doc["brand_id"]), payout_default=await creator_payout_days()
+    )
 
     # A group event's timetable, read back off the slots it was written into,
     # so the edit form can re-seed rather than default. Without this, opening a
@@ -32481,9 +33111,19 @@ async def get_campaign(
     # the button's promise and the route's behaviour cannot diverge.
     payload["apply_holds"] = False
     payload["outstanding"] = None
+    # **Asked for where it is actually needed, and nowhere else.** A delivery
+    # brief sends something to a creator's door, so a shortlist without an
+    # address is a brief that cannot be fulfilled — and this is the one moment
+    # the question has a visible consequence. A creator who will never take a
+    # delivery campaign is never chased for it: the field stays optional, out
+    # of `_PROFILE_COMPLETENESS_FIELDS`, and unmentioned on every other brief.
+    payload["needs_delivery_address"] = False
     if user["role"] == "creator":
         # Decide eligibility server-side so the button and the API agree.
         profile = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+        payload["needs_delivery_address"] = bool(
+            _is_delivery(doc) and not (profile or {}).get("full_address", "").strip()
+        )
         verification = (profile or {}).get("verification_status", "pending")
         needed = int(doc.get("creators_needed") or 1)
         filled = (await _filled_counts_for([oid])).get(oid, 0)
@@ -36020,6 +36660,7 @@ async def get_application(
     profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
     payment = await db.payments.find_one({"collaboration_id": collab["_id"]})
     brand_map = await _load_brand_map([campaign["brand_id"]])
+    payout_default = await creator_payout_days()
     brand = brand_map.get(campaign["brand_id"]) or {}
 
     state = collab.get("state", "applied")
@@ -36107,6 +36748,8 @@ async def get_application(
         # Read off the campaign rather than the snapshot, so an application
         # that has not reached acceptance still shows the current grant.
         "usage": _usage_block(campaign),
+        "payout": _payout_block(campaign, payout_default),
+        "travel": _travel_block(campaign),
         "disclosure": {
             "code": _required_disclosure(campaign),
             "label": _disclosure_text(campaign),
@@ -36532,7 +37175,12 @@ def _share_summary(campaign: dict, brand: dict) -> str:
 
 
 def _share_page_html(
-    campaign: dict, brand: dict, spots_left: int, media_base: str = ""
+    campaign: dict,
+    brand: dict,
+    spots_left: int,
+    media_base: str = "",
+    *,
+    payout_default: int,
 ) -> str:
     """One page, no framework, everything escaped.
 
@@ -36600,6 +37248,14 @@ def _share_page_html(
         f'<div class="row"><dt>{e(label)}</dt><dd>{value}</dd></div>'
         for label, value in (
             ("What it pays", e(money)),
+            # **The payment promise, on the page a creator is most likely to
+            # see first.** This is the link that gets pasted into WhatsApp,
+            # so for a lot of creators it is the whole brief — leaving the
+            # window off here would put it only in front of people who had
+            # already signed in.
+            ("When you're paid", e(_payout_promise(
+                _creator_payout_days(campaign, payout_default)
+            ))),
             ("Deliverables", e(campaign.get("deliverables") or "—")),
             ("Where", where),
             ("When", when_label),
@@ -36707,6 +37363,7 @@ async def public_campaign_page(campaign_id: str, request: Request):
             # This request's own origin, because the backend is what mounts
             # /uploads. Not _share_base(), which is the frontend.
             media_base=str(request.base_url),
+            payout_default=await creator_payout_days(),
         ),
         media_type="text/html; charset=utf-8",
         # Public and safe to cache briefly — a crawler and a person often fetch

@@ -900,23 +900,42 @@ class TestAdminCreation:
         assert doc["manager_id"] is None
         assert server._execution_owner(doc) == "weare"
 
-    def test_barter_is_reachable_here_and_nowhere_else(self, world):
-        """The asymmetry `admin_update_campaign` already holds. Adding the
-        guard would make a barter brief impossible to *create*, leaving an edit
-        as the only way to reach one."""
+    def test_barter_is_reachable_here(self, world):
+        """**This used to be `..._and_nowhere_else`.** Barter is postable by a
+        brand now; what stayed is that this route makes one without being
+        asked to justify it, and that it still has to say what is on offer."""
         run(world.db.brand_profiles.update_one(
             {"user_id": world.mine}, {"$set": {"verified": True}}
         ))
         out = run(server.admin_create_campaign(
-            self._campaign(world, compensation_type="barter"), world.admin
+            self._campaign(
+                world,
+                compensation_type="barter",
+                barter_description="Dinner for two, about Rs 4,000.",
+            ),
+            world.admin,
         ))
         doc = run(world.db.campaigns.find_one({"_id": ObjectId(out["id"])}))
         assert server._compensation_type(doc) == "barter"
+        assert doc["barter_description"].startswith("Dinner for two")
 
         src = inspect.getsource(server.admin_create_campaign)
         # The call form, not the bare name — the docstring explains why it is
         # absent, and a substring test would read that as the guard.
         assert "_refuse_brand_barter(" not in src
+
+    def test_even_our_own_barter_brief_has_to_say_what_is_on_offer(self, world):
+        """The description guard is **not** skipped here. Who may make a brief
+        barter is a question about authority; whether a barter brief is
+        answerable is a question the creator reading it asks either way."""
+        run(world.db.brand_profiles.update_one(
+            {"user_id": world.mine}, {"$set": {"verified": True}}
+        ))
+        assert refuses(
+            server.admin_create_campaign(
+                self._campaign(world, compensation_type="barter"), world.admin
+            )
+        ).status_code == 422
 
     def test_publishing_onto_an_unchecked_brand_is_refused(self, world):
         """The gate `approve_campaign` holds, for the identical reason:

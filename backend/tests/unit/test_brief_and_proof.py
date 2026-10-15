@@ -252,7 +252,7 @@ class TestTheBriefIsWrittenByOneWriterAndReadEverywhere:
             "_id": ObjectId(), "brand_id": ObjectId(), "title": "x", "status": "open",
             "brief_donts": ["Don't show the queue"],
         }
-        out = server._serialize_campaign(doc, None)
+        out = server._serialize_campaign(doc, None, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert out["brief_details"] == {"brief_donts": ["Don't show the queue"]}
 
     def test_it_rides_on_the_owners_shape_so_an_edit_round_trip_keeps_it(self):
@@ -260,7 +260,7 @@ class TestTheBriefIsWrittenByOneWriterAndReadEverywhere:
             "_id": ObjectId(), "brand_id": ObjectId(), "title": "x", "status": "draft",
             "mandatory_hashtags": ["#weare"], "creators_needed": 1,
         }
-        out = server._serialize_brand_campaign(doc, 0, 0)
+        out = server._serialize_brand_campaign(doc, 0, 0, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert out["brief_details"]["mandatory_hashtags"] == ["#weare"]
 
     def test_a_duplicate_and_a_template_carry_it(self):

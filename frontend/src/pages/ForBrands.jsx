@@ -150,6 +150,8 @@ export default function ForBrands() {
                     // service lighting, a creator filming at a table in the
                     // mid-ground. Landscape 16:9.
                     note: "Full restaurant on opening night, creator filming at a table, landscape 16:9",
+                    src: "/img/marketing/brands-full-house.webp",
+                    alt: "A full restaurant on opening night under warm service lighting, with a creator filming at one of the tables.",
                     ratio: "16/9",
                 }}
             />
@@ -199,6 +201,8 @@ export default function ForBrands() {
                     // with a tablet, checking creators in at the door, evening.
                     // Portrait-ish 4:3 so it sits beside body copy.
                     note: "WeAre manager checking creators in at a venue door with a tablet, 4:3",
+                    src: "/img/marketing/brands-door-checkin.webp",
+                    alt: "A campaign manager checking creators in at a venue door in the evening, tablet in hand.",
                     ratio: "4/3",
                 }}
                 flip
@@ -223,6 +227,11 @@ export default function ForBrands() {
                             // naming Indiranagar would brief a photograph for
                             // a city the page may not be talking about.
                             note: "City shopfronts at dusk, lit up, people on the street, landscape 3:2",
+                            src: "/img/marketing/brands-city-dusk.webp",
+                            // Describes the photograph and names no city, for
+                            // the reason the note above gives: the place this
+                            // section names is counted at request time.
+                            alt: "Lit shopfronts along a city street at dusk, with people walking past.",
                             ratio: "3/2",
                         }}
                     />

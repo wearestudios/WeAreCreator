@@ -386,7 +386,9 @@ it takes:
   the creator picked** (`_PLATFORM_COMPLETENESS_FIELDS`): an Instagram-only creator
   is never asked for a YouTube link, because otherwise they could never reach 100%
   and so could never submit at all. Payout details are deliberately not counted —
-  a PAN must not be the price of being looked at.
+  a PAN must not be the price of being looked at — and **neither is the full
+  address**, for the same reason read a second way: see "Why we are asking"
+  below.
 - Browsing campaigns is open to everyone; `POST /campaigns/{id}/apply` 403s anyone
   not `verified` and says which of the three states they're in
   (`_why_you_cannot_apply`).
@@ -495,7 +497,7 @@ anything else, naming what is allowed; an empty city is still allowed, because
 the profile is built over sittings and refusing it would block partial saves.
 The **neighbourhood stays free text and stays optional** — it is not in
 `_PROFILE_COMPLETENESS_FIELDS`, and neither is YouTube unless the creator says
-they post there.
+they post there, nor the full address.
 
 `about` is the one field on the form whose shape the creator chose. It is
 optional on purpose: putting it in completeness would drop every existing
@@ -558,6 +560,39 @@ that is precisely wrong is worse than none.
   their home address to five decimal places. It is off the allow-list and named
   in `BRAND_FORBIDDEN_CREATOR_FIELDS` so the leak test looks for it. `about` and
   `facebook_url` *are* brand-visible — they were written to be read.
+
+#### Why we are asking, and what it costs not to answer
+
+The field was always there. What was missing was the reason: the most
+invasive question on the form was asked with a generic privacy note, which
+reads as a form collecting what it can. And it was in
+`_PROFILE_COMPLETENESS_FIELDS`, so a creator who shoots nothing but venue
+work and will never be sent anything could not reach 100% without it — and
+therefore could not submit for review at all.
+
+- **The purpose line is the fix, not a new field.** `PRIVATE_ADDRESS_NOTE`
+  is the `AddressPicker` default and says three things: we need it to send
+  hampers, product and invites on delivery campaigns; only the WeAre team
+  sees it; **a brand never does, at any stage, including after you are
+  booked.** The brand's outlet form overrides it, because an outlet is
+  public and the default would be a lie there.
+- **That last clause is checkable, and a test checks it** rather than taking
+  it on trust. `full_address`, `location_lat`, `location_lng` and
+  `location_place_id` are all in `BRAND_FORBIDDEN_CREATOR_FIELDS` and off
+  `_BRAND_VISIBLE_CREATOR_FIELDS`. A privacy claim nothing enforces is the
+  one kind of copy worse than silence.
+- **Out of completeness, and the removal is the safe direction.** Taking a
+  field out can only raise somebody's percentage — nobody drops below 100%
+  and gets silently un-submitted, which is the trap that keeps `about` out.
+  It is the same reasoning that keeps PAN out, applied to a field that was
+  already in.
+- **Consequential rather than nagging.** `needs_delivery_address` rides on
+  the creator's campaign payload: true only where the brief is a delivery
+  *and* the creator has no address saved. The brief then says a delivery
+  address is needed to be shortlisted, with a link to the profile. A creator
+  who will never do a delivery campaign is never chased for it, and a
+  creator on one finds out while they can still act on it rather than after
+  being passed over.
 
 ## Instagram stats
 
@@ -2290,26 +2325,69 @@ brand receiving curation is the offer rather than a contradiction of it.
   recorded against the collaboration (see work notes).
 - `barter` — no money. A meal, a stay, a product.
 
-**Barter is admin-only.** A brand posts paid work or it posts nothing:
-`BRAND_COMPENSATION_TYPES = ("fixed", "negotiated")`, and `_refuse_brand_barter`
-422s on both brand write paths — `create_brand_campaign` and
-`update_brand_campaign`, the second because its update loop copies the payload
-generically and `compensation_type` would otherwise ride along with everything
-else. The **two** routes that accept it are `PATCH /admin/campaigns/{id}` and
-`POST /admin/campaigns`, both of which deliberately do not call the guard; a
-unit test pins every half. So a barter brief is one an admin either posted or
-converted — either way somebody at WeAre typed it, which is the property the
-restriction is actually about.
+**Barter used to be admin-only and is not any more, and that reversal is
+worth reading before anybody puts it back.** `BRAND_COMPENSATION_TYPES` is all
+three, and `_refuse_brand_barter` has lost the first of the two things it
+refused.
 
-The guard refuses two different things: writing `barter`, and rewriting the
-compensation of a campaign that already *is* barter — otherwise a brand could
-undo a WeAre arrangement into a cash liability. The rest of such a brief stays
-theirs to edit.
+The old rule was that a brand posts paid work or it posts nothing, so a barter
+brief was one somebody at WeAre had typed. The reasoning was never wrong — the
+creator survey is the strongest evidence for it that exists, with barter the
+single most-cited reason a creator walks away from a collaboration and eight
+of thirty-eight raising it unprompted. What the rule could not do was stop
+barter happening. It is how a large part of this market runs, so a brand that
+could not post one arranged it over WhatsApp instead, where no rate is
+recorded, no terms are frozen and nobody is checked — which is the
+disorganisation the whole product is pointed at.
 
-`compensation_type` is typed as the full enum on `PostCampaignPayload` on
-purpose. Narrowing it to the brand subset would answer with pydantic's "Input
-should be 'fixed' or 'negotiated'", which reads like a typo; the handler
-refuses it with the actual reason instead.
+**So it is a reversal with mitigations, not a deletion**, and the mitigations
+are the half that answers the survey:
+
+- **A barter brief has to say what is on offer.** `barter_description` is
+  required, enforced by `_refuse_unstated_barter` on every write path — the
+  brand's create, the brand's edit and the admin's edit. Almost every account
+  of barter going wrong is the same shape: "a free meal" turned out to be one
+  dish, or the value was never stated at all. A brief that names the thing is
+  one somebody can decline before travelling to it rather than after. The
+  guard **reads the campaign under the update**, not the update alone, because
+  there are three ways to arrive at an unstated barter brief — posting one,
+  switching to barter without adding a description, and emptying the
+  description on a brief that already is barter — and only the first is
+  visible from the payload by itself.
+- **Whether travel is covered is asked**, raised unprompted by five
+  respondents: the complaint is rarely the barter on its own, it is crossing
+  the city for it at their own cost. `travel_allowance` is a **tri-state** and
+  `_travel_block` is the reader — `None` is "nobody said", which is what every
+  brief written before the field carries, and rendering that as "travel not
+  covered" would tell a creator something we never said. An amount on an
+  explicit "no" is dropped rather than refused, the `_usage_duration_days`
+  shape.
+- **The ranking is deliberately untouched.** `score_campaign_for_creator`
+  knows nothing about money, and a flood of barter briefs is not a reason to
+  start ranking paid work first — that would quietly turn "most relevant" into
+  "most lucrative", which is a different product.
+
+`_resolve_barter` is the one writer for all three fields, shared by the three
+paths with the keys popped out of the generic copy loop first — the rule
+`_resolve_deliverables` and `_resolve_brief_details` hold.
+
+**The guard's second refusal survived**, and it was always the more important
+one: a brand may not rewrite the compensation of a campaign that already *is*
+barter, or it could undo a WeAre arrangement into a cash liability. It refuses
+the key whatever value it carries, so `PostCampaign` omits `compensation_type`
+entirely on a brief that is already barter rather than re-posting the same
+word — and it keys that on the **stored** campaign, not on the picker, or
+choosing barter on a new brief would hide the picker before anyone could
+change their mind. `PATCH /admin/campaigns/{id}` and `POST /admin/campaigns`
+still skip the guard, the same asymmetry as before; neither skips
+`_refuse_unstated_barter`, because who may make a brief barter and whether a
+barter brief has to say what it is are different questions.
+
+`compensation_type` is typed as the full enum on `PostCampaignPayload`, which
+now matches what a brand may send. It was the full enum before the reversal
+too, on purpose: narrowing it to the brand subset would have answered with
+pydantic's "Input should be 'fixed' or 'negotiated'", which reads like a typo
+rather than a rule.
 
 - `_compensation_type(doc)` is the only reader. Campaigns predate the field and
   a bare `.get()` returns `None`, which is not a third kind of money — they
@@ -2321,10 +2399,89 @@ refuses it with the actual reason instead.
   carries the type beside it and every surface that shows money goes through
   `formatCompensation` / `isBarter` in `frontend/src/lib/compensation.js`. A
   unit test walks `server.py` for a fee emitted without its type.
-- The brand form imports `BRAND_COMPENSATION_OPTIONS`, which has no barter in
-  it — the option is *absent*, not present and disabled, so there is nothing to
-  re-enable from devtools. `ALL_COMPENSATION_OPTIONS` is admin-only and is used
-  by exactly one control, `CampaignEditDialog`.
+- The brand form imports `BRAND_COMPENSATION_OPTIONS`, which now carries all
+  three. **The option is genuinely present rather than present and disabled**
+  — a disabled control is a thing somebody re-enables from devtools and then
+  posts against a server that has to refuse it anyway. `BRAND_ALLOWED` in
+  `lib/compensation.js` is drift-tested against `BRAND_COMPENSATION_TYPES` in
+  both directions, so neither list can quietly gain or lose a kind of money.
+  `ALL_COMPENSATION_OPTIONS` is still the admin's, used by exactly one
+  control, `CampaignEditDialog`.
+
+### When a brief pays, said on the brief
+
+Late payment is what creators name most often as the thing that goes wrong —
+63% put it in their top three — and the finding that decided this is the
+second half: **64% of the creators who were actually paid inside a week still
+named it.** The wait was not the problem on its own. No brief had ever said
+when payment comes, so an unstated wait is assumed to be a long one and
+remembered as one. Saying it costs nothing.
+
+**`payment_terms_days()` is not this, and the risk in this whole feature is
+somebody thinking it is.** That one is how long a *brand* has to settle an
+invoice to *us* (14 days, feeding `_invoice_due_at` and
+`_brand_overdue_invoices`). This is how long *we* take to pay a *creator*.
+Two directions, two stored ids, two defaults — `_CREATOR_PAYOUT_SETTINGS_ID`
+is `creator_payout_days` and the default is 7, and each constant carries a
+comment saying which leg it governs. Reusing the first for the second would
+tie a promise made to creators to a commercial term negotiated with brands,
+so that giving one client a longer rope silently lengthened the wait for
+everybody who did the work. The settings rows sit deliberately **adjacent**
+on the console rather than apart: editing the wrong one is the failure, and
+the two blurbs side by side is what stops it.
+
+- `creator_payout_days()` lays a stored override over the default, cached 30
+  seconds in a module global and cleared by the writer — the `sla_targets()`
+  arrangement, **including its cache discipline**: a test that stores a value
+  and immediately reads it gets whatever the previous test left behind,
+  across a fresh mock database, which looks exactly like the write being
+  dropped.
+- **`_creator_payout_days(campaign, default_days)` is the one reader, and
+  absent reads as the platform default, never as zero.** Every campaign
+  written before the field carries no override, and reading that as "paid the
+  same day" would publish a promise nobody made across the whole back
+  catalogue. An unparseable or negative stored value falls back the same way.
+  **`0` is a real answer and survives the reader** — "paid the same day" is a
+  promise somebody might make, so it cannot be collapsed into absent.
+- **Staff set it, the brand reads it.** There is no `creator_payout_days` on
+  `PostCampaignPayload` for the generic copy loop to let through, and
+  `_refuse_brand_payout_window` 422s the brand's edit path. What we pay out
+  of our own money across every brand is not the brand's to set.
+  `_resolve_payout_window` is the one writer, so an explicit `null` clears an
+  override where an omitted key leaves it alone — and `creator_payout_days`
+  is on the admin edit's clearable list, or "clear this brief's override"
+  would be the one edit that answered `422 Nothing to update`.
+- **Frozen into the terms snapshot at acceptance**, beside the cancellation
+  and refund policies and for their reason: a later change to the platform
+  number must not reach backwards into an arrangement somebody accepted.
+- **A duration on the brief, a date on the row.** `_payout_promise` builds
+  the sentence ("Paid within 7 days of approved delivery"); `_payout_due_at`
+  builds the instant, and only from `content_approved` onwards, because a
+  date needs an approval to count from. It anchors on **`content_approved_at`
+  rather than `state_since`** — the clock moves again when the row reaches
+  `in_payment`, so reading it would restart the promise every time somebody
+  got round to raising the payment. The fallback to `state_since` for rows
+  approved before the stamp existed can only place the date *later* than the
+  truth, which is the safe direction.
+- **Where it appears:** `_serialize_campaign` (the brief a creator reads
+  before applying), `_serialize_brand_campaign` (the owner's), the `/c/{id}`
+  share page, the manager's brief panel, the frozen terms, and
+  `_serialize_collab_row` as `payout_due_at` — the creator's own card, where
+  it is the date. `_payout_block` is the one shape and `payoutPromise` in
+  `lib/payoutWindow.js` **prefers the sentence the server sent**, falling
+  back to building one only where no block arrived; rebuilding it locally
+  would be a second definition of the promise, which is how a brief and a
+  share page come to word it differently. `PayoutNote` is the single
+  renderer and never asks what role is looking.
+- **Measured, or it is not a promise.** The `payouts_late` check on
+  `/admin/health` asks each awaiting-payout collaboration against the window
+  *its own campaign* advertised, and sorts on **`hours / sla_hours`** — the
+  fraction of the allowance used, the reading `_overdue_check` settled on. A
+  row one day past a same-day promise has burnt more of its allowance than
+  one a day past a fortnight, and absolute days over cannot say that. It sets
+  `presorted`, the same exception the overdue list takes.
+- `lib/payoutWindow.js` is named apart from `lib/payout.js` on purpose: that
+  one is *how* money reaches a creator (UPI or bank), this is *when*.
 
 ## What a brief asks for
 

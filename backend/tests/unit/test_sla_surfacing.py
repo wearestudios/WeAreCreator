@@ -542,7 +542,9 @@ class TestTheCreatorSeesTheAgeAndNotTheVerdict:
             )
             collab = await db.collaborations.find_one({"_id": collab_oid})
             campaign = await db.campaigns.find_one({"_id": campaign_oid})
-            creator_row = server._serialize_collab_row(collab, campaign, "Toit")
+            creator_row = server._serialize_collab_row(
+                collab, campaign, "Toit", payout_default=server.CREATOR_PAYOUT_DAYS
+            )
             brand_row = server._serialize_applicant(
                 collab,
                 {"_id": collab["creator_id"], "name": "Asha"},

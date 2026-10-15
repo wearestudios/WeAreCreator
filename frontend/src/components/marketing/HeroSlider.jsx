@@ -102,9 +102,35 @@ const NOTES = [
     "Flat-lay of a morning routine on a linen bed, hands arranging the last object",
 ];
 
+// The photographs, one per note and **indexed the same way `NOTES` is**.
+//
+// Deliberately a parallel array rather than an eight-item list of objects:
+// `PHRASES` is derived from `CATEGORY_OPTIONS`, so a ninth sector added to the
+// enum has to degrade rather than break the deck. Written out as objects, the
+// ninth slide would be `undefined` and the map would throw; written this way
+// it wraps to the first image exactly as the note and the drift already wrap —
+// a picture that is one sector out of step is worse than the right one and
+// very much better than a blank hero.
+//
+// Served from `public/img/marketing/`, which CRA copies to the site root
+// untouched — no import, no bundling, no hashed filename, so a reshoot is a
+// file swap rather than a build change. Nothing is fetched from a third party;
+// the sweep that enforces that is a blunt substring check over whole files.
+const IMAGES = [
+    "/img/marketing/hero-fnb.webp",
+    "/img/marketing/hero-hospitality.webp",
+    "/img/marketing/hero-retail.webp",
+    "/img/marketing/hero-real-estate.webp",
+    "/img/marketing/hero-fashion.webp",
+    "/img/marketing/hero-travel.webp",
+    "/img/marketing/hero-wellness.webp",
+    "/img/marketing/hero-lifestyle.webp",
+];
+
 export const SLIDES = PHRASES.map((phrase, i) => ({
     phrase,
     note: NOTES[i % NOTES.length],
+    image: IMAGES[i % IMAGES.length],
     drift: DRIFTS[i % DRIFTS.length],
 }));
 
@@ -174,6 +200,15 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
                 <PlaceholderImage
                     testid={IDS.slideImage(index)}
                     note={slide.note}
+                    src={slide.image}
+                    // **Decorative, so empty.** This is a background behind
+                    // the `h1` and under a scrim, inside a subtree that is
+                    // `aria-hidden` in its entirety — the headline above
+                    // already carries the meaning, and a screen reader
+                    // announcing eight photographs of nothing in particular
+                    // is noise. The page-section slots are the opposite case
+                    // and describe themselves.
+                    alt=""
                     // `fill`, not a ratio: the hero's height is set by its
                     // content, and an aspect class would fight `inset-0`.
                     fill

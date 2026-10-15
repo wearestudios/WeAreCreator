@@ -693,7 +693,17 @@ export default function CreatorOnboarding() {
                                 </div>
                             </Field>
                         </div>
-                        <Field id="full-address" label="Full address">
+                        {/* **Optional, and it says so now.** It was counted
+                            towards completeness, which made the most
+                            invasive question on the form a condition of
+                            being reviewed at all — including for a creator
+                            who shoots nothing but venue work and will never
+                            be sent anything. It is asked where it bites
+                            instead: a delivery brief says a creator cannot
+                            be shortlisted without one. The note under the
+                            picker is the other half — why we are asking, and
+                            who sees it. */}
+                        <Field id="full-address" label="Full address (optional)">
                             <AddressPicker
                                 address={form.full_address}
                                 lat={form.location_lat}
