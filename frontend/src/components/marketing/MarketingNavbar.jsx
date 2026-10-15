@@ -17,9 +17,8 @@ import { Link } from "react-router-dom";
 import { Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { StudioEndorsement } from "@/components/StudioEndorsement";
 import { MARKETING_LINKS } from "@/lib/siteNav";
-import { MARKETING as IDS, LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
+import { MARKETING as IDS } from "@/constants/testIds";
 import {
     Sheet,
     SheetClose,
@@ -52,13 +51,6 @@ export function MarketingNavbar() {
                     >
                         <Logo variant="horizontal" height={30} />
                     </Link>
-                    <span aria-hidden className="hidden h-4 w-px bg-white/15 sm:block" />
-                    {/* Outside the <Link>, so tapping the logo can only ever go
-                        to Creators' own home. An endorsement, not a co-brand. */}
-                    <StudioEndorsement
-                        testid={STUDIO_IDS.nav}
-                        className="hidden sm:block"
-                    />
                 </div>
 
                 <nav aria-label="Marketing" className="hidden items-center gap-7 md:flex">
@@ -117,7 +109,6 @@ export function MarketingNavbar() {
                             <div className="flex h-full flex-col">
                                 <div className="flex flex-col gap-1 border-b border-white/10 px-6 py-5">
                                     <Logo variant="horizontal" height={30} />
-                                    <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
 
                                 <nav className="flex-1 overflow-y-auto px-6 py-7">

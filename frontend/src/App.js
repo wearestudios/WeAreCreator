@@ -55,6 +55,7 @@ const AdminLogin = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Adm
 // once by somebody who is not signed in, and never again.
 const ForBrands = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForBrands"));
 const ForCreators = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForCreators"));
+const Contact = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/Contact"));
 const HowItWorks = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/HowItWorks"));
 const WhyWeAre = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/WhyWeAre"));
 const NotFound = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/NotFound"));
@@ -141,6 +142,7 @@ const HealthRoute = adminRoute("HealthRoute");
 const AuditRoute = adminRoute("AuditRoute");
 const TeamRoute = adminRoute("TeamRoute");
 const DeletionsRoute = adminRoute("DeletionsRoute");
+const EnquiriesRoute = adminRoute("EnquiriesRoute");
 const SettingsRoute = adminRoute("SettingsRoute");
 const DormantRoute = adminRoute("DormantRoute");
 const DisputesRoute = adminRoute("DisputesRoute");
@@ -286,6 +288,7 @@ function App() {
                         <Route path="/for-creators" element={<ForCreators />} />
                         <Route path="/how-it-works" element={<HowItWorks />} />
                         <Route path="/why-weare" element={<WhyWeAre />} />
+                        <Route path="/contact" element={<Contact />} />
                         <Route
                             path="/dashboard"
                             element={
@@ -512,6 +515,7 @@ function App() {
                             <Route path="audit" element={<AuditRoute />} />
                             <Route path="team" element={<TeamRoute />} />
                             <Route path="deletions" element={<DeletionsRoute />} />
+                            <Route path="enquiries" element={<EnquiriesRoute />} />
                             <Route path="settings" element={<SettingsRoute />} />
                             <Route path="case-studies" element={<CaseStudiesRoute />} />
                             <Route path="dormant" element={<DormantRoute />} />

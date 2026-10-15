@@ -1151,11 +1151,19 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
 
 ## The marketing site
 
-Five pages and a designed 404, **all React routes**. `/` routes, `/for-brands`
+Six pages and a designed 404, **all React routes**. `/` routes, `/for-brands`
 and `/for-creators` sell to one reader each, `/how-it-works` is the journey
-from both sides, `/why-weare` is the standalone case. Registered in `App.js`
-and linked with `<Link>` — see "Why they are not server-rendered" below, which
-is a reversal worth reading before reinstating anything.
+from both sides, `/why-weare` is the standalone case, and `/contact` is the
+form plus the two partners' numbers. Registered in `App.js` and linked with
+`<Link>` — see "Why they are not server-rendered" below, which is a reversal
+worth reading before reinstating anything.
+
+`/contact` is a React route for the same reason the audience pages are: it
+links sideways and nobody pastes a contact page into a chat as a pitch, so the
+preview is not the product. It is **the one page here with no image slot** —
+it is a form, two numbers and an address, and a decorative photograph on it is
+a photograph between somebody and the thing they came to do. Its word budget
+is 200, tighter than any of the five, because it argues for nothing.
 
 **The positioning governs every word, and it is not "against agencies".** WeAre
 Studios is one, and the managed service is a real offering somebody chooses —
@@ -1951,9 +1959,84 @@ noise rather than navigation. The OTP screens are the other exception — one
 focused task, and `Signup` already links both documents inline, at the moment
 consent is actually recorded.
 
-The copyright names **WeAre Monk**, the entity that was already in that line.
-Who owns the thing is a fact, not a copy decision, so it is carried over rather
-than re-branded to match the product name. The year is read at render.
+The copyright names **WeAre Studios**, linked, and **that overrides a note
+that argued the other way**. The line said "WeAre Monk" on the reasoning that
+who owns the thing is a fact rather than a copy decision, so it was carried
+over verbatim rather than re-branded to match the product name. That reasoning
+was sound and it was never the codebase's to settle: the entity in a copyright
+line belongs to the owner, and the owner asked for WeAre Studios directly. The
+year is still read at render.
+
+**It also absorbed the studio credit.** `StudioEndorsement` rendered "A WeAre
+Studios offering" in seven places — beside both nav logos, in both mobile
+sheets, in both footers and at the foot of the closing band — and the
+component is deleted. A relationship stated once is a statement; stated seven
+times down a page it is furniture, and the copyright is where ownership is
+already being named. `lib/studio.js` stays, because `STUDIO_NAME` and
+`STUDIO_URL` are what the line links with, and **an unset `STUDIO_URL` still
+renders the name as text**: the environment holds it because the studio's
+address is not ours to hardcode, and an `<a href="">` is a link that reloads
+the page.
+
+### Writing in
+
+`/contact` and `POST /public/contact` — a public, unauthenticated write, and
+the second one in the product. The creator survey is the precedent and most of
+the shape is carried over from it, but **the two differ in the one way that
+decides everything else: an enquiry has a name on it.**
+
+- **It is audited; the survey is not.** That is not an inconsistency. `audit()`
+  has an actor field, and a line naming who submitted is precisely what an
+  anonymous survey must not have. An enquiry carries a name and a number
+  somebody will be rung back on, so it is logged like every other write, under
+  `_SYSTEM_ACTOR` — named rather than blank, so a system-written line does not
+  read as a gap.
+- **Its own rate bucket.** `_CONTACT_RATE`, never `_SURVEY_RATE`: sharing one
+  dict would let somebody filling in a contact form throttle a survey
+  respondent on the same office NAT. Three an hour and ten a day, lower than
+  the survey's, because a contact form is filled in once.
+- **The address is a dict key and never a column.** In memory, forgotten on
+  restart, and a missing address is allowed through — refusing would turn a
+  proxy configuration into a wall in front of the form. The next person here
+  will reach for storing it; the answer is a smaller window, not a stored
+  address. Nothing derived from the request is written at all.
+- **A PAN or an Aadhaar in free text is refused, not stripped**, through
+  `_survey_id_refusal` rather than a second copy of it. A contact box is
+  exactly where somebody pastes one, and silently removing it would store a
+  sanitised message while they believe they sent the number.
+- `_contact_refusal` **returns the sentence rather than raising**, the
+  `_scheduling_refusal` shape, so the form can show one beside the field it is
+  about without a code table in between. The phone check is shaped like
+  `validatePhone`, which the form itself uses — the one place that knows what
+  an Indian mobile looks like stays one place, and it names three distinct
+  problems rather than answering all of them with "invalid".
+- **A honeypot and a clock, no CAPTCHA.** A CAPTCHA taxes every real person to
+  inconvenience a script, on a form whose whole job is to be easy. Both
+  failures are reported to the sender as success, because a script that learns
+  which check caught it is a script that gets past the next one.
+- **The confirmation keeps the message on screen.** Clearing the form back to
+  empty reads as the submission having vanished, which is the one thing a
+  confirmation has to rule out.
+- Every admin is told, directly rather than through `notify_weare_team`: an
+  enquiry is attached to no brand and no campaign, so there is nobody narrower
+  to tell. `GET /admin/contact-enquiries` and the `enquiries` console section
+  are **admin-only, not `CONSOLE_ROLES`**, for the reason the survey is —
+  there is nothing for a scoped console to be scoped *to*, so narrowing it
+  returns an empty list rather than a smaller one.
+
+**Retention is 24 months** (`RETENTION_DAYS["contact_enquiries"]`), and the
+period is a housekeeping decision rather than a legal one: long enough that a
+conversation picked up months later still has its first message, short enough
+that a form filled in once does not become a permanent record of somebody's
+number. `Legal.jsx` names what an enquiry holds and quotes the period, as it
+does for every other store — if the two disagree, that page is the lie.
+
+**The open question is flagged, not answered.** An enquiry is attached to no
+account, so the erasure flow at `/account/deletion-requests` cannot reach it —
+that flow starts from a signed-in user. Whether an erasure request from
+somebody who never had an account must be honoured for these rows, and through
+what channel, is in the `NEEDS A LAWYER` block. The page tells people to write
+in and ask, which is a process rather than a legal position.
 
 ### Terms and privacy
 

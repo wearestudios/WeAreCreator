@@ -8,9 +8,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
 import AdminAccountMenu from "@/components/admin/AdminAccountMenu";
 import { api } from "@/lib/api";
-import { StudioEndorsement } from "@/components/StudioEndorsement";
 import Logo from "@/components/brand/Logo";
-import { LANDING_STUDIO as STUDIO_IDS } from "@/constants/testIds";
 import {
     Sheet,
     SheetClose,
@@ -107,6 +105,7 @@ const MARKETING_LINKS = [
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/how-it-works", label: "How it works", testId: "nav-how" },
     { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
+    { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 
 export const Navbar = () => {
@@ -166,10 +165,6 @@ export const Navbar = () => {
             className="sticky top-0 z-40 w-full border-b border-tint/10 bg-background/70 backdrop-blur-xl"
         >
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-                {/* Creators keeps the wordmark and the accent; the studio is
-                    credited beside it in small caps. An endorsement, not a
-                    co-brand — and outside the <Link>, so tapping the logo can
-                    only ever go to Creators' own home. */}
                 <div className="flex items-center gap-3">
                     <Link
                         to="/"
@@ -178,11 +173,6 @@ export const Navbar = () => {
                     >
                         <Logo variant="horizontal" height={30} />
                     </Link>
-                    <span aria-hidden className="hidden h-4 w-px bg-tint/15 sm:block" />
-                    <StudioEndorsement
-                        testid={STUDIO_IDS.nav}
-                        className="hidden sm:block"
-                    />
                 </div>
 
                 {/* Only for people we are still pitching to. A signed-in user
@@ -322,7 +312,6 @@ export const Navbar = () => {
                             <div className="flex h-full flex-col">
                                 <div className="flex flex-col gap-1 border-b border-tint/10 px-6 py-5">
                                     <Logo variant="horizontal" height={30} />
-                                    <StudioEndorsement testid={STUDIO_IDS.navMobile} />
                                 </div>
 
                                 <nav className="flex-1 overflow-y-auto px-6 py-7">

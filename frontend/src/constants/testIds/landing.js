@@ -61,11 +61,3 @@ export const LANDING_CLOSING = {
 	section: 'closing-cta',
 };
 
-export const LANDING_STUDIO = {
-	// The endorsement line. Present beside the nav logo, in the mobile sheet,
-	// in the footer and once at the foot of home — so each gets an id.
-	nav: 'studio-endorsement-nav',
-	navMobile: 'studio-endorsement-nav-mobile',
-	footer: 'studio-endorsement-footer',
-	landing: 'studio-endorsement-landing',
-};

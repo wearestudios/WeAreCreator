@@ -17,6 +17,36 @@
 export const CONTACT_EMAIL = "creators@wearemonk.in";
 
 /**
+ * The two partners, as one list.
+ *
+ * **Written once because two surfaces render it** — the contact page and the
+ * footer — and a number written twice is a number that moves once. The stored
+ * form is bare E.164, which is what a `tel:` and a `wa.me` href both want;
+ * `formatPhone` builds the spaced reading form from it rather than a second
+ * spelling being kept beside the first.
+ *
+ * **Both get a WhatsApp link as well as a phone one.** This business runs on
+ * WhatsApp — every OTP and every notification in this product is delivered
+ * there — so a contact page offering only a voice call is offering the wrong
+ * door.
+ */
+export const CONTACT_PEOPLE = [
+    { name: "Renukesh", role: "Co-founder", phone: "+919916154048" },
+    { name: "Vinay Nagaraju", role: "Co-founder", phone: "+919686500765" },
+];
+
+/** `+919916154048` → `+91 99161 54048`. Display only; hrefs take the raw value. */
+export function formatPhone(e164) {
+    const m = /^\+91(\d{5})(\d{5})$/.exec(e164);
+    return m ? `+91 ${m[1]} ${m[2]}` : e164;
+}
+
+/** What a `wa.me` link wants: the digits, no `+`. */
+export function whatsappHref(e164) {
+    return `https://wa.me/${e164.replace(/\D/g, "")}`;
+}
+
+/**
  * The case-study shelf.
  *
  * **Server-rendered by the backend**, like `/c/{id}` and `/brands/{id}`, so
@@ -61,7 +91,10 @@ export const FOOTER_COLUMNS = [
             { label: "Our work", to: WORK_PATH, external: true },
             { label: "How it works", to: "/how-it-works" },
             { label: "Why WeAre Creators", to: "/why-weare" },
-            { label: "Contact", to: `mailto:${CONTACT_EMAIL}`, external: true },
+            // Was a bare `mailto:`. The page carries the address *and* both
+            // partners on WhatsApp, so the link goes there and the mailto
+            // survives on the page rather than as the only way through.
+            { label: "Contact", to: "/contact" },
         ],
     },
     {
@@ -89,6 +122,7 @@ export const MARKETING_LINKS = [
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/how-it-works", label: "How it works", testId: "nav-how" },
     { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
+    { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 
 /** The marketing pages, for the sitemap and for tests that walk them all. */

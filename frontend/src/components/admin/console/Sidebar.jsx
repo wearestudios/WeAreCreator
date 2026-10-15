@@ -114,6 +114,17 @@ export const ADMIN_SECTIONS = [
         badge: "circumvention_open",
         adminOnly: true,
     },
+    // **Admin-only for the reason the survey is.** An enquiry is attached to
+    // no brand, so there is nothing for a scoped console to be scoped to —
+    // narrowing it returns an empty list rather than a smaller one.
+    {
+        key: "enquiries",
+        to: "enquiries",
+        label: "Enquiries",
+        Icon: Inbox,
+        badge: "enquiries_unhandled",
+        adminOnly: true,
+    },
     { key: "creators", to: "creators", label: "Creators", Icon: Users, adminOnly: true },
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", to: "brands", label: "Brands", Icon: Building2 },

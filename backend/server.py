@@ -4166,6 +4166,10 @@ NOTIFY_EVENTS = {
     # follows execution_owner, exactly like a new application.
     "campaign_question": "A creator asked a question",
     "question_answered": "Your question was answered",
+    # Somebody wrote in through the public contact form. Every admin
+    # hears it: an enquiry is attached to no brand and no campaign, so
+    # there is nobody narrower to tell.
+    "contact_enquiry": "Somebody got in touch",
     # Draft review. `draft_submitted` routes on execution_owner like an
     # application does; the other two are the creator being told the outcome,
     # and the second of them carries the note that says what to change.
@@ -26959,6 +26963,13 @@ async def admin_dashboard(
         "circumvention_open": await db.circumvention_reports.count_documents(
             {"state": "open"}
         ),
+        # **Unscoped for the same reason**, and counted here rather than
+        # fetched by the section: a badge that arrives on its own request
+        # lands in a later commit than the rows and moves the sidebar after
+        # it has painted. The action queue cost 0.055 CLS learning that.
+        "enquiries_unhandled": await db.contact_enquiries.count_documents(
+            {"handled_at": None}
+        ),
     }
 
     # --- the per-campaign summary -----------------------------------------
@@ -27394,6 +27405,15 @@ RETENTION_DAYS = {
     # enough to compare a wave against the next one: a survey whose previous
     # round has been deleted can describe this year and cannot show a change.
     "survey_responses": 24 * 30,
+    # Contact enquiries. **Twenty-four months, and the period is a
+    # housekeeping decision rather than a legal one** — long enough that a
+    # conversation picked up months later still has its first message, short
+    # enough that a form filled in once does not become a permanent record of
+    # somebody's number. Unlike the survey these rows *do* identify a person,
+    # which is why `Legal.jsx` names what one holds and flags the open
+    # question: an enquiry is attached to no account, so the erasure flow at
+    # `/account/deletion-requests` does not reach it.
+    "contact_enquiries": 24 * 30,
 }
 
 # What erasure removes immediately regardless of any of the above, because it
@@ -27520,6 +27540,95 @@ def _survey_aggregate(rows: list) -> dict:
             ),
         }
     return out
+
+
+def _serialize_contact_enquiry(doc: dict) -> dict:
+    """An enquiry as the console reads it, built by naming every key.
+
+    An allow-list rather than a document with fields deleted from it — the
+    rule `_public_case_study` holds — so a column added to `contact_enquiries`
+    next month cannot reach a response because nobody remembered to exclude
+    it.
+    """
+    return {
+        "id": str(doc["_id"]),
+        "name": doc.get("name") or "",
+        "whatsapp": doc.get("whatsapp") or "",
+        "email": doc.get("email"),
+        "role": doc.get("role") or "other",
+        "message": doc.get("message") or "",
+        "created_at": _iso(doc.get("created_at")),
+        "handled_at": _iso(doc.get("handled_at")),
+        "handled_note": doc.get("handled_note"),
+    }
+
+
+@admin_router.get("/contact-enquiries")
+async def admin_contact_enquiries(
+    page: int = 1,
+    limit: int = 50,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Enquiries from the public contact form, newest first.
+
+    **Admin-only, not `CONSOLE_ROLES`.** An enquiry is attached to no brand
+    and no campaign, so there is nothing for a scoped console to be scoped
+    *to* — narrowing it would return an empty list rather than a smaller one.
+    The same reasoning keeps the survey and the global creator directory
+    admin-only.
+    """
+    limit = max(1, min(int(limit or 50), 100))
+    page = max(1, int(page or 1))
+    total = await db.contact_enquiries.count_documents({})
+    rows = (
+        await db.contact_enquiries.find({})
+        .sort([("created_at", -1), ("_id", -1)])
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return {
+        "enquiries": [_serialize_contact_enquiry(r) for r in rows],
+        "total": total,
+        # The badge counts what is still waiting, which is the only number the
+        # sidebar has room to show.
+        "unhandled": await db.contact_enquiries.count_documents({"handled_at": None}),
+        "page": page,
+        "limit": limit,
+    }
+
+
+class ContactHandledPayload(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+@admin_router.post("/contact-enquiries/{enquiry_id}/handled")
+async def mark_contact_enquiry_handled(
+    enquiry_id: str,
+    payload: ContactHandledPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Mark one enquiry dealt with. The note is optional and audited either way."""
+    oid = _as_oid(enquiry_id)
+    doc = await db.contact_enquiries.find_one({"_id": oid}) if oid else None
+    if not doc:
+        # A malformed id is a 404 like a missing one — whether a row exists is
+        # not a question an id's shape should answer differently.
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+    now = datetime.now(timezone.utc)
+    await db.contact_enquiries.update_one(
+        {"_id": oid},
+        {"$set": {
+            "handled_at": now,
+            "handled_by_id": user["_id"],
+            "handled_note": (payload.note or "").strip() or None,
+        }},
+    )
+    await audit(
+        user, "contact.handled", "contact_enquiry", oid,
+        note=(payload.note or "").strip() or None,
+    )
+    return {"handled": True}
 
 
 @admin_router.get("/survey/creator")
@@ -34418,6 +34527,189 @@ async def submit_creator_survey(payload: CreatorSurveyPayload, request: Request)
 
 
 
+# --- The contact form, for anybody ----------------------------------------
+#
+# An unauthenticated public write, modelled on the creator survey because that
+# is the existing precedent here — but it is **not** the survey, and the two
+# differences are the whole design.
+#
+#   - **This one has a name on it.** The survey is anonymous and is therefore
+#     the one write path in the product that deliberately leaves no log line,
+#     because `audit()` has an actor field. An enquiry carries a name and a
+#     number that somebody will be rung back on, so it is audited like every
+#     other write — under `_SYSTEM_ACTOR`, which is named rather than blank
+#     precisely so a system-written line does not read as a gap.
+#   - **Its own rate bucket.** `_CONTACT_RATE`, never `_SURVEY_RATE`. Sharing
+#     one dict would let somebody filling in a contact form throttle a survey
+#     respondent on the same office NAT, and the two surfaces deserve
+#     different budgets anyway.
+#
+# What is carried over unchanged, because it is right for both:
+#
+#   - **No auth and no `Depends` on a user.** The route sits on the public
+#     router beside the other unauthenticated reads.
+#   - **The address is a dict key and never a column.** In memory, forgotten
+#     on restart. The next person here will reach for storing it — for a
+#     better limit, for abuse forensics, for deduplication — and the answer is
+#     a smaller window, not a stored address. A missing address is allowed
+#     through, or a proxy configuration becomes a wall in front of the form.
+#   - **Nothing derived from the request is stored.** No `request.client.host`,
+#     no header, no user agent. `_CONTACT_STORED_KEYS` is the whole shape.
+#   - **A PAN or an Aadhaar in free text is refused, not stripped.** A contact
+#     box is exactly where somebody pastes one, and silently removing it would
+#     store a sanitised message while they believe they sent the number.
+#     `_survey_id_refusal` is the one decider; this calls it rather than
+#     growing a second.
+#
+# Retention is 24 months, in `RETENTION_DAYS` beside the survey's. Whether an
+# erasure request from somebody who has no account must reach these rows is an
+# open legal question and is flagged in `Legal.jsx`, not answered here.
+
+CONTACT_ENQUIRY_SCHEMA_VERSION = 1
+
+CONTACT_MESSAGE_MAX = 2000
+
+# Lower than the survey's: somebody fills a contact form once, where a survey
+# page might legitimately be reopened. Still high enough that a shared office
+# address does not lock out the second person to write in.
+CONTACT_MAX_PER_HOUR = 3
+CONTACT_MAX_PER_DAY = 10
+
+# {ip: [epoch seconds, ...]} — **its own dict**, forgotten on restart.
+_CONTACT_RATE: dict = {}
+
+# Who is writing in. Free text would be a fourth answer nobody can count, and
+# the three here are the three routings that matter.
+CONTACT_ROLES = ("brand", "creator", "other")
+
+
+class ContactEnquiryPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    # The channel this business actually runs on, so it is the required one
+    # and the email is not.
+    whatsapp: str = Field(min_length=1, max_length=20)
+    email: Optional[EmailStr] = None
+    role: Literal["brand", "creator", "other"]
+    message: str = Field(min_length=1, max_length=CONTACT_MESSAGE_MAX)
+
+
+_CONTACT_STORED_KEYS = frozenset(
+    set(ContactEnquiryPayload.model_fields)
+    | {"created_at", "schema_version", "handled_at", "handled_by_id", "handled_note"}
+)
+
+
+def _contact_rate_refusal(ip: Optional[str], now: Optional[float] = None) -> Optional[str]:
+    """Whether this address has written in too often, as a sentence or `None`.
+
+    **Returns the sentence rather than raising**, the shape
+    `_scheduling_refusal` and `_survey_rate_refusal` both use. The address is
+    the dict key and nothing else: not returned, not logged, not written.
+    """
+    if not ip:
+        # Allowing it is the right direction — refusing would turn a proxy
+        # configuration into a wall in front of the contact form.
+        return None
+    now = now if now is not None else time.time()
+    seen = [t for t in _CONTACT_RATE.get(ip, []) if now - t < 86400]
+    # Trim as we read, so the dict does not grow for the life of the process.
+    if seen:
+        _CONTACT_RATE[ip] = seen
+    else:
+        _CONTACT_RATE.pop(ip, None)
+    if len([t for t in seen if now - t < 3600]) >= CONTACT_MAX_PER_HOUR:
+        return (
+            "That is a few messages from this connection in the last hour. "
+            "Please try again later."
+        )
+    if len(seen) >= CONTACT_MAX_PER_DAY:
+        return (
+            "That is a lot of messages from this connection today. "
+            "Please try again tomorrow, or reach us on WhatsApp."
+        )
+    return None
+
+
+def _contact_rate_record(ip: Optional[str], now: Optional[float] = None) -> None:
+    """Remember the submission, in memory only."""
+    if not ip:
+        return
+    _CONTACT_RATE.setdefault(ip, []).append(now if now is not None else time.time())
+
+
+def _contact_refusal(payload: ContactEnquiryPayload) -> Optional[str]:
+    """Why this enquiry cannot be stored, as a sentence, or `None`.
+
+    One decider, returning the sentence rather than raising — the
+    `_scheduling_refusal` shape. The phone check is deliberately shaped like
+    the client's `validatePhone`: it names the problem rather than answering
+    every problem with "invalid".
+    """
+    digits = re.sub(r"\D", "", payload.whatsapp or "")
+    if not payload.whatsapp.strip().startswith("+") and len(digits) == 10:
+        return "Please include the country code, like +91 for India."
+    if len(digits) < 11:
+        return "That number looks too short. Please include the country code."
+    if not re.fullmatch(r"91[6-9]\d{9}", digits):
+        return "That does not look like an Indian mobile number."
+    if not (payload.message or "").strip():
+        return "Please tell us what you are getting in touch about."
+    # A contact box is exactly where somebody pastes a PAN or an Aadhaar.
+    # Refused rather than stripped, for the reason the survey records.
+    return _survey_id_refusal([payload.message, payload.name])
+
+
+async def _store_contact_enquiry(payload: ContactEnquiryPayload) -> str:
+    """Write the enquiry and tell every admin. Returns the new id as a string.
+
+    Built by naming keys off the payload, never by copying anything that came
+    from the request — the rule `_public_case_study` holds, for a stronger
+    reason here.
+    """
+    doc = payload.model_dump(exclude_none=True)
+    doc["created_at"] = datetime.now(timezone.utc)
+    doc["schema_version"] = CONTACT_ENQUIRY_SCHEMA_VERSION
+    doc["handled_at"] = None
+    result = await db.contact_enquiries.insert_one(doc)
+    enquiry_id = str(result.inserted_id)
+
+    # **Every admin, directly.** There is no campaign and no brand on an
+    # enquiry, so `notify_weare_team` has nothing to scope by and
+    # `notify_campaign_manager` would reach nobody.
+    admin_ids = await db.users.distinct("_id", {"role": "admin"})
+    for admin_id in admin_ids:
+        await notify(
+            admin_id,
+            "contact_enquiry",
+            title="Somebody got in touch",
+            body=f"{payload.name} ({payload.role}) sent a message through the contact form.",
+            link="/admin/enquiries",
+        )
+
+    # Audited, where the survey is not: this one has a name on it.
+    await audit(_SYSTEM_ACTOR, "contact.enquiry", "contact_enquiry", result.inserted_id)
+    return enquiry_id
+
+
+@public_router.post("/contact")
+async def submit_contact_enquiry(payload: ContactEnquiryPayload, request: Request):
+    """Take one enquiry from the contact page.
+
+    Unauthenticated by design rather than by omission — see the section
+    header. The refusals are plain sentences, so the form can show one beside
+    the field it is about without a code table in between.
+    """
+    refusal = _contact_rate_refusal(_client_ip(request))
+    if refusal:
+        raise HTTPException(status_code=429, detail=refusal)
+    refusal = _contact_refusal(payload)
+    if refusal:
+        raise HTTPException(status_code=422, detail=refusal)
+    await _store_contact_enquiry(payload)
+    _contact_rate_record(_client_ip(request))
+    return {"stored": True}
+
+
 # --- Case studies, for anybody --------------------------------------------
 #
 # The JSON half. The pages themselves are server-rendered outside `/api` (see
@@ -37791,6 +38083,7 @@ FOR_BRANDS_PATH = "/for-brands"
 FOR_CREATORS_PATH = "/for-creators"
 HOW_IT_WORKS_PATH = "/how-it-works"
 WHY_WEARE_PATH = "/why-weare"
+CONTACT_PATH = "/contact"
 
 MARKETING_PATHS = (
     HOME_PATH,
@@ -37798,6 +38091,7 @@ MARKETING_PATHS = (
     FOR_CREATORS_PATH,
     HOW_IT_WORKS_PATH,
     WHY_WEARE_PATH,
+    CONTACT_PATH,
 )
 
 # Phrases that would position us against agencies, or promise more than the
@@ -37862,7 +38156,10 @@ FOOTER_COLUMNS = (
             ("Our work", CASE_STUDY_PATH),
             ("How it works", HOW_IT_WORKS_PATH),
             ("Why WeAre Creators", WHY_WEARE_PATH),
-            ("Contact", "mailto:creators@wearemonk.in"),
+            # Was a bare `mailto:`. The page carries the address *and* both
+            # partners on WhatsApp, which is the channel this business runs
+            # on, so the link goes there.
+            ("Contact", CONTACT_PATH),
         ),
     ),
     (

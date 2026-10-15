@@ -115,6 +115,7 @@ WIPED = (
     # reset should leave no real answers behind — and because they are not
     # seeded, so keeping them would mix genuine research into a fixture.
     "creator_survey_responses",
+    "contact_enquiries",
     # Derived and rebuilt on a schedule, so a stale one over fresh demo data
     # would show yesterday's business against today's records.
     "analytics_cache",
