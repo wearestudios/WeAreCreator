@@ -1503,6 +1503,19 @@ Hospitality", on through the list — each resolving against "We run it end to
 end.", which never moves. The motion *is* the message: what changes is the
 sector, what does not is that we run the campaign.
 
+**The hero is full-bleed with the type in a protected column**, which is a
+reversal of the arrangement the rest of this section was written for. It was
+a slider as the ground, four tilted cards drifting above it and the poster
+type on top of both — three layers over one area. The cards are positioned as
+percentages of the hero box while the type sits in a centred `max-w-7xl`
+column, so the two coordinate systems were never going to agree: measured at
+1440, two of four landed over the headline and the subheading; at 390 the two
+that survive landed under the eyebrow and across the CTA row. The cards are
+unmounted, the type lives in `lg:col-span-6`, and **nothing readable may sit
+past column 7** — which is the rule the overlap broke and what makes a
+full-bleed hero safe at all. Every one of the eight hero shots was composed
+with its left two-fifths quiet, so this is the composition they already had.
+
 - **It was a possessive on a campaign noun and all three defects are the
   reason it changed.** "Your launch night" → "Your menu tasting" against the
   tail "handled properly." — "your travel stay" and "your menu tasting" are
@@ -1524,30 +1537,108 @@ sector, what does not is that we run the campaign.
   drink" at exactly twelve.
 - **The lead and the tail are outside the morph.** Animating the whole line
   would say eight unrelated headlines are cycling rather than one sentence
-  being re-pointed. Verified across a full cycle at 390, 768 and 1280: the
-  `h1` holds one height at each width and nothing overflows horizontally.
+  being re-pointed. Verified across a full cycle at 390, 768 and 1440: the
+  `h1` holds one height at each width, nothing overflows horizontally, and
+  nothing in the type column crosses into grid column 7.
+- **The type is sized to a column now, not to the window.**
+  `clamp(2.25rem, 4.6vw, 4.75rem)` at `lineHeight: 1.0`, down from
+  `clamp(2.5rem, 10.5vw, 8.5rem)` at 0.94. At 1440 the old clamp resolved to
+  136px against a lead roughly 1700px wide, which ran the `h1` to four lines
+  and put the CTAs under the fold on a laptop. It is still well past
+  `fluid-hero`'s 4.25rem top step, which is what the poster-scale rule was
+  ever about.
 - **Per letter, on a stagger, moving as well as fading.** A single opacity
   tween on the phrase is the thing this is specified not to be. ~4s a phrase;
   the swap itself is under a second, so the phrase is still for most of its
   life.
-- **The tallest phrase reserves the box.** A line that changes height moves
-  the page every four seconds — a CLS event per cycle.
+- **The box is reserved by rendered width, not by character count.** Every
+  phrase is drawn invisibly into one grid cell (`col-start-1 row-start-1`),
+  so the box is as wide and as tall as the widest and tallest phrase the
+  browser actually draws.
+
+  **It used to reserve with one invisible copy of the "longest" phrase,
+  picked by `reduce` on string length, and a character count is not a
+  width.** "Hospitality" and "Real Estate" are both eleven characters, the
+  reduce keeps the first on a tie, and in Fraunces at poster size "Real
+  Estate" renders wider — the animated layer is `absolute whitespace-nowrap`,
+  so on that one slide it ran past its own box and the hero's
+  `overflow-hidden` clipped it. Measured on the old build it also changed the
+  box's *height* by 6px mid-cycle, which was a layout shift every lap. A line
+  that changes height moves the page — that property is unchanged and one
+  grid cell cannot break it either. Nothing about a font can be inferred from
+  the characters in a string; the only reliable reservation is one the
+  browser draws.
 - One `aria-label` on the `h1`, with the animated spans hidden. A screen
   reader reading four letters at a time as they arrive is gibberish.
 - Under `prefers-reduced-motion` the first phrase renders and no timer starts.
 
-**`FloatingCards`** are tilted photo cards drifting on scroll, in two clusters:
-four behind the hero (the four categories, said at once rather than one at a
-time) and two hanging past the edges of a proof strip. Rotation is static;
-the drift is `y` off the scroll position, so nothing touches layout. **Two
-cards below `md`, four above** — four overlapping compositing layers on a
-390px screen sit behind text nobody can read through them.
+**`FloatingCards` is unmounted on all four pages and the file is kept.**
+They were tilted photo cards drifting on scroll, in two clusters: four behind
+the hero and two hanging past the edges of a proof strip. The proof pair came
+off `/for-brands`, `/for-creators` and `/why-weare` with the hero's four;
+`ProofStrip` has nothing absolutely positioned, so each page's `relative`
+wrapper went too, having existed only to anchor the cards.
+
+Two reasons, and the second is the one to read before remounting it.
+
+**Every slot was empty.** `Card` passes `src={card.image}` and no object in
+`CARDS` or `PROOF_CARDS` carries an `image` key at all, so all six rendered
+as bare tint — the blue boxes on the live site. The hero's four sat *above*
+the slider's scrim as well, because `Hero()` mounted the slider first and the
+scrim lives inside it, so they were undimmed tint over a photograph.
+
+**And the geometry could not be made to agree**, which is the part tuning
+would not have fixed: the cards are positioned as percentages of the hero box
+while the type sits in a centred `max-w-7xl` column.
+
+The file stays because `CARD_SHADOW` is imported by `CreatorLeaderboard`, and
+because several tests pin its contents. **Before any of it is remounted,
+every card needs an `image` and every one of those files has to exist** — a
+missing file is worse than a missing key, because a 404'd `<img>` draws the
+browser's broken-image glyph over the tint that was designed to be the absent
+state. The rule, plainly: never wire a slot to a file that does not exist.
+
+**The brand wall no longer takes the shadow exception**, because it is a
+light band now: on a pale ground a soft black shadow reads as dirt rather
+than as lift, so elevation there is the hairline and `bg-card` it already
+had.
 
 **This is the only `box-shadow` on the marketing site**, and a deliberate
 exception to the elevation rule: a card drifting at a different rate from the
 page behind it is the one inline element that really is floating, and without
 the shadow the tilt reads as a mistake. Soft, and in black rather than the
 default grey. A test fails any other marketing file that grows one.
+
+### One clock for the picture and the word
+
+`components/marketing/sectorCycle.jsx`, and it exists because there were two.
+`HeroSlider` held `HOLD_MS = 7000` with its own `setTimeout`; `KineticHeadline`
+held `HOLD_MS = 4000` with its own `setInterval`. They start together, are
+apart by the second slide and never recover — so the headline says "Retail"
+over a photograph of a restaurant for most of the cycle. **That is the lag:
+not a slow animation, two animations that disagree about what time it is.**
+
+- **The fix is structural, not a matter of matching the numbers.** Two
+  independent timers accumulate their own scheduling error, and a
+  `setInterval` firing in a throttled tab is not the same clock as a chain of
+  `setTimeout`s. `SectorCycleProvider` owns `index`, `leaving`, `paused`, the
+  one timer and the reduced-motion branch; both consumers read the index off
+  context, and neither declares a hold or starts a timer. A unit test asserts
+  all three of those, and the third is the load-bearing one — a test that
+  only checked the number would pass with both timers still present.
+- **6000ms, which is neither of the old numbers.** 7000 is slow for a word
+  and 4000 is frantic for a full-bleed image; a wipe is also a stronger beat
+  than a dissolve, so the word change rides on it and reads as one event.
+- `useSectorCycle()` throws outside a provider, the convention
+  `useAdminConsole()` sets. `useOptionalSectorCycle()` is the exception, for
+  the one consumer that has to survive without one: `KineticHeadline` is
+  exported and mountable on its own, and a headline that throws outside the
+  hero is a component with a hidden dependency on its parent. With no
+  provider it renders phrase one and starts nothing, which is also its
+  reduced-motion state.
+- The provider renders its own positioned wrapper rather than nothing,
+  because the pause listeners bind to it and an element with no box receives
+  no pointer events.
 
 ### The slider came back, under the budget that removed it
 
@@ -1574,16 +1665,52 @@ the budget it had to come in under rather than a decision it overrode.
   container grows the hole it reserves — and the four drifts alternate
   direction so the sequence does not read as one looping clip. Transform and
   opacity only, so the compositor owns both.
-- **The outgoing slide paints last**, which is the opposite of the obvious
-  order: it sits on top and dissolves to reveal the incoming one. Painting the
-  incoming above would cover the old slide at full opacity on the frame it
-  mounts — a hard cut with a 600ms fade running invisibly underneath — and
-  dissolving one layer is half the work of fading two.
-- **The pause listeners go on the hero, not on the slider.** The slider is
-  `absolute inset-0` *behind* the content, so a pointer over the headline is
-  never over this element; handlers on the slider would pause only for the few
-  pixels of background either side of the type. `focusin`/`focusout` rather
-  than `focus`/`blur`, which do not bubble.
+- **It is a wipe, and the incoming slide paints last** — which reverses what
+  this file used to say, because the paint order follows from the transition
+  rather than being a fact about sliders. With a *crossfade* the outgoing
+  slide has to be on top: it dissolves to reveal the one underneath, and
+  painting the incoming above would cover the old one at full opacity on the
+  frame it mounts, a hard cut with the fade running invisibly beneath it. A
+  wipe is the opposite — the incoming slide is the thing that moves, so it
+  opens *over* the outgoing one, which stays still and is simply uncovered.
+- **The wipe is two nested transforms and no `clip-path`.** The outer element
+  clips and travels in from the right; the inner travels the same distance
+  the other way, so the two cancel and the picture holds still while the
+  window opens over it. Animating the outer alone slides the photograph in,
+  which reads as a carousel. `clip-path` is the obvious alternative and is
+  not reliably promoted to the compositor, which on the front door on mobile
+  data is the whole argument.
+- **The dots became a frame rail**, which is the thing worth taking from the
+  reference: dots say how many there are, a rail of the next three frames
+  says what is coming, which is the only reason to wait. Beside it a
+  zero-padded `01 / 08` and a 2px bar filling over `HOLD_MS` — **the bar is
+  the visible proof that the picture and the word are on one clock.** Below
+  `md` the rail and the index are hidden and the dots come back: three
+  thumbnails and a counter on a 390px screen is clutter laid over the one
+  place the headline has to be read.
+  **The rail's track travels and its slots do not.** Keying three buttons by
+  phrase made React move the DOM nodes on every advance, which the browser
+  records as a real layout shift — measured at 0.0007 per advance, every six
+  seconds, for as long as the page is open. The slots are keyed by position
+  and the movement is one `translateX` on the track.
+- **The pause listeners live on the provider**, which wraps both consumers
+  and is the hero's positioning context. The slider is `absolute inset-0`
+  behind the content, so a pointer over the headline is never over it and
+  handlers on the slider itself would pause only for the few pixels of
+  background either side of the type. `focusin`/`focusout` rather than
+  `focus`/`blur`, which do not bubble.
+- **The scrim is two scrims, because the layout is two layouts.** At `lg` and
+  up the type is in six of twelve, so the cover is horizontal: near-solid
+  past the column's edge at 58%, then released so the half the photograph was
+  composed for is the photograph. Below `lg` the grid collapses to one column
+  and the type spans the full width, where a horizontal scrim covers the left
+  of a headline and abandons its right — measured at 390 with a single
+  horizontal scrim: headline 1.48:1, subheading 1.03:1. There the cover is
+  the whole frame and the picture is atmosphere, which is the honest trade on
+  a 390px screen. Measured with the content column hidden and the *ground*
+  sampled — cropping the text's own box samples the glyphs — worst case
+  across all eight slides: headline 12.96:1 at 390 and 14.20:1 at 1440,
+  subheading 6.60 / 8.36, eyebrow 8.26 / 8.79.
 - `will-change` is released on `animationend`, the rule the app's motion layer
   already holds, and `EASE_CSS` is built from `EASE` rather than retyped so a
   second curve cannot be introduced.
@@ -4889,6 +5016,52 @@ second one to `public/index.html`.
 
 In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
 `border-white/10` on `bg-card` surfaces, ember for CTAs and accents only.
+
+### A band can ask for the other palette
+
+`data-surface="light"` / `"dark"` on a section, which is how the marketing
+site alternates navy and white bands down the page. On home: hero dark, proof
+dark, brand wall light, the film dark, the band image dark, "What we run"
+light, case studies light, the leaderboard dark, and the closing handshake
+keeps the studio coral with no attribute at all.
+
+- **It reuses the one measured light block rather than adding a second.**
+  `index.css` already held a fully contrast-measured light palette at
+  `:root[data-theme="light"]` — the product surface, reached by signing in —
+  with the ratios written in the comments beside each token. The change is a
+  selector, not a palette: `[data-surface="light"]` joins that block and
+  `[data-surface="dark"]` joins `:root`. One declaration each, two selectors.
+  A second copy is a copy that drifts, and these numbers were measured once.
+- **The new selector goes first in each list**, which looks arbitrary and is
+  not: `test_console_theme.py` and `test_brand.py` find these blocks by
+  indexing `index.css` for the literal `:root {` and
+  `:root[data-theme="light"] {`, so putting the addition first leaves both
+  strings intact. Selector order has no effect on specificity or cascade, so
+  this costs nothing and keeps four tests passing that would otherwise have
+  had to be rewritten to accommodate a formatting choice.
+- `[data-surface="light"] .weare-logo` joins the light logo rule too, or a
+  logo inside a light band paints white on white.
+- **A section declares `data-surface` plus `bg-background text-foreground`**
+  and everything inside resolves from the nearest ancestor.
+- **The hardcoded dark-surface classes are wrong inside a light band** and
+  render as near-invisible ink: `border-white/10` → `border-border`,
+  `bg-white/5` → `bg-card`, `text-white` → `text-foreground`, a white alpha
+  fill → `bg-muted`. Swept per section, never globally — the dark bands keep
+  theirs.
+- **Elevation in a light band is a hairline plus `bg-card`, never a shadow.**
+  The brand wall gave up the marketing site's one `box-shadow` exception when
+  it became a light band: on a pale ground a soft black shadow reads as dirt
+  rather than as lift.
+- The grain is white noise at `mix-blend-mode: overlay`, so it does almost
+  nothing on a pale ground. That is accepted; a light band that reads flat
+  wants a `bg-card` panel and a hairline, not a shadow and not a second
+  texture.
+- **Red is the thing to watch.** `#FF2731` is 3.76:1 on white and a test
+  already fails any use of it below 24px. In a light band `--primary` is
+  navy, so `text-primary` resolves to 16.72:1 rather than to red — which is
+  why the band's accent is navy rather than a second, darker, not-quite-brand
+  red. Measured on every light band at 390 and 1440: nothing below AA, worst
+  case 5.20:1 on 14px body text.
 
 ### The four foundations
 

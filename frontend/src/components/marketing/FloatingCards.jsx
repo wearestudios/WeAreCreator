@@ -1,5 +1,34 @@
 // Tilted photo cards floating behind the hero, drifting on scroll.
 //
+// ============================================================================
+// **UNMOUNTED. Nothing renders this.** Kept because `CARD_SHADOW` below is
+// imported by `BrandWall` and `CreatorLeaderboard`, and because several tests
+// pin this file's contents — the four keys, the `useTransform` drift, the
+// `hidden md:block` pair and the reduced-motion freeze.
+//
+// Two reasons, and the second is the one to read before remounting it.
+//
+// **Every slot is empty.** `Card` passes `src={card.image}` and no object in
+// `CARDS` or `PROOF_CARDS` carries an `image` key at all, so all six render
+// as bare tint — the blue boxes on the live site. The hero's four sat above
+// the slider's scrim as well, because `Hero()` mounted the slider first and
+// the scrim lives inside it, so they were undimmed tint over a photograph.
+//
+// **And the geometry could not be made to agree.** The cards are positioned
+// as percentages of the hero box (`md:left-[3%]`, `md:left-[19%] md:top-
+// [58%]`) while the type sits in a centred `max-w-7xl` column — two
+// coordinate systems. Measured at 1440, two of the four landed over the
+// headline and over the subheading/CTA block; at 390 the two that survive
+// landed under the eyebrow and across the CTA row. Tuning the percentages
+// only moves which width it breaks at.
+//
+// **Anything remounting this must add an `image` path per card AND those
+// files must exist first.** A missing file is worse than a missing key: a
+// 404'd `<img>` draws the browser's broken-image glyph over the tint that
+// was designed to be the absent state. The rule, plainly: **never wire a
+// slot to a file that does not exist.** Draw the file, then point at it.
+// ============================================================================
+//
 // The hero's argument is range — launch night, fashion, travel, fitness — and
 // four cards at four angles say it faster than a sentence can. They sit behind
 // and around the headline rather than beside it, so the page reads as one

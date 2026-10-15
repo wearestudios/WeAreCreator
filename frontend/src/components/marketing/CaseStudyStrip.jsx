@@ -65,12 +65,12 @@ function CaseStudyCard({ study, i }) {
             <a
                 href={`${WORK_PATH}/${study.slug}`}
                 data-testid={IDS.caseStudyCard(study.slug)}
-                className={`flex flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-card grain-surface ${CARD_HOVER}`}
+                className={`flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card grain-surface ${CARD_HOVER}`}
             >
                 {/* 16:9 on the container. A hero that never arrives is a
                     surface that has not filled rather than a hole, and the
                     card does not change height when it does. */}
-                <div className="aspect-[16/9] w-full overflow-hidden bg-white/5">
+                <div className="aspect-[16/9] w-full overflow-hidden bg-muted">
                     {study.hero_image_url ? (
                         <img
                             src={study.hero_image_url}
@@ -167,7 +167,7 @@ export default function CaseStudyStrip() {
         <section
             ref={anchor}
             data-testid={IDS.caseStudyStrip}
-            className="border-b border-white/10 py-16 md:py-20"
+            className="border-b border-border py-16 md:py-20"
         >
             <div className="mx-auto max-w-7xl px-6">
                 <Reveal>
@@ -200,7 +200,7 @@ export default function CaseStudyStrip() {
                               <li
                                   key={i}
                                   aria-hidden="true"
-                                  className="flex flex-col overflow-hidden rounded-lg border border-white/10 bg-card"
+                                  className="flex flex-col overflow-hidden rounded-lg border border-border bg-card"
                               >
                                   <Skeleton className="aspect-[16/9] w-full rounded-none" />
                                   <div className="flex flex-col gap-3 p-5">

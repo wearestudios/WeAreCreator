@@ -41,8 +41,20 @@ export const LANDING_HERO = {
 	slides: 'hero-slides',
 	slide: (i) => `hero-slide-${i}`,
 	slideImage: (i) => `hero-slide-image-${i}`,
+	// Below `md` only — three thumbnails and a counter on a 390px screen is
+	// clutter over the one place the headline has to be read.
 	dots: 'hero-dots',
 	dot: (i) => `hero-dot-${i}`,
+
+	// The rail of upcoming frames, and the counter beside it, which replaced
+	// the dots at `md` and up. Frames are addressed by the slide index they
+	// go to rather than by their position in the rail: the position changes
+	// every six seconds and the destination is what a test means.
+	rail: 'hero-rail',
+	railTrack: 'hero-rail-track',
+	railFrame: (i) => `hero-rail-frame-${i}`,
+	index: 'hero-index',
+	progress: 'hero-progress',
 };
 
 export const LANDING_CLOSING = {

@@ -1623,9 +1623,18 @@ def test_the_headline_morphs_between_real_campaign_categories():
     the brief feed cannot filter to is no longer something a reviewer has to
     notice. `lib/categories.js` is already drift-tested against
     `CATEGORY_LITERAL`, which is what makes that worth doing.
+
+    **The slice no longer ends at `const HOLD_MS`.** That constant was only
+    ever a convenient landmark for "the end of the phrase declaration", and it
+    has moved to `sectorCycle.jsx` — the headline and the slider each owned a
+    hold and drifted apart, so there is one now and neither file declares it.
+    Every assertion below is unchanged; the block simply ends at the blank
+    line after the declaration, which does not depend on what happens to be
+    written next to it.
     """
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    block = src[src.index("export const PHRASES") : src.index("const HOLD_MS")]
+    start = src.index("export const PHRASES")
+    block = src[start : src.index("\n\n", start)]
     assert "CATEGORY_OPTIONS" in block, (
         "the phrases are hand-written again rather than derived from the enum"
     )
@@ -1666,38 +1675,104 @@ def test_the_morph_is_per_letter_rather_than_a_fade():
     assert 'y: "-0.45em"' in src and 'y: "0.55em"' in src
 
 
-def test_the_headline_holds_each_phrase_about_four_seconds():
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    hold = int(re.search(r"const HOLD_MS = (\d+)", src).group(1))
-    assert 3500 <= hold <= 4500, hold
+def test_the_picture_and_the_word_change_on_one_timer():
+    """One clock, in `sectorCycle.jsx`, read by the headline and the slider.
+
+    **This read `HOLD_MS` out of `KineticHeadline.jsx`, which no longer owns
+    it — and the number was never the point.** The headline held 4000ms with
+    its own `setInterval` while `HeroSlider` held 7000ms with its own
+    `setTimeout`: they started together, drifted apart by the second slide and
+    never recovered, so the word named one sector over a picture of another.
+    That is the lag the hero was rebuilt to remove.
+
+    Matching the two constants would not have fixed it, which is why the third
+    assertion is the load-bearing one: two independent timers accumulate their
+    own scheduling error, and a `setInterval` firing in a throttled tab is not
+    the same clock as a chain of `setTimeout`s. A test that only checked the
+    number would pass with both timers still present and the defect intact.
+    """
+    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
+    hold = re.search(r"export const HOLD_MS = (\d+)", cycle)
+    assert hold, "the one hold is not declared in sectorCycle.jsx"
+    assert 5000 <= int(hold.group(1)) <= 7500, hold.group(1)
+
+    for name in ("KineticHeadline.jsx", "HeroSlider.jsx"):
+        src = copy_of("src", "components", "marketing", name)
+        assert "HOLD_MS =" not in src, f"{name} declares a hold of its own"
+        assert "setInterval" not in src, f"{name} still runs its own timer"
+        assert "setTimeout" not in src, f"{name} still runs its own timer"
 
 
 def test_the_headline_is_poster_scale():
-    """Dramatically larger than the type ramp's top step, and sized in `vw` so
-    it fills the column at every width. `fluid-hero` tops out at 4.25rem; this
-    is the one element on the site past it."""
+    """Still well past the type ramp's top step, and still sized in `vw`, but
+    **sized to a column rather than to the window** — which is a reversal.
+
+    The ceiling was 8.5rem and this asserted 8, which was right while the
+    headline filled a full-bleed hero. The type now lives in six of the hero's
+    twelve columns: at 1440 the old clamp resolved to 136px against a lead
+    roughly 1700px wide, which ran the h1 to four lines and pushed the CTAs
+    below the fold on a laptop.
+
+    So the ceiling comes down and the floor stays. `fluid-hero` tops out at
+    4.25rem and this is still the one element on the site past it, which is
+    what the assertion is actually for; 8 was a number for a different box.
+    """
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
     m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', src)
     assert m, "no clamp on the headline"
-    assert "vw" in m.group(2)
-    assert float(m.group(3).replace("rem", "")) >= 8
+    assert "vw" in m.group(2), "the middle term is still fluid"
+    assert float(m.group(3).replace("rem", "")) >= 4.5
 
 
-def test_the_headline_reserves_the_tallest_phrase():
-    """A line that changes width is fine; one that changes height moves the
-    page every four seconds, which is a CLS event per cycle."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "longest" in src
-    assert 'className="invisible"' in src
+def test_the_headline_reserves_its_box_by_rendered_width():
+    """Every phrase is drawn invisibly into one grid cell, so the box is as
+    wide and as tall as the widest and tallest phrase the browser draws.
+
+    **This pinned `longest`, and `longest` was the bug.** It reserved the box
+    with one invisible copy of the phrase with the most characters — and a
+    character count is not a width. "Hospitality" and "Real Estate" are both
+    eleven, the reduce keeps the first on a tie, and in Fraunces at poster
+    size "Real Estate" renders wider: the animated layer is `absolute
+    whitespace-nowrap`, so on that one slide it ran past its own box and the
+    hero's `overflow-hidden` clipped it. Measured on the old build, the box
+    also changed height by 6px mid-cycle, which was a layout shift per lap.
+
+    So the assertion is inverted. `longest` must be GONE, or somebody
+    reintroduces a width guess; the stack has to be there instead. The height
+    property the old test was protecting is unchanged and still holds — one
+    grid cell cannot change height between phrases either.
+
+    Read through `copy_of`, which strips comments, for the reason that helper
+    exists: the convention here is to explain a removal where it happened, so
+    the comment recording why `longest` went necessarily names `longest` and
+    would fail this test on its own justification.
+    """
+    src = copy_of("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "longest" not in src, "the character-count width guess is back"
+    assert "phrases.map" in src, "the phrases are not stacked"
+    assert "invisible" in src
+    assert "col-start-1 row-start-1" in src, "the stack is not in one cell"
 
 
 def test_the_headline_is_static_under_reduced_motion():
     """First phrase, and no timer started — nothing running in the background
-    either."""
+    either.
+
+    **The branch that decides it moved to the provider**, which is where the
+    timer went: this asserted `if (reduced) return undefined;` in
+    `KineticHeadline.jsx`, and the headline no longer owns a cycle to refuse
+    to start. The guard is pinned in `sectorCycle.jsx` instead. The second
+    half is unchanged and is the half about this component — it still renders
+    phrase one and starts nothing of its own, which is also what it does when
+    it is mounted outside a provider.
+    """
+    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
+    assert "useReducedMotion" in cycle
+    assert "if (reduced || paused) return undefined;" in cycle
+
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
     assert "useReducedMotion" in src
-    assert "if (reduced) return undefined;" in src
-    assert "reduced ? (" in src
+    assert "still ? (" in src
 
 
 def test_the_headline_has_one_stable_accessible_name():

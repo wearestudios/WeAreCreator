@@ -30,18 +30,21 @@
 // it looks for. Teaching the sweep to skip comments would mean stripping from
 // `//` onward, which also strips the `//` in `https://` and would hide a real
 // hotlink: the bluntness is the value.
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useReducedMotion } from "framer-motion";
+import React, { useEffect, useRef } from "react";
 
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import { EASE } from "@/components/marketing/motion";
 import { PHRASES } from "@/components/marketing/KineticHeadline";
+import {
+    HOLD_MS,
+    WIPE_MS,
+    useSectorCycle,
+} from "@/components/marketing/sectorCycle";
 import { LANDING_HERO as IDS } from "@/constants/testIds";
 
-/** How long each slide holds, including its crossfade. */
-export const HOLD_MS = 7000;
-/** The crossfade. Long enough to read as a dissolve rather than a cut. */
-export const FADE_MS = 600;
+// `HOLD_MS` and `WIPE_MS` are imported, not declared. They used to live here
+// as 7000 alongside a 4000 in `KineticHeadline`, which is the whole defect
+// `sectorCycle` exists to remove: one clock, read by both.
 
 /**
  * **One curve, derived rather than retyped.** `EASE` is the marketing layer's
@@ -142,16 +145,26 @@ const DRIFT_ANIMATION = {
     rightUp: "heroDriftRightUp",
 };
 
+/** How many upcoming frames the rail shows. */
+const RAIL_LENGTH = 3;
+
+/** One thumbnail plus its gap, in rem — how far the track travels. */
+const RAIL_STEP_REM = 5.25 + 0.75;
+
+/** `01`, `08` — the index is read, so it is zero-padded. */
+const pad = (n) => String(n).padStart(2, "0");
+
 /**
- * One slide layer: a crossfade wrapper, a drifting layer, and the picture.
+ * One slide: the wipe's window, the wipe's held picture, the drift, the image.
  *
- * Three nested elements rather than one, because the two animations have to
- * be separable. Opacity and transform on the same node means the crossfade
- * and the pan share a timeline, and the incoming slide would start its pan
- * already faded in. They are also the two properties a compositor can animate
- * without touching layout, which is the whole reason this is affordable.
+ * **Four nested elements, and each one owns exactly one transform.** The two
+ * wipe halves cancel so the photograph holds still while the window opens
+ * over it; the drift pans; the image is the picture. Collapsing any two onto
+ * one node would make them share a timeline — the incoming slide would begin
+ * its pan already half-revealed — and all four are transforms, so the
+ * compositor owns the lot and nothing touches layout.
  */
-function Slide({ slide, index, visible, paused, reduced, eager }) {
+function Slide({ slide, index, incoming, paused, reduced, eager }) {
     const driftRef = useRef(null);
 
     // **`will-change` is released when the animation ends**, the rule the
@@ -181,39 +194,112 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
               willChange: "transform",
           };
 
+    // Only the arriving slide animates. The one underneath is already in
+    // place and is simply uncovered.
+    const wipe = (name) =>
+        reduced || !incoming
+            ? undefined
+            : {
+                  animationName: name,
+                  animationDuration: `${WIPE_MS}ms`,
+                  animationTimingFunction: EASE_CSS,
+                  animationFillMode: "both",
+                  willChange: "transform",
+              };
+
     return (
         <div
             data-testid={IDS.slide(index)}
-            // Opacity only. The layer is painted whether or not it is visible,
-            // which is why only two are ever mounted.
-            className="absolute inset-0"
-            style={
-                reduced
-                    ? undefined
-                    : {
-                          opacity: visible ? 1 : 0,
-                          transition: `opacity ${FADE_MS}ms ${EASE_CSS}`,
-                      }
-            }
+            className="absolute inset-0 overflow-hidden"
+            style={wipe("heroWipeWindow")}
         >
-            <div ref={driftRef} className="absolute inset-0" style={drift}>
-                <PlaceholderImage
-                    testid={IDS.slideImage(index)}
-                    note={slide.note}
-                    src={slide.image}
-                    // **Decorative, so empty.** This is a background behind
-                    // the `h1` and under a scrim, inside a subtree that is
-                    // `aria-hidden` in its entirety — the headline above
-                    // already carries the meaning, and a screen reader
-                    // announcing eight photographs of nothing in particular
-                    // is noise. The page-section slots are the opposite case
-                    // and describe themselves.
-                    alt=""
-                    // `fill`, not a ratio: the hero's height is set by its
-                    // content, and an aspect class would fight `inset-0`.
-                    fill
-                    eager={eager}
-                />
+            <div className="absolute inset-0" style={wipe("heroWipeHold")}>
+                <div ref={driftRef} className="absolute inset-0" style={drift}>
+                    <PlaceholderImage
+                        testid={IDS.slideImage(index)}
+                        note={slide.note}
+                        src={slide.image}
+                        // **Decorative, so empty.** This is a background
+                        // behind the `h1` and under a scrim, inside a subtree
+                        // that is `aria-hidden` in its entirety — the headline
+                        // already carries the meaning, and a screen reader
+                        // announcing eight photographs of nothing in
+                        // particular is noise. The page-section slots are the
+                        // opposite case and describe themselves.
+                        alt=""
+                        // `fill`, not a ratio: the hero's height is set by its
+                        // content, and an aspect class would fight `inset-0`.
+                        fill
+                        eager={eager}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * The rail: the next three frames, sliding left by one on each advance.
+ *
+ * **This replaced a row of dots, and it is the thing worth taking from the
+ * reference.** Dots say how many there are and which one you are on; a rail
+ * of upcoming frames says what is coming, which is the only reason to wait.
+ * It moves by `transform` rather than by reordering, so an advance is one
+ * composited slide rather than three elements changing their contents.
+ *
+ * Each frame is a real `<button>` and sits outside the `aria-hidden` subtree,
+ * exactly as the dots did — these are controls, and a picture of where a
+ * control goes is not a substitute for naming it.
+ */
+function FrameRail({ slides, index, goTo }) {
+    const upcoming = Array.from(
+        { length: RAIL_LENGTH },
+        (_, n) => (index + n + 1) % slides.length,
+    );
+
+    return (
+        <div
+            data-testid={IDS.rail}
+            className="pointer-events-auto hidden items-end overflow-hidden md:flex"
+        >
+            {/* **The track travels; the slots do not.** Keying three buttons
+                by phrase made React move the DOM nodes on every advance,
+                which the browser records as a layout shift — measured at
+                0.0007 per advance, every six seconds, unbounded. The slots
+                are keyed by position so their nodes are stable, and the
+                movement is one `translateX` on the track, restarted by the
+                index. */}
+            <div
+                key={index}
+                data-testid={IDS.railTrack}
+                className="flex items-end gap-3"
+                style={{
+                    "--rail-step": `${RAIL_STEP_REM}rem`,
+                    animationName: "heroRailSlide",
+                    animationDuration: `${WIPE_MS}ms`,
+                    animationTimingFunction: EASE_CSS,
+                    animationFillMode: "both",
+                }}
+            >
+                {upcoming.map((i, n) => (
+                    <button
+                        key={n}
+                        type="button"
+                        data-testid={IDS.railFrame(i)}
+                        aria-label={`Show ${slides[i].phrase}`}
+                        aria-current={i === index ? "true" : undefined}
+                        onClick={() => goTo(i)}
+                        style={{ opacity: 1 - n * 0.22 }}
+                        className="relative h-14 w-[5.25rem] shrink-0 overflow-hidden rounded border border-border/60 transition-colors duration-200 hover:border-primary/60"
+                    >
+                        <PlaceholderImage
+                            note={slides[i].note}
+                            src={slides[i].image}
+                            alt=""
+                            fill
+                        />
+                    </button>
+                ))}
             </div>
         </div>
     );
@@ -223,96 +309,34 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
  * The slider.
  *
  * `aria-hidden` in its entirety: the `h1` above already carries the meaning,
- * and a screen reader announcing four photographs of nothing in particular is
- * noise. The dots are the exception — they are controls, so they sit outside
- * the hidden subtree and name the slide they go to.
+ * and a screen reader announcing eight photographs of nothing in particular is
+ * noise. The controls are the exception — they sit outside the hidden subtree
+ * and name the slide they go to.
  */
 export default function HeroSlider({ className = "" }) {
-    const reduced = useReducedMotion();
-    const [active, setActive] = useState(0);
-    // The slide fading out. `null` once the fade has finished, which is what
-    // takes the third and fourth layers out of the DOM.
-    const [leaving, setLeaving] = useState(null);
-    const [paused, setPaused] = useState(false);
-    const timer = useRef(null);
-    const fadeTimer = useRef(null);
+    // **One clock, and it is not this component's.** `HeroSlider` held a
+    // 7000ms `setTimeout` while `KineticHeadline` held a 4000ms
+    // `setInterval`; they drifted apart by the second slide and never
+    // recovered, so the word named one sector while the picture showed
+    // another. `sectorCycle` owns the index and both read it.
+    const { index: active, leaving, paused, reduced, goTo } = useSectorCycle();
 
-    // The active index as a ref as well as state, so `goTo` can read the
-    // current slide without depending on it — a callback that changes every
-    // slide would restart the timer effect on every tick.
-    const activeRef = useRef(0);
-
-    const goTo = useCallback((next) => {
-        const current = activeRef.current;
-        if (next === current) return;
-        activeRef.current = next;
-        setLeaving(current);
-        setActive(next);
-        clearTimeout(fadeTimer.current);
-        // Drop the outgoing layer once it is invisible, rather than leaving
-        // it parked at `opacity: 0` — a transparent full-viewport layer still
-        // composites, which is the cost this whole component is budgeted
-        // against.
-        fadeTimer.current = setTimeout(() => setLeaving(null), FADE_MS);
-    }, []);
-
-    // **One timer, cleared on pause.** Under reduced motion it never starts —
-    // slide one is the end state, not a frame of an animation.
-    useEffect(() => {
-        if (reduced || paused) return undefined;
-        timer.current = setTimeout(
-            () => goTo((active + 1) % SLIDES.length),
-            HOLD_MS,
-        );
-        return () => clearTimeout(timer.current);
-    }, [active, paused, reduced, goTo]);
-
-    useEffect(() => () => {
-        clearTimeout(timer.current);
-        clearTimeout(fadeTimer.current);
-    }, []);
-
-    // **The listeners go on the hero, not on the slider.** The slider is
-    // `absolute inset-0` *behind* the content, so a pointer over the headline
-    // is over the content column and never over this element — handlers here
-    // would pause only when somebody hovered the few pixels of background
-    // either side of the type, which is the opposite of the case this is for.
-    // Binding to the parent keeps the paused state owned by the component
-    // that uses it while detecting the thing that actually matters: a reader
-    // stopped on the hero.
-    const rootRef = useRef(null);
-    useEffect(() => {
-        const hero = rootRef.current?.parentElement;
-        if (!hero) return undefined;
-        const hold = () => setPaused(true);
-        const release = () => setPaused(false);
-        hero.addEventListener("pointerenter", hold);
-        hero.addEventListener("pointerleave", release);
-        // `focusin`/`focusout` rather than `focus`/`blur`: the latter do not
-        // bubble, so tabbing to a CTA inside the hero would not reach this.
-        hero.addEventListener("focusin", hold);
-        hero.addEventListener("focusout", release);
-        return () => {
-            hero.removeEventListener("pointerenter", hold);
-            hero.removeEventListener("pointerleave", release);
-            hero.removeEventListener("focusin", hold);
-            hero.removeEventListener("focusout", release);
-        };
-    }, []);
-
-    // **Order matters, and it is the opposite of the obvious one.** The
-    // outgoing slide renders *last* so it sits on top, and fades out to
-    // reveal the incoming one underneath. Painting the incoming above would
-    // have it cover the old slide at full opacity the frame it mounts — a
-    // hard cut, with a 600ms fade running invisibly beneath it. Dissolving
-    // one layer is also half the work of fading two.
+    // **The incoming slide paints last, which reverses the order this file
+    // used to document — and the order follows from the transition.** With a
+    // crossfade the outgoing slide has to be on top: it dissolves to reveal
+    // the one underneath, and painting the incoming above would cover the old
+    // one at full opacity on the frame it mounts, a hard cut with a fade
+    // running invisibly beneath it. A wipe is the opposite. The incoming
+    // slide is the thing that moves, so it opens *over* the outgoing one,
+    // which stays still and is simply uncovered. Still two layers, never
+    // more: an invisible compositing layer still composites, and that budget
+    // is what got this component rebuilt rather than restored.
     const painted = reduced
         ? [0]
-        : [active, leaving].filter((i) => i !== null && i !== undefined);
+        : [leaving, active].filter((i) => i !== null && i !== undefined);
 
     return (
         <div
-            ref={rootRef}
             className={`absolute inset-0 overflow-hidden ${className}`}
         >
             <div data-testid={IDS.slides} aria-hidden className="absolute inset-0">
@@ -321,43 +345,75 @@ export default function HeroSlider({ className = "" }) {
                         key={i}
                         slide={SLIDES[i]}
                         index={i}
-                        visible={i === active}
+                        incoming={i === active && leaving !== null}
                         paused={paused}
                         reduced={reduced}
                         // Only the first slide is worth the early fetch; the
-                        // rest arrive seven seconds apart.
+                        // rest arrive six seconds apart.
                         eager={i === 0}
                     />
                 ))}
             </div>
 
-            {/* **The scrim is its own layer**, not a property of the slide.
-                Putting it on the slide would mean setting `background-image`
-                on an element that already has one — the rule `.grain-surface`
-                exists to avoid — and it would fade in and out with the
-                picture, so the headline's legibility would pulse every seven
-                seconds.
+            {/* **The scrim has to actually cover the type column**, which is
+                what makes a full-bleed hero safe. The old one ran
+                `from-background via-background/85 to-background/40` across
+                the whole width — it had released most of its cover by the
+                middle of the type and still dimmed the far edge of a picture
+                nothing was written over. This holds near-solid to 42%, which
+                is past the type column's right edge, and then goes to
+                transparent so the half the photograph was composed for is
+                the photograph.
 
-                Heaviest on the left, where the type sits, and lighter on the
-                right so the picture is still a picture. */}
+                Its own layer, not a property of the slide: the slide already
+                sets `background-image` and one of the two would silently win
+                — the rule `.grain-surface` exists for — and on the slide it
+                would wipe in and out with the picture, so the headline's
+                legibility would pulse every six seconds. */}
+            {/* **Two scrims, because the layout is two layouts.** At `lg`
+                and up the type is in six of twelve and the picture owns the
+                right half, so the cover is horizontal: near-solid past the
+                column's edge at 55%, then released so the half the
+                photograph was composed for is the photograph.
+
+                Below `lg` the grid collapses to one column and the type
+                spans the full width, so a horizontal scrim covers the left
+                of a headline and abandons its right — measured at 390 with
+                the 42% version: headline 1.48:1, subheading 1.03:1. There
+                the cover has to be the whole frame, and the picture is
+                atmosphere rather than subject. That is the honest trade on a
+                390px screen; the alternative is a headline nobody can read
+                over a photograph nobody can see past it. */}
             <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/40"
+                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background via-background/92 to-background/80 lg:hidden"
             />
             <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60"
+                className="pointer-events-none absolute inset-0 hidden bg-gradient-to-r from-background from-35% via-background/90 via-[58%] to-transparent lg:block"
+            />
+            <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent"
             />
 
-            {/* Controls, so outside the hidden subtree. Aligned to the content
-                column rather than to the viewport, so they sit under the type
-                at every width. */}
-            {!reduced && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10">
-                    <div className="mx-auto max-w-7xl px-6">
+            {/* Controls, so outside the hidden subtree, and aligned to the
+                content column so they sit under the type at every width. */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10">
+                <div className="mx-auto flex max-w-7xl items-end justify-between gap-6 px-6">
+                    {/* The left end carries nothing at `md` and up: the
+                        controls belong with the picture, and the picture is
+                        the right-hand half. */}
+                    {/* **Below `md` the rail and the index are gone and the
+                        dots come back.** Three thumbnails and a counter on a
+                        390px screen is clutter laid over the one place the
+                        headline has to be read, and the rail's own argument —
+                        showing what is coming — is worth less than the space
+                        it costs there. */}
+                    {!reduced && (
                         <div
                             data-testid={IDS.dots}
-                            className="pointer-events-auto inline-flex items-center gap-2"
+                            className="pointer-events-auto inline-flex items-center gap-2 md:hidden"
                         >
                             {SLIDES.map((slide, i) => (
                                 <button
@@ -375,9 +431,56 @@ export default function HeroSlider({ className = "" }) {
                                 />
                             ))}
                         </div>
+                    )}
+
+                    {/* The index, its progress bar and the rail, together
+                        and right-aligned — the controls sit with the picture
+                        they control, not under the type column.
+
+                        **The bar is the visible proof that the picture and
+                        the word are on one clock**: it fills over exactly the
+                        hold both of them wait out, and pauses with the
+                        slider. Keyed on the active index so it restarts per
+                        slide; `scaleX` on a 2px rule, so it composites. */}
+                    <div className="ml-auto hidden items-end gap-5 md:flex">
+                    <div className="flex flex-col items-start gap-2">
+                        <p
+                            data-testid={IDS.index}
+                            className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
+                        >
+                            {pad(active + 1)} / {pad(SLIDES.length)}
+                        </p>
+                        <div
+                            aria-hidden
+                            className="h-0.5 w-24 overflow-hidden rounded-full bg-foreground/15"
+                        >
+                            <div
+                                key={active}
+                                data-testid={IDS.progress}
+                                className="h-full w-full origin-left bg-primary"
+                                style={
+                                    reduced
+                                        ? { transform: "scaleX(1)" }
+                                        : {
+                                              animationName: "heroProgress",
+                                              animationDuration: `${HOLD_MS}ms`,
+                                              animationTimingFunction: "linear",
+                                              animationFillMode: "both",
+                                              animationPlayState: paused
+                                                  ? "paused"
+                                                  : "running",
+                                          }
+                                }
+                            />
+                        </div>
+                    </div>
+
+                    {!reduced && (
+                        <FrameRail slides={SLIDES} index={active} goTo={goTo} />
+                    )}
                     </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }

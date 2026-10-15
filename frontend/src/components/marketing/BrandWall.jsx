@@ -24,7 +24,6 @@ import { api } from "@/lib/api";
 import Reveal from "@/components/marketing/Reveal";
 import { Eyebrow } from "@/components/marketing/Sections";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CARD_SHADOW } from "@/components/marketing/FloatingCards";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const COPY = {
@@ -99,13 +98,13 @@ function BrandLogo({ brand, i }) {
             {brand.public_page ? (
                 <a
                     href={brand.public_page}
-                    className={`group flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-card transition duration-200 hover:border-primary/40 ${CARD_SHADOW}`}
+                    className="group flex flex-1 items-center justify-center rounded-lg border border-border bg-card transition duration-200 hover:border-primary/40"
                 >
                     {inner}
                 </a>
             ) : (
                 <div
-                    className={`group flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-card ${CARD_SHADOW}`}
+                    className="group flex flex-1 items-center justify-center rounded-lg border border-border bg-card"
                 >
                     {inner}
                 </div>
@@ -198,7 +197,8 @@ export default function BrandWall() {
             ref={anchor}
             data-testid={loading ? IDS.brandWallSkeleton : IDS.brandWall}
             aria-hidden={loading || undefined}
-            className="border-t border-white/10 py-16 md:py-24"
+            data-surface="light"
+            className="border-t border-border bg-background text-foreground py-16 md:py-24"
         >
             <div className="mx-auto max-w-7xl px-6">
                 {/* **The heading is not skeletoned**, for the reason the
@@ -226,7 +226,7 @@ export default function BrandWall() {
                                       container — a pixel height would be
                                       wrong between every pair of
                                       breakpoints. */}
-                                  <div className="flex flex-1 items-center justify-center rounded-lg border border-white/10 bg-card">
+                                  <div className="flex flex-1 items-center justify-center rounded-lg border border-border bg-card">
                                       <Skeleton className="m-5 aspect-[3/2] w-full" />
                                   </div>
                               </li>

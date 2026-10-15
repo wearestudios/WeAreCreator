@@ -971,13 +971,28 @@ class TestTheSectionBehavesLikeTheLeaderboard:
         assert "grayscale" in src
         assert "group-hover:grayscale-0" in src
 
-    def test_the_section_reuses_the_marketing_sites_one_shadow(self):
-        """`CARD_SHADOW` is imported from `FloatingCards` rather than written
-        a second time: the marketing site's single `box-shadow` exception
-        stays one place to read."""
+    def test_the_section_carries_no_shadow_at_all(self):
+        """A hairline and `bg-card`, which is what elevation is on a light
+        band.
+
+        **This required `CARD_SHADOW` to be imported here**, and was right
+        while the wall sat on navy: the marketing site has exactly one
+        `box-shadow` exception and reusing it beat spelling a second one. The
+        wall is a light band now — `data-surface="light"` on home — and a soft
+        black shadow on a pale ground reads as dirt rather than as lift, so
+        the rule that applies is the other one the design foundations state:
+        in a light band, elevation is a hairline plus a card tint.
+
+        The half that has not changed is that no file may spell a shadow of
+        its own, so `shadow-[` is still banned here; what changed is that this
+        section no longer takes the exception at all.
+        """
         src = js_code("components", "marketing", "BrandWall.jsx")
-        assert "import { CARD_SHADOW }" in src
-        assert "shadow-[" not in src
+        assert "shadow-[" not in src, "a second box-shadow literal"
+        assert "CARD_SHADOW" not in src, "a shadow on a light band"
+        assert "border-border" in src and "bg-card" in src, (
+            "the hairline and the card tint are what carry elevation here"
+        )
 
     def test_the_name_is_available_to_a_screen_reader(self):
         """A wall of logos a screen reader reads as twelve images is a wall of
