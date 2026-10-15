@@ -223,9 +223,20 @@ def test_the_brand_pages_state_the_two_commercial_terms():
     kind of claim a compression quietly loses because it reads like small
     print."""
     for name in ("brands", "why"):
-        text = copy_of(*PAGES[name]).lower()
+        # **Read through the components the page mounts, not the page alone.**
+        # Where the margin sits is now drawn by `FeeFlow` rather than stated in
+        # a bullet, and the bullet came out so the graphic would not sit above
+        # a sentence restating it. A test reading only the page would have
+        # failed on an honest move of the claim rather than on its loss, which
+        # is the failure this suite documents elsewhere: pin the idea wherever
+        # it is declared.
+        text = rendered_copy(name).lower()
         # Where our margin sits relative to the creator's fee.
-        assert "full rate" in text or "never taken out of theirs" in text, name
+        assert (
+            "full rate" in text
+            or "never taken out of theirs" in text
+            or "of their quoted rate" in text
+        ), name
         # The refund, and the one thing that forfeits it.
         assert "refunded if we cannot fill it" in text, name
         assert "shortlisted" in text, name
@@ -1032,7 +1043,10 @@ def test_how_it_works_states_the_payment_flow_the_way_the_product_works():
 
 
 def test_why_weare_makes_the_standalone_case():
-    text = copy_of(*PAGES["why"]).lower()
+    # Through the mounted graphics, for the reason `rendered_copy` gives: the
+    # money claim this pins is drawn by `FeeFlow` now, and the sentence that
+    # used to carry it came out so the section would not say it twice.
+    text = rendered_copy("why").lower()
     assert "weare studios" in text                      # the pedigree
     # Was "run it yourself, or hand it over" — the choice the product no
     # longer offers — and then "handed over, and what that costs", which
@@ -1040,7 +1054,10 @@ def test_why_weare_makes_the_standalone_case():
     # *costs*, which is what a sceptic with another tab open is weighing.
     assert "handing it over costs" in text              # the offer
     assert "a person reviews every creator" in text     # verified people
-    assert "plus our fee" in text                       # money handled properly
+    # Was "you pay us that plus our fee". The graphic draws the same split as
+    # two flows ending in two figures, so the idea is pinned rather than the
+    # sentence — the rule the register audit settled on.
+    assert "our fee sits on top" in text                # money handled properly
     assert "reach and cost per thousand" in text        # results reported
 
 
@@ -1254,6 +1271,25 @@ HEADLINE_WORDS = 12
 LINE_WORDS = 32
 
 
+def rendered_copy(name):
+    """A page's copy plus that of the graphics it mounts.
+
+    `copy_of` reads one file, which was right while every word a reader met
+    was declared in the page. The two data graphics changed that: each draws a
+    claim the page used to state, and each page dropped the sentence it
+    duplicated so the graphic would not sit above a restatement of itself. A
+    rule reading the page alone would then fail on the claim having *moved*
+    rather than on its having gone — which is the trap this file documents at
+    length, and the reason its assertions pin the idea rather than the
+    sentence.
+    """
+    src = copy_of(*PAGES[name])
+    for component in ("FeeFlow", "PayoutClock"):
+        if component in src:
+            src += " " + copy_of("src", "components", "marketing", f"{component}.jsx")
+    return src
+
+
 def _block_strings(src, marker):
     """Every string literal inside one top-level object literal."""
     start = src.index(marker)
@@ -1320,6 +1356,18 @@ def _copy_strings(name):
             if " " in c or c.isalpha()
         ]
         out += ["One campaign"]  # the section's eyebrow, set at the call site
+    # The two data graphics, by the same argument. Each keeps its words in an
+    # exported `COPY` block precisely so this counter can read them — a graphic
+    # is a section, and a section's labels are words on the page whoever
+    # declares them. `FeeFlow` is mounted twice and so is counted against both
+    # of the pages that mount it, which is correct: a reader of either meets
+    # those words once.
+    for component in ("FeeFlow", "PayoutClock"):
+        if component in src:
+            out += _block_strings(
+                read("src", "components", "marketing", f"{component}.jsx"),
+                "export const COPY = {",
+            )
     return out
 
 
@@ -1902,3 +1950,121 @@ def test_the_film_is_on_home_only():
     story as parallel tracks and two tellings compete."""
     on = [n for n, parts in PAGES.items() if "CampaignFilm" in read(*parts)]
     assert on == ["home"], on
+
+
+# --- The two data graphics ----------------------------------------------------
+#
+# These are the only animated things on the marketing site besides the hero and
+# the scroll film, and they earn it the same way those do: each draws a claim
+# the prose could only assert. The rules below are the ones that would be
+# quietly lost by a later edit — a second easing curve, a number that exists
+# only as a bar, a competitor figure that stops being flagged as unsourced.
+
+GRAPHICS = ("FeeFlow", "PayoutClock")
+
+
+def _graphic(name):
+    return read("src", "components", "marketing", f"{name}.jsx")
+
+
+@pytest.mark.parametrize("name", GRAPHICS)
+def test_a_graphic_introduces_no_second_easing_curve(name):
+    """One curve for the whole site. A hand-written `cubic-bezier` here is the
+    start of the six-easings page `motion.js` exists to prevent."""
+    src = _graphic(name)
+    assert "cubic-bezier" not in src, name
+    assert 'from "@/components/marketing/motion"' in src, name
+    assert "EASE" in src, name
+
+
+@pytest.mark.parametrize("name", GRAPHICS)
+def test_a_graphic_animates_transforms_and_opacity_only(name):
+    """A width or height animation lays out on every frame. The bars scale on
+    one axis, which the compositor owns."""
+    code = _code("src", "components", "marketing", f"{name}.jsx")
+    assert "scaleX" in code, name
+    for banned in ("animate={{ width", "animate={{ height", "whileInView={{ width"):
+        assert banned not in code, f"{name}: {banned}"
+
+
+@pytest.mark.parametrize("name", GRAPHICS)
+def test_a_graphic_states_its_finding_to_a_screen_reader(name):
+    """`role="img"` makes a subtree presentational, so the picture has to carry
+    the finding itself — and the numbers have to live outside it as real text,
+    or they reach a screen reader as nothing at all."""
+    src = _graphic(name)
+    assert 'role="img"' in src, name
+    assert "aria-label" in src, name
+
+
+@pytest.mark.parametrize(
+    "name,figures",
+    [("FeeFlow", ("OUR_SHARE", "theirShareHigh")), ("PayoutClock", ("ourDays", "theirDays"))],
+)
+def test_a_graphic_puts_its_figures_in_text_not_only_in_a_bar(name, figures):
+    """Semantic meaning is never carried by a bar length or a colour alone. The
+    accented figure says "100%" in words beside it, so the point survives
+    greyscale, a screen reader, and somebody who cannot distinguish the red."""
+    src = _graphic(name)
+    for fig in figures:
+        # Rendered into JSX text, not merely used to size a rect.
+        assert f"{{{fig}}}" in src or f"{fig}}}" in src, f"{name}: {fig}"
+
+
+@pytest.mark.parametrize("name", GRAPHICS)
+def test_an_unsourced_claim_stays_flagged(name):
+    """**The one rule here that is about honesty rather than craft.** Each
+    graphic carries exactly one figure nothing in this codebase can back — a
+    claim about what *other* operators pay, or how long they take. Our own
+    numbers are real: `CREATOR_PAYOUT_DAYS` is a stored platform setting and
+    100% is `COMMISSION_TERMS` restated.
+
+    So the competitor figures are named in a `NEEDS A SOURCE` block and marked
+    `data-unsourced` in the rendered page, the way `NEEDS A LAWYER` blocks work
+    elsewhere. Deleting the flag without sourcing the number is the failure
+    this catches: these pages are held to "every claim is checkable", and that
+    one is not yet."""
+    src = _graphic(name)
+    assert "NEEDS A SOURCE" in src, name
+    assert "export const UNSOURCED" in src, name
+    assert "data-unsourced" in src, name
+
+
+def test_our_payout_window_is_read_rather_than_typed():
+    """The figure a creator is promised exists — it is a stored setting with a
+    mirror and a drift test. Typing `7` here would be a second definition of a
+    number printed on every brief and frozen into accepted terms."""
+    src = _graphic("PayoutClock")
+    assert "CREATOR_PAYOUT_DAYS" in src
+    assert 'from "@/lib/payoutWindow"' in src
+
+
+def test_the_fee_graphic_does_not_argue_against_agencies():
+    """WeAre Studios is an agency and the managed service is a real offering,
+    so a graphic naming intermediaries would argue against our own product.
+    The left column names the *shape* of the deal — bundled, unstated — and no
+    kind of company."""
+    text = _code("src", "components", "marketing", "FeeFlow.jsx").lower()
+    # Read from the server rather than re-listed, the rule the geography
+    # sweep already settled: a list maintained twice is a list that drifts.
+    for banned in server._FORBIDDEN_MARKETING_PHRASES:
+        assert banned not in text, banned
+    for named in ("agency", "agencies", "intermediar"):
+        assert named not in text, named
+
+
+@pytest.mark.parametrize(
+    "page,graphic",
+    [("brands", "FeeFlow"), ("why", "FeeFlow"), ("creators", "PayoutClock")],
+)
+def test_a_graphic_does_not_sit_above_a_sentence_restating_it(page, graphic):
+    """Each page dropped the line its graphic draws. The failure this guards
+    is the easy one: mounting the picture and leaving the prose, so a section
+    makes the same point twice and the budget pays for it twice."""
+    src = read(*PAGES[page])
+    assert graphic in src, page
+    text = copy_of(*PAGES[page]).lower()
+    if graphic == "FeeFlow":
+        # The bullet and the clause that used to carry the split.
+        assert "creators keep their full rate" not in text, page
+        assert "plus our fee" not in text, page

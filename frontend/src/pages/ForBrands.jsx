@@ -35,6 +35,7 @@ import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
 import CountedGeography from "@/components/marketing/CountedGeography";
+import FeeFlow from "@/components/marketing/FeeFlow";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
@@ -100,12 +101,16 @@ const COPY = {
     // we cannot fill the brief. Both are checkable, which is the standard
     // this page is held to.
     termsTitle: "What we charge, and what comes back.",
-    termsLine: "Our fee is charged on top of the creator rate, and the campaign fee is refunded if we cannot fill the brief.",
+    // **The first half of this line is now drawn rather than stated.** It
+    // opened "Our fee is charged on top of the creator rate", which is exactly
+    // what `FeeFlow` below compares — so the sentence kept only the half the
+    // graphic does not show.
+    termsLine: "The campaign fee is refunded if we cannot fill the brief.",
     terms: [
-        {
-            label: "Creators keep their full rate",
-            line: "A creator who quotes a fee is paid that fee. Our margin is yours to pay, never theirs.",
-        },
+        // **"Creators keep their full rate" came out of this list**, because
+        // `FeeFlow` below now draws exactly that claim and a graphic sitting
+        // above a sentence restating it is the page arguing with itself. The
+        // other two points are different claims and stay.
         {
             label: "Refunded if we cannot fill it",
             line: "The campaign fee comes back, unless you turned down everyone we shortlisted.",
@@ -208,6 +213,17 @@ export default function ForBrands() {
                 flip
                 testid={IDS.choice}
             />
+
+            {/* **The one claim on this page worth drawing rather than
+                stating.** Where the money goes is the strongest thing we have
+                to say to a brand and it was a clause in a sentence. It sits
+                immediately under the terms it illustrates, and the list above
+                lost the line it duplicates. */}
+            <section className="border-b border-white/10 py-16 md:py-20">
+                <div className="mx-auto max-w-7xl px-6">
+                    <FeeFlow />
+                </div>
+            </section>
 
             {/* The whole section is behind the counted city, not just the
                 noun in its title: an eyebrow reading "Where we are" above a

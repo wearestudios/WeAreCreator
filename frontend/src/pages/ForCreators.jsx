@@ -21,6 +21,7 @@ import {
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
+import PayoutClock from "@/components/marketing/PayoutClock";
 import { MARKETING as IDS } from "@/constants/testIds";
 
 const ASK = { to: "/signup?role=creator", label: "Join as a creator" };
@@ -83,7 +84,11 @@ const COPY = {
     ],
 
     costTitle: "It costs nothing.",
-    costLine: "No subscription, no joining fee, and nothing deducted from your rate. That is not an introductory offer.",
+    // **"That is not an introductory offer." came out as a duplicate**, not to
+    // make room: the hero footnote already says "we never charge you a fee",
+    // and `never` is the same promise of permanence in a word rather than a
+    // sentence. `PayoutClock` below is what the section gained.
+    costLine: "No subscription, no joining fee, and nothing deducted from your rate.",
 
     closeTitle: "Join as a creator.",
     closeLine: "A name and a WhatsApp number. Everything else can wait.",
@@ -166,6 +171,17 @@ export default function ForCreators() {
                     ratio: "3/2",
                 }}
             />
+
+            {/* **When, not how much** — which is why this sits under "What it
+                costs" without taking anything out of it. That section answers
+                what we deduct (nothing); this answers the question the survey
+                found underneath it, which creators asked even when they had
+                been paid quickly: nobody had ever told them when. */}
+            <section className="border-b border-white/10 py-16 md:py-20">
+                <div className="mx-auto max-w-7xl px-6">
+                    <PayoutClock />
+                </div>
+            </section>
 
             <ClosingSection
                 title={COPY.closeTitle}

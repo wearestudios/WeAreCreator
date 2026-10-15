@@ -34,6 +34,7 @@ import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import FloatingCards from "@/components/marketing/FloatingCards";
 import Reveal from "@/components/marketing/Reveal";
+import FeeFlow from "@/components/marketing/FeeFlow";
 import { useDeepestCity } from "@/components/marketing/CountedGeography";
 import { MARKETING as IDS } from "@/constants/testIds";
 
@@ -73,10 +74,11 @@ const COPY = {
             label: "No retainer, no markup",
             line: "You pay per campaign and nothing between them. We add no margin to a creator fee.",
         },
-        {
-            label: "Creators keep their full rate",
-            line: "Our fee is charged to you, never taken out of theirs. A squeezed creator is one who leaves.",
-        },
+        // **"Creators keep their full rate" came out here too.** It read as a
+        // point in this list and again as a clause in "The money", and
+        // `FeeFlow` now draws it a third time — so the page made one claim
+        // three ways. The graphic is the version a reader can check, so the
+        // two sentences went and it stayed.
         {
             label: "A named manager",
             line: "One person holds the roster, briefs the creators and is at the door on the day.",
@@ -105,7 +107,12 @@ const COPY = {
     ],
 
     moneyTitle: "Nobody is guessing what it costs.",
-    moneyLine: "The creator keeps their rate. You pay us that plus our fee, and we release the money on approved delivery.",
+    // **Shorter than it was, because `FeeFlow` now draws its first half.** The
+    // line used to open "The creator keeps their rate. You pay us that plus
+    // our fee" — which is precisely the comparison the graphic below makes, so
+    // keeping both would be the section saying one thing twice. What is left
+    // is the half the graphic does not show: when the money moves.
+    moneyLine: "We release the money on approved delivery, and every figure is itemised on the invoice.",
 
     closeTitle: "Post your first brief.",
     closeLine: "About ten minutes. We check your business before anything reaches a creator.",
@@ -231,6 +238,15 @@ export default function WhyWeAre() {
                     ratio: "5/4",
                 }}
             />
+
+            {/* The same graphic as `/for-brands`, under the section that makes
+                the same claim — one component rather than two drawings of one
+                fact, which is how the two pages come to disagree about it. */}
+            <section className="border-b border-white/10 py-16 md:py-20">
+                <div className="mx-auto max-w-7xl px-6">
+                    <FeeFlow />
+                </div>
+            </section>
 
             <ClosingSection
                 title={COPY.closeTitle}
