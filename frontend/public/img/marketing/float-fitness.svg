@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="A studio class seen from the back, drawn flat: three figures on their mats facing warm windows, with a figure in red near the camera filming them.">
+  <defs>
+    <linearGradient id="f4sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <linearGradient id="f4day" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D3A2"/><stop offset="1" stop-color="#E8B06B"/>
+    </linearGradient>
+    <radialGradient id="f4glow" cx="0.56" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.38"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="f4grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#f4sky)"/>
+  <rect width="1200" height="800" fill="url(#f4glow)"/>
+  <rect y="430" width="1200" height="370" fill="#0B1A30"/>
+  <rect y="424" width="1200" height="6" fill="#1A3053"/>
+  <rect x="150" y="70" width="190" height="354" fill="url(#f4day)"/>
+  <rect x="134" y="58" width="22" height="366" fill="#1D3458"/>
+  <rect x="134" y="58" width="212" height="16" fill="#1D3458"/>
+  <rect x="430" y="70" width="190" height="354" fill="url(#f4day)"/>
+  <rect x="414" y="58" width="22" height="366" fill="#1D3458"/>
+  <rect x="414" y="58" width="212" height="16" fill="#1D3458"/>
+  <rect x="710" y="70" width="190" height="354" fill="url(#f4day)"/>
+  <rect x="694" y="58" width="22" height="366" fill="#1D3458"/>
+  <rect x="694" y="58" width="212" height="16" fill="#1D3458"/>
+  <rect x="120" y="486" width="280" height="22" rx="11" fill="#1A3053"/>
+  <circle cx="246" cy="404" r="40" fill="#20395C"/>
+  <path d="M184 486 q62 -108 124 0 z" fill="#20395C"/>
+  <rect x="440" y="560" width="310" height="26" rx="13" fill="#16294A"/>
+  <circle cx="580" cy="462" r="46" fill="#1B3153"/>
+  <path d="M510 560 q70 -124 140 0 z" fill="#1B3153"/>
+  <rect x="760" y="660" width="350" height="30" rx="15" fill="#13253F"/>
+  <circle cx="920" cy="548" r="52" fill="#223D63"/>
+  <path d="M842 660 q78 -140 156 0 z" fill="#223D63"/>
+  <path d="M120 800 v-168 q74 -124 148 0 v168 z" fill="#FF2731"/>
+  <circle cx="194" cy="572" r="48" fill="#20395C"/>
+  <rect x="278" y="520" width="42" height="68" rx="8" fill="#0A1526"/>
+  <rect x="285" y="529" width="28" height="50" rx="4" fill="#5E7FA8"/>
+  <rect x="252" y="588" width="24" height="90" rx="11" fill="#E4E8EF" transform="rotate(-34 252 588)"/>
+  <rect width="1200" height="800" filter="url(#f4grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

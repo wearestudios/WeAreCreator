@@ -137,6 +137,8 @@ export default function HowItWorks() {
                     // across a table at a venue before a shoot, both with
                     // phones out. Landscape 16:9.
                     note: "Brand manager and creator talking across a table before a shoot, 16:9",
+                    src: "/img/marketing/how-table-talk.svg",
+                    alt: "A brand manager and a creator talking across a table before a shoot, a phone between them under a pendant lamp.",
                     ratio: "16/9",
                 }}
             />
@@ -216,6 +218,8 @@ export default function HowItWorks() {
                                     // report on a desk beside a phone showing
                                     // the same numbers. Landscape 5:4.
                                     note="Printed campaign report on a desk beside a phone showing the same numbers, 5:4"
+                                    src="/img/marketing/how-report-desk.svg"
+                                    alt="A printed campaign report on a desk beside a phone showing the same chart, with the same figure highlighted on both."
                                     ratio="5/4"
                                     zoom
                                 />
@@ -236,6 +240,8 @@ export default function HowItWorks() {
                     // PLACEHOLDER IMAGE: a WeAre manager with a clipboard and
                     // a phone, briefing two creators at a venue entrance. 4:3.
                     note: "WeAre manager briefing two creators at a venue entrance, 4:3",
+                    src: "/img/marketing/how-briefing.svg",
+                    alt: "A WeAre manager briefing two creators at a lit venue entrance, gesturing them through the door.",
                     ratio: "4/3",
                 }}
                 flip

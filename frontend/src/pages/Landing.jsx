@@ -248,6 +248,8 @@ function WhatWeRun() {
                         <PlaceholderImage
                             testid={PAGE_IDS.problemImage}
                             note="A creator shooting on location, phone on a gimbal, venue staff visible behind"
+                            src="/img/marketing/home-on-location.svg"
+                            alt="A creator shooting on location, a phone on a stand in front of them and venue staff working at the counter behind."
                             ratio="3/2"
                         />
                     </Reveal>
@@ -332,6 +334,8 @@ export default function Landing() {
                 <PlaceholderImage
                     testid={PAGE_IDS.bandImage}
                     note="Wide shot of a busy venue mid-campaign, creators and guests mixed, shot from above"
+                    src="/img/marketing/home-venue-wide.svg"
+                    alt="A busy venue mid-campaign seen wide, guests along the tables and a creator filming among them."
                     ratio="21/9"
                 />
             </div>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Two people talking across a cafe table, drawn flat: a phone lies between them with a red screen, the rate being agreed before anything is booked.">
+  <defs>
+    <linearGradient id="p9sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <radialGradient id="p9glow" cx="0.5" cy="0.44" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.40"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="p9lamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.62"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="p9grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#p9sky)"/>
+  <rect width="1600" height="900" fill="url(#p9glow)"/>
+  <rect y="600" width="1600" height="300" fill="#0B1A30"/>
+  <rect y="594" width="1600" height="6" fill="#1A3053"/>
+  <circle cx="800" cy="150" r="180" fill="url(#p9lamp)"/>
+  <rect x="794" y="0" width="12" height="104" fill="#1D3458"/>
+  <path d="M718 140 h164 l-34 -56 h-96 z" fill="#F2BE7A"/>
+  <ellipse cx="800" cy="630" rx="330" ry="72" fill="#E9B778"/>
+  <ellipse cx="800" cy="612" rx="330" ry="72" fill="#F7D3A2"/>
+  <rect x="778" y="676" width="44" height="160" fill="#15273F"/>
+  <rect x="716" y="828" width="168" height="26" rx="10" fill="#15273F"/>
+  <rect x="722" y="580" width="156" height="78" rx="12" fill="#0A1526" transform="rotate(-6 722 580)"/>
+  <rect x="736" y="592" width="128" height="56" rx="7" fill="#FF2731" transform="rotate(-6 736 592)"/>
+  <circle cx="578" cy="548" r="22" fill="#E4E8EF"/>
+  <circle cx="1024" cy="552" r="22" fill="#D8DEE8"/>
+  <g>
+    <circle cx="336" cy="407" r="90" fill="#20395C"/>
+    <path d="M196 600 q140 -230 280 0 z" fill="#20395C"/>
+    <rect x="222" y="592" width="228" height="308" fill="#1B3153"/>
+    <rect x="432" y="520" width="150" height="34" rx="17" fill="#20395C" transform="rotate(16 432 520)"/>
+  </g>
+  <g>
+    <circle cx="1270" cy="415" r="86" fill="#223D63"/>
+    <path d="M1136 600 q134 -222 268 0 z" fill="#223D63"/>
+    <rect x="1160" y="592" width="220" height="308" fill="#1E3557"/>
+    <rect x="1030" y="534" width="146" height="32" rx="16" fill="#223D63" transform="rotate(-16 1030 534)"/>
+  </g>
+  <rect width="1600" height="900" filter="url(#p9grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

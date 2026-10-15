@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="Two people at a bar counter before doors, drawn flat: both looking down at a tablet showing the roster, its screen in red.">
+  <defs>
+    <linearGradient id="pEsky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <radialGradient id="pEglow" cx="0.5" cy="0.44" r="0.62">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.40"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pElamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.6"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="pEgrain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#pEsky)"/>
+  <rect width="1200" height="800" fill="url(#pEglow)"/>
+  <circle cx="240" cy="110" r="130" fill="url(#pElamp)"/>
+  <rect x="234" y="0" width="8" height="74" fill="#1D3458"/>
+  <path d="M190 104 h100 l-20 -34 h-60 z" fill="#F2BE7A"/>
+  <circle cx="960" cy="110" r="130" fill="url(#pElamp)"/>
+  <rect x="954" y="0" width="8" height="74" fill="#1D3458"/>
+  <path d="M910 104 h100 l-20 -34 h-60 z" fill="#F2BE7A"/>
+  <rect x="60" y="200" width="300" height="200" fill="#0D1B32"/>
+  <rect x="80" y="230" width="36" height="140" fill="#16294A"/>
+  <rect x="134" y="230" width="36" height="140" fill="#1A3053"/>
+  <rect x="188" y="230" width="36" height="140" fill="#16294A"/>
+  <rect y="560" width="1200" height="56" fill="#E9B778"/>
+  <rect y="544" width="1200" height="48" fill="#F7D3A2"/>
+  <rect y="616" width="1200" height="184" fill="#15273F"/>
+  <rect x="452" y="488" width="296" height="80" rx="12" fill="#0A1526" transform="rotate(-5 452 488)"/>
+  <rect x="468" y="500" width="264" height="56" rx="7" fill="#FF2731" transform="rotate(-5 468 500)"/>
+  <g>
+    <circle cx="372" cy="396" r="80" fill="#20395C"/>
+    <path d="M246 556 q126 -232 252 0 z" fill="#20395C"/>
+  </g>
+  <g>
+    <circle cx="848" cy="404" r="76" fill="#223D63"/>
+    <path d="M728 560 q120 -224 240 0 z" fill="#223D63"/>
+  </g>
+  <rect width="1200" height="800" filter="url(#pEgrain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

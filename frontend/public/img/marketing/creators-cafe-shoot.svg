@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A creator shooting a plate in window light, drawn flat: a phone on a small tripod aimed down at a table, with one red dish on the plate.">
+  <defs>
+    <linearGradient id="p6sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <linearGradient id="p6day" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D3A2"/><stop offset="1" stop-color="#E9B778"/>
+    </linearGradient>
+    <radialGradient id="p6glow" cx="0.68" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.42"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="p6grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#p6sky)"/>
+  <rect width="1600" height="900" fill="url(#p6glow)"/>
+  <rect x="1110" y="70" width="440" height="500" fill="url(#p6day)"/>
+  <rect x="1088" y="54" width="26" height="516" fill="#1D3458"/>
+  <rect x="1088" y="54" width="478" height="20" fill="#1D3458"/>
+  <rect x="1316" y="70" width="16" height="500" fill="#1D3458"/>
+  <rect y="570" width="1600" height="60" fill="#2A4873"/>
+  <rect y="630" width="1600" height="270" fill="#15273F"/>
+  <path d="M1110 570 h440 l-230 330 h-700 z" fill="#E9B778" opacity="0.35"/>
+  <ellipse cx="700" cy="620" rx="250" ry="56" fill="#E4E8EF"/>
+  <ellipse cx="700" cy="604" rx="250" ry="56" fill="#F4EFE7"/>
+  <ellipse cx="700" cy="604" rx="150" ry="34" fill="#D8DEE8"/>
+  <ellipse cx="700" cy="598" rx="96" ry="24" fill="#FF2731"/>
+  <rect x="1010" y="556" width="46" height="96" rx="12" fill="#D8DEE8"/>
+  <rect x="368" y="548" width="34" height="86" rx="10" fill="#E4E8EF"/>
+  <g>
+    <rect x="692" y="300" width="22" height="170" fill="#15273F"/>
+    <path d="M636 486 h136 l-26 -26 h-84 z" fill="#15273F"/>
+    <rect x="648" y="190" width="110" height="160" rx="18" fill="#0A1526"/>
+    <rect x="664" y="206" width="78" height="128" rx="8" fill="#5E7FA8"/>
+  </g>
+  <g>
+    <circle cx="270" cy="409" r="76" fill="#20395C"/>
+    <path d="M152 570 q118 -194 236 0 z" fill="#20395C"/>
+    <rect x="368" y="430" width="30" height="130" rx="15" fill="#20395C" transform="rotate(26 368 430)"/>
+  </g>
+  <rect width="1600" height="900" filter="url(#p6grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

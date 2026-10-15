@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="A creator filming on location, drawn flat: a figure in red holding a phone on a gimbal, with venue staff working at a counter behind them.">
+  <defs>
+    <linearGradient id="p1sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <radialGradient id="p1glow" cx="0.44" cy="0.38" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.38"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="p1lamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.58"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="p1grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#p1sky)"/>
+  <rect width="1200" height="800" fill="url(#p1glow)"/>
+  <rect y="600" width="1200" height="200" fill="#0B1A30"/>
+  <rect y="594" width="1200" height="6" fill="#1A3053"/>
+  <circle cx="880" cy="150" r="140" fill="url(#p1lamp)"/>
+  <rect x="862" y="40" width="10" height="92" fill="#1D3458"/>
+  <path d="M826 132 h92 l-18 -34 h-56 z" fill="#F2BE7A"/>
+  <rect x="700" y="400" width="500" height="26" fill="#2A4873"/>
+  <rect x="700" y="426" width="500" height="174" fill="#15273F"/>
+  <rect x="740" y="340" width="46" height="60" fill="#1D3458"/>
+  <rect x="812" y="326" width="46" height="74" fill="#1D3458"/>
+  <rect x="884" y="348" width="46" height="52" fill="#1D3458"/>
+  <circle cx="1008" cy="306" r="54" fill="#223D63"/>
+  <path d="M930 400 q78 -126 156 0 z" fill="#223D63"/>
+  <circle cx="1148" cy="316" r="48" fill="#1B3153"/>
+  <path d="M1080 400 q68 -112 136 0 z" fill="#1B3153"/>
+  <path d="M168 800 v-244 q106 -176 212 0 v244 z" fill="#FF2731"/>
+  <circle cx="274" cy="458" r="74" fill="#20395C"/>
+  <rect x="396" y="300" width="24" height="212" fill="#15273F"/>
+  <rect x="356" y="500" width="104" height="26" rx="10" fill="#15273F"/>
+  <rect x="368" y="212" width="80" height="128" rx="14" fill="#0A1526"/>
+  <rect x="380" y="226" width="56" height="100" rx="6" fill="#5E7FA8"/>
+  <rect x="344" y="508" width="30" height="130" rx="15" fill="#E4E8EF" transform="rotate(-36 344 508)"/>
+  <rect width="1200" height="800" filter="url(#p1grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>
