@@ -137,6 +137,8 @@ export default function HowItWorks() {
                     // across a table at a venue before a shoot, both with
                     // phones out. Landscape 16:9.
                     note: "Brand manager and creator talking across a table before a shoot, 16:9",
+                    src: "/img/marketing/how-table-talk.webp",
+                    alt: "A brand manager and a creator talking across a table at a venue before a shoot, phones out.",
                     ratio: "16/9",
                 }}
             />
@@ -216,6 +218,8 @@ export default function HowItWorks() {
                                     // report on a desk beside a phone showing
                                     // the same numbers. Landscape 5:4.
                                     note="Printed campaign report on a desk beside a phone showing the same numbers, 5:4"
+                                    src="/img/marketing/how-report-desk.webp"
+                                    alt="A printed campaign report lying on a desk beside a phone showing the same figures."
                                     ratio="5/4"
                                     zoom
                                 />
@@ -236,6 +240,8 @@ export default function HowItWorks() {
                     // PLACEHOLDER IMAGE: a WeAre manager with a clipboard and
                     // a phone, briefing two creators at a venue entrance. 4:3.
                     note: "WeAre manager briefing two creators at a venue entrance, 4:3",
+                    src: "/img/marketing/how-briefing.webp",
+                    alt: "A campaign manager briefing two creators at a venue entrance, clipboard and phone in hand.",
                     ratio: "4/3",
                 }}
                 flip
