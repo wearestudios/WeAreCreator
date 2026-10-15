@@ -114,7 +114,6 @@ export default function ForCreators() {
                     // café — phone on a small tripod, natural window light,
                     // their hands in frame. Landscape 16:9.
                     note: "Creator mid-shoot at a Bengaluru cafe, phone on a tripod, window light, 16:9",
-                    src: "/img/marketing/creators-cafe-shoot.webp",
                     // The note names a city because it briefs a shoot; the
                     // alt describes what is in frame, and a café is a café.
                     alt: "A creator filming in a café, phone on a small tripod in window light.",
@@ -151,8 +150,6 @@ export default function ForCreators() {
                     // PLACEHOLDER IMAGE: over-the-shoulder of a creator filling
                     // in their profile on a phone, café table, evening. 4:3.
                     note: "Over-the-shoulder of a creator filling in their profile on a phone, 4:3",
-                    src: "/img/marketing/creators-profile-phone.webp",
-                    alt: "Over a creator's shoulder as they fill in their profile on a phone at a café table.",
                     ratio: "4/3",
                 }}
                 flip
@@ -166,8 +163,6 @@ export default function ForCreators() {
                     // PLACEHOLDER IMAGE: a creator checking a payment
                     // confirmation on their phone, warm interior, candid. 3:2.
                     note: "Creator checking a payment confirmation on their phone, candid, 3:2",
-                    src: "/img/marketing/creators-payment.webp",
-                    alt: "A creator reading a payment confirmation on their phone in a warm interior.",
                     ratio: "3/2",
                 }}
             />

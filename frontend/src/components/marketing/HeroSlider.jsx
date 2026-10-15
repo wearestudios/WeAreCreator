@@ -117,14 +117,14 @@ const NOTES = [
 // file swap rather than a build change. Nothing is fetched from a third party;
 // the sweep that enforces that is a blunt substring check over whole files.
 const IMAGES = [
-    "/img/marketing/hero-fnb.webp",
-    "/img/marketing/hero-hospitality.webp",
-    "/img/marketing/hero-retail.webp",
-    "/img/marketing/hero-real-estate.webp",
-    "/img/marketing/hero-fashion.webp",
-    "/img/marketing/hero-travel.webp",
-    "/img/marketing/hero-wellness.webp",
-    "/img/marketing/hero-lifestyle.webp",
+    "/img/marketing/hero-fnb.svg",
+    "/img/marketing/hero-hospitality.svg",
+    "/img/marketing/hero-retail.svg",
+    "/img/marketing/hero-real-estate.svg",
+    "/img/marketing/hero-fashion.svg",
+    "/img/marketing/hero-travel.svg",
+    "/img/marketing/hero-wellness.svg",
+    "/img/marketing/hero-lifestyle.svg",
 ];
 
 export const SLIDES = PHRASES.map((phrase, i) => ({

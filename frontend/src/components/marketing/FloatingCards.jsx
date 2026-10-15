@@ -48,7 +48,6 @@ const CARDS = [
         // PLACEHOLDER IMAGE: a restaurant on opening night, tables full, warm
         // service light, shot from the pass. Portrait 4:5.
         note: "Restaurant on opening night, tables full, warm service light, portrait 4:5",
-        image: "/img/marketing/float-fnb.webp",
         ratio: "4/3",
         className: "left-[2%] top-[14%] w-[26%] md:left-[3%] md:top-[16%] md:w-[19%]",
         rotate: -7,
@@ -60,7 +59,6 @@ const CARDS = [
         // PLACEHOLDER IMAGE: a fashion creator mid-shoot against a plain wall,
         // outfit in motion. Portrait 4:5.
         note: "Fashion creator mid-shoot against a plain wall, outfit in motion, portrait 4:5",
-        image: "/img/marketing/float-fashion.webp",
         ratio: "4/3",
         className: "hidden md:block md:left-[19%] md:top-[58%] md:w-[15%]",
         rotate: 5,
@@ -71,7 +69,6 @@ const CARDS = [
         // PLACEHOLDER IMAGE: a hotel balcony at first light, coffee on the
         // rail, city beyond. Landscape 3:2.
         note: "Hotel balcony at first light, coffee on the rail, city beyond, landscape 3:2",
-        image: "/img/marketing/float-hotel.webp",
         ratio: "3/2",
         className: "hidden md:block md:right-[4%] md:top-[12%] md:w-[20%]",
         rotate: 6,
@@ -82,7 +79,6 @@ const CARDS = [
         // PLACEHOLDER IMAGE: a fitness class mid-session, one participant
         // filming from the back of the room. Landscape 3:2.
         note: "Fitness class mid-session, one participant filming from the back, landscape 3:2",
-        image: "/img/marketing/float-fitness.webp",
         ratio: "3/2",
         className: "right-[3%] bottom-[8%] w-[28%] md:right-[15%] md:bottom-[10%] md:w-[17%]",
         rotate: -5,
@@ -140,7 +136,6 @@ const PROOF_CARDS = [
         // PLACEHOLDER IMAGE: a creator's contact sheet or camera roll of a
         // finished shoot, spread on a table. Landscape 3:2.
         note: "Contact sheet from a finished shoot spread on a table, landscape 3:2",
-        image: "/img/marketing/float-contact-sheet.webp",
         ratio: "3/2",
         className: "hidden md:block md:-left-[6%] md:top-[-18%] md:w-[16%]",
         rotate: -4,
@@ -151,7 +146,6 @@ const PROOF_CARDS = [
         // PLACEHOLDER IMAGE: a venue's own screen showing a campaign report,
         // somebody pointing at the reach figure. Landscape 3:2.
         note: "Venue screen showing a campaign report, somebody pointing at the reach figure, 3:2",
-        image: "/img/marketing/float-report-screen.webp",
         ratio: "3/2",
         className: "hidden md:block md:-right-[6%] md:bottom-[-18%] md:w-[16%]",
         rotate: 4,
