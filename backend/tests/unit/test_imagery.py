@@ -620,4 +620,30 @@ def test_home_reserves_the_space_its_images_will_fill():
     assert "aspect-[16/9]" in slot
     # The ratio is on the container. An <img> that carried it would collapse
     # the box for as long as the file took to arrive.
-    assert 'className={`relative overflow-hidden ${' in slot
+    #
+    # **This used to assert the container's literal class string, and that
+    # string contained a bug.** The base was `relative overflow-hidden` with
+    # `absolute inset-0` appended under `fill`, so a filled slot emitted two
+    # competing position utilities, `relative` won on stylesheet order, and
+    # the container collapsed to zero height — the hero drew nothing for as
+    # long as it existed. Pinning the line meant the test passed on the defect
+    # and would have failed on the fix, which is the failure mode this suite
+    # documents elsewhere: name the rule, never the sentence.
+    # Comments out first: this file's own header says "Every `<img>` in the
+    # app is inside one", so splitting the raw source on `<img` finds the
+    # prose rather than the element.
+    code = re.sub(r"/\*.*?\*/", "", slot, flags=re.S)
+    code = "\n".join(
+        ln for ln in code.splitlines() if not ln.lstrip().startswith("//")
+    )
+    container = code.split("return (", 1)[1].split("<img", 1)[0]
+    assert "aspect-" in container or "RATIO[" in container, "ratio left the container"
+    img = code.split("<img", 1)[1].split("/>", 1)[0]
+    for banned in ("aspect-", "RATIO["):
+        assert banned not in img, f"the ratio moved onto the <img>: {banned}"
+    # Exactly one positioning utility per branch, which is what the collapse
+    # was. `relative` belongs to the ratio branch, whose children are
+    # absolutely positioned inside it; `absolute inset-0` belongs to `fill`.
+    assert "`relative overflow-hidden" not in code, (
+        "a fill slot would carry both `relative` and `absolute` again"
+    )
