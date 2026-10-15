@@ -67,7 +67,8 @@ def code_of(*parts):
 # they live in `pages/` beside the authenticated ones, so they have to be named.
 MARKETING_PAGES = {
     "Landing.jsx", "ForBrands.jsx", "ForCreators.jsx",
-    "HowItWorks.jsx", "WhyWeAre.jsx", "NotFound.jsx",
+    "HowItWorks.jsx", "WhyWeAre.jsx",
+    "Contact.jsx", "NotFound.jsx",
 }
 
 

@@ -13,6 +13,7 @@
 
 export * from './address';
 export * from './admin';
+export * from './contact';
 export * from './application';
 export * from './auth';
 export * from './brand';

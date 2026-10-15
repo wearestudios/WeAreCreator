@@ -21,7 +21,6 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
 import Reveal from "@/components/marketing/Reveal";
-import { StudioEndorsement } from "@/components/StudioEndorsement";
 import { CORAL, CORAL_DEEP, CORAL_INK } from "@/lib/studioPalette";
 import { MARKETING as IDS } from "@/constants/testIds";
 
@@ -91,13 +90,6 @@ export function HandshakeBand({ title, line, cta, children }) {
                 {children ? <div className="mt-10">{children}</div> : null}
 
                 <Reveal i={3} className="mt-14 border-t pt-6" style={{ borderColor: "rgba(255,255,255,0.25)" }}>
-                    {/* The endorsement, in the one place it is not a footnote.
-                        Inverted for the field rather than restyled — same
-                        component, same words. */}
-                    <StudioEndorsement
-                        testid={IDS.handshakeStudio}
-                        className="!text-navy-700 hover:!text-navy-900"
-                    />
                 </Reveal>
             </div>
         </section>

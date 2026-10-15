@@ -43,6 +43,14 @@ import { CIRCUMVENTION_TERMS } from "@/lib/platformTerms";
  *     naming a person is a record we are obliged to keep or personal data we
  *     are obliged to erase. Where the two duties conflict the code keeps the
  *     line and erases the name; somebody has to say whether that is right.
+ *   - Contact enquiries, which are new and are a third case. A row carries a
+ *     name, a WhatsApp number and free text, and is attached to **no
+ *     account** — so the erasure flow at `/account/deletion-requests` cannot
+ *     reach it, because that flow starts from a signed-in user. Whether an
+ *     erasure request from somebody who never had an account must be honoured
+ *     for these rows, and through what channel, is a real question that is not
+ *     answered in the code. The page tells people to write in and ask, which
+ *     is a process rather than a legal position.
  *   - Erasure, now that it exists. `_erase_personal_data` takes a defensible
  *     position — remove the person, keep the anonymised transaction — but
  *     whether an anonymised collaboration row is still personal data, how long
@@ -425,6 +433,25 @@ export function Privacy() {
                     sent what, so there is nothing there to look up or erase. Those
                     answers are kept for two years, so we can compare one round of the
                     research against the next.
+                </p>
+                <p>
+                    {/* **A contact enquiry is the opposite case to the survey
+                        above it**, which is why it is stated right after: that
+                        one holds nothing about anybody, this one holds a name
+                        and a number somebody will be rung back on. The period
+                        mirrors RETENTION_DAYS, which this prose mirrors
+                        rather than reads — if the two disagree, this page is
+                        the lie. */}
+                    <span className="text-foreground">
+                        If you write to us through the contact form.
+                    </span>{" "}
+                    We keep your name, the WhatsApp number you gave us, your email if
+                    you added one, which of brand or creator you said you were, and
+                    whatever you typed in the message — along with the date. We do not
+                    record your device or where you were. Those enquiries are kept for
+                    two years, so a conversation picked up months later still has the
+                    message that started it. An enquiry is not attached to an account,
+                    so if you want one removed, write to us and say so.
                 </p>
                 <p>
                     {/* Said plainly rather than buried: a page that implies

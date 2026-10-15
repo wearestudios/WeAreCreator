@@ -27,6 +27,7 @@ import AdminBrands from "@/components/admin/AdminBrands";
 import AdminAudit from "@/components/admin/AdminAudit";
 import AdminTeam from "@/components/admin/AdminTeam";
 import AdminDeletions from "@/components/admin/AdminDeletions";
+import AdminEnquiries from "@/components/admin/AdminEnquiries";
 import PlatformSettings from "@/components/admin/PlatformSettings";
 import DisputeQueue from "@/components/admin/DisputeQueue";
 import CircumventionQueue from "@/components/admin/CircumventionQueue";
@@ -120,6 +121,11 @@ export const TeamRoute = () => <AdminTeam />;
 
 /** People asking to be forgotten. Admin-only, and irreversible. */
 export const DeletionsRoute = () => <AdminDeletions />;
+
+export const EnquiriesRoute = () => {
+    const { reloadCounts } = useAdminConsole();
+    return <AdminEnquiries onChanged={reloadCounts} />;
+};
 export const SettingsRoute = () => <PlatformSettings />;
 
 /** Frozen collaborations, worst-waiting first. Scoped like every list. */

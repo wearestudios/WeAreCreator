@@ -66,6 +66,7 @@ def copy_of(*parts):
 
 
 PAGES = {
+    "contact": ("src", "pages", "Contact.jsx"),
     "brands": ("src", "pages", "ForBrands.jsx"),
     "creators": ("src", "pages", "ForCreators.jsx"),
     "how": ("src", "pages", "HowItWorks.jsx"),
@@ -75,6 +76,14 @@ PAGES = {
 
 # The four that argue. Home routes rather than sells, and the 404 is neither.
 ARGUING = ["brands", "creators", "how", "why"]
+
+# Every page here carries image slots except one. **`/contact` has none on
+# purpose**: it is a form, two numbers and an address, and a decorative
+# photograph on it is a photograph between somebody and the thing they came to
+# do. The slot rules below are about briefing the imagery a page *has*, so a
+# page with none is outside them rather than failing them — and the rule that
+# matters stays enforced everywhere it applies.
+PAGES_WITH_IMAGERY = [n for n in PAGES if n != "contact"]
 
 # The audience pages, which are the ones held to the single-ask rule.
 AUDIENCE = ["brands", "creators"]
@@ -538,7 +547,7 @@ def test_no_heading_uses_a_flat_text_size(name):
         assert not flat, f"{name}: {flat} in {classes}"
 
 
-@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
 def test_every_page_carries_the_footer(name):
     parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
     src = read(*parts)
@@ -574,13 +583,13 @@ def _with_marketing_components(name):
     return "\n".join(out)
 
 
-@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
 def test_every_page_has_deliberate_image_slots(name):
     src = _with_marketing_components(name)
     assert "PlaceholderImage" in src or "image={{" in src, name
 
 
-@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
 def test_every_image_slot_says_what_belongs_in_it(name):
     """A slot nobody can brief is a slot that stays empty. Every `note` is a
     sentence somebody could hand to a photographer, and it rides on the
@@ -592,7 +601,7 @@ def test_every_image_slot_says_what_belongs_in_it(name):
         assert len(n) > 25, f"{name}: {n!r} is not a brief"
 
 
-@pytest.mark.parametrize("name", list(PAGES) + ["notfound"])
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
 def test_every_image_slot_is_marked_for_the_photographer(name):
     """The `PLACEHOLDER IMAGE:` comment is what makes these findable — real
     photography is meant to be dropped in one slot at a time."""
@@ -1118,12 +1127,40 @@ def test_the_sitemap_lists_every_marketing_page():
         "/for-creators",
         "/how-it-works",
         "/why-weare",
+        # Six now. `/contact` is a React route like the five above it — it
+        # links sideways rather than being written to be found, which is the
+        # same trade `/for-brands` makes — but it is still a page the sitemap
+        # has to list, which is what this set is for.
+        "/contact",
     }
 
 
-def test_the_copyright_names_the_entity_that_was_already_there():
-    """Who owns the thing is a fact, not a copy decision."""
-    assert "WeAre Monk" in read("src", "components", "Footer.jsx")
+def test_the_copyright_names_the_studio_and_links_to_it():
+    """The copyright names WeAre Studios, linked — **which overrides a note
+    that argued the other way, and the override is the point.**
+
+    This asserted "WeAre Monk", on the reasoning that who owns the thing is a
+    fact rather than a copy decision and so is carried over verbatim. That
+    reasoning was sound and it was not the test's to settle: the entity named
+    in a copyright line belongs to the owner, and the owner asked for WeAre
+    Studios directly. A test cannot out-argue that, so it pins the new string
+    instead.
+
+    The link is pinned with it because the line now absorbs the studio credit
+    `StudioEndorsement` used to carry in six places — the relationship
+    belongs where ownership is already being stated, not as a standalone line
+    repeated down the page. Both footers, because they are variants of one
+    thing and a credit on one is a credit missing from the other.
+    """
+    for name in ("Footer.jsx", "marketing/MarketingFooter.jsx"):
+        src = read("src", "components", *name.split("/"))
+        assert "WeAre Monk" not in src, f"{name} still names the old entity"
+        assert "STUDIO_NAME" in src, f"{name} does not name the studio"
+        # The href specifically, not just the symbol: `STUDIO_URL` also
+        # appears in the guard that renders plain text when it is unset, so
+        # asserting the name alone passes with the link pointing anywhere.
+        assert "href={STUDIO_URL}" in src, f"{name} does not link to it"
+        assert "copyrightYear" in src, f"{name} stopped reading the year"
 
 
 # --- Getting there ------------------------------------------------------------
@@ -1263,7 +1300,18 @@ def test_robots_txt_does_not_claim_the_site_origin_serves_the_sitemap():
 # is still enforcing is unchanged — one idea per screen-height, and a section
 # that wants to say more has to argue with a number. The number is just no
 # longer set below the length of a specific sentence.
-BUDGET = {"home": 260, "brands": 320, "creators": 320, "how": 360, "why": 360}
+BUDGET = {
+    "home": 260,
+    "brands": 320,
+    "creators": 320,
+    "how": 360,
+    "why": 360,
+    # **Tighter than any of them, because it argues for nothing.** The
+    # audience pages have a case to make; this one has a form, two numbers
+    # and an address, and every word past that is a word between somebody and
+    # the thing they came to do.
+    "contact": 200,
+}
 
 # A heading may name a sector and a verb; a line may carry a fact and the
 # qualifier that makes it checkable. Both were 8/20.
@@ -1554,11 +1602,22 @@ def test_the_image_zoom_scales_a_layer_rather_than_the_frame():
 # --- The marketing chrome -----------------------------------------------------
 
 
-def test_the_marketing_navbar_carries_the_four_pages_and_both_actions():
+def test_the_marketing_navbar_carries_the_pages_and_both_actions():
+    """**The studio endorsement is gone from the bar**, which is a reversal.
+
+    This required `StudioEndorsement` here. The credit moved into the
+    copyright line, where ownership is already being stated, rather than
+    being repeated beside the nav logo, in the mobile sheet, in both footers
+    and at the foot of the closing band. One statement of a relationship is a
+    statement; five is furniture.
+
+    What the test is actually for is unchanged and still asserted: one link
+    list feeding both the bar and the sheet.
+    """
     nav = read("src", "components", "marketing", "MarketingNavbar.jsx")
     assert "MARKETING_LINKS" in nav
     assert "Sign in" in nav and "Join" in nav
-    assert "StudioEndorsement" in nav
+    assert "StudioEndorsement" not in nav, "the endorsement is back in the bar"
     # One list feeds the bar and the sheet, because the sheet is the only
     # navigation below md and anything missing there is unreachable on a phone.
     assert nav.count("MARKETING_LINKS.map") == 2
@@ -1889,7 +1948,14 @@ def test_the_handshake_borrows_motion_and_confidence_not_assets():
     would be putting somebody else's page at the bottom of ours. What is
     shared is the endorsement line the site already carries."""
     src = read("src", "components", "marketing", "HandshakeBand.jsx")
-    assert "StudioEndorsement" in src
+    # **The endorsement line went with the component**, which this used to
+    # require. It was the one place the credit was not a footnote, and that
+    # was a fair reading — but the credit is in the copyright now, and a band
+    # that states it again two elements above the footer states it twice. The
+    # two assertions below are the ones this test is named for and they are
+    # untouched: what is borrowed is the palette and the motion, never the
+    # assets.
+    assert "StudioEndorsement" not in src
     assert "img" not in re.sub(r"//.*", "", src)
     assert "logo" not in re.sub(r"//.*", "", src).lower()
 
