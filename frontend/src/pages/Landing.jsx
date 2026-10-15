@@ -20,15 +20,6 @@
 // likely to be opened on mobile data. `FloatingCards` replaced it and said
 // the same thing better — four categories at once instead of one at a time.
 //
-// **Both of those arrangements have since gone, and the hero is two
-// columns.** The slider returned underneath the cards, which left three
-// layers competing for one area: at desktop two cards landed over the
-// headline and one over the subheading, and the type needed a scrim that
-// muted the picture it was laid over. The words have a column now and the
-// picture is a framed panel beside them, so neither is laid over anything —
-// the cards are unmounted, and the scrims went with the overlap that made
-// them necessary.
-//
 // It returns carrying no copy of its own. Each slide used to have a headline
 // ("A full room on opening night"), which is a second idea on a screen that
 // already has one, and four of them made the page look like it was selling
@@ -56,6 +47,7 @@ import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
 import { HERO_EYEBROW } from "@/lib/siteNav";
+import { SectorCycleProvider } from "@/components/marketing/sectorCycle";
 import HeroSlider from "@/components/marketing/HeroSlider";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
@@ -119,49 +111,66 @@ const COPY = {
 };
 
 /**
- * The hero — the kinetic headline in its own column, the slider in a framed
- * panel beside it, two doors.
+ * The hero — a full-bleed photograph, the kinetic headline in a column
+ * nothing else may enter, two doors.
  *
- * **It was three layers competing for one area and this is the fix.** The
- * slider was a full-bleed ground, four tilted cards drifted above it, and the
- * poster type sat on top of both — so at desktop two cards landed directly
- * over the headline and over the subheading, the type needed a scrim heavy
- * enough to stay legible, and that scrim muted the picture it was laid over.
- * Each of the three was arguing for the same pixels.
+ * **Full-bleed stays; what changed is that the type is protected by grid
+ * rather than by hope.** `FloatingCards` used to drift between the picture
+ * and the words, positioned as percentages of the hero box while the type sat
+ * in a centred `max-w-7xl` column — two coordinate systems that were never
+ * going to agree. Measured at 1440, two of the four cards landed over the
+ * headline and the subheading; at 390 the two that survive landed under the
+ * eyebrow and across the CTA row. They are unmounted; see `FloatingCards.jsx`.
  *
- * So the words and the picture each get their own space. **The type has a
- * column**, which is why it no longer needs anything laid over the picture to
- * be readable — see `HeroSlider.jsx`, whose two scrims are gone for exactly
- * that reason. **The picture is a framed panel rather than a ground**, which
- * is what lets it be a picture: bordered, clipped, and the only thing in its
- * half. The cards are unmounted — see `FloatingCards.jsx`.
+ * So there is one layer behind the type instead of two, and the type lives in
+ * `lg:col-span-6`. **Nothing readable may sit past column 7**, which is the
+ * rule the overlap broke and the thing that makes a full-bleed hero safe: the
+ * scrim holds near-solid to 42% of the width and then releases, so the type
+ * always has cover and the picture always has a half that is just a picture.
+ * Every one of the eight hero shots was composed with its left two-fifths
+ * quiet, so this is the composition they already had.
  *
- * What survives from the old arrangement is the thing that was right about
- * it: the slide is in step with the headline morphing through the same
- * sectors, so the picture changes as the word does. Everything in the content
- * column is fixed across slides, which is what keeps this one idea rather
- * than two.
- *
- * **The left column is first in DOM order** so a phone reads the words before
- * it meets the picture, which is also the order they matter in.
+ * **The headline and the picture share one timer.** They used to run on 4000ms
+ * and 7000ms respectively, drifting apart by the second slide — the word
+ * naming one sector over a photograph of another. `SectorCycleProvider` owns
+ * the index and both read it; it is also the element the pause listeners bind
+ * to, so hovering anywhere on the band stops the cycle.
  */
 function Hero() {
     return (
         <section
             data-testid={HERO_IDS.section}
-            className="relative overflow-hidden border-b border-white/10"
+            data-surface="dark"
+            className="relative overflow-hidden border-b border-border bg-background text-foreground"
         >
-            {/* Decorative. It sits behind the panel rather than behind the
-                headline now — a warm bloom under poster type was competing
-                with the type for the same reason everything else here was. */}
-            <div
-                aria-hidden
-                className="pointer-events-none absolute -right-24 top-10 h-[520px] w-[520px] rounded-full bg-primary/10 blur-[130px]"
-            />
+            {/* The provider is the positioning context as well as the clock:
+                the slider's `absolute inset-0` resolves against it, and the
+                pause listeners bind to it, so hovering the picture out at the
+                edge of the band pauses the cycle and not only hovering the
+                words. */}
+            <SectorCycleProvider className="relative">
+                {/* One layer behind the type, carrying its own scrim — on its
+                    own layer, not on the slide, because the slide already
+                    sets `background-image` and one of the two would silently
+                    win. */}
+                <HeroSlider />
 
-            <div className="relative mx-auto max-w-7xl px-6 pb-14 pt-12 md:pb-20 md:pt-16">
-                <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
-                    <div className="lg:col-span-7">
+                {/* Decorative. On the right half, behind the picture's focal
+                    area — it used to sit at `-right-40 -top-32`, which put a
+                    warm bloom directly behind the headline it was competing
+                    with. */}
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute right-[8%] top-1/4 h-[460px] w-[460px] rounded-full bg-primary/10 blur-[130px]"
+                />
+
+                <div className="relative mx-auto max-w-7xl px-6 pb-16 pt-14 md:pb-24 md:pt-20">
+                    <div className="grid grid-cols-1 lg:grid-cols-12">
+                        {/* **Six of twelve, and nothing readable past column
+                            seven.** The scrim is measured against this edge;
+                            widening the column without re-measuring it is how
+                            a headline ends up on the bright half. */}
+                        <div className="lg:col-span-6">
                         <Reveal onView={false}>
                             <p
                                 data-testid={HERO_IDS.eyebrow}
@@ -176,18 +185,34 @@ function Hero() {
                             <KineticHeadline />
                         </Reveal>
 
+                        {/* **The subheading reserves the taller of its two
+                            wraps**, which is the fallback font's. Measured: it
+                            sets four lines in the fallback and three once
+                            Inter Tight lands at 390, and three then two above
+                            it — so on every load the hero lost a line and
+                            everything below it moved up 26-28px.
+
+                            That is pre-existing and it is the largest layout
+                            shift on the page. It became worth fixing here
+                            because the headline coming down to its column
+                            made the hero shorter, which pulls more of the
+                            page into the first viewport — where a shift
+                            actually scores. `min-h` in rem, from the line
+                            count and the leading, so it tracks the type scale
+                            rather than a pixel measured once; the cost is a
+                            little slack under the text after the font lands,
+                            which is the trade `ProofStrip` already makes. */}
                         <Reveal i={2} onView={false}>
                             <p
                                 data-testid={HERO_IDS.subheading}
-                                className="mt-10 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
+                                className="mt-10 min-h-[6.5rem] max-w-xl text-base leading-relaxed text-muted-foreground md:min-h-[5.5rem] md:text-lg"
                             >
                                 {COPY.line}
                             </p>
                         </Reveal>
 
-                        {/* Two paths, not three asks. Home routes; the
-                            audience pages sell — so these go to the pages,
-                            not to signup. */}
+                        {/* Two paths, not three asks. Home routes; the audience pages
+                            sell — so these go to the pages, not to signup. */}
                         <Reveal i={3} onView={false}>
                             <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
                                 <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
@@ -210,22 +235,11 @@ function Hero() {
                                     </Button>
                                 </Link>
                             </div>
-                        </Reveal>
-                    </div>
-
-                    {/* **The ratio is on the panel, never on anything inside
-                        it** — the rule `PlaceholderImage` already holds, and
-                        the reason filling this slot moves nothing. The slider
-                        is `absolute inset-0` within it. */}
-                    <div className="lg:col-span-5">
-                        <Reveal i={2} onView={false}>
-                            <div className="relative aspect-[4/5] overflow-hidden rounded-lg border border-white/10 lg:aspect-[4/5]">
-                                <HeroSlider />
-                            </div>
-                        </Reveal>
+                                </Reveal>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </SectorCycleProvider>
         </section>
     );
 }
@@ -246,7 +260,11 @@ function Hero() {
  */
 function WhatWeRun() {
     return (
-        <section data-testid={PAGE_IDS.problem} className="border-t border-white/10">
+        <section
+            data-testid={PAGE_IDS.problem}
+            data-surface="light"
+            className="border-t border-border bg-background text-foreground"
+        >
             <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
                 <Reveal>
                     <Eyebrow>What we run</Eyebrow>
@@ -325,7 +343,9 @@ export default function Landing() {
 
             {/* Counted, never written down. The hero carried a hardcoded
                 "500+ verified creators" until this replaced it. */}
-            <ProofStrip only={["creators", "campaigns", "cities"]} />
+            <div data-surface="dark" className="bg-background text-foreground">
+                <ProofStrip only={["creators", "campaigns", "cities"]} />
+            </div>
 
             {/* **Directly under the figures and well above the case studies**,
                 which is the order a sceptical brand reads in: the figures say
@@ -346,7 +366,9 @@ export default function Landing() {
             {/* The centrepiece: the product performing itself. Pinned and
                 scroll-driven where that runs well, the identical seven beats
                 as a stepped list everywhere else. */}
-            <CampaignFilm title={COPY.filmTitle} />
+            <div data-surface="dark" className="bg-background text-foreground">
+                <CampaignFilm title={COPY.filmTitle} />
+            </div>
 
             {/* A full-bleed band between the film and the problem — the film
                 ends on a drawn interface and the problem opens on type, and
@@ -354,7 +376,10 @@ export default function Landing() {
                 reading as a diagram followed by an argument. No words: the
                 120-word budget is the constraint, and this is doing the job
                 a sentence would have done badly. */}
-            <div className="mx-auto max-w-7xl px-6">
+            <div
+                data-surface="dark"
+                className="mx-auto max-w-7xl bg-background px-6 text-foreground"
+            >
                 {/* PLACEHOLDER IMAGE: Wide shot of a busy venue mid-campaign,
                     creators and guests mixed, shot from above */}
                 <PlaceholderImage
@@ -374,13 +399,17 @@ export default function Landing() {
                 have. Below the fold and fetched only when it gets close, and
                 absent entirely below three — a shelf of one advertises an
                 operation that has run one campaign. */}
-            <CaseStudyStrip />
+            <div data-surface="light" className="bg-background text-foreground">
+                <CaseStudyStrip />
+            </div>
 
             {/* The creators, with their permission. Below the fold and
                 fetched only when it gets close — a marketing page must not
                 pay for this on the critical path — and absent entirely when
                 too few have opted in to be worth claiming. */}
-            <CreatorLeaderboard />
+            <div data-surface="dark" className="bg-background text-foreground">
+                <CreatorLeaderboard />
+            </div>
 
             {/* The family handshake. Full-bleed studio coral, white poster
                 type, a black block — the one place the studio palette appears

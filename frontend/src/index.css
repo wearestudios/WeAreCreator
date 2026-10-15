@@ -24,6 +24,7 @@
      * first paint should be, and the one page everybody sees before anything
      * has loaded.
      * ----------------------------------------------------------------- */
+    [data-surface="dark"],
     :root {
         /* MARKETING — navy canvas, red is the loud moment. */
         --background: 217.2 61.7% 9.2%; /* #091426 */
@@ -127,7 +128,7 @@
     }
 
     /* -----------------------------------------------------------------
-     * The product surface
+     * The product surface, and any band that asks for it
      *
      * Light canvas, white cards, navy text and navy CTAs. Reached by signing
      * in: `surfaceTheme.js` writes `data-theme="light"` for every
@@ -135,7 +136,16 @@
      * An admin may still put the console back on navy, which is the one
      * per-account exception and the reason the attribute is a value rather
      * than a flag.
+     *
+     * **`[data-surface="light"]` makes the same block apply to a section**,
+     * which is how the marketing site alternates navy and white bands. It is
+     * the same declaration under a second selector, never a second palette:
+     * every ratio in the comments below was measured once, and a copy is a
+     * copy that drifts. The tokens resolve from the nearest ancestor, so a
+     * band declares `data-surface` plus `bg-background text-foreground` and
+     * everything inside it follows.
      * ----------------------------------------------------------------- */
+    [data-surface="light"],
     :root[data-theme="light"] {
         --background: 216 24% 96%; /* #F2F4F7 */
         --foreground: 217.2 61.7% 9.2%; /* #091426 */
@@ -464,6 +474,46 @@
     to   { transform: scale(1.08) translate3d(1.5%, -1.5%, 0); }
 }
 
+/* -----------------------------------------------------------------------
+ * The wipe, in two halves, which is what makes it a wipe rather than a slide.
+ *
+ * The outer element clips and travels in from the right; the inner travels
+ * the same distance the other way, so the two cancel and **the picture holds
+ * still while the window opens over it**. Animate the outer alone and the
+ * photograph slides in, which reads as a carousel; animate neither and it is
+ * a cut.
+ *
+ * `translateX` on both rather than `clip-path`, deliberately: a clip is not
+ * reliably promoted to the compositor, and this is the front door on mobile
+ * data. Two transforms are.
+ * ------------------------------------------------------------------------- */
+@keyframes heroWipeWindow {
+    from { transform: translate3d(100%, 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+@keyframes heroWipeHold {
+    from { transform: translate3d(-100%, 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+
+/* The per-slide progress bar: the visible proof that the picture and the word
+   are on one clock. Keyed on the index at the call site so it restarts each
+   slide, and it inherits the slider's `animationPlayState` when paused. */
+@keyframes heroProgress {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+}
+
+/* The rail sliding left by one thumbnail. **Transform, not layout** — the
+   first version re-keyed three buttons by phrase, so on each advance React
+   moved the DOM nodes and the browser recorded a real layout shift: 0.0007
+   per advance, every six seconds, for as long as the page is open. The track
+   now travels and the slots stay put. */
+@keyframes heroRailSlide {
+    from { transform: translate3d(var(--rail-step), 0, 0); }
+    to   { transform: translate3d(0, 0, 0); }
+}
+
 /* A route arriving. Same shape, its own duration so the two can be tuned
    apart — a whole screen and one row inside it are different distances. */
 .weare-route {
@@ -515,6 +565,16 @@
         transform: none !important;
         will-change: auto !important;
     }
+    /* Same backstop for the wipe and the progress bar. The end state is the
+       first paint — slide one in place, the bar full — rather than a 0.01ms
+       animation of either. */
+    [style*="heroWipe"],
+    [style*="heroProgress"],
+    [style*="heroRailSlide"] {
+        animation: none !important;
+        transform: none !important;
+        will-change: auto !important;
+    }
 }
 
 /* Focus ring override for premium feel */
@@ -559,6 +619,7 @@
         color: #fff;
     }
 
+    [data-surface="light"] .weare-logo,
     :root[data-theme="light"] .weare-logo {
         color: var(--weare-logo-ink);
     }

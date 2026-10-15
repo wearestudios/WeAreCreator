@@ -2,16 +2,20 @@
 //
 // ============================================================================
 // **UNMOUNTED. Nothing renders this.** Kept because `CARD_SHADOW` below is
-// imported by `BrandWall` and `CreatorLeaderboard`, and because several tests
-// pin this file's contents.
+// imported by `CreatorLeaderboard`, and because several tests pin this
+// file's contents. `BrandWall` imported it too until the brand wall became a
+// light band: on a pale ground a soft black shadow reads as dirt rather than
+// as lift, so elevation there is a hairline and `bg-card`.
 //
 // It came off the hero because three layers were competing for one area: the
 // slider was a full-bleed ground, these drifted above it, and the poster type
 // sat on top of both. Measured at 1440, three of the four cards overlapped
 // the `h1` and one overlapped the subheading; at 390 one overlapped the `h1`.
 // The cards are positioned as percentages of the hero box while the type sits
-// in a centred `max-w-7xl` column, so the two were never going to agree — the
-// hero is two columns now and the picture is a framed panel. The proof
+// in a centred `max-w-7xl` column, so the two were never going to agree, and
+// tuning the percentages only moves which width it breaks at. The hero is
+// full-bleed with the type in a protected column now — nothing readable sits
+// past column 7, and the scrim is measured against that edge. The proof
 // cluster came off `/for-brands`, `/for-creators` and `/why-weare` with it.
 //
 // **Before any of it is remounted, every card needs an `image` and every one

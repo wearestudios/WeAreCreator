@@ -35,29 +35,39 @@
 //   - **Every phrase reserves the box, by rendered width.** All eight are
 //     drawn invisibly into one grid cell, so the box is as wide and as tall as
 //     the widest and tallest phrase the browser actually draws. A shorter one
-//     cannot let the second line ride up — a headline that jumps every four
-//     seconds is worse than no animation, and it would be a CLS event on every
-//     cycle.
+//     cannot let the second line ride up — a headline that jumps is worse than
+//     no animation, and it would be a CLS event on every cycle.
 //
 //     **It used to reserve with one copy of the "longest" phrase, chosen by
 //     character count, and a character count is not a width.** "Hospitality"
 //     and "Real Estate" are both eleven characters so the reduce kept the
 //     first, and in Fraunces at poster size "Real Estate" renders wider — the
 //     animated layer is `absolute whitespace-nowrap`, so on that one slide it
-//     overflowed its box to the right and the hero clipped it. Measuring by
-//     rendering is the only thing that cannot be wrong about a font.
+//     overflowed its box to the right and the hero clipped it. Nothing about a
+//     font can be inferred from the characters in a string; the only reliable
+//     reservation is one the browser draws.
 //   - **The letters are capped.** The tails are twelve characters at most; a
 //     phrase long enough to make this expensive is a phrase too long to be a
 //     poster headline anyway.
 //
 // **Under `prefers-reduced-motion` the first phrase renders and stays.** No
 // timer is started, so there is nothing running in the background either.
-import React, { useEffect, useState } from "react";
+//
+// **The cycle itself lives in `sectorCycle.jsx` and not here.** This file
+// owned a 4000ms `setInterval` while `HeroSlider` owned a 7000ms
+// `setTimeout`; they drifted apart by the second slide and never recovered,
+// so the word named one sector while the picture showed another. Matching the
+// two constants would not have fixed it — two independent timers accumulate
+// their own scheduling error — so there is one timer now and both read its
+// index. Mounted with no provider this renders phrase one and starts nothing,
+// which keeps the component usable on its own.
+import React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import { EASE } from "@/components/marketing/motion";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import { MARKETING as IDS } from "@/constants/testIds";
+import { useOptionalSectorCycle } from "@/components/marketing/sectorCycle";
 
 /**
  * The sectors, straight off the live category list.
@@ -75,8 +85,6 @@ import { MARKETING as IDS } from "@/constants/testIds";
  * letter animation is budgeted for, "Food & drink" at exactly twelve.
  */
 export const PHRASES = CATEGORY_OPTIONS.map((c) => c.label);
-
-const HOLD_MS = 4000;
 
 // Per-letter timings. The whole swap is well under a second, so the phrase is
 // legible and still for most of its four seconds — the point is punctuation,
@@ -135,24 +143,31 @@ export function KineticHeadline({
     tail = "We run it end to end.",
     phrases = PHRASES,
 }) {
-    const reduced = useReducedMotion();
-    const [i, setI] = useState(0);
-
-    useEffect(() => {
-        if (reduced) return undefined;
-        const t = setInterval(() => setI((n) => (n + 1) % phrases.length), HOLD_MS);
-        return () => clearInterval(t);
-    }, [reduced, phrases.length]);
+    const ownReduced = useReducedMotion();
+    // **The cycle is not this component's any more.** It owned a 4000ms
+    // `setInterval` while the slider owned a 7000ms `setTimeout`, and the
+    // two drifted apart by the second slide — the word naming one sector
+    // over a picture of another. `sectorCycle` owns the index now and both
+    // read it, so there is nothing left to go out of step.
+    //
+    // Read optionally, because this is exported and mountable on its own: a
+    // headline that throws outside the hero is a component with a hidden
+    // dependency on its parent. With no provider it renders phrase one and
+    // starts nothing, which is also the reduced-motion state.
+    const cycle = useOptionalSectorCycle();
+    const reduced = cycle ? cycle.reduced : ownReduced;
+    const i = cycle ? cycle.index % phrases.length : 0;
+    const still = reduced || !cycle;
 
     // clamp() rather than a Tailwind step: this is still poster scale, well
     // past `fluid-hero`'s 4.25rem top step, and it is the only element on the
     // site at this size. **The ceiling came down from 8.5rem because the
     // headline is sized to a column now rather than to the window** — it sits
-    // in the hero's 7-of-12 column, about 735px at `max-w-7xl`, where 8.5rem
-    // put "Influencer marketing for" on a line of its own and ran the h1 to
-    // three. The vw term is measured rather than guessed; see the PR.
+    // in six of the hero's twelve, where 8.5rem resolved to 136px against a
+    // lead roughly 1700px wide and ran the h1 to four lines, putting the CTAs
+    // under the fold on a laptop. The vw term is measured, not guessed.
     const poster = {
-        fontSize: "clamp(2.25rem, 5vw, 4.75rem)",
+        fontSize: "clamp(2.25rem, 4.6vw, 4.75rem)",
         lineHeight: 1.0,
     };
 
@@ -168,23 +183,24 @@ export function KineticHeadline({
         >
             <span aria-hidden className="block">
                 <span className="text-foreground">{lead} </span>
-                {/* The morphing line. **Every phrase is rendered invisibly in
-                    one grid cell**, so the box is as wide and as tall as the
-                    widest and tallest phrase the browser actually draws, and
-                    the animated copy sits on top of it.
+                {/* The morphing line. **Every phrase is rendered invisibly
+                    into one grid cell**, so the box is as wide and as tall as
+                    the widest and tallest phrase the browser actually draws,
+                    and the animated copy sits on top of it.
 
                     It used to reserve the box with a single invisible copy of
                     the longest phrase, picked by character count — and a
                     character count is not a width. "Hospitality" and "Real
                     Estate" are both eleven characters, the reduce kept the
-                    first, and in Fraunces at this size "Real Estate" renders
-                    wider: the animated layer is `absolute whitespace-nowrap`,
-                    so on that slide it ran past its own box and the hero's
-                    `overflow-hidden` clipped it. Stacking them all means the
-                    box cannot be narrower than the phrase in it whatever the
-                    font does, and it still cannot change height between
-                    phrases — which is the CLS property the old version was
-                    protecting and this one keeps. */}
+                    first on a tie, and in Fraunces at this size "Real Estate"
+                    renders wider: the animated layer is `absolute
+                    whitespace-nowrap`, so on that one slide it ran past its
+                    own box and the hero's `overflow-hidden` clipped it.
+                    Stacking them all means the box cannot be narrower than
+                    the phrase in it whatever the font does, and it still
+                    cannot change height between phrases — which is the CLS
+                    property the old version was protecting and this one
+                    keeps. */}
                 <span className="relative inline-grid align-top">
                     {phrases.map((p) => (
                         <span
@@ -196,7 +212,7 @@ export function KineticHeadline({
                         </span>
                     ))}
                     <span className="absolute inset-0 whitespace-nowrap text-primary">
-                        {reduced ? (
+                        {still ? (
                             phrases[0]
                         ) : (
                             <AnimatePresence mode="wait" initial={false}>
