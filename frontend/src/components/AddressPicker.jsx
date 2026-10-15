@@ -29,9 +29,22 @@ import { ADDRESS } from "@/constants/testIds";
 // delivery address only our team reads; a brand's outlet is on a page anyone
 // can open. Getting that wrong here would be the component telling somebody
 // their shopfront is private.
+// **The purpose, then the promise, in that order.** This is the most invasive
+// question on the form and it was asked with the blandest framing — a home
+// address with a generic privacy note and no stated reason, which reads as
+// data collection for its own sake. Saying what it is for first is what makes
+// the question answerable.
+//
+// **The last clause is true and checkable, which is why it is worth saying.**
+// `full_address`, `location_lat`, `location_lng` and `location_place_id` are
+// all in `BRAND_FORBIDDEN_CREATOR_FIELDS` and off
+// `_BRAND_VISIBLE_CREATOR_FIELDS`, held by a leak test that plants values and
+// searches every brand response shape. It is the strongest privacy promise
+// this product makes and it was invisible until it was written here.
 export const PRIVATE_ADDRESS_NOTE =
-    "We use this for sending physical invites and delivery campaigns — product " +
-    "samples, event passes, gifting. Only the WeAre team sees it.";
+    "We need this to send you hampers, product and invites on delivery " +
+    "campaigns. Only the WeAre team ever sees it — a brand never does, at any " +
+    "stage of a campaign, including after you are booked.";
 
 export default function AddressPicker({
     address,

@@ -778,8 +778,7 @@ class TestItReachesTheScreens:
             scene = await _scene(db, total_budget=50000)
             campaign = await db.campaigns.find_one({"_id": scene["campaign_oid"]})
             row = server._serialize_brand_campaign(
-                campaign, 0, 0, 0, await server._campaign_budget(campaign)
-            )
+                campaign, 0, 0, 0, await server._campaign_budget(campaign), payout_default=server.CREATOR_PAYOUT_DAYS)
             assert row["total_budget"] == 50000
             assert row["budget"]["remaining"] == 50000
 
@@ -792,7 +791,7 @@ class TestItReachesTheScreens:
         async def body(db):
             scene = await _scene(db, total_budget=50000)
             campaign = await db.campaigns.find_one({"_id": scene["campaign_oid"]})
-            assert server._serialize_brand_campaign(campaign, 0)["budget"] is None
+            assert server._serialize_brand_campaign(campaign, 0, payout_default=server.CREATOR_PAYOUT_DAYS)["budget"] is None
 
         run(body)
 

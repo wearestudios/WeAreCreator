@@ -41,7 +41,12 @@ export default function ShareButton({
             if (navigator.share) {
                 try {
                     await navigator.share({
-                        title: title || "A paid brief on WeAre Creators",
+                        // **Not "a paid brief".** This is the fallback for
+                        // every brief including a barter one, and a share
+                        // sheet announcing money on a brief that offers a
+                        // product is the one place the claim is read before
+                        // the page that corrects it.
+                        title: title || "A brief on WeAre Creators",
                         text: summary || undefined,
                         url,
                     });

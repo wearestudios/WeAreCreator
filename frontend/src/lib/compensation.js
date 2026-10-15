@@ -6,11 +6,19 @@
 //   negotiated  the budget is a guide; the number is agreed offline
 //   barter      no money — a meal, a stay, a product
 //
-// Barter is arranged by WeAre and refused on every brand write path
-// (`_refuse_brand_barter` in server.py). This file is the frontend half of that
-// rule: BRAND_COMPENSATION_OPTIONS is what the post-campaign form renders, and
-// it does not contain barter, so there is no option to hide, disable or leak.
-// The admin form uses ALL_COMPENSATION_OPTIONS.
+// **Barter was WeAre-only and is not any more.** It was refused on every brand
+// write path, because it is the arrangement most easily used to get a shoot out
+// of a creator for nothing \u2014 and the creator survey is the strongest evidence
+// for that rule there has ever been. It opened because a brand that cannot post
+// barter posts it as "negotiated" and settles the truth over WhatsApp, which is
+// the same arrangement with none of the record. See `BRAND_COMPENSATION_TYPES`
+// in server.py for the full reasoning and the mitigations that shipped with it.
+//
+// So BRAND_COMPENSATION_OPTIONS now carries all three. The option is genuinely
+// present rather than present and disabled \u2014 a disabled control is a thing
+// somebody re-enables from devtools, and the server is the enforcement either
+// way. What a brand still cannot do is post barter without saying what is on
+// offer, which the form collects and the server refuses without.
 
 /** The full set. Admin-facing only. */
 export const ALL_COMPENSATION_OPTIONS = [
@@ -27,7 +35,7 @@ export const ALL_COMPENSATION_OPTIONS = [
     {
         value: "barter",
         label: "Barter",
-        blurb: "No fee — a meal, a stay or a product. WeAre only.",
+        blurb: "No fee — a meal, a stay or a product. Say what it is below.",
     },
 ];
 
@@ -35,8 +43,11 @@ export const ALL_COMPENSATION_OPTIONS = [
  * What a brand may post. Derived from the full list rather than written out
  * again, so a fourth kind added above cannot silently appear here — it has to
  * be named in BRAND_ALLOWED first, which is a decision about who can post it.
+ *
+ * All three today. Mirrors `BRAND_COMPENSATION_TYPES` in server.py and a unit
+ * test fails if the two drift.
  */
-const BRAND_ALLOWED = ["fixed", "negotiated"];
+const BRAND_ALLOWED = ["fixed", "negotiated", "barter"];
 export const BRAND_COMPENSATION_OPTIONS = ALL_COMPENSATION_OPTIONS.filter((o) =>
     BRAND_ALLOWED.includes(o.value),
 );

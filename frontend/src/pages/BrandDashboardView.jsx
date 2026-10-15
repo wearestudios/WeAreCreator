@@ -612,8 +612,15 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                             No campaigns yet.
                                         </p>
                                         <p className="max-w-md text-sm text-muted-foreground">
-                                            Post your first paid brief and it will start
-                                            reaching verified creators across Bengaluru immediately.
+                                            {/* Not "paid", because barter is
+                                                postable here now; and not a
+                                                city, because signup is open
+                                                and the operation runs across
+                                                India — the same sentence the
+                                                dashboards' "Brand ·
+                                                Bengaluru" line already lost. */}
+                                            Post your first brief and it will start
+                                            reaching verified creators immediately.
                                         </p>
                                         <Link to="/campaigns/new" className="mt-4">
                                             <Button className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">

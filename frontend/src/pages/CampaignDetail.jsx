@@ -31,10 +31,11 @@ import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
 import ShootWindowNote from "@/components/campaign/ShootWindowNote";
+import PayoutNote from "@/components/campaign/PayoutNote";
 import { BriefTerms } from "@/components/campaign/CampaignTerms";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
-import { VISIBILITY } from "@/constants/testIds";
+import { PAYOUT as PAYOUT_IDS, VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
@@ -715,6 +716,40 @@ export default function CampaignDetail() {
                             whose Saturday was the whole reason they applied.
                             Renders nothing when the brief set nothing. */}
                         <ShootWindowNote campaign={campaign} className="mt-12" />
+
+                        {/* When the money arrives, on the brief rather than
+                            discovered afterwards. The survey's clearest
+                            finding: creators paid inside a week still name
+                            late payment, because nothing ever said when
+                            payment was coming. */}
+                        <PayoutNote campaign={campaign} className="mt-4" />
+
+                        {/* And the one thing a delivery brief needs that a
+                            venue brief never does. Absent unless this
+                            campaign ships something to the creator *and*
+                            they have no address saved — a creator who will
+                            never do a delivery campaign is never chased. */}
+                        {campaign.needs_delivery_address && (
+                            <div
+                                data-testid={PAYOUT_IDS.addressPrompt}
+                                className="mt-4 rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm leading-relaxed"
+                            >
+                                <p className="font-medium text-foreground">
+                                    Add a delivery address to be shortlisted
+                                </p>
+                                <p className="mt-1 text-muted-foreground">
+                                    This brief sends you the product, so we need somewhere to
+                                    send it. Only the WeAre team sees it — the brand never
+                                    does, at any stage.{" "}
+                                    <Link
+                                        to="/onboarding/creator"
+                                        className="font-medium text-primary underline-offset-4 hover:underline"
+                                    >
+                                        Add it to your profile
+                                    </Link>
+                                </p>
+                            </div>
+                        )}
 
                         {/* The page decides by audience, like the navbar does:
                             the ask box belongs to the creator reading a brief,

@@ -38,6 +38,7 @@ import DisputePanel from "@/components/DisputePanel";
 import TakedownPanel from "@/components/TakedownPanel";
 import { TermsCard } from "@/components/campaign/CampaignTerms";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
+import { PayoutDue } from "@/components/campaign/PayoutNote";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
@@ -327,6 +328,14 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     details={collab.brief_details}
                     title="What this brief asks for"
                 />
+
+                {/* **The date, once the work has been approved.** The brief
+                    said "within N days" and that was the right shape there;
+                    by the time somebody has delivered, the useful thing is a
+                    day they can hold us to. Absent on every row that has not
+                    reached approval — the server decides, as everywhere on
+                    this card. */}
+                <PayoutDue dueAt={collab.payout_due_at} className="mt-4" />
             </div>
 
             {/* The card's own next-action line stays where the server has

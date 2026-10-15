@@ -14,6 +14,7 @@ import { FileText } from "lucide-react";
 
 import { DeliverableList } from "@/components/Deliverables";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
+import PayoutNote from "@/components/campaign/PayoutNote";
 import { hasBriefDetails } from "@/lib/briefDetails";
 import { formatCompensation } from "@/lib/compensation";
 import BudgetMeter from "@/components/campaign/BudgetMeter";
@@ -68,6 +69,14 @@ export default function BriefPanel({ campaign }) {
                     per creator
                 </p>
             </div>
+
+            {/* What the brief promised about *when* that money lands, and
+                about getting there — because the person in the room is the
+                one a creator asks, and answering "I'll check" to the
+                question the brief already answers is how the promise stops
+                being read as one. One renderer with the brief and the share
+                page, so the three cannot word it differently. */}
+            <PayoutNote campaign={campaign} />
 
             {/* The cap, because on a weare-run brief the manager is the runner
                 and therefore the one agreeing fees against it. Same component

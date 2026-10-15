@@ -555,26 +555,26 @@ class TestCampaignActionFlags:
         return base
 
     def test_a_draft_can_be_published_edited_and_deleted(self):
-        row = server._serialize_brand_campaign(self._campaign("draft"), 0)
+        row = server._serialize_brand_campaign(self._campaign("draft"), 0, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert row["can_publish"] and row["can_edit"] and row["can_delete"]
 
     def test_a_draft_with_applicants_is_not_deletable(self):
-        row = server._serialize_brand_campaign(self._campaign("draft"), 2)
+        row = server._serialize_brand_campaign(self._campaign("draft"), 2, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert not row["can_delete"]
 
     def test_a_live_campaign_can_be_edited_and_closed_but_not_republished(self):
-        row = server._serialize_brand_campaign(self._campaign("open"), 4)
+        row = server._serialize_brand_campaign(self._campaign("open"), 4, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert row["can_edit"] and row["can_close"]
         assert not row["can_publish"]
 
     def test_a_closed_campaign_is_finished(self):
-        row = server._serialize_brand_campaign(self._campaign("closed"), 4)
+        row = server._serialize_brand_campaign(self._campaign("closed"), 4, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert not row["can_edit"]
         assert not row["can_close"]
         assert not row["can_delete"]
 
     def test_spots_left_never_goes_negative(self):
-        row = server._serialize_brand_campaign(self._campaign("open"), 9, filled=5)
+        row = server._serialize_brand_campaign(self._campaign("open"), 9, filled=5, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert row["spots_left"] == 0
         assert row["filled_slots"] == 5
 
@@ -1771,13 +1771,21 @@ class TestCampaignTypes:
         assert "event_date" in src and "end_date" in src
 
 
-class TestBarterIsAdminOnly:
-    """Barter is an arrangement WeAre makes, never one a brand posts.
+class TestBarterIsPostableAndHasToSayWhatItIs:
+    """**This class was `TestBarterIsAdminOnly` and the rule it held is
+    reversed.** It said a brand brief is paid work and barter is an
+    arrangement WeAre makes, refused on every brand write path.
 
-    A brand brief is paid work — a fixed fee or a negotiated one. Barter is the
-    arrangement most easily used to get a shoot out of a creator for nothing, so
-    it is set by somebody here who has read the brief, and refused on every path
-    a brand can write to.
+    The reasoning was not wrong — the creator survey is the strongest evidence
+    for it that exists, with barter the single most-cited reason creators walk
+    away from a collaboration. What changed is the judgement that a brand
+    which cannot post barter posts it as "negotiated" and settles the truth
+    over WhatsApp, which is the same arrangement with none of the record.
+
+    So the gate moved rather than went: a brand may post barter, and **a
+    barter brief has to say what is actually on offer** on every write path.
+    What survives untouched is the half that was never about self-serve — a
+    brand still cannot undo a barter arrangement WeAre made.
     """
 
     def test_the_three_kinds_are_the_declared_ones(self):
@@ -1787,11 +1795,9 @@ class TestBarterIsAdminOnly:
             "barter",
         }
 
-    def test_a_brand_may_post_two_of_them_and_barter_is_not_one(self):
-        assert server.BRAND_COMPENSATION_TYPES == ("fixed", "negotiated")
-        assert "barter" not in server.BRAND_COMPENSATION_TYPES
-        # The brand set has to be a real subset, or the allow-list is a fiction.
-        assert set(server.BRAND_COMPENSATION_TYPES) < set(
+    def test_a_brand_may_now_post_all_three(self):
+        assert server.BRAND_COMPENSATION_TYPES == ("fixed", "negotiated", "barter")
+        assert set(server.BRAND_COMPENSATION_TYPES) == set(
             server.CompensationType.__args__
         )
 
@@ -1808,15 +1814,51 @@ class TestBarterIsAdminOnly:
 
     # -- the guard itself ---------------------------------------------------
 
-    def test_a_brand_cannot_post_a_barter_brief(self):
-        with pytest.raises(HTTPException) as exc:
-            server._refuse_brand_barter(None, {"compensation_type": "barter"})
-        assert exc.value.status_code == 422
-        assert "barter" in exc.value.detail.lower()
+    def test_a_brand_posting_barter_is_no_longer_refused(self):
+        """The refusal that went. Asserted as a non-raise rather than
+        deleted, because "this used to be refused and is not" is the fact
+        somebody reinstating the rule needs to meet."""
+        server._refuse_brand_barter(None, {"compensation_type": "barter"})
 
-    @pytest.mark.parametrize("kind", ["fixed", "negotiated"])
-    def test_a_brand_may_post_either_paid_kind(self, kind):
+    @pytest.mark.parametrize("kind", ["fixed", "negotiated", "barter"])
+    def test_a_brand_may_post_any_of_the_three(self, kind):
         server._refuse_brand_barter(None, {"compensation_type": kind})
+
+    # -- the mitigation that shipped with the reversal ----------------------
+
+    def test_a_barter_brief_must_say_what_is_on_offer(self):
+        with pytest.raises(HTTPException) as exc:
+            server._refuse_unstated_barter(
+                None, {"compensation_type": "barter", "barter_description": ""}
+            )
+        assert exc.value.status_code == 422
+        assert "what the creator actually gets" in exc.value.detail.lower()
+
+    def test_switching_an_existing_brief_to_barter_is_checked_too(self):
+        """**The campaign under the update, not the update alone.** An edit
+        that changes only `compensation_type` carries no description, so a
+        guard reading the payload by itself would wave it through."""
+        with pytest.raises(HTTPException):
+            server._refuse_unstated_barter(
+                {"compensation_type": "fixed", "title": "Tasting"},
+                {"compensation_type": "barter"},
+            )
+        # And the same edit on a brief that already has one is fine.
+        server._refuse_unstated_barter(
+            {"compensation_type": "fixed", "barter_description": "Dinner for two"},
+            {"compensation_type": "barter"},
+        )
+
+    def test_clearing_the_description_on_a_barter_brief_is_refused(self):
+        with pytest.raises(HTTPException):
+            server._refuse_unstated_barter(
+                {"compensation_type": "barter", "barter_description": "Dinner"},
+                {"barter_description": None},
+            )
+
+    def test_a_paid_brief_needs_no_description(self):
+        server._refuse_unstated_barter(None, {"compensation_type": "fixed"})
+        server._refuse_unstated_barter({"compensation_type": "negotiated"}, {})
 
     def test_a_brand_cannot_edit_a_brief_we_made_barter_back_to_cash(self):
         # The other half of the rule. Refusing only the write *to* barter would
@@ -2783,7 +2825,25 @@ class TestProfileCompleteness:
 
     def test_the_new_profile_fields_are_counted(self):
         fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
-        assert {"genres", "platforms", "full_address"} <= fields
+        assert {"genres", "platforms"} <= fields
+
+    def test_the_address_is_not_counted(self):
+        """**This inverts what the line above used to assert**, and the
+        survey is why it was looked at. `full_address` is the most invasive
+        question on the form and it was being asked with no stated purpose —
+        while holding a creator who shoots nothing but venue work below 100%,
+        so they could not submit for review at all over a field their work
+        will never need.
+
+        It is asked where it is needed instead: a delivery brief says a
+        creator cannot be shortlisted without one. The same reasoning that
+        keeps PAN out of this tuple, applied to a field that was already in
+        it. Removing one is the safe direction — it can only raise somebody's
+        percentage, never drop them below 100% and silently un-submit them.
+        """
+        fields = {field for field, _ in server._PROFILE_COMPLETENESS_FIELDS}
+        assert "full_address" not in fields
+        assert not ({"location_lat", "location_lng"} & fields)
 
 
 class TestCreatorNextAction:

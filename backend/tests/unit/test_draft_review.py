@@ -522,7 +522,12 @@ def test_the_submit_button_agrees_with_what_the_api_will_accept():
     `submit_collab_content` are two statements of one rule; a disagreement is
     a button that produces a 400."""
     reviewed = {"requires_draft_approval": True}
-    row = server._serialize_collab_row
+    # Bound with the platform default: this test is about the submit gate,
+    # not about the payout window, and the keyword is required so a caller
+    # cannot publish a stale promise.
+    def row(*a, **kw):
+        kw.setdefault("payout_default", server.CREATOR_PAYOUT_DAYS)
+        return server._serialize_collab_row(*a, **kw)
     base = {"_id": ObjectId(), "campaign_id": ObjectId()}
 
     assert row({**base, "state": "attended"}, {}, None)["can_submit_content"] is True

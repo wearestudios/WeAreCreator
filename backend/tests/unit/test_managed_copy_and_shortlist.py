@@ -489,7 +489,7 @@ class TestTheCommercialTermsAreStated:
         """Frozen, not fetched. A later rewording must not be applied
         backwards to somebody who agreed to different words — the rule
         `CANCELLATION_TERMS` and `CIRCUMVENTION_TERMS` already hold."""
-        terms = server._build_terms({"title": "Tasting"}, {})
+        terms = server._build_terms({"title": "Tasting"}, {}, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert terms["commission_terms"] == server.COMMISSION_TERMS
         assert terms["refund_terms"] == server.REFUND_POLICY_TERMS
 
@@ -502,7 +502,7 @@ class TestTheCommercialTermsAreStated:
         first time a brand's rate was renegotiated between acceptance and
         payment.
         """
-        terms = server._build_terms({"title": "Tasting"}, {})
+        terms = server._build_terms({"title": "Tasting"}, {}, payout_default=server.CREATOR_PAYOUT_DAYS)
         assert "commission_percent" not in terms
         assert "fee_percent" not in terms
         assert "%" not in terms["commission_terms"]

@@ -31,6 +31,7 @@ export * from './imagery';
 export * from './landing';
 export * from './manager';
 export * from './marketing';
+export * from './payout';
 export * from './profile';
 export * from './questions';
 export * from './scheduling';
