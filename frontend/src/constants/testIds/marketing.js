@@ -96,4 +96,15 @@ export const MARKETING = {
 	trust: 'how-it-works-trust',
 	pedigree: 'why-weare-pedigree',
 	choice: 'why-weare-choice',
+
+	// The two data graphics. Each makes a claim the prose only asserted, which
+	// is the whole reason they are the only animated things on the site.
+	feeFlow: 'marketing-fee-flow',
+	feeFlowTheirs: 'marketing-fee-flow-theirs',
+	feeFlowOurs: 'marketing-fee-flow-ours',
+	feeFlowShare: (side) => `marketing-fee-flow-share-${side}`,
+	payoutClock: 'marketing-payout-clock',
+	payoutClockOurs: 'marketing-payout-clock-ours',
+	payoutClockTheirs: 'marketing-payout-clock-theirs',
+	payoutClockGap: 'marketing-payout-clock-gap',
 };

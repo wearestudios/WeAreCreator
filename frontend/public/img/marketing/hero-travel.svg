@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="The inside of a train at dawn, drawn flat: a hand holds a phone up to a cool blue window on the right, a red holdall sits on the seat opposite, and the carriage itself is lit warm.">
+  <defs>
+    <linearGradient id="h6sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <radialGradient id="h6glow" cx="0.44" cy="0.26" r="0.46">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.28"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="h6dawn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5E7FA8"/><stop offset="0.72" stop-color="#2A4873"/><stop offset="1" stop-color="#1A3053"/>
+    </linearGradient>
+    <radialGradient id="h6lamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.42"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="h6grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#h6sky)"/>
+  <rect width="1600" height="900" fill="url(#h6glow)"/>
+  <rect y="716" width="1600" height="184" fill="#0B1A30"/>
+  <rect x="0" y="0" width="286" height="900" fill="#081222"/>
+  <rect x="280" y="0" width="8" height="900" fill="#132744"/>
+  <rect x="56" y="286" width="178" height="26" fill="#0C1A2F"/>
+  <rect x="56" y="312" width="178" height="300" fill="#0C1A2F"/>
+  <rect x="330" y="128" width="470" height="24" fill="#13253F"/>
+  <rect x="348" y="152" width="434" height="68" fill="#0D1B32"/>
+  <circle cx="500" cy="286" r="128" fill="url(#h6lamp)"/>
+  <rect x="462" y="248" width="78" height="12" rx="5" fill="#F2BE7A"/>
+  <rect x="1046" y="214" width="470" height="330" rx="34" fill="url(#h6dawn)"/>
+  <rect x="1046" y="422" width="470" height="4" fill="#C9D2DF"/>
+  <path d="M1046 426 h108 l74 -58 l86 58 h202 v118 h-470 z" fill="#1A3053"/>
+  <path d="M1270 426 h64 l56 -40 l62 40 h64 v118 h-246 z" fill="#16294A"/>
+  <rect x="1026" y="196" width="510" height="22" rx="11" fill="#1D3458"/>
+  <rect x="1026" y="540" width="510" height="22" rx="11" fill="#1D3458"/>
+  <rect x="340" y="604" width="672" height="30" fill="#15273F"/>
+  <rect x="340" y="634" width="672" height="112" fill="#13253F"/>
+  <rect x="372" y="746" width="24" height="62" fill="#0C1A2F"/>
+  <rect x="956" y="746" width="24" height="62" fill="#0C1A2F"/>
+  <rect x="566" y="470" width="226" height="134" rx="14" fill="#FF2731"/>
+  <rect x="566" y="516" width="226" height="16" fill="#E9B778"/>
+  <path d="M636 470 q44 -58 86 0" fill="none" stroke="#15273F" stroke-width="14"/>
+  <rect x="824" y="518" width="140" height="86" rx="12" fill="#1E3557"/>
+  <rect x="824" y="550" width="140" height="10" fill="#15273F"/>
+  <g>
+    <path d="M1206 900 v-184 q54 -92 108 -24 l-44 56 v152 z" fill="#20395C"/>
+    <path d="M1270 712 q58 -56 102 -8 q-34 50 -84 44 z" fill="#20395C"/>
+    <rect x="1312" y="590" width="74" height="132" rx="11" fill="#0A1526"/>
+    <rect x="1322" y="602" width="54" height="108" rx="5" fill="#5E7FA8"/>
+  </g>
+  <rect width="1600" height="900" filter="url(#h6grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>
