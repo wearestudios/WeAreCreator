@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="A laptop showing a campaign report, drawn flat: a bar chart with one bar in red, and a hand reaching in from the right to point at it.">
+  <defs>
+    <linearGradient id="f6sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <radialGradient id="f6glow" cx="0.44" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.32"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="f6grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#f6sky)"/>
+  <rect width="1200" height="800" fill="url(#f6glow)"/>
+  <rect x="150" y="90" width="780" height="510" rx="16" fill="#15273F"/>
+  <rect x="180" y="124" width="720" height="442" fill="#F4EFE7"/>
+  <rect x="96" y="600" width="888" height="36" rx="14" fill="#1D3458"/>
+  <rect x="470" y="608" width="140" height="12" rx="6" fill="#2A4873"/>
+  <rect x="222" y="168" width="250" height="18" rx="9" fill="#B6AEA2"/>
+  <rect x="222" y="206" width="150" height="14" rx="7" fill="#C9D2DF"/>
+  <rect x="222" y="492" width="636" height="8" fill="#B6AEA2"/>
+  <rect x="246" y="372" width="86" height="120" fill="#2A4873"/>
+  <rect x="368" y="320" width="86" height="172" fill="#20395C"/>
+  <rect x="490" y="256" width="86" height="236" fill="#FF2731"/>
+  <rect x="612" y="344" width="86" height="148" fill="#20395C"/>
+  <rect x="734" y="398" width="86" height="94" fill="#2A4873"/>
+  <path d="M1200 352 q-130 10 -214 64 q-62 40 -16 74 q46 34 104 -8 q52 -38 126 -44 z" fill="#20395C"/>
+  <path d="M1200 440 q-96 6 -150 40 q-40 26 -8 48 q34 22 74 -6 q38 -26 84 -30 z" fill="#1B3153"/>
+  <rect width="1200" height="800" filter="url(#f6grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

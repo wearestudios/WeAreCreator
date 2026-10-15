@@ -1,46 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A studio class seen from the back of the room, drawn flat: three figures sit upright on their mats facing warm windows on the right, while a figure in red stands near the camera filming them.">
   <defs>
     <linearGradient id="h7sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h7glow" cx="0.84" cy="0.34" r="0.52">
-      <stop offset="0" stop-color="#F0B268" stop-opacity="0.30"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="h7day" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F7D3A2"/><stop offset="1" stop-color="#E8B06B"/>
+      <stop offset="0" stop-color="#FFD9A0"/><stop offset="1" stop-color="#E9B778"/>
     </linearGradient>
     <filter id="h7grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
   </defs>
   <rect width="1600" height="900" fill="url(#h7sky)"/>
   <rect width="1600" height="900" fill="url(#h7glow)"/>
   <rect y="560" width="1600" height="340" fill="#0B1A30"/>
-  <rect y="556" width="1600" height="4" fill="#16294A"/>
-  <rect x="0" y="0" width="252" height="556" fill="#081222"/>
-  <rect x="246" y="0" width="6" height="556" fill="#132744"/>
-  <rect x="1180" y="118" width="150" height="438" fill="url(#h7day)"/>
-  <rect x="1162" y="106" width="20" height="450" fill="#1D3458"/>
-  <rect x="1162" y="106" width="168" height="14" fill="#1D3458"/>
-  <rect x="1392" y="118" width="150" height="438" fill="url(#h7day)"/>
-  <rect x="1374" y="106" width="20" height="450" fill="#1D3458"/>
-  <rect x="1374" y="106" width="168" height="14" fill="#1D3458"/>
+  <rect y="556" width="1600" height="4" fill="#1A3053"/>
+  <rect x="0" y="0" width="252" height="556" fill="#0B1A30"/>
+  <rect x="246" y="0" width="6" height="556" fill="#13253F"/>
+  <rect x="1150" y="118" width="200" height="438" fill="url(#h7day)"/>
+  <rect x="1132" y="106" width="20" height="450" fill="#20395C"/>
+  <rect x="1132" y="106" width="238" height="14" fill="#20395C"/>
+  <rect x="1380" y="118" width="200" height="438" fill="url(#h7day)"/>
+  <rect x="1362" y="106" width="20" height="450" fill="#20395C"/>
+  <rect x="1362" y="106" width="238" height="14" fill="#20395C"/>
+  <path d="M1132 556 h468 v180 h-648 z" fill="#E9B778" opacity="0.72"/>
   <g>
-    <rect x="648" y="588" width="300" height="20" rx="10" fill="#1A3053"/>
-    <circle cx="774" cy="470" r="38" fill="#20395C"/>
-    <path d="M716 588 q58 -96 116 0 z" fill="#20395C"/>
+    <rect x="648" y="588" width="300" height="20" rx="10" fill="#1C3354"/>
+    <circle cx="774" cy="605" r="38" fill="#223D63"/>
+    <path d="M716 588 q58 -96 116 0 z" fill="#223D63"/>
   </g>
   <g>
-    <rect x="612" y="686" width="340" height="24" rx="12" fill="#16294A"/>
-    <circle cx="752" cy="552" r="44" fill="#1B3153"/>
-    <path d="M686 686 q66 -110 132 0 z" fill="#1B3153"/>
+    <rect x="612" y="686" width="340" height="24" rx="12" fill="#1A3053"/>
+    <circle cx="752" cy="552" r="44" fill="#1D3458"/>
+    <path d="M686 686 q66 -110 132 0 z" fill="#1D3458"/>
   </g>
   <g>
-    <rect x="566" y="808" width="392" height="28" rx="14" fill="#13253F"/>
-    <circle cx="726" cy="652" r="50" fill="#223D63"/>
-    <path d="M652 808 q74 -126 148 0 z" fill="#223D63"/>
+    <rect x="566" y="808" width="392" height="28" rx="14" fill="#16294A"/>
+    <circle cx="726" cy="707" r="50" fill="#2A4873"/>
+    <path d="M652 808 q74 -126 148 0 z" fill="#2A4873"/>
   </g>
   <g>
     <path d="M1172 900 v-212 q92 -152 184 0 v212 z" fill="#FF2731"/>
-    <circle cx="1264" cy="616" r="58" fill="#20395C"/>
+    <circle cx="1264" cy="616" r="58" fill="#223D63"/>
     <rect x="1382" y="548" width="50" height="82" rx="9" fill="#0A1526"/>
     <rect x="1391" y="559" width="32" height="60" rx="4" fill="#5E7FA8"/>
     <rect x="1348" y="630" width="28" height="112" rx="13" fill="#E4E8EF" transform="rotate(-32 1348 630)"/>

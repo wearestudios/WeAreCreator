@@ -2,31 +2,31 @@
 //
 // ============================================================================
 // **UNMOUNTED. Nothing renders this.** Kept because `CARD_SHADOW` below is
-// imported by `BrandWall` and `CreatorLeaderboard`, and because several tests
-// pin this file's contents — the four keys, the `useTransform` drift, the
-// `hidden md:block` pair and the reduced-motion freeze.
+// imported by `CreatorLeaderboard`, and because several tests pin this
+// file's contents. `BrandWall` imported it too until the brand wall became a
+// light band: on a pale ground a soft black shadow reads as dirt rather than
+// as lift, so elevation there is a hairline and `bg-card`.
 //
-// Two reasons, and the second is the one to read before remounting it.
+// It came off the hero because three layers were competing for one area: the
+// slider was a full-bleed ground, these drifted above it, and the poster type
+// sat on top of both. Measured at 1440, three of the four cards overlapped
+// the `h1` and one overlapped the subheading; at 390 one overlapped the `h1`.
+// The cards are positioned as percentages of the hero box while the type sits
+// in a centred `max-w-7xl` column, so the two were never going to agree, and
+// tuning the percentages only moves which width it breaks at. The hero is
+// full-bleed with the type in a protected column now — nothing readable sits
+// past column 7, and the scrim is measured against that edge. The proof
+// cluster came off `/for-brands`, `/for-creators` and `/why-weare` with it.
 //
-// **Every slot is empty.** `Card` passes `src={card.image}` and no object in
-// `CARDS` or `PROOF_CARDS` carries an `image` key at all, so all six render
-// as bare tint — the blue boxes on the live site. The hero's four sat above
-// the slider's scrim as well, because `Hero()` mounted the slider first and
-// the scrim lives inside it, so they were undimmed tint over a photograph.
-//
-// **And the geometry could not be made to agree.** The cards are positioned
-// as percentages of the hero box (`md:left-[3%]`, `md:left-[19%] md:top-
-// [58%]`) while the type sits in a centred `max-w-7xl` column — two
-// coordinate systems. Measured at 1440, two of the four landed over the
-// headline and over the subheading/CTA block; at 390 the two that survive
-// landed under the eyebrow and across the CTA row. Tuning the percentages
-// only moves which width it breaks at.
-//
-// **Anything remounting this must add an `image` path per card AND those
-// files must exist first.** A missing file is worse than a missing key: a
-// 404'd `<img>` draws the browser's broken-image glyph over the tint that
-// was designed to be the absent state. The rule, plainly: **never wire a
-// slot to a file that does not exist.** Draw the file, then point at it.
+// **Before any of it is remounted, every card needs an `image` and every one
+// of those files has to exist.** For a while `Card` passed `src={card.image}`
+// while no card object carried an `image` at all, so six slots rendered as
+// bare tint — and a slot pointed at a file that is not there is worse again,
+// because a 404'd `<img>` draws the browser's broken-image glyph over the
+// tint the absent state was designed to be. The six paths below were added
+// and the six files drawn, so that half is done. The rule it cost is worth
+// keeping: **never wire a slot to a file that does not exist.** Draw the
+// file, then point at it, in that order.
 // ============================================================================
 //
 // The hero's argument is range — launch night, fashion, travel, fitness — and
@@ -74,9 +74,10 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const CARDS = [
     {
         key: "launch",
+        image: "/img/marketing/float-fnb.svg",
         // PLACEHOLDER IMAGE: a restaurant on opening night, tables full, warm
         // service light, shot from the pass. Portrait 4:5.
-        note: "Restaurant on opening night, tables full, warm service light, portrait 4:5",
+        note: "Restaurant on opening night, tables full, warm service light, landscape 4:3",
         ratio: "4/3",
         className: "left-[2%] top-[14%] w-[26%] md:left-[3%] md:top-[16%] md:w-[19%]",
         rotate: -7,
@@ -85,9 +86,10 @@ const CARDS = [
     },
     {
         key: "fashion",
+        image: "/img/marketing/float-fashion.svg",
         // PLACEHOLDER IMAGE: a fashion creator mid-shoot against a plain wall,
         // outfit in motion. Portrait 4:5.
-        note: "Fashion creator mid-shoot against a plain wall, outfit in motion, portrait 4:5",
+        note: "Fashion creator mid-shoot against a plain wall, outfit in motion, landscape 4:3",
         ratio: "4/3",
         className: "hidden md:block md:left-[19%] md:top-[58%] md:w-[15%]",
         rotate: 5,
@@ -95,6 +97,7 @@ const CARDS = [
     },
     {
         key: "travel",
+        image: "/img/marketing/float-hotel.svg",
         // PLACEHOLDER IMAGE: a hotel balcony at first light, coffee on the
         // rail, city beyond. Landscape 3:2.
         note: "Hotel balcony at first light, coffee on the rail, city beyond, landscape 3:2",
@@ -105,6 +108,7 @@ const CARDS = [
     },
     {
         key: "fitness",
+        image: "/img/marketing/float-fitness.svg",
         // PLACEHOLDER IMAGE: a fitness class mid-session, one participant
         // filming from the back of the room. Landscape 3:2.
         note: "Fitness class mid-session, one participant filming from the back, landscape 3:2",
@@ -162,6 +166,7 @@ function Card({ card, progress, reduced }) {
 const PROOF_CARDS = [
     {
         key: "proof-left",
+        image: "/img/marketing/float-contact-sheet.svg",
         // PLACEHOLDER IMAGE: a creator's contact sheet or camera roll of a
         // finished shoot, spread on a table. Landscape 3:2.
         note: "Contact sheet from a finished shoot spread on a table, landscape 3:2",
@@ -172,6 +177,7 @@ const PROOF_CARDS = [
     },
     {
         key: "proof-right",
+        image: "/img/marketing/float-report-screen.svg",
         // PLACEHOLDER IMAGE: a venue's own screen showing a campaign report,
         // somebody pointing at the reach figure. Landscape 3:2.
         note: "Venue screen showing a campaign report, somebody pointing at the reach figure, 3:2",

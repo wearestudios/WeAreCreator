@@ -1508,13 +1508,23 @@ reversal of the arrangement the rest of this section was written for. It was
 a slider as the ground, four tilted cards drifting above it and the poster
 type on top of both — three layers over one area. The cards are positioned as
 percentages of the hero box while the type sits in a centred `max-w-7xl`
-column, so the two coordinate systems were never going to agree: measured at
-1440, two of four landed over the headline and the subheading; at 390 the two
-that survive landed under the eyebrow and across the CTA row. The cards are
-unmounted, the type lives in `lg:col-span-6`, and **nothing readable may sit
-past column 7** — which is the rule the overlap broke and what makes a
-full-bleed hero safe at all. Every one of the eight hero shots was composed
-with its left two-fifths quiet, so this is the composition they already had.
+column, so the two coordinate systems were never going to agree and tuning
+the percentages only moves which width it breaks at: measured at 1440, three
+of the four cards overlapped the `h1` and one overlapped the subheading; at
+390 one overlapped the `h1`. The cards are unmounted, the type lives in
+`lg:col-span-6`, and **nothing readable may sit past column 7** — which is
+the rule the overlap broke and what makes a full-bleed hero safe at all.
+Every one of the eight hero shots was composed with its left two-fifths
+quiet, so this is the composition they already had.
+
+**A two-column hero shipped in between and this replaces it.** That one gave
+the picture a framed `aspect-[4/5]` panel in `lg:col-span-5` and dropped the
+scrims, on the reasoning that nothing readable sat over the picture any more.
+It worked, and it cost the thing the pictures were drawn for: the panel is
+portrait and the eight hero drawings are 16:9, so `object-cover` showed the
+middle 45% of each one — a quiet left two-fifths and a subject on the right,
+cropped through both. Full-bleed with a measured scrim keeps the composition
+and buys the legibility back.
 
 - **It was a possessive on a campaign noun and all three defects are the
   reason it changed.** "Your launch night" → "Your menu tasting" against the
@@ -1546,7 +1556,7 @@ with its left two-fifths quiet, so this is the composition they already had.
   136px against a lead roughly 1700px wide, which ran the `h1` to four lines
   and put the CTAs under the fold on a laptop. It is still well past
   `fluid-hero`'s 4.25rem top step, which is what the poster-scale rule was
-  ever about.
+  ever about, and the vw term was settled by measurement rather than guessed.
 - **Per letter, on a stagger, moving as well as fading.** A single opacity
   tween on the phrase is the thing this is specified not to be. ~4s a phrase;
   the swap itself is under a second, so the phrase is still for most of its
@@ -1562,12 +1572,13 @@ with its left two-fifths quiet, so this is the composition they already had.
   reduce keeps the first on a tie, and in Fraunces at poster size "Real
   Estate" renders wider — the animated layer is `absolute whitespace-nowrap`,
   so on that one slide it ran past its own box and the hero's
-  `overflow-hidden` clipped it. Measured on the old build it also changed the
-  box's *height* by 6px mid-cycle, which was a layout shift every lap. A line
-  that changes height moves the page — that property is unchanged and one
-  grid cell cannot break it either. Nothing about a font can be inferred from
-  the characters in a string; the only reliable reservation is one the
-  browser draws.
+  `overflow-hidden` clipped it. Measured before the fix: the phrase escaped
+  its box by 2px at 390, 3px at 768 and 5px at 1440 on every cycle, and the
+  box also changed *height* by 6px mid-cycle, which was a layout shift every
+  lap. A line that changes height moves the page — that property is unchanged
+  and one grid cell cannot break it either. Nothing about a font can be
+  inferred from the characters in a string; the only reliable reservation is
+  one the browser draws.
 - One `aria-label` on the `h1`, with the animated spans hidden. A screen
   reader reading four letters at a time as they arrive is gibberish.
 - Under `prefers-reduced-motion` the first phrase renders and no timer starts.
@@ -1579,17 +1590,20 @@ off `/for-brands`, `/for-creators` and `/why-weare` with the hero's four;
 `ProofStrip` has nothing absolutely positioned, so each page's `relative`
 wrapper went too, having existed only to anchor the cards.
 
-Two reasons, and the second is the one to read before remounting it.
+Two faults, and only one of them has since been fixed.
 
-**Every slot was empty.** `Card` passes `src={card.image}` and no object in
-`CARDS` or `PROOF_CARDS` carries an `image` key at all, so all six rendered
-as bare tint — the blue boxes on the live site. The hero's four sat *above*
-the slider's scrim as well, because `Hero()` mounted the slider first and the
-scrim lives inside it, so they were undimmed tint over a photograph.
+**Every slot was empty.** `Card` passes `src={card.image}` and for a long
+time no object in `CARDS` or `PROOF_CARDS` carried an `image` key at all, so
+all six rendered as bare tint — the blue boxes on the live site. The hero's
+four sat *above* the slider's scrim as well, because `Hero()` mounted the
+slider first and the scrim lives inside it, so they were undimmed tint over a
+photograph. **The six paths are wired and the six files drawn now**, so that
+half is done.
 
-**And the geometry could not be made to agree**, which is the part tuning
-would not have fixed: the cards are positioned as percentages of the hero box
-while the type sits in a centred `max-w-7xl` column.
+**The geometry is the half that is not**, and it is the part tuning would
+never have fixed: the cards are positioned as percentages of the hero box
+while the type sits in a centred `max-w-7xl` column. That is why remounting
+them is not simply a matter of the pictures now existing.
 
 The file stays because `CARD_SHADOW` is imported by `CreatorLeaderboard`, and
 because several tests pin its contents. **Before any of it is remounted,
@@ -1648,10 +1662,21 @@ cross-fading every seven seconds on the page most likely to be opened on
 mobile data. `HeroSlider.jsx` is the reversal, and the original measurement is
 the budget it had to come in under rather than a decision it overrode.
 
-- **At most two layers are painted, ever.** The deck is four slides and the
-  DOM holds the outgoing one and the incoming one; `peakLayersOverTenSeconds`
-  measured 2. Rendering all four with three at `opacity: 0` would pay the
-  original cost in full — an invisible full-viewport layer still composites.
+**It was a framed panel for one release and it is a ground again.** The
+slider returned underneath the cards, which is what produced the three-layer
+hero the section above records; the fix after that gave it an `aspect-[4/5]`
+panel in the right column. That solved the overlap and cost the pictures: the
+panel is portrait and the eight hero drawings are 16:9, so `object-cover`
+showed the middle 45% of each — a quiet left two-fifths and a subject on the
+right, cropped through both. It fills the whole section again, with the type
+protected by grid and a scrim measured against the column's edge, which is
+the arrangement the drawings were composed for.
+
+**The two-layer budget survived both reversals and is the thing to keep.** At
+most two layers are painted, ever: the DOM holds the outgoing slide and the
+incoming one; `peakLayersOverTenSeconds` measured 2. Rendering all eight with
+seven at `opacity: 0` would pay for them in full — an invisible compositing
+layer still composites, which is what got the original removed.
 - **The slides come from the headline.** One per `PHRASES` entry, in the
   headline's order, so the picture changes as the words morph — eight now that
   the headline runs the sector list, and **it costs nothing at runtime**,

@@ -1,40 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A figure caught mid-turn against a plain wall, drawn flat: a red dress swings out with the movement and one hard shadow is thrown across the empty floor to the left.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A figure caught mid-turn against a lit studio backdrop, drawn flat: a red dress swings out with the movement and one hard shadow is thrown across the empty floor to the left.">
   <defs>
     <linearGradient id="h5sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h5glow" cx="0.70" cy="0.30" r="0.52">
-      <stop offset="0" stop-color="#F0B268" stop-opacity="0.30"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="h5lamp" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.46"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.65"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
     </radialGradient>
     <filter id="h5grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
   </defs>
   <rect width="1600" height="900" fill="url(#h5sky)"/>
   <rect width="1600" height="900" fill="url(#h5glow)"/>
   <rect y="704" width="1600" height="196" fill="#0B1A30"/>
-  <rect y="700" width="1600" height="4" fill="#16294A"/>
+  <rect y="700" width="1600" height="4" fill="#1A3053"/>
   <rect x="0" y="0" width="300" height="704" fill="#0C1A2F"/>
-  <rect x="294" y="0" width="6" height="704" fill="#132744"/>
-  <circle cx="1246" cy="176" r="168" fill="url(#h5lamp)"/>
-  <rect x="1222" y="96" width="48" height="18" rx="4" fill="#F2BE7A"/>
-  <rect x="1240" y="114" width="12" height="118" fill="#1D3458"/>
-  <path d="M1012 704 L402 704 L516 760 L1060 760 Z" fill="#081222"/>
+  <rect x="294" y="0" width="6" height="704" fill="#13253F"/>
+  <rect x="800" y="60" width="760" height="644" fill="#E9B778"/>
+  <circle cx="1246" cy="176" r="240" fill="url(#h5lamp)"/>
+  <rect x="1222" y="96" width="48" height="18" rx="4" fill="#F7D3A2"/>
+  <rect x="1240" y="114" width="12" height="118" fill="#20395C"/>
+  <path d="M1012 704 L402 704 L516 760 L1060 760 Z" fill="#0B1A30"/>
   <g>
-    <rect x="1002" y="596" width="30" height="112" fill="#1B3153"/>
-    <rect x="1066" y="596" width="30" height="112" fill="#1B3153"/>
+    <rect x="1002" y="596" width="30" height="112" fill="#1D3458"/>
+    <rect x="1066" y="596" width="30" height="112" fill="#1D3458"/>
     <rect x="986" y="700" width="60" height="16" rx="5" fill="#0C1A2F"/>
     <rect x="1056" y="700" width="60" height="16" rx="5" fill="#0C1A2F"/>
     <path d="M1004 366 h96 l28 148 q86 54 104 184 q-146 56 -316 0 q22 -142 60 -188 z" fill="#FF2731"/>
-    <path d="M992 364 q-66 92 -92 196 q30 24 62 6 q22 -94 72 -158 z" fill="#20395C"/>
-    <path d="M1112 362 q74 72 96 166 q-30 26 -64 10 q-24 -92 -70 -142 z" fill="#20395C"/>
-    <rect x="1024" y="304" width="56" height="70" fill="#20395C"/>
-    <circle cx="1052" cy="268" r="52" fill="#20395C"/>
+    <path d="M992 364 q-66 92 -92 196 q30 24 62 6 q22 -94 72 -158 z" fill="#223D63"/>
+    <path d="M1112 362 q74 72 96 166 q-30 26 -64 10 q-24 -92 -70 -142 z" fill="#223D63"/>
+    <rect x="1024" y="304" width="56" height="70" fill="#223D63"/>
+    <circle cx="1052" cy="268" r="52" fill="#223D63"/>
   </g>
   <g>
-    <rect x="1472" y="474" width="14" height="230" fill="#15273F"/>
-    <rect x="1436" y="700" width="86" height="12" fill="#15273F"/>
+    <rect x="1472" y="474" width="14" height="230" fill="#16294A"/>
+    <rect x="1436" y="700" width="86" height="12" fill="#16294A"/>
     <rect x="1454" y="406" width="50" height="72" rx="7" fill="#0A1526"/>
     <rect x="1461" y="415" width="36" height="54" rx="3" fill="#5E7FA8"/>
   </g>
