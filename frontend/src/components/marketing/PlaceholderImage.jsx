@@ -97,10 +97,26 @@ export function PlaceholderImage({
         <div
             data-testid={testid}
             data-placeholder={src ? undefined : note}
-            className={`relative overflow-hidden ${
+            // **Exactly one positioning utility, which `fill` used to break.**
+            // The base here was `relative overflow-hidden` with `absolute
+            // inset-0` appended for `fill`, so a filled slot carried *both*
+            // `relative` and `absolute`. Tailwind settles that by stylesheet
+            // order rather than by the order written, `relative` won, and
+            // `inset-0` means nothing on a relatively-positioned box — so the
+            // container collapsed to zero height and every layer inside it,
+            // tint and picture alike, resolved `h-full` against nothing.
+            //
+            // It was invisible for as long as `fill` had no `src`: an empty
+            // slot and a zero-height slot look identical. The hero is the only
+            // caller, and it drew nothing from the day it was written.
+            // Measured: the img laid out at 1300x0, and serving its file made
+            // a pixel difference of exactly zero.
+            className={`overflow-hidden ${
                 fill
                     ? "absolute inset-0"
-                    : `rounded-lg border border-white/10 ${RATIO[ratio] || RATIO["16/9"]}`
+                    : `relative rounded-lg border border-white/10 ${
+                          RATIO[ratio] || RATIO["16/9"]
+                      }`
             } ${className}`}
         >
             {/* The tint on its own layer rather than on the container, so the
