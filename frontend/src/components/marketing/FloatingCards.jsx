@@ -1,5 +1,30 @@
 // Tilted photo cards floating behind the hero, drifting on scroll.
 //
+// ============================================================================
+// **UNMOUNTED. Nothing renders this.** Kept because `CARD_SHADOW` below is
+// imported by `BrandWall` and `CreatorLeaderboard`, and because several tests
+// pin this file's contents.
+//
+// It came off the hero because three layers were competing for one area: the
+// slider was a full-bleed ground, these drifted above it, and the poster type
+// sat on top of both. Measured at 1440, three of the four cards overlapped
+// the `h1` and one overlapped the subheading; at 390 one overlapped the `h1`.
+// The cards are positioned as percentages of the hero box while the type sits
+// in a centred `max-w-7xl` column, so the two were never going to agree — the
+// hero is two columns now and the picture is a framed panel. The proof
+// cluster came off `/for-brands`, `/for-creators` and `/why-weare` with it.
+//
+// **Before any of it is remounted, every card needs an `image` and every one
+// of those files has to exist.** For a while `Card` passed `src={card.image}`
+// while no card object carried an `image` at all, so six slots rendered as
+// bare tint — and a slot pointed at a file that is not there is worse again,
+// because a 404'd `<img>` draws the browser's broken-image glyph over the
+// tint the absent state was designed to be. The six paths below were added
+// and the six files drawn, so that half is done. The rule it cost is worth
+// keeping: **never wire a slot to a file that does not exist.** Draw the
+// file, then point at it, in that order.
+// ============================================================================
+//
 // The hero's argument is range — launch night, fashion, travel, fitness — and
 // four cards at four angles say it faster than a sentence can. They sit behind
 // and around the headline rather than beside it, so the page reads as one

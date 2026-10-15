@@ -32,10 +32,20 @@
 //   - **Transforms and opacity only.** Each letter is a `<span>` moved with
 //     `y` and `opacity`. No layout property is touched, so nothing reflows and
 //     the whole thing composites.
-//   - **The tallest phrase reserves the box.** The line's height is fixed by
-//     an invisible copy of the longest phrase, so a shorter one cannot let the
-//     second line ride up — a headline that jumps every four seconds is worse
-//     than no animation, and it would be a CLS event on every cycle.
+//   - **Every phrase reserves the box, by rendered width.** All eight are
+//     drawn invisibly into one grid cell, so the box is as wide and as tall as
+//     the widest and tallest phrase the browser actually draws. A shorter one
+//     cannot let the second line ride up — a headline that jumps every four
+//     seconds is worse than no animation, and it would be a CLS event on every
+//     cycle.
+//
+//     **It used to reserve with one copy of the "longest" phrase, chosen by
+//     character count, and a character count is not a width.** "Hospitality"
+//     and "Real Estate" are both eleven characters so the reduce kept the
+//     first, and in Fraunces at poster size "Real Estate" renders wider — the
+//     animated layer is `absolute whitespace-nowrap`, so on that one slide it
+//     overflowed its box to the right and the hero clipped it. Measuring by
+//     rendering is the only thing that cannot be wrong about a font.
 //   - **The letters are capped.** The tails are twelve characters at most; a
 //     phrase long enough to make this expensive is a phrase too long to be a
 //     poster headline anyway.
@@ -134,14 +144,16 @@ export function KineticHeadline({
         return () => clearInterval(t);
     }, [reduced, phrases.length]);
 
-    const longest = phrases.reduce((a, b) => (b.length > a.length ? b : a), "");
-
-    // clamp() rather than a Tailwind step: this is poster scale, well past the
-    // top of the type ramp, and it is the only element on the site at this
-    // size. 11vw keeps it filling the column at every width.
+    // clamp() rather than a Tailwind step: this is still poster scale, well
+    // past `fluid-hero`'s 4.25rem top step, and it is the only element on the
+    // site at this size. **The ceiling came down from 8.5rem because the
+    // headline is sized to a column now rather than to the window** — it sits
+    // in the hero's 7-of-12 column, about 735px at `max-w-7xl`, where 8.5rem
+    // put "Influencer marketing for" on a line of its own and ran the h1 to
+    // three. The vw term is measured rather than guessed; see the PR.
     const poster = {
-        fontSize: "clamp(2.5rem, 10.5vw, 8.5rem)",
-        lineHeight: 0.94,
+        fontSize: "clamp(2.25rem, 5vw, 4.75rem)",
+        lineHeight: 1.0,
     };
 
     return (
@@ -156,13 +168,33 @@ export function KineticHeadline({
         >
             <span aria-hidden className="block">
                 <span className="text-foreground">{lead} </span>
-                {/* The morphing line. `relative` + an invisible copy of the
-                    longest phrase reserves the height so nothing below moves;
-                    the animated copy sits on top of it. */}
-                <span className="relative inline-block align-top">
-                    <span className="invisible" aria-hidden>
-                        {longest}
-                    </span>
+                {/* The morphing line. **Every phrase is rendered invisibly in
+                    one grid cell**, so the box is as wide and as tall as the
+                    widest and tallest phrase the browser actually draws, and
+                    the animated copy sits on top of it.
+
+                    It used to reserve the box with a single invisible copy of
+                    the longest phrase, picked by character count — and a
+                    character count is not a width. "Hospitality" and "Real
+                    Estate" are both eleven characters, the reduce kept the
+                    first, and in Fraunces at this size "Real Estate" renders
+                    wider: the animated layer is `absolute whitespace-nowrap`,
+                    so on that slide it ran past its own box and the hero's
+                    `overflow-hidden` clipped it. Stacking them all means the
+                    box cannot be narrower than the phrase in it whatever the
+                    font does, and it still cannot change height between
+                    phrases — which is the CLS property the old version was
+                    protecting and this one keeps. */}
+                <span className="relative inline-grid align-top">
+                    {phrases.map((p) => (
+                        <span
+                            key={p}
+                            className="invisible col-start-1 row-start-1 whitespace-nowrap"
+                            aria-hidden
+                        >
+                            {p}
+                        </span>
+                    ))}
                     <span className="absolute inset-0 whitespace-nowrap text-primary">
                         {reduced ? (
                             phrases[0]

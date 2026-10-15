@@ -1,19 +1,25 @@
-// The hero's moving background — a reversal, and what it had to pay.
+// The hero's picture — a framed panel in the hero's right column.
 //
-// A slider was here before and was removed on a measurement: a full-viewport
-// compositing layer cross-fading every seven seconds, on the page most likely
-// to be opened on mobile data. `FloatingCards` replaced it and said the same
-// thing better — four categories visible *at once* rather than one at a time
-// behind a scrim heavy enough to keep the headline readable.
+// **It is not a background any more.** A slider was here before and was
+// removed on a measurement: a full-viewport compositing layer cross-fading
+// every seven seconds, on the page most likely to be opened on mobile data.
+// `FloatingCards` replaced it, the slider came back underneath the cards, and
+// the result was three layers arguing over one area — type over cards over
+// picture, with a scrim heavy enough to keep the headline readable muting the
+// picture it was laid over. The hero is two columns now: the type has a
+// column and this has a panel, so nothing readable sits over it and the
+// scrims are gone.
 //
-// This brings the movement back under that budget rather than in spite of it.
-// Four things are different from the version that went:
+// Four things are different from the version that was removed. The first was
+// a budget set against a full-viewport layer; **this is a panel, so it is no
+// longer required — it is kept**, because it is the right shape for the
+// problem whatever the element's size, and the cost of losing it is paid on
+// exactly the devices least able to afford it:
 //
-//   - **At most two layers are painted, ever.** The deck is four slides and
-//     the DOM holds the outgoing one and the incoming one. Four simultaneous
-//     full-viewport layers is the cost that got the original removed, and
-//     rendering all four with three at `opacity: 0` would pay it in full —
-//     an invisible compositing layer still composites.
+//   - **At most two layers are painted, ever.** The deck is eight slides and
+//     the DOM holds the outgoing one and the incoming one. Rendering all
+//     eight with seven at `opacity: 0` would pay for them in full — an
+//     invisible compositing layer still composites.
 //   - **The slides come from the headline.** One per `PHRASES` entry, in
 //     order, so the picture changes as the words morph. The old deck carried
 //     its own headline per slide, which made the page appear to sell four
@@ -22,6 +28,10 @@
 //     is the clipping box; scaling it would grow the hole it reserves.
 //   - **Reduced motion gets slide one and no timer** — the end state on first
 //     paint, not a shortened animation.
+//
+// The root stays `absolute inset-0`, so it fills whatever box it is given.
+// The panel that gives it one owns the aspect ratio, which is why filling a
+// slot here moves nothing.
 //
 // Nothing is fetched from a third party. Every slide is a `PlaceholderImage`,
 // which is a computed tint and a brief for a photographer. A test sweeps every
@@ -155,9 +165,10 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
     const driftRef = useRef(null);
 
     // **`will-change` is released when the animation ends**, the rule the
-    // app's motion layer already holds. Left on, a full-viewport layer keeps a
-    // compositor layer alive for the life of the page — which on this element
-    // is precisely the cost the original slider was removed for.
+    // app's motion layer already holds. Left on, this keeps a compositor
+    // layer alive for the life of the page — which on a full-viewport
+    // version of this element is precisely the cost the original slider was
+    // removed for, and is not worth paying at panel size either.
     useEffect(() => {
         const node = driftRef.current;
         if (!node) return undefined;
@@ -201,16 +212,16 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
                     testid={IDS.slideImage(index)}
                     note={slide.note}
                     src={slide.image}
-                    // **Decorative, so empty.** This is a background behind
-                    // the `h1` and under a scrim, inside a subtree that is
-                    // `aria-hidden` in its entirety — the headline above
-                    // already carries the meaning, and a screen reader
-                    // announcing eight photographs of nothing in particular
-                    // is noise. The page-section slots are the opposite case
-                    // and describe themselves.
+                    // **Decorative, so empty.** The panel sits beside the
+                    // headline inside a subtree that is `aria-hidden` in
+                    // its entirety — the headline already carries the
+                    // meaning, and a screen reader announcing eight
+                    // photographs of nothing in particular is noise. The
+                    // page-section slots are the opposite case and describe
+                    // themselves.
                     alt=""
-                    // `fill`, not a ratio: the hero's height is set by its
-                    // content, and an aspect class would fight `inset-0`.
+                    // `fill`, not a ratio: the panel owns the aspect ratio,
+                    // and a second one here would fight `inset-0`.
                     fill
                     eager={eager}
                 />
@@ -222,10 +233,10 @@ function Slide({ slide, index, visible, paused, reduced, eager }) {
 /**
  * The slider.
  *
- * `aria-hidden` in its entirety: the `h1` above already carries the meaning,
- * and a screen reader announcing four photographs of nothing in particular is
- * noise. The dots are the exception — they are controls, so they sit outside
- * the hidden subtree and name the slide they go to.
+ * `aria-hidden` in its entirety: the `h1` beside it already carries the
+ * meaning, and a screen reader announcing eight photographs of nothing in
+ * particular is noise. The dots are the exception — they are controls, so
+ * they sit outside the hidden subtree and name the slide they go to.
  */
 export default function HeroSlider({ className = "" }) {
     const reduced = useReducedMotion();
@@ -250,9 +261,8 @@ export default function HeroSlider({ className = "" }) {
         setActive(next);
         clearTimeout(fadeTimer.current);
         // Drop the outgoing layer once it is invisible, rather than leaving
-        // it parked at `opacity: 0` — a transparent full-viewport layer still
-        // composites, which is the cost this whole component is budgeted
-        // against.
+        // it parked at `opacity: 0` — a transparent layer still composites,
+        // which is the cost this whole component is budgeted against.
         fadeTimer.current = setTimeout(() => setLeaving(null), FADE_MS);
     }, []);
 
@@ -272,31 +282,33 @@ export default function HeroSlider({ className = "" }) {
         clearTimeout(fadeTimer.current);
     }, []);
 
-    // **The listeners go on the hero, not on the slider.** The slider is
-    // `absolute inset-0` *behind* the content, so a pointer over the headline
-    // is over the content column and never over this element — handlers here
-    // would pause only when somebody hovered the few pixels of background
-    // either side of the type, which is the opposite of the case this is for.
-    // Binding to the parent keeps the paused state owned by the component
-    // that uses it while detecting the thing that actually matters: a reader
-    // stopped on the hero.
+    // **The listeners bind to the parent, which is now the panel.** They used
+    // to reach the whole hero section, and had to: the slider was the
+    // full-bleed ground behind the content column, so a pointer over the
+    // headline was never over this element and handlers on it would have
+    // paused only for the few pixels of background either side of the type.
+    //
+    // The parent is the framed panel now, so the same line of code means
+    // something better — hovering the picture pauses it, and hovering the
+    // words does not stop a picture the reader is not looking at.
+    //
+    // `focusin`/`focusout` rather than `focus`/`blur`: the latter do not
+    // bubble, so tabbing to the dots inside the panel would not reach this.
     const rootRef = useRef(null);
     useEffect(() => {
-        const hero = rootRef.current?.parentElement;
-        if (!hero) return undefined;
+        const panel = rootRef.current?.parentElement;
+        if (!panel) return undefined;
         const hold = () => setPaused(true);
         const release = () => setPaused(false);
-        hero.addEventListener("pointerenter", hold);
-        hero.addEventListener("pointerleave", release);
-        // `focusin`/`focusout` rather than `focus`/`blur`: the latter do not
-        // bubble, so tabbing to a CTA inside the hero would not reach this.
-        hero.addEventListener("focusin", hold);
-        hero.addEventListener("focusout", release);
+        panel.addEventListener("pointerenter", hold);
+        panel.addEventListener("pointerleave", release);
+        panel.addEventListener("focusin", hold);
+        panel.addEventListener("focusout", release);
         return () => {
-            hero.removeEventListener("pointerenter", hold);
-            hero.removeEventListener("pointerleave", release);
-            hero.removeEventListener("focusin", hold);
-            hero.removeEventListener("focusout", release);
+            panel.removeEventListener("pointerenter", hold);
+            panel.removeEventListener("pointerleave", release);
+            panel.removeEventListener("focusin", hold);
+            panel.removeEventListener("focusout", release);
         };
     }, []);
 
@@ -331,50 +343,50 @@ export default function HeroSlider({ className = "" }) {
                 ))}
             </div>
 
-            {/* **The scrim is its own layer**, not a property of the slide.
-                Putting it on the slide would mean setting `background-image`
-                on an element that already has one — the rule `.grain-surface`
-                exists to avoid — and it would fade in and out with the
-                picture, so the headline's legibility would pulse every seven
-                seconds.
+            {/* **The two scrims are gone, and their absence is the point.**
+                They were a heavy left-to-right wash plus a bottom gradient,
+                and they existed for one job: keeping poster type legible over
+                the picture. The type has its own column now and nothing
+                readable sits over this at all, so a scrim would only mute an
+                illustration for no one's benefit.
 
-                Heaviest on the left, where the type sits, and lighter on the
-                right so the picture is still a picture. */}
+                What is left is a soft bottom vignette, purely so the dots
+                have something to sit on. It is its own layer rather than a
+                property of the slide, the rule that has not changed: the
+                slide already sets `background-image`, and one of the two
+                would silently win. */}
             <div
                 aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/40"
-            />
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60"
+                className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background/55 via-transparent to-transparent"
             />
 
-            {/* Controls, so outside the hidden subtree. Aligned to the content
-                column rather than to the viewport, so they sit under the type
-                at every width. */}
+            {/* Controls, so outside the hidden subtree. **Inside the panel**,
+                which is the whole change: they used to be aligned to the page
+                column with `mx-auto max-w-7xl px-6`, back when the slider was
+                the full-bleed ground and the type sat on it. The picture is a
+                panel now and the page column has nothing to do with where it
+                is. */}
             {!reduced && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10">
-                    <div className="mx-auto max-w-7xl px-6">
-                        <div
-                            data-testid={IDS.dots}
-                            className="pointer-events-auto inline-flex items-center gap-2"
-                        >
-                            {SLIDES.map((slide, i) => (
-                                <button
-                                    key={slide.phrase}
-                                    type="button"
-                                    data-testid={IDS.dot(i)}
-                                    aria-label={`Show ${slide.phrase}`}
-                                    aria-current={i === active ? "true" : undefined}
-                                    onClick={() => goTo(i)}
-                                    className={`h-2 rounded-full transition-all duration-200 ${
-                                        i === active
-                                            ? "w-6 bg-primary"
-                                            : "w-2 bg-foreground/35 hover:bg-foreground/60"
-                                    }`}
-                                />
-                            ))}
-                        </div>
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4">
+                    <div
+                        data-testid={IDS.dots}
+                        className="pointer-events-auto inline-flex items-center gap-2"
+                    >
+                        {SLIDES.map((slide, i) => (
+                            <button
+                                key={slide.phrase}
+                                type="button"
+                                data-testid={IDS.dot(i)}
+                                aria-label={`Show ${slide.phrase}`}
+                                aria-current={i === active ? "true" : undefined}
+                                onClick={() => goTo(i)}
+                                className={`h-2 rounded-full transition-all duration-200 ${
+                                    i === active
+                                        ? "w-6 bg-primary"
+                                        : "w-2 bg-foreground/35 hover:bg-foreground/60"
+                                }`}
+                            />
+                        ))}
                     </div>
                 </div>
             )}

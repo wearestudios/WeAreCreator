@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="An empty show flat seen from a dark hallway, drawn flat: a creator stands in the doorway filming the room, the red screen of their phone held up, as balcony light floods in from the right.">
   <defs>
     <linearGradient id="h4sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h4glow" cx="0.78" cy="0.42" r="0.48">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.50"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.56"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="h4day" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFD9A0"/><stop offset="1" stop-color="#F0B268"/>

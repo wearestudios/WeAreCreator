@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A restaurant at full service, drawn flat: warm pools of light over occupied tables on the right, a quiet dark room on the left.">
   <defs>
     <linearGradient id="h1sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h1glow" cx="0.72" cy="0.46" r="0.52">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.46"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="h1lamp" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.69"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.77"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
     </radialGradient>
     <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
   </defs>

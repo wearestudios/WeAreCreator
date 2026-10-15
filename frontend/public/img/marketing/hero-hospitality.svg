@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A boutique hotel room at golden hour, drawn flat: balcony doors stand open onto a city skyline on the right, while the wardrobe and far wall stay in shadow on the left.">
   <defs>
     <linearGradient id="h2sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h2glow" cx="0.80" cy="0.44" r="0.50">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.58"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="h2day" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFD9A0"/><stop offset="1" stop-color="#E9B778"/>

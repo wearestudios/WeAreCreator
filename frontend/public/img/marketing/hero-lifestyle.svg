@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="An overhead flat-lay on linen, drawn flat: a cup of coffee, a red notebook and a pair of sunglasses arranged on lit linen, with two hands reaching in from the right and the left of the cloth left plain.">
   <defs>
     <linearGradient id="h8sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h8glow" cx="0.72" cy="0.48" r="0.48">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.46"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="h8lamp" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.38"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.43"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
     </radialGradient>
     <filter id="h8grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
   </defs>

@@ -32,7 +32,6 @@ import {
 } from "@/components/marketing/Sections";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
-import FloatingCards from "@/components/marketing/FloatingCards";
 import Reveal from "@/components/marketing/Reveal";
 import FeeFlow from "@/components/marketing/FeeFlow";
 import { useDeepestCity } from "@/components/marketing/CountedGeography";
@@ -144,12 +143,7 @@ export default function WhyWeAre() {
                 }}
             />
 
-            {/* The proof figures, with two cards floating past the strip's
-                edges — the second of the two card clusters. */}
-            <div className="relative">
-                <FloatingCards set="proof" />
-                <ProofStrip />
-            </div>
+            <ProofStrip />
 
             <TextImageSection
                 eyebrow="The pedigree"

@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A studio class seen from the back of the room, drawn flat: three figures sit upright on their mats facing warm windows on the right, while a figure in red stands near the camera filming them.">
   <defs>
     <linearGradient id="h7sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h7glow" cx="0.84" cy="0.34" r="0.52">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.46"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="h7day" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFD9A0"/><stop offset="1" stop-color="#E9B778"/>

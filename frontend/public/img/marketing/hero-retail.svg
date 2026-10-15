@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="A shop floor drawn flat: a creator films a wall of products in which one item stands out in red, a member of staff serves behind, and daylight comes in through the shopfront on the right.">
   <defs>
     <linearGradient id="h3sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+      <stop offset="0" stop-color="#0B182C"/><stop offset="1" stop-color="#122340"/>
     </linearGradient>
     <radialGradient id="h3glow" cx="0.84" cy="0.40" r="0.52">
-      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.46"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F2BE7A" stop-opacity="0.52"/><stop offset="1" stop-color="#F2BE7A" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="h3day" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFD9A0"/><stop offset="1" stop-color="#F0B268"/>

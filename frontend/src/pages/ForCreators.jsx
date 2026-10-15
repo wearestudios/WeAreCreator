@@ -20,7 +20,6 @@ import {
     ClosingSection,
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
-import FloatingCards from "@/components/marketing/FloatingCards";
 import PayoutClock from "@/components/marketing/PayoutClock";
 import { MARKETING as IDS } from "@/constants/testIds";
 
@@ -122,12 +121,7 @@ export default function ForCreators() {
                 }}
             />
 
-            {/* The proof figures, with two cards floating past the strip's
-                edges — the second of the two card clusters. */}
-            <div className="relative">
-                <FloatingCards set="proof" />
-                <ProofStrip />
-            </div>
+            <ProofStrip />
 
             <section className="border-b border-white/10 py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
