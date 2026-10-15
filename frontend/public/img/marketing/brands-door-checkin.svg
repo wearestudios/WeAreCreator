@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" role="img" aria-label="A venue door in the evening, drawn flat: a campaign manager with a red tablet checking two creators in under the entrance light.">
+  <defs>
+    <linearGradient id="p4sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <linearGradient id="p4door" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D3A2"/><stop offset="1" stop-color="#E8B06B"/>
+    </linearGradient>
+    <radialGradient id="p4glow" cx="0.5" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.42"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="p4lamp" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.6"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="p4grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1600" height="1200" fill="url(#p4sky)"/>
+  <rect width="1600" height="1200" fill="url(#p4glow)"/>
+  <rect y="980" width="1600" height="220" fill="#0B1A30"/>
+  <rect y="972" width="1600" height="8" fill="#1A3053"/>
+  <rect x="560" y="180" width="480" height="800" fill="url(#p4door)"/>
+  <rect x="534" y="160" width="28" height="820" fill="#1D3458"/>
+  <rect x="1038" y="160" width="28" height="820" fill="#1D3458"/>
+  <rect x="534" y="160" width="532" height="28" fill="#1D3458"/>
+  <rect x="786" y="180" width="18" height="800" fill="#E8B06B"/>
+  <path d="M560 980 h480 l170 220 h-820 z" fill="#E9B778" opacity="0.5"/>
+  <circle cx="800" cy="120" r="140" fill="url(#p4lamp)"/>
+  <path d="M742 110 h116 l-24 -48 h-68 z" fill="#F2BE7A"/>
+  <rect x="796" y="20" width="8" height="46" fill="#1D3458"/>
+  <g>
+    <circle cx="368" cy="513" r="88" fill="#20395C"/>
+    <path d="M232 700 q136 -222 272 0 z" fill="#20395C"/>
+    <rect x="258" y="690" width="220" height="296" fill="#1B3153"/>
+    <rect x="470" y="596" width="196" height="138" rx="14" fill="#FF2731" transform="rotate(-12 470 596)"/>
+    <rect x="452" y="556" width="56" height="150" rx="26" fill="#20395C" transform="rotate(-24 452 556)"/>
+  </g>
+  <g>
+    <circle cx="1196" cy="592" r="78" fill="#223D63"/>
+    <path d="M1076 756 q120 -196 240 0 z" fill="#223D63"/>
+    <rect x="1100" y="748" width="192" height="238" fill="#1E3557"/>
+  </g>
+  <g>
+    <circle cx="1424" cy="643" r="70" fill="#1B3153"/>
+    <path d="M1316 790 q108 -178 216 0 z" fill="#1B3153"/>
+    <rect x="1338" y="782" width="172" height="204" fill="#15273F"/>
+  </g>
+  <rect width="1600" height="1200" filter="url(#p4grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

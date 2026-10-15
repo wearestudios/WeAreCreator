@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" role="img" aria-label="A campaign manager in red briefing two creators at a venue entrance, drawn flat, under the warm light of the doorway.">
+  <defs>
+    <linearGradient id="pBsky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <linearGradient id="pBdoor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D3A2"/><stop offset="1" stop-color="#E8B06B"/>
+    </linearGradient>
+    <radialGradient id="pBglow" cx="0.56" cy="0.3" r="0.62">
+      <stop offset="0" stop-color="#F0B268" stop-opacity="0.42"/><stop offset="1" stop-color="#F0B268" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="pBgrain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1600" height="1200" fill="url(#pBsky)"/>
+  <rect width="1600" height="1200" fill="url(#pBglow)"/>
+  <rect y="1000" width="1600" height="200" fill="#0B1A30"/>
+  <rect y="992" width="1600" height="8" fill="#1A3053"/>
+  <rect x="820" y="150" width="620" height="850" fill="url(#pBdoor)"/>
+  <rect x="792" y="128" width="30" height="872" fill="#1D3458"/>
+  <rect x="792" y="128" width="676" height="26" fill="#1D3458"/>
+  <rect x="1122" y="150" width="18" height="850" fill="#E8B06B"/>
+  <path d="M820 1000 h620 l150 200 h-920 z" fill="#E9B778" opacity="0.45"/>
+  <rect x="120" y="300" width="130" height="700" fill="#0C1A2F"/>
+  <g>
+    <path d="M374 470 a96 96 0 1 0 192 0 a96 96 0 1 0 -192 0 z M320 700 q150 -244 300 0 z M596 566 L778 521 L787 555 L605 601 z" fill="#FF2731"/>
+    <rect x="348" y="690" width="244" height="310" fill="#1B3153"/>
+  </g>
+  <g>
+    <circle cx="1000" cy="562" r="84" fill="#223D63"/>
+    <path d="M870 762 q130 -214 260 0 z" fill="#223D63"/>
+    <rect x="896" y="754" width="208" height="246" fill="#1E3557"/>
+  </g>
+  <g>
+    <circle cx="1268" cy="600" r="76" fill="#20395C"/>
+    <path d="M1150 788 q118 -196 236 0 z" fill="#20395C"/>
+    <rect x="1174" y="780" width="188" height="220" fill="#1B3153"/>
+  </g>
+  <rect width="1600" height="1200" filter="url(#pBgrain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

@@ -32,7 +32,6 @@ import {
 } from "@/components/marketing/Sections";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import ProofStrip from "@/components/marketing/ProofStrip";
-import FloatingCards from "@/components/marketing/FloatingCards";
 import Reveal from "@/components/marketing/Reveal";
 import FeeFlow from "@/components/marketing/FeeFlow";
 import { useDeepestCity } from "@/components/marketing/CountedGeography";
@@ -138,16 +137,13 @@ export default function WhyWeAre() {
                     // at a venue — lighting being set, a creator briefed in the
                     // background. Landscape 16:9.
                     note: "WeAre Studios team mid-production at a venue, lighting being set, 16:9",
+                    src: "/img/marketing/why-production.svg",
+                    alt: "A production crew setting up at a venue: a lighting panel on a stand, a camera on sticks and a kit case on the floor.",
                     ratio: "16/9",
                 }}
             />
 
-            {/* The proof figures, with two cards floating past the strip's
-                edges — the second of the two card clusters. */}
-            <div className="relative">
-                <FloatingCards set="proof" />
-                <ProofStrip />
-            </div>
+            <ProofStrip />
 
             <TextImageSection
                 eyebrow="The pedigree"
@@ -163,6 +159,8 @@ export default function WhyWeAre() {
                     // production meeting — whiteboard with a campaign plan,
                     // people mid-conversation. 4:3.
                     note: "WeAre Studios production meeting, whiteboard with a campaign plan, 4:3",
+                    src: "/img/marketing/why-planning.svg",
+                    alt: "A production meeting seen from behind: four people at a table facing a whiteboard of boxes and arrows, with one box marked out.",
                     ratio: "4/3",
                 }}
                 testid={IDS.pedigree}
@@ -178,6 +176,8 @@ export default function WhyWeAre() {
                     // side by side at the venue before doors, going through
                     // the roster on a tablet. 3:2.
                     note: "WeAre manager and brand owner going through the roster on a tablet before doors, 3:2",
+                    src: "/img/marketing/why-roster-tablet.svg",
+                    alt: "A WeAre manager and a venue owner leaning over a bar counter before doors, reading the roster off a tablet between them.",
                     ratio: "3/2",
                 }}
                 flip
@@ -209,6 +209,8 @@ export default function WhyWeAre() {
                             // check-in desk, manager with a tablet. Banner
                             // proportions, 21:9.
                             note="Shoot day running to plan, creators at a check-in desk, manager with a tablet, 21:9"
+                            src="/img/marketing/why-shoot-day.svg"
+                            alt="A shoot day running to plan: a manager behind a check-in desk, a short queue of creators, and the venue doors open and lit at the far end."
                             ratio="21/9"
                             zoom
                         />
@@ -225,6 +227,8 @@ export default function WhyWeAre() {
                     // summary with fees and payouts itemised, pen resting on
                     // it. 5:4.
                     note: "Close crop of a printed campaign summary with fees itemised, pen resting on it, 5:4",
+                    src: "/img/marketing/why-fees-closeup.svg",
+                    alt: "A printed campaign summary seen close up, the fees itemised line by line with the creator's own total marked and a pen resting across the page.",
                     ratio: "5/4",
                 }}
             />

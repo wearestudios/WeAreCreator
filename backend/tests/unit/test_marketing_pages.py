@@ -1673,22 +1673,50 @@ def test_the_headline_holds_each_phrase_about_four_seconds():
 
 
 def test_the_headline_is_poster_scale():
-    """Dramatically larger than the type ramp's top step, and sized in `vw` so
-    it fills the column at every width. `fluid-hero` tops out at 4.25rem; this
-    is the one element on the site past it."""
+    """Still well past the type ramp's top step, and still sized in `vw`, but
+    **sized to a column rather than to the window** — which is a reversal.
+
+    This asserted a ceiling of 8.5rem, and that was right while the headline
+    filled a full-bleed hero. The hero is two columns now and the headline
+    lives in seven of twelve, about 735px at `max-w-7xl`: at 8.5rem the lead
+    "Influencer marketing for" took a line to itself and ran the h1 to three.
+    So the ceiling comes down and the floor stays. `fluid-hero` tops out at
+    4.25rem and this is still the one element on the site past it, which is
+    what the assertion is actually for; 8 was a number for a different box.
+    """
     src = read("src", "components", "marketing", "KineticHeadline.jsx")
     m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', src)
     assert m, "no clamp on the headline"
-    assert "vw" in m.group(2)
-    assert float(m.group(3).replace("rem", "")) >= 8
+    assert "vw" in m.group(2), "the middle term is still fluid"
+    assert float(m.group(3).replace("rem", "")) >= 4.5
 
 
-def test_the_headline_reserves_the_tallest_phrase():
-    """A line that changes width is fine; one that changes height moves the
-    page every four seconds, which is a CLS event per cycle."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "longest" in src
-    assert 'className="invisible"' in src
+def test_the_headline_reserves_its_box_by_rendered_width():
+    """Every phrase is drawn invisibly in one grid cell, so the box is as wide
+    and as tall as the widest and tallest phrase the browser actually draws.
+
+    **This pinned `longest`, and `longest` was the bug.** It reserved the box
+    with one invisible copy of the phrase with the most characters — and a
+    character count is not a width. "Hospitality" and "Real Estate" are both
+    eleven, the reduce kept the first, and in Fraunces at poster size "Real
+    Estate" renders wider: the animated layer is `absolute whitespace-nowrap`,
+    so on that one slide it ran past its own box and the hero clipped it.
+
+    So the assertion is inverted. `longest` must be GONE, or somebody
+    reintroduces a width guess; the stack has to be there instead. The height
+    property the old test was protecting is unchanged and still holds — one
+    grid cell cannot change height between phrases either.
+
+    Read through `copy_of`, which strips comments, for the reason that helper
+    exists: the convention here is to explain a removal where it happened, so
+    the comment recording why `longest` went necessarily names `longest` and
+    would fail this test on its own justification.
+    """
+    src = copy_of("src", "components", "marketing", "KineticHeadline.jsx")
+    assert "longest" not in src, "the character-count width guess is back"
+    assert "phrases.map" in src, "the phrases are not stacked"
+    assert "invisible" in src
+    assert "col-start-1 row-start-1" in src, "the stack is not in one cell"
 
 
 def test_the_headline_is_static_under_reduced_motion():

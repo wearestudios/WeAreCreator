@@ -20,6 +20,15 @@
 // likely to be opened on mobile data. `FloatingCards` replaced it and said
 // the same thing better — four categories at once instead of one at a time.
 //
+// **Both of those arrangements have since gone, and the hero is two
+// columns.** The slider returned underneath the cards, which left three
+// layers competing for one area: at desktop two cards landed over the
+// headline and one over the subheading, and the type needed a scrim that
+// muted the picture it was laid over. The words have a column now and the
+// picture is a framed panel beside them, so neither is laid over anything —
+// the cards are unmounted, and the scrims went with the overlap that made
+// them necessary.
+//
 // It returns carrying no copy of its own. Each slide used to have a headline
 // ("A full room on opening night"), which is a second idea on a screen that
 // already has one, and four of them made the page look like it was selling
@@ -47,7 +56,6 @@ import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
 import KineticHeadline from "@/components/marketing/KineticHeadline";
 import { HERO_EYEBROW } from "@/lib/siteNav";
-import FloatingCards from "@/components/marketing/FloatingCards";
 import HeroSlider from "@/components/marketing/HeroSlider";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
@@ -111,23 +119,31 @@ const COPY = {
 };
 
 /**
- * The hero — a moving photograph, the kinetic headline, floating cards, two
- * doors.
+ * The hero — the kinetic headline in its own column, the slider in a framed
+ * panel beside it, two doors.
  *
- * **The slider was removed from here and has been put back.** The reason it
- * went is still the reason it is built the way it is: a full-bleed deck cost
- * four compositing layers cross-fading every seven seconds, and
- * `FloatingCards` said "we do all of these" better by showing four categories
- * at once. So the cards stay, and the slider sits behind them under a budget
- * — see `HeroSlider.jsx`, which holds two layers at most and stops entirely
- * when somebody hovers or tabs in.
+ * **It was three layers competing for one area and this is the fix.** The
+ * slider was a full-bleed ground, four tilted cards drifted above it, and the
+ * poster type sat on top of both — so at desktop two cards landed directly
+ * over the headline and over the subheading, the type needed a scrim heavy
+ * enough to stay legible, and that scrim muted the picture it was laid over.
+ * Each of the three was arguing for the same pixels.
  *
- * The two say different things now rather than the same thing twice: the
- * cards are the range, the slider is one of them at a time, in step with the
- * headline morphing through the same sectors.
+ * So the words and the picture each get their own space. **The type has a
+ * column**, which is why it no longer needs anything laid over the picture to
+ * be readable — see `HeroSlider.jsx`, whose two scrims are gone for exactly
+ * that reason. **The picture is a framed panel rather than a ground**, which
+ * is what lets it be a picture: bordered, clipped, and the only thing in its
+ * half. The cards are unmounted — see `FloatingCards.jsx`.
  *
- * Everything in the content column is fixed across slides. Only the
- * background moves, which is what keeps this one idea instead of two.
+ * What survives from the old arrangement is the thing that was right about
+ * it: the slide is in step with the headline morphing through the same
+ * sectors, so the picture changes as the word does. Everything in the content
+ * column is fixed across slides, which is what keeps this one idea rather
+ * than two.
+ *
+ * **The left column is first in DOM order** so a phone reads the words before
+ * it meets the picture, which is also the order they matter in.
  */
 function Hero() {
     return (
@@ -135,70 +151,80 @@ function Hero() {
             data-testid={HERO_IDS.section}
             className="relative overflow-hidden border-b border-white/10"
         >
-            {/* Behind everything, including the cards. It carries its own
-                scrim — on its own layer, not on the slide, because the slide
-                already sets `background-image` and one of the two would
-                silently win. */}
-            <HeroSlider />
-
-            {/* Decorative and absolutely positioned, so they never move the
-                headline. Above the slider and below the type. */}
-            <FloatingCards />
-
+            {/* Decorative. It sits behind the panel rather than behind the
+                headline now — a warm bloom under poster type was competing
+                with the type for the same reason everything else here was. */}
             <div
                 aria-hidden
-                className="pointer-events-none absolute -right-40 -top-32 h-[560px] w-[560px] rounded-full bg-primary/10 blur-[130px]"
+                className="pointer-events-none absolute -right-24 top-10 h-[520px] w-[520px] rounded-full bg-primary/10 blur-[130px]"
             />
 
-            <div className="relative mx-auto max-w-7xl px-6 pb-16 pt-14 md:pb-24 md:pt-20">
-                <Reveal onView={false}>
-                    <p
-                        data-testid={HERO_IDS.eyebrow}
-                        className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
-                    >
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                        {HERO_EYEBROW}
-                    </p>
-                </Reveal>
-
-                <Reveal i={1} onView={false}>
-                    <KineticHeadline />
-                </Reveal>
-
-                <Reveal i={2} onView={false}>
-                    <p
-                        data-testid={HERO_IDS.subheading}
-                        className="mt-10 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
-                    >
-                        {COPY.line}
-                    </p>
-                </Reveal>
-
-                {/* Two paths, not three asks. Home routes; the audience pages
-                    sell — so these go to the pages, not to signup. */}
-                <Reveal i={3} onView={false}>
-                    <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
-                            <Button
-                                size="lg"
-                                className="group h-12 w-full rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover sm:w-auto"
+            <div className="relative mx-auto max-w-7xl px-6 pb-14 pt-12 md:pb-20 md:pt-16">
+                <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
+                    <div className="lg:col-span-7">
+                        <Reveal onView={false}>
+                            <p
+                                data-testid={HERO_IDS.eyebrow}
+                                className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                             >
-                                I&apos;m a creator
-                                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                            </Button>
-                        </Link>
-                        <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
-                            <Button
-                                size="lg"
-                                variant="outline"
-                                className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-white/5 sm:w-auto"
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                                {HERO_EYEBROW}
+                            </p>
+                        </Reveal>
+
+                        <Reveal i={1} onView={false}>
+                            <KineticHeadline />
+                        </Reveal>
+
+                        <Reveal i={2} onView={false}>
+                            <p
+                                data-testid={HERO_IDS.subheading}
+                                className="mt-10 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
                             >
-                                I&apos;m a brand
-                                <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                            </Button>
-                        </Link>
+                                {COPY.line}
+                            </p>
+                        </Reveal>
+
+                        {/* Two paths, not three asks. Home routes; the
+                            audience pages sell — so these go to the pages,
+                            not to signup. */}
+                        <Reveal i={3} onView={false}>
+                            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
+                                    <Button
+                                        size="lg"
+                                        className="group h-12 w-full rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover sm:w-auto"
+                                    >
+                                        I&apos;m a creator
+                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Button>
+                                </Link>
+                                <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
+                                    <Button
+                                        size="lg"
+                                        variant="outline"
+                                        className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-white/5 sm:w-auto"
+                                    >
+                                        I&apos;m a brand
+                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                                    </Button>
+                                </Link>
+                            </div>
+                        </Reveal>
                     </div>
-                </Reveal>
+
+                    {/* **The ratio is on the panel, never on anything inside
+                        it** — the rule `PlaceholderImage` already holds, and
+                        the reason filling this slot moves nothing. The slider
+                        is `absolute inset-0` within it. */}
+                    <div className="lg:col-span-5">
+                        <Reveal i={2} onView={false}>
+                            <div className="relative aspect-[4/5] overflow-hidden rounded-lg border border-white/10 lg:aspect-[4/5]">
+                                <HeroSlider />
+                            </div>
+                        </Reveal>
+                    </div>
+                </div>
             </div>
         </section>
     );
@@ -248,6 +274,8 @@ function WhatWeRun() {
                         <PlaceholderImage
                             testid={PAGE_IDS.problemImage}
                             note="A creator shooting on location, phone on a gimbal, venue staff visible behind"
+                            src="/img/marketing/home-on-location.svg"
+                            alt="A creator shooting on location, a phone on a stand in front of them and venue staff working at the counter behind."
                             ratio="3/2"
                         />
                     </Reveal>
@@ -332,6 +360,8 @@ export default function Landing() {
                 <PlaceholderImage
                     testid={PAGE_IDS.bandImage}
                     note="Wide shot of a busy venue mid-campaign, creators and guests mixed, shot from above"
+                    src="/img/marketing/home-venue-wide.svg"
+                    alt="A busy venue mid-campaign seen wide, guests along the tables and a creator filming among them."
                     ratio="21/9"
                 />
             </div>

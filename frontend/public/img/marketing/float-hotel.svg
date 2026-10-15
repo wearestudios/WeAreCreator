@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="A hotel balcony at first light, drawn flat: a red cup and saucer resting on the rail, the city skyline catching the sun beyond it.">
+  <defs>
+    <linearGradient id="f3sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1527"/><stop offset="1" stop-color="#101F39"/>
+    </linearGradient>
+    <linearGradient id="f3dawn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D3A2"/><stop offset="0.7" stop-color="#F0B268"/><stop offset="1" stop-color="#E8B06B"/>
+    </linearGradient>
+    <radialGradient id="f3glow" cx="0.5" cy="0.4" r="0.62">
+      <stop offset="0" stop-color="#FFD9A0" stop-opacity="0.38"/><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="f3grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3"/></filter>
+  </defs>
+  <rect width="1200" height="800" fill="url(#f3sky)"/>
+  <rect y="40" width="1200" height="440" fill="url(#f3dawn)"/>
+  <rect width="1200" height="800" fill="url(#f3glow)"/>
+  <rect x="30" y="300" width="104" height="180" fill="#13253F"/>
+  <rect x="158" y="210" width="72" height="270" fill="#0D1B32"/>
+  <rect x="180" y="164" width="30" height="50" fill="#0D1B32"/>
+  <rect x="256" y="344" width="126" height="136" fill="#1A3053"/>
+  <rect x="408" y="248" width="80" height="232" fill="#13253F"/>
+  <rect x="516" y="322" width="152" height="158" fill="#0D1B32"/>
+  <rect x="696" y="216" width="66" height="264" fill="#1A3053"/>
+  <rect x="790" y="296" width="128" height="184" fill="#13253F"/>
+  <rect x="944" y="252" width="86" height="228" fill="#0D1B32"/>
+  <rect x="1056" y="330" width="130" height="150" fill="#1A3053"/>
+  <rect y="474" width="1200" height="10" fill="#E8B06B"/>
+  <rect y="484" width="1200" height="316" fill="#0B1A30"/>
+  <rect x="86" y="560" width="22" height="240" fill="#16294A"/>
+  <rect x="322" y="560" width="22" height="240" fill="#16294A"/>
+  <rect x="558" y="560" width="22" height="240" fill="#16294A"/>
+  <rect x="794" y="560" width="22" height="240" fill="#16294A"/>
+  <rect x="1030" y="560" width="22" height="240" fill="#16294A"/>
+  <rect y="520" width="1200" height="44" rx="10" fill="#1D3458"/>
+  <rect y="520" width="1200" height="10" rx="5" fill="#2A4873"/>
+  <ellipse cx="650" cy="520" rx="186" ry="34" fill="#E4E8EF"/>
+  <ellipse cx="650" cy="508" rx="186" ry="34" fill="#D8DEE8"/>
+  <path d="M784 404 q92 54 0 108" fill="none" stroke="#E4E8EF" stroke-width="26"/>
+  <path d="M540 368 h228 l-24 136 q-90 30 -180 0 z" fill="#FF2731"/>
+  <rect x="534" y="356" width="240" height="26" rx="13" fill="#E4E8EF"/>
+  <rect width="1200" height="800" filter="url(#f3grain)" opacity="0.055" style="mix-blend-mode:overlay"/>
+</svg>

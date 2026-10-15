@@ -1,5 +1,30 @@
 // Tilted photo cards floating behind the hero, drifting on scroll.
 //
+// ============================================================================
+// **UNMOUNTED. Nothing renders this.** Kept because `CARD_SHADOW` below is
+// imported by `BrandWall` and `CreatorLeaderboard`, and because several tests
+// pin this file's contents.
+//
+// It came off the hero because three layers were competing for one area: the
+// slider was a full-bleed ground, these drifted above it, and the poster type
+// sat on top of both. Measured at 1440, three of the four cards overlapped
+// the `h1` and one overlapped the subheading; at 390 one overlapped the `h1`.
+// The cards are positioned as percentages of the hero box while the type sits
+// in a centred `max-w-7xl` column, so the two were never going to agree — the
+// hero is two columns now and the picture is a framed panel. The proof
+// cluster came off `/for-brands`, `/for-creators` and `/why-weare` with it.
+//
+// **Before any of it is remounted, every card needs an `image` and every one
+// of those files has to exist.** For a while `Card` passed `src={card.image}`
+// while no card object carried an `image` at all, so six slots rendered as
+// bare tint — and a slot pointed at a file that is not there is worse again,
+// because a 404'd `<img>` draws the browser's broken-image glyph over the
+// tint the absent state was designed to be. The six paths below were added
+// and the six files drawn, so that half is done. The rule it cost is worth
+// keeping: **never wire a slot to a file that does not exist.** Draw the
+// file, then point at it, in that order.
+// ============================================================================
+//
 // The hero's argument is range — launch night, fashion, travel, fitness — and
 // four cards at four angles say it faster than a sentence can. They sit behind
 // and around the headline rather than beside it, so the page reads as one
@@ -45,9 +70,10 @@ import { MARKETING as IDS } from "@/constants/testIds";
 const CARDS = [
     {
         key: "launch",
+        image: "/img/marketing/float-fnb.svg",
         // PLACEHOLDER IMAGE: a restaurant on opening night, tables full, warm
         // service light, shot from the pass. Portrait 4:5.
-        note: "Restaurant on opening night, tables full, warm service light, portrait 4:5",
+        note: "Restaurant on opening night, tables full, warm service light, landscape 4:3",
         ratio: "4/3",
         className: "left-[2%] top-[14%] w-[26%] md:left-[3%] md:top-[16%] md:w-[19%]",
         rotate: -7,
@@ -56,9 +82,10 @@ const CARDS = [
     },
     {
         key: "fashion",
+        image: "/img/marketing/float-fashion.svg",
         // PLACEHOLDER IMAGE: a fashion creator mid-shoot against a plain wall,
         // outfit in motion. Portrait 4:5.
-        note: "Fashion creator mid-shoot against a plain wall, outfit in motion, portrait 4:5",
+        note: "Fashion creator mid-shoot against a plain wall, outfit in motion, landscape 4:3",
         ratio: "4/3",
         className: "hidden md:block md:left-[19%] md:top-[58%] md:w-[15%]",
         rotate: 5,
@@ -66,6 +93,7 @@ const CARDS = [
     },
     {
         key: "travel",
+        image: "/img/marketing/float-hotel.svg",
         // PLACEHOLDER IMAGE: a hotel balcony at first light, coffee on the
         // rail, city beyond. Landscape 3:2.
         note: "Hotel balcony at first light, coffee on the rail, city beyond, landscape 3:2",
@@ -76,6 +104,7 @@ const CARDS = [
     },
     {
         key: "fitness",
+        image: "/img/marketing/float-fitness.svg",
         // PLACEHOLDER IMAGE: a fitness class mid-session, one participant
         // filming from the back of the room. Landscape 3:2.
         note: "Fitness class mid-session, one participant filming from the back, landscape 3:2",
@@ -133,6 +162,7 @@ function Card({ card, progress, reduced }) {
 const PROOF_CARDS = [
     {
         key: "proof-left",
+        image: "/img/marketing/float-contact-sheet.svg",
         // PLACEHOLDER IMAGE: a creator's contact sheet or camera roll of a
         // finished shoot, spread on a table. Landscape 3:2.
         note: "Contact sheet from a finished shoot spread on a table, landscape 3:2",
@@ -143,6 +173,7 @@ const PROOF_CARDS = [
     },
     {
         key: "proof-right",
+        image: "/img/marketing/float-report-screen.svg",
         // PLACEHOLDER IMAGE: a venue's own screen showing a campaign report,
         // somebody pointing at the reach figure. Landscape 3:2.
         note: "Venue screen showing a campaign report, somebody pointing at the reach figure, 3:2",

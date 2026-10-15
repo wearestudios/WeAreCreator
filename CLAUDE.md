@@ -1503,6 +1503,25 @@ Hospitality", on through the list — each resolving against "We run it end to
 end.", which never moves. The motion *is* the message: what changes is the
 sector, what does not is that we run the campaign.
 
+**The hero is two columns, and that is a reversal of the arrangement the rest
+of this section was written for.** It was a full-bleed slider as the ground,
+four tilted cards drifting above it, and the poster type on top of both —
+three layers competing for one area. Measured at 1440, three of the four
+cards overlapped the `h1` and one overlapped the subheading; at 390 one
+overlapped the `h1`. The cards are positioned as percentages of the hero box
+while the type sits in a centred `max-w-7xl` column, so the two could never
+be made to agree by tuning either.
+
+So the words and the picture each get their own space: the type in
+`lg:col-span-7`, the slider in a framed `aspect-[4/5]` panel in
+`lg:col-span-5`, the left column first in DOM order so a phone reads the
+words before it meets the picture. **The scrims went with the overlap** —
+they existed to keep type legible over a picture, nothing readable sits over
+the picture now, and left in they would mute an illustration for nobody. The
+cards are unmounted; see below. Measured against the previous build on the
+identical harness: hero-phase CLS **0.2633 → 0.0084** at 390 and **0.0750 →
+0.0486** at 1440.
+
 - **It was a possessive on a campaign noun and all three defects are the
   reason it changed.** "Your launch night" → "Your menu tasting" against the
   tail "handled properly." — "your travel stay" and "your menu tasting" are
@@ -1524,24 +1543,57 @@ sector, what does not is that we run the campaign.
   drink" at exactly twelve.
 - **The lead and the tail are outside the morph.** Animating the whole line
   would say eight unrelated headlines are cycling rather than one sentence
-  being re-pointed. Verified across a full cycle at 390, 768 and 1280: the
+  being re-pointed. Verified across a full cycle at 390, 768 and 1440: the
   `h1` holds one height at each width and nothing overflows horizontally.
+- **The type is sized to a column now, not to the window.**
+  `clamp(2.25rem, 5vw, 4.75rem)` at `lineHeight: 1.0`, down from
+  `clamp(2.5rem, 10.5vw, 8.5rem)` at 0.94. The headline lives in seven of
+  twelve columns, about 695px at `max-w-7xl` and 1440 — where 8.5rem put
+  "Influencer marketing for" on a line of its own. It is still well past
+  `fluid-hero`'s 4.25rem top step, which is what the poster-scale rule was
+  ever about; the vw term was settled by measurement, not by guessing.
 - **Per letter, on a stagger, moving as well as fading.** A single opacity
   tween on the phrase is the thing this is specified not to be. ~4s a phrase;
   the swap itself is under a second, so the phrase is still for most of its
   life.
-- **The tallest phrase reserves the box.** A line that changes height moves
-  the page every four seconds — a CLS event per cycle.
+- **The box is reserved by rendered width, not by character count.** Every
+  phrase is drawn invisibly into one grid cell (`col-start-1 row-start-1`),
+  so the box is as wide and as tall as the widest and tallest phrase the
+  browser actually draws. A line that changes height moves the page every
+  four seconds — a CLS event per cycle — and that property is unchanged.
+
+  **It used to reserve with one invisible copy of the "longest" phrase,
+  picked by `reduce` on string length, and a character count is not a
+  width.** "Hospitality" and "Real Estate" are both eleven characters, the
+  reduce keeps the first on a tie, and in Fraunces at poster size "Real
+  Estate" renders wider — the animated layer is `absolute whitespace-nowrap`,
+  so on that one slide it ran past its own box and the hero's
+  `overflow-hidden` clipped it. Measured before the fix: the phrase escaped
+  its box by 2px at 390, 3px at 768 and 5px at 1440, on every cycle. Nothing
+  about a font can be inferred from the characters in a string, so the only
+  reliable reservation is one the browser draws.
 - One `aria-label` on the `h1`, with the animated spans hidden. A screen
   reader reading four letters at a time as they arrive is gibberish.
 - Under `prefers-reduced-motion` the first phrase renders and no timer starts.
 
-**`FloatingCards`** are tilted photo cards drifting on scroll, in two clusters:
-four behind the hero (the four categories, said at once rather than one at a
-time) and two hanging past the edges of a proof strip. Rotation is static;
-the drift is `y` off the scroll position, so nothing touches layout. **Two
-cards below `md`, four above** — four overlapping compositing layers on a
-390px screen sit behind text nobody can read through them.
+**`FloatingCards` is unmounted on all four pages and the file is kept.**
+They were tilted photo cards drifting on scroll, in two clusters: four behind
+the hero and two hanging past the edges of a proof strip. They came off the
+hero because the cards and the type could not share the area — see the two
+columns above — and the proof pair came off `/for-brands`, `/for-creators`
+and `/why-weare` with them. `ProofStrip` has nothing absolutely positioned,
+so each page's `relative` wrapper went too, having existed only to anchor the
+cards.
+
+The file stays because `CARD_SHADOW` is imported by `BrandWall` and
+`CreatorLeaderboard`, and because several tests pin its contents. **What has
+to be true before any of it is remounted** is written at the top of the file:
+for a while `Card` passed `src={card.image}` while no card object carried an
+`image`, so six slots rendered as bare tint — and pointing a slot at a file
+that does not exist is worse again, because a 404'd `<img>` draws the
+browser's broken-image glyph over the tint the absent state was designed to
+be. Both halves are fixed now. The rule it cost is the one to keep: **never
+wire a slot to a file that does not exist.**
 
 **This is the only `box-shadow` on the marketing site**, and a deliberate
 exception to the elevation rule: a card drifting at a different rate from the
@@ -1557,10 +1609,35 @@ cross-fading every seven seconds on the page most likely to be opened on
 mobile data. `HeroSlider.jsx` is the reversal, and the original measurement is
 the budget it had to come in under rather than a decision it overrode.
 
-- **At most two layers are painted, ever.** The deck is four slides and the
-  DOM holds the outgoing one and the incoming one; `peakLayersOverTenSeconds`
-  measured 2. Rendering all four with three at `opacity: 0` would pay the
-  original cost in full — an invisible full-viewport layer still composites.
+**It is a framed panel now, not a ground.** The slider returned underneath
+the cards, which is what produced the three-layer hero the section above
+records; with the hero split in two it fills an `aspect-[4/5]` panel in the
+right column instead of the whole section. Three consequences, and the first
+is the one to read carefully:
+
+- **The two-layer budget is kept rather than required.** It was set against a
+  full-viewport layer and a panel is a fraction of one, so the rule no longer
+  has to hold — it is kept because it is the right shape for the problem at
+  any size, and the cost of dropping it is paid on exactly the devices least
+  able to afford it. At most two layers are painted, ever: the DOM holds the
+  outgoing slide and the incoming one; `peakLayersOverTenSeconds` measured 2.
+  Rendering all eight with seven at `opacity: 0` would pay for them in full —
+  an invisible compositing layer still composites.
+- **Both scrims are gone.** A heavy left-to-right wash plus a bottom gradient
+  existed for one job, keeping poster type legible over the picture, and
+  nothing readable sits over the picture any more. What is left is a soft
+  bottom vignette, purely so the dots have something to sit on.
+- **The dots moved inside the panel.** They were aligned to the page column
+  with `mx-auto max-w-7xl px-6`, which was right when the slider was the
+  full-bleed ground under the type and means nothing now that the picture is
+  a panel somewhere else on the row.
+
+**The panel is 4:5 and the eight hero drawings are 16:9**, so `object-cover`
+shows the middle 45% of each one. The drawings were made for a full-bleed
+ground, with the left two-fifths deliberately dark for a headline that was
+over them and the subject to the right, and a centred crop cuts through
+both. Re-cropping them to portrait is the fix and is drawing work, not
+layout work.
 - **The slides come from the headline.** One per `PHRASES` entry, in the
   headline's order, so the picture changes as the words morph — eight now that
   the headline runs the sector list, and **it costs nothing at runtime**,
@@ -1579,11 +1656,15 @@ the budget it had to come in under rather than a decision it overrode.
   incoming above would cover the old slide at full opacity on the frame it
   mounts — a hard cut with a 600ms fade running invisibly underneath — and
   dissolving one layer is half the work of fading two.
-- **The pause listeners go on the hero, not on the slider.** The slider is
-  `absolute inset-0` *behind* the content, so a pointer over the headline is
-  never over this element; handlers on the slider would pause only for the few
-  pixels of background either side of the type. `focusin`/`focusout` rather
-  than `focus`/`blur`, which do not bubble.
+- **The pause listeners bind to the parent, which is the panel.** They had
+  to reach the whole hero section when the slider was the ground behind the
+  content column: a pointer over the headline was never over this element,
+  and handlers on the slider itself would have paused only for the few pixels
+  of background either side of the type. The same line of code means
+  something better now — hovering the picture pauses it, and hovering the
+  words does not stop a picture the reader is not looking at.
+  `focusin`/`focusout` rather than `focus`/`blur`, which do not bubble, so
+  tabbing to the dots still pauses.
 - `will-change` is released on `animationend`, the rule the app's motion layer
   already holds, and `EASE_CSS` is built from `EASE` rather than retyped so a
   second curve cannot be introduced.

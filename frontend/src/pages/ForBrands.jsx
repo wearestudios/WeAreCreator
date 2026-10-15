@@ -32,7 +32,6 @@ import {
     ClosingSection,
 } from "@/components/marketing/Sections";
 import ProofStrip from "@/components/marketing/ProofStrip";
-import FloatingCards from "@/components/marketing/FloatingCards";
 import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
 import CountedGeography from "@/components/marketing/CountedGeography";
 import FeeFlow from "@/components/marketing/FeeFlow";
@@ -155,18 +154,15 @@ export default function ForBrands() {
                     // service lighting, a creator filming at a table in the
                     // mid-ground. Landscape 16:9.
                     note: "Full restaurant on opening night, creator filming at a table, landscape 16:9",
+                    src: "/img/marketing/brands-full-house.svg",
+                    alt: "A full restaurant on opening night, guests at every table under warm pendant light, and a creator filming at a table in the middle of the room.",
                     ratio: "16/9",
                 }}
             />
 
             {/* Counted, never written down — and absent entirely below the
                 floors, because a small number is not proof. */}
-            {/* The proof figures, with two cards floating past the strip's
-                edges — the second of the two card clusters. */}
-            <div className="relative">
-                <FloatingCards set="proof" />
-                <ProofStrip />
-            </div>
+            <ProofStrip />
 
             <section className="border-b border-white/10 py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
@@ -204,6 +200,8 @@ export default function ForBrands() {
                     // with a tablet, checking creators in at the door, evening.
                     // Portrait-ish 4:3 so it sits beside body copy.
                     note: "WeAre manager checking creators in at a venue door with a tablet, 4:3",
+                    src: "/img/marketing/brands-door-checkin.svg",
+                    alt: "A WeAre manager checking creators in at a lit venue door, tablet in hand, with two creators waiting to the side.",
                     ratio: "4/3",
                 }}
                 flip
@@ -239,6 +237,7 @@ export default function ForBrands() {
                             // naming Indiranagar would brief a photograph for
                             // a city the page may not be talking about.
                             note: "City shopfronts at dusk, lit up, people on the street, landscape 3:2",
+                            src: "/img/marketing/brands-city-dusk.svg",
                             // Describes the photograph and names no city, for
                             // the reason the note above gives: the place this
                             // section names is counted at request time.
