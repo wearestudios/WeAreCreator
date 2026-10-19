@@ -120,6 +120,9 @@ export const ADMIN_CAMPAIGN_PAGE = {
 	status: 'admin-campaign-page-status',
 	brandLink: 'admin-campaign-page-brand',
 	managerName: 'admin-campaign-page-manager',
+	// The way out of "there are no managers yet", which named a step with no
+	// screen behind it until Team grew one.
+	createManager: 'admin-campaign-page-create-manager',
 	compensation: 'admin-campaign-page-compensation',
 	slot: (id) => `admin-campaign-page-slot-${id}`,
 	slotBooking: (id) => `admin-campaign-page-booking-${id}`,
@@ -465,6 +468,33 @@ export const ADMIN_TEAM = {
 	phone: 'admin-team-phone',
 	submit: 'admin-team-submit',
 	empty: 'admin-team-empty',
+};
+
+// The other staff role on the same screen, and deliberately its own block.
+//
+// A `campaign_manager` is not a scoped console: they are assigned per
+// campaign and they read creators' phone numbers on the shoots they run. Two
+// forms with two ids is what stops a check — or a person — treating the two
+// as one kind of account.
+export const ADMIN_MANAGERS = {
+	section: 'admin-managers',
+	// Its own id rather than `ADMIN_TABLE.root`: two tables share this screen,
+	// and two elements carrying `admin-table` is one id that finds whichever
+	// the DOM happens to reach first.
+	table: 'admin-managers-table',
+	create: 'admin-manager-create',
+	name: 'admin-manager-name',
+	email: 'admin-manager-email',
+	password: 'admin-manager-password',
+	generate: 'admin-manager-generate',
+	// Shown once, after the account exists. There is nowhere to read it again.
+	issued: 'admin-manager-issued',
+	copy: 'admin-manager-copy',
+	dismiss: 'admin-manager-dismiss',
+	phone: 'admin-manager-phone',
+	submit: 'admin-manager-submit',
+	row: (id) => `admin-manager-row-${id}`,
+	empty: 'admin-managers-empty',
 };
 
 // On the brand's own page: who at WeAre runs it.

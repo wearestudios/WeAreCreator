@@ -27,7 +27,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { ADMIN_PEEK, ADMIN_REVIEWS as IDS, BULK } from "@/constants/testIds";
+import { ADMIN_PEEK, ADMIN_REVIEWS as IDS, BULK, TRUST } from "@/constants/testIds";
 import { Button } from "@/components/ui/button";
 import { ListEmptyState } from "@/components/data/DenseView";
 import { ConfirmDialog } from "./dialogs";
@@ -86,16 +86,41 @@ function ReviewQueue({ config, onChanged }) {
         load();
     }, [load]);
 
+    /**
+     * The primary action for one row, which is not always "approve".
+     *
+     * **A queue can hold rows whose approve cannot succeed.** The campaign
+     * queue returns two kinds: a brief awaiting a decision, and a trusted
+     * brand's brief that is *already live* and awaiting a look. Approve
+     * writes with `status == pending_review` as its precondition, so on the
+     * second kind it answered 409 "This just moved — reload and try again" —
+     * a refusal that describes a race that did not happen and sends somebody
+     * to reload a list that was never stale.
+     *
+     * `config.altPrimary(row)` returns the action that *can* succeed, or null
+     * for an ordinary row. Offering approve and letting the server refuse is
+     * the thing this replaces, so there is no row where both are drawn.
+     */
+    const primaryFor = useCallback(
+        (row) => (row ? config.altPrimary?.(row) || null : null),
+        [config],
+    );
+
     const approve = useCallback(
         (row) => {
             if (!row) return;
+            const alt = primaryFor(row);
             setPeekId(null);
-            removeOptimistically(config.idOf(row), () => api.post(config.approvePath(row)), {
-                successMessage: config.approvedMessage(row),
-                onDone: () => onChanged?.(),
-            });
+            removeOptimistically(
+                config.idOf(row),
+                () => api.post(alt ? alt.path : config.approvePath(row)),
+                {
+                    successMessage: alt ? alt.message : config.approvedMessage(row),
+                    onDone: () => onChanged?.(),
+                },
+            );
         },
-        [config, onChanged, removeOptimistically],
+        [config, onChanged, removeOptimistically, primaryFor],
     );
 
     const reject = useCallback(
@@ -182,6 +207,14 @@ function ReviewQueue({ config, onChanged }) {
                                 {r.reference}
                             </span>
                         )}
+                        {/* **The exception, on the row rather than only in the
+                            peek.** `renderBadge` draws the state inside the
+                            peek, where both kinds want naming; here a chip on
+                            every row would print "Pending review" down a queue
+                            that is entirely pending review. So this marks only
+                            the row that is *not* what the queue implies — the
+                            one an admin would otherwise approve by reflex. */}
+                        {config.rowBadge?.(r)}
                     </span>
                 ),
             },
@@ -213,6 +246,7 @@ function ReviewQueue({ config, onChanged }) {
                 width: "w-40",
                 cell: (r) => {
                     const id = config.idOf(r);
+                    const alt = primaryFor(r);
                     return (
                         <span className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                             <RowButton
@@ -221,22 +255,22 @@ function ReviewQueue({ config, onChanged }) {
                                 onClick={() => reject(r)}
                                 testid={IDS.reject(id)}
                             >
-                                {config.rejectLabel}
+                                {alt?.rejectLabel || config.rejectLabel}
                             </RowButton>
                             <RowButton
                                 tone="primary"
                                 disabled={isBusy(id)}
                                 onClick={() => approve(r)}
-                                testid={IDS.approve(id)}
+                                testid={alt ? alt.testid(id) : IDS.approve(id)}
                             >
-                                {config.approveLabel}
+                                {alt ? alt.label : config.approveLabel}
                             </RowButton>
                         </span>
                     );
                 },
             },
         ],
-        [config, approve, reject, isBusy, selected],
+        [config, approve, reject, isBusy, selected, primaryFor],
     );
 
     const rows = useMemo(() => sortRows(raw || [], columns, sort), [raw, columns, sort]);
@@ -279,11 +313,34 @@ function ReviewQueue({ config, onChanged }) {
      * through; reporting "it failed" over one stale row would be a lie about
      * forty-nine real decisions.
      */
+    /**
+     * Which of the ticked rows this batch may actually be sent for.
+     *
+     * **A row whose approve cannot succeed is excluded from approving, not
+     * from selecting.** `POST /admin/bulk/campaigns` loops the real handler,
+     * so an auto-published brief in an approve batch comes back in `failed`
+     * with the same 409 the single row gave — forty-nine real decisions
+     * reported beside a refusal that was predictable before it was sent.
+     * Rejecting them in bulk is a different matter and stays allowed: pulling
+     * live briefs off the feed together is a real thing to want.
+     */
+    const approvableIds = useMemo(
+        () =>
+            [...selected].filter((id) => {
+                const row = (raw || []).find((r) => config.idOf(r) === id);
+                return !(row && primaryFor(row));
+            }),
+        [selected, raw, config, primaryFor],
+    );
+
+    const bulkIds = bulk === "approve" ? approvableIds : [...selected];
+    const bulkSkipped = selected.size - approvableIds.length;
+
     const runBulk = async (body) => {
         setBulkBusy(true);
         try {
             const { data } = await api.post(`/admin/bulk/${config.bulkKind}`, {
-                ids: [...selected],
+                ids: bulkIds,
                 action: bulk,
                 reason: (body?.reason || "").trim() || null,
             });
@@ -338,13 +395,27 @@ function ReviewQueue({ config, onChanged }) {
                     <span className={`${TEXT.body} text-primary-ink`}>
                         {selected.size} selected
                     </span>
+                    {/* **Disabled rather than absent, with the reason in the
+                        title.** The bar itself is absent until something is
+                        picked, which is the rule for chrome; this button has
+                        been picked *for* and cannot run, so vanishing it would
+                        read as the bar being broken. */}
                     <Button
                         size="sm"
                         onClick={() => setBulk("approve")}
+                        disabled={approvableIds.length === 0}
+                        title={
+                            approvableIds.length === 0
+                                ? "Everything selected is already live and awaiting a spot check — clear those one at a time."
+                                : undefined
+                        }
                         data-testid={BULK.approve}
-                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover sm:min-h-0"
+                        className="min-h-[2.75rem] bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-40 sm:min-h-0"
                     >
-                        {config.approveLabel} all
+                        {config.approveLabel}
+                        {approvableIds.length === selected.size
+                            ? " all"
+                            : ` ${approvableIds.length}`}
                     </Button>
                     <Button
                         variant="outline"
@@ -416,7 +487,7 @@ function ReviewQueue({ config, onChanged }) {
                                 testid={ADMIN_PEEK.action("reject")}
                             >
                                 <XCircle className="h-3.5 w-3.5" />
-                                {config.rejectLabel}
+                                {primaryFor(peek)?.rejectLabel || config.rejectLabel}
                             </PeekButton>
                             <PeekButton
                                 tone="primary"
@@ -425,7 +496,7 @@ function ReviewQueue({ config, onChanged }) {
                                 testid={ADMIN_PEEK.action("approve")}
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5" />
-                                {config.approveLabel}
+                                {primaryFor(peek)?.label || config.approveLabel}
                             </PeekButton>
                         </>
                     ) : null
@@ -458,12 +529,31 @@ function ReviewQueue({ config, onChanged }) {
                 title={
                     bulk === "reject"
                         ? `${config.rejectLabel} ${selected.size}?`
-                        : `${config.approveLabel} ${selected.size}?`
+                        : `${config.approveLabel} ${bulkIds.length}?`
                 }
                 description={
                     bulk === "reject"
                         ? `All ${selected.size} are told the same reason, and each decision is recorded separately.`
-                        : `All ${selected.size} go through one at a time, each one recorded and each person told.`
+                        : // **The skipped ones are named, not silently dropped.**
+                          // Ticking six and being told six went through when
+                          // four did is the shape of this that costs somebody
+                          // an afternoon of believing the queue is clear.
+                          [
+                              `All ${bulkIds.length} go through one at a time, each one recorded and each person told.`,
+                              bulkSkipped
+                                  ? `${bulkSkipped} of the ${selected.size} selected ${
+                                        bulkSkipped === 1 ? "is" : "are"
+                                    } already live and awaiting a spot check — ${
+                                        bulkSkipped === 1 ? "it is" : "they are"
+                                    } left out, because approving ${
+                                        bulkSkipped === 1 ? "it" : "them"
+                                    } is not a thing that can happen. Clear ${
+                                        bulkSkipped === 1 ? "it" : "them"
+                                    } one at a time.`
+                                  : null,
+                          ]
+                              .filter(Boolean)
+                              .join(" ")
                 }
                 requireReason={bulk === "reject"}
                 placeholder="What should they all know?"
@@ -478,7 +568,15 @@ function ReviewQueue({ config, onChanged }) {
                 destructive
                 kicker={config.rejectKicker}
                 title={confirm ? config.rejectTitle(confirm.row) : ""}
-                description={config.rejectDescription}
+                // **A string on two queues and a function on the third.** What
+                // rejecting *does* depends on the row where one queue holds
+                // two kinds: sending a draft back to its brand and pulling a
+                // brief creators can currently see are not the same warning.
+                description={
+                    typeof config.rejectDescription === "function"
+                        ? config.rejectDescription(confirm?.row)
+                        : config.rejectDescription
+                }
                 placeholder="What should they know?"
                 confirmLabel={config.rejectLabel}
                 onSubmit={(body) => confirm?.onSubmit(body)}
@@ -619,7 +717,7 @@ export function CampaignReviews({ onChanged }) {
                 title: "Briefs waiting to go live",
                 clearTitle: "No briefs waiting.",
                 blurb:
-                    "A campaign reaches creators when it's approved here, and not before. Read the brief; it's what a creator will act on.",
+                    "Most briefs reach creators when they're approved here. A trusted brand's goes live on submission and lands here already live, for a spot check — read the brief either way; it's what a creator will act on.",
                 emptyText: "Nothing submitted for review.",
                 idOf: (r) => r.id,
                 href: (r) => `/admin/campaigns/${r.id}`,
@@ -635,15 +733,71 @@ export function CampaignReviews({ onChanged }) {
                     ]
                         .filter(Boolean)
                         .join(" · "),
-                renderBadge: () => (
-                    <StatusTag
-                        state="pending_review"
-                        label={CAMPAIGN_STATUS_META.pending_review?.label}
-                        chip
-                    />
-                ),
+                // **Two kinds of row, so the badge has to read the row.** It
+                // was hardcoded to `pending_review`, which labelled a brief
+                // that creators could already see "Pending review" — the one
+                // word for it that is false.
+                renderBadge: (r) =>
+                    r?.auto_published ? (
+                        <StatusTag
+                            state="open"
+                            label="Live — needs a spot check"
+                            chip
+                        />
+                    ) : (
+                        <StatusTag
+                            state="pending_review"
+                            label={CAMPAIGN_STATUS_META.pending_review?.label}
+                            chip
+                        />
+                    ),
+                rowBadge: (r) =>
+                    r.auto_published ? (
+                        <span
+                            data-testid={TRUST.autoBadge(r.id)}
+                            className="flex-none"
+                            title="This brand publishes on submission. The brief is live; this is the read after the fact."
+                        >
+                            <StatusTag state="open" label="Live" chip />
+                        </span>
+                    ) : null,
+                // **The action that can succeed on an auto-published row.**
+                // Approve's write precondition is `status == pending_review`,
+                // which these do not have and never will: they are live. So
+                // approve is not offered on them at all — see `primaryFor` in
+                // `ReviewQueue` for why offering it and letting the server
+                // refuse is the thing this replaces.
+                altPrimary: (r) =>
+                    r.auto_published
+                        ? {
+                              label: "Looks fine",
+                              path: `/admin/campaigns/${r.id}/spot-check`,
+                              message: `“${r.title}” spot-checked`,
+                              testid: TRUST.spotCheck,
+                              // Reject still works and is the right door, but
+                              // on this row it does something different from
+                              // what "Send back" means on the others: it takes
+                              // a brief off the feed that creators can see now.
+                              rejectLabel: "Pull it down",
+                          }
+                        : null,
                 renderDetail: (r) => (
                     <div className="space-y-5 text-sm">
+                        {/* **What kind of row this is, before the brief.** The
+                            reader's next action differs, so the fact that
+                            changes it goes above the thing they are reading. */}
+                        {r.auto_published && (
+                            <p className="rounded-md border border-state-progress/30 bg-state-progress/10 px-4 py-3 text-sm leading-relaxed text-state-progress">
+                                This brand has earned publishing on submission, so this
+                                brief went live on its own
+                                {r.auto_published_at
+                                    ? ` ${formatDate(r.auto_published_at)}`
+                                    : ""}{" "}
+                                and nobody has read it yet. Clearing it records the read;
+                                rejecting it takes it off the feed.
+                            </p>
+                        )}
+
                         {/* A brand that lost its verification while the brief
                             sat here can't have it approved — say so up front. */}
                         {!r.brand_verified && (
@@ -717,9 +871,18 @@ export function CampaignReviews({ onChanged }) {
                 approvedMessage: (r) => `“${r.title}” is live`,
                 rejectedMessage: (r) => `“${r.title}” sent back to the brand`,
                 rejectKicker: "Send back",
-                rejectTitle: (r) => `Send “${r.title}” back?`,
-                rejectDescription:
-                    "It returns to the brand as a draft with your reason attached, so they can fix it and submit again.",
+                rejectTitle: (r) =>
+                    r?.auto_published
+                        ? `Pull “${r.title}” off the feed?`
+                        : `Send “${r.title}” back?`,
+                rejectDescription: (r) =>
+                    r?.auto_published
+                        ? // Said plainly, because this is the one row where
+                          // the button's ordinary meaning understates it:
+                          // creators can see this brief right now, and some
+                          // may already have pitched on it.
+                          "This brief is live. Rejecting it takes it off the feed and returns it to the brand as a draft with your reason attached — anyone already looking at it will stop seeing it."
+                        : "It returns to the brand as a draft with your reason attached, so they can fix it and submit again.",
             }}
         />
     );

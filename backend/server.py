@@ -26650,8 +26650,26 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         {"verification_status": "verified", "pending_review": True}
     )
     brands_unverified = await db.brand_profiles.count_documents({"verified": False})
+    # **Both kinds of row the queue actually holds**, because the badge is a
+    # count of the work and the queue shows both. It counted only
+    # `pending_review`, so a console with nothing submitted but four
+    # trusted-brand briefs awaiting a spot check read `0` over a queue with
+    # four rows in it — and a badge that says there is nothing to do is read,
+    # believed, and not clicked. The same `$or` as `list_campaigns_for_review`,
+    # so the number and the list cannot disagree about what counts.
     campaigns_to_review = await db.campaigns.count_documents(
-        {"status": CAMPAIGN_REVIEW_STATUS}
+        {
+            "$or": [
+                {"status": CAMPAIGN_REVIEW_STATUS},
+                {"auto_published_at": {"$ne": None}, "spot_checked_at": None},
+            ]
+        }
+    )
+    # Reported apart as well as summed: "six waiting, two of them already
+    # live" is two different jobs, and the spot-check half is the one where
+    # the cost of leaving it is a brief on the feed nobody has read.
+    campaigns_to_spot_check = await db.campaigns.count_documents(
+        {"auto_published_at": {"$ne": None}, "spot_checked_at": None}
     )
     payouts_pending_count = int(pending_agg[0]["n"]) if pending_agg else 0
 
@@ -26660,6 +26678,7 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
         "creator_edits_to_review": creators_changed,
         "brands_to_verify": brands_unverified,
         "campaigns_to_review": campaigns_to_review,
+        "campaigns_to_spot_check": campaigns_to_spot_check,
         "applicants_to_verify": collab_action_counts["applied"],
         "fees_to_agree": collab_action_counts["accepted"],
         "slots_to_book": collab_action_counts["commercial_agreed"],
@@ -26819,6 +26838,18 @@ async def admin_dashboard(
     active_brands_rows = facet.get("active_brands") or []
     active_brands = active_brands_rows[0]["n"] if active_brands_rows else 0
 
+    # The other half of the review queue: live already, and waiting on a read
+    # rather than on a decision. A status aggregation cannot see it, because
+    # these rows carry status `open` — see the `awaiting` block below. Scoped
+    # with `campaign_match`, so a narrowed console gets a narrowed number.
+    campaigns_to_spot_check = await db.campaigns.count_documents(
+        {
+            **campaign_match,
+            "auto_published_at": {"$ne": None},
+            "spot_checked_at": None,
+        }
+    )
+
     docs = facet.get("rows") or []
 
     # --- collaborations: per-campaign buckets and the queue counts, one pass ---
@@ -26943,7 +26974,21 @@ async def admin_dashboard(
         "creators_to_review": creators_to_review,
         "creator_edits_to_review": creator_edits,
         "brands_to_verify": brands_to_verify,
-        "campaigns_to_review": campaigns_by_status.get(CAMPAIGN_REVIEW_STATUS, 0),
+        # **The badge counts both kinds of row the queue holds.** It was
+        # `campaigns_by_status[pending_review]`, which a status aggregation can
+        # answer and which is therefore blind to the other half:
+        # `list_campaigns_for_review` also returns a trusted brand's brief that
+        # is *already live* and awaiting a spot check, and that row has status
+        # `open`. So a console with nothing submitted and four live briefs
+        # waiting on a read showed `0` above a queue with four rows in it — and
+        # a badge saying there is nothing to do is read, believed, and not
+        # clicked. Scoped like every other number here.
+        "campaigns_to_review": campaigns_by_status.get(CAMPAIGN_REVIEW_STATUS, 0)
+        + campaigns_to_spot_check,
+        # Reported apart as well as summed, because they are two jobs: one is a
+        # decision somebody is waiting on, the other is a read of something
+        # strangers can already see.
+        "campaigns_to_spot_check": campaigns_to_spot_check,
         "collaborations_to_move": sum(
             collab_by_state.get(s, 0) for s in ADMIN_ACTION_STATES
         ),

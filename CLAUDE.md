@@ -741,6 +741,43 @@ here, because a case study links outward rather than sideways.
   with the page. The roster is **read-only** on the form: a box an admin can
   type a name into is a box that gets a name typed into it.
 
+#### The hero, without which none of this could ever be published
+
+`hero_image_url` is in `_CASE_STUDY_REQUIRED` and publish 409s without one.
+`_our_image_path` takes only a path this server issued, and
+`POST /admin/case-studies/images` is the only way to get one — and **the
+editor had no image control and never sent the key.** So "Blank draft
+created." was permanently unpublishable, and so was a draft prefilled from a
+closed campaign that happened to have no cover. The publish button correctly
+disabled itself and listed "a hero image" under "Before this can go live",
+with nothing anywhere able to supply one. This is the only public evidence
+that this operation runs campaigns end to end.
+
+- **Two halves were missing and both are needed.** A control that uploads to
+  that route, and the key in the `PUT` body: `PUT` writes only the keys it is
+  sent, so a field the form never sends is a field the form cannot change.
+- **`ImageUploadField` is reused, extended by one prop.** It already had
+  `responseKey`, which is exactly this endpoint's shape — it answers `{ url }`
+  and the caller stores the url. What did not fit is removal: the cover and
+  logo routes own a record, so `remove` DELETEs the same path, and this route
+  **owns no record and has no DELETE**. `uploadOnly` makes removal
+  `onChange(null)` and no request. The uploaded file stays on disk, which is
+  the same trade `_replace_image` makes in the other direction: an orphan byte
+  is cheaper than a record pointing at nothing.
+- **The gallery is wired too, off the same endpoint, and it had no field at
+  all** — while `_clean_case_study_gallery`, `MAX_CASE_STUDY_GALLERY` and the
+  public page's "The content" section all existed. A caption is optional per
+  image; the picker is keyed on the row count so it resets after each add,
+  which is what stops the next pick reading as a replace of the row just
+  added.
+- **The screen it all sits on had never rendered.** Three of the list's
+  columns carried a `value` and no `cell`, and `DataTable` calls
+  `col.cell(row, index)` on every render path — so Case studies threw
+  `col.cell is not a function` on first paint and the section had only ever
+  shown "Case studies couldn't load". `value` is what sorts and `cell` is what
+  draws; **a column needs both**, and a test now walks this file's columns for
+  it. A swept check found no other table with the same shape.
+
 ## The brand behind the brief
 
 A creator could see a campaign and learn nothing about who was posting it.
@@ -2978,6 +3015,61 @@ registered address or its documents from the screen where they decide it.
   page" means losing the queue to read the record and going back to act on it.
   All three pages already had them; what was missing was the way there.
 
+### Two kinds of row in the campaign queue, and only one can be approved
+
+`GET /admin/campaigns/pending` has always returned two kinds: a brief awaiting
+a decision (`status == pending_review`), and a **trusted brand's brief that is
+already live** and awaiting a look (`auto_published_at` set,
+`spot_checked_at` unset) — the check moved to after publication, which is the
+whole trade "Brands whose briefs stop queueing" makes. The row says which it
+is in `auto_published`, and **the frontend read none of it.**
+
+So a live brief was labelled "Pending review" — the one word for it that is
+false — and the only action offered was approve, whose write precondition is
+`status == pending_review`. It answered **409 "This just moved — reload and
+try again"**: a refusal describing a race that never happened, sending
+somebody to reload a list that was never stale. The one button that did work
+was Send back, which pulls a live brief off the feed.
+
+- **`config.altPrimary(row)` is the per-row primary action**, and where it
+  returns one, approve is **not drawn at all**. Offering a button and letting
+  the server refuse it is the thing this replaces; there is no row where both
+  appear. `ReviewQueue.approve` dispatches whichever it is, so one `api.post`
+  still serves all three queues — and the keyboard `A` goes the same way,
+  which a separate button would have missed.
+- **The badge reads the row, not the queue.** `renderBadge` was hardcoded to
+  `pending_review`. There are now two: the peek names the state either way,
+  and `rowBadge` marks **only** the exception — a chip on every row would
+  print "Pending review" down a queue that is entirely pending review, so the
+  marker is on the row that is *not* what the queue implies.
+- **Reject keeps both doors and changes its words.** On an auto-published row
+  the label is "Pull it down" and the confirmation says the brief is live and
+  anyone looking at it will stop seeing it. Same route, same outcome; what
+  differs is that the ordinary copy understates it. `rejectDescription` takes
+  the row for that reason, where the other two queues pass a string.
+- **Bulk approve excludes them; bulk reject does not.** `POST /admin/bulk/...`
+  loops the real handler, so an auto-published row in an approve batch comes
+  back in `failed` with the same predictable 409 — forty-nine real decisions
+  reported beside a refusal nobody needed to send. They stay *selectable*,
+  because pulling several live briefs together is a real thing to want. The
+  button counts what it will actually send, the skipped ones are **named in
+  the confirmation** rather than silently dropped, and it is disabled with the
+  reason in its title when everything picked is excluded.
+- **The sidebar badge counts both kinds, and reports the live half apart.** It
+  was `campaigns_by_status[pending_review]`, which a status aggregation can
+  answer and which is therefore blind to the other half — those rows carry
+  status `open`. A console with four live briefs awaiting a read showed `0`
+  above a queue with four rows in it, and a badge saying there is nothing to
+  do is read, believed and not clicked. `campaigns_to_spot_check` travels
+  beside the sum because they are two jobs, and the second is the one whose
+  cost is a brief on the feed nobody has read.
+
+  **There are two `awaiting` dicts and only one feeds the badge.** The copy in
+  `admin_metrics` is admin-only and not what the sidebar reads; `AdminConsole`
+  reads `/admin/dashboard`. Both are fixed, and the dashboard's is the one
+  that mattered — a fix applied only to the first would have looked right in
+  the diff and changed nothing on screen.
+
 ### Fifty at a time
 
 Approving fifty creators one at a time is the heaviest process in this product.
@@ -4970,6 +5062,49 @@ state, so a narrowed console is a link somebody can send; it renders nothing
 for somebody on one brand. **No screen filters by brand itself** — a test greps
 the whole frontend for `assigned_brand_ids` and fails on a hit.
 
+### The other staff role, and the screen it had none of
+
+`campaign_manager` is the second staff account an admin creates, and
+`POST /admin/managers` **had no caller anywhere**. That was not a cosmetic
+gap: every brand-posted brief is weare-run, so with no manager account in
+existence no weare-run campaign could be staffed — **no roster, no daysheet
+and no check-in on any of them** — and the campaign page's own assign dialog
+said "There are no WeAre managers yet. Create one first" while pointing at a
+screen that did not exist. It is a link to Team now.
+
+Both roles live on `/admin/team`, in two blocks, because both are accounts an
+admin makes and both sign in with email and password. **What each block says
+is what the role can see**, not what it is called:
+
+- `weare_team` — assigned per **brand**, sees this console scoped to them, and
+  no creator contact details.
+- `campaign_manager` — assigned per **campaign**, and on the ones they run
+  sees the roster and the daysheet, which carry **creators' phone numbers**.
+
+That is the only distinction that matters at the moment somebody is choosing,
+and it is why this is two labelled forms rather than one form with a role
+dropdown — a picker would make the phone numbers a detail inside it.
+
+- **The manager block is gated on `allAccess`**, the way `AdminConsole` gates
+  `/admin/metrics` and `BrandDetailPage` gates its own admin-only half.
+  `POST /admin/managers` is `require_roles("admin")` where much of this
+  console is `CONSOLE_ROLES`, and a form that 403s is worse than one that is
+  absent. The team block needs no gate: the whole section is out of a team
+  member's sidebar.
+- **A password is typed or generated, and a generated one is shown exactly
+  once.** The create route answers with the account and **no credential**, so
+  there is nothing to echo — what is on screen is what the browser generated a
+  moment earlier, from `crypto.getRandomValues` and never `Math.random`, held
+  in state until it is dismissed. Reloading loses it, which is the honest
+  behaviour: there is no second copy to go and read, and the note says so.
+  Nothing here logs it, and a test fails the file for a `console.*` call.
+- The alphabet leaves out `O`/`0` and `l`/`1`/`I`, because the first thing
+  that happens to this value is somebody reading it down a phone.
+- Assignment stays elsewhere, the rule the team half already holds: a manager
+  goes on a campaign from the campaign's page. Both tables' assignment columns
+  are readouts, and the manager table's is the active-campaign count — the
+  number you look at before handing somebody a twelfth shoot.
+
 ## What an admin may create
 
 We are the operator as well as the platform. Some campaigns are ours to run,
@@ -5913,6 +6048,57 @@ the backend log, so it can't gate a PR.
 Build collaborations through `tests/pipeline.py` rather than by hand — it routes
 each step to whoever owns it. Do not change `addopts` in `pytest.ini`; serialize
 with `-n 0`.
+
+### Every route on the admin router has a caller
+
+`test_admin_surface.py` is `test_manager_experience.py`'s rule pointed at the
+largest router in the product. That one made "a backend flow with no UI is not
+shipped" mechanical for **one router out of seventeen** and found five real
+gaps the day it was written; this one covers 125 routes and found three that
+had each cost something — no way to create a campaign manager, no way to clear
+a spot check, no way to give a case study the hero image publish requires.
+
+- **The method is part of the match, and that is what makes it work.**
+  `/admin/managers` was already in the source as a `GET`, so a pattern reading
+  the path alone passes the missing `POST`. Measured: a path-only sweep
+  false-passed two of the three real gaps.
+- **Five call forms are accepted**, each in use here and each unambiguous
+  about the path: `api.get(` with whitespace or a newline before the dot;
+  `url:` and `path:` on a `POST` (the offline queue and the review queue both
+  declare a request as data, which is a shape worth having rather than one to
+  regex around); `endpoint=` as a prop, where `NumberSetting` legitimately
+  covers a GET/PUT pair with one value; and `${API_BASE}` or `downloadCsv(`
+  for an authenticated link. The last three cannot be method-checked and the
+  docstring says so.
+- **A "bare path literal anywhere" form was tried and rejected.** It passes
+  any route sharing a path with a called one, which is exactly the shape of
+  the bugs this is for — it passed both `POST /admin/managers` and
+  `POST /admin/case-studies/images` while they were broken.
+- **`INDIRECT_CALLERS` names the exemptions one at a time, with the file.**
+  Eight routes are called through a path built at the call site — an action
+  interpolated into the last segment (`trust/${action}`,
+  `deletion-requests/${id}/${kind}`) or a path held in an endpoint map — so
+  the literal does not appear in the source at all. A regex tolerant enough
+  to pass those passes the real gaps, so they are a reviewable list instead,
+  the arrangement `clock-exempt:` and `ALIASES` already use. **Each exemption
+  is itself checked**: the named file has to mention the path's head, or an
+  exemption would be a claim rather than a fact.
+- **`UNBUILT` is a ratchet, not an exemption list.** Nineteen routes are
+  genuinely unreachable, reported rather than wired, because nineteen screens
+  in one change is how a change stops being reviewable. A second test asserts
+  each is **still** uncalled, so building one fails the suite and tells you to
+  delete the line. The list can only shrink, and a third test fails any entry
+  naming a route that no longer exists.
+
+What is in `UNBUILT` today, by kind: the three admin-editable settings with an
+editor endpoint and no form (`trusted-brands`, `large-campaign`,
+`leaderboard` — the other six have one); the six background jobs' "run it now"
+doors, of which only `/admin/jobs/retention` is wired; `case-studies/order`
+and `DELETE case-studies/{id}`; `campaigns/{id}/duplicate` and
+`delivery-cost`; `GET /admin/survey/creator`, whose CSV export is wired while
+the readable JSON is not; and two reads whose data already reaches the screen
+another way (`campaigns/{id}/refund`, `creators/incomplete`) — for those the
+honest fix may be deleting the route rather than building a screen.
 
 ### Reading the source is not driving the code
 

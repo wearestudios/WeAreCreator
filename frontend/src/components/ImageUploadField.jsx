@@ -5,12 +5,20 @@
 // remove it — so they are one component. Two copies is how one of them ends up
 // with a size check and the other doesn't.
 //
-// Two modes, because a cover has to be pickable on a brief that does not exist
-// yet:
+// Three modes, because the three callers differ in who owns the stored value:
 //   - **immediate**  `endpoint` given: uploads on pick, deletes on remove.
+//                    The cover and logo routes own a record, so DELETE on the
+//                    same path is what clears it.
 //   - **deferred**   no `endpoint`: holds the File and previews it locally,
 //                    handing it up through `onFile` for the caller to send once
 //                    it has an id to send it to.
+//   - **uploadOnly** `endpoint` + `uploadOnly`: the endpoint *issues a path*
+//                    and updates nothing. `POST /admin/case-studies/images` is
+//                    that shape — it answers `{ url }` and the caller stores
+//                    the url itself — so there is no record to DELETE, and
+//                    firing one at an upload-only route would be a request
+//                    with no handler. Removing is the caller dropping the url
+//                    it was holding, which is `onChange(null)` and no request.
 // The deferred preview is an object URL, revoked on replace and unmount — a
 // blob left dangling is a copy of the file held in memory for the rest of the
 // session.
@@ -40,6 +48,8 @@ export default function ImageUploadField({
     onFile,
     endpoint,
     responseKey,
+    // The endpoint issues a path and owns no record — see the modes above.
+    uploadOnly = false,
     shape = "cover",
     maxBytes = FALLBACK_MAX_IMAGE_BYTES,
     acceptedMimes = FALLBACK_IMAGE_MIMES,
@@ -118,6 +128,16 @@ export default function ImageUploadField({
             releasePreview();
             setLocalPreview(null);
             onFile?.(null);
+            return;
+        }
+        // Nothing to DELETE: the caller holds the url, so dropping it is the
+        // removal. The uploaded file stays on disk, which is the same trade
+        // `_replace_image` makes in the other direction — an orphan byte is
+        // cheaper than a record pointing at nothing.
+        if (uploadOnly) {
+            releasePreview();
+            setLocalPreview(null);
+            onChange?.(null);
             return;
         }
         setBusy(true);

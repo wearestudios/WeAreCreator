@@ -1000,9 +1000,20 @@ function ReassignManagerDialog({
                         </SelectContent>
                     </Select>
                     {managers.length === 0 && (
+                        // **"Create one first" used to name a step that did not
+                        // exist**: there was no screen behind it, so the one
+                        // sentence telling an admin what to do pointed nowhere.
+                        // It is a link now, to the half of Team that makes one.
                         <p className="text-sm leading-relaxed text-muted-foreground">
-                            There are no WeAre managers yet. Create one first — until then a
-                            campaign stays with the brand's own person.
+                            There are no WeAre managers yet.{" "}
+                            <Link
+                                to="/admin/team"
+                                data-testid={IDS.createManager}
+                                className="underline underline-offset-4 transition-colors duration-150 hover:text-primary-ink"
+                            >
+                                Create one on the Team screen
+                            </Link>{" "}
+                            — until then a campaign stays with the brand&apos;s own person.
                         </p>
                     )}
 

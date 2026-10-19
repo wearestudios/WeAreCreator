@@ -24,7 +24,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, Eye, Loader2, Plus, Wand2 } from "lucide-react";
 
-import { api, formatApiError } from "@/lib/api";
+import { api, formatApiError, mediaUrl } from "@/lib/api";
+import ImageUploadField from "@/components/ImageUploadField";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { useOptimisticAction } from "@/lib/useOptimistic";
 import { DataTable } from "@/components/admin/console/DataTable";
@@ -70,6 +71,96 @@ function Row({ label, hint, children }) {
 }
 
 /**
+ * The gallery: the shots the campaign actually produced.
+ *
+ * **It had no editor at all**, while `_clean_case_study_gallery`,
+ * `MAX_CASE_STUDY_GALLERY` and the public page's "The content" section all
+ * existed — so the one part of a case study that shows the work was
+ * unreachable. Same endpoint as the hero, same rule about whose paths these
+ * are.
+ *
+ * A caption is optional per image. `_clean_case_study_gallery` drops a row
+ * whose url is not ours and de-duplicates on url, so adding the same file
+ * twice is not an error here either — it is just one row.
+ */
+function GalleryEditor({ gallery, onChange }) {
+    const add = (url) => {
+        if (!url) return;
+        if (gallery.some((g) => g.url === url)) return;
+        onChange([...gallery, { url, caption: null }]);
+    };
+
+    const setCaption = (i, caption) =>
+        onChange(gallery.map((g, n) => (n === i ? { ...g, caption: caption || null } : g)));
+
+    const remove = (i) => onChange(gallery.filter((_, n) => n !== i));
+
+    return (
+        <Row
+            label="The content"
+            hint="Shots from the campaign, in this order, with an optional caption each. The hero is separate — these sit below it on the page."
+        >
+            <div data-testid={IDS.gallery} className="space-y-3">
+                {gallery.map((g, i) => (
+                    <div
+                        key={g.url}
+                        data-testid={IDS.galleryItem(i)}
+                        className="flex items-start gap-3 rounded-md border border-tint/10 p-2"
+                    >
+                        {/* The ratio is on the container, so a slot that has
+                            not painted yet still holds its place. */}
+                        <div className="media-frame relative aspect-[4/5] w-16 flex-none overflow-hidden rounded">
+                            <img
+                                src={mediaUrl(g.url)}
+                                alt=""
+                                className="absolute inset-0 h-full w-full object-cover"
+                            />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-2">
+                            <Input
+                                placeholder="Caption (optional)"
+                                data-testid={IDS.galleryCaption(i)}
+                                value={g.caption || ""}
+                                onChange={(e) => setCaption(i, e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => remove(i)}
+                                data-testid={IDS.galleryRemove(i)}
+                                // 150ms, not the app's 200: the console's own
+                                // rule, and a test holds it.
+                                className="min-h-[2.75rem] text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:text-state-rejected"
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                ))}
+
+                {/* **Keyed on the count, so the picker resets after each add.**
+                    Without it the field keeps the last upload as its preview
+                    and the next pick looks like a replace of the row that was
+                    just added. */}
+                <ImageUploadField
+                    key={gallery.length}
+                    label={gallery.length ? "Add another" : "Add an image"}
+                    value={null}
+                    onChange={add}
+                    endpoint="/admin/case-studies/images"
+                    responseKey="url"
+                    uploadOnly
+                    shape="square"
+                    testids={{
+                        input: IDS.galleryAddInput,
+                        choose: IDS.galleryAdd,
+                    }}
+                />
+            </div>
+        </Row>
+    );
+}
+
+/**
  * The editor.
  *
  * Every field is optional to *save* and a named few are required to
@@ -111,6 +202,13 @@ function Editor({ study, onSaved, onClose }) {
                         headline_result: form.headline_result,
                         results: form.results || {},
                         quote: form.quote || null,
+                        // **Both were absent from this body**, which is why
+                        // the hero could not be set even once a path existed:
+                        // `PUT` writes only the keys it is sent, so a field
+                        // the form never sends is a field the form cannot
+                        // change. `null` clears, which is what Remove means.
+                        hero_image_url: form.hero_image_url || null,
+                        gallery: form.gallery || [],
                     })
                     .then(({ data }) => data),
             { onError: (e) => notifyError(formatApiError(e)) },
@@ -291,6 +389,44 @@ function Editor({ study, onSaved, onClose }) {
                 </Row>
             </div>
 
+            {/* **The hero, and publish is gated on it.** `hero_image_url` is in
+                `_CASE_STUDY_REQUIRED`, so until this control existed the
+                publish button correctly disabled itself and listed "a hero
+                image" as what was in the way, with nothing anywhere able to
+                supply one — a blank draft could never go live, and nor could a
+                draft prefilled from a campaign that had no cover.
+
+                The value is a path this server issued:
+                `POST /admin/case-studies/images` is the only way to get one,
+                and `_our_image_path` drops anything else. So the field uploads
+                to that endpoint and stores the `url` it answers with —
+                `uploadOnly`, because that route owns no record and has no
+                DELETE. */}
+            <Row
+                label="Hero image"
+                hint="Required to publish. Leads the page and is the share preview, so it wants the campaign's best frame rather than a logo."
+            >
+                <ImageUploadField
+                    value={form.hero_image_url || null}
+                    onChange={(url) => setForm((f) => ({ ...f, hero_image_url: url }))}
+                    endpoint="/admin/case-studies/images"
+                    responseKey="url"
+                    uploadOnly
+                    testids={{
+                        preview: IDS.hero,
+                        input: IDS.heroInput,
+                        choose: IDS.heroChoose,
+                        remove: IDS.heroRemove,
+                        error: IDS.heroError,
+                    }}
+                />
+            </Row>
+
+            <GalleryEditor
+                gallery={form.gallery || []}
+                onChange={(gallery) => setForm((f) => ({ ...f, gallery }))}
+            />
+
             {/* The roster is read-only here on purpose: who is on it is
                 decided by who delivered the campaign *and* consented, and a
                 box an admin can type a name into is a box that gets a name
@@ -437,21 +573,43 @@ export default function CaseStudies() {
                     <span className="truncate">{r.title || "Untitled"}</span>
                 ),
             },
+            // **`cell` is not optional, and these three had none.**
+            // `DataTable` calls `col.cell(row, index)` at every one of its
+            // render paths, so a column carrying only a `value` threw
+            // `col.cell is not a function` on first paint — which the section
+            // boundary caught, so the whole Case studies screen has only ever
+            // rendered as "Case studies couldn't load". `value` is what sorts;
+            // `cell` is what draws. A column needs both.
             {
                 key: "brand",
                 header: "Brand",
                 mobile: "meta",
                 value: (r) => r.brand_name || "",
+                cell: (r) => (
+                    <span className="truncate text-muted-foreground">
+                        {r.brand_name || "—"}
+                    </span>
+                ),
             },
             {
                 key: "category",
                 header: "Category",
                 value: (r) => categoryLabel(r.category),
+                cell: (r) => (
+                    <span className="text-muted-foreground">
+                        {categoryLabel(r.category) || "—"}
+                    </span>
+                ),
             },
             {
                 key: "type",
                 header: "Type",
                 value: (r) => TYPE_LABELS[r.campaign_type] || "",
+                cell: (r) => (
+                    <span className="text-muted-foreground">
+                        {TYPE_LABELS[r.campaign_type] || "—"}
+                    </span>
+                ),
             },
             {
                 key: "status",
