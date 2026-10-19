@@ -36712,6 +36712,9 @@ async def _own_collab_for_draft(collab_id: str, user: dict) -> tuple:
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     if not campaign:
         raise HTTPException(status_code=404, detail="Collaboration not found")
+    # Both callers write: a new draft is a new thing for the mediator to be
+    # looking at, swapped in while they are looking.
+    _refuse_if_disputed(collab)
     if not _requires_draft_approval(campaign):
         raise HTTPException(
             status_code=409,
@@ -36837,6 +36840,10 @@ async def approve_draft(
     than only at the end.
     """
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    # Here rather than in `_draft_reviewable_or_404`, which is also the door
+    # for reading the draft — and the draft is exactly the evidence a mediator
+    # needs while the collaboration is frozen.
+    _refuse_if_disputed(collab)
     _refuse_unconfirmed_disclosure(campaign, payload.disclosure_confirmed)
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
@@ -36881,6 +36888,7 @@ async def request_draft_changes(
 ):
     """Send it back with a note, and count the round trip."""
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
     note = (payload.note or "").strip()
     if not note:
         raise HTTPException(
