@@ -71,6 +71,9 @@ export const MANAGER_ROSTER = {
 	rowStatus: (id) => `manager-roster-status-${id}`,
 	rowOpen: (id) => `manager-roster-open-${id}`,
 	rowPending: (id) => `manager-roster-pending-${id}`,
+	// The seat was booked by WeAre for the creator, not by the creator. The
+	// person at the door reads this before ringing them.
+	rowOnBehalf: (id) => `manager-roster-on-behalf-${id}`,
 	rowPerformance: (id) => `manager-roster-performance-${id}`,
 };
 

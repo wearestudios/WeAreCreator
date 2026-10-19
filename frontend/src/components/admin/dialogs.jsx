@@ -21,6 +21,7 @@ import {
     ADMIN_ADVANCE,
     ADMIN_CAMPAIGN_EDIT,
     ADMIN_CONFIRM,
+    ADMIN_ON_BEHALF,
     BUDGET,
 } from "@/constants/testIds";
 // The full list, barter included — this is the admin surface, and the only one
@@ -35,8 +36,9 @@ import DeliverablePicker, {
     fromDeliverableItems,
     toDeliverableItems,
 } from "@/components/DeliverablePicker";
-import { formatRupees } from "./shared";
+import { formatDateTime, formatRupees } from "./shared";
 import { fromLocalInput, localInputValue } from "@/lib/time";
+import { api, formatApiError } from "@/lib/api";
 import {
     SCHEDULING_DATE_LABELS,
     schedulingDateFields,
@@ -848,6 +850,238 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 </>
                             ) : (
                                 "Save changes"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/**
+ * Booking one of the campaign's slots *for* a creator, as an audited override.
+ *
+ * `advance_collaboration` refuses `slot_booked` and keeps refusing it — an
+ * admin advancing into it writes an appointment onto somebody's day as if
+ * they made it. This is the separate door: the seat is still one of the
+ * campaign's real slots (claimed through the same atomic `_claim_slot`), and
+ * the one thing added is a reason **the creator will read** — it lands on
+ * their card and in the WhatsApp telling them a day was booked for them, so
+ * the box says so rather than reading as an internal note.
+ *
+ * The slots come from the campaign's own page payload rather than a second
+ * endpoint, and a personal table asks for the time inside the window the
+ * way the creator's own picker does — the server refuses a time on any
+ * other type, so the field is absent there rather than present and 422ing.
+ */
+export function OnBehalfSlotDialog({
+    open,
+    onOpenChange,
+    collab,
+    onSubmit,
+    submitting,
+}) {
+    const [slots, setSlots] = useState(null);
+    const [campaignType, setCampaignType] = useState(null);
+    const [slotId, setSlotId] = useState("");
+    const [time, setTime] = useState("");
+    const [reason, setReason] = useState("");
+    const [err, setErr] = useState("");
+    const campaignId = collab?.campaign?.id;
+
+    useEffect(() => {
+        if (!open || !campaignId) return undefined;
+        let live = true;
+        setSlots(null);
+        setSlotId("");
+        setTime("");
+        setReason("");
+        setErr("");
+        api.get(`/admin/campaigns/${campaignId}`)
+            .then(({ data }) => {
+                if (!live) return;
+                setSlots(data?.slots || []);
+                setCampaignType(data?.campaign?.campaign_type || null);
+            })
+            .catch((e) => live && setErr(formatApiError(e)));
+        return () => {
+            live = false;
+        };
+    }, [open, campaignId]);
+
+    const personalTable = campaignType === "personal_table";
+    const chosen = (slots || []).find((s) => s.id === slotId);
+
+    const submit = (e) => {
+        e.preventDefault();
+        if (!slotId) {
+            setErr("Pick the slot they asked for.");
+            return;
+        }
+        if (personalTable && !time) {
+            setErr("Pick the time inside the window they asked for.");
+            return;
+        }
+        if (reason.trim().length < MIN_REASON) {
+            setErr("Say why you're booking this for them — the creator reads it.");
+            return;
+        }
+        setErr("");
+        onSubmit({
+            slot_id: slotId,
+            preferred_time: personalTable ? fromLocalInput(time) || null : null,
+            reason: reason.trim(),
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent
+                data-testid={ADMIN_ON_BEHALF.dialog}
+                className="max-w-md rounded-md border border-tint/10 bg-card ![background-image:none]"
+            >
+                <DialogHeader className="text-left">
+                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                        On the creator's behalf
+                    </p>
+                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                        Book a slot for {collab?.creator?.name || "the creator"}
+                    </DialogTitle>
+                    <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        Booking is theirs to do. This records that WeAre did it for
+                        them — on their card, in the audit log, and in a message to
+                        them with your reason in it. They can still release it.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <form onSubmit={submit} noValidate className="mt-4 space-y-5">
+                    <div>
+                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            Slot
+                        </Label>
+                        {slots === null && !err ? (
+                            <p className="mt-2 text-sm text-muted-foreground">Loading slots…</p>
+                        ) : (slots || []).length === 0 ? (
+                            <p
+                                data-testid={ADMIN_ON_BEHALF.slotsEmpty}
+                                className="mt-2 text-sm text-muted-foreground"
+                            >
+                                This campaign has no slots yet. The manager sets them
+                                on the campaign page.
+                            </p>
+                        ) : (
+                            <ul data-testid={ADMIN_ON_BEHALF.slots} className="mt-2 space-y-2">
+                                {slots.map((s) => {
+                                    const full = (s.spots_left ?? 1) <= 0;
+                                    return (
+                                        <li key={s.id}>
+                                            <label
+                                                className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors duration-150 ${
+                                                    slotId === s.id
+                                                        ? "border-primary/50 bg-primary/10"
+                                                        : "border-tint/10 hover:border-tint/25"
+                                                } ${full ? "opacity-50" : ""}`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="on-behalf-slot"
+                                                    data-testid={ADMIN_ON_BEHALF.slot(s.id)}
+                                                    value={s.id}
+                                                    checked={slotId === s.id}
+                                                    disabled={full}
+                                                    onChange={() => setSlotId(s.id)}
+                                                />
+                                                <span className="min-w-0 flex-1">
+                                                    {formatDateTime(s.starts_at)}
+                                                    {s.ends_at ? ` – ${formatDateTime(s.ends_at)}` : ""}
+                                                </span>
+                                                <span className="text-sm text-muted-foreground">
+                                                    {full ? "Full" : `${s.spots_left} left`}
+                                                </span>
+                                            </label>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+
+                    {personalTable && chosen && (
+                        <div>
+                            <Label
+                                htmlFor="on-behalf-time"
+                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            >
+                                Time inside the window (IST)
+                            </Label>
+                            <Input
+                                id="on-behalf-time"
+                                data-testid={ADMIN_ON_BEHALF.time}
+                                type="datetime-local"
+                                min={localInputValue(chosen.starts_at)}
+                                max={localInputValue(chosen.ends_at)}
+                                value={time}
+                                onChange={(e) => setTime(e.target.value)}
+                                className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                            />
+                        </div>
+                    )}
+
+                    <div>
+                        <Label
+                            htmlFor="on-behalf-reason"
+                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                        >
+                            Why — the creator reads this
+                        </Label>
+                        <Textarea
+                            id="on-behalf-reason"
+                            data-testid={ADMIN_ON_BEHALF.reason}
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            rows={3}
+                            placeholder="e.g. You asked us on the phone to put you down for Saturday"
+                            className="mt-2 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                        />
+                    </div>
+
+                    {err && (
+                        <p
+                            data-testid={ADMIN_ON_BEHALF.error}
+                            className="text-sm text-destructive"
+                        >
+                            {err}
+                        </p>
+                    )}
+
+                    <DialogFooter className="gap-2">
+                        <DialogClose asChild>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                data-testid={ADMIN_ON_BEHALF.cancel}
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                            >
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            type="submit"
+                            disabled={submitting || !slots || slots.length === 0}
+                            data-testid={ADMIN_ON_BEHALF.submit}
+                            className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
+                        >
+                            {submitting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Booking…
+                                </>
+                            ) : (
+                                <>
+                                    Book it for them
+                                    <ArrowRight className="ml-2 h-4 w-4" />
+                                </>
                             )}
                         </Button>
                     </DialogFooter>

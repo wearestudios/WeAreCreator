@@ -33,10 +33,15 @@ import {
     formatDateTime,
     formatRupees,
 } from "@/components/admin/shared";
-import { AdvanceDialog, ConfirmDialog } from "@/components/admin/dialogs";
+import {
+    AdvanceDialog,
+    ConfirmDialog,
+    OnBehalfSlotDialog,
+} from "@/components/admin/dialogs";
 import { CampaignLink, CreatorLink } from "@/components/admin/links";
 import { PerformancePanel } from "@/components/admin/Performance";
 import DisputePanel from "@/components/DisputePanel";
+import OnBehalfNote from "@/components/collab/OnBehalfNote";
 import { INVOICE } from "@/constants/testIds";
 import { TEXT } from "./console/tokens";
 import { useAdminConsole } from "@/pages/AdminConsole";
@@ -204,6 +209,34 @@ export default function CollaborationDetailPage() {
                                 Waiting on the creator.
                             </span>
                         )}
+                        {/* **The override, where the ordinary advance refuses.**
+                            Booking and confirming an address are the creator's
+                            own steps and `advance` keeps refusing them. These
+                            are the separate, audited door for when the creator
+                            has asked us to — a reason is required and the
+                            creator reads it. The server decides whether either
+                            is offered; an outline button, because it is the
+                            exception and not the next step. */}
+                        {collab.can_book_on_behalf && (
+                            <Button
+                                variant="outline"
+                                data-testid={IDS.bookOnBehalf}
+                                onClick={() => setDialog({ kind: "book-on-behalf" })}
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                            >
+                                Book a slot on their behalf
+                            </Button>
+                        )}
+                        {collab.can_confirm_address_on_behalf && (
+                            <Button
+                                variant="outline"
+                                data-testid={IDS.confirmAddressOnBehalf}
+                                onClick={() => setDialog({ kind: "address-on-behalf" })}
+                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                            >
+                                Confirm their address on their behalf
+                            </Button>
+                        )}
                         {collab.can_cancel && (
                             <>
                                 <Button
@@ -355,6 +388,19 @@ export default function CollaborationDetailPage() {
                     <div className="grid gap-8 lg:grid-cols-2">
                         <Section id="slot" title="Slot">
                             <Panel data-testid={IDS.slot}>
+                                {/* **Booked by WeAre, not by them.** Beside the
+                                    slot it describes, so the one screen that
+                                    offers the override is also one that shows
+                                    its result as an override — never a bare
+                                    "booked" on a row an admin booked. Covers
+                                    the address too on a delivery brief, which
+                                    has no slot but has the same question. */}
+                                <OnBehalfNote
+                                    onBehalf={collab.on_behalf}
+                                    voice="they"
+                                    testid={IDS.onBehalf}
+                                    className="mb-4"
+                                />
                                 {data.slot ? (
                                     <dl className="space-y-4">
                                         <Field label="When">
@@ -533,6 +579,45 @@ export default function CollaborationDetailPage() {
                                 ...body,
                             }),
                         `Moved to ${STATE_META[dialog.mode]?.label || dialog.mode}`,
+                    )
+                }
+            />
+            <OnBehalfSlotDialog
+                open={dialog.kind === "book-on-behalf"}
+                onOpenChange={(v) => !v && setDialog({ kind: null })}
+                collab={collab}
+                submitting={busy === "book-on-behalf"}
+                onSubmit={(body) =>
+                    act(
+                        "book-on-behalf",
+                        () =>
+                            api.post(
+                                `/admin/collaborations/${id}/on-behalf/book-slot`,
+                                body,
+                            ),
+                        "Booked on their behalf — the creator has been told",
+                    )
+                }
+            />
+            <ConfirmDialog
+                open={dialog.kind === "address-on-behalf"}
+                onOpenChange={(v) => !v && setDialog({ kind: null })}
+                kicker="On the creator's behalf"
+                title={`Confirm ${collab?.creator?.name || "the creator"}'s address`}
+                description="Confirms the delivery address already on their profile — there is nothing to type, and a profile with no address is refused. The creator reads your reason, on their card and in a message, and is told to say now if the address is wrong."
+                reasonLabel="Why — the creator reads this"
+                placeholder="e.g. You confirmed it with us on the phone"
+                confirmLabel="Confirm it for them"
+                submitting={busy === "address-on-behalf"}
+                onSubmit={(body) =>
+                    act(
+                        "address-on-behalf",
+                        () =>
+                            api.post(
+                                `/admin/collaborations/${id}/on-behalf/confirm-address`,
+                                { reason: body.reason },
+                            ),
+                        "Address confirmed on their behalf — the creator has been told",
                     )
                 }
             />

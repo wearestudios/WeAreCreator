@@ -39,6 +39,7 @@ import TakedownPanel from "@/components/TakedownPanel";
 import { TermsCard } from "@/components/campaign/CampaignTerms";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
 import { PayoutDue } from "@/components/campaign/PayoutNote";
+import OnBehalfNote from "@/components/collab/OnBehalfNote";
 import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
@@ -354,6 +355,19 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     {next.label}
                 </p>
             )}
+
+            {/* **A step WeAre took for them, said on their own card.** A
+                booking they did not make must never read as one they did —
+                this is the one surface the creator has, and "slot booked"
+                with no author is exactly the bare word the override is not
+                allowed to leave behind. Renders nothing on every row they
+                moved themselves. */}
+            <OnBehalfNote
+                onBehalf={collab.on_behalf}
+                voice="you"
+                testid={IDS.onBehalf(collab.id)}
+                className="mt-5"
+            />
 
             {(collab.slot_starts_at || collab.venue?.address || collab.manager?.name) && (
                 <div className="mt-5 grid gap-3 sm:grid-cols-2">

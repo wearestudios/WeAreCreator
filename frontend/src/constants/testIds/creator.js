@@ -59,6 +59,9 @@ export const CREATOR_ACTIVE = {
 	slotTime: (id) => `creator-active-slot-${id}`,
 	primary: (id) => `creator-active-action-${id}`,
 	cancelSlot: (id) => `creator-active-cancel-slot-${id}`,
+	// A step WeAre took for them, as an audited override. Rendered on their
+	// own card so a booking they did not make never reads as one they did.
+	onBehalf: (id) => `creator-active-on-behalf-${id}`,
 };
 
 export const CREATOR_SLOT_PICKER = {

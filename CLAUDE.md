@@ -3060,6 +3060,73 @@ Rules to preserve when touching this:
 
 Every state change calls `audit(...)` and usually `notify(...)`. Keep both.
 
+### Doing the creator's step for them
+
+Three transitions are the creator's alone on the ordinary path —
+`_CREATOR_OWNED_TRANSITIONS` is `slot_booked`, `address_confirmed` and
+`received` — and `advance_collaboration` refuses all three with a 409 and
+**keeps refusing them**. An admin advancing into `slot_booked` from the
+console writes an appointment onto somebody's day as if they made it, and a
+test drives the handler at every one of the three and reads the row back
+unchanged.
+
+What exists instead is an **override, as a separate route rather than a
+relaxation**, for the first two: `POST /admin/collaborations/{id}/on-behalf/
+book-slot` and `/on-behalf/confirm-address`. The pattern is the budget
+override and trust revocation — outside the lane on purpose, admin-only, a
+reason required, audited as its own action with the state at the moment of
+the decision. It is a different door rather than a flag on the old one
+because the refusal has to stay *true of the state machine*: a relaxed
+`advance` would be one more branch that writes the state directly, and the
+whole reason the override is safe is that it does not — the booking goes
+through `_claim_slot`, so the only way to be booked is still to hold one of
+the campaign's real seats, under the same conditional increment, the same
+venue rules and the same handshake. `received` is deliberately left out and
+the reason is beside `ON_BEHALF_STEPS`: an admin asserting that a parcel
+arrived at somebody's door is the one of the three with no honest basis, and
+a required reason would only record the guess.
+
+- **The record says who, when, why — and, by existing, that it was an
+  override.** `slot_booked_on_behalf` lives beside `slot_booked_at` and is
+  `$unset` wherever the seat is handed back (decline, revert, the creator's
+  own cancel), so a creator who re-books after a declined override reads as
+  having booked it themselves; the creator's own claim writes the key as
+  `None` explicitly so a stale marker cannot be inherited.
+  `delivery.address_confirmed_on_behalf` lives inside the confirmation it
+  describes. `_on_behalf_block` is the one reader and absent means the
+  creator did it. The audit actions are `collaboration.book_slot_on_behalf`
+  and `collaboration.delivery_address_confirmed_on_behalf`, never the
+  creator's own action with a different actor — "who booked this" is exactly
+  the question the log is asked about these rows.
+- **A row WeAre moved renders differently everywhere it appears**, and if the
+  only visible difference were in the audit log this would have failed. The
+  block rides on `_serialize_collab_row`, `get_application`,
+  `_serialize_admin_collab` and `_roster_rows`; `_process_flow` has
+  `*_on_behalf` action keys so the next-action line every surface prints
+  says "booked by WeAre on the creator's behalf" rather than "booked";
+  `_creator_next_action` says it in the creator's own voice.
+  `components/collab/OnBehalfNote.jsx` is the one renderer, on the creator's
+  card, the shared application screen and the admin collaboration page, and
+  the manager's roster carries a pill — the person at the door should know a
+  seat the creator never chose is the one most likely to be a no-show. The
+  component never asks what role is looking; the caller passes the voice.
+- **The creator is told every time**, by name and with the reason —
+  `slot_booked_for_you` / `address_confirmed_for_you`, routed like the
+  existing slot notifications, and told what to do if it is wrong (release
+  the slot; say so before the parcel is sent). The reason is written to the
+  person it is about, and the dialog says so: "you asked us on the phone" is
+  a reason, "ops" is not. The runner and the brand are told it was booked
+  *for* the creator, not that the creator booked.
+- The address override confirms the address **on the profile** and refuses a
+  blank one with the creator's own `no_delivery_address`, because confirming
+  nothing is how a parcel still goes nowhere. That check is what makes it
+  the harder of the two to reach.
+- `can_book_on_behalf` / `can_confirm_address_on_behalf` are decided
+  server-side on the application and admin-collaboration payloads and
+  offered only at `commercial_agreed`, admin only — `weare_team` reaches the
+  page and does not get the button, the split the budget override makes.
+  `test_on_behalf_overrides.py` drives all of it and reads the database back.
+
 ### The draft gate
 
 `content_submitted` carried a link to something already live, so the brand's

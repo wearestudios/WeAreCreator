@@ -60,6 +60,7 @@ import {
 import BriefChecklist from "@/components/campaign/BriefChecklist";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
 import { StoryProofReview } from "@/components/collab/StoryProof";
+import OnBehalfNote from "@/components/collab/OnBehalfNote";
 import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
@@ -560,6 +561,19 @@ export default function ApplicationDetail({
                             </Field>
                         </div>
                     </Section>
+
+                    {/* **A step WeAre took on the creator's behalf.** Above
+                        the actions, because whoever is about to confirm this
+                        slot or send this parcel should know the creator did
+                        not choose it themselves — and because an override
+                        visible only in the audit log is the failure the
+                        marker exists to prevent. Nothing on every row the
+                        creator moved themselves. */}
+                    <OnBehalfNote
+                        onBehalf={app.on_behalf}
+                        voice="they"
+                        testid={APPLICATION.onBehalf}
+                    />
 
                     {/* **The delivery a creator is waiting on.** A band above
                         the rest for the same reason `SlotAnswer` is one on the

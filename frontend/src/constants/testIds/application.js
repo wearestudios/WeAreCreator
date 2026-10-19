@@ -46,6 +46,9 @@ export const APPLICATION = {
 	slotPending: 'application-slot-pending',
 	declineSlotReason: 'application-decline-slot-reason',
 	declineSlotSubmit: 'application-decline-slot-submit',
+	// A step WeAre took on the creator's behalf, said on every view of the
+	// application rather than only in the audit log.
+	onBehalf: 'application-on-behalf',
 
 	// The record's readable name, on every view of it.
 	reference: 'application-reference',

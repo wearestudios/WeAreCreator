@@ -1493,6 +1493,10 @@ class TestAuditCoverage:
                     # Writes the `*.commission` line with the old rate and the
                     # new one, for both the brand's rate and a campaign's.
                     "_record_commission_change",
+                    # The one atomic claim behind every booking, the admin's
+                    # on-behalf override included. It writes
+                    # `collaboration.book_slot_on_behalf` with the reason.
+                    "_claim_slot",
                 )
             )
             if not delegates:
@@ -1503,7 +1507,7 @@ class TestAuditCoverage:
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
          "_check_in_collaboration", "_set_creator_verification",
-         "_record_performance"],
+         "_record_performance", "_claim_slot"],
     )
     def test_the_delegated_helpers_actually_audit(self, helper):
         # The exemption above is only safe while this holds: a helper trusted
@@ -2990,7 +2994,12 @@ class TestCreatorSlotCancellation:
         import inspect
 
         src = inspect.getsource(server.creator_cancel_slot)
-        assert '"$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""}' in src
+        # The on-behalf marker goes with the seat: a creator releasing a slot
+        # WeAre booked for them and picking their own has booked it themselves.
+        assert (
+            '"$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": "", '
+            '"slot_booked_on_behalf": ""}'
+        ) in src
 
     def test_the_collaboration_moves_before_the_seat_is_released(self):
         # The other order would put the place on sale while the creator still

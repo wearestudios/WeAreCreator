@@ -2879,6 +2879,33 @@ class CreatorBookSlotPayload(BaseModel):
     preferred_time: Optional[datetime] = None
 
 
+class OnBehalfPayload(BaseModel):
+    """Why an admin is doing a step that is the creator's to do.
+
+    **The reason is required and the creator reads it.** The override lands on
+    their own card and in a WhatsApp message with this sentence in it, so it
+    is written to the person it is about rather than filed as an internal
+    note — "you asked us to on the phone" is a reason; "ops" is not. The same
+    floor as `ReasonPayload`, because a three-character reason is a reason
+    somebody typed to get past the box.
+    """
+
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class BookSlotOnBehalfPayload(OnBehalfPayload):
+    """An admin taking a seat for a creator who asked them to.
+
+    The same two fields the creator's own booking carries, with the reason on
+    top: the seat still has to be one of the campaign's real slots, claimed
+    through `_claim_slot`, so an override cannot book a time the venue never
+    offered.
+    """
+
+    slot_id: str
+    preferred_time: Optional[datetime] = None
+
+
 class CreatorCancelSlotPayload(BaseModel):
     """Handing a booked slot back. The reason is optional — we would rather
     know early without one than have the seat held because a form asked a
@@ -3144,6 +3171,61 @@ def _slot_confirmed(collab: Optional[dict]) -> bool:
         return True
     # No booking timestamp at all means it predates the handshake.
     return not collab.get("slot_booked_at")
+
+
+# The two creator-owned steps an admin may take *for* a creator, as an
+# explicit override. `received` is deliberately not among them: an admin
+# asserting that a parcel arrived at somebody's door is the one of the three
+# with no honest basis at all, and a required reason would only record the
+# guess. See `_CREATOR_OWNED_TRANSITIONS` for why the ordinary advance refuses
+# all three, and the `/on-behalf/` routes for the override.
+ON_BEHALF_STEPS = ("slot_booked", "address_confirmed")
+
+
+def _on_behalf_record(user: dict, reason: str, now: datetime) -> dict:
+    """What an override stores: who, when, why — and, by existing at all, that
+    it was one. The resulting state alone says nothing about who wrote it,
+    which is the whole reason this is a record rather than a flag."""
+    return {
+        "by_id": ObjectId(user["_id"]) if user.get("_id") else None,
+        "by_name": user.get("name"),
+        "at": now,
+        "reason": reason,
+    }
+
+
+def _serialize_on_behalf(record: Optional[dict]) -> Optional[dict]:
+    if not record:
+        return None
+    return {
+        "by_name": record.get("by_name"),
+        "at": _iso(record.get("at")),
+        "reason": record.get("reason"),
+    }
+
+
+def _on_behalf_block(collab: Optional[dict]) -> Optional[dict]:
+    """Which of this collaboration's steps WeAre took on the creator's behalf.
+
+    **The one reader, for every surface.** The booking marker lives beside
+    `slot_booked_at` and is unset with it when the seat is handed back, so a
+    creator who re-books after a declined override reads as having booked it
+    themselves; the address marker lives inside `delivery` with the
+    confirmation it describes. `None` when neither step was overridden —
+    absent means the creator did it, which is every collaboration written
+    before this existed.
+    """
+    collab = collab or {}
+    out = {}
+    slot = _serialize_on_behalf(collab.get("slot_booked_on_behalf"))
+    if slot:
+        out["slot_booked"] = slot
+    address = _serialize_on_behalf(
+        (collab.get("delivery") or {}).get("address_confirmed_on_behalf")
+    )
+    if address:
+        out["address_confirmed"] = address
+    return out or None
 
 
 def _requires_slot_confirmation(campaign: Optional[dict]) -> bool:
@@ -4124,6 +4206,12 @@ NOTIFY_EVENTS = {
     # The booking handshake. A creator asks; whoever runs the campaign answers.
     "slot_requested": "Your slot is waiting to be confirmed",
     "slot_declined": "Your slot time didn't work — pick another",
+    # An admin doing the creator's step for them. Its own event rather than
+    # `slot_confirmed` / `delivery_address_confirmed` reworded, because the
+    # creator is being told about something done *to* their collaboration
+    # and has to be able to object to it — the message names who and why.
+    "slot_booked_for_you": "WeAre booked a slot for you",
+    "address_confirmed_for_you": "WeAre confirmed your delivery address for you",
     "manager_slot_pending": "A slot needs confirming",
     "campaign_broadcast": "A message from your campaign manager",
     "profile_submitted": "Your profile is with the team",
@@ -8871,6 +8959,11 @@ def _serialize_collab_row(
         "delivery": _delivery_block(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
+        # **Which steps WeAre took for them, with who and why.** This is the
+        # creator's own card, and a booking they did not make has to read as
+        # one — the rule is "booked by WeAre on your behalf", never a bare
+        # "booked". `None` on every row the creator moved themselves.
+        "on_behalf": _on_behalf_block(collab),
         "campaign_id": str(collab["campaign_id"]),
         "campaign_reference": _reference_of(campaign),
         "campaign_title": (campaign or {}).get("title"),
@@ -9104,7 +9197,21 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
             ),
             "waiting_on": "you",
         }
+    on_behalf = _on_behalf_block(collab) or {}
     if state == "slot_booked":
+        # **Said in the creator's own next line, not only in a note beside
+        # it.** A seat somebody else chose for them is the one thing on this
+        # card they might need to undo, and "turn up" alone would read as a
+        # booking they made and forgot.
+        if on_behalf.get("slot_booked"):
+            return {
+                "action": "attend",
+                "label": (
+                    "WeAre booked this slot for you. Turn up at the venue at "
+                    "the time shown — or release it if it doesn't work."
+                ),
+                "waiting_on": "you",
+            }
         return {"action": "attend", "label": "Turn up at the venue at your slot time.", "waiting_on": "you"}
     # The delivery half, before the shared branch below: these three have no
     # venue equivalent, and the last of them lands on `received`, which is the
@@ -9112,7 +9219,12 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     if state == "address_confirmed":
         return {
             "action": "await_dispatch",
-            "label": "Your address is confirmed. Waiting for it to be sent.",
+            "label": (
+                "WeAre confirmed your delivery address for you. Waiting for it "
+                "to be sent — tell us now if the address on your profile is wrong."
+                if on_behalf.get("address_confirmed")
+                else "Your address is confirmed. Waiting for it to be sent."
+            ),
             "waiting_on": "brand",
         }
     if state == "dispatched":
@@ -10468,7 +10580,10 @@ async def creator_cancel_slot(
             # the creator decided to make — whether they book again tonight or
             # next week does not change that the venue lost a booking.
             "$inc": {"reschedule_count": 1},
-            "$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": ""},
+            # The override marker goes with the seat: a creator releasing a
+            # slot WeAre booked for them and picking their own is a booking
+            # they made, and must read as one.
+            "$unset": {"slot_id": "", "scheduled_at": "", "preferred_time": "", "slot_booked_on_behalf": ""},
         },
         return_document=True,
     )
@@ -16943,6 +17058,22 @@ _PROCESS_ACTION = {
     # Booked, and waiting on whoever runs the campaign to say the time works.
     "slot_pending": ("runner", "Confirm the creator's slot", "Your slot is waiting to be confirmed"),
     "slot_booked": ("creator", "Turn up on the day", "Booked — waiting for the day"),
+    # The same two, where WeAre booked the seat for the creator. **Never a
+    # bare "booked"**: the creator reads that somebody else chose their day,
+    # and everybody else reads that the creator did not — both of which are
+    # the one fact this step would otherwise hide.
+    "slot_pending_on_behalf": (
+        "runner",
+        "Confirm the slot WeAre booked for the creator",
+        # Read by the creator *and* by a brand that is not the runner, so it
+        # names the creator rather than saying "you".
+        "Booked by WeAre on the creator's behalf — waiting to be confirmed",
+    ),
+    "slot_booked_on_behalf": (
+        "creator",
+        "Turn up on the day — WeAre booked this slot for you",
+        "Booked by WeAre on the creator's behalf — waiting for the day",
+    ),
     "attended": ("creator", "Publish and send the link", "Waiting for the creator's content"),
     "attended_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
     # The delivery half. Both voices are written out rather than reusing the
@@ -16951,6 +17082,11 @@ _PROCESS_ACTION = {
     # creator" about a parcel it has not posted yet would chase the wrong
     # person.
     "address_confirmed": ("runner", "Send it and record the tracking", "Waiting to be sent"),
+    "address_confirmed_on_behalf": (
+        "runner",
+        "Send it and record the tracking — WeAre confirmed the address for the creator",
+        "Address confirmed by WeAre on the creator's behalf — waiting to be sent",
+    ),
     "dispatched": ("creator", "Confirm it arrived", "On its way to the creator"),
     "received": ("creator", "Publish and send the link", "Waiting for the creator's content"),
     "received_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
@@ -17032,6 +17168,14 @@ def _process_flow(
         action_key = "attended_draft"
     if state == "slot_booked" and not _slot_confirmed(collab):
         action_key = "slot_pending"
+    # And finer again where WeAre took the step for the creator: the line
+    # every surface prints must say so, or the override is visible only in
+    # the audit log — which is the failure this marker exists to prevent.
+    on_behalf = _on_behalf_block(collab) or {}
+    if action_key in ("slot_booked", "slot_pending") and on_behalf.get("slot_booked"):
+        action_key = f"{action_key}_on_behalf"
+    if state == "address_confirmed" and on_behalf.get("address_confirmed"):
+        action_key = "address_confirmed_on_behalf"
     # A delivery brief reaches `received` where a venue one reaches
     # `attended`, and with a draft gate the same split applies: what the
     # creator does next is make the draft, not publish.
@@ -24637,6 +24781,9 @@ def _serialize_admin_collab(
         # Absent on every venue brief, which is how a surface knows not to
         # draw a tracking row at all rather than drawing an empty one.
         "delivery": _delivery_block(collab),
+        # Steps WeAre took on the creator's behalf, so the console reads an
+        # override as one rather than as the creator's own move.
+        "on_behalf": _on_behalf_block(collab),
         "pitch": collab.get("pitch"),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
@@ -24823,6 +24970,21 @@ async def get_admin_collaboration_detail(
         _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS | _CREATOR_OWNED_TRANSITIONS
     )
     row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
+    # **The override, offered only where the ordinary advance refuses.** The
+    # two creator-owned steps an admin may take *for* the creator, decided
+    # here like every other action so the page cannot offer one the route
+    # will 409. Admin-only — `weare_team` reaches this page and does not get
+    # the button, for the reason it does not get the budget override.
+    row["can_book_on_behalf"] = (
+        is_all_access(user)
+        and row["state"] == "commercial_agreed"
+        and not _is_delivery(campaign)
+    )
+    row["can_confirm_address_on_behalf"] = (
+        is_all_access(user)
+        and row["state"] == "commercial_agreed"
+        and _is_delivery(campaign)
+    )
 
     slot = None
     if collab.get("slot_id"):
@@ -25140,6 +25302,219 @@ async def advance_collaboration(
     }
 
 
+# --- Doing the creator's step for them, on the record ----------------------
+#
+# `advance_collaboration` refuses the three creator-owned transitions and
+# keeps refusing them: an admin advancing into `slot_booked` from the console
+# writes an appointment onto somebody's day as if they made it. What happens
+# in practice is that the creator rings up — no data, phone broken, "just put
+# me down for Saturday" — and the honest shape of that is an **override**: a
+# separate route, admin-only, that costs a reason the creator will read, lands
+# in the audit log as its own action, and leaves a marker on the row so every
+# screen says "booked by WeAre on their behalf" rather than "booked".
+#
+# The pattern is the budget override and trust revocation: outside the lane,
+# on purpose, with the reason attached to the act and the state at the moment
+# of the decision recorded. Two of the three, deliberately — see
+# `ON_BEHALF_STEPS` for why `received` is not here.
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/book-slot")
+async def book_slot_on_behalf(
+    collab_id: str,
+    payload: BookSlotOnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Book one of the campaign's slots for a creator who asked us to.
+
+    **Through `_claim_slot`, like both of the creator's own routes.** The seat
+    is one the venue actually offered, claimed under the same conditional
+    increment and the same days-and-hours check, and the handshake is
+    untouched — if the campaign asks its runner to confirm bookings, this one
+    waits to be confirmed like any other. What the override changes is the
+    record and the message, not the mechanics.
+
+    The refusals are the creator's own, in the admin's voice: a brief not
+    taking bookings, a seat already held, a slot from another campaign.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Say why you're booking this for them — the creator reads it.",
+        )
+    state = collab.get("state")
+    if state == "slot_booked":
+        raise HTTPException(status_code=409, detail="They already have a slot booked.")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Booking opens once the fee is agreed."
+                if state in ("applied", "verified", "accepted")
+                else f"This collaboration is {state} — there's nothing to book."
+            ),
+        )
+
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign or campaign.get("status") not in ACTIVE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=409, detail="This campaign isn't taking bookings right now."
+        )
+    if _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This is a delivery brief — there is no slot to book. Confirm the address instead.",
+        )
+
+    soid = _as_oid(payload.slot_id)
+    slot = await db.campaign_slots.find_one({"_id": soid}) if soid else None
+    if not slot or slot["campaign_id"] != collab["campaign_id"]:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    preferred = None
+    if campaign.get("campaign_type") == "personal_table":
+        if payload.preferred_time is None:
+            raise HTTPException(
+                status_code=422, detail="Pick the time inside the window they asked for."
+            )
+        preferred = _as_utc(payload.preferred_time)
+        starts, ends = _as_utc(slot.get("starts_at")), _as_utc(slot.get("ends_at"))
+        if (starts and preferred < starts) or (ends and preferred > ends):
+            raise HTTPException(
+                status_code=422, detail="That time is outside the window."
+            )
+    elif payload.preferred_time is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="The time on this campaign is set by the slot — there is no time to choose.",
+        )
+
+    return await _claim_slot(
+        user, collab, campaign, slot, preferred_time=preferred, on_behalf_reason=reason
+    )
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/confirm-address")
+async def confirm_address_on_behalf(
+    collab_id: str,
+    payload: OnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Confirm the creator's delivery address for them. `commercial_agreed →
+    address_confirmed`, as an override.
+
+    **It confirms the address on their profile and nothing else.** The
+    creator's own route checks rather than types, and so does this one: a
+    profile with no address is refused with the same `no_delivery_address`,
+    because an admin "confirming" a blank would be confirming nothing and
+    the parcel would still have nowhere to go. That check is what makes this
+    the second-hardest of the three to reach, and it is why `received` — a
+    step with nothing on file to check against — has no override at all.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Say why you're confirming this for them — the creator reads it.",
+        )
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has a venue — book a slot for them rather than an address.",
+        )
+    state = collab.get("state")
+    if state != "commercial_agreed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Their address is already confirmed."
+                if state in DELIVERY_STATES
+                else f"This collaboration is {state} — there's no address to confirm."
+            ),
+        )
+
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+    if not (profile.get("full_address") or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "They have no delivery address on their profile. There is "
+                    "nothing to confirm until they add one."
+                ),
+                "code": "no_delivery_address",
+                "missing_fields": ["full_address"],
+            },
+        )
+
+    now = datetime.now(timezone.utc)
+    record = _on_behalf_record(user, reason, now)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "commercial_agreed"},
+        {
+            "$set": {
+                **_state_stamp("address_confirmed", now),
+                "delivery": {
+                    "address_confirmed_at": now,
+                    "address_note": None,
+                    "address_confirmed_on_behalf": record,
+                },
+            }
+        },
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=409, detail="That moved while you were confirming. Reload."
+        )
+
+    await audit(
+        user,
+        "collaboration.delivery_address_confirmed_on_behalf",
+        "collaboration",
+        collab["_id"],
+        before={"state": "commercial_agreed"},
+        after={
+            "state": "address_confirmed",
+            "on_behalf": True,
+            "confirmed_by": user.get("name"),
+        },
+        note=reason,
+        **_campaign_audit_context(campaign),
+    )
+    creator_user = await db.users.find_one({"_id": collab["creator_id"]}) or {}
+    creator_name = profile.get("name") or creator_user.get("name") or "A creator"
+    booker = user.get("name") or "WeAre"
+    # **The creator first, and told plainly what to do if it is wrong.** This
+    # is a step they did not take, about where a parcel goes, and the one
+    # useful moment to object is before it is sent.
+    await notify(
+        collab["creator_id"],
+        "address_confirmed_for_you",
+        title="WeAre confirmed your delivery address for you",
+        body=f"{booker} confirmed the address on your profile for "
+        f"{(campaign or {}).get('title') or 'your campaign'} — {reason} If that "
+        "address is wrong, tell us now, before it's sent.",
+        link=f"/dashboard?collab={str(collab['_id'])}",
+    )
+    # Then whoever has to put it in a box, routed the way the creator's own
+    # confirmation is.
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "delivery_address_confirmed",
+        title="An address is confirmed",
+        body=f"{creator_name}'s delivery address was confirmed by {booker} "
+        "(WeAre) on their behalf.",
+    )
+    return {**(_delivery_block(updated) or {}), "on_behalf": _on_behalf_block(updated)}
+
+
 @admin_router.post("/collaborations/{collab_id}/revert")
 async def revert_collaboration(
     collab_id: str,
@@ -25211,8 +25586,9 @@ async def revert_collaboration(
                 "revert_reason": payload.reason,
             },
             # Stepping back out of slot_booked gives the seat up; the slot link
-            # goes with it so a re-book claims fresh.
-            "$unset": {"slot_id": ""},
+            # goes with it so a re-book claims fresh, and so does the marker
+            # saying WeAre booked it — the next booking is whoever makes it.
+            "$unset": {"slot_id": "", "slot_booked_on_behalf": ""},
         },
         return_document=True,
     )
@@ -31301,6 +31677,11 @@ async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
                 # made before the handshake still reads as confirmed here.
                 "slot_confirmed": _slot_confirmed(r),
                 "slot_pending": state == "slot_booked" and not _slot_confirmed(r),
+                # **Booked by WeAre, not by them.** The person at the door
+                # reads this roster, and a seat the creator never chose is
+                # the one most likely to be the no-show — worth knowing
+                # before ringing them rather than after.
+                "on_behalf": _on_behalf_block(r),
                 "agreed_amount": r.get("agreed_amount"),
             }
         )
@@ -31594,6 +31975,9 @@ async def _answer_slot_request(
                 "preferred_time": "",
                 "slot_booked_at": "",
                 "slot_confirmed_at": "",
+                # A declined override is no longer a booking at all, so it
+                # is no longer one WeAre made.
+                "slot_booked_on_behalf": "",
             },
         },
         return_document=True,
@@ -33763,11 +34147,23 @@ async def _claim_slot(
     campaign: dict,
     slot: dict,
     preferred_time: Optional[datetime] = None,
+    *,
+    on_behalf_reason: Optional[str] = None,
 ) -> dict:
     """Take a place on a slot and move the collaboration onto it.
 
     One implementation behind both booking routes, because a second copy of an
     atomic claim is a second chance to get it subtly wrong.
+
+    **`on_behalf_reason` is the admin override, and it is the same claim.**
+    The seat is taken under the same conditional increment, against the same
+    venue rules, with the same handshake — what differs is that the record
+    says WeAre booked it, the audit line is its own action with the reason on
+    it, and the creator is told that somebody booked a day for them rather
+    than that their booking went through. Routing the override through here
+    rather than writing the state directly is what keeps "nobody books on a
+    creator's behalf" true of the state machine: the only way to be booked is
+    still to hold one of the campaign's real seats.
 
     The seat is claimed with a conditional increment — the filter only matches
     while booked_count is under capacity, so two creators after the last place
@@ -33832,6 +34228,13 @@ async def _claim_slot(
         # timestamp says when the booking became one.
         "slot_confirmed_at": None if needs_confirming else now,
         "slot_declined_reason": None,
+        # **Who made this booking, written on every claim.** The override
+        # stores who, when and why; the creator's own booking writes `None`
+        # explicitly rather than leaving the key alone, so a seat re-booked
+        # after a declined override cannot inherit a stale marker.
+        "slot_booked_on_behalf": (
+            _on_behalf_record(user, on_behalf_reason, now) if on_behalf_reason else None
+        ),
         "updated_at": now,
     }
     # A personal-table window is an availability range, so the creator can name
@@ -33856,36 +34259,77 @@ async def _claim_slot(
         )
 
     when = update["scheduled_at"]
+    # **An override is its own audit action**, not `collaboration.book_slot`
+    # with a different actor. "Who booked this" is the question the log is
+    # asked about exactly these rows, and an answer that needs the actor's
+    # role cross-referenced is an answer somebody gets wrong.
     await audit(
         user,
-        "collaboration.book_slot",
+        "collaboration.book_slot_on_behalf" if on_behalf_reason else "collaboration.book_slot",
         "collaboration",
         collab["_id"],
-        before={"state": "commercial_agreed"},
-        after={"state": "slot_booked", "slot_id": str(soid), "scheduled_at": _iso(when)},
+        before={"state": "commercial_agreed", "slot_id": None},
+        after={
+            "state": "slot_booked",
+            "slot_id": str(soid),
+            "scheduled_at": _iso(when),
+            "slot_confirmed": not needs_confirming,
+            **({"on_behalf": True, "booked_by": user.get("name")} if on_behalf_reason else {}),
+        },
+        note=on_behalf_reason,
+        **_campaign_audit_context(campaign),
     )
     creator_profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
     creator_name = (creator_profile or {}).get("name") or "A creator"
+    booker = user.get("name") or "WeAre"
+    # What the runner and the brand read: "X booked" is false when X did not,
+    # and the person at the door is the one who needs to know whose idea the
+    # time was.
+    booked_phrase = (
+        f"was booked by {booker} (WeAre) on their behalf for"
+        if on_behalf_reason
+        else "booked"
+    )
+    asked_phrase = (
+        f"was booked by {booker} (WeAre) on their behalf for"
+        if on_behalf_reason
+        else "asked for"
+    )
 
     if needs_confirming:
         # **What the creator is told is that it is requested, not confirmed.**
         # They arrange a day around this; "booked" when nobody has agreed the
         # time is how somebody travels across Bengaluru to a shut venue.
-        await notify(
-            collab["creator_id"],
-            "slot_requested",
-            title="Slot requested",
-            body=f"{campaign.get('title')} — {_when_text(when)}. "
-            "We'll confirm it shortly.",
-            link=f"/campaigns/{str(campaign['_id'])}",
-        )
+        if not on_behalf_reason:
+            await notify(
+                collab["creator_id"],
+                "slot_requested",
+                title="Slot requested",
+                body=f"{campaign.get('title')} — {_when_text(when)}. "
+                "We'll confirm it shortly.",
+                link=f"/campaigns/{str(campaign['_id'])}",
+            )
+        else:
+            # Told that somebody chose this for them, by name and with the
+            # reason — the message is the first they hear of it, and it has
+            # to be one they can answer.
+            await notify(
+                collab["creator_id"],
+                "slot_booked_for_you",
+                title="WeAre booked a slot for you",
+                body=f"{booker} booked {_when_text(when)} for you on "
+                f"{campaign.get('title')} — {on_behalf_reason} It still has to be "
+                "confirmed by whoever runs the campaign. If this time doesn't "
+                "work, release it from your dashboard.",
+                link=f"/campaigns/{str(campaign['_id'])}",
+            )
         # And whoever runs the campaign has a decision to make, not a note to
         # file.
         await notify_campaign_manager(
             campaign,
             "manager_slot_pending",
             title="A slot needs confirming",
-            body=f"{creator_name} asked for "
+            body=f"{creator_name} {asked_phrase} "
             f"{_when_text(when)} on {campaign.get('title')}.",
         )
         # And the brand, which has a table to hold whoever is running the day.
@@ -33895,34 +34339,45 @@ async def _claim_slot(
             campaign,
             "brand_slot_pending",
             title="A slot needs confirming",
-            body=f"{creator_name} asked for {_when_text(when)} on "
+            body=f"{creator_name} {asked_phrase} {_when_text(when)} on "
             f"“{campaign.get('title')}”.",
         )
     else:
         # **Settled, and said so.** Telling somebody "we'll confirm shortly"
         # about a booking that is already confirmed is a message they wait on
         # and a follow-up that never comes.
-        await notify(
-            collab["creator_id"],
-            "slot_confirmed",
-            title="You're booked",
-            body=f"{campaign.get('title')} — {_when_text(when)}. That's confirmed.",
-            link=f"/campaigns/{str(campaign['_id'])}",
-        )
+        if on_behalf_reason:
+            await notify(
+                collab["creator_id"],
+                "slot_booked_for_you",
+                title="WeAre booked a slot for you",
+                body=f"{booker} booked {_when_text(when)} for you on "
+                f"{campaign.get('title')} — {on_behalf_reason} That's confirmed. "
+                "If this time doesn't work, release it from your dashboard.",
+                link=f"/campaigns/{str(campaign['_id'])}",
+            )
+        else:
+            await notify(
+                collab["creator_id"],
+                "slot_confirmed",
+                title="You're booked",
+                body=f"{campaign.get('title')} — {_when_text(when)}. That's confirmed.",
+                link=f"/campaigns/{str(campaign['_id'])}",
+            )
         # The runner is told rather than asked: it is their day being filled,
         # and a diary entry is still worth having.
         await notify_campaign_manager(
             campaign,
             "manager_slot_booked",
             title="A slot was booked",
-            body=f"{creator_name} booked {_when_text(when)} on "
+            body=f"{creator_name} {booked_phrase} {_when_text(when)} on "
             f"{campaign.get('title')}.",
         )
         await _tell_brand_manager_unless_managed(
             campaign,
             "brand_slot_booked",
             title="A slot was booked",
-            body=f"{creator_name} booked {_when_text(when)} on "
+            body=f"{creator_name} {booked_phrase} {_when_text(when)} on "
             f"“{campaign.get('title')}”.",
         )
     return {
@@ -33931,6 +34386,7 @@ async def _claim_slot(
         "slot_confirmed": not needs_confirming,
         "slot": _serialize_slot(claimed),
         "scheduled_at": _iso(when),
+        "on_behalf": _on_behalf_block(updated),
     }
 
 
@@ -36991,6 +37447,10 @@ async def get_application(
         # Booked and agreed, or booked and waiting. See `_slot_confirmed`.
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
+        # Steps WeAre took on the creator's behalf. On the shared screen for
+        # the same reason it is on the creator's card: a booking an admin
+        # made must not read as the creator's own on any surface.
+        "on_behalf": _on_behalf_block(collab),
         "location_note": collab.get("location_note"),
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
@@ -37161,6 +37621,16 @@ async def get_application(
                 | {"dispatched"}
             )
             and _next_collab_state(state, campaign) is not None,
+            # The audited override for the two creator-owned steps. Decided
+            # here so the shared screen never asks who is looking: an admin
+            # gets them, nobody else does, and only at the one state where
+            # the creator's move is the thing being waited on.
+            "can_book_on_behalf": is_admin
+            and state == "commercial_agreed"
+            and not _is_delivery(campaign),
+            "can_confirm_address_on_behalf": is_admin
+            and state == "commercial_agreed"
+            and _is_delivery(campaign),
             # **Raising is for the parties, resolving is for the mediator**,
             # and the two are never offered to the same person on the same
             # row. An admin reading a brand-run collaboration is neither side
