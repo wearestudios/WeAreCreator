@@ -17,7 +17,7 @@
 // Motion is entrance-only and functional. Nothing on this page keeps moving
 // once it has arrived, and every piece of it checks prefers-reduced-motion.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";
@@ -220,12 +220,25 @@ export default function CreatorHome({ user, justOnboarded }) {
         typeof sessionStorage !== "undefined" &&
         sessionStorage.getItem("weare.builder-steered") === "1";
     if (untouched && !alreadySteered) {
+        // **The redirect is built before the steer is claimed, and that order
+        // is the whole lesson of the bug this block shipped with.** `Navigate`
+        // was never imported, so evaluating it threw a ReferenceError — and
+        // because the flag was written first, the one-shot steer had already
+        // been spent by the time the throw happened. The reload that followed
+        // the crash therefore saw `alreadySteered` and dropped the creator on
+        // an empty dashboard, having never once seen the builder. With the
+        // import fixed nothing here throws, so the ordering is no longer
+        // load-bearing — it stays this way round because "steered" claiming a
+        // steer that did not happen is the one state this flag must not reach,
+        // and the next person to add a line above the return should not be the
+        // one who rediscovers that.
+        const steer = <Navigate to="/onboarding/creator" replace />;
         try {
             sessionStorage.setItem("weare.builder-steered", "1");
         } catch {
             // Private mode. Worst case they get steered again next load.
         }
-        return <Navigate to="/onboarding/creator" replace />;
+        return steer;
     }
 
     // Completeness can drop out — at 100% there is nothing to say, and an

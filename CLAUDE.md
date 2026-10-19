@@ -479,6 +479,62 @@ already has their answer.
   value. `HomeSkeleton` mirrors the new arrangement (photo box, cover strip,
   tab strip); CLS measured 0.0000 at 390 and 1280 with the payload delayed.
 
+### An undefined name was not a lint error, and this page is where it bit
+
+`pages/CreatorHome.jsx` rendered `<Navigate to="/onboarding/creator" replace />`
+while importing only `{ Link }` from `react-router-dom`, so the first dashboard
+load of **every creator who had just signed up** threw a `ReferenceError` and
+fell through to the route boundary. That branch is the one that steers somebody
+with an empty profile into the builder — `percent === 0` and no
+`submitted_for_review_at` — which is precisely the state a new account is in, so
+the crash was on the most-travelled path onto this page rather than an edge of
+it.
+
+**The reason it was never caught is `craco.config.js`.** `eslint.configure`
+**replaces** create-react-app's own `baseConfig` rather than extending it, and
+the extends array named only `plugin:react-hooks/recommended` — so
+`eslint-config-react-app` was out of the build entirely and `no-undef` never
+ran. An undefined identifier was not a lint error anywhere in this frontend.
+**This is the second crash that cost**: the other is `istStartOfDay` in the
+manager's `shared.jsx`, recorded under "The campaign manager", which took the
+whole of `ManagerHome` down on every render and shipped that way. Both are the
+same defect wearing two names, and neither is the kind a reviewer catches by
+eye — which is the entire argument for the rule rather than for more care.
+
+- `extends` now leads with `eslint-config-react-app`, which carries `no-undef`
+  (and `react/jsx-no-undef`, the JSX-element half that catches the `Navigate`
+  shape). It is spelled as a **resolved absolute path**, not the bare name
+  `"react-app"`: this install nests the package inside
+  `react-scripts/node_modules`, ESLint resolves a `baseConfig` extends entry
+  against the project root, and the bare name fails the build outright. CRA's
+  own config has the same problem and solves it the same way.
+- It is resolved **from react-scripts' directory** rather than by naming the
+  nested path, so a future install that hoists the package keeps working.
+- The config also pulls back the parser, the browser/node/jest globals and
+  `settings.react.version` through its own `./base` — which is what CRA's
+  `baseConfig` had pointed at and what the override had also been dropping.
+  That half matters: with `no-undef` on and no `env.browser`, every `window`
+  and `sessionStorage` in the app would itself be an undefined name.
+- **`CI: "false"` in `.github/workflows/ci.yml` does not weaken this.** It
+  stops *warnings* failing the build; `no-undef` is an error. Verified by
+  removing the import again and building with `CI=false`: "Failed to compile …
+  'Navigate' is not defined".
+- Turning the rule on surfaced exactly one other error-level problem in 299
+  files — five `import/first` in `BrandOnboarding.jsx`, from a `const` sitting
+  between two imports. Fixed by moving the `const` below them.
+
+**The steer flag is claimed after the redirect is built, and the ordering is
+measured rather than assumed.** `sessionStorage.setItem("weare.builder-steered")`
+ran *before* the return, so the crash spent the one-shot steer without steering
+anybody: measured on the original code, the flag was written, the page threw,
+and the reload then read `alreadySteered` and dropped the creator on an ordinary
+empty dashboard — having never once seen the builder. With the element built
+first, the throw happens before the write, the flag stays unset and the reload
+retries; measured on exactly that build, `sessionStorage` is empty afterwards.
+The import fix makes the throw impossible, so this is no longer load-bearing —
+it stays because "steered" recording a steer that did not happen is the one
+state the flag must never reach.
+
 ## What a creator says about themselves
 
 The suggestion lists were food and nothing but food — cafe, brunch, bakery,

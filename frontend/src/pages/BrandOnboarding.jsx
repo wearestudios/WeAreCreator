@@ -65,7 +65,6 @@ import {
     FOLLOWER_TIERS,
 } from "@/lib/followerTiers";
 
-const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -78,6 +77,11 @@ import { IST } from "@/lib/time";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import DeleteAccount from "@/components/account/DeleteAccount";
 import HomepageLogoConsent from "@/components/brand/HomepageLogoConsent";
+
+// Below the imports rather than among them: this sat between two of them,
+// which put five later imports in the module body and is an `import/first`
+// error — one the build could not report while the lint config was narrowed.
+const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
