@@ -326,6 +326,8 @@ export const ADMIN_CAMPAIGN_EDIT = {
 	compensationOption: (value) => `admin-campaign-edit-compensation-${value}`,
 	creatorsNeeded: 'admin-campaign-edit-creators-needed',
 	deliverables: 'admin-campaign-edit-deliverables',
+	// The draft review window — an admin's override of the brand's setting.
+	reviewDays: 'admin-campaign-edit-review-days',
 	// The dates, by campaign type — the health panel's "extend the dates"
 	// action had nowhere to land until these existed.
 	date: (field) => `admin-campaign-edit-${field.replace(/_/g, '-')}`,

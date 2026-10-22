@@ -281,8 +281,14 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             htmlFor="accept-note"
                             className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                         >
-                            Note for our team (optional)
+                            Note (optional)
                         </Label>
+                        {/* **Said, because it changed.** This box used to
+                            reach our team alone; it now sits in the fee
+                            history the creator reads too. */}
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            The creator and our team both see this in the fee history.
+                        </p>
                         <Textarea
                             id="accept-note"
                             data-testid="accept-note-input"
@@ -291,7 +297,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
                             className="mt-2 border-white/10 bg-background/60 focus-visible:ring-primary"
-                            placeholder="Anything we should know when we book the slot?"
+                            placeholder="e.g. Accepting at our ceiling for this brief."
                         />
                     </div>
 
