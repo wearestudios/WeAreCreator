@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..700,0..100&family=Inter+Tight:wght@300..700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,400..700,0..100,0..1;1,9..144,400..700,0..100,0..1&family=Inter+Tight:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -336,6 +336,18 @@
     body {
         font-size: var(--text-body);
     }
+    /* **Every figure is tabular, everywhere.** Rupee amounts, the numbers in a
+     * table cell and a countdown all jitter with proportional figures — a
+     * column of fees that does not line up, a "0:09" that shifts as it ticks
+     * to "0:08". Set on the document rather than at each of the ~70 places a
+     * currency amount is rendered, so one written next month is tabular by
+     * construction rather than by somebody remembering. The cost is that a
+     * "1" in running prose takes the same advance as a "0", which in Inter
+     * Tight is close to invisible. Nothing may opt back out to proportional;
+     * `test_site_foundations.py` holds both halves. */
+    html {
+        font-variant-numeric: tabular-nums;
+    }
     h1,
     h2,
     h3,
@@ -352,6 +364,93 @@
     ::selection {
         background: hsl(var(--accent-wash));
         color: hsl(var(--heading));
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * The marketing type scale, kept apart from the product's
+ *
+ * The public site used to borrow the app's scale: `text-fluid-hero` stops at
+ * 68px and a Landing section heading was `text-fluid-4xl`, 36px. That is the
+ * whole of "the text is too small" — a scale tuned for a console somebody
+ * reads at arm's length, put on a page that has to carry across a room. The
+ * `fluid-*` steps are untouched; the app depends on them, and
+ * `test_site_foundations.py` pins every one of their values.
+ *
+ *   mkt-display  52 → 120px   lh 0.93   -0.04em
+ *   mkt-h1       44 →  84px   lh 0.96   -0.035em
+ *   mkt-h2       40 →  68px   lh 1.02   -0.035em
+ *   mkt-h3       28 →  40px   lh 1.1    -0.02em
+ *   mkt-lead     18 →  24px
+ *   mkt-body     18px
+ *   mkt-eyebrow  13px, 0.2em, uppercase
+ *
+ * **Every clamp reaches its minimum at a 375px viewport and its maximum at
+ * 1600px**, where the app's stop near 1280: a large monitor should not get
+ * laptop type. The coefficients are derived from those two points rather than
+ * typed, and the test re-derives them.
+ *
+ * **Marketing only.** These classes are not permitted under any signed-in
+ * route; the test fails a file outside the public pages that uses one.
+ * ------------------------------------------------------------------------- */
+:root {
+    /* **Wonk, and the size it is allowed at.** Fraunces' WONK axis swaps in
+     * the leaning n, m and h that give the face its character — at 40px and
+     * up. Below that the same glyphs read as a rendering fault, so the
+     * product's 24–32px headings must never get it. It is a token used by
+     * exactly the three classes whose minimum is 40px or more, rather than a
+     * utility anybody can put on anything. Optical size is left to the font
+     * (`font-optical-sizing: auto`), which is what the opsz axis is for. */
+    --mkt-wonk: "WONK" 1, "SOFT" 30;
+    --mkt-soft: "SOFT" 30;
+}
+
+@layer components {
+    .mkt-display,
+    .mkt-h1,
+    .mkt-h2,
+    .mkt-h3 {
+        font-family: "Fraunces", "Cormorant Garamond", ui-serif, Georgia, serif;
+        font-optical-sizing: auto;
+        font-weight: 400;
+    }
+    .mkt-display {
+        font-size: clamp(3.25rem, 1.949rem + 5.551vw, 7.5rem);
+        line-height: 0.93;
+        letter-spacing: -0.04em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h1 {
+        font-size: clamp(2.75rem, 1.985rem + 3.265vw, 5.25rem);
+        line-height: 0.96;
+        letter-spacing: -0.035em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h2 {
+        font-size: clamp(2.5rem, 1.964rem + 2.286vw, 4.25rem);
+        line-height: 1.02;
+        letter-spacing: -0.035em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h3 {
+        font-size: clamp(1.75rem, 1.52rem + 0.98vw, 2.5rem);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        font-variation-settings: var(--mkt-soft);
+    }
+    .mkt-lead {
+        font-size: clamp(1.125rem, 1.01rem + 0.49vw, 1.5rem);
+        line-height: 1.45;
+    }
+    .mkt-body {
+        font-size: 1.125rem;
+        line-height: 1.6;
+    }
+    .mkt-eyebrow {
+        font-size: 0.8125rem;
+        line-height: 1.4;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
     }
 }
 
@@ -613,6 +712,79 @@
     to   { transform: translate3d(0, 0, 0); }
 }
 
+/* ---------------------------------------------------------------------------
+ * The marketing motion, which is three moments and nothing else
+ *
+ * One curve — `--weare-ease`, the same deceleration as the product and the
+ * same numbers as `EASE` in `components/marketing/motion.js`. Two bands of
+ * duration and nothing between them:
+ *
+ *   interactive  200ms        colour, border and transform on hover/focus
+ *   entrance     450–600ms    the three entrances below
+ *
+ * The product keeps its own 180–220ms band in `lib/motion.js`; the two never
+ * borrow from each other.
+ *
+ * The three moments a public page may have, and the primitives that draw
+ * them (`components/marketing/primitives.js` exports exactly these):
+ *
+ *   1. a once-only line entrance — `LineEntrance`, `.mkt-line`
+ *   2. a once-only sequential row writer — `RowWriter`, `.mkt-row`
+ *   3. a number counting once — the existing `CountUp`
+ *
+ * **CSS, not framer-motion**, for the reason the product's settle is: an
+ * animation on transform and opacity is composited, and a JS tween runs on
+ * the main thread next to React on the phone this is read on. Delays are set
+ * inline per line or row; the reduced-motion block below zeroes them.
+ * ------------------------------------------------------------------------- */
+:root {
+    --mkt-interactive: 200ms;
+    --mkt-line: 520ms;
+    --mkt-line-gap: 90ms;
+    --mkt-row: 400ms;
+    --mkt-row-gap: 70ms;
+    /* The travel of a line entrance. 24px reads as type arriving; the
+       product's 6px reads as a row settling, and the two are different jobs. */
+    --mkt-rise: 24px;
+}
+
+@keyframes mkt-rise {
+    from { opacity: 0; transform: translate3d(0, var(--mkt-rise), 0); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes mkt-write {
+    from { opacity: 0; transform: translate3d(0, 8px, 0); }
+    to   { opacity: 1; transform: none; }
+}
+/* The final figure of a written sequence lands rather than slides: it scales
+   from 0.96, the one row that is the point of the others. */
+@keyframes mkt-land {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* A line of a headline, once, at mount. `both` holds it invisible through its
+   delay rather than flashing in and out. `display: block` because a transform
+   does nothing to an inline box. */
+.mkt-line {
+    display: block;
+    animation: mkt-rise var(--mkt-line) var(--weare-ease) both;
+}
+/* A row waiting to be written is transparent — opacity only, so it already
+   occupies its box and arriving moves nothing. `RowWriter` sets
+   `data-written` once, when the block is first in view, and never clears it:
+   scrolling past again does not replay it. */
+.mkt-row {
+    opacity: 0;
+}
+[data-written="true"] .mkt-row {
+    animation: mkt-write var(--mkt-row) var(--weare-ease) both;
+}
+[data-written="true"] .mkt-row-final {
+    animation-name: mkt-land;
+    transform-origin: left center;
+}
+
 /* A route arriving. Same shape, its own duration so the two can be tuned
    apart — a whole screen and one row inside it are different distances. */
 .weare-route {
@@ -653,6 +825,19 @@
         opacity: 1;
         transform: none;
         will-change: auto;
+    }
+    /* **The marketing moments resolve to their end state, never to a shorter
+       animation.** Handled here and only here: the primitives carry no
+       reduced-motion branch of their own, so a fourth component cannot forget
+       one. A row that has not been "written" is visible too — the writer's
+       observer is irrelevant to somebody who asked for no motion. */
+    .mkt-line,
+    .mkt-row,
+    [data-written="true"] .mkt-row,
+    [data-written="true"] .mkt-row-final {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
     }
     /* The hero drift is applied inline by `HeroSlider`, which already checks
        `useReducedMotion` and does not apply it at all under `reduce`. This is
