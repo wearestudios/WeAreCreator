@@ -27,7 +27,6 @@ import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
 import { DisclosureConfirmDialog } from "@/components/campaign/CampaignTerms";
 import Shortfall from "@/components/Shortfall";
-import { ReliabilityBadge } from "@/components/ReliabilityBadge";
 import { SHORTFALL } from "@/constants/testIds";
 import {
     ApplicantListSkeleton,
@@ -71,7 +70,7 @@ const CAT_LABEL = {
 const STATE_META = {
     applied: {
         label: "With WeAre",
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
         note: "Our team is verifying this applicant. You'll see them once they're through.",
     },
     verified: {
@@ -81,20 +80,20 @@ const STATE_META = {
     },
     accepted: {
         label: "Accepted",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
         note: "Confirmed. We'll agree the fee and book the slot.",
     },
     commercial_agreed: {
         label: "Fee agreed",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     slot_booked: {
         label: "Slot booked",
-        tone: "bg-state-progress/15 text-state-progress border-state-progress/30",
+        tone: "bg-state-progress-wash text-state-progress border-state-progress/30",
     },
     attended: {
         label: "Shoot done",
-        tone: "bg-state-done/15 text-state-done border-state-done/30",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
         note: "Waiting on the creator to publish and submit links.",
     },
     draft_submitted: {
@@ -104,7 +103,7 @@ const STATE_META = {
     },
     draft_approved: {
         label: "Draft approved",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
         note: "Approved. The creator is publishing it now.",
     },
     content_submitted: {
@@ -114,24 +113,24 @@ const STATE_META = {
     },
     content_approved: {
         label: "Approved",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
         note: "Approved — payment is being processed.",
     },
     in_payment: {
         label: "In payment",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     closed: {
         label: "Complete",
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     },
     declined: {
         label: "Declined",
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     },
     cancelled: {
         label: "Cancelled",
-        tone: "bg-state-rejected/10 text-state-rejected/80 border-state-rejected/25",
+        tone: "bg-state-rejected-wash text-state-rejected/80 border-state-rejected/25",
     },
 };
 
@@ -176,13 +175,13 @@ const formatDate = (iso) => {
 const StatePill = ({ state }) => {
     const meta = STATE_META[state] || {
         label: state,
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     };
     return (
         <span
             data-testid={`applicant-state-${state}`}
             className={
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 meta.tone
             }
         >
@@ -229,16 +228,16 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="accept-applicant-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                className="max-w-md rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         Accept creator
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {applicant?.creator?.name}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         They'll be told straight away, and we'll take it from there —
                         fee confirmation, slot booking, then content.
                     </DialogDescription>
@@ -248,7 +247,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                     <div>
                         <Label
                             htmlFor="accept-amount"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             Fee you're accepting at
                         </Label>
@@ -262,13 +261,13 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                                 step="500"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
-                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
+                                className="h-11 border-border bg-background/60 pl-9 focus-visible:ring-primary"
                             />
                         </div>
                         {/* `budget` is null on a barter brief, where the stored
                           * figure is a leftover and quoting it as "your budget"
                           * would be wrong. */}
-                        <p className="mt-2 text-xs text-muted-foreground">
+                        <p className="mt-2 text-meta text-muted-foreground">
                             They quoted ₹{formatRupees(applicant?.quoted_rate)}
                             {budget != null
                                 ? ` · your budget is ₹${formatRupees(budget)} per creator.`
@@ -279,7 +278,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                     <div>
                         <Label
                             htmlFor="accept-note"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             Note for our team (optional)
                         </Label>
@@ -290,13 +289,13 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             maxLength={500}
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
-                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="mt-2 border-border bg-background/60 focus-visible:ring-primary"
                             placeholder="Anything we should know when we book the slot?"
                         />
                     </div>
 
                     {err && (
-                        <p data-testid="accept-error" className="text-sm text-destructive">
+                        <p data-testid="accept-error" className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -306,7 +305,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 Cancel
                             </Button>
@@ -383,16 +382,16 @@ function ReasonDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="reason-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card grain-surface"
+                className="max-w-md rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         {kicker}
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         {description}
                     </DialogDescription>
                 </DialogHeader>
@@ -401,7 +400,7 @@ function ReasonDialog({
                     <div>
                         <Label
                             htmlFor="reason-input"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             {label}
                         </Label>
@@ -412,13 +411,13 @@ function ReasonDialog({
                             maxLength={500}
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
-                            className="mt-2 border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="mt-2 border-border bg-background/60 focus-visible:ring-primary"
                             placeholder={placeholder}
                         />
                     </div>
 
                     {err && (
-                        <p data-testid="reason-error" className="text-sm text-destructive">
+                        <p data-testid="reason-error" className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -428,7 +427,7 @@ function ReasonDialog({
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 Cancel
                             </Button>
@@ -439,7 +438,7 @@ function ReasonDialog({
                             disabled={busy}
                             className={
                                 destructive
-                                    ? "rounded-full border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
+                                    ? "rounded-full border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected-wash"
                                     : "rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             }
                         >
@@ -493,7 +492,7 @@ const ApplicantCard = ({
                                 src={mediaUrl(c.profile_image_url)}
                                 alt=""
                                 data-testid={`applicant-photo-${a.id}`}
-                                className="aspect-square h-10 w-10 flex-none rounded-full border border-white/10 object-cover"
+                                className="aspect-square h-10 w-10 flex-none rounded-full border border-border object-cover"
                             />
                         )}
                         {/* The name is the way in to the application's own
@@ -502,7 +501,7 @@ const ApplicantCard = ({
                         <Link
                             to={`/brand/applications/${a.id}`}
                             data-testid={`applicant-open-${a.id}`}
-                            className="font-serif text-2xl leading-tight transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            className="font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             {c.name || "Creator"}
                         </Link>
@@ -510,7 +509,7 @@ const ApplicantCard = ({
                         {a.reference && (
                             <span
                                 data-testid={`applicant-reference-${a.id}`}
-                                className="rounded-md border border-white/10 px-2 py-0.5 font-mono text-[10px] tracking-wider text-muted-foreground"
+                                className="rounded-md border border-border px-2 py-0.5 font-mono text-eyebrow tracking-wider text-muted-foreground"
                             >
                                 {a.reference}
                             </span>
@@ -522,7 +521,7 @@ const ApplicantCard = ({
                         picture. */}
                     <ProcessFlow process={a.process} className="mt-4" />
 
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta text-muted-foreground">
                         {c.instagram_handle && (
                             <a
                                 href={
@@ -560,7 +559,7 @@ const ApplicantCard = ({
                             {c.niches.map((n) => (
                                 <span
                                     key={n}
-                                    className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-primary"
+                                    className="rounded-full bg-primary/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
                                 >
                                     {n}
                                 </span>
@@ -571,17 +570,17 @@ const ApplicantCard = ({
 
                 <div className="flex flex-row items-end gap-6 md:flex-col md:items-end md:gap-2">
                     <div className="md:text-right">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             {a.agreed_amount != null ? "Agreed" : "They quoted"}
                         </div>
-                        <div className="mt-1 flex items-baseline font-serif text-3xl">
+                        <div className="mt-1 flex items-baseline font-serif text-h2">
                             <IndianRupee className="h-5 w-5 text-primary" />
                             {formatRupees(a.agreed_amount ?? a.quoted_rate)}
                         </div>
                         {overBudget && a.agreed_amount == null && (
                             <div
                                 data-testid={`applicant-over-budget-${a.id}`}
-                                className="mt-1 text-[11px] text-state-pending"
+                                className="mt-1 text-eyebrow text-state-pending"
                             >
                                 ₹{formatRupees(a.quoted_rate - budget)} over budget
                             </div>
@@ -593,7 +592,7 @@ const ApplicantCard = ({
             {a.pitch && (
                 <blockquote
                     data-testid={`applicant-pitch-${a.id}`}
-                    className="border-l-2 border-primary/40 pl-4 text-sm leading-relaxed text-foreground/85"
+                    className="border-l-2 border-primary/40 pl-4 text-body leading-relaxed text-foreground/85"
                 >
                     {a.pitch}
                 </blockquote>
@@ -613,7 +612,7 @@ const ApplicantCard = ({
             {a.scheduled_at && (
                 <div
                     data-testid={`applicant-slot-${a.id}`}
-                    className="flex flex-wrap items-center gap-2 text-sm text-state-progress"
+                    className="flex flex-wrap items-center gap-2 text-meta text-state-progress"
                 >
                     <Clock className="h-4 w-4" />
                     {formatDateTime(a.scheduled_at)}
@@ -625,7 +624,7 @@ const ApplicantCard = ({
 
             {a.content_urls?.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Submitted
                     </span>
                     {a.content_urls.map((u, i) => (
@@ -635,7 +634,7 @@ const ApplicantCard = ({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={`applicant-content-${a.id}-${i}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-background/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-primary transition-colors duration-200 hover:border-primary/40"
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:border-primary/40"
                         >
                             <LinkIcon className="h-3 w-3" />
                             Post {i + 1}
@@ -648,9 +647,9 @@ const ApplicantCard = ({
             {a.revision_note && (
                 <p
                     data-testid={`applicant-revision-${a.id}`}
-                    className="rounded-md border border-state-pending/25 bg-state-pending/10 px-4 py-3 text-sm text-state-pending"
+                    className="rounded-md border border-state-pending/25 bg-state-pending-wash px-4 py-3 text-meta text-state-pending"
                 >
-                    <span className="uppercase tracking-[0.15em] text-[10px]">
+                    <span className="uppercase tracking-eyebrow text-eyebrow">
                         You asked for
                     </span>
                     <br />
@@ -659,18 +658,18 @@ const ApplicantCard = ({
             )}
 
             {a.exit_reason && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                     Reason given: {a.exit_reason}
                 </p>
             )}
 
             {meta.note && !a.can_accept && !a.can_review_content && (
-                <p className="text-xs text-muted-foreground">{meta.note}</p>
+                <p className="text-meta text-muted-foreground">{meta.note}</p>
             )}
 
             {/* Actions */}
             {(a.can_accept || a.can_decline || a.can_review_content) && (
-                <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
                     {a.can_accept && (
                         <Button
                             data-testid={`applicant-accept-btn-${a.id}`}
@@ -708,7 +707,7 @@ const ApplicantCard = ({
                                 disabled={busy}
                                 variant="outline"
                                 onClick={() => onRequestChanges(a)}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 <MessageSquare className="mr-1.5 h-4 w-4" />
                                 Ask for a change
@@ -725,7 +724,7 @@ const ApplicantCard = ({
                                     disabled={busy}
                                     variant="outline"
                                     onClick={() => onAcceptPartial(a)}
-                                    className="rounded-full border-state-pending/40 bg-transparent text-state-pending hover:bg-state-pending/10"
+                                    className="rounded-full border-state-pending/40 bg-transparent text-state-pending hover:bg-state-pending-wash"
                                 >
                                     <PackageOpen className="mr-1.5 h-4 w-4" />
                                     Accept what arrived
@@ -739,7 +738,7 @@ const ApplicantCard = ({
                             disabled={busy}
                             variant="outline"
                             onClick={() => onDecline(a)}
-                            className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10 hover:text-state-rejected"
+                            className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected-wash hover:text-state-rejected"
                         >
                             <X className="mr-1.5 h-4 w-4" />
                             Decline
@@ -769,18 +768,18 @@ const InvitedStrip = ({ invited }) => {
 
     return (
         <section data-testid="applicants-invited" className="mt-10">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 Invited, waiting to hear back
                 <span className="ml-2 text-primary">{rows.length}</span>
             </p>
-            <ul className="mt-3 divide-y divide-white/10 rounded-md border border-white/10 bg-card">
+            <ul className="mt-3 divide-y divide-divider rounded-md border border-border bg-card">
                 {rows.map((i) => (
                     <li
                         key={i.invitation_id}
                         data-testid={`applicants-invited-${i.invitation_id}`}
                         className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
                     >
-                        <span className="min-w-0 flex-1 truncate text-sm">
+                        <span className="min-w-0 flex-1 truncate text-meta">
                             {i.name || "Creator"}
                             {i.instagram_handle && (
                                 <span className="ml-2 text-muted-foreground">
@@ -788,7 +787,7 @@ const InvitedStrip = ({ invited }) => {
                                 </span>
                             )}
                         </span>
-                        <span className="flex-none text-xs text-muted-foreground">
+                        <span className="flex-none text-meta text-muted-foreground">
                             invited {formatDate(i.created_at)}
                         </span>
                     </li>
@@ -910,7 +909,7 @@ export default function BrandCampaignApplicants() {
                         <Skeleton className="h-4 w-36" />
                         <Skeleton className="h-4 w-24" />
                     </div>
-                    <div className="mt-10 flex flex-wrap gap-2 border-b border-white/10 pb-5">
+                    <div className="mt-10 flex flex-wrap gap-2 border-b border-border pb-5">
                         {Array.from({ length: 6 }).map((_, i) => (
                             <Skeleton key={i} className="h-8 w-28 rounded-full" />
                         ))}
@@ -928,8 +927,8 @@ export default function BrandCampaignApplicants() {
             <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-                    <p className="font-serif text-3xl">Campaign not found</p>
-                    <p className="mt-4 text-sm text-muted-foreground">{error}</p>
+                    <p className="font-serif text-h2">Campaign not found</p>
+                    <p className="mt-4 text-meta text-muted-foreground">{error}</p>
                     <Button
                         onClick={() => navigate("/dashboard")}
                         className="mt-8 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
@@ -954,22 +953,22 @@ export default function BrandCampaignApplicants() {
                 <Link
                     to="/dashboard"
                     data-testid="applicants-back-link"
-                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Your campaigns
                 </Link>
 
-                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="mt-6 text-eyebrow uppercase tracking-eyebrow text-primary">
                     Applicants
                 </p>
                 <h1
                     data-testid="applicants-campaign-title"
-                    className="mt-3 max-w-3xl font-serif text-fluid-5xl leading-none tracking-tight"
+                    className="mt-3 max-w-3xl font-serif text-h1 leading-none tracking-tight"
                 >
                     {campaign.title}
                 </h1>
-                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-meta text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
                         {isBarter(campaign) ? (
                             "Barter"
@@ -1006,7 +1005,7 @@ export default function BrandCampaignApplicants() {
                 {totals.awaiting_you > 0 && (
                     <div
                         data-testid="applicants-action-banner"
-                        className="mt-8 flex items-start gap-3 rounded-md border border-primary/30 bg-primary/10 p-4 text-sm text-primary/90"
+                        className="mt-8 flex items-start gap-3 rounded-md border border-primary/30 bg-primary/10 p-4 text-meta text-primary/90"
                     >
                         <Send className="mt-0.5 h-4 w-4 flex-none" />
                         <p>
@@ -1045,14 +1044,14 @@ export default function BrandCampaignApplicants() {
                                 data-testid={`applicants-filter-${f.key}`}
                                 onClick={() => setFilter(f.key)}
                                 className={
-                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (active
                                         ? "border-primary bg-primary/10 text-primary"
-                                        : "border-white/10 bg-transparent text-muted-foreground hover:border-white/25 hover:text-foreground")
+                                        : "border-border bg-transparent text-muted-foreground hover:border-tint/30 hover:text-foreground")
                                 }
                             >
                                 {f.label}
-                                <span className="ml-2 text-[10px] opacity-70">{n}</span>
+                                <span className="ml-2 text-eyebrow opacity-70">{n}</span>
                             </button>
                         );
                     })}
@@ -1072,7 +1071,7 @@ export default function BrandCampaignApplicants() {
                     panel down with it, on the one screen a brand uses to decide
                     who gets booked. */}
                 <SafeSection name="applicant-board" label="The applicant list couldn't load">
-                <div className="mt-8 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
+                <div className="mt-8 overflow-hidden rounded-md border border-border bg-card grain-surface">
                     {visible.length === 0 ? (
                         <ListEmptyState
                             Icon={Users}
@@ -1093,7 +1092,7 @@ export default function BrandCampaignApplicants() {
                             className="border-0 bg-transparent"
                         />
                     ) : (
-                        <ul className="divide-y divide-white/10">
+                        <ul className="divide-y divide-divider">
                             {visible.map((a) => (
                                 <ApplicantCard
                                     key={a.id}

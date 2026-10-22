@@ -30,7 +30,7 @@ const Ring = ({ percent }) => {
                     r={RADIUS}
                     fill="none"
                     strokeWidth="3"
-                    className="stroke-white/10"
+                    className="stroke-border"
                 />
                 <motion.circle
                     cx="36"
@@ -48,7 +48,7 @@ const Ring = ({ percent }) => {
             </svg>
             <span
                 data-testid={IDS.percent}
-                className="absolute inset-0 grid place-items-center font-serif text-lg"
+                className="absolute inset-0 grid place-items-center font-serif text-body-lg"
             >
                 {percent}%
             </span>
@@ -62,15 +62,15 @@ export default function Completeness({ completeness }) {
     if (!completeness || completeness.complete || missing.length === 0) return null;
 
     return (
-        <div className="rounded-md border border-white/10 bg-card p-6 md:p-7 grain-surface">
+        <div className="rounded-md border border-border bg-card p-6 md:p-7 grain-surface">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <Ring percent={completeness.percent ?? 0} />
 
                 <div className="min-w-0 flex-1">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Your profile
                     </p>
-                    <p className="mt-3 font-serif text-xl leading-tight">
+                    <p className="mt-3 font-serif text-h3 leading-tight">
                         {/* Framed as what it unlocks, not as a chore. */}
                         A few more details and brands can find you properly.
                     </p>
@@ -83,7 +83,7 @@ export default function Completeness({ completeness }) {
                             <li
                                 key={row.field}
                                 data-testid={IDS.item(row.field)}
-                                className="rounded-full border border-white/10 bg-background/60 px-3 py-1 text-xs text-muted-foreground"
+                                className="rounded-full border border-border bg-background/60 px-3 py-1 text-meta text-muted-foreground"
                             >
                                 {row.label}
                             </li>
@@ -93,7 +93,7 @@ export default function Completeness({ completeness }) {
                     <Link
                         to="/onboarding/creator"
                         data-testid={IDS.cta}
-                        className="group mt-6 inline-flex items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
+                        className="group mt-6 inline-flex items-center gap-2 text-meta text-primary transition-colors duration-200 hover:text-primary-hover"
                     >
                         Finish your profile
                         <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

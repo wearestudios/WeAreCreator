@@ -74,7 +74,7 @@ export default function SlotAnswer({ rows, onChanged }) {
             data-testid={IDS.band}
             className="mt-6 rounded-md border border-primary/40 bg-primary/10 p-4"
         >
-            <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-primary">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                 <CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />
                 {waiting.length === 1
                     ? "A booking is waiting on you"
@@ -86,15 +86,15 @@ export default function SlotAnswer({ rows, onChanged }) {
                     <li
                         key={r.collaboration_id}
                         data-testid={IDS.row(r.collaboration_id)}
-                        className="rounded-md border border-white/10 bg-card p-4"
+                        className="rounded-md border border-border bg-card p-4"
                     >
-                        <p className="text-sm">
+                        <p className="text-meta">
                             {/* The name opens the whole application — the fast
                                 answer is here, the reason to hesitate is
                                 there. */}
                             <Link
                                 to={`/manager/applications/${r.collaboration_id}`}
-                                className="underline decoration-white/20 underline-offset-4 hover:text-primary"
+                                className="underline decoration-border underline-offset-4 hover:text-primary"
                             >
                                 {r.name || "A creator"}
                             </Link>{" "}
@@ -122,7 +122,7 @@ export default function SlotAnswer({ rows, onChanged }) {
                                 disabled={busyId === r.collaboration_id}
                                 onClick={() => setDecliningFor(r)}
                                 data-testid={IDS.decline(r.collaboration_id)}
-                                className="border-white/15 bg-transparent sm:flex-1"
+                                className="border-input bg-transparent sm:flex-1"
                             >
                                 <X className="mr-2 h-4 w-4" />
                                 Doesn't work
@@ -173,12 +173,12 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
             <SheetContent
                 side="bottom"
                 data-testid={IDS.sheet}
-                className="rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-2xl leading-tight">
+                <SheetTitle className="font-serif text-h3 leading-tight">
                     That time doesn't work?
                 </SheetTitle>
-                <SheetDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                     {row?.name || "They"} keep their place on the campaign and can pick
                     another slot. They see what you write here.
                 </SheetDescription>
@@ -190,10 +190,10 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={IDS.reason}
                     placeholder="e.g. Kitchen is closed Monday evenings — any lunchtime works"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                    className="mt-5 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                 />
                 {err && (
-                    <p data-testid={IDS.error} className={`mt-3 text-sm text-destructive`}>
+                    <p data-testid={IDS.error} className={`mt-3 text-meta text-destructive`}>
                         {err}
                     </p>
                 )}
@@ -204,7 +204,7 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
                         busy={busy}
                         onClick={submit}
                         data-testid={IDS.submit}
-                        className={`border border-white/15 bg-transparent ${TOUCH}`}
+                        className={`border border-input bg-transparent ${TOUCH}`}
                     >
                         Send it back
                     </BigButton>
@@ -213,7 +213,7 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
                         variant="outline"
                         onClick={onClose}
                         data-testid={IDS.cancel}
-                        className="border-white/15 bg-transparent"
+                        className="border-input bg-transparent"
                     >
                         Back
                     </BigButton>

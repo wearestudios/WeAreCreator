@@ -28,11 +28,11 @@ export default function ShootWindowNote({ campaign, className = "" }) {
         <div
             data-testid={IDS.summary}
             className={
-                "rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm leading-relaxed " +
+                "rounded-md border border-border bg-muted px-4 py-3 text-body leading-relaxed " +
                 className
             }
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-primary">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                 <CalendarClock className="h-3.5 w-3.5" />
                 When it shoots
             </p>

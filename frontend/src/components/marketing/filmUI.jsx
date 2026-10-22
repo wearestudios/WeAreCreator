@@ -25,7 +25,7 @@ const PAYOUT_TESTID = IDS.filmPayout;
 
 /** The shared panel treatment. Everything in the film sits on one of these. */
 export const PANEL =
-    "rounded-lg border border-white/10 bg-card grain-surface";
+    "rounded-lg border border-border bg-card grain-surface";
 
 /** A tiny uppercase label — the same overline rule as the rest of the site. */
 export function Tag({ children, tone = "muted" }) {
@@ -34,7 +34,7 @@ export function Tag({ children, tone = "muted" }) {
             ? "border-primary/40 text-primary"
             : tone === "good"
               ? "border-state-approved/40 text-state-approved"
-              : "border-white/15 text-muted-foreground";
+              : "border-input text-muted-foreground";
     return (
         <span
             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] uppercase tracking-[0.18em] ${colour}`}
@@ -60,10 +60,10 @@ export function BriefCard() {
             </div>
             <p className="mt-3 font-serif text-lg leading-tight">Opening night</p>
             <div className="mt-3 flex items-center gap-2">
-                <span className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-muted-foreground">
+                <span className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">
                     ₹12,000 per creator
                 </span>
-                <span className="rounded-md bg-white/5 px-2 py-1 text-[11px] text-muted-foreground">
+                <span className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">
                     3 needed
                 </span>
             </div>
@@ -142,7 +142,7 @@ export function SlotStrip({ booked }) {
                         className={`grid h-8 place-items-center rounded-md text-[11px] ${
                             i === booked
                                 ? "bg-primary text-primary-foreground"
-                                : "bg-white/5 text-muted-foreground"
+                                : "bg-muted text-muted-foreground"
                         }`}
                     >
                         {d}
@@ -164,7 +164,7 @@ export function ApprovalCard() {
     return (
         <div className={`${PANEL} w-full p-3`}>
             <div className="flex items-center gap-3">
-                <div className="h-12 w-16 shrink-0 rounded-md bg-gradient-to-br from-navy-500/60 to-navy-900/80" />
+                <div className="h-12 w-16 shrink-0 rounded-md bg-gradient-to-br from-inverse-alt/60 to-inverse/80" />
                 <div className="min-w-0">
                     <p className="text-sm">Draft reviewed</p>
                     <p className="text-[11px] text-muted-foreground">

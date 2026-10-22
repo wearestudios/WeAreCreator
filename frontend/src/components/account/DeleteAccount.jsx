@@ -118,12 +118,12 @@ export default function DeleteAccount() {
         return (
             <section
                 data-testid={IDS.deletionPending}
-                className="rounded-md border border-state-pending/30 bg-state-pending/10 p-5"
+                className="rounded-md border border-state-pending/30 bg-state-pending-wash p-5"
             >
-                <p className="text-xs uppercase tracking-[0.2em] text-state-pending">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
                     Deletion requested
                 </p>
-                <p className="mt-3 text-sm leading-relaxed text-state-pending/90">
+                <p className="mt-3 text-body leading-relaxed text-state-pending/90">
                     You asked on {formatDateTime(request.requested_at)}. We'll come back
                     to you once somebody has been through your account. You can change
                     your mind until then.
@@ -133,7 +133,7 @@ export default function DeleteAccount() {
                     onClick={cancelRequest}
                     disabled={busy}
                     data-testid={IDS.deletionWithdraw}
-                    className="mt-4 min-h-[2.75rem] border-white/20 bg-transparent"
+                    className="mt-4 min-h-[2.75rem] border-input bg-transparent"
                 >
                     Keep my account
                 </Button>
@@ -144,12 +144,12 @@ export default function DeleteAccount() {
     return (
         <section
             data-testid={IDS.deletionSection}
-            className="rounded-md border border-white/10 bg-card p-5 grain-surface"
+            className="rounded-md border border-border bg-card p-5 grain-surface"
         >
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 Delete your account
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                 You can ask us to erase your personal details at any time. Somebody
                 reads every request — it isn't automatic — and we'll tell you when it's
                 done.
@@ -161,18 +161,18 @@ export default function DeleteAccount() {
             {blocked?.blocking?.length > 0 && (
                 <div
                     data-testid={IDS.deletionBlocked}
-                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
+                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
                 >
-                    <p className="flex items-center gap-2 text-sm text-state-pending">
+                    <p className="flex items-center gap-2 text-meta text-state-pending">
                         <AlertTriangle aria-hidden="true" className="h-4 w-4 flex-none" />
                         {blocked.message}
                     </p>
-                    <ul className="mt-3 space-y-1.5 text-sm text-state-pending/90">
+                    <ul className="mt-3 space-y-1.5 text-meta text-state-pending/90">
                         {blocked.blocking.map((b) => (
                             <li key={b.collaboration_id}>
                                 <Link
                                     to="/dashboard"
-                                    className="underline decoration-white/20 underline-offset-4"
+                                    className="underline decoration-border underline-offset-4"
                                 >
                                     {b.campaign_title || "A campaign"}
                                 </Link>{" "}
@@ -197,12 +197,12 @@ export default function DeleteAccount() {
                 <DialogContent data-testid={IDS.deletionDialog} className="sm:max-w-lg">
                     <DialogHeader className="text-left">
                         <DialogTitle>Delete your account?</DialogTitle>
-                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                             Here's exactly what happens.
                         </DialogDescription>
                     </DialogHeader>
 
-                    <ul className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+                    <ul className="space-y-2 text-body leading-relaxed text-muted-foreground">
                         {WHAT_HAPPENS.map((line) => (
                             <li key={line} className="flex gap-2">
                                 <span aria-hidden="true" className="text-primary">
@@ -214,7 +214,7 @@ export default function DeleteAccount() {
                     </ul>
 
                     <label className="block">
-                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Anything you'd like to tell us{" "}
                             <span className="opacity-60">(optional)</span>
                         </span>
@@ -227,7 +227,7 @@ export default function DeleteAccount() {
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                             data-testid={IDS.deletionReason}
-                            className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                            className="mt-2 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                         />
                     </label>
 

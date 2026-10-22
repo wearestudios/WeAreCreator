@@ -56,7 +56,7 @@ export default function CancellationHistory({ rows, showCreator = false }) {
                                 anybody is committed and is the creator's to
                                 make — printing it as a cancellation would put
                                 a black mark where there is none. */}
-                            <span className="text-sm">
+                            <span className="text-meta">
                                 {r.state === "withdrawn" ? "Withdrawn" : "Cancelled"}
                             </span>
                             <span className={`${TEXT.meta} text-muted-foreground`}>
@@ -77,7 +77,7 @@ export default function CancellationHistory({ rows, showCreator = false }) {
                             {r.at ? ` · ${formatDateTime(r.at)}` : ""}
                         </p>
 
-                        {r.reason && <p className="mt-2 text-sm">“{r.reason}”</p>}
+                        {r.reason && <p className="mt-2 text-meta">“{r.reason}”</p>}
 
                         {r.kill_fee != null && (
                             <p

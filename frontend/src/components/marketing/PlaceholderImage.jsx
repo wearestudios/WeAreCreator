@@ -114,7 +114,7 @@ export function PlaceholderImage({
             className={`overflow-hidden ${
                 fill
                     ? "absolute inset-0"
-                    : `relative rounded-lg border border-white/10 ${
+                    : `relative rounded-lg border border-border ${
                           RATIO[ratio] || RATIO["16/9"]
                       }`
             } ${className}`}
@@ -131,7 +131,7 @@ export function PlaceholderImage({
                     // because the hue is computed.
                     backgroundImage: `linear-gradient(135deg, hsl(${hue} 78% 22%) 0%, hsl(${
                         hue + 6
-                    } 60% 12%) 45%, hsl(217 62% 9%) 100%)`,
+                    } 60% 12%) 45%, hsl(var(--brand-navy)) 100%)`,
                 }}
             />
             {src ? (

@@ -89,10 +89,10 @@ const Chip = ({ on, children, testid, ...rest }) => (
         data-testid={testid}
         aria-pressed={on}
         className={
-            "min-h-[3rem] rounded-md border px-4 text-sm transition-colors duration-200 " +
+            "min-h-[3rem] rounded-md border px-4 text-meta transition-colors duration-200 " +
             (on
                 ? "border-primary bg-primary/10 text-primary"
-                : "border-white/10 bg-background/60 text-foreground hover:border-white/25")
+                : "border-border bg-background/60 text-foreground hover:border-tint/30")
         }
         {...rest}
     >
@@ -209,16 +209,16 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
+                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         {reviewing ? "Check and confirm" : "Pick your slot"}
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {collab?.campaign_title || data?.campaign_title || "Your slot"}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                         {reviewing
                             ? "One look before we take the seat."
                             : data?.how_it_works || "Choose a time that works for you."}
@@ -236,7 +236,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                 {error && (
                     <p
                         data-testid={IDS.error}
-                        className="mt-5 flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm text-state-rejected"
+                        className="mt-5 flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected-wash px-4 py-3 text-meta text-state-rejected"
                     >
                         <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
                         {error}
@@ -252,7 +252,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                         {picksOwnTime && (
                             <p
                                 data-testid={IDS.window}
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Windows open on this campaign
                             </p>
@@ -261,7 +261,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                         {slots.length === 0 ? (
                             <p
                                 data-testid={IDS.empty}
-                                className="rounded-md border border-white/10 bg-background/60 px-4 py-6 text-sm leading-relaxed text-muted-foreground"
+                                className="rounded-md border border-border bg-background/60 px-4 py-6 text-body leading-relaxed text-muted-foreground"
                             >
                                 Every slot is taken right now. The campaign manager
                                 usually opens more — check back, or message them if
@@ -282,21 +282,21 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                                     "flex min-h-[3.5rem] w-full items-center justify-between gap-4 rounded-md border px-4 py-3 text-left transition-colors duration-200 " +
                                                     (on
                                                         ? "border-primary bg-primary/10"
-                                                        : "border-white/10 bg-background/60 hover:border-white/25")
+                                                        : "border-border bg-background/60 hover:border-tint/30")
                                                 }
                                             >
                                                 <span className="min-w-0">
-                                                    <span className="block text-sm">
+                                                    <span className="block text-meta">
                                                         {formatDay(s.starts_at)}
                                                     </span>
-                                                    <span className="mt-1 block text-xs text-muted-foreground">
+                                                    <span className="mt-1 block text-meta text-muted-foreground">
                                                         {formatTime(s.starts_at)}
                                                         {s.ends_at ? ` – ${formatTime(s.ends_at)}` : ""}
                                                     </span>
                                                 </span>
                                                 <span
                                                     data-testid={IDS.spots(s.id)}
-                                                    className="inline-flex flex-none items-center gap-1.5 text-xs text-muted-foreground"
+                                                    className="inline-flex flex-none items-center gap-1.5 text-meta text-muted-foreground"
                                                 >
                                                     <Users className="h-3.5 w-3.5" />
                                                     {s.spots_left} left
@@ -310,12 +310,12 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                         {picksOwnTime && chosen && days.length > 1 && (
                             <div>
-                                <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Which day?
                                 </p>
                                 <div
                                     data-testid={IDS.calendar}
-                                    className="mt-3 rounded-md border border-white/10 bg-background/60"
+                                    className="mt-3 rounded-md border border-border bg-background/60"
                                 >
                                     <Calendar
                                         mode="single"
@@ -334,11 +334,11 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                         {picksOwnTime && chosen && day && (
                             <div>
-                                <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     What time on {formatDay(day.toISOString())}?
                                 </p>
                                 {times.length === 0 ? (
-                                    <p className="mt-3 text-sm text-muted-foreground">
+                                    <p className="mt-3 text-meta text-muted-foreground">
                                         No times left on that day — either it's
                                         booked out, or it falls outside the hours
                                         this venue shoots in. Try another one.
@@ -380,13 +380,13 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                     <div className="mt-5 space-y-5">
                         <dl
                             data-testid={IDS.summary}
-                            className="space-y-4 rounded-md border border-white/10 bg-background/60 p-5"
+                            className="space-y-4 rounded-md border border-border bg-background/60 p-5"
                         >
                             <div>
-                                <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     When
                                 </dt>
-                                <dd className="mt-2 inline-flex items-center gap-2 font-serif text-xl leading-tight">
+                                <dd className="mt-2 inline-flex items-center gap-2 font-serif text-h3 leading-tight">
                                     <CalendarClock className="h-4 w-4 text-primary" />
                                     {formatDay(when?.toISOString())} ·{" "}
                                     {formatTime(when?.toISOString())}
@@ -394,25 +394,25 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                             </div>
                             {collab?.venue?.address && (
                                 <div>
-                                    <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                    <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         Where
                                     </dt>
-                                    <dd className="mt-2 text-sm leading-relaxed">
+                                    <dd className="mt-2 text-body leading-relaxed">
                                         {collab.venue.address}
                                     </dd>
                                 </div>
                             )}
                             <div>
-                                <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Places left on this slot
                                 </dt>
-                                <dd className="mt-2 text-sm text-muted-foreground">
+                                <dd className="mt-2 text-meta text-muted-foreground">
                                     {chosen.spots_left}
                                 </dd>
                             </div>
                         </dl>
 
-                        <p className="text-xs leading-relaxed text-muted-foreground">
+                        <p className="text-meta leading-relaxed text-muted-foreground">
                             You can hand the slot back up to{" "}
                             {data.cancel_cutoff_hours ?? 24} hours before it. After
                             that the venue is already set up for you, so it's a call
@@ -427,7 +427,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                 variant="outline"
                                 data-testid={IDS.back}
                                 onClick={() => setReviewing(false)}
-                                className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="h-12 rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 <ArrowLeft className="mr-2 h-4 w-4" />
                                 Change it

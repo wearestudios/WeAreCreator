@@ -477,10 +477,10 @@ def test_the_brand_avatar_mirrors_the_creator_one():
     brand = component("components", "BrandAvatar.jsx")
     creator = component("components", "admin", "shared.jsx")
 
-    # Tokens rather than raw colours since the console gained a light theme —
-    # `border-tint/10` is `border-white/10` with the base flipped per theme, so
-    # the two avatars still have to be spelled the same way as each other.
-    for shared in ("rounded-md border border-tint/10", "bg-primary/10", "font-serif"):
+    # Tokens rather than raw colours. The hairline is `border-border` now —
+    # the light app's #E3DED6 — and the two avatars still have to be spelled
+    # the same way as each other.
+    for shared in ("rounded-md border border-border", "bg-primary/10", "font-serif"):
         assert shared in brand, f"BrandAvatar has dropped {shared}"
         assert shared in creator
 

@@ -66,7 +66,7 @@ function ProofThumb({ path, proof, onRemove, removing }) {
     return (
         <li
             data-testid={IDS.item(proof.id)}
-            className="relative overflow-hidden rounded-md border border-white/10 bg-background/60"
+            className="relative overflow-hidden rounded-md border border-border bg-background/60"
         >
             {/* The ratio is on the container, never on the image, so a
                 screenshot that never arrives still occupies the space it
@@ -89,7 +89,7 @@ function ProofThumb({ path, proof, onRemove, removing }) {
                     </div>
                 )}
             </div>
-            <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">
+            <p className="truncate px-2 py-1.5 text-meta text-muted-foreground">
                 {proof.note || formatDate(proof.uploaded_at)}
                 {proof.size ? ` · ${size(proof.size)}` : ""}
             </p>
@@ -173,13 +173,13 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
     return (
         <div data-testid={IDS.panel} className="space-y-3">
             <div>
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     <Camera aria-hidden="true" className="h-3 w-3" />
                     Story screenshots
                 </p>
                 <p
                     data-testid={IDS.required}
-                    className="mt-1 text-sm leading-relaxed text-muted-foreground"
+                    className="mt-1 text-body leading-relaxed text-muted-foreground"
                 >
                     A story link is dead within a day, so a screenshot is what
                     gets reviewed.{" "}
@@ -215,7 +215,7 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
                 htmlFor={`proof-${collabId}`}
                 data-testid={IDS.pick}
                 aria-disabled={busy || full}
-                className={`inline-flex min-h-[2.75rem] cursor-pointer items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-150 ${
+                className={`inline-flex min-h-[2.75rem] cursor-pointer items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-150 ${
                     busy || full
                         ? "pointer-events-none opacity-40"
                         : "text-muted-foreground hover:border-primary/40 hover:text-primary"
@@ -234,7 +234,7 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
             </label>
 
             {err && (
-                <p data-testid={IDS.error} className="text-sm text-destructive">
+                <p data-testid={IDS.error} className="text-meta text-destructive">
                     {err}
                 </p>
             )}
@@ -254,12 +254,12 @@ export function StoryProofReview({ collabId, proof }) {
     if (!proof?.required && items.length === 0) return null;
     return (
         <div data-testid={IDS.panel} className="space-y-2">
-            <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 <Camera aria-hidden="true" className="h-3 w-3" />
                 Story screenshots
             </p>
             {items.length === 0 ? (
-                <p data-testid={IDS.empty} className="text-sm text-muted-foreground">
+                <p data-testid={IDS.empty} className="text-meta text-muted-foreground">
                     None attached yet.
                 </p>
             ) : (

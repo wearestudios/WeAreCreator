@@ -133,12 +133,12 @@ export default function RetentionPanel() {
                                     className={`${PANEL} flex flex-wrap items-center gap-x-4 gap-y-2 p-4`}
                                 >
                                     <div className="min-w-0 flex-1">
-                                        <p className="text-sm">{meta.label}</p>
+                                        <p className="text-meta">{meta.label}</p>
                                         <p className={`mt-0.5 ${TEXT.meta} text-muted-foreground`}>
                                             {meta.blurb}
                                         </p>
                                     </div>
-                                    <span className="text-sm tabular-nums">
+                                    <span className="text-meta tabular-nums">
                                         {inWords(days)}
                                     </span>
                                 </li>
@@ -152,10 +152,10 @@ export default function RetentionPanel() {
                         >
                             On an erasure
                         </p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-meta text-muted-foreground">
                             Gone: {(data.purged_on_erasure || []).join(", ")}.
                         </p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-meta text-muted-foreground">
                             {/* Both halves, because "deleted" does not mean
                                 everything vanishes, and somebody who finds
                                 that out afterwards has met exactly the
@@ -168,7 +168,7 @@ export default function RetentionPanel() {
                     {data.needs_legal_review && (
                         <p
                             data-testid={IDS.legal}
-                            className="flex items-start gap-2 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm text-state-pending"
+                            className="flex items-start gap-2 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-meta text-state-pending"
                         >
                             <Scale
                                 aria-hidden="true"
@@ -195,7 +195,7 @@ export default function RetentionPanel() {
                         onClick={purge}
                         disabled={busy}
                         data-testid={IDS.purge}
-                        className="min-h-[2.75rem] border-tint/20 bg-transparent"
+                        className="min-h-[2.75rem] border-input bg-transparent"
                     >
                         {busy ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

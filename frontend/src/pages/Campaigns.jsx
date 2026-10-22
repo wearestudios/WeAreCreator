@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
     MapPin,
@@ -31,7 +31,6 @@ import ShareButton from "@/components/ShareButton";
 import BrandName from "@/components/BrandName";
 import { HERO_EYEBROW } from "@/lib/siteNav";
 import CampaignCover from "@/components/CampaignCover";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     Select,
@@ -94,7 +93,7 @@ const TagBadge = ({ status }) => {
                 "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
                 (isLive
                     ? "bg-primary/15 text-primary"
-                    : "border border-white/15 bg-white/5 text-muted-foreground")
+                    : "border border-input bg-muted text-muted-foreground")
             }
         >
             <span
@@ -144,7 +143,7 @@ const CampaignCard = ({ c, index, settleKey }) => (
             one hit area, two destinations, and valid HTML. */}
         <article
             data-testid={`campaign-card-${c.id}`}
-            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-white/10 bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-card-elevated"
+            className="group relative flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card/60 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:bg-card-elevated"
         >
             {/* editorial accent line */}
             <span className="absolute inset-x-0 top-0 z-10 h-px origin-left scale-x-0 bg-gradient-to-r from-primary via-primary-hover to-transparent transition-transform duration-500 group-hover:scale-x-100" />
@@ -205,13 +204,13 @@ const CampaignCard = ({ c, index, settleKey }) => (
 
                 <div className="mt-6 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     {c.area && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
                             <MapPin className="h-3 w-3" />
                             {c.area}
                         </span>
                     )}
                     {c.category && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 uppercase tracking-[0.15em]">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 uppercase tracking-[0.15em]">
                             {CAT_LABEL[c.category] || c.category}
                         </span>
                     )}
@@ -221,7 +220,7 @@ const CampaignCard = ({ c, index, settleKey }) => (
                     <ExecutionBadge campaign={c} audience="creator" />
                 </div>
 
-                <div className="mt-auto flex items-end justify-between border-t border-white/10 pt-6">
+                <div className="mt-auto flex items-end justify-between border-t border-border pt-6">
                     <div>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                             {isBarter(c) ? "What you get" : "Budget / creator"}
@@ -482,14 +481,14 @@ export default function Campaigns() {
                             value={q}
                             onChange={(e) => setQ(e.target.value)}
                             placeholder="Search briefs…"
-                            className="h-11 md:h-10 border-white/10 bg-background pl-8 focus-visible:ring-primary"
+                            className="h-11 md:h-10 border-border bg-background pl-8 focus-visible:ring-primary"
                         />
                     </div>
 
                     <Select value={city} onValueChange={setCity}>
                         <SelectTrigger
                             data-testid="filter-city-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any city" />
                         </SelectTrigger>
@@ -508,7 +507,7 @@ export default function Campaigns() {
                     <Select value={area} onValueChange={setArea}>
                         <SelectTrigger
                             data-testid="filter-area-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any area" />
                         </SelectTrigger>
@@ -531,7 +530,7 @@ export default function Campaigns() {
                     <Select value={campaignType} onValueChange={setCampaignType}>
                         <SelectTrigger
                             data-testid="filter-type-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any format" />
                         </SelectTrigger>
@@ -550,7 +549,7 @@ export default function Campaigns() {
                     <Select value={compensation} onValueChange={setCompensation}>
                         <SelectTrigger
                             data-testid="filter-compensation-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any pay" />
                         </SelectTrigger>
@@ -573,7 +572,7 @@ export default function Campaigns() {
                     <Select value={category} onValueChange={setCategory}>
                         <SelectTrigger
                             data-testid="filter-category-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-40"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-40"
                         >
                             <SelectValue placeholder="Any category" />
                         </SelectTrigger>
@@ -596,7 +595,7 @@ export default function Campaigns() {
                     <Select value={budget} onValueChange={setBudget}>
                         <SelectTrigger
                             data-testid="filter-budget-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-44"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-44"
                         >
                             <SelectValue placeholder="Any budget" />
                         </SelectTrigger>
@@ -616,7 +615,7 @@ export default function Campaigns() {
                     <Select value={sort} onValueChange={setSort}>
                         <SelectTrigger
                             data-testid="filter-sort-trigger"
-                            className="h-11 md:h-10 w-full border-white/10 bg-background md:w-52"
+                            className="h-11 md:h-10 w-full border-border bg-background md:w-52"
                         >
                             <ArrowDownUp className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue />
@@ -639,7 +638,7 @@ export default function Campaigns() {
                             type="button"
                             onClick={resetAll}
                             data-testid="clear-filters-btn"
-                            className="ml-auto rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
+                            className="ml-auto rounded-full border border-border bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
                         >
                             Clear all
                         </button>

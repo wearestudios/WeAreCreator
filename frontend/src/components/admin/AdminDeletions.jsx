@@ -68,7 +68,7 @@ export default function AdminDeletions() {
     };
 
     return (
-        <div data-testid={IDS.page} className="space-y-4">
+        <div data-testid={IDS.page} className="space-y-section">
             <div className="flex flex-wrap items-center gap-3">
                 <UserX className="h-4 w-4 text-muted-foreground" />
                 <h1 className={`${TEXT.body} font-medium`}>Deletion requests</h1>
@@ -93,7 +93,7 @@ export default function AdminDeletions() {
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (state === s.value
                                 ? "border-primary/40 bg-primary/10 text-primary-ink"
-                                : "border-tint/10 text-muted-foreground hover:text-foreground")
+                                : "border-border text-muted-foreground hover:text-foreground")
                         }
                     >
                         {s.label}
@@ -117,13 +117,13 @@ export default function AdminDeletions() {
                             className={`${PANEL} p-4`}
                         >
                             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                                <span className="text-sm">{row.name || "Unnamed"}</span>
+                                <span className="text-meta">{row.name || "Unnamed"}</span>
                                 <span className={`${TEXT.meta} text-muted-foreground`}>
                                     {row.role} · asked <TimeAgo iso={row.requested_at} />
                                 </span>
                             </div>
                             {row.reason && (
-                                <p className="mt-2 text-sm text-muted-foreground">
+                                <p className="mt-2 text-meta text-muted-foreground">
                                     “{row.reason}”
                                 </p>
                             )}
@@ -134,9 +134,9 @@ export default function AdminDeletions() {
                             {row.blocking?.length > 0 && (
                                 <div
                                     data-testid={IDS.blocked(row.id)}
-                                    className="mt-3 rounded border border-state-pending/30 bg-state-pending/10 p-3"
+                                    className="mt-3 rounded border border-state-pending/30 bg-state-pending-wash p-3"
                                 >
-                                    <p className="flex items-center gap-2 text-sm text-state-pending">
+                                    <p className="flex items-center gap-2 text-meta text-state-pending">
                                         <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
                                         {row.blocking.length} collaboration
                                         {row.blocking.length === 1 ? "" : "s"} still under way

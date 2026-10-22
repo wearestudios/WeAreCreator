@@ -334,7 +334,7 @@ export default function Overview({ onChanged }) {
                     {STAT_CARDS.map((c) => (
                         <div
                             key={c.key}
-                            className="rounded-md border border-tint/10 bg-card p-5"
+                            className="rounded-md border border-border bg-card p-5"
                         >
                             <Skeleton className="h-3 w-16" />
                             <Skeleton className="mt-4 h-7 w-20" />
@@ -363,11 +363,11 @@ export default function Overview({ onChanged }) {
                                     "rounded-md border p-5 text-left transition-colors duration-150 " +
                                     (on
                                         ? "border-primary bg-primary/10"
-                                        : "border-tint/10 bg-card hover:border-primary/40")
+                                        : "border-border bg-card hover:border-primary/40")
                                 }
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {card.label}
                                     </p>
                                     <card.Icon
@@ -379,7 +379,7 @@ export default function Overview({ onChanged }) {
                                 </div>
                                 <p
                                     className={
-                                        "mt-3 flex items-baseline font-serif text-2xl leading-none " +
+                                        "mt-3 flex items-baseline font-serif text-h3 leading-none " +
                                         (on ? "text-primary-ink" : "")
                                     }
                                 >
@@ -430,7 +430,7 @@ export default function Overview({ onChanged }) {
                         type="button"
                         onClick={clearFilters}
                         data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                        className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                     >
                         <X className="h-3.5 w-3.5" />
                         Clear
@@ -471,7 +471,7 @@ export default function Overview({ onChanged }) {
             {data && rows.length > 0 && (
                 <p
                     data-testid={IDS.count}
-                    className="mt-4 text-xs uppercase tracking-[0.18em] text-muted-foreground"
+                    className="mt-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                 >
                     {rows.length} of {data.campaign_summary.length} campaigns
                     {data.summary_truncated ? " · list capped at 200" : ""}
@@ -579,7 +579,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                 type="button"
                 onClick={onBack}
                 data-testid={DETAIL_IDS.back}
-                className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 All campaigns
@@ -590,7 +590,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                     <Skeleton className="h-8 w-2/3" />
                     <div className="grid gap-4 lg:grid-cols-3">
                         {COLUMNS.map((c) => (
-                            <div key={c.key} className="rounded-md border border-tint/10 bg-card">
+                            <div key={c.key} className="rounded-md border border-border bg-card">
                                 <ListSkeleton rows={3} />
                             </div>
                         ))}
@@ -605,18 +605,18 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 label={CAMPAIGN_STATUS_META[data.campaign.status]?.label}
                                 chip
                             />
-                            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                            <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 {(data.campaign.campaign_type || "").replace(/_/g, " ")} ·{" "}
                                 {campaignWhen(data.campaign)}
                             </span>
                         </div>
                         <h2
                             data-testid={DETAIL_IDS.title}
-                            className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight"
+                            className="mt-3 font-serif text-h1 leading-none tracking-tight"
                         >
                             {data.campaign.title}
                         </h2>
-                        <p className="mt-3 text-sm text-muted-foreground">
+                        <p className="mt-3 text-meta text-muted-foreground">
                             {data.campaign.brand_name} · ₹
                             {formatRupees(data.campaign.budget_per_creator)} per creator ·{" "}
                             {data.campaign.filled_slots}/{data.campaign.creators_needed} filled
@@ -630,15 +630,15 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 <div
                                     key={col.key}
                                     data-testid={DETAIL_IDS.column(col.key)}
-                                    className="rounded-md border border-tint/10 bg-card"
+                                    className="rounded-md border border-border bg-card"
                                 >
-                                    <div className="flex items-baseline justify-between border-b border-tint/10 px-5 py-4">
-                                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                    <div className="flex items-baseline justify-between border-b border-border px-5 py-4">
+                                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {col.label}
                                         </p>
                                         <span
                                             data-testid={DETAIL_IDS.columnCount(col.key)}
-                                            className="font-serif text-lg leading-none"
+                                            className="font-serif text-body-lg leading-none"
                                         >
                                             {entries.length}
                                         </span>
@@ -647,12 +647,12 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                     {entries.length === 0 ? (
                                         <p
                                             data-testid={DETAIL_IDS.columnEmpty(col.key)}
-                                            className="px-5 py-8 text-center text-sm text-muted-foreground"
+                                            className="px-5 py-8 text-center text-meta text-muted-foreground"
                                         >
                                             {col.empty}
                                         </p>
                                     ) : (
-                                        <ul className="divide-y divide-tint/10">
+                                        <ul className="divide-y divide-divider">
                                             {entries.map((e) => (
                                                 <ApplicantRow
                                                     key={e.collaboration_id}
@@ -703,8 +703,8 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
             <div className="flex items-start gap-3">
                 <CreatorAvatar creator={entry} size="h-10 w-10" />
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{entry.name || "Unnamed"}</p>
-                    <p className="truncate text-sm text-muted-foreground">
+                    <p className="truncate text-meta">{entry.name || "Unnamed"}</p>
+                    <p className="truncate text-meta text-muted-foreground">
                         {entry.instagram_handle ? `@${entry.instagram_handle}` : "No handle"}
                         {typeof entry.follower_count === "number"
                             ? ` · ${formatCompact(entry.follower_count)}`
@@ -714,7 +714,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                 <StatusTag state={entry.state} />
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-meta text-muted-foreground">
                 <span className="inline-flex items-baseline">
                     Quoted
                     <IndianRupee className="ml-1.5 h-3 w-3" />
@@ -728,7 +728,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
             </div>
 
             {entry.exit_reason && (
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-2 text-body leading-relaxed text-muted-foreground">
                     {entry.exit_reason}
                 </p>
             )}
@@ -741,7 +741,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onAdvance(entry)}
                             data-testid={DETAIL_IDS.creatorAdvance(entry.collaboration_id)}
-                            className="h-9 rounded-full bg-primary px-3 text-sm text-primary-foreground hover:bg-primary-hover"
+                            className="h-9 rounded-full bg-primary px-3 text-meta text-primary-foreground hover:bg-primary-hover"
                         >
                             Move forward
                         </Button>
@@ -753,7 +753,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onDecline(entry)}
                             data-testid={DETAIL_IDS.creatorDecline(entry.collaboration_id)}
-                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-sm text-state-rejected hover:bg-state-rejected/10"
+                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-meta text-state-rejected hover:bg-state-rejected-wash"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Decline
@@ -765,7 +765,7 @@ function ApplicantRow({ entry, column, busy, onAdvance, onDecline, onCancel }) {
                             disabled={busy}
                             onClick={() => onCancel(entry)}
                             data-testid={DETAIL_IDS.creatorCancel(entry.collaboration_id)}
-                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-sm text-state-rejected hover:bg-state-rejected/10"
+                            className="h-9 rounded-full border-state-rejected/30 bg-transparent px-3 text-meta text-state-rejected hover:bg-state-rejected-wash"
                         >
                             <XCircle className="mr-1.5 h-3.5 w-3.5" />
                             Cancel

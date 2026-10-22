@@ -274,7 +274,7 @@ export default function AdminCreators() {
 
     return (
         <section data-testid={IDS.section}>
-            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-section flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className={TEXT.heading}>Creators</h1>
                     <p
@@ -315,7 +315,7 @@ export default function AdminCreators() {
                 as a second piece of content. */}
             <div
                 data-testid={TABLE_IDS.toolbar}
-                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+                className={`mb-section flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
             >
                 <div className="relative min-w-[9rem] flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -324,7 +324,7 @@ export default function AdminCreators() {
                         onChange={(e) => setTyped(e.target.value)}
                         placeholder="Name, handle, phone"
                         data-testid={IDS.search}
-                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-border bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -409,7 +409,7 @@ export default function AdminCreators() {
                             disabled={page <= 1}
                             onClick={() => patch({ page: page - 1 })}
                             data-testid={IDS.pagePrev}
-                            className={`rounded border border-tint/10 px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
+                            className={`rounded border border-border px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
                         >
                             Previous
                         </button>
@@ -418,7 +418,7 @@ export default function AdminCreators() {
                             disabled={page >= pages}
                             onClick={() => patch({ page: page + 1 })}
                             data-testid={IDS.pageNext}
-                            className={`rounded border border-tint/10 px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
+                            className={`rounded border border-border px-2 py-1 ${CALM} hover:bg-tint/5 disabled:opacity-40 ${FOCUS}`}
                         >
                             Next
                         </button>

@@ -40,7 +40,7 @@ export function PayoutDue({ dueAt, className = "" }) {
     return (
         <p
             data-testid={IDS.due}
-            className={"text-sm font-medium text-foreground " + className}
+            className={"text-meta font-medium text-foreground " + className}
         >
             Payment due by {formatDate(dueAt)}
         </p>
@@ -72,11 +72,11 @@ export default function PayoutNote({ campaign, dueAt = null, className = "" }) {
         <div
             data-testid={IDS.note}
             className={
-                "rounded-md border border-white/10 bg-white/5 px-4 py-3 text-sm leading-relaxed " +
+                "rounded-md border border-border bg-muted px-4 py-3 text-body leading-relaxed " +
                 className
             }
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-primary">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                 <BadgeIndianRupee className="h-3.5 w-3.5" />
                 {barter ? "What you get" : "When you are paid"}
             </p>

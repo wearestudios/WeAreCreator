@@ -92,12 +92,12 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
             <SheetContent
                 side="bottom"
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-2xl leading-tight">
+                <SheetTitle className="font-serif text-h3 leading-tight">
                     {editing ? "Edit slot" : "Add a slot"}
                 </SheetTitle>
-                <SheetDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                     {isEvent
                         ? `Fixed time on ${formatDay(campaign?.event_date) || "the event day"}.`
                         : "An availability window creators can book into."}
@@ -110,7 +110,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         <div>
                             <Label
                                 htmlFor="slot-date"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Date
                             </Label>
@@ -120,7 +120,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
                                 data-testid={IDS.date}
-                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
+                                className={`mt-2 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary ${TOUCH}`}
                             />
                         </div>
                     )}
@@ -129,7 +129,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         <div>
                             <Label
                                 htmlFor="slot-start"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 {isEvent ? "Time" : "From"}
                             </Label>
@@ -139,14 +139,14 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={startTime}
                                 onChange={(e) => setStartTime(e.target.value)}
                                 data-testid={IDS.startTime}
-                                className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
+                                className={`mt-2 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary ${TOUCH}`}
                             />
                         </div>
                         {!isEvent && (
                             <div>
                                 <Label
                                     htmlFor="slot-end"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     To
                                 </Label>
@@ -156,14 +156,14 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                     value={endTime}
                                     onChange={(e) => setEndTime(e.target.value)}
                                     data-testid={IDS.endTime}
-                                    className={`mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary ${TOUCH}`}
+                                    className={`mt-2 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary ${TOUCH}`}
                                 />
                             </div>
                         )}
                     </div>
 
                     <div>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Places
                         </Label>
                         {/* Steppers rather than a keyboard: this gets changed
@@ -174,7 +174,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 aria-label="One fewer place"
                                 data-testid={IDS.capacityMinus}
                                 onClick={() => setCapacity((c) => Math.max(booked || 1, Number(c) - 1))}
-                                className={`grid w-16 flex-none place-items-center rounded-md border border-white/15 transition-colors duration-200 hover:border-white/30 ${TOUCH}`}
+                                className={`grid w-16 flex-none place-items-center rounded-md border border-input transition-colors duration-200 hover:border-tint/30 ${TOUCH}`}
                             >
                                 <Minus className="h-5 w-5" />
                             </button>
@@ -184,27 +184,27 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={capacity}
                                 onChange={(e) => setCapacity(e.target.value)}
                                 data-testid={IDS.capacity}
-                                className={`rounded-md border-white/10 bg-background/60 text-center font-serif text-xl focus-visible:ring-primary ${TOUCH}`}
+                                className={`rounded-md border-border bg-background/60 text-center font-serif text-h3 focus-visible:ring-primary ${TOUCH}`}
                             />
                             <button
                                 type="button"
                                 aria-label="One more place"
                                 data-testid={IDS.capacityPlus}
                                 onClick={() => setCapacity((c) => Number(c) + 1)}
-                                className={`grid w-16 flex-none place-items-center rounded-md border border-white/15 transition-colors duration-200 hover:border-white/30 ${TOUCH}`}
+                                className={`grid w-16 flex-none place-items-center rounded-md border border-input transition-colors duration-200 hover:border-tint/30 ${TOUCH}`}
                             >
                                 <Plus className="h-5 w-5" />
                             </button>
                         </div>
                         {booked > 0 && (
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 text-meta text-muted-foreground">
                                 {booked} already booked — it can't go below that.
                             </p>
                         )}
                     </div>
 
                     {err && (
-                        <p data-testid={IDS.error} className="text-sm text-destructive">
+                        <p data-testid={IDS.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -225,7 +225,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         variant="outline"
                         onClick={onClose}
                         data-testid={IDS.cancel}
-                        className="border-white/15 bg-transparent"
+                        className="border-input bg-transparent"
                     >
                         Cancel
                     </BigButton>

@@ -673,7 +673,7 @@ export default function PostCampaign() {
                     type="button"
                     onClick={() => navigate("/dashboard")}
                     data-testid="post-back-btn"
-                    className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-primary"
+                    className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Dashboard
@@ -690,16 +690,16 @@ export default function PostCampaign() {
                     </div>
                 )}
 
-                <p className="mt-6 text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="mt-6 text-eyebrow uppercase tracking-eyebrow text-primary">
                     {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
-                <h1 className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight">
+                <h1 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                     {/* Not "a paid brief" any more: barter is postable here,
                         and a header saying otherwise is the page arguing
                         with the picker three sections down. */}
                     {isEditing ? "Change the brief." : "Post a brief."}
                 </h1>
-                <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-6 max-w-xl text-body leading-relaxed text-muted-foreground">
                     {isEditing
                         ? existing?.status === "draft"
                             ? "This is still a draft — nobody can see it yet. Send it for review when you're ready."
@@ -713,7 +713,7 @@ export default function PostCampaign() {
                     className="mt-12 space-y-8"
                 >
                     <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             What kind of campaign
                         </p>
                         <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -752,18 +752,18 @@ export default function PostCampaign() {
                                             "rounded-md border p-5 text-left transition-colors duration-200 disabled:opacity-50 " +
                                             (on
                                                 ? "border-primary bg-primary/10"
-                                                : "border-white/10 bg-card/60 hover:border-white/25")
+                                                : "border-border bg-card/60 hover:border-tint/30")
                                         }
                                     >
                                         <span
                                             className={
-                                                "block text-sm " +
+                                                "block text-meta " +
                                                 (on ? "text-primary" : "text-foreground")
                                             }
                                         >
                                             {opt.label}
                                         </span>
-                                        <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                        <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                             {opt.blurb}
                                         </span>
                                     </button>
@@ -771,7 +771,7 @@ export default function PostCampaign() {
                             })}
                         </div>
                         {isEditing && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 The type is fixed once a campaign exists — it decides which
                                 dates the brief carries.
                             </p>
@@ -781,7 +781,7 @@ export default function PostCampaign() {
                         {usesWindow ? (
                             <div className="grid gap-5 md:grid-cols-2">
                                 <div>
-                                    <Label htmlFor="pc-start" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    <Label htmlFor="pc-start" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {/* Nothing is bookable on a delivery —
                                             the window is when you post it. */}
                                         {isDelivery ? "Sending from" : "Bookable from"}
@@ -794,12 +794,12 @@ export default function PostCampaign() {
                                             type="date"
                                             value={startDate}
                                             onChange={(e) => setStartDate(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         />
                                     </div>
                                 </div>
                                 <div>
-                                    <Label htmlFor="pc-end" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    <Label htmlFor="pc-end" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {isDelivery ? "Sent by" : "Until"}
                                     </Label>
                                     <div className="relative mt-2">
@@ -810,7 +810,7 @@ export default function PostCampaign() {
                                             type="date"
                                             value={endDate}
                                             onChange={(e) => setEndDate(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         />
                                     </div>
                                 </div>
@@ -819,7 +819,7 @@ export default function PostCampaign() {
                             <div className="space-y-5">
                                 <div className="grid gap-5 md:grid-cols-3">
                                     <div>
-                                        <Label htmlFor="pc-event" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        <Label htmlFor="pc-event" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             Which day
                                         </Label>
                                         <div className="relative mt-2">
@@ -830,7 +830,7 @@ export default function PostCampaign() {
                                                 type="date"
                                                 value={eventDate}
                                                 onChange={(e) => setEventDate(e.target.value)}
-                                                className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                                className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                             />
                                         </div>
                                     </div>
@@ -841,7 +841,7 @@ export default function PostCampaign() {
                                     {campaignType === "launch" && (
                                         <>
                                             <div>
-                                                <Label htmlFor="pc-event-time" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                                <Label htmlFor="pc-event-time" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                     Starts at
                                                 </Label>
                                                 <Input
@@ -850,11 +850,11 @@ export default function PostCampaign() {
                                                     type="time"
                                                     value={eventTime}
                                                     onChange={(e) => setEventTime(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                                    className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                                 />
                                             </div>
                                             <div>
-                                                <Label htmlFor="pc-duration" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                                <Label htmlFor="pc-duration" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                     Runs for (optional)
                                                 </Label>
                                                 <Input
@@ -867,7 +867,7 @@ export default function PostCampaign() {
                                                     placeholder="Minutes"
                                                     value={durationMinutes}
                                                     onChange={(e) => setDurationMinutes(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                                    className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                                 />
                                             </div>
                                         </>
@@ -882,7 +882,7 @@ export default function PostCampaign() {
                                     to the manager after approval. */}
                                 {campaignType === "group_event" && (
                                     <div data-testid="pc-sittings">
-                                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             Sittings
                                         </Label>
                                         <div className="mt-2 space-y-2">
@@ -898,7 +898,7 @@ export default function PostCampaign() {
                                                             next[i] = { ...next[i], time: e.target.value };
                                                             setSittings(next);
                                                         }}
-                                                        className="h-11 w-36 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                                        className="h-11 w-36 border-border bg-card/60 focus-visible:ring-primary"
                                                     />
                                                     <Input
                                                         type="number"
@@ -911,9 +911,9 @@ export default function PostCampaign() {
                                                             next[i] = { ...next[i], capacity: e.target.value };
                                                             setSittings(next);
                                                         }}
-                                                        className="h-11 w-24 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                                        className="h-11 w-24 border-border bg-card/60 focus-visible:ring-primary"
                                                     />
-                                                    <span className="text-xs text-muted-foreground">places</span>
+                                                    <span className="text-meta text-muted-foreground">places</span>
                                                     {sittings.length > 1 && (
                                                         <button
                                                             type="button"
@@ -921,7 +921,7 @@ export default function PostCampaign() {
                                                             onClick={() =>
                                                                 setSittings(sittings.filter((_, j) => j !== i))
                                                             }
-                                                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                                                            className="min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
                                                         >
                                                             Remove
                                                         </button>
@@ -935,7 +935,7 @@ export default function PostCampaign() {
                                             onClick={() =>
                                                 setSittings([...sittings, { time: "", capacity: "4" }])
                                             }
-                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-xs uppercase tracking-[0.15em] text-primary transition-colors duration-200 hover:text-primary-hover sm:min-h-0"
+                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:text-primary-hover sm:min-h-0"
                                         >
                                             Add a sitting
                                         </button>
@@ -954,7 +954,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label
                                     htmlFor="pc-disclosure"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Disclosure the post must carry
                                 </Label>
@@ -963,7 +963,7 @@ export default function PostCampaign() {
                                     data-testid="pc-disclosure"
                                     value={requiredDisclosure}
                                     onChange={(e) => setRequiredDisclosure(e.target.value)}
-                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                    className="mt-2 h-11 w-full rounded-md border border-border bg-card/60 px-3 text-meta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     {Object.entries(DISCLOSURE_LABELS).map(([k, label]) => (
                                         <option key={k} value={k}>
@@ -971,7 +971,7 @@ export default function PostCampaign() {
                                         </option>
                                     ))}
                                 </select>
-                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                     Required on every brief — a gifted post is an ad too.
                                     Confirmed again at review before anything is approved.
                                 </p>
@@ -980,7 +980,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label
                                     htmlFor="pc-usage"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     What you may do with the content
                                 </Label>
@@ -992,7 +992,7 @@ export default function PostCampaign() {
                                         setUsageRights(e.target.value);
                                         if (!needsDuration(e.target.value)) setUsageDuration("");
                                     }}
-                                    className="mt-2 h-11 w-full rounded-md border border-white/10 bg-card/60 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                    className="mt-2 h-11 w-full rounded-md border border-border bg-card/60 px-3 text-meta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     {Object.entries(USAGE_RIGHTS).map(([k, label]) => (
                                         <option key={k} value={k}>
@@ -1008,7 +1008,7 @@ export default function PostCampaign() {
                                     <div className="mt-3">
                                         <Label
                                             htmlFor="pc-usage-days"
-                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                         >
                                             For how many days
                                         </Label>
@@ -1021,7 +1021,7 @@ export default function PostCampaign() {
                                             placeholder="e.g. 90"
                                             value={usageDuration}
                                             onChange={(e) => setUsageDuration(e.target.value)}
-                                            className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                            className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                         />
                                     </div>
                                 )}
@@ -1047,11 +1047,11 @@ export default function PostCampaign() {
                     </section>
 
                     <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             The brief
                         </p>
                         <div>
-                            <Label htmlFor="pc-title" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label htmlFor="pc-title" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Campaign title
                             </Label>
                             <Input
@@ -1060,12 +1060,12 @@ export default function PostCampaign() {
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 maxLength={140}
-                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                 placeholder="e.g. Two reels for the spring range"
                             />
                         </div>
                         <div>
-                            <Label htmlFor="pc-brief" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label htmlFor="pc-brief" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Brief
                             </Label>
                             <Textarea
@@ -1075,12 +1075,12 @@ export default function PostCampaign() {
                                 maxLength={5000}
                                 value={brief}
                                 onChange={(e) => setBrief(e.target.value)}
-                                className="mt-2 min-h-[140px] border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="mt-2 min-h-[140px] border-border bg-card/60 focus-visible:ring-primary"
                                 placeholder="What the campaign is about, the vibe you're after, dates, and anything creators should know upfront."
                             />
                         </div>
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Deliverables
                             </Label>
                             {/* Counted, not written. Anything about *how* —
@@ -1091,7 +1091,7 @@ export default function PostCampaign() {
                                 They have their own fields now — a hashtag
                                 buried in a paragraph is one a creator reads
                                 once and a reviewer cannot check against. */}
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-meta text-muted-foreground">
                                 How many of each. Tags, do's and don'ts have
                                 their own fields below.
                             </p>
@@ -1149,7 +1149,7 @@ export default function PostCampaign() {
                     </section>
 
                     <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Money & scope
                         </p>
 
@@ -1160,10 +1160,10 @@ export default function PostCampaign() {
                             // posts a 422 is worse than no control.
                             <div
                                 data-testid="pc-compensation-barter-note"
-                                className="rounded-md border border-white/10 bg-card/60 p-5"
+                                className="rounded-md border border-border bg-card/60 p-5"
                             >
-                                <p className="text-sm text-primary">Barter</p>
-                                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                <p className="text-meta text-primary">Barter</p>
+                                <p className="mt-1.5 text-meta leading-relaxed text-muted-foreground">
                                     This brief is set up as barter. The rest of it is yours
                                     to edit — talk to us if you want it paid.
                                 </p>
@@ -1189,18 +1189,18 @@ export default function PostCampaign() {
                                                 "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
                                                     ? "border-primary bg-primary/10"
-                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                                    : "border-border bg-card/60 hover:border-tint/30")
                                             }
                                         >
                                             <span
                                                 className={
-                                                    "block text-sm " +
+                                                    "block text-meta " +
                                                     (on ? "text-primary" : "text-foreground")
                                                 }
                                             >
                                                 {opt.label}
                                             </span>
-                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                            <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                                 {opt.blurb}
                                             </span>
                                         </button>
@@ -1219,7 +1219,7 @@ export default function PostCampaign() {
                             brief somebody can decline before travelling to
                             it rather than after. */}
                         {isBarter && (
-                            <div className="space-y-5 rounded-md border border-white/10 bg-card/60 p-5">
+                            <div className="space-y-5 rounded-md border border-border bg-card/60 p-5">
                                 <div className="space-y-2">
                                     <Label htmlFor="barter-description">
                                         What the creator gets
@@ -1241,7 +1241,7 @@ export default function PostCampaign() {
                                         // holds across these forms.
                                         placeholder="Two seats at the Saturday session, about ₹4,000 each. Extras not included."
                                     />
-                                    <p className="text-xs leading-relaxed text-muted-foreground">
+                                    <p className="text-meta leading-relaxed text-muted-foreground">
                                         Name the thing and roughly what it is worth. A
                                         creator is deciding whether it covers their day.
                                     </p>
@@ -1279,10 +1279,10 @@ export default function PostCampaign() {
                                                         setTravelAllowance(opt.value)
                                                     }
                                                     className={
-                                                        "min-h-[2.75rem] rounded-md border px-4 py-2 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
+                                                        "min-h-[2.75rem] rounded-md border px-4 py-2 text-meta transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
                                                         (on
                                                             ? "border-primary bg-primary/10 text-primary"
-                                                            : "border-white/10 bg-background/60 text-muted-foreground hover:border-white/25")
+                                                            : "border-border bg-background/60 text-muted-foreground hover:border-tint/30")
                                                     }
                                                 >
                                                     {opt.label}
@@ -1328,20 +1328,20 @@ export default function PostCampaign() {
                             both are ours, and only one of them has something
                             particular to say about why. */}
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                                 Who runs it
                             </p>
                             <div
                                 data-testid={EXECUTION.weareRun}
                                 className="mt-3 rounded-md border border-primary/40 bg-primary/10 p-5"
                             >
-                                <p className="text-sm text-primary">
+                                <p className="text-meta text-primary">
                                     {weareRun ? weareRun.title : "Our team runs this campaign"}
                                 </p>
-                                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-1.5 text-meta leading-relaxed text-muted-foreground">
                                     {weareRun ? weareRun.line : MANAGED_NOTE}
                                 </p>
-                                <p className="mt-3 border-t border-primary/20 pt-3 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-3 border-t border-primary/20 pt-3 text-meta leading-relaxed text-muted-foreground">
                                     {REFUND_TERMS}
                                 </p>
                                 {/* **The third promise, and the one that was
@@ -1356,7 +1356,7 @@ export default function PostCampaign() {
                                     not a note about one input. */}
                                 <p
                                     data-testid={EXECUTION.commissionTerms}
-                                    className="mt-3 border-t border-primary/20 pt-3 text-xs leading-relaxed text-muted-foreground"
+                                    className="mt-3 border-t border-primary/20 pt-3 text-meta leading-relaxed text-muted-foreground"
                                 >
                                     {COMMISSION_TERMS}
                                 </p>
@@ -1364,7 +1364,7 @@ export default function PostCampaign() {
                         </div>
 
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Who can find this brief
                             </Label>
                             <div
@@ -1387,18 +1387,18 @@ export default function PostCampaign() {
                                                 "min-h-[2.75rem] rounded-md border p-5 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
                                                     ? "border-primary bg-primary/10"
-                                                    : "border-white/10 bg-card/60 hover:border-white/25")
+                                                    : "border-border bg-card/60 hover:border-tint/30")
                                             }
                                         >
                                             <span
                                                 className={
-                                                    "block text-sm " +
+                                                    "block text-meta " +
                                                     (on ? "text-primary" : "text-foreground")
                                                 }
                                             >
                                                 {opt.label}
                                             </span>
-                                            <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                            <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                                 {opt.hint}
                                             </span>
                                         </button>
@@ -1406,7 +1406,7 @@ export default function PostCampaign() {
                                 })}
                             </div>
                             {visibility === "private" && (
-                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                     Invite creators from the campaign page once it's
                                     live — nobody else will ever see it, and it won't
                                     have a public share page.
@@ -1419,7 +1419,7 @@ export default function PostCampaign() {
                             has an obvious default and no second story to
                             tell. */}
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Before anything is published
                             </Label>
                             <label
@@ -1428,7 +1428,7 @@ export default function PostCampaign() {
                                     "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
                                     (requiresDraft
                                         ? "border-primary bg-primary/10"
-                                        : "border-white/10 bg-card/60 hover:border-white/25")
+                                        : "border-border bg-card/60 hover:border-tint/30")
                                 }
                             >
                                 <input
@@ -1442,13 +1442,13 @@ export default function PostCampaign() {
                                 <span className="min-w-0">
                                     <span
                                         className={
-                                            "block text-sm " +
+                                            "block text-meta " +
                                             (requiresDraft ? "text-primary" : "text-foreground")
                                         }
                                     >
                                         Review the draft first
                                     </span>
-                                    <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                    <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                         The creator sends the cut for approval after
                                         the shoot. Nothing goes live until you've said
                                         yes — or asked for a change. Leave it off and
@@ -1467,7 +1467,7 @@ export default function PostCampaign() {
                                     "mt-3 flex min-h-[2.75rem] cursor-pointer items-start gap-3 rounded-md border p-5 transition-colors duration-200 " +
                                     (requiresSlotConfirmation
                                         ? "border-primary bg-primary/10"
-                                        : "border-white/10 bg-card/60 hover:border-white/25")
+                                        : "border-border bg-card/60 hover:border-tint/30")
                                 }
                             >
                                 <input
@@ -1483,7 +1483,7 @@ export default function PostCampaign() {
                                 <span className="min-w-0">
                                     <span
                                         className={
-                                            "block text-sm " +
+                                            "block text-meta " +
                                             (requiresSlotConfirmation
                                                 ? "text-primary"
                                                 : "text-foreground")
@@ -1491,7 +1491,7 @@ export default function PostCampaign() {
                                     >
                                         Confirm each booking yourself
                                     </span>
-                                    <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                    <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                         Leave this off and a creator who books a slot
                                         is booked. Turn it on where the venue has to
                                         check the day first — you'll answer each
@@ -1509,7 +1509,7 @@ export default function PostCampaign() {
                               * left untouched — see buildPayload. */}
                             {!isBarter && (
                                 <div>
-                                    <Label htmlFor="pc-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    <Label htmlFor="pc-budget" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {compensationType === "negotiated"
                                             ? "Budget per creator (guide)"
                                             : "Budget per creator"}
@@ -1525,11 +1525,11 @@ export default function PostCampaign() {
                                             step="500"
                                             value={budget}
                                             onChange={(e) => setBudget(e.target.value)}
-                                            className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="e.g. 8000"
                                         />
                                     </div>
-                                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                         {compensationType === "negotiated"
                                             ? "Shown to creators as a guide. You agree the actual fee with each one, and we record it against their application."
                                             : "Creators receive 100% of this amount. Platform fee is charged to you on top."}
@@ -1537,7 +1537,7 @@ export default function PostCampaign() {
                                 </div>
                             )}
                             <div>
-                                <Label htmlFor="pc-needed" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label htmlFor="pc-needed" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Creators needed
                                 </Label>
                                 <div className="relative mt-2">
@@ -1551,7 +1551,7 @@ export default function PostCampaign() {
                                         step="1"
                                         value={creatorsNeeded}
                                         onChange={(e) => setCreatorsNeeded(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                        className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                     />
                                 </div>
                             </div>
@@ -1568,7 +1568,7 @@ export default function PostCampaign() {
                             <div className="max-w-sm">
                                 <Label
                                     htmlFor="pc-total-budget"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Total campaign budget (optional)
                                 </Label>
@@ -1583,11 +1583,11 @@ export default function PostCampaign() {
                                         step="1000"
                                         value={totalBudget}
                                         onChange={(e) => setTotalBudget(e.target.value)}
-                                        className="h-11 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                        className="h-11 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 80000"
                                     />
                                 </div>
-                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                     Agreed fees draw down against this as creators are
                                     taken on, and we stop you going past it. Somebody who
                                     cancels or withdraws releases theirs. Leave it empty
@@ -1598,13 +1598,13 @@ export default function PostCampaign() {
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>
-                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Category
                                 </Label>
                                 <Select value={category} onValueChange={setCategory}>
                                     <SelectTrigger
                                         data-testid="pc-category-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60"
+                                        className="mt-2 h-11 border-border bg-card/60"
                                     >
                                         <SelectValue placeholder="Pick a category" />
                                     </SelectTrigger>
@@ -1622,13 +1622,13 @@ export default function PostCampaign() {
                                 </Select>
                             </div>
                             <div>
-                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Area
                                 </Label>
                                 <Select value={area} onValueChange={setArea}>
                                     <SelectTrigger
                                         data-testid="pc-area-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60"
+                                        className="mt-2 h-11 border-border bg-card/60"
                                     >
                                         <SelectValue placeholder="Pick an area" />
                                     </SelectTrigger>
@@ -1657,24 +1657,24 @@ export default function PostCampaign() {
                         {isDelivery ? (
                             <div
                                 data-testid="pc-delivery-note"
-                                className="space-y-2 border-t border-white/10 pt-6"
+                                className="space-y-2 border-t border-border pt-6"
                             >
-                                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Where it goes
                                 </p>
-                                <p className="text-sm leading-relaxed text-muted-foreground">
+                                <p className="text-body leading-relaxed text-muted-foreground">
                                     Nowhere to set. Each creator confirms their own
                                     delivery address before you send anything, and
                                     you record the tracking reference when it goes.
                                 </p>
                             </div>
                         ) : (
-                        <div className="space-y-5 border-t border-white/10 pt-6">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <div className="space-y-5 border-t border-border pt-6">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 The venue (optional for now)
                             </p>
                             <div>
-                                <Label htmlFor="pc-venue" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label htmlFor="pc-venue" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Address
                                 </Label>
                                 <Input
@@ -1684,12 +1684,12 @@ export default function PostCampaign() {
                                     onChange={(e) => setVenueAddress(e.target.value)}
                                     maxLength={500}
                                     placeholder="Where creators should show up"
-                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                    className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                 />
                             </div>
                             <div className="grid gap-5 md:grid-cols-2">
                                 <div>
-                                    <Label htmlFor="pc-venue-notes" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    <Label htmlFor="pc-venue-notes" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         Arrival instructions
                                     </Label>
                                     <Input
@@ -1699,11 +1699,11 @@ export default function PostCampaign() {
                                         onChange={(e) => setVenueInstructions(e.target.value)}
                                         maxLength={1000}
                                         placeholder="e.g. Ask for the events desk"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                        className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor="pc-onsite" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                    <Label htmlFor="pc-onsite" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         On-site contact
                                     </Label>
                                     <Input
@@ -1713,7 +1713,7 @@ export default function PostCampaign() {
                                         onChange={(e) => setOnSiteContact(e.target.value)}
                                         maxLength={200}
                                         placeholder="Name and number at the venue"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                        className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                     />
                                 </div>
                             </div>
@@ -1722,7 +1722,7 @@ export default function PostCampaign() {
                     </section>
 
                     {error && (
-                        <p data-testid="pc-error" className="text-sm text-destructive">
+                        <p data-testid="pc-error" className="text-meta text-destructive">
                             {error}
                         </p>
                     )}
@@ -1735,7 +1735,7 @@ export default function PostCampaign() {
                         trust={brandProfile?.trust}
                     />
 
-                    <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-8 md:flex-row md:items-center md:justify-between">
                         {/* On a live campaign there's no draft to save back to. */}
                         {(!isEditing || existing?.status === "draft") && (
                             <Button
@@ -1744,7 +1744,7 @@ export default function PostCampaign() {
                                 data-testid="pc-save-draft-btn"
                                 onClick={(e) => submit(e, "draft")}
                                 disabled={submitting || savingDraft}
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 {savingDraft ? (
                                     <>

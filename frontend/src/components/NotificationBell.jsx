@@ -90,7 +90,7 @@ export const NotificationBell = () => {
                     {unread > 0 && (
                         <span
                             data-testid="nav-notifications-badge"
-                            className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground"
+                            className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-eyebrow font-semibold text-primary-foreground"
                         >
                             {unread > 9 ? "9+" : unread}
                         </span>
@@ -100,10 +100,10 @@ export const NotificationBell = () => {
             <PopoverContent
                 align="end"
                 data-testid="nav-notifications-panel"
-                className="w-80 rounded-md border-tint/10 bg-card p-0 grain-surface"
+                className="w-80 rounded-md border-border bg-card p-0 grain-surface"
             >
-                <div className="border-b border-tint/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                <div className="border-b border-border px-4 py-3">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Notifications
                     </p>
                 </div>
@@ -114,13 +114,13 @@ export const NotificationBell = () => {
                 ) : items.length === 0 ? (
                     <p
                         data-testid="nav-notifications-empty"
-                        className="px-4 py-8 text-center text-sm text-muted-foreground"
+                        className="px-4 py-8 text-center text-meta text-muted-foreground"
                     >
                         Nothing yet. We'll tell you here — and on WhatsApp — as things
                         move.
                     </p>
                 ) : (
-                    <ul className="max-h-96 divide-y divide-tint/10 overflow-y-auto">
+                    <ul className="max-h-96 divide-y divide-divider overflow-y-auto">
                         {items.map((n) => (
                             <li key={n.id}>
                                 <button
@@ -130,14 +130,14 @@ export const NotificationBell = () => {
                                     className="w-full px-4 py-3 text-left transition-colors duration-200 hover:bg-tint/5"
                                 >
                                     <div className="flex items-baseline justify-between gap-3">
-                                        <span className="text-sm font-medium text-foreground">
+                                        <span className="text-meta font-medium text-foreground">
                                             {n.title}
                                         </span>
-                                        <span className="flex-none text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                                        <span className="flex-none text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {formatWhen(n.created_at)}
                                         </span>
                                     </div>
-                                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                    <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
                                         {n.body}
                                     </p>
                                 </button>

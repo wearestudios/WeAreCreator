@@ -133,12 +133,12 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                     onClick={() => setOpen((v) => !v)}
                     aria-expanded={open}
                     data-testid={IDS.toggle(doc.id)}
-                    className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex min-w-0 flex-1 items-center gap-2.5 text-left text-meta transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     <FileText className="h-4 w-4 flex-none text-primary-ink" />
                     <span className="min-w-0">
                         {doc.doc_label}
-                        <span className="block truncate text-sm text-muted-foreground">
+                        <span className="block truncate text-meta text-muted-foreground">
                             {doc.original_name}
                             {doc.size ? ` · ${size(doc.size)}` : ""}
                         </span>
@@ -159,7 +159,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                 >
                     {doc.status}
                 </span>
-                <span className="w-32 flex-none text-sm text-muted-foreground">
+                <span className="w-32 flex-none text-meta text-muted-foreground">
                     {formatDate(doc.uploaded_at)}
                 </span>
             </div>
@@ -176,16 +176,16 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                 <div className="mt-3 space-y-3">
                     <div
                         data-testid={IDS.viewer(doc.id)}
-                        className="overflow-hidden rounded-md border border-tint/10 bg-background/60"
+                        className="overflow-hidden rounded-md border border-border bg-background/60"
                     >
                         {loading && (
-                            <p className="flex items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
+                            <p className="flex items-center gap-2 px-4 py-8 text-meta text-muted-foreground">
                                 <Loader2 className="h-4 w-4 animate-spin" />
                                 Opening…
                             </p>
                         )}
                         {failed && (
-                            <p className="px-4 py-8 text-sm text-muted-foreground">{failed}</p>
+                            <p className="px-4 py-8 text-meta text-muted-foreground">{failed}</p>
                         )}
                         {blobUrl && isImage && (
                             // The ratio is on the container, not the image: an
@@ -207,7 +207,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                             />
                         )}
                         {blobUrl && !isImage && !isPdf && (
-                            <p className="px-4 py-8 text-sm text-muted-foreground">
+                            <p className="px-4 py-8 text-meta text-muted-foreground">
                                 This one can't be shown here. Download it to read it.
                             </p>
                         )}
@@ -219,7 +219,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 href={blobUrl}
                                 download={doc.original_name || "document"}
                                 data-testid={IDS.download(doc.id)}
-                                className={`inline-flex items-center gap-1.5 rounded border border-tint/15 px-3 py-2 ${TEXT.meta} uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+                                className={`inline-flex items-center gap-1.5 rounded border border-border px-3 py-2 ${TEXT.meta} uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                             >
                                 <Download className="h-3.5 w-3.5" />
                                 Download
@@ -261,7 +261,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 onChange={(e) => setNote(e.target.value)}
                                 placeholder="What's wrong with it. The brand is told this, so it can re-upload the right one."
                                 data-testid={IDS.rejectNote(doc.id)}
-                                className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
+                                className="rounded-md border-border bg-background/60 text-body focus-visible:ring-ring"
                             />
                             <Button
                                 size="sm"
@@ -289,7 +289,7 @@ export default function BrandDocuments({ brandId, documents, onChanged }) {
         return (
             <p
                 data-testid={IDS.empty}
-                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground"
             >
                 Nothing uploaded. A brand needs at least one — GST certificate, business
                 registration, FSSAI licence or shop &amp; establishment licence — before
@@ -300,7 +300,7 @@ export default function BrandDocuments({ brandId, documents, onChanged }) {
     return (
         <ul
             data-testid={IDS.list}
-            className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card"
+            className="divide-y divide-divider rounded-md border border-border bg-card"
         >
             {documents.map((d) => (
                 <DocumentRow key={d.id} brandId={brandId} doc={d} onReviewed={onChanged} />

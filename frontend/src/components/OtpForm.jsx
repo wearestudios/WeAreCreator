@@ -187,7 +187,7 @@ export default function OtpForm({
                 className="flex items-start gap-2.5 rounded-md border border-destructive/30 bg-destructive/10 p-3.5"
             >
                 <AlertCircle className="mt-0.5 h-4 w-4 flex-none text-destructive" />
-                <div className="min-w-0 text-sm leading-relaxed text-destructive">
+                <div className="min-w-0 text-body leading-relaxed text-destructive">
                     {failure.message}
                     {/* The way out, in the same breath as the problem. Only
                         where it is actually the right next move. */}
@@ -222,7 +222,7 @@ export default function OtpForm({
                     <div>
                         <Label
                             htmlFor="phone"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             WhatsApp number
                         </Label>
@@ -241,7 +241,7 @@ export default function OtpForm({
                                 "mt-2 h-11 bg-card/60 text-foreground focus-visible:ring-primary " +
                                 (showPhoneProblem
                                     ? "border-destructive/60"
-                                    : "border-white/10")
+                                    : "border-border")
                             }
                             placeholder="+91 98765 43210"
                         />
@@ -249,7 +249,7 @@ export default function OtpForm({
                             id="phone-help"
                             data-testid={showPhoneProblem ? IDS.phoneError : IDS.phoneHint}
                             className={
-                                "mt-2 text-xs leading-relaxed " +
+                                "mt-2 text-meta leading-relaxed " +
                                 (showPhoneProblem ? "text-destructive" : "text-muted-foreground")
                             }
                         >
@@ -265,7 +265,7 @@ export default function OtpForm({
                     {blockedReason && !canSubmitPhoneStep && (
                         <p
                             data-testid={IDS.blockedReason}
-                            className="text-xs leading-relaxed text-muted-foreground"
+                            className="text-meta leading-relaxed text-muted-foreground"
                         >
                             {blockedReason}
                         </p>
@@ -296,7 +296,7 @@ export default function OtpForm({
                 <form onSubmit={verify} noValidate className="mt-8 space-y-5" data-testid={IDS.codeStep}>
                     {/* Which number it went to, so a typo is caught here
                         rather than being blamed on WhatsApp. */}
-                    <div className="rounded-md border border-white/10 bg-card/60 p-3.5 text-sm">
+                    <div className="rounded-md border border-border bg-card/60 p-3.5 text-meta">
                         <span className="text-muted-foreground">Code sent to </span>
                         <span data-testid={IDS.sentTo} className="text-foreground">
                             {normalized}
@@ -319,7 +319,7 @@ export default function OtpForm({
                     <div>
                         <Label
                             htmlFor="code"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             6-digit code
                         </Label>
@@ -338,13 +338,13 @@ export default function OtpForm({
                                 // fixing reads as a verdict on the new ones.
                                 if (failure) setFailure(null);
                             }}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground tracking-[0.35em] focus-visible:ring-primary"
+                            className="mt-2 h-11 border-border bg-card/60 text-foreground tracking-[0.35em] focus-visible:ring-primary"
                             placeholder="••••••"
                         />
                     </div>
 
                     {notice && !failure && (
-                        <p data-testid={IDS.notice} className="text-xs text-muted-foreground">
+                        <p data-testid={IDS.notice} className="text-meta text-muted-foreground">
                             {notice}
                         </p>
                     )}
@@ -372,7 +372,7 @@ export default function OtpForm({
                         data-testid={IDS.resendBtn}
                         onClick={() => send({ isResend: true })}
                         disabled={cooldown > 0 || sending || verifying}
-                        className="inline-flex min-h-[2.75rem] w-full items-center justify-center gap-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-primary disabled:text-muted-foreground/50 disabled:hover:text-muted-foreground/50 md:min-h-0"
+                        className="inline-flex min-h-[2.75rem] w-full items-center justify-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary disabled:text-muted-foreground/50 disabled:hover:text-muted-foreground/50 md:min-h-0"
                     >
                         {sending ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />

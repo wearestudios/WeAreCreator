@@ -16,7 +16,6 @@ import {
     applyTheme,
     rememberTheme,
     resolveTheme,
-    systemTheme,
 } from "@/lib/surfaceTheme";
 
 /** Initials, for a menu button with no photograph behind it. */
@@ -32,14 +31,13 @@ const initials = (name) =>
 /**
  * Three options rather than a two-way switch.
  *
- * "System" is not a third theme — it is the absence of a choice, which is a
- * different thing from having chosen the one that happens to match today. An
- * admin who tried light and wants to stop thinking about it should be able to
- * hand the question back to their machine, and a two-way toggle gives them
- * nowhere to put that.
+ * "Default" is not a third theme — it is the absence of a choice, which is a
+ * different thing from having chosen the one that happens to match today. It
+ * used to be "System" and followed the operating system; it is light now,
+ * because the app is light and dark is something somebody opts into.
  */
 const OPTIONS = [
-    { value: null, label: "System", Icon: Monitor },
+    { value: null, label: "Default", Icon: Monitor },
     { value: "light", label: "Light", Icon: Sun },
     { value: "dark", label: "Dark", Icon: Moon },
 ];
@@ -109,7 +107,7 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                 aria-expanded={open}
                 aria-label="Your account"
                 onClick={() => setOpen((v) => !v)}
-                className="grid h-10 w-10 place-items-center rounded-full border border-tint/15 bg-card text-sm tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-meta tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
                 {initials(user?.name)}
             </button>
@@ -118,19 +116,19 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                 <div
                     role="menu"
                     data-testid="admin-account-menu"
-                    className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-tint/15 bg-popover shadow-lg shadow-scrim/30"
+                    className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg shadow-scrim/30"
                 >
-                    <div className="border-b border-tint/10 px-3 py-2.5">
-                        <p className="truncate text-sm text-foreground">
+                    <div className="border-b border-border px-3 py-2.5">
+                        <p className="truncate text-meta text-foreground">
                             {user?.name || "Your account"}
                         </p>
-                        <p className="truncate text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="truncate text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             {String(user?.role || "").replace(/_/g, " ")}
                         </p>
                     </div>
 
                     <div className="px-3 py-2.5">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Appearance
                         </p>
                         <div
@@ -150,10 +148,10 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                                         data-testid={`admin-theme-${value || "system"}`}
                                         onClick={() => choose(value)}
                                         className={
-                                            "flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-[11px] transition-colors duration-150 disabled:opacity-60 " +
+                                            "flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-eyebrow transition-colors duration-150 disabled:opacity-60 " +
                                             (on
                                                 ? "border-primary/50 bg-primary/10 text-primary-ink"
-                                                : "border-tint/10 bg-tint/[0.03] text-muted-foreground hover:border-tint/20 hover:text-foreground")
+                                                : "border-border bg-tint/[0.03] text-muted-foreground hover:border-tint/20 hover:text-foreground")
                                         }
                                     >
                                         <Icon className="h-4 w-4" aria-hidden="true" />
@@ -162,12 +160,10 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                                 );
                             })}
                         </div>
-                        {/* Said rather than implied: "System" on a machine set
-                            to light is light, and somebody who cannot see why
-                            the console changed at dusk deserves the sentence. */}
+                        {/* Said rather than implied: what "Default" resolves to. */}
                         {active === null && (
-                            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                                Following this device — {systemTheme()} right now.
+                            <p className="mt-2 text-eyebrow leading-relaxed text-muted-foreground">
+                                The app default — light.
                             </p>
                         )}
                     </div>
@@ -177,7 +173,7 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                         role="menuitem"
                         data-testid="admin-account-logout"
                         onClick={onLogout}
-                        className="flex w-full items-center gap-2 border-t border-tint/10 px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors duration-150 hover:bg-tint/5 hover:text-foreground"
+                        className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-left text-meta text-muted-foreground transition-colors duration-150 hover:bg-tint/5 hover:text-foreground"
                     >
                         <LogOut className="h-4 w-4" aria-hidden="true" />
                         Log out

@@ -93,7 +93,7 @@ export function Point({ label, line, i = 0, testid = IDS.point }) {
         <Reveal i={i} as="li" className="flex">
             <div
                 data-testid={testid}
-                className={`flex-1 rounded-lg border border-white/10 bg-card grain-surface p-6 ${CARD_HOVER}`}
+                className={`flex-1 rounded-lg border border-border bg-card grain-surface p-6 ${CARD_HOVER}`}
             >
                 <h3 className="font-serif text-fluid-xl leading-tight tracking-tight">
                     {label}
@@ -126,7 +126,7 @@ export function MarketingHero({ eyebrow, title, line, cta, image, footnote }) {
     return (
         <section
             data-testid={IDS.hero}
-            className="relative overflow-hidden border-b border-white/10"
+            className="relative overflow-hidden border-b border-border"
         >
             <div
                 aria-hidden
@@ -189,7 +189,7 @@ export function TextImageSection({
     return (
         <section
             data-testid={testid}
-            className="border-b border-white/10 py-16 md:py-20"
+            className="border-b border-border py-16 md:py-20"
         >
             <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 md:grid-cols-12">
                 <div className={`md:col-span-6 ${flip ? "md:order-2" : ""}`}>
@@ -251,7 +251,7 @@ export function TextImageSection({
 /** A numbered sequence — how it works, from one side. Label plus one line. */
 export function Steps({ eyebrow, title, items, testid }) {
     return (
-        <section data-testid={testid} className="border-b border-white/10 py-16 md:py-20">
+        <section data-testid={testid} className="border-b border-border py-16 md:py-20">
             <div className="mx-auto max-w-7xl px-6">
                 <Reveal>
                     <Eyebrow>{eyebrow}</Eyebrow>
@@ -267,7 +267,7 @@ export function Steps({ eyebrow, title, items, testid }) {
                             key={step.label}
                             i={i}
                             as="li"
-                            className="border-t border-white/10 pt-6"
+                            className="border-t border-border pt-6"
                         >
                             <span className="font-serif text-sm text-primary">
                                 {String(i + 1).padStart(2, "0")}
@@ -303,12 +303,12 @@ export function TwoPaths({ testid, tone = "dark" }) {
     const card =
         "group flex-1 rounded-lg p-7 " +
         (onCoral
-            ? "border border-navy-700/25 bg-navy-700/10 hover:border-navy-700/60 "
-            : "border border-white/10 bg-card grain-surface ") +
+            ? "border border-brand-navy/25 bg-brand-navy/10 hover:border-brand-navy/60 "
+            : "border border-border bg-card grain-surface ") +
         CARD_HOVER;
-    const heading = onCoral ? "text-navy-700" : "";
-    const bodyClass = onCoral ? "text-navy-700" : "text-muted-foreground";
-    const arrow = onCoral ? "text-navy-700" : "text-primary";
+    const heading = onCoral ? "text-brand-navy" : "";
+    const bodyClass = onCoral ? "text-brand-navy" : "text-muted-foreground";
+    const arrow = onCoral ? "text-brand-navy" : "text-primary";
     return (
         <div data-testid={testid} className="flex flex-col gap-4 sm:flex-row">
             <Reveal as="div" className="flex flex-1">

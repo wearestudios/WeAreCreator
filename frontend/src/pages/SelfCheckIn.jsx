@@ -59,16 +59,16 @@ export default function SelfCheckIn() {
         >
             <Navbar />
             <main className="mx-auto flex max-w-md flex-col px-6 py-16">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                     Check in
                 </p>
 
                 {user === false || !user ? (
                     <>
-                        <h1 className="mt-4 font-serif text-fluid-3xl leading-tight">
+                        <h1 className="mt-4 font-serif text-h2 leading-tight">
                             Sign in to check yourself in.
                         </h1>
-                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                             We need to know which booking is yours. It's the same number
                             you signed up with.
                         </p>
@@ -77,7 +77,7 @@ export default function SelfCheckIn() {
                             takes longer, so carrying it through would land
                             somebody on an expired one. Say what actually
                             happens instead. */}
-                        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                             Sign in first, then scan the screen again — the code
                             refreshes every minute, so there will be a fresh one waiting.
                         </p>
@@ -90,7 +90,7 @@ export default function SelfCheckIn() {
                 ) : state === "sending" || state === "idle" ? (
                     <div
                         data-testid={IDS.pending}
-                        className="mt-6 flex items-center gap-3 text-sm text-muted-foreground"
+                        className="mt-6 flex items-center gap-3 text-meta text-muted-foreground"
                     >
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         Checking you in…
@@ -98,10 +98,10 @@ export default function SelfCheckIn() {
                 ) : state === "done" ? (
                     <div data-testid={IDS.success} className="mt-6">
                         <CheckCircle2 className="h-10 w-10 text-state-approved" />
-                        <h1 className="mt-5 font-serif text-fluid-3xl leading-tight">
+                        <h1 className="mt-5 font-serif text-h2 leading-tight">
                             You're checked in.
                         </h1>
-                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                             That's it — enjoy the shoot. Your next step shows up on your
                             dashboard when it's yours.
                         </p>
@@ -114,16 +114,16 @@ export default function SelfCheckIn() {
                 ) : (
                     <div data-testid={IDS.failure} className="mt-6">
                         <XCircle className="h-10 w-10 text-state-rejected" />
-                        <h1 className="mt-5 font-serif text-fluid-3xl leading-tight">
+                        <h1 className="mt-5 font-serif text-h2 leading-tight">
                             That didn't work.
                         </h1>
-                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                             {message}
                         </p>
                         {/* Naming the fallback rather than leaving somebody
                             tapping: the person with the clipboard is standing
                             right there and can do this in one tap. */}
-                        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                             The campaign manager can check you in from their screen — it
                             takes them a second.
                         </p>

@@ -36,6 +36,7 @@ export const CORAL = "#E1483C";
 /** A half-step darker, for the band's own hairlines and hover states. */
 export const CORAL_DEEP = "#C33A30";
 
-/** The CTA block sitting on the coral. Near-black, never pure #000 — the
- *  tinted-grey rule holds even inside the handshake. */
-export const CORAL_INK = "#091426";
+/** The CTA block sitting on the coral: the brand navy, read from the one
+ *  constant rather than typed a second time. Near-black, never pure black —
+ *  the tinted-grey rule holds even inside the handshake. */
+export const CORAL_INK = "hsl(var(--brand-navy))";

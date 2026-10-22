@@ -464,7 +464,9 @@ def test_the_qr_is_dark_on_white():
     """A QR inverted on a dark card is one many phone cameras will not read,
     and this is held up in a badly lit venue."""
     src = read("components", "manager", "CheckInQr.jsx")
-    assert "bg-white" in src
+    # The brand constant, not a token that flips: the QR's ground has to be
+    # white whatever surface the manager's screen is on.
+    assert "bg-brand-white" in src
 
 
 def test_the_manual_button_survives_beside_it():

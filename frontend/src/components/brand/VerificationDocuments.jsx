@@ -90,7 +90,7 @@ function ProgressBar({ value, testid }) {
             aria-valuenow={value}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/10"
+            className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted"
         >
             <div
                 className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
@@ -110,7 +110,7 @@ function QueuedFile({ item, onRetry, onDismiss }) {
                 "flex items-start gap-3 rounded-md border p-4 " +
                 (failed
                     ? "border-destructive/40 bg-destructive/5"
-                    : "border-white/10 bg-background/60")
+                    : "border-border bg-background/60")
             }
         >
             <div className="mt-0.5 flex-none">
@@ -121,16 +121,16 @@ function QueuedFile({ item, onRetry, onDismiss }) {
                 )}
             </div>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-foreground" title={item.name}>
+                <p className="truncate text-meta text-foreground" title={item.name}>
                     {item.name}
                 </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-meta text-muted-foreground">
                     {item.docLabel} · {formatBytes(item.size)}
                 </p>
                 {failed ? (
                     <p
                         data-testid={IDS.queueError(item.key)}
-                        className="mt-2 text-xs leading-relaxed text-destructive"
+                        className="mt-2 text-meta leading-relaxed text-destructive"
                     >
                         {item.error}
                     </p>
@@ -142,7 +142,7 @@ function QueuedFile({ item, onRetry, onDismiss }) {
                         />
                         <p
                             data-testid={IDS.queuePercent(item.key)}
-                            className="mt-1.5 text-xs text-muted-foreground"
+                            className="mt-1.5 text-meta text-muted-foreground"
                         >
                             {item.progress < 100
                                 ? `Uploading — ${item.progress}%`
@@ -202,27 +202,27 @@ function StoredDocument({ doc, onRemoved, disabled }) {
     return (
         <li
             data-testid={IDS.document(doc.id)}
-            className="flex items-start gap-3 rounded-md border border-white/10 bg-background/60 p-4"
+            className="flex items-start gap-3 rounded-md border border-border bg-background/60 p-4"
         >
             <FileText className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-foreground" title={doc.original_name}>
+                <p className="truncate text-meta text-foreground" title={doc.original_name}>
                     {doc.original_name}
                 </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-meta text-muted-foreground">
                     <span data-testid={IDS.documentType(doc.id)}>{doc.doc_label}</span>
                     {" · "}
                     {formatBytes(doc.size)}
                 </p>
                 {doc.review_note && (
-                    <p className="mt-2 text-xs leading-relaxed text-state-pending">
+                    <p className="mt-2 text-meta leading-relaxed text-state-pending">
                         {doc.review_note}
                     </p>
                 )}
                 {error && (
                     <p
                         data-testid={IDS.documentError(doc.id)}
-                        className="mt-2 text-xs text-destructive"
+                        className="mt-2 text-meta text-destructive"
                     >
                         {error}
                     </p>
@@ -240,7 +240,7 @@ function StoredDocument({ doc, onRemoved, disabled }) {
                             onClick={remove}
                             disabled={removing}
                             data-testid={IDS.documentConfirmRemove(doc.id)}
-                            className="rounded-full px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-destructive transition-colors duration-200 hover:bg-destructive/10 disabled:opacity-60"
+                            className="rounded-full px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-destructive transition-colors duration-200 hover:bg-destructive/10 disabled:opacity-60"
                         >
                             {removing ? "Removing…" : "Remove"}
                         </button>
@@ -249,7 +249,7 @@ function StoredDocument({ doc, onRemoved, disabled }) {
                             onClick={() => setConfirming(false)}
                             disabled={removing}
                             data-testid={IDS.documentCancelRemove(doc.id)}
-                            className="rounded-full px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                            className="rounded-full px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground"
                         >
                             Keep
                         </button>
@@ -278,7 +278,7 @@ export function VerificationDocumentsSkeleton() {
                 {Array.from({ length: 2 }).map((_, i) => (
                     <div
                         key={i}
-                        className="flex items-start gap-3 rounded-md border border-white/10 bg-background/60 p-4"
+                        className="flex items-start gap-3 rounded-md border border-border bg-background/60 p-4"
                     >
                         <Skeleton className="mt-0.5 h-4 w-4 flex-none rounded" />
                         <div className="min-w-0 flex-1">
@@ -448,7 +448,7 @@ export default function VerificationDocuments({
     return (
         <section data-testid={IDS.documentsSection} className="space-y-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Proof of business
                 </p>
                 {/* **A count, not a target.** "1 of 12 uploaded" reads as
@@ -458,7 +458,7 @@ export default function VerificationDocuments({
                   * near it. */}
                 <span
                     data-testid={IDS.documentCount}
-                    className="text-xs text-muted-foreground"
+                    className="text-meta text-muted-foreground"
                 >
                     {documents.length === 0
                         ? "None uploaded yet"
@@ -471,7 +471,7 @@ export default function VerificationDocuments({
                 </span>
             </div>
 
-            <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+            <p className="max-w-xl text-meta leading-relaxed text-muted-foreground">
                 Any one of these is enough — a GST certificate, business
                 registration, FSSAI licence or shop &amp; establishment licence.
                 Only the WeAre review team ever sees them. PDF or a photo, under{" "}
@@ -481,14 +481,14 @@ export default function VerificationDocuments({
             {!readOnly && (
                 <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                     <div>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             What is this document?
                         </Label>
                         <Select value={docType} onValueChange={setDocType}>
                             <SelectTrigger
                                 data-testid={IDS.docTypeTrigger}
                                 disabled={uploading || full}
-                                className="mt-2 h-11 border-white/10 bg-card/60"
+                                className="mt-2 h-11 border-border bg-card/60"
                             >
                                 <SelectValue placeholder="Pick a document type" />
                             </SelectTrigger>
@@ -527,7 +527,7 @@ export default function VerificationDocuments({
                             data-testid={IDS.chooseBtn}
                             disabled={uploading || full || !docType}
                             onClick={() => inputRef.current?.click()}
-                            className="h-11 w-full rounded-full border-white/15 bg-transparent hover:bg-white/5 sm:w-auto"
+                            className="h-11 w-full rounded-full border-input bg-transparent hover:bg-muted sm:w-auto"
                         >
                             {uploading ? (
                                 <>
@@ -548,7 +548,7 @@ export default function VerificationDocuments({
             {full && !readOnly && (
                 <p
                     data-testid={IDS.documentsFull}
-                    className="text-xs text-state-pending"
+                    className="text-meta text-state-pending"
                 >
                     That's the maximum. Remove one before adding another.
                 </p>
@@ -591,7 +591,7 @@ export default function VerificationDocuments({
             )}
 
             {readOnly && documents.length > 0 && (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <p className="flex items-center gap-2 text-meta text-muted-foreground">
                     <CheckCircle2 className="h-3.5 w-3.5 text-state-approved" />
                     Your documents are on file. Get in touch if one needs
                     changing.

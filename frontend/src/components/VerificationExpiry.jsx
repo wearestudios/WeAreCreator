@@ -66,7 +66,7 @@ export default function VerificationExpiry({ verification, kind, onConfirmed }) 
             className={`rounded-md border p-4 ${
                 lapsed
                     ? "border-destructive/40 bg-destructive/10"
-                    : "border-state-pending/30 bg-state-pending/10"
+                    : "border-state-pending/30 bg-state-pending-wash"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -74,14 +74,14 @@ export default function VerificationExpiry({ verification, kind, onConfirmed }) 
                     aria-hidden="true"
                     className={`h-4 w-4 ${lapsed ? "text-destructive" : "text-state-pending"}`}
                 />
-                <p className="text-sm font-medium">
+                <p className="text-meta font-medium">
                     {lapsed
                         ? `Confirm your ${noun} to carry on`
                         : `Your ${noun} need a check soon`}
                 </p>
             </div>
 
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-meta text-muted-foreground">
                 {/* **What is lost and what is not**, both said. The single
                     most likely reading of "your verification expired" is that
                     the account is gone, and it is the wrong one. */}
@@ -95,7 +95,7 @@ export default function VerificationExpiry({ verification, kind, onConfirmed }) 
             </p>
 
             {!lapsed && typeof verification.days_left === "number" && (
-                <p data-testid={IDS.expiry} className="mt-1 text-xs text-muted-foreground">
+                <p data-testid={IDS.expiry} className="mt-1 text-meta text-muted-foreground">
                     {verification.days_left}{" "}
                     {verification.days_left === 1 ? "day" : "days"} left
                 </p>

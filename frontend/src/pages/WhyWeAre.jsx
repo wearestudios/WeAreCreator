@@ -184,7 +184,7 @@ export default function WhyWeAre() {
                 testid={IDS.choice}
             />
 
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <Reveal>
                         <Eyebrow>What we run</Eyebrow>
@@ -236,7 +236,7 @@ export default function WhyWeAre() {
             {/* The same graphic as `/for-brands`, under the section that makes
                 the same claim — one component rather than two drawings of one
                 fact, which is how the two pages come to disagree about it. */}
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <FeeFlow />
                 </div>

@@ -79,7 +79,7 @@ export default function PartialDeliveryDialog({
             <DialogContent data-testid={IDS.dialog} className="sm:max-w-lg">
                 <DialogHeader className="text-left">
                     <DialogTitle>What arrived?</DialogTitle>
-                    <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                         Count what is actually up. The creator is told what was accepted and
                         what it was agreed at, and the shortfall goes on the record.
                     </DialogDescription>
@@ -88,9 +88,9 @@ export default function PartialDeliveryDialog({
                 <ul className="space-y-2">
                     {asked.map((item) => (
                         <li key={item.type} className="flex items-center gap-3">
-                            <span className="min-w-0 flex-1 text-sm">
+                            <span className="min-w-0 flex-1 text-meta">
                                 {DELIVERABLE_TYPES[item.type] || item.type}
-                                <span className="ml-2 text-xs text-muted-foreground">
+                                <span className="ml-2 text-meta text-muted-foreground">
                                     asked for {item.quantity}
                                 </span>
                             </span>
@@ -104,7 +104,7 @@ export default function PartialDeliveryDialog({
                                     setCounts((c) => ({ ...c, [item.type]: e.target.value }))
                                 }
                                 data-testid={IDS.count(item.type)}
-                                className="h-10 w-20 border-white/10 bg-background/60 text-right tabular-nums"
+                                className="h-10 w-20 border-border bg-background/60 text-right tabular-nums"
                             />
                         </li>
                     ))}
@@ -112,7 +112,7 @@ export default function PartialDeliveryDialog({
 
                 {!barter && (
                     <label className="block">
-                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Agreed for this
                         </span>
                         <Input
@@ -123,12 +123,12 @@ export default function PartialDeliveryDialog({
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder={suggestion != null ? String(suggestion) : ""}
                             data-testid={IDS.amount}
-                            className="mt-2 h-11 border-white/10 bg-background/60 text-base tabular-nums"
+                            className="mt-2 h-11 border-border bg-background/60 text-body tabular-nums"
                         />
                         {suggestion != null && (
                             <span
                                 data-testid={IDS.suggestion}
-                                className="mt-1.5 block text-xs text-muted-foreground"
+                                className="mt-1.5 block text-meta text-muted-foreground"
                             >
                                 Pro-rata would be ₹{suggestion.toLocaleString("en-IN")} —
                                 a suggestion, not a rule. Two of three stories is not
@@ -139,7 +139,7 @@ export default function PartialDeliveryDialog({
                 )}
 
                 <label className="block">
-                    <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Why
                     </span>
                     {/* Required. "Accepted partial" with no reason is a
@@ -152,7 +152,7 @@ export default function PartialDeliveryDialog({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="e.g. Two stories went up, the third clashed with their own launch."
                         data-testid={IDS.note}
-                        className="mt-2 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                        className="mt-2 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                     />
                 </label>
 

@@ -36,7 +36,7 @@
 // as `mobile: "primary" | "meta" | "trailing" | "action"`. A column with no
 // hint is desktop-only, which is the honest default: most of them are there to
 // be compared, and comparison is the thing a phone cannot do.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 
 import {
@@ -48,6 +48,7 @@ import {
     ROW_PX,
     TEXT,
 } from "@/components/admin/console/tokens";
+import { useDensity } from "@/components/admin/console/density";
 import { ADMIN_TABLE as IDS } from "@/constants/testIds";
 import useWide from "@/lib/useWide";
 import { settleDelay } from "@/lib/motion";
@@ -157,6 +158,18 @@ export function DataTable({
     const bodyRef = scrollRef || localRef;
     const [range, setRange] = useState({ start: 0, end: 60 });
     const wide = useWide();
+    // **The row height is the stylesheet's, read off the element.** It is
+    // `--row-h` — 70px comfortable, 42px compact — and the windowing below
+    // multiplies by it, so a second copy of the number here would be wrong
+    // the moment somebody retuned the CSS. Re-read when the density changes.
+    const { density } = useDensity();
+    const [rowPx, setRowPx] = useState(ROW_PX);
+    useLayoutEffect(() => {
+        const el = bodyRef.current;
+        if (!el) return;
+        const read = parseFloat(window.getComputedStyle(el).getPropertyValue("--row-h"));
+        if (read > 0) setRowPx(read);
+    }, [density, bodyRef, wide]);
 
     // **Windowing is a desktop-only concern here**, because the phone list is
     // not its own scroll container — the page scrolls, which is what a phone
@@ -180,10 +193,10 @@ export function DataTable({
     const recompute = useCallback(() => {
         const el = bodyRef.current;
         if (!el || !virtual) return;
-        const start = Math.max(0, Math.floor(el.scrollTop / ROW_PX) - OVERSCAN);
-        const visible = Math.ceil(el.clientHeight / ROW_PX) + OVERSCAN * 2;
+        const start = Math.max(0, Math.floor(el.scrollTop / rowPx) - OVERSCAN);
+        const visible = Math.ceil(el.clientHeight / rowPx) + OVERSCAN * 2;
         setRange({ start, end: Math.min(rows.length, start + visible) });
-    }, [bodyRef, virtual, rows.length]);
+    }, [bodyRef, virtual, rows.length, rowPx]);
 
     useEffect(() => {
         if (!virtual) return undefined;
@@ -202,8 +215,8 @@ export function DataTable({
         () => (virtual ? rows.slice(range.start, range.end) : rows),
         [virtual, rows, range.start, range.end],
     );
-    const padTop = virtual ? range.start * ROW_PX : 0;
-    const padBottom = virtual ? Math.max(0, (rows.length - range.end) * ROW_PX) : 0;
+    const padTop = virtual ? range.start * rowPx : 0;
+    const padBottom = virtual ? Math.max(0, (rows.length - range.end) * rowPx) : 0;
 
     const toggleSort = (col) => {
         if (!col.sortable || !onSortChange) return;
@@ -250,11 +263,23 @@ export function DataTable({
                     ellipsises instead of pushing the buttons away. */}
                 <table className={`w-full table-fixed border-collapse text-left ${minWidth}`}>
                     <thead className="sticky top-0 z-10 bg-card">
-                        <tr className="border-b border-tint/10">
+                        <tr className="border-b border-border">
                             {columns.map((col) => (
                                 <th
                                     key={col.key}
                                     scope="col"
+                                    // On the header cell, where ARIA allows
+                                    // it: a `button` has no sort state, and a
+                                    // screen reader reads it off the column.
+                                    aria-sort={
+                                        !col.sortable
+                                            ? undefined
+                                            : sort?.key === col.key
+                                              ? sort.dir === "asc"
+                                                  ? "ascending"
+                                                  : "descending"
+                                              : "none"
+                                    }
                                     // A screen whose sort control already had an
                                     // id keeps it: the control moved into the
                                     // header, it did not stop existing.
@@ -267,13 +292,6 @@ export function DataTable({
                                         <button
                                             type="button"
                                             onClick={() => toggleSort(col)}
-                                            aria-sort={
-                                                sort?.key === col.key
-                                                    ? sort.dir === "asc"
-                                                        ? "ascending"
-                                                        : "descending"
-                                                    : "none"
-                                            }
                                             // The case and tracking are repeated
                                             // here rather than inherited from the
                                             // `th`: the UA stylesheet sets
@@ -325,7 +343,7 @@ export function DataTable({
                                             onOpen?.(index);
                                         }
                                     }}
-                                    className={`${settles ? "weare-settle " : ""}${ROW_H} cursor-pointer border-b border-tint/5 ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
+                                    className={`${settles ? "weare-settle " : ""}${ROW_H} cursor-pointer border-b border-divider ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
                                         isFocused
                                             ? // The focused row is a left rule
                                               // plus a lift in the surface, not
@@ -345,7 +363,7 @@ export function DataTable({
                                             // next column — measured on the
                                             // queue, where a brand name ran
                                             // into the state beside it.
-                                            className={`${DENSITY.row} ${TEXT.body} overflow-hidden align-middle ${
+                                            className={`${DENSITY.cell} ${TEXT.body} overflow-hidden align-middle ${
                                                 col.numeric
                                                     ? "text-right tabular-nums"
                                                     : "text-left"
@@ -391,7 +409,7 @@ function MobileList({
     const actions = pick(columns, "action");
 
     return (
-        <ul className={`${PANEL} divide-y divide-tint/5`} data-testid={testid}>
+        <ul className={`${PANEL} divide-y divide-divider`} data-testid={testid}>
             {rows.map((row, index) => (
                 <li
                     key={`${stamp}:${rowKey(row, index)}`}
@@ -407,7 +425,7 @@ function MobileList({
                             onOpen?.(index);
                         }
                     }}
-                    className={`weare-settle flex items-start gap-3 ${DENSITY.row} ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
+                    className={`weare-settle flex items-start gap-3 ${DENSITY.cell} ${CALM} ${FOCUS} ${rowClass?.(row) || ""} ${
                         index === focused ? "bg-tint/[0.06]" : ""
                     }`}
                 >
@@ -464,17 +482,17 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
         // Two lines and a value on the right, which is the mobile row.
         return (
             <ul
-                className={`${PANEL} divide-y divide-tint/5`}
+                className={`${PANEL} divide-y divide-divider`}
                 aria-hidden
                 data-testid={testid ? `${testid}-skeleton` : undefined}
             >
                 {Array.from({ length: rows }).map((_, r) => (
-                    <li key={r} className={`flex items-start gap-3 ${DENSITY.row}`}>
+                    <li key={r} className={`flex items-start gap-3 ${DENSITY.cell}`}>
                         <div className="min-w-0 flex-1">
-                            <div className="h-3.5 w-2/5 rounded bg-tint/5" />
-                            <div className="mt-2 h-3 w-3/5 rounded bg-tint/5" />
+                            <div className="h-3.5 w-2/5 rounded bg-muted" />
+                            <div className="mt-2 h-3 w-3/5 rounded bg-muted" />
                         </div>
-                        <div className="h-3.5 w-12 shrink-0 rounded bg-tint/5" />
+                        <div className="h-3.5 w-12 shrink-0 rounded bg-muted" />
                     </li>
                 ))}
             </ul>
@@ -488,7 +506,7 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
             <div className="overflow-hidden">
             <table className={`w-full table-fixed border-collapse ${minWidth}`}>
                 <thead className="bg-card">
-                    <tr className="border-b border-tint/10">
+                    <tr className="border-b border-border">
                         {columns.map((col) => (
                             <th
                                 key={col.key}
@@ -503,11 +521,11 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
                 </thead>
                 <tbody aria-hidden>
                     {Array.from({ length: rows }).map((_, r) => (
-                        <tr key={r} className={`${ROW_H} border-b border-tint/5`}>
+                        <tr key={r} className={`${ROW_H} border-b border-divider`}>
                             {columns.map((col) => (
-                                <td key={col.key} className={`${DENSITY.row} ${col.hideBelow ? "hidden lg:table-cell" : ""}`}>
+                                <td key={col.key} className={`${DENSITY.cell} ${col.hideBelow ? "hidden lg:table-cell" : ""}`}>
                                     <div
-                                        className={`h-3 rounded bg-tint/5 ${
+                                        className={`h-3 rounded bg-muted ${
                                             col.numeric ? "ml-auto w-12" : "w-3/4"
                                         }`}
                                     />

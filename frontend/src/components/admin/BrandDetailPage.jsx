@@ -4,10 +4,10 @@
 // checking: what they say they are, the documents that prove it, the named
 // person asking on their behalf, and then what they have actually run with us.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ExternalLink, FileText, Globe, Instagram } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { Globe, Instagram } from "lucide-react";
 
-import { api, formatApiError, API_BASE } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
@@ -138,12 +138,12 @@ export default function BrandDetailPage() {
                     <>
                         <span
                             className={
-                                "rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] " +
+                                "rounded-full border px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow " +
                                 (brand.verified
-                                    ? "border-state-approved/30 bg-state-approved/15 text-state-approved"
+                                    ? "border-state-approved/30 bg-state-approved-wash text-state-approved"
                                     : brand.verification_state === "rejected"
-                                      ? "border-state-rejected/25 bg-state-rejected/10 text-state-rejected"
-                                      : "border-state-pending/30 bg-state-pending/15 text-state-pending")
+                                      ? "border-state-rejected/25 bg-state-rejected-wash text-state-rejected"
+                                      : "border-state-pending/30 bg-state-pending-wash text-state-pending")
                             }
                         >
                             {STATE_LABEL[brand.verification_state] || brand.verification_state}
@@ -156,7 +156,7 @@ export default function BrandDetailPage() {
                         {brand.verification_resubmissions > 0 && (
                             <span
                                 data-testid={IDS.resubmissions}
-                                className="rounded border border-state-pending/30 bg-state-pending/10 px-1.5 py-0.5 text-state-pending"
+                                className="rounded border border-state-pending/30 bg-state-pending-wash px-1.5 py-0.5 text-state-pending"
                             >
                                 {brand.verification_resubmissions === 1
                                     ? "Resubmitted once"
@@ -193,7 +193,7 @@ export default function BrandDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("unverify")}
                                 onClick={() => setDialog({ kind: "unverify" })}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Unverify
                             </Button>
@@ -295,7 +295,7 @@ export default function BrandDetailPage() {
                                     </Field>
                                 </dl>
                                 {brand.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
+                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-body leading-relaxed text-state-pending">
                                         Last decision: {brand.verification_reason}
                                     </p>
                                 )}
@@ -304,13 +304,13 @@ export default function BrandDetailPage() {
 
                         <Section id="manager" title="Brand manager">
                             <Panel data-testid={IDS.manager}>
-                                <p className="font-serif text-xl">
+                                <p className="font-serif text-h3">
                                     {brand.manager_name || "Nobody named"}
                                 </p>
-                                <p className="mt-1 text-sm text-muted-foreground">
+                                <p className="mt-1 text-meta text-muted-foreground">
                                     {brand.manager_designation || "—"}
                                 </p>
-                                <dl className="mt-6 space-y-4 border-t border-tint/10 pt-5">
+                                <dl className="mt-6 space-y-4 border-t border-border pt-5">
                                     <Field label="WhatsApp (their login)">
                                         {brand.manager_phone}
                                     </Field>
@@ -318,13 +318,13 @@ export default function BrandDetailPage() {
                                     <Field label="Account status">{brand.status}</Field>
                                 </dl>
                                 {brand.contact_email_is_free_domain && (
-                                    <p className="mt-5 rounded-md border border-state-pending/30 bg-state-pending/10 p-3 text-sm leading-relaxed text-state-pending">
+                                    <p className="mt-5 rounded-md border border-state-pending/30 bg-state-pending-wash p-3 text-body leading-relaxed text-state-pending">
                                         That's a free mail address. Not a problem on its own —
                                         plenty of real small businesses use one — but a domain
                                         address is the cheapest evidence somebody works there.
                                     </p>
                                 )}
-                                <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
+                                <p className="mt-5 text-body leading-relaxed text-muted-foreground">
                                     One login per brand. There is no way to add a second.
                                 </p>
                             </Panel>
@@ -349,29 +349,29 @@ export default function BrandDetailPage() {
                         {data.campaigns.length === 0 ? (
                             <p
                                 data-testid={IDS.campaignsEmpty}
-                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground"
                             >
                                 They haven't posted anything yet.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
+                            <ul className="divide-y divide-divider rounded-md border border-border bg-card">
                                 {data.campaigns.map((c) => (
                                     <li
                                         key={c.id}
                                         data-testid={IDS.campaign(c.id)}
                                         className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                     >
-                                        <span className="min-w-0 flex-1 text-sm">
+                                        <span className="min-w-0 flex-1 text-meta">
                                             <CampaignLink id={c.id} title={c.title} />
-                                            <span className="block text-sm text-muted-foreground">
+                                            <span className="block text-meta text-muted-foreground">
                                                 {c.area}
                                                 {c.manager_name ? ` · ${c.manager_name}` : ""}
                                             </span>
                                         </span>
-                                        <span className="flex-none text-sm text-muted-foreground">
+                                        <span className="flex-none text-meta text-muted-foreground">
                                             {c.filled_slots}/{c.creators_needed} filled
                                         </span>
-                                        <span className="w-24 flex-none text-sm">
+                                        <span className="w-24 flex-none text-meta">
                                             {isBarter(c) ? "Barter" : `₹${formatRupees(c.spend)}`}
                                         </span>
                                         <Pill

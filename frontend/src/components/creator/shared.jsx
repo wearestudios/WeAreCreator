@@ -109,55 +109,55 @@ export const CAT_LABEL = {
 // a pill naming one state is a different job from a bar naming the journey.
 
 export const STATE_META = {
-    applied: { label: "Applied", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
-    verified: { label: "With the brand", tone: "bg-state-progress/15 text-state-progress border-state-progress/30" },
-    accepted: { label: "Accepted", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
+    applied: { label: "Applied", tone: "bg-state-pending-wash text-state-pending border-state-pending/30" },
+    verified: { label: "With the brand", tone: "bg-state-progress-wash text-state-progress border-state-progress/30" },
+    accepted: { label: "Accepted", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     commercial_agreed: {
         label: "Fee agreed",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     slot_booked: {
         label: "Slot booked",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
-    attended: { label: "Attended", tone: "bg-state-done/15 text-state-done border-state-done/30" },
+    attended: { label: "Attended", tone: "bg-state-done-wash text-state-done border-state-done/30" },
     draft_submitted: {
         label: "Draft in review",
-        tone: "bg-state-done/15 text-state-done border-state-done/30",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
     },
     draft_approved: {
         label: "Draft approved",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     content_submitted: {
         label: "In review",
-        tone: "bg-state-done/15 text-state-done border-state-done/30",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
     },
     content_approved: {
         label: "Approved",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     in_payment: { label: "In payment", tone: "bg-primary/15 text-primary border-primary/30" },
-    closed: { label: "Paid", tone: "bg-white/5 text-muted-foreground border-white/15" },
+    closed: { label: "Paid", tone: "bg-muted text-muted-foreground border-input" },
     // Deliberately not "rejected". A brand picking someone else is not a
     // verdict on the creator, and the word it is given shouldn't imply one.
-    declined: { label: "Not this time", tone: "bg-white/5 text-muted-foreground border-white/15" },
-    cancelled: { label: "Cancelled", tone: "bg-white/5 text-muted-foreground border-white/15" },
-    pending: { label: "Pending", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
-    paid: { label: "Paid", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    refunded: { label: "Refunded", tone: "bg-white/5 text-muted-foreground border-white/15" },
+    declined: { label: "Not this time", tone: "bg-muted text-muted-foreground border-input" },
+    cancelled: { label: "Cancelled", tone: "bg-muted text-muted-foreground border-input" },
+    pending: { label: "Pending", tone: "bg-state-pending-wash text-state-pending border-state-pending/30" },
+    paid: { label: "Paid", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    refunded: { label: "Refunded", tone: "bg-muted text-muted-foreground border-input" },
 };
 
 export const StatePill = ({ state, testid }) => {
     const meta = STATE_META[state] || {
         label: state,
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     };
     return (
         <span
             data-testid={testid || `state-pill-${state}`}
             className={
-                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 meta.tone
             }
         >
@@ -256,8 +256,8 @@ export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => 
 export const SectionHead = ({ kicker, title, aside, className = "" }) => (
     <div className={"flex flex-wrap items-end justify-between gap-3 " + className}>
         <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-primary">{kicker}</p>
-            <h2 className="mt-3 font-serif text-fluid-3xl leading-none tracking-tight">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">{kicker}</p>
+            <h2 className="mt-3 font-serif text-h2 leading-none tracking-tight">
                 {title}
             </h2>
         </div>
@@ -268,17 +268,17 @@ export const SectionHead = ({ kicker, title, aside, className = "" }) => (
 export const EmptyState = ({ Icon, title, children, testid, action }) => (
     <div
         data-testid={testid}
-        className="flex flex-col items-center gap-3 rounded-md border border-white/10 bg-card px-6 py-14 text-center grain-surface"
+        className="flex flex-col items-center gap-3 rounded-md border border-border bg-card px-6 py-14 text-center grain-surface"
     >
         {Icon && <Icon className="h-6 w-6 text-primary" />}
-        {title && <p className="font-serif text-xl leading-tight">{title}</p>}
-        <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">{children}</p>
+        {title && <p className="font-serif text-h3 leading-tight">{title}</p>}
+        <p className="max-w-sm text-body leading-relaxed text-muted-foreground">{children}</p>
         {action}
     </div>
 );
 
 export const CardSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
+    <div className="rounded-md border border-border bg-card p-6 grain-surface">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-6 w-2/3" />
         <Skeleton className="mt-6 h-2 w-full rounded-full" />
@@ -315,7 +315,7 @@ export const HomeSkeleton = ({ testid }) => (
         <div className="space-y-4">
             <Skeleton className="h-3 w-36" />
             {/* The active card leads with its cover strip now. */}
-            <div className="overflow-hidden rounded-md border border-white/10">
+            <div className="overflow-hidden rounded-md border border-border">
                 <Skeleton className="aspect-[16/5] w-full rounded-none" />
                 <CardSkeleton />
             </div>

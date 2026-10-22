@@ -115,7 +115,7 @@ export default function DisputePanel({
             className={`rounded-md border p-4 ${
                 open
                     ? "border-destructive/40 bg-destructive/10"
-                    : "border-tint/10 bg-card"
+                    : "border-border bg-card"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -123,14 +123,14 @@ export default function DisputePanel({
                     aria-hidden="true"
                     className={`h-4 w-4 ${open ? "text-destructive" : "text-muted-foreground"}`}
                 />
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     {open ? "Under dispute" : "Dispute"}
                 </p>
                 {/* **The freeze is said, not implied.** Somebody wondering why
                     their payment has not moved is owed the reason on the same
                     screen, not in a support thread. */}
                 {open && dispute?.frozen && (
-                    <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive-foreground">
+                    <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-meta text-destructive-foreground">
                         <Snowflake aria-hidden="true" className="h-3 w-3" />
                         Payment held
                     </span>
@@ -138,7 +138,7 @@ export default function DisputePanel({
             </div>
 
             {dispute && (
-                <div className="mt-3 space-y-2 text-sm">
+                <div className="mt-3 space-y-2 text-meta">
                     <p className="text-muted-foreground">
                         Raised by {WHO[dispute.raised_by_role] || "somebody"}
                         {dispute.raised_at ? ` on ${formatDateTime(dispute.raised_at)}` : ""}.
@@ -146,8 +146,8 @@ export default function DisputePanel({
                     <p className="whitespace-pre-wrap">{dispute.reason}</p>
 
                     {dispute.state === "resolved" && (
-                        <div className="rounded border border-tint/10 bg-background/40 p-3">
-                            <p className="text-sm">
+                        <div className="rounded border border-border bg-background/40 p-3">
+                            <p className="text-meta">
                                 {dispute.resolution_label || dispute.resolution}
                                 {typeof dispute.resolution_amount === "number"
                                     ? ` — ₹${dispute.resolution_amount.toLocaleString("en-IN")}`
@@ -157,10 +157,10 @@ export default function DisputePanel({
                                 beside it is a decision nobody can defend six
                                 months later, and the party it went against is
                                 the one who will ask. */}
-                            <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                            <p className="mt-1 whitespace-pre-wrap text-meta text-muted-foreground">
                                 {dispute.resolution_note}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-meta text-muted-foreground">
                                 Decided by {dispute.resolved_by_name || "WeAre"}
                                 {dispute.resolved_at
                                     ? ` on ${formatDateTime(dispute.resolved_at)}`
@@ -169,7 +169,7 @@ export default function DisputePanel({
                         </div>
                     )}
                     {dispute.state === "withdrawn" && (
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-meta text-muted-foreground">
                             Taken back. Nothing is held.
                         </p>
                     )}
@@ -177,7 +177,7 @@ export default function DisputePanel({
             )}
 
             {open && !dispute?.resolution && (
-                <p className="mt-3 text-sm text-muted-foreground">
+                <p className="mt-3 text-meta text-muted-foreground">
                     WeAre is mediating. Nothing moves on either side until it is
                     decided, and you will both be told the outcome and the reasoning.
                 </p>
@@ -203,7 +203,7 @@ export default function DisputePanel({
                         onClick={withdraw}
                         disabled={busy}
                         data-testid={IDS.withdraw}
-                        className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
+                        className="min-h-[2.75rem] border-input bg-transparent sm:min-h-0"
                     >
                         {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                         Take it back
@@ -230,9 +230,9 @@ export default function DisputePanel({
                         onChange={(e) => setReason(e.target.value)}
                         placeholder="What happened, and what you think should happen about it."
                         data-testid={IDS.reason}
-                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
+                        className="rounded-md border-border bg-background/60 text-body focus-visible:ring-ring"
                     />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-meta text-muted-foreground">
                         This freezes the collaboration and any payment on it until
                         WeAre decides. The other side is told straight away.
                     </p>
@@ -268,10 +268,10 @@ export default function DisputePanel({
                                 type="button"
                                 onClick={() => setResolution(r.key)}
                                 data-testid={IDS.resolution(r.key)}
-                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                className={`rounded border px-3 py-2 text-meta transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                     resolution === r.key
                                         ? "border-primary bg-primary/10 text-foreground"
-                                        : "border-tint/10 text-muted-foreground hover:border-tint/20"
+                                        : "border-border text-muted-foreground hover:border-tint/20"
                                 }`}
                             >
                                 {r.label}
@@ -290,7 +290,7 @@ export default function DisputePanel({
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder="How much goes to the creator"
                             data-testid={IDS.resolveAmount}
-                            className="h-11 border-tint/10 bg-background/60 text-base tabular-nums"
+                            className="h-11 border-border bg-background/60 text-body tabular-nums"
                         />
                     )}
 
@@ -301,7 +301,7 @@ export default function DisputePanel({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="Why this is the right outcome. Both sides read it."
                         data-testid={IDS.resolveNote}
-                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
+                        className="rounded-md border-border bg-background/60 text-body focus-visible:ring-ring"
                     />
 
                     <div className="flex flex-wrap gap-2">

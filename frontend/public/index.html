@@ -6,7 +6,7 @@
         <!-- The app's actual background, hsl(20 8% 4%) — warm-tinted near-black,
              not pure #000. On Android Chrome this paints the address bar, so a
              pure black here shows as a seam above the page. -->
-        <meta name="theme-color" content="#0B0A09" />
+        <meta name="theme-color" content="#F6F4F1" />
 
         <title>WeAre Creators — Influencer marketing across India, run end to end</title>
         <meta
@@ -78,26 +78,21 @@
       React cannot do this: the bundle has to download, parse and mount before
       it can set an attribute, and on the mid-range Android and Indian mobile
       data this product is built for that is a real interval spent looking at
-      a full-screen dark page that is about to become light. A flash of the
-      wrong theme is worse than no theme.
+      the wrong surface. A flash of the wrong theme is worse than no theme.
 
-      **Only on /admin**, which is the whole of the scoping. The marketing
-      site, the creator app, the brand app and the manager screens never get
-      the attribute and so cannot be affected by what it means.
-
-      Kept deliberately small and dependency-free, because it is inline and
-      blocking. The precedence it implements is the same one `resolveTheme`
-      in lib/consoleTheme.js implements — explicit choice, then this browser's
-      cache of one, then the operating system — and a test pins that the two
-      agree.
+      Light is the default document and needs nothing written. The script
+      writes data-theme="dark" for the marketing routes and, inside /admin,
+      for an admin whose cached choice is dark — and for nothing else. The
+      precedence matches `surfaceFor` in lib/surfaceTheme.js, and a test pins
+      that the two agree.
     -->
     <script>
       /* Which surface this page is on, before first paint.
          
-         MARKETING is navy and is the absence of the attribute; PRODUCT is
-         light. Getting this wrong for even one frame is the whole reason the
-         script exists — a dashboard that flashes navy before turning light is
-         worse than either surface on its own.
+         LIGHT is the app and is the absence of the attribute. DARK is asked
+         for: by the marketing routes, which were drawn for the navy set, and
+         inside the console by an admin who chose it. Getting this wrong for
+         even one frame is the whole reason the script exists.
          
          **This must agree with `isProductPath` in `lib/surfaceTheme.js`**, and
          a test fails the two if the prefix lists drift. It is duplicated
@@ -116,31 +111,27 @@
             PRODUCT.some(function (p) {
               return path === p.replace(/\/$/, "") || path.indexOf(p) === 0;
             });
-          if (!isProduct) return; /* marketing navy is the default document */
 
-          /* Inside the console an admin may have chosen navy. Everywhere else
-             in the product the surface is light and not negotiable. */
           var theme = "light";
-          if (path.indexOf("/admin") === 0) {
+          if (!isProduct) {
+            theme = "dark"; /* marketing keeps its navy set */
+          } else if (path.indexOf("/admin") === 0) {
+            /* An explicit choice, cached from the account. Never the
+               operating system: dark is an opt-in, not a default. */
             var stored = null;
             try { stored = localStorage.getItem("weare:console-theme"); } catch (e) {}
-            theme =
-              stored === "light" || stored === "dark"
-                ? stored
-                : window.matchMedia &&
-                  window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light";
+            if (stored === "dark") theme = "dark";
           }
-          if (theme === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
+          if (theme === "dark") {
+            document.documentElement.setAttribute("data-theme", "dark");
+            document.documentElement.style.colorScheme = "dark";
+          } else {
             document.documentElement.style.colorScheme = "light";
           }
         } catch (e) {
-          /* Navy is the absence of the attribute, so a throw lands on the
-             marketing surface rather than on nothing. On a product route that
-             is the wrong surface for a moment, which the guard corrects on
-             mount — a visible correction beats an unstyled page. */
+          /* Light is the absence of the attribute, so a throw lands on the
+             app's own surface. On a marketing route that is the wrong
+             surface for a moment, which the guard corrects on mount. */
         }
       })();
     </script>

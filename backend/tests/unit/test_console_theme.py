@@ -1,9 +1,10 @@
-"""Two themes for the admin console, and the sweep that keeps the second one working.
+"""Two themes, and the sweep that keeps the second one working.
 
-An admin sits in front of the console for hours, which is a different
-relationship from the one a creator has with their dashboard — so the console
-gets a choice of light or dark, and the marketing site, the creator app, the
-brand app and the manager screens stay dark.
+**Light is the app now and is `:root`.** The navy set moved, whole, under
+`[data-theme="dark"]`, which the marketing routes select and an admin may opt
+into for the console. Nothing reaches it by default — not an unset attribute
+and not an operating system set to dark. The history below is how the console
+got its two themes in the first place, and the rule it set still holds.
 
 **The audit was the work, not the palette.** The console was written in the
 dark-mode idiom: `border-white/10` for a hairline, `bg-white/5` for a surface
@@ -168,32 +169,37 @@ class TestTheTokens:
             for name, value in re.findall(r"--([a-z-]+):\s*([^;]+);", css[start:end])
         )
 
-    def test_the_light_theme_overrides_every_token_that_carries_colour(self, css):
-        """**Anything not overridden keeps its dark value**, which is how a
-        light page ends up with a near-black surface on it. The two that are
-        deliberately shared are `--radius`, which is not a colour, and the
-        grain texture."""
-        dark = self._block(css, ":root {")
-        light = self._block(css, ':root[data-theme="light"] {')
+    LIGHT = ':root,\n    [data-surface="light"] {'
+    DARK = '[data-surface="dark"],\n    :root[data-theme="dark"] {'
+
+    def test_the_dark_set_overrides_every_token_the_light_one_colours(self, css):
+        """**Anything not overridden keeps its light value**, which is how a
+        navy page ends up with a white card on it. The radius scale is in both
+        blocks too, deliberately: the dark set keeps the old 4/6/8."""
+        light = self._block(css, self.LIGHT)
+        dark = self._block(css, self.DARK)
         colourish = {
-            k for k in dark if re.match(r"^[0-9.]+\s+[0-9.]+%\s+[0-9.]+%$", dark[k])
+            k for k in light if re.match(r"^[0-9.]+\s+[0-9.]+%\s+[0-9.]+%", light[k])
         }
-        missing = sorted(colourish - set(light))
-        assert not missing, f"light theme does not override: {missing}"
+        missing = sorted(colourish - set(dark))
+        assert not missing, f"dark set does not override: {missing}"
 
-    def test_dark_is_the_absence_of_the_attribute(self, css):
-        """There is no `[data-theme="dark"]` block, deliberately: the default
-        state of the document is the default state of the product, so a bug
-        that fails to set anything fails to dark — which is what every other
-        surface here already is."""
-        assert '[data-theme="dark"]' not in css
+    def test_light_is_the_absence_of_the_attribute(self, css):
+        """**The reversal.** There used to be no `[data-theme="dark"]` block
+        and the product opted into light; now there is no `[data-theme="light"]`
+        block and dark is the thing asked for. A bug that fails to set the
+        attribute fails to the app's own surface."""
+        assert ':root[data-theme="light"]' not in css
+        assert ':root[data-theme="dark"]' in css
+        assert css.index(self.LIGHT) < css.index(self.DARK)
 
-    def test_the_tint_is_what_carries_the_hairlines(self, css):
-        """The 240 `border-white/10`-shaped classes became `border-tint/10`,
-        keeping the alpha at the call site. `--tint` is white on dark, so the
-        replacement is a no-op there — which is what let it be mechanical."""
-        dark = self._block(css, ":root {")
-        light = self._block(css, ':root[data-theme="light"] {')
+    def test_the_tint_flips_with_the_set(self, css):
+        """`--tint` is the alpha base for the classes that still carry an
+        alpha at the call site (`hover:border-tint/30`). White on the dark set,
+        a warm ink on light — the static hairlines moved to `border-border`
+        and `divide-divider`, which land on the brief's exact values."""
+        light = self._block(css, self.LIGHT)
+        dark = self._block(css, self.DARK)
         assert dark["tint"] == "0 0% 100%"
         assert light["tint"] != dark["tint"]
         assert "tint:" in TAILWIND.read_text().replace('"', "").replace(" ", "")
@@ -214,19 +220,21 @@ class TestTheTokens:
         its own job, which `TestContrast` measures. This only pins that neither
         has been deleted.
         """
-        for sel in (":root {", ':root[data-theme="light"] {'):
+        for sel in (self.LIGHT, self.DARK):
             block = self._block(css, sel)
-            assert block.get("primary"), sel
-            assert block.get("primary-ink"), sel
+            for token in ("primary", "primary-ink", "accent", "accent-ink"):
+                assert block.get(token), (sel, token)
 
     def test_every_state_the_console_shows_has_a_token(self, css):
         """Four were named in the brief; the audit turned up a fifth. Violet
         marked "past the shoot" — attended, draft in review, content
         submitted, completed — which is a real distinction, and flattening it
         into "in progress" to fit a four-token list would have lost it."""
-        dark = self._block(css, ":root {")
-        for state in ("pending", "approved", "rejected", "progress", "done"):
-            assert f"state-{state}" in dark, state
+        for sel in (self.LIGHT, self.DARK):
+            block = self._block(css, sel)
+            for state in ("pending", "approved", "rejected", "progress", "done"):
+                assert f"state-{state}" in block, (sel, state)
+                assert f"state-{state}-wash" in block, (sel, state)
 
     def test_the_status_table_is_the_only_place_a_state_is_coloured(self):
         """`STATUS_TONE` was already the one definition — the four `meta`
@@ -260,17 +268,18 @@ class TestScope:
             if 'setAttribute("data-theme"' in f.read_text().replace("'", '"'):
                 writers.append(f.relative_to(FRONTEND))
         assert writers == [Path("lib/surfaceTheme.js")], writers
-        assert 'setAttribute("data-theme", "light")' in INDEX_HTML.read_text()
+        assert 'setAttribute("data-theme", "dark")' in INDEX_HTML.read_text()
 
-    def test_the_pre_paint_script_puts_the_product_on_light(self):
-        """**This is the whole of the scoping.** Marketing is the absence of
-        the attribute, so a stranger's first paint is navy with no work done,
-        and every product route opts into light before anything renders."""
+    def test_the_pre_paint_script_only_ever_asks_for_dark(self):
+        """**This is the whole of the scoping, turned round.** Light is the
+        absence of the attribute, so the app's first paint needs nothing
+        written; the script writes `dark` for the marketing routes and for an
+        admin whose cached choice is dark, and for nothing else."""
         html = INDEX_HTML.read_text()
         assert "/dashboard" in html and "/admin" in html
-        assert 'setAttribute("data-theme", "light")' in html
-        # Marketing returns early rather than setting anything.
-        assert "if (!isProduct) return" in html
+        assert 'setAttribute("data-theme", "dark")' in html
+        assert 'setAttribute("data-theme", "light")' not in html
+        assert 'var theme = "light"' in html
 
     def test_the_pre_paint_script_and_the_module_agree_about_which_routes(self):
         """**Two implementations of "is this the product" is two answers**, and
@@ -286,10 +295,14 @@ class TestScope:
         for prefix in prefixes:
             assert f'"{prefix}"' in html, f"{prefix} is in the module and not the script"
         # And the awkward one: /campaigns is public, but authoring is not.
-        for both in ("/campaigns/new", "prefers-color-scheme: dark",
-                     "weare:console-theme"):
+        for both in ("/campaigns/new", "weare:console-theme"):
             assert both in html, both
             assert both in js, both
+        # **And neither consults the operating system.** It used to: an admin
+        # on a dark-mode laptop got the navy console without choosing it,
+        # which is dark selected by default.
+        for reader in (html, js):
+            assert "prefers-color-scheme" not in reader
 
     def test_one_guard_applies_it_on_every_navigation(self):
         """**Found in a browser, not by a test**, in its first form: a hard
@@ -354,10 +367,10 @@ class TestItFollowsThePerson:
         assert "console_theme" in src
 
     def test_never_chosen_is_a_real_answer_and_not_a_default(self):
-        """It is the difference between "follow this machine" and "they picked
-        dark" — and only the first should change when somebody switches their
-        OS at dusk. Collapsing them freezes every admin who has never opened
-        the menu onto whatever their OS said the first time they loaded."""
+        """It is the difference between "the app's default" and "they picked
+        light" — and only the first should move if the default ever does.
+        Collapsing them freezes every admin who has never opened the menu onto
+        whatever the default happened to be the first time they loaded."""
         assert server._console_theme({}) is None
         assert server._console_theme({"console_theme": None}) is None
         assert server._console_theme({"console_theme": "dark"}) == "dark"
@@ -375,16 +388,18 @@ class TestItFollowsThePerson:
         assert "require_roles(*CONSOLE_ROLES)" in src
 
     def test_clearing_it_is_possible(self):
-        """Somebody who tried light and wants to stop thinking about it should
-        be able to hand the question back to their machine, rather than having
-        to pick the one that happens to match today."""
+        """Somebody who tried dark and wants to stop thinking about it should
+        be able to hand the question back to the app, rather than having to
+        pick the one that happens to match today."""
         assert server.ConsoleThemePayload().theme is None
         assert server.ConsoleThemePayload(theme=None).theme is None
 
     def test_the_menu_offers_system_as_well_as_the_two_themes(self):
         src = (FRONTEND / "components/admin/AdminAccountMenu.jsx").read_text()
-        for value in ("System", "Light", "Dark"):
+        # "Default" rather than "System": it resolves to light, not to the OS.
+        for value in ("Default", "Light", "Dark"):
             assert value in src, value
+        assert "systemTheme" not in src
         # And it is in the account menu rather than floating in the layout: a
         # toggle over a dense working surface is a control somebody hits
         # reaching for a table.

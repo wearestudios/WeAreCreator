@@ -1,9 +1,10 @@
 /**
  * Which surface a route is on.
  *
- *   MARKETING   navy canvas, red CTAs — everything a signed-out stranger
- *               can land on
- *   PRODUCT     light canvas, navy CTAs — everything behind a sign-in
+ *   PRODUCT     light — the default, and the absence of the attribute
+ *   MARKETING   navy (`data-theme="dark"`) — everything a signed-out
+ *               stranger can land on, which was drawn for the navy set and is
+ *               deliberately not redrawn by the move to light
  *
  * **The line is authentication, and it is drawn on the path rather than on
  * the session.** The session is not known at first paint, and the one thing
@@ -23,9 +24,10 @@
  *   - `index.css` defines what the attribute means.
  *
  * This replaced `consoleTheme.js`, which did the same job pointing the other
- * way — light was an admin's opt-in and everything else was dark. The machine
- * is the same; what changed is which surface is the default and how much of
- * the product is on the other one.
+ * way — light was an admin's opt-in and everything else was dark. It has now
+ * turned a second time: **light is `:root`, and dark is something a route or
+ * an account has to ask for.** Nothing reaches it by default — not an unset
+ * attribute, not a failed script, and not an operating system set to dark.
  */
 
 export const THEMES = ["dark", "light"];
@@ -82,23 +84,6 @@ export function isProductPath(pathname) {
 }
 
 /**
- * What this machine's operating system asks for.
- *
- * Only ever consulted for the console override, and only when an admin has
- * never chosen. `matchMedia` is absent in jsdom and in some embedded
- * webviews, so a missing one reads as light — which is what the product is.
- */
-export function systemTheme() {
-    try {
-        return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
-            ? "dark"
-            : "light";
-    } catch {
-        return "light";
-    }
-}
-
-/**
  * The console theme this admin has chosen, or `null` if they never have.
  *
  * **`null` is a real answer** — the difference between "follow this machine"
@@ -139,11 +124,10 @@ export function rememberTheme(theme) {
 export function applyTheme(theme) {
     const root = document?.documentElement;
     if (!root) return;
-    if (theme === "light") root.setAttribute("data-theme", "light");
-    // Marketing navy is the absence of the attribute rather than
-    // `data-theme="dark"`, so the default state of the document is the brand's
-    // default surface — and a bug that fails to set anything fails to navy,
-    // which is what an unauthenticated first paint should be.
+    if (theme === "dark") root.setAttribute("data-theme", "dark");
+    // Light is the absence of the attribute, so the default state of the
+    // document is the app — and a bug that fails to set anything fails to
+    // light, which is legible everywhere.
     else root.removeAttribute("data-theme");
     // Native controls — scrollbars, form widgets, the spinner inside a
     // `datetime-local` — take their cue from this and nothing else. Without
@@ -163,13 +147,15 @@ export function surfaceFor(pathname, accountTheme) {
     if (!isProductPath(pathname)) return "dark";
     if (!isConsolePath(pathname)) return "light";
     // Inside the console only: an explicit choice wins, then this browser's
-    // cache of one, then the operating system.
+    // cache of one, then light. **The operating system is not consulted** —
+    // it used to be, which meant every admin on a dark-mode laptop got the
+    // navy console without ever choosing it. Dark is an opt-in now.
     if (THEMES.includes(accountTheme)) return accountTheme;
-    return storedTheme() || systemTheme();
+    return storedTheme() || "light";
 }
 
 /** Back-compat for the account menu, which only ever asks about the console. */
 export function resolveTheme(accountTheme) {
     if (THEMES.includes(accountTheme)) return accountTheme;
-    return storedTheme() || systemTheme();
+    return storedTheme() || "light";
 }

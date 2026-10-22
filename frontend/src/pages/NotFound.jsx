@@ -63,7 +63,7 @@ export default function NotFound() {
                                 <Link
                                     to={w.to}
                                     data-testid={`not-found-link-${w.to.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "home"}`}
-                                    className={`group block rounded-lg border border-white/10 bg-card grain-surface p-5 ${CARD_HOVER}`}
+                                    className={`group block rounded-lg border border-border bg-card grain-surface p-5 ${CARD_HOVER}`}
                                 >
                                     <p className="font-serif text-fluid-xl leading-tight tracking-tight transition-colors duration-200 group-hover:text-primary">
                                         {w.label}

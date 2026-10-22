@@ -224,18 +224,18 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
             {/* Progress first: the only number that matters mid-shift. */}
             <div
                 data-testid={IDS.progress}
-                className="rounded-md border border-white/10 bg-card p-5 grain-surface"
+                className="rounded-md border border-border bg-card p-5 grain-surface"
             >
                 <div className="flex items-baseline justify-between">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Checked in
                     </p>
-                    <p className="font-serif text-2xl leading-none">
+                    <p className="font-serif text-h3 leading-none">
                         {done}
                         <span className="text-muted-foreground">/{total}</span>
                     </p>
                 </div>
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                         className="h-full rounded-full bg-primary transition-[width] duration-300"
                         style={{ width: total ? `${(done / total) * 100}%` : "0%" }}
@@ -265,10 +265,10 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                             onClick={() => setFilter(f.key)}
                             data-testid={IDS.filter(f.key)}
                             className={
-                                "flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                "flex-1 rounded-md border px-3 py-3 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 " +
                                 (on
                                     ? "border-primary bg-primary/10 text-primary"
-                                    : "border-white/10 text-muted-foreground")
+                                    : "border-border text-muted-foreground")
                             }
                         >
                             {f.label}
@@ -299,12 +299,12 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                             <li
                                 key={row.collaboration_id}
                                 data-testid={IDS.row(row.collaboration_id)}
-                                className="overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
+                                className="overflow-hidden rounded-md border border-border bg-card grain-surface"
                             >
                                 <div className="flex items-stretch gap-3 p-4">
                                     <div className="flex min-w-0 flex-1 flex-col justify-center">
                                         <div className="flex items-center gap-2">
-                                            <span className="font-serif text-lg leading-none">
+                                            <span className="font-serif text-body-lg leading-none">
                                                 {formatTime(row.slot_time)}
                                             </span>
                                             {settled && (
@@ -317,16 +317,16 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             {row._queued && (
                                                 <span
                                                     data-testid={IDS.queued(row.collaboration_id)}
-                                                    className="inline-flex items-center gap-1 rounded-full border border-state-pending/30 bg-state-pending/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-state-pending"
+                                                    className="inline-flex items-center gap-1 rounded-full border border-state-pending/30 bg-state-pending-wash px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-state-pending"
                                                 >
                                                     <UploadCloud className="h-3 w-3" />
                                                     Waiting
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="mt-1.5 truncate text-sm">{row.name}</p>
+                                        <p className="mt-1.5 truncate text-meta">{row.name}</p>
                                         {row.instagram_handle && (
-                                            <p className="truncate text-xs text-muted-foreground">
+                                            <p className="truncate text-meta text-muted-foreground">
                                                 @{row.instagram_handle}
                                             </p>
                                         )}
@@ -337,7 +337,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             href={`tel:${row.phone.replace(/\s+/g, "")}`}
                                             aria-label={`Call ${row.name}`}
                                             data-testid={IDS.call(row.collaboration_id)}
-                                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
+                                            className={`grid w-14 flex-none place-items-center rounded-md border border-input text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                                         >
                                             <Phone className="h-5 w-5" />
                                         </a>
@@ -355,7 +355,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             <Check className="h-6 w-6" />
                                         </button>
                                     ) : (
-                                        <div className="grid w-16 flex-none place-items-center rounded-md border border-white/10 text-state-approved">
+                                        <div className="grid w-16 flex-none place-items-center rounded-md border border-border text-state-approved">
                                             <Check className="h-5 w-5" />
                                         </div>
                                     )}
@@ -369,7 +369,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             type="button"
                                             aria-expanded={open}
                                             onClick={() => setOpenId(open ? null : row.collaboration_id)}
-                                            className="flex w-full items-center justify-center gap-1.5 border-t border-white/10 py-3 text-[10px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                                            className="flex w-full items-center justify-center gap-1.5 border-t border-border py-3 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground"
                                         >
                                             More
                                             <ChevronDown
@@ -380,14 +380,14 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             />
                                         </button>
                                         {open && (
-                                            <div className="grid gap-2 border-t border-white/10 p-4 sm:grid-cols-2">
+                                            <div className="grid gap-2 border-t border-border p-4 sm:grid-cols-2">
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     disabled={busy}
                                                     onClick={() => setRescheduleFor(row)}
                                                     data-testid={IDS.reschedule(row.collaboration_id)}
-                                                    className={`rounded-md border-white/15 bg-transparent ${TOUCH}`}
+                                                    className={`rounded-md border-input bg-transparent ${TOUCH}`}
                                                 >
                                                     <CalendarClock className="mr-2 h-4 w-4" />
                                                     Move slot
@@ -398,7 +398,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                                     disabled={busy}
                                                     onClick={() => setNoShowFor(row)}
                                                     data-testid={IDS.noShow(row.collaboration_id)}
-                                                    className={`rounded-md border-state-rejected/30 bg-transparent text-state-rejected hover:bg-state-rejected/10 ${TOUCH}`}
+                                                    className={`rounded-md border-state-rejected/30 bg-transparent text-state-rejected hover:bg-state-rejected-wash ${TOUCH}`}
                                                 >
                                                     <UserX className="mr-2 h-4 w-4" />
                                                     No-show
@@ -477,12 +477,12 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
             <SheetContent
                 side="bottom"
                 data-testid={NO_SHOW_IDS.sheet}
-                className="rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-2xl leading-tight">
+                <SheetTitle className="font-serif text-h3 leading-tight">
                     {row?.name} didn't turn up?
                 </SheetTitle>
-                <SheetDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                     This flags it for the WeAre team. It doesn't cancel anything — they
                     decide what happens to the booking and the fee.
                 </SheetDescription>
@@ -494,10 +494,10 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={NO_SHOW_IDS.note}
                     placeholder="e.g. Waited an hour, no answer on the phone"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                    className="mt-5 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                 />
                 {err && (
-                    <p data-testid={NO_SHOW_IDS.error} className="mt-3 text-sm text-destructive">
+                    <p data-testid={NO_SHOW_IDS.error} className="mt-3 text-meta text-destructive">
                         {err}
                     </p>
                 )}
@@ -508,7 +508,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                         busy={busy}
                         onClick={submit}
                         data-testid={NO_SHOW_IDS.submit}
-                        className="border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
+                        className="border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected-wash"
                     >
                         Report no-show
                     </BigButton>
@@ -517,7 +517,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                         variant="outline"
                         onClick={onClose}
                         data-testid={NO_SHOW_IDS.cancel}
-                        className="border-white/15 bg-transparent"
+                        className="border-input bg-transparent"
                     >
                         Back
                     </BigButton>
@@ -548,12 +548,12 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
             <SheetContent
                 side="bottom"
                 data-testid={RESCHEDULE_IDS.sheet}
-                className="max-h-[85vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="max-h-[85vh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-2xl leading-tight">
+                <SheetTitle className="font-serif text-h3 leading-tight">
                     Move {row?.name}
                 </SheetTitle>
-                <SheetDescription className="mt-2 text-sm text-muted-foreground">
+                <SheetDescription className="mt-2 text-meta text-muted-foreground">
                     Currently at {formatTime(row?.slot_time)}. Only slots with room are
                     listed.
                 </SheetDescription>
@@ -561,7 +561,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                 {options.length === 0 ? (
                     <p
                         data-testid={RESCHEDULE_IDS.empty}
-                        className="mt-6 rounded-md border border-white/10 bg-background/40 px-5 py-8 text-center text-sm text-muted-foreground"
+                        className="mt-6 rounded-md border border-border bg-background/40 px-5 py-8 text-center text-meta text-muted-foreground"
                     >
                         Every other slot is full. Add one, or free a place first.
                     </p>
@@ -582,13 +582,13 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                                             " " +
                                             (on
                                                 ? "border-primary bg-primary/10"
-                                                : "border-white/10 hover:border-white/25")
+                                                : "border-border hover:border-tint/30")
                                         }
                                     >
-                                        <span className="font-serif text-lg">
+                                        <span className="font-serif text-body-lg">
                                             {formatTime(s.starts_at)}
                                         </span>
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="text-meta text-muted-foreground">
                                             {s.spots_left} left
                                         </span>
                                     </button>
@@ -605,7 +605,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                     maxLength={500}
                     data-testid={RESCHEDULE_IDS.reason}
                     placeholder="Why (optional) — e.g. stuck in traffic"
-                    className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                    className="mt-5 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                 />
 
                 <div className="mt-6 flex flex-col gap-3">
@@ -624,7 +624,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                         variant="outline"
                         onClick={onClose}
                         data-testid={RESCHEDULE_IDS.cancel}
-                        className="border-white/15 bg-transparent"
+                        className="border-input bg-transparent"
                     >
                         Back
                     </BigButton>

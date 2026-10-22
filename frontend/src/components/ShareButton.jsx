@@ -82,7 +82,7 @@ export default function ShareButton({
                 aria-label={copied ? "Link copied" : "Share this brief"}
                 title={label}
                 className={
-                    "grid h-11 w-11 flex-none place-items-center rounded-full border border-tint/10 text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-9 md:w-9 " +
+                    "grid h-11 w-11 flex-none place-items-center rounded-full border border-border text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:h-9 md:w-9 " +
                     (copied ? "border-primary/40 text-primary-ink " : "") +
                     className
                 }
@@ -98,7 +98,7 @@ export default function ShareButton({
             onClick={share}
             data-testid={SHARE.button(campaignId)}
             className={
-                "inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-tint/15 px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                "inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                 (copied ? "border-primary/40 text-primary-ink " : "text-muted-foreground ") +
                 className
             }

@@ -9,7 +9,6 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
-    CalendarDays,
     Compass,
     Copy,
     Download,
@@ -74,16 +73,16 @@ const CAT_LABEL = {
 const STATUS_META = {
     draft: {
         label: "Draft",
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     },
     // With us, not with creators — see publish_brand_campaign on the server.
     pending_review: {
         label: "In review",
-        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
+        tone: "bg-state-pending-wash text-state-pending border-state-pending/30",
     },
     upcoming: {
         label: "Upcoming",
-        tone: "bg-state-progress/15 text-state-progress border-state-progress/30",
+        tone: "bg-state-progress-wash text-state-progress border-state-progress/30",
     },
     open: {
         label: "Live",
@@ -92,32 +91,32 @@ const STATUS_META = {
     // Stopped by us, not over — see pause_campaign on the server.
     paused: {
         label: "Paused",
-        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
+        tone: "bg-state-pending-wash text-state-pending border-state-pending/30",
     },
     in_progress: {
         label: "In progress",
-        tone: "bg-state-done/15 text-state-done border-state-done/30",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
     },
     completed: {
         label: "Completed",
-        tone: "bg-state-approved/15 text-state-approved border-state-approved/30",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     closed: {
         label: "Closed",
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     },
 };
 
 const StatusPill = ({ status }) => {
     const meta = STATUS_META[status] || {
         label: status,
-        tone: "bg-white/5 text-muted-foreground border-white/15",
+        tone: "bg-muted text-muted-foreground border-input",
     };
     return (
         <span
             data-testid={`brand-campaign-status-${status}`}
             className={
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 meta.tone
             }
         >
@@ -128,9 +127,6 @@ const StatusPill = ({ status }) => {
         </span>
     );
 };
-
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
 
 const formatDate = (iso) => {
     if (!iso) return "—";
@@ -151,18 +147,18 @@ const StatTile = ({ label, value, Icon, highlight }) => (
             "rounded-md border p-5 transition-colors duration-200 " +
             (highlight
                 ? "border-primary/40 bg-primary/10"
-                : "border-white/10 bg-card grain-surface")
+                : "border-border bg-card grain-surface")
         }
     >
         <div className="flex items-center justify-between">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {label}
             </p>
             {Icon && <Icon className="h-4 w-4 text-primary" />}
         </div>
         <div
             className={
-                "mt-4 font-serif text-3xl md:text-4xl " +
+                "mt-4 font-serif text-h2 md:text-h1 " +
                 (highlight ? "text-primary" : "")
             }
         >
@@ -349,7 +345,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             {Array.from({ length: 4 }).map((_, i) => (
                                 <div
                                     key={i}
-                                    className="rounded-lg border border-white/10 bg-card p-6 grain-surface"
+                                    className="rounded-lg border border-border bg-card p-6 grain-surface"
                                 >
                                     <Skeleton className="h-3 w-24" />
                                     <Skeleton className="mt-4 h-8 w-16" />
@@ -364,7 +360,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                 {error && (
                     <p
                         data-testid="brand-dashboard-error"
-                        className="text-sm text-destructive"
+                        className="text-meta text-destructive"
                     >
                         {error}
                     </p>
@@ -377,19 +373,19 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                     creator's header follows: a hardcoded one
                                     is wrong for everybody it is not about, and
                                     this screen already knows the answer. */}
-                                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                                     {data?.profile?.city
                                         ? `Brand · ${data.profile.city}`
                                         : "Brand"}
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
-                                    className="mt-3 font-serif text-fluid-5xl leading-none tracking-tight"
+                                    className="mt-3 font-serif text-h1 leading-none tracking-tight"
                                 >
                                     {businessName}
                                 </h1>
                                 {data.profile && (
-                                    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                                    <div className="mt-4 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
                                         {data.profile.category && (
                                             <span className="inline-flex items-center gap-1.5">
                                                 <Building2 className="h-4 w-4" />
@@ -410,7 +406,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 <Link to="/onboarding/brand" data-testid="brand-header-edit">
                                     <Button
                                         variant="outline"
-                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                        className="rounded-full border-input bg-transparent hover:bg-muted"
                                     >
                                         Edit brand
                                     </Button>
@@ -442,11 +438,11 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 data-testid="brand-what-happens-next"
                                 className="mt-8 rounded-md border border-primary/30 bg-primary/10 p-5 md:p-6"
                             >
-                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
+                                <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                                     <Sparkles className="h-4 w-4" />
                                     What happens next
                                 </p>
-                                <ol className="mt-4 space-y-3 text-sm leading-relaxed text-foreground/90">
+                                <ol className="mt-4 space-y-3 text-body leading-relaxed text-foreground/90">
                                     <li>
                                         <span className="text-primary">1 ·</span> We check
                                         your business details. That usually takes a working
@@ -465,7 +461,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         without.
                                     </li>
                                 </ol>
-                                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-4 text-meta leading-relaxed text-muted-foreground">
                                     Nothing to chase in the meantime — we'll come to you.
                                 </p>
                             </div>
@@ -474,7 +470,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         {profileMissing && (
                             <div
                                 data-testid="brand-profile-incomplete"
-                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm text-state-pending"
+                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-meta text-state-pending"
                             >
                                 <Sparkles className="mt-0.5 h-4 w-4 flex-none" />
                                 <p>
@@ -530,10 +526,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         <section data-testid="brand-campaigns-section" className="mt-14">
                             <div className="flex items-baseline justify-between">
                                 <div>
-                                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                                         Your campaigns
                                     </p>
-                                    <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
+                                    <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                                         Every brief you've posted.
                                     </h2>
                                 </div>
@@ -543,7 +539,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 >
                                     <Button
                                         variant="outline"
-                                        className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                        className="rounded-full border-input bg-transparent hover:bg-muted"
                                     >
                                         <Plus className="mr-1.5 h-4 w-4" />
                                         New campaign
@@ -572,10 +568,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                             data-testid={EXECUTION.filterOption(opt.value)}
                                             onClick={() => setExecution(opt.value)}
                                             className={
-                                                "min-h-[2.75rem] rounded-full border px-4 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
+                                                "min-h-[2.75rem] rounded-full border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
                                                 (on
                                                     ? "border-primary bg-primary/10 text-primary"
-                                                    : "border-white/10 text-muted-foreground hover:border-white/25")
+                                                    : "border-border text-muted-foreground hover:border-tint/30")
                                             }
                                         >
                                             {opt.label}
@@ -584,20 +580,20 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 })}
                             </div>
 
-                            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
+                            <div className="mt-4 overflow-hidden rounded-md border border-border bg-card grain-surface">
                                 {data.campaigns.length > 0 && visibleCampaigns.length === 0 ? (
                                     <div
                                         data-testid="brand-campaigns-filtered-empty"
                                         className="px-6 py-12 text-center"
                                     >
-                                        <p className="text-sm text-muted-foreground">
+                                        <p className="text-meta text-muted-foreground">
                                             No campaign here is{" "}
                                             {execution === "weare" ? "WeAre-run" : "brand-run"}.
                                         </p>
                                         <button
                                             type="button"
                                             onClick={() => setExecution("all")}
-                                            className="mt-3 min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-primary transition-colors duration-200 hover:text-primary-hover md:min-h-0"
+                                            className="mt-3 min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:text-primary-hover md:min-h-0"
                                         >
                                             Show all campaigns
                                         </button>
@@ -608,10 +604,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         className="flex flex-col items-center gap-3 px-6 py-16 text-center"
                                     >
                                         <Compass className="h-6 w-6 text-primary" />
-                                        <p className="font-serif text-2xl">
+                                        <p className="font-serif text-h3">
                                             No campaigns yet.
                                         </p>
-                                        <p className="max-w-md text-sm text-muted-foreground">
+                                        <p className="max-w-md text-meta text-muted-foreground">
                                             {/* Not "paid", because barter is
                                                 postable here now; and not a
                                                 city, because signup is open
@@ -630,7 +626,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         </Link>
                                     </div>
                                 ) : (
-                                    <ul className="divide-y divide-white/10">
+                                    <ul className="divide-y divide-divider">
                                         {visibleCampaigns.map((c) => {
                                             const canBrowsePublicly =
                                                 c.status === "open" || c.status === "upcoming";
@@ -650,7 +646,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             className="w-24 flex-none"
                                                         />
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                                            <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                                 {CAT_LABEL[c.category] || c.category || "—"}
                                                                 {c.area ? ` · ${c.area}` : ""}
                                                                 {c.start_date
@@ -661,10 +657,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                       }`
                                                                     : ""}
                                                             </div>
-                                                            <div className="mt-1.5 truncate font-serif text-xl leading-tight text-foreground">
+                                                            <div className="mt-1.5 truncate font-serif text-h3 leading-tight text-foreground">
                                                                 {c.title}
                                                             </div>
-                                                            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                                            <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
                                                                 {/* The owner always knows which shelf a
                                                                     brief is on — a private one that the
                                                                     brand believes is public gets zero
@@ -672,10 +668,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 <span
                                                                     data-testid={VISIBILITY.badge(c.id)}
                                                                     className={
-                                                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] " +
+                                                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow " +
                                                                         (isPrivate(c)
                                                                             ? "border-primary/40 bg-primary/10 text-primary"
-                                                                            : "border-white/10 text-muted-foreground")
+                                                                            : "border-border text-muted-foreground")
                                                                     }
                                                                 >
                                                                     {isPrivate(c) ? (
@@ -718,11 +714,11 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             >
                                                                 <div
                                                                     data-testid={`brand-campaign-applicants-${c.id}`}
-                                                                    className="font-serif text-2xl leading-none"
+                                                                    className="font-serif text-h3 leading-none"
                                                                 >
                                                                     {c.applicant_count}
                                                                 </div>
-                                                                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground group-hover:text-primary">
+                                                                <div className="mt-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground group-hover:text-primary">
                                                                     {c.applicant_count === 1
                                                                         ? "applicant"
                                                                         : "applicants"}
@@ -734,7 +730,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 {c.awaiting_decision > 0 && (
                                                                     <span
                                                                         data-testid={`brand-campaign-awaiting-${c.id}`}
-                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary"
+                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow text-primary"
                                                                     >
                                                                         {c.awaiting_decision} waiting on you
                                                                     </span>
@@ -744,7 +740,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                     </div>
 
                                                     {/* Actions — a draft used to be a dead end here. */}
-                                                    <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+                                                    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
                                                         <Link
                                                             to={`/brand/campaigns/${c.id}/applicants`}
                                                             data-testid={`brand-campaign-review-${c.id}`}
@@ -752,7 +748,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             <Button
                                                                 variant="outline"
                                                                 size="sm"
-                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                className="rounded-full border-input bg-transparent hover:bg-muted"
                                                             >
                                                                 <Users className="mr-1.5 h-3.5 w-3.5" />
                                                                 Applicants
@@ -784,7 +780,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             disabled={busy}
                                                             data-testid={TEMPLATES.duplicate(c.id)}
                                                             onClick={() => duplicate(c)}
-                                                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                            className="rounded-full border-input bg-transparent hover:bg-muted"
                                                         >
                                                             <Copy className="mr-1.5 h-3.5 w-3.5" />
                                                             Duplicate
@@ -803,7 +799,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 <Button
                                                                     variant="outline"
                                                                     size="sm"
-                                                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                    className="rounded-full border-input bg-transparent hover:bg-muted"
                                                                 >
                                                                     <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                                                     Edit
@@ -819,7 +815,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 <Button
                                                                     variant="outline"
                                                                     size="sm"
-                                                                    className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                    className="rounded-full border-input bg-transparent hover:bg-muted"
                                                                 >
                                                                     <Eye className="mr-1.5 h-3.5 w-3.5" />
                                                                     Preview
@@ -843,7 +839,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                         reason: "",
                                                                     })
                                                                 }
-                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                className="rounded-full border-input bg-transparent hover:bg-muted"
                                                             >
                                                                 <Pause className="mr-1.5 h-3.5 w-3.5" />
                                                                 Pause
@@ -859,7 +855,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                     c.id,
                                                                 )}
                                                                 onClick={() => resumeCampaign(c)}
-                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                className="rounded-full border-input bg-transparent hover:bg-muted"
                                                             >
                                                                 <Play className="mr-1.5 h-3.5 w-3.5" />
                                                                 Resume
@@ -875,7 +871,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 onClick={() =>
                                                                     setConfirm({ kind: "close", campaign: c })
                                                                 }
-                                                                className="rounded-full border-white/15 bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                                                                className="rounded-full border-input bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                                                             >
                                                                 <XCircle className="mr-1.5 h-3.5 w-3.5" />
                                                                 Close
@@ -896,7 +892,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 disabled={exporting === c.id}
                                                                 data-testid={`brand-campaign-export-${c.id}`}
                                                                 onClick={() => exportCampaign(c)}
-                                                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                                                className="rounded-full border-input bg-transparent hover:bg-muted"
                                                             >
                                                                 <Download className="mr-1.5 h-3.5 w-3.5" />
                                                                 {exporting === c.id
@@ -914,7 +910,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 onClick={() =>
                                                                     setConfirm({ kind: "delete", campaign: c })
                                                                 }
-                                                                className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
+                                                                className="rounded-full border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected-wash"
                                                             >
                                                                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                                                                 Delete
@@ -933,7 +929,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             </div>
                         </section>
 
-                        <div className="mt-16 rounded-md border border-white/10 bg-card/40 p-6 text-sm text-muted-foreground">
+                        <div className="mt-16 rounded-md border border-border bg-card/40 p-6 text-meta text-muted-foreground">
                             <span className="text-foreground">Signed in as</span>{" "}
                             {/* Accounts created over WhatsApp have no email. */}
                             {user.email || user.phone || user.name} ·{" "}
@@ -951,13 +947,13 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
             >
                 <DialogContent
                     data-testid={BRAND_CAMPAIGN_CONTROLS.pauseDialog}
-                    className="rounded-md border border-white/10 bg-card grain-surface"
+                    className="rounded-md border border-border bg-card grain-surface"
                 >
                     <DialogHeader>
-                        <DialogTitle className="font-serif text-2xl">
+                        <DialogTitle className="font-serif text-h3">
                             Pause this campaign?
                         </DialogTitle>
-                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                             “{pausing.campaign?.title}” comes off the feed and stops taking
                             new applications. Creators already working on it carry on, and
                             resuming puts it back exactly where it was.
@@ -974,7 +970,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             data-testid={BRAND_CAMPAIGN_CONTROLS.pauseReason}
                             aria-label="Why you're pausing"
                         />
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-eyebrow text-muted-foreground">
                             A line for your own records and ours — it isn't shown to creators.
                         </span>
                     </div>
@@ -1009,15 +1005,15 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
             >
                 <AlertDialogContent
                     data-testid="brand-campaign-confirm"
-                    className="rounded-md border border-white/10 bg-card grain-surface"
+                    className="rounded-md border border-border bg-card grain-surface"
                 >
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="font-serif text-2xl">
+                        <AlertDialogTitle className="font-serif text-h3">
                             {confirm.kind === "delete"
                                 ? "Delete this draft?"
                                 : "Close this campaign?"}
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="text-sm text-muted-foreground">
+                        <AlertDialogDescription className="text-meta text-muted-foreground">
                             {confirm.kind === "delete" ? (
                                 <>
                                     “{confirm.campaign?.title}” hasn't been published and has
@@ -1036,7 +1032,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                     <AlertDialogFooter>
                         <AlertDialogCancel
                             data-testid="brand-campaign-confirm-cancel"
-                            className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="rounded-full border-input bg-transparent hover:bg-muted"
                         >
                             Keep it
                         </AlertDialogCancel>

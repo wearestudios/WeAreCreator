@@ -163,9 +163,9 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="apply-dialog"
-                className="max-w-lg overflow-hidden rounded-md border border-white/10 bg-card p-0 sm:rounded-md grain-surface"
+                className="max-w-lg overflow-hidden rounded-md border border-border bg-card p-0 sm:rounded-md grain-surface"
             >
-                <div className="border-b border-white/10 bg-background/50 px-6 pt-6 pb-5">
+                <div className="border-b border-border bg-background/50 px-6 pt-6 pb-5">
                     <DialogHeader className="text-left">
                         <p className="text-xs uppercase tracking-[0.2em] text-primary">
                             Apply to campaign
@@ -194,7 +194,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                             maxLength={1000}
                             value={pitch}
                             onChange={(e) => setPitch(e.target.value)}
-                            className="mt-2 min-h-[92px] border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="mt-2 min-h-[92px] border-border bg-background/60 focus-visible:ring-primary"
                             placeholder="Why you're the right creator for this brief."
                         />
                         <p className="mt-2 text-xs text-muted-foreground">
@@ -220,7 +220,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                                 inputMode="numeric"
                                 value={rate}
                                 onChange={(e) => setRate(e.target.value)}
-                                className="h-11 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
+                                className="h-11 border-border bg-background/60 pl-9 focus-visible:ring-primary"
                                 placeholder="e.g. 8000"
                             />
                         </div>
@@ -259,7 +259,7 @@ function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
                                 type="button"
                                 variant="outline"
                                 data-testid="apply-cancel-btn"
-                                className="rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 Cancel
                             </Button>
@@ -299,7 +299,7 @@ function AppliedCard({ application, outstanding }) {
     return (
         <div
             data-testid="applied-status-card"
-            className="rounded-md border border-state-approved/30 bg-state-approved/10 p-5"
+            className="rounded-md border border-state-approved/30 bg-state-approved-wash p-5"
         >
             <div className="flex items-center gap-2 text-state-approved">
                 <Check className="h-4 w-4" />
@@ -332,7 +332,7 @@ function AppliedCard({ application, outstanding }) {
                     </dt>
                     <dd
                         data-testid="applied-state"
-                        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-state-approved/15 px-2.5 py-0.5 text-xs uppercase tracking-[0.15em] text-state-approved"
+                        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-state-approved-wash px-2.5 py-0.5 text-xs uppercase tracking-[0.15em] text-state-approved"
                     >
                         <Clock className="h-3 w-3" />
                         {STATE_LABEL[application.state] || application.state}
@@ -450,7 +450,7 @@ export default function CampaignDetail() {
         if (!campaign) return null;
         if (!isCreator) {
             return (
-                <div className="rounded-md border border-white/10 bg-background/60 p-4 text-xs leading-relaxed text-muted-foreground">
+                <div className="rounded-md border border-border bg-background/60 p-4 text-xs leading-relaxed text-muted-foreground">
                     <Info className="mb-2 h-4 w-4 text-primary" />
                     You're signed in as{" "}
                     <span className="uppercase tracking-[0.15em] text-primary">
@@ -473,7 +473,7 @@ export default function CampaignDetail() {
             return (
                 <div
                     data-testid="detail-apply-blocked"
-                    className="rounded-md border border-state-pending/30 bg-state-pending/10 p-5 text-sm leading-relaxed text-state-pending"
+                    className="rounded-md border border-state-pending/30 bg-state-pending-wash p-5 text-sm leading-relaxed text-state-pending"
                 >
                     <Info className="mb-2 h-4 w-4" />
                     {campaign.apply_blocked_reason}
@@ -580,7 +580,7 @@ export default function CampaignDetail() {
                             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
                             (isLive
                                 ? "bg-primary/15 text-primary"
-                                : "border border-white/15 bg-white/5 text-muted-foreground")
+                                : "border border-input bg-muted text-muted-foreground")
                         }
                     >
                         <span
@@ -659,7 +659,7 @@ export default function CampaignDetail() {
                             </p>
                         </section>
 
-                        <section className="mt-12 rounded-md border border-white/10 bg-card p-8 grain-surface">
+                        <section className="mt-12 rounded-md border border-border bg-card p-8 grain-surface">
                             <p className="text-xs uppercase tracking-[0.2em] text-primary">
                                 Deliverables
                             </p>
@@ -762,7 +762,7 @@ export default function CampaignDetail() {
 
                     <aside className="md:col-span-4">
                         <div className="sticky top-24 space-y-4">
-                            <div className="rounded-md border border-white/10 bg-card p-7 grain-surface">
+                            <div className="rounded-md border border-border bg-card p-7 grain-surface">
                                 <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                     {isBarter(campaign)
                                         ? "What you get"
@@ -792,7 +792,7 @@ export default function CampaignDetail() {
                                           : "You receive 100% of this. The platform fee is charged to the brand."}
                                 </p>
 
-                                <dl className="mt-7 space-y-4 border-t border-white/10 pt-6 text-sm">
+                                <dl className="mt-7 space-y-4 border-t border-border pt-6 text-sm">
                                     <div className="flex items-start gap-3">
                                         <MapPin className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
                                         <div>

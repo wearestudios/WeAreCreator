@@ -88,7 +88,7 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                 wrong — measured at 0.11 CLS across three of these. Only the
                 control waits, and it occupies its own box while it does. */}
             <div className="min-w-0 flex-1">
-                <p className="text-sm">{label}</p>
+                <p className="text-meta">{label}</p>
                 <p className={`mt-0.5 ${TEXT.meta} text-muted-foreground`}>{blurb}</p>
             </div>
 
@@ -102,7 +102,7 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     data-testid={IDS.input(settingKey)}
-                    className="h-9 w-24 border-tint/10 bg-background/60 text-right tabular-nums"
+                    className="h-9 w-24 border-border bg-background/60 text-right tabular-nums"
                 />
                 <span className={`${TEXT.meta} w-16 text-muted-foreground`}>{unit}</span>
                 <button
@@ -110,7 +110,7 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                     disabled={!data || isDefault}
                     onClick={() => setValue(String(data.default))}
                     title={data ? `Back to the default, ${data.default} ${unit}` : "Back to the default"}
-                    className={`rounded border border-tint/10 p-1.5 ${CALM} ${
+                    className={`rounded border border-border p-1.5 ${CALM} ${
                         isDefault
                             ? "opacity-30"
                             : "text-muted-foreground hover:border-primary/40 hover:text-primary-ink"

@@ -3,7 +3,6 @@
 // and it reports what actually happened per creator rather than one verdict for
 // the batch. A WhatsApp send can fail for one number and land for the next.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { notifyError, notifySuccess, notifyWarning } from "@/lib/feedback";
 import { AlertCircle, Check, Loader2, Search, Send, UserCheck } from "lucide-react";
 import { api } from "@/lib/api";
@@ -141,16 +140,16 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-tint/10 bg-card"
+                className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Invite creators
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {campaign?.title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         {campaign?.brand_name || "Unknown brand"} · ₹
                         {formatRupees(campaign?.budget_per_creator)} per creator. They get a
                         WhatsApp message and a note in their dashboard.
@@ -159,11 +158,11 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
 
                 {report ? (
                     <div data-testid={IDS.report} className="mt-2 min-h-0 flex-1 overflow-y-auto">
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-meta text-muted-foreground">
                             {report.invited} invited · {report.failed} failed ·{" "}
                             {report.already_invited} already had one.
                         </p>
-                        <ul className="mt-4 divide-y divide-tint/10">
+                        <ul className="mt-4 divide-y divide-divider">
                             {report.results.map((r) => {
                                 const meta = RESULT_META[r.status] || RESULT_META.failed;
                                 const { Icon } = meta;
@@ -175,14 +174,14 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                     >
                                         <Icon className={`mt-0.5 h-4 w-4 flex-none ${meta.tone}`} />
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-sm">
+                                            <p className="text-meta">
                                                 {r.name || r.creator_id}{" "}
-                                                <span className={`text-sm ${meta.tone}`}>
+                                                <span className={`text-meta ${meta.tone}`}>
                                                     · {meta.label}
                                                 </span>
                                             </p>
                                             {r.reason && (
-                                                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                                                <p className="mt-1 text-body leading-relaxed text-muted-foreground">
                                                     {r.reason}
                                                 </p>
                                             )}
@@ -202,13 +201,13 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.search}
                                 placeholder="Search verified creators"
                                 aria-label="Search verified creators"
-                                className="h-11 md:h-10 rounded-md border-tint/10 bg-background/60 pl-9 focus-visible:ring-ring"
+                                className="h-11 md:h-10 rounded-md border-border bg-background/60 pl-9 focus-visible:ring-ring"
                             />
                         </div>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-tint/10 bg-background/40">
+                        <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background/40">
                             {rows === null ? (
-                                <div data-testid={IDS.skeleton} className="divide-y divide-tint/10">
+                                <div data-testid={IDS.skeleton} className="divide-y divide-divider">
                                     {[0, 1, 2, 3].map((i) => (
                                         <div key={i} className="flex items-center gap-3 px-4 py-3">
                                             <Skeleton className="h-9 w-9 flex-none rounded-md" />
@@ -222,14 +221,14 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                             ) : rows.length === 0 ? (
                                 <p
                                     data-testid={IDS.empty}
-                                    className="px-4 py-8 text-center text-sm text-muted-foreground"
+                                    className="px-4 py-8 text-center text-meta text-muted-foreground"
                                 >
                                     {search
                                         ? "No verified creator matches that."
                                         : "No verified creators to invite yet."}
                                 </p>
                             ) : (
-                                <ul data-testid={IDS.list} className="divide-y divide-tint/10">
+                                <ul data-testid={IDS.list} className="divide-y divide-divider">
                                     {rows.map((c) => {
                                         const isOn = selectedIds.has(c.user_id);
                                         return (
@@ -246,8 +245,8 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                 >
                                                     <CreatorAvatar creator={c} size="h-9 w-9" />
                                                     <div className="min-w-0 flex-1">
-                                                        <p className="truncate text-sm">{c.name}</p>
-                                                        <p className="truncate text-sm text-muted-foreground">
+                                                        <p className="truncate text-meta">{c.name}</p>
+                                                        <p className="truncate text-meta text-muted-foreground">
                                                             {c.instagram_handle
                                                                 ? `@${c.instagram_handle}`
                                                                 : "No handle"}
@@ -262,7 +261,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                                             "grid h-5 w-5 flex-none place-items-center rounded border transition-colors duration-150 " +
                                                             (isOn
                                                                 ? "border-primary bg-primary text-primary-foreground"
-                                                                : "border-tint/20")
+                                                                : "border-input")
                                                         }
                                                     >
                                                         {isOn && <Check className="h-3.5 w-3.5" />}
@@ -276,7 +275,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         </div>
 
                         {rows?.length === PAGE_SIZE && (
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 Showing the first {PAGE_SIZE}. Search to narrow it down.
                             </p>
                         )}
@@ -284,7 +283,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         <div>
                             <Label
                                 htmlFor="invite-note"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Note (internal)
                             </Label>
@@ -295,7 +294,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                 data-testid={IDS.note}
                                 maxLength={500}
                                 placeholder="Why these creators — kept on the record, not sent"
-                                className="mt-2 h-11 md:h-10 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                className="mt-2 h-11 md:h-10 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                             />
                         </div>
                     </>
@@ -316,7 +315,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         <>
                             <span
                                 data-testid={IDS.selectedCount}
-                                className="mr-auto self-center text-xs uppercase tracking-[0.18em] text-muted-foreground"
+                                className="mr-auto self-center text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 {selected.length} selected
                             </span>
@@ -325,7 +324,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                                     type="button"
                                     variant="outline"
                                     data-testid={IDS.cancel}
-                                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                    className="rounded-full border-border bg-transparent hover:bg-tint/5"
                                 >
                                     Cancel
                                 </Button>

@@ -26,7 +26,7 @@ import { ADMIN_DETAIL as IDS, BREADCRUMBS } from "@/constants/testIds";
  */
 export const Breadcrumbs = ({ crumbs }) => (
     <nav data-testid={BREADCRUMBS.nav} aria-label="Breadcrumb">
-        <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs uppercase tracking-[0.15em] text-muted-foreground">
+        <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
             {crumbs.filter(Boolean).map((c, i, all) => {
                 const last = i === all.length - 1;
                 return (
@@ -71,7 +71,7 @@ export const Breadcrumbs = ({ crumbs }) => (
 export const Section = ({ id, title, count, action, children, className = "" }) => (
     <section data-testid={IDS.section(id)} className={"min-w-0 " + className}>
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-            <h2 className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <h2 className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {title}
                 {typeof count === "number" && (
                     <span className="ml-2 text-primary-ink">{count}</span>
@@ -97,10 +97,10 @@ export const Section = ({ id, title, count, action, children, className = "" }) 
 /** A label over a value. The unit of a detail page. */
 export const Field = ({ label, children, testid, className = "" }) => (
     <div className={"min-w-0 " + className}>
-        <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
             {label}
         </dt>
-        <dd data-testid={testid} className="mt-1.5 break-words text-sm">
+        <dd data-testid={testid} className="mt-1.5 break-words text-meta">
             {children ?? "—"}
         </dd>
     </div>
@@ -114,15 +114,15 @@ export const Stat = ({ label, value, testid, highlight }) => (
             "rounded-md border p-5 " +
             (highlight
                 ? "border-primary/40 bg-primary/10"
-                : "border-tint/10 bg-card")
+                : "border-border bg-card")
         }
     >
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
             {label}
         </p>
         <p
             className={
-                "mt-3 font-serif text-2xl leading-none md:text-3xl " +
+                "mt-3 font-serif text-h3 leading-none md:text-h2 " +
                 (highlight ? "text-primary-ink" : "")
             }
         >
@@ -137,7 +137,7 @@ export const Panel = ({ children, className = "", ...rest }) => (
     <div
         {...rest}
         className={
-            "rounded-md border border-tint/10 bg-card p-6 " + className
+            "rounded-md border border-border bg-card p-card " + className
         }
     >
         {children}
@@ -180,7 +180,7 @@ export function DetailShell({
                 to={backTo}
                 data-testid={IDS.back}
                 className={
-                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                    "inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                     (crumbs ? "mt-2" : "")
                 }
             >
@@ -205,17 +205,17 @@ export function DetailShell({
             ) : notFound ? (
                 <div
                     data-testid={IDS.notFound}
-                    className="mt-10 rounded-md border border-tint/10 bg-card px-6 py-12"
+                    className="mt-10 rounded-md border border-border bg-card px-6 py-12"
                 >
-                    <p className="font-serif text-2xl">Nothing here.</p>
-                    <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+                    <p className="font-serif text-h3">Nothing here.</p>
+                    <p className="mt-3 max-w-md text-body leading-relaxed text-muted-foreground">
                         {notFoundMessage ||
                             "This record doesn't exist, or it was removed. The link may be out of date."}
                     </p>
                     <Link to={backTo} className="mt-6 inline-block">
                         <Button
                             variant="outline"
-                            className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                            className="rounded-full border-border bg-transparent hover:bg-tint/5"
                         >
                             {backLabel}
                         </Button>
@@ -226,14 +226,14 @@ export function DetailShell({
                     data-testid={IDS.error}
                     className="mt-10 rounded-md border border-destructive/30 bg-destructive/10 px-6 py-8"
                 >
-                    <p className="text-sm text-destructive">{error}</p>
+                    <p className="text-meta text-destructive">{error}</p>
                 </div>
             ) : (
                 <>
                     <div className="mt-6 flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
                         <div className="min-w-0">
                             {kicker && (
-                                <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                                     {kicker}
                                 </p>
                             )}
@@ -241,13 +241,13 @@ export function DetailShell({
                                 {avatar}
                                 <h1
                                     data-testid={IDS.title}
-                                    className="min-w-0 font-serif text-fluid-4xl leading-none tracking-tight"
+                                    className="min-w-0 font-serif text-h1 leading-none tracking-tight"
                                 >
                                     {title}
                                 </h1>
                             </div>
                             {subtitle && (
-                                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta text-muted-foreground">
                                     {subtitle}
                                 </div>
                             )}
@@ -276,35 +276,35 @@ export const AuditTrail = ({ rows, emptyMessage, formatWhen }) => {
         return (
             <p
                 data-testid={IDS.timelineEmpty}
-                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground"
             >
                 {emptyMessage || "Nothing has happened to this yet."}
             </p>
         );
     }
     return (
-        <ol data-testid={IDS.timeline} className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
+        <ol data-testid={IDS.timeline} className="divide-y divide-divider rounded-md border border-border bg-card">
             {rows.map((e) => (
                 <li
                     key={e.id}
                     data-testid={IDS.auditRow(e.id)}
                     className="flex flex-col gap-1.5 px-5 py-4 md:flex-row md:items-baseline md:gap-6"
                 >
-                    <span className="w-40 flex-none text-sm text-muted-foreground">
+                    <span className="w-40 flex-none text-meta text-muted-foreground">
                         {formatWhen(e.created_at)}
                     </span>
                     <span className="min-w-0 flex-1">
-                        <span className="text-sm text-foreground">{e.action}</span>
+                        <span className="text-meta text-foreground">{e.action}</span>
                         {e.note && (
                             <span
                                 title={e.note}
-                                className="mt-1 block line-clamp-2 text-sm leading-relaxed text-muted-foreground"
+                                className="mt-1 block line-clamp-2 text-body leading-relaxed text-muted-foreground"
                             >
                                 {e.note}
                             </span>
                         )}
                     </span>
-                    <span className="flex-none text-sm text-muted-foreground">
+                    <span className="flex-none text-meta text-muted-foreground">
                         {e.actor_name || "—"}
                         {e.actor_role ? ` · ${e.actor_role}` : ""}
                     </span>

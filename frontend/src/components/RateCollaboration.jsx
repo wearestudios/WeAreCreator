@@ -111,12 +111,12 @@ export default function RateCollaboration({ collabId }) {
     return (
         <section
             data-testid={IDS.panel}
-            className="rounded-md border border-white/10 bg-card p-5 grain-surface"
+            className="rounded-md border border-border bg-card p-5 grain-surface"
         >
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {copy.title}
             </p>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.blurb}</p>
+            <p className="mt-2 text-body leading-relaxed text-muted-foreground">{copy.blurb}</p>
 
             <div className="mt-4">
                 <Stars
@@ -134,7 +134,7 @@ export default function RateCollaboration({ collabId }) {
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={copy.placeholder}
                 data-testid={IDS.note}
-                className="mt-4 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                className="mt-4 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
             />
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -152,7 +152,7 @@ export default function RateCollaboration({ collabId }) {
                     {existing ? "Update" : "Save"}
                 </Button>
                 {existing && (
-                    <p data-testid={IDS.existing} className="text-xs text-muted-foreground">
+                    <p data-testid={IDS.existing} className="text-meta text-muted-foreground">
                         You rated this {existing.score} out of 5. You can change it.
                     </p>
                 )}

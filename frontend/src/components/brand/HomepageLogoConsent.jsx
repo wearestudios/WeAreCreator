@@ -51,7 +51,7 @@ export default function HomepageLogoConsent({ block, checked, onChange }) {
     return (
         <div
             data-testid={IDS.consent}
-            className="rounded-lg border border-white/10 bg-card p-5"
+            className="rounded-lg border border-border bg-card p-5"
         >
             <label className="flex cursor-pointer items-start gap-3">
                 <Checkbox
@@ -60,7 +60,7 @@ export default function HomepageLogoConsent({ block, checked, onChange }) {
                     data-testid={IDS.consentCheckbox}
                     className="mt-0.5"
                 />
-                <span className="text-sm leading-relaxed">
+                <span className="text-body leading-relaxed">
                     <span className="font-medium">
                         Show our name and logo on the WeAre Creators website
                     </span>
@@ -80,7 +80,7 @@ export default function HomepageLogoConsent({ block, checked, onChange }) {
             {checked && eligible && (
                 <p
                     data-testid={IDS.consentLive}
-                    className="mt-4 text-sm text-muted-foreground"
+                    className="mt-4 text-meta text-muted-foreground"
                 >
                     Your logo is on the home page now. Unticking this removes it
                     immediately.
@@ -89,7 +89,7 @@ export default function HomepageLogoConsent({ block, checked, onChange }) {
             {pending && (
                 <p
                     data-testid={IDS.consentPending}
-                    className="mt-4 text-sm text-muted-foreground"
+                    className="mt-4 text-meta text-muted-foreground"
                 >
                     {pending}
                 </p>

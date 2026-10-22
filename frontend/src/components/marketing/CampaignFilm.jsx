@@ -326,7 +326,7 @@ export function CampaignFilm({ eyebrow = "One campaign", title }) {
         <section
             data-testid={IDS.film}
             data-mode={play ? "pinned" : "stepped"}
-            className="border-b border-white/10"
+            className="border-b border-border"
         >
             <div className="mx-auto max-w-7xl px-6 pt-16 md:pt-20">
                 <Reveal>

@@ -39,49 +39,49 @@ export const STATE_META = {
     // Not a collaboration state — there is no collaboration yet. It is what an
     // applicant board calls somebody we asked and who has not answered, and it
     // is here because that row sits in the same list as the real ones.
-    invited: { label: "Invited", tone: "bg-state-progress/15 text-state-progress border-state-progress/30" },
-    applied: { label: "Applied", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
-    verified: { label: "Verified", tone: "bg-state-progress/15 text-state-progress border-state-progress/30" },
-    accepted: { label: "Accepted", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    commercial_agreed: { label: "Commercial agreed", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    slot_booked: { label: "Slot booked", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    attended: { label: "Attended", tone: "bg-state-done/15 text-state-done border-state-done/30" },
-    draft_submitted: { label: "Draft in review", tone: "bg-state-done/15 text-state-done border-state-done/30" },
-    draft_approved: { label: "Draft approved", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    content_submitted: { label: "Content submitted", tone: "bg-state-done/15 text-state-done border-state-done/30" },
-    content_approved: { label: "Content approved", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
+    invited: { label: "Invited", tone: "bg-state-progress-wash text-state-progress border-state-progress/30" },
+    applied: { label: "Applied", tone: "bg-state-pending-wash text-state-pending border-state-pending/30" },
+    verified: { label: "Verified", tone: "bg-state-progress-wash text-state-progress border-state-progress/30" },
+    accepted: { label: "Accepted", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    commercial_agreed: { label: "Commercial agreed", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    slot_booked: { label: "Slot booked", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    attended: { label: "Attended", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    draft_submitted: { label: "Draft in review", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    draft_approved: { label: "Draft approved", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    content_submitted: { label: "Content submitted", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    content_approved: { label: "Content approved", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     in_payment: { label: "In payment", tone: "bg-primary/15 text-primary-ink border-primary/30" },
-    closed: { label: "Closed", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
-    declined: { label: "Declined", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
-    cancelled: { label: "Cancelled", tone: "bg-state-rejected/10 text-state-rejected border-state-rejected/25" },
+    closed: { label: "Closed", tone: "bg-muted text-muted-foreground border-border" },
+    declined: { label: "Declined", tone: "bg-muted text-muted-foreground border-border" },
+    cancelled: { label: "Cancelled", tone: "bg-state-rejected-wash text-state-rejected border-state-rejected/25" },
     // The creator's own exit, and nobody's. Neither is a rejection, so neither
     // wears the red a decline does — a withdrawal happens before anybody is
     // committed, and an expiry is a decision that never got made.
-    withdrawn: { label: "Withdrawn", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
-    expired: { label: "No answer", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
+    withdrawn: { label: "Withdrawn", tone: "bg-muted text-muted-foreground border-border" },
+    expired: { label: "No answer", tone: "bg-muted text-muted-foreground border-border" },
 };
 
 export const CAMPAIGN_STATUS_META = {
-    draft: { label: "Draft", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
+    draft: { label: "Draft", tone: "bg-muted text-muted-foreground border-border" },
     pending_review: {
         label: "In review",
-        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
+        tone: "bg-state-pending-wash text-state-pending border-state-pending/30",
     },
-    upcoming: { label: "Upcoming", tone: "bg-state-progress/15 text-state-progress border-state-progress/30" },
-    open: { label: "Open", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
+    upcoming: { label: "Upcoming", tone: "bg-state-progress-wash text-state-progress border-state-progress/30" },
+    open: { label: "Open", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     in_progress: { label: "In progress", tone: "bg-primary/15 text-primary-ink border-primary/30" },
     paused: {
         label: "Paused",
-        tone: "bg-state-pending/15 text-state-pending border-state-pending/30",
+        tone: "bg-state-pending-wash text-state-pending border-state-pending/30",
     },
-    completed: { label: "Completed", tone: "bg-state-done/15 text-state-done border-state-done/30" },
-    closed: { label: "Closed", tone: "bg-tint/5 text-muted-foreground border-tint/15" },
+    completed: { label: "Completed", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    closed: { label: "Closed", tone: "bg-muted text-muted-foreground border-border" },
 };
 
 export const VERIFICATION_META = {
-    verified: { label: "Verified", tone: "bg-state-approved/15 text-state-approved border-state-approved/30" },
-    pending: { label: "Pending", tone: "bg-state-pending/15 text-state-pending border-state-pending/30" },
-    rejected: { label: "Rejected", tone: "bg-state-rejected/10 text-state-rejected border-state-rejected/25" },
+    verified: { label: "Verified", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    pending: { label: "Pending", tone: "bg-state-pending-wash text-state-pending border-state-pending/30" },
+    rejected: { label: "Rejected", tone: "bg-state-rejected-wash text-state-rejected border-state-rejected/25" },
 };
 
 // Campaigns you can still invite someone to. Mirrors INVITABLE_CAMPAIGN_STATUSES
@@ -143,13 +143,13 @@ export const formatCompact = (n) => {
 export const Pill = ({ meta, value, testid }) => {
     const m = meta[value] || {
         label: value || "—",
-        tone: "bg-tint/5 text-muted-foreground border-tint/15",
+        tone: "bg-muted text-muted-foreground border-border",
     };
     return (
         <span
             data-testid={testid}
             className={
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 m.tone
             }
         >
@@ -183,7 +183,7 @@ export const CreatorAvatar = ({ creator, size = "h-12 w-12", testids = {} }) => 
                 loading="lazy"
                 data-testid={testids.photo}
                 onError={() => setBroken(true)}
-                className={`${size} aspect-square flex-none rounded-md border border-tint/10 object-cover`}
+                className={`${size} aspect-square flex-none rounded-md border border-border object-cover`}
             />
         );
     }
@@ -191,7 +191,7 @@ export const CreatorAvatar = ({ creator, size = "h-12 w-12", testids = {} }) => 
         <span
             aria-hidden="true"
             data-testid={testids.monogram}
-            className={`${size} grid flex-none place-items-center rounded-md border border-tint/10 bg-primary/10 font-serif text-lg text-primary-ink`}
+            className={`${size} grid flex-none place-items-center rounded-md border border-border bg-primary/10 font-serif text-body-lg text-primary-ink`}
         >
             {monogram}
         </span>
@@ -202,8 +202,8 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
     <div className="flex flex-col gap-4">
         <div className="flex items-baseline justify-between gap-6">
             <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">{kicker}</p>
-                <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">{kicker}</p>
+                <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                     {title}
                 </h2>
             </div>
@@ -212,7 +212,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
                     type="button"
                     onClick={onRefresh}
                     data-testid={refreshTestId}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                 >
                     <RotateCw className="h-3.5 w-3.5" />
                     Refresh
@@ -220,7 +220,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
             )}
         </div>
         {blurb && (
-            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">{blurb}</p>
+            <p className="max-w-xl text-body leading-relaxed text-muted-foreground">{blurb}</p>
         )}
         {children}
     </div>
@@ -241,8 +241,8 @@ export const FilterSelect = ({ label, value, onChange, options, testid, dense = 
             aria-label={label}
             className={
                 (dense
-                    ? "h-8 w-full rounded border-tint/10 bg-transparent text-sm capitalize focus:ring-ring sm:w-40 "
-                    : "h-11 md:h-10 w-full rounded-md border-tint/10 bg-background/60 text-sm capitalize focus:ring-ring sm:w-44 ") +
+                    ? "h-8 w-full rounded border-border bg-transparent text-meta capitalize focus:ring-ring sm:w-40 "
+                    : "h-11 md:h-10 w-full rounded-md border-border bg-background/60 text-meta capitalize focus:ring-ring sm:w-44 ") +
                 className
             }
         >
@@ -250,12 +250,12 @@ export const FilterSelect = ({ label, value, onChange, options, testid, dense = 
         </SelectTrigger>
         {/* No grain: this menu opens over the console, which is a working
             surface rather than a printed one. */}
-        <SelectContent className="max-h-72 rounded-md border-tint/10 bg-card">
-            <SelectItem value={ALL} className="text-sm">
+        <SelectContent className="max-h-72 rounded-md border-border bg-card">
+            <SelectItem value={ALL} className="text-meta">
                 {label}
             </SelectItem>
             {options.map((o) => (
-                <SelectItem key={o.value} value={o.value} className="text-sm capitalize">
+                <SelectItem key={o.value} value={o.value} className="text-meta capitalize">
                     {o.label}
                 </SelectItem>
             ))}
@@ -265,7 +265,7 @@ export const FilterSelect = ({ label, value, onChange, options, testid, dense = 
 
 /** Skeletons. One shape per section, so a loading console reads like the loaded one. */
 export const TileSkeleton = () => (
-    <div className="rounded-md border border-tint/10 bg-card p-6">
+    <div className="rounded-md border border-border bg-card p-6">
         <div className="flex items-start gap-4">
             <Skeleton className="h-12 w-12 flex-none rounded-md" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -291,7 +291,7 @@ export const RowSkeleton = () => (
 );
 
 export const ListSkeleton = ({ rows = 4, testid }) => (
-    <div data-testid={testid} className="divide-y divide-tint/10">
+    <div data-testid={testid} className="divide-y divide-divider">
         {Array.from({ length: rows }).map((_, i) => (
             <RowSkeleton key={i} />
         ))}
@@ -310,8 +310,8 @@ export const DateFilter = ({ value, onChange, label, testid, dense = false }) =>
                     data-testid={testid}
                     className={
                         (dense
-                            ? "inline-flex h-8 items-center gap-2 rounded border border-tint/10 bg-transparent px-2 text-sm transition-colors duration-150 hover:border-tint/25 "
-                            : "inline-flex h-11 md:h-10 items-center gap-2 rounded-md border border-tint/10 bg-background/60 px-3 text-sm transition-colors duration-150 hover:border-tint/25 ") +
+                            ? "inline-flex h-8 items-center gap-2 rounded border border-border bg-transparent px-2 text-meta transition-colors duration-150 hover:border-tint/25 "
+                            : "inline-flex h-11 md:h-10 items-center gap-2 rounded-md border border-border bg-background/60 px-3 text-meta transition-colors duration-150 hover:border-tint/25 ") +
                         (value ? "text-foreground" : "text-muted-foreground")
                     }
                 >
@@ -319,7 +319,7 @@ export const DateFilter = ({ value, onChange, label, testid, dense = false }) =>
                     {value ? formatDate(value.toISOString()) : label}
                 </button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto rounded-md border-tint/10 bg-card p-0">
+            <PopoverContent align="start" className="w-auto rounded-md border-border bg-card p-0">
                 <Calendar
                     mode="single"
                     selected={value || undefined}
@@ -335,7 +335,7 @@ export const DateFilter = ({ value, onChange, label, testid, dense = false }) =>
                             onChange(null);
                             setOpen(false);
                         }}
-                        className="w-full border-t border-tint/10 px-3 py-2 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                        className="w-full border-t border-border px-3 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                     >
                         Clear
                     </button>
@@ -352,7 +352,7 @@ export const endOfDay = (d) =>
 export const EmptyState = ({ Icon, children, testid }) => (
     <div
         data-testid={testid}
-        className="flex items-center gap-4 rounded-md border border-tint/10 bg-card px-6 py-10 text-sm text-muted-foreground"
+        className="flex items-center gap-4 rounded-md border border-border bg-card px-6 py-10 text-meta text-muted-foreground"
     >
         {Icon && <Icon className="h-5 w-5 flex-none text-primary-ink" />}
         <p>{children}</p>
@@ -360,7 +360,7 @@ export const EmptyState = ({ Icon, children, testid }) => (
 );
 
 export const TableSkeleton = ({ rows = 8, cols = 4, testid }) => (
-    <div data-testid={testid} className="divide-y divide-tint/10">
+    <div data-testid={testid} className="divide-y divide-divider">
         {Array.from({ length: rows }).map((_, r) => (
             <div key={r} className="flex items-center gap-4 px-5 py-3">
                 {Array.from({ length: cols }).map((__, c) => (

@@ -5112,9 +5112,94 @@ now.
 
 ## Design system
 
-`design_guidelines.json` is the brief: burnt orange `#F05D14` as `ember-500`,
-tinted near-black (never pure `#000`), max `rounded-lg`, generous padding, targeted
-transitions (never `transition-all`), left-aligned dense content.
+`design_guidelines.json` describes what ships: light by default, navy headings
+and primary buttons, red as the accent, tinted ink (never pure `#000`), the
+radius scale below, generous padding, targeted transitions (never
+`transition-all`), left-aligned content.
+
+### Light is `:root`, and the navy set is asked for
+
+**The default reversed.** `:root` used to be the navy marketing surface and the
+product opted into light; now `:root` (and `[data-surface="light"]`) is the
+light app and the navy set lives whole under `[data-theme="dark"]` (and
+`[data-surface="dark"]`). Nothing selects it by default: `surfaceFor` asks for
+it on the marketing routes, which were drawn for it and were deliberately not
+redrawn, and inside `/admin` only for an admin whose saved choice is dark.
+**The operating system is no longer consulted** — "System" in the account menu
+became "Default", which is light. The pre-paint script and `applyTheme` write
+`data-theme="dark"` or nothing; a document with no attribute is light.
+
+- **Red has two tokens because it has two jobs.** `--accent` (#FF2731, 3.76:1
+  on white) is for fills, bars, dots, badge grounds and borders; `--accent-ink`
+  (#C41E27, 5.90:1) is the only red a word below 24px may wear. `test_brand.py`
+  sweeps for `text-data`, a bare `text-accent` and `text-brand-red` without a
+  ≥24px size beside them. The shadcn primitives used `accent` as a neutral
+  hover highlight; they read `muted` now, or every menu item would light red.
+- **Primary buttons are navy with white text** (`--primary`), never red, on light.
+- **Navy inverts rather than retiring**: `[data-surface="inverse"]` redefines
+  the semantic tokens to the inverse values (#091426 / #15294A, ink #EDF1F7 /
+  #AEB8C7) and sets `color-scheme: dark`, so the admin sidebar's links still
+  say `bg-card text-muted-foreground` and get navy and light ink.
+- **A state is ink on its own wash** (`text-state-x bg-state-x-wash`), the
+  brief's info/warn/good/danger. Warn is #9E6000, not the brief's #B06B00, which
+  is 3.85:1 on its own wash; `test_brand.py` holds both numbers.
+- `--faint-foreground` (#8A93A1) is the brief's "muted ink" and is 3.10:1 on
+  white — decoration only, and a test fails any `text-faint`. Eyebrows use
+  `--muted-foreground` (#5B6678, 5.81:1).
+- The hairlines are exact: `border-border` (#E3DED6), `divide-divider`
+  (#EFECE7), `border-input` (#D8D2C8, 1.50:1 — flagged: below the 3:1 a control
+  boundary is meant to have). `border-tint/N` survives only on hover lifts.
+- **Brand constants** (`brand-navy`, `brand-red`, `brand-white`) are for a
+  surface that must keep its colour whatever the theme: the mark, the studio's
+  closing band, the check-in QR's white ground. The literal `navy-*`/`red-*`
+  scales are gone from the config, and a sweep fails any `*-white`, `*-black`,
+  `navy-N` or `red-N` class anywhere in the app.
+
+### Type, spacing and radius are tokens
+
+`text-eyebrow` 11px (uppercase, `tracking-eyebrow` 0.18em), `text-meta` 14px,
+`text-body` 16px (also the document base), `text-body-lg` 17px, `text-h3` 24px,
+`text-h2` 24→30px, `text-h1` 32→46px — h1–h3 Fraunces 600, h1/h2 clamped so
+neither overflows at phone width. `max-w-measure` is 64ch. Spacing:
+`p-card-sm`/`p-card`/`p-card-lg` 26/30/34px, `p-inner` 24px, `gap-section` /
+`space-y-section` 26px, `py-row` 22px. The product's stock sizes were mapped onto
+this scale mechanically (`text-sm` with `leading-relaxed` is body, without it
+meta; uppercase `text-xs` is an eyebrow); the marketing pages keep their fluid
+poster scale on the dark set.
+
+**The radius maximum was 8px and is 22px**: `rounded-sm/md/lg/xl/pill` = 10 /
+14 / 20 / 22 / 999px, from `--radius-*`. The dark set keeps 4/6/8 for the pages
+drawn to it. `rounded` (4px) is kept for controls too small for 10px — a 16px
+checkbox at `rounded-sm` is a circle.
+
+**Focus** is a 2px `--ring` with a 2–3px offset everywhere: navy on light
+(18.43:1 on white), the inverse ink on the sidebar (16.26:1), red on the dark
+set. The old global rule also set `border-radius: 6px` on whatever had focus,
+reshaping a pill for as long as it was focused; it is gone.
+
+### Density, for an admin's queue
+
+`data-density="compact"` redefines `--space-row-y` 22→9px, `--text-body`
+16→14px, `--text-meta` 14→13px, `--space-section` 26→16px and `--row-h` 70→42px,
+and hides `.density-avatar`. Nothing else: the compact block in `index.css` may
+contain those five names and a test fails a sixth. `DensityScope` in
+`components/admin/console/density.jsx` is the **one writer** of the attribute,
+takes a `surface` from `DENSITY_SURFACES` (the action queue, the console's data
+tables, the audit log — never the overview), and **throws in development**
+off its own list route. `test_density.py` fails any other writer, any scope
+outside `routes.jsx`, and any import of the module from outside the console.
+
+- Stored as `admin_density` on the admin's own user record —
+  `PUT /auth/me/density`, `require_roles("admin")`, a 403 for every other role
+  including `weare_team` — and only an admin's `/auth/me` carries the key.
+  localStorage (`weare:admin-density`) caches it so a table's first paint is
+  right; the account wins when it lands.
+- `DataTable` reads `--row-h` off its own element for the windowing arithmetic,
+  so the row height is written once, in CSS. A two-line row still outgrows it
+  — as it outgrew the old 44px — which only matters past the 150-row windowing
+  threshold.
+- The control is a two-button segmented pill with `aria-pressed`, in the
+  console header, admin-only and only on a density surface, hidden below `sm`.
 
 Typography is **Fraunces** (`font-serif`, headings) and **Inter Tight** (body),
 defined in `tailwind.config.js` and `src/index.css`. `design_guidelines.json` now
@@ -5122,8 +5207,9 @@ matches; if the two ever disagree again, the code wins. Exactly one font
 stylesheet loads — the `@import` at the top of `src/index.css`. Don't add a
 second one to `public/index.html`.
 
-In practice: uppercase `tracking-[0.2em]` eyebrows, `font-serif` headings,
-`border-white/10` on `bg-card` surfaces, ember for CTAs and accents only.
+In practice: `text-eyebrow uppercase tracking-eyebrow` eyebrows, `font-serif
+text-h*` headings, `border-border` on `bg-card` surfaces, navy for primary
+actions and red for the accent only.
 
 ### A band can ask for the other palette
 
@@ -5140,13 +5226,10 @@ keeps the studio coral with no attribute at all.
   selector, not a palette: `[data-surface="light"]` joins that block and
   `[data-surface="dark"]` joins `:root`. One declaration each, two selectors.
   A second copy is a copy that drifts, and these numbers were measured once.
-- **The new selector goes first in each list**, which looks arbitrary and is
-  not: `test_console_theme.py` and `test_brand.py` find these blocks by
-  indexing `index.css` for the literal `:root {` and
-  `:root[data-theme="light"] {`, so putting the addition first leaves both
-  strings intact. Selector order has no effect on specificity or cascade, so
-  this costs nothing and keeps four tests passing that would otherwise have
-  had to be rewritten to accommodate a formatting choice.
+- **Since light became `:root`** the blocks are `:root, [data-surface="light"]`
+  and `[data-surface="dark"], :root[data-theme="dark"]`, and the two tests that
+  index `index.css` for a block read those literal selector pairs. The band
+  mechanism did not change: a section still declares `data-surface`.
 - `[data-surface="light"] .weare-logo` joins the light logo rule too, or a
   logo inside a light band paints white on white.
 - **A section declares `data-surface` plus `bg-background text-foreground`**
@@ -5246,11 +5329,12 @@ tree alone) and `components/brand/paths.js` holds the curves.
   a webfont reflows when the font lands and a dimensioned SVG does not.
 
 **Tone comes from the surface, through the mechanism that already decides
-it.** Two rules in `index.css` keyed on `data-theme`: `.weare-logo` is white,
-and `:root[data-theme="light"] .weare-logo` is the red. Marketing navy is the
-*absence* of the attribute, so white is the default and the product is the
-override — the same way round as every other token, and a bug that applies
-neither applies white to navy.
+it.** `.weare-logo` is the brand red by default, and the three navy grounds —
+`:root[data-theme="dark"]`, a `[data-surface="dark"]` band and
+`[data-surface="inverse"]` chrome — paint it white. Light is the *absence* of
+the attribute now, so red is the default and navy is the override — the same
+way round as every other token, and a bug that applies neither applies red to
+the light ground, which is legible.
 
 - **`<Logo>` never works out which surface it is on.** There are already two
   copies of that list — the pre-paint script and `isProductPath` — with a test

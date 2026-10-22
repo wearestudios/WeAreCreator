@@ -34,7 +34,7 @@ export function DeliverableList({ campaign, testid, className = "" }) {
         return (
             <p
                 data-testid={testid}
-                className={"text-sm leading-relaxed text-muted-foreground " + className}
+                className={"text-body leading-relaxed text-muted-foreground " + className}
             >
                 {text}
             </p>
@@ -50,7 +50,7 @@ export function DeliverableList({ campaign, testid, className = "" }) {
                 <li
                     key={item.type}
                     data-testid={`deliverable-${item.type}`}
-                    className="inline-flex items-baseline gap-1.5 rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-1.5 text-sm"
+                    className="inline-flex items-baseline gap-1.5 rounded-md border border-border bg-tint/[0.03] px-3 py-1.5 text-meta"
                 >
                     {/* The number leads and is the heavier of the two: the
                         format is the category, the count is the commitment.

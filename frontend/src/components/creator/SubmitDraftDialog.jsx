@@ -94,16 +94,16 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
+                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         Draft for review
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {collab?.campaign_title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                         Nothing goes out until this is approved. Send the cut
                         itself, or an unlisted link if it's a big file.
                     </DialogDescription>
@@ -113,7 +113,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                     reason this dialog is open a second time, so it goes above
                     the fields rather than below them. */}
                 {collab?.draft?.revision_note && (
-                    <p className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary">
+                    <p className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-body leading-relaxed text-primary">
                         Changes asked for: {collab.draft.revision_note}
                     </p>
                 )}
@@ -131,10 +131,10 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                     setErr("");
                                 }}
                                 className={
-                                    "inline-flex min-h-[3rem] flex-1 items-center justify-center gap-2 rounded-full border px-4 text-sm transition-colors duration-200 " +
+                                    "inline-flex min-h-[3rem] flex-1 items-center justify-center gap-2 rounded-full border px-4 text-meta transition-colors duration-200 " +
                                     (mode === key
                                         ? "border-primary/40 bg-primary/15 text-primary"
-                                        : "border-white/10 bg-transparent text-muted-foreground hover:border-white/20")
+                                        : "border-border bg-transparent text-muted-foreground hover:border-tint/30")
                                 }
                             >
                                 <Icon className="h-4 w-4" />
@@ -147,7 +147,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                         <div className="space-y-1">
                             <Label
                                 htmlFor="draft-file"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Video or image
                             </Label>
@@ -157,9 +157,9 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                 type="file"
                                 accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp"
                                 onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                className="h-12 border-white/10 bg-background/60 file:mr-3 file:rounded-full file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:text-foreground focus-visible:ring-primary"
+                                className="h-12 border-border bg-background/60 file:mr-3 file:rounded-full file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-meta file:text-foreground focus-visible:ring-primary"
                             />
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 MP4, MOV, WebM or a still. Only the reviewer sees it.
                             </p>
                         </div>
@@ -167,7 +167,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                         <div className="space-y-1">
                             <Label
                                 htmlFor="draft-url"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Unlisted link
                             </Label>
@@ -181,10 +181,10 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                     value={url}
                                     onChange={(e) => setUrl(e.target.value)}
                                     placeholder="https://youtu.be/…"
-                                    className="h-12 border-white/10 bg-background/60 pl-9 focus-visible:ring-primary"
+                                    className="h-12 border-border bg-background/60 pl-9 focus-visible:ring-primary"
                                 />
                             </div>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 Keep it unlisted or private — this shouldn't be public yet.
                             </p>
                         </div>
@@ -193,7 +193,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                     <div className="space-y-1">
                         <Label
                             htmlFor="draft-note"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             Anything to flag (optional)
                         </Label>
@@ -205,12 +205,12 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
                             placeholder="Music is a placeholder, happy to swap it…"
-                            className="min-h-[72px] border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="min-h-[72px] border-border bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
 
                     {err && (
-                        <p data-testid={IDS.error} className="text-sm text-destructive">
+                        <p data-testid={IDS.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -221,7 +221,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                                 type="button"
                                 variant="outline"
                                 data-testid={IDS.cancel}
-                                className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="h-12 rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 Cancel
                             </Button>
