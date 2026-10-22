@@ -67,7 +67,7 @@ export const FOOTER_COLUMNS = [
     {
         heading: "Creators",
         links: [
-            { label: "For creators", to: "/for-creators" },
+            { label: "For creators", to: "/creators" },
             { label: "Browse briefs", to: "/campaigns" },
             { label: "Join as a creator", to: "/signup?role=creator" },
         ],
@@ -75,7 +75,7 @@ export const FOOTER_COLUMNS = [
     {
         heading: "Brands",
         links: [
-            { label: "For brands", to: "/for-brands" },
+            { label: "For brands", to: "/brands" },
             { label: "Post a campaign", to: "/signup?role=brand" },
             { label: "Log in", to: "/login" },
         ],
@@ -89,8 +89,6 @@ export const FOOTER_COLUMNS = [
             // the SPA's catch-all, which is the exact failure the audience
             // pages had for months. `FooterLink` picks `<a>` off this flag.
             { label: "Our work", to: WORK_PATH, external: true },
-            { label: "How it works", to: "/how-it-works" },
-            { label: "Why WeAre Creators", to: "/why-weare" },
             // Was a bare `mailto:`. The page carries the address *and* both
             // partners on WhatsApp, so the link goes there and the mailto
             // survives on the page rather than as the only way through.
@@ -108,30 +106,41 @@ export const FOOTER_COLUMNS = [
 
 /**
  * The logged-out menu, in the order somebody reads it: which audience am I,
- * then how does it work, then why you.
+ * then how to reach a person. How it works and why us are sections of
+ * `/brands` now rather than pages of their own.
  *
  * `components/marketing/MarketingNavbar.jsx` renders these. The shared
- * `components/Navbar.jsx` keeps its own copy of the same four, deliberately —
+ * `components/Navbar.jsx` keeps its own copy of the same links, deliberately —
  * it is on nineteen authenticated surfaces and is out of scope for marketing
  * changes, so it is left alone rather than edited to import this. A unit test
  * compares the two lists, because two copies is exactly how one of them ends
  * up pointing at a page that moved.
  */
 export const MARKETING_LINKS = [
-    { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
-    { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
-    { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
+    { to: "/brands", label: "For brands", testId: "nav-for-brands" },
+    { to: "/creators", label: "For creators", testId: "nav-for-creators" },
     { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 
 /** The marketing pages, for the sitemap and for tests that walk them all. */
-export const MARKETING_PATHS = [
-    "/",
-    "/for-brands",
-    "/for-creators",
-    "/how-it-works",
-    "/why-weare",
+export const MARKETING_PATHS = ["/", "/brands", "/creators"];
+
+/**
+ * Paths that used to be pages, and where each one lives now.
+ *
+ * `/how-it-works` and `/why-weare` were folded into `/brands` as sections, and
+ * the two audience pages dropped their `for-` prefix. **Every one redirects
+ * rather than 404s**: they are in the footers of old WhatsApp forwards and in
+ * search indexes, and a link that used to work landing on "not found" is the
+ * site looking abandoned. App.js renders these as `<Navigate replace>`, and
+ * `vercel.json` carries the same list as permanent redirects, which is what a
+ * crawler and a pasted link actually meet. A test keeps the three in step.
+ */
+export const RETIRED_MARKETING_PATHS = [
+    ["/for-brands", "/brands"],
+    ["/for-creators", "/creators"],
+    ["/how-it-works", "/brands"],
+    ["/why-weare", "/brands"],
 ];
 
 /** The year the copyright line prints. Read at render, not hardcoded — a
@@ -162,4 +171,7 @@ export const copyrightYear = () => new Date().getFullYear();
  * inventing a bigger one. Where depth is genuinely the point, the pages say it
  * in a sentence that can be defended — see the positioning note in CLAUDE.md.
  */
-export const HERO_EYEBROW = "Paid briefs · Verified creators · India";
+// **"A creator marketplace for India"**, set with the rebuilt home page: it
+// names the category and the country without claiming a footprint per city.
+// One constant still, so the brief feed and the sign-in screen carry it too.
+export const HERO_EYEBROW = "A creator marketplace for India";

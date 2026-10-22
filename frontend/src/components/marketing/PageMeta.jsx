@@ -9,7 +9,7 @@
 //   Google and Bing render JavaScript and will read these. **WhatsApp does
 //   not, and neither do most chat crawlers** — they fetch the HTML, read the
 //   static tags in `public/index.html`, and never run a line of script. So a
-//   link to /for-brands pasted into a chat previews with the site-wide card,
+//   link to /brands pasted into a chat previews with the site-wide card,
 //   not this page's.
 //
 // That is the trade this restructure makes. It is recoverable without moving

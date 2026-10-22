@@ -1122,11 +1122,21 @@ class TestTheScreensExist:
 
 
 class TestTheMarketingStrip:
-    def test_it_is_on_both_pages_the_brief_names(self):
-        for page in ("Landing.jsx", "ForBrands.jsx"):
-            src = fread("pages", page)
-            assert "<CaseStudyStrip />" in src, page
-            assert "CaseStudyStrip" in src, page
+    def test_the_strip_is_unmounted_pending_a_decision(self):
+        """**Unmounted by the public-site rebuild, deliberately, and pinned that
+        way so it cannot happen by accident in either direction.** The rebuilt
+        home is the brief's eight sections and the case-study strip is not one of them; the
+        component and its endpoint are kept intact for the product decision
+        the PR names — remount it, or retire the feature. Until then this
+        asserts the component still exists and that no page mounts a second,
+        unreviewed copy of it.
+
+        The case studies themselves are still reached: `/work` is linked from
+        every footer as "Our work", and the pages are server-rendered."""
+        for page in ("Home.jsx", "Brands.jsx"):
+            assert "CaseStudyStrip" not in fread("pages", page), page
+        assert (FRONTEND / "components" / "marketing" / "CaseStudyStrip.jsx").exists()
+        assert "WORK_PATH" in fread("lib", "siteNav.js")
 
     def test_the_cards_leave_the_spa(self):
         """`/work` is server-rendered, so a `<Link>` would be caught by the

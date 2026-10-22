@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { TOAST_DURATION } from "@/lib/feedback";
 import { AuthProvider, BRAND_ROLES, useAuth } from "@/context/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RETIRED_MARKETING_PATHS } from "@/lib/siteNav";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import RouteFade from "@/components/motion/RouteFade";
@@ -32,7 +33,7 @@ import { CONSOLE_ROLES } from "@/lib/consoleScope";
 // bundle nobody needs for a waterfall everybody feels.
 //
 // What deliberately stays in the main bundle: the router, the auth context, the
-// two error boundaries, `ProtectedRoute` — and `Landing`, `Login` and `Signup`.
+// two error boundaries, `ProtectedRoute` — and `Home`, `Login` and `Signup`.
 // Those three are the front door. Splitting them buys nothing (an anonymous
 // visitor needs the landing page *now*, so its chunk would be fetched
 // immediately anyway) and costs a second round trip on the one page where the
@@ -46,18 +47,16 @@ import { CONSOLE_ROLES } from "@/lib/consoleScope";
 const load = (importer) => lazy(() => retryImport(importer));
 
 // The front door.
-const Landing = load(() => import(/* webpackChunkName: "landing" */ "@/pages/Landing"));
+const Home = load(() => import(/* webpackChunkName: "landing" */ "@/pages/Home"));
 const Login = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Login"));
 const Signup = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Signup"));
 const AdminLogin = load(() => import(/* webpackChunkName: "auth" */ "@/pages/AdminLogin"));
 
 // The rest of the marketing site, plus the two legal pages and the 404. Read
 // once by somebody who is not signed in, and never again.
-const ForBrands = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForBrands"));
-const ForCreators = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForCreators"));
+const Brands = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/Brands"));
+const Creators = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/Creators"));
 const Contact = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/Contact"));
-const HowItWorks = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/HowItWorks"));
-const WhyWeAre = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/WhyWeAre"));
 const NotFound = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/NotFound"));
 const Terms = load(() =>
     import(/* webpackChunkName: "marketing" */ "@/pages/Legal").then((m) => ({ default: m.Terms })),
@@ -278,16 +277,23 @@ function App() {
                     <SurfaceGuard />
                     <RouteFade>
                     <Routes>
-                        <Route path="/" element={<Landing />} />
+                        <Route path="/" element={<Home />} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/signup" element={<Signup />} />
                         <Route path="/admin/login" element={<AdminLogin />} />
                         <Route path="/terms" element={<Terms />} />
                         <Route path="/privacy" element={<Privacy />} />
-                        <Route path="/for-brands" element={<ForBrands />} />
-                        <Route path="/for-creators" element={<ForCreators />} />
-                        <Route path="/how-it-works" element={<HowItWorks />} />
-                        <Route path="/why-weare" element={<WhyWeAre />} />
+                        <Route path="/brands" element={<Brands />} />
+                        <Route path="/creators" element={<Creators />} />
+                        {/* The retired pages, and the old names of the two
+                            audience pages. /how-it-works and /why-weare were
+                            folded into /brands as sections; the redirects are
+                            `replace` so the back button does not bounce. The
+                            permanent (308) half is in vercel.json, which is
+                            what a crawler and an old link actually meet. */}
+                        {RETIRED_MARKETING_PATHS.map(([from, to]) => (
+                            <Route key={from} path={from} element={<Navigate to={to} replace />} />
+                        ))}
                         <Route path="/contact" element={<Contact />} />
                         <Route
                             path="/dashboard"

@@ -1,5 +1,27 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/for-brands",
+      "destination": "/brands",
+      "permanent": true
+    },
+    {
+      "source": "/for-creators",
+      "destination": "/creators",
+      "permanent": true
+    },
+    {
+      "source": "/how-it-works",
+      "destination": "/brands",
+      "permanent": true
+    },
+    {
+      "source": "/why-weare",
+      "destination": "/brands",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/c/:id",

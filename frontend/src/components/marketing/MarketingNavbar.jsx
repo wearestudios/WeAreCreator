@@ -8,7 +8,7 @@
 // endorsement.
 //
 // So it does not read `useAuth` at all. The marketing pages are the signed-out
-// site; a signed-in visitor who lands on `/for-brands` sees the same bar and
+// site; a signed-in visitor who lands on `/brands` sees the same bar and
 // the same two buttons, which is correct — they can still get to their
 // dashboard through Log in, and the alternative is this component growing a
 // second mode and drifting into being the shared one.
@@ -79,11 +79,17 @@ export function MarketingNavbar() {
                         register. "Join" is the more casual of the two, and a
                         pair where one half is clipped reads as a pair somebody
                         stopped proof-reading. */}
-                    <Link to="/signup" data-testid={IDS.navJoin}>
-                        <Button className="rounded-full bg-primary px-5 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover">
+                    {/* One element, one tab stop: the link *is* the button.
+                        A `<Link>` around a `<Button>` was two stops, and the
+                        outer one carried no ring of its own. */}
+                    <Button
+                        asChild
+                        className="rounded-full bg-primary px-5 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover"
+                    >
+                        <Link to="/signup" data-testid={IDS.navJoin}>
                             Sign up
-                        </Button>
-                    </Link>
+                        </Link>
+                    </Button>
 
                     {/* Everything above collapses below md; this is the way in,
                         and it is the only navigation on a phone — anything
@@ -129,11 +135,14 @@ export function MarketingNavbar() {
 
                                 <div className="flex flex-col gap-3 border-t border-border px-6 py-6">
                                     <SheetClose asChild>
-                                        <Link to="/signup" data-testid={`${IDS.navJoin}-mobile`}>
-                                            <Button className="h-11 w-full rounded-full bg-primary text-primary-foreground transition-colors duration-200 hover:bg-primary-hover">
+                                        <Button
+                                            asChild
+                                            className="h-11 w-full rounded-full bg-primary text-primary-foreground transition-colors duration-200 hover:bg-primary-hover"
+                                        >
+                                            <Link to="/signup" data-testid={`${IDS.navJoin}-mobile`}>
                                                 Sign up
-                                            </Button>
-                                        </Link>
+                                            </Link>
+                                        </Button>
                                     </SheetClose>
                                     <SheetClose asChild>
                                         <Link
