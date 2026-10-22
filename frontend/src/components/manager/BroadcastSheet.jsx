@@ -39,19 +39,19 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
             <SheetContent
                 side="bottom"
                 data-testid={IDS.sheet}
-                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
                 {report ? (
                     <>
-                        <SheetTitle className="font-serif text-2xl leading-tight">
+                        <SheetTitle className="font-serif text-h3 leading-tight">
                             Sent
                         </SheetTitle>
-                        <SheetDescription className="mt-2 text-sm text-muted-foreground">
+                        <SheetDescription className="mt-2 text-meta text-muted-foreground">
                             {report.delivered} delivered · {report.failed} didn't go through.
                             Everyone got it in the app either way.
                         </SheetDescription>
 
-                        <ul data-testid={IDS.report} className="mt-5 divide-y divide-white/10">
+                        <ul data-testid={IDS.report} className="mt-5 divide-y divide-divider">
                             {report.results.map((r) => (
                                 <li
                                     key={r.creator_id}
@@ -64,9 +64,9 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                         <AlertCircle className="mt-0.5 h-4 w-4 flex-none text-state-pending" />
                                     )}
                                     <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm">{r.name}</p>
+                                        <p className="truncate text-meta">{r.name}</p>
                                         {r.error && (
-                                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                            <p className="mt-0.5 text-meta text-muted-foreground">
                                                 {r.error}
                                             </p>
                                         )}
@@ -86,24 +86,24 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                     </>
                 ) : reviewing ? (
                     <>
-                        <SheetTitle className="font-serif text-2xl leading-tight">
+                        <SheetTitle className="font-serif text-h3 leading-tight">
                             Send to {count} {count === 1 ? "creator" : "creators"}?
                         </SheetTitle>
-                        <SheetDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                             This goes out on WhatsApp and can't be taken back. Read it once
                             more.
                         </SheetDescription>
 
                         <blockquote
                             data-testid={IDS.review}
-                            className="mt-5 whitespace-pre-wrap rounded-md border border-white/10 bg-background/60 p-5 text-sm leading-relaxed"
+                            className="mt-5 whitespace-pre-wrap rounded-md border border-border bg-background/60 p-5 text-body leading-relaxed"
                         >
                             {message.trim()}
                         </blockquote>
 
                         <p
                             data-testid={IDS.count}
-                            className="mt-4 inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground"
+                            className="mt-4 inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             <Users className="h-3.5 w-3.5" />
                             {count} confirmed {count === 1 ? "creator" : "creators"}
@@ -125,7 +125,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                 variant="outline"
                                 onClick={() => setReviewing(false)}
                                 data-testid={IDS.back}
-                                className="border-white/15 bg-transparent"
+                                className="border-input bg-transparent"
                             >
                                 Edit
                             </BigButton>
@@ -133,10 +133,10 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                     </>
                 ) : (
                     <>
-                        <SheetTitle className="font-serif text-2xl leading-tight">
+                        <SheetTitle className="font-serif text-h3 leading-tight">
                             Message everyone
                         </SheetTitle>
-                        <SheetDescription className="mt-2 text-sm text-muted-foreground">
+                        <SheetDescription className="mt-2 text-meta text-muted-foreground">
                             Goes to the {count} {count === 1 ? "creator" : "creators"} still
                             expected on this campaign.
                         </SheetDescription>
@@ -148,13 +148,13 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                             maxLength={1000}
                             data-testid={IDS.message}
                             placeholder="e.g. Parking is round the back today — ask for Riya at the events desk."
-                            className="mt-5 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                            className="mt-5 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                         />
-                        <p className="mt-2 text-right text-xs text-muted-foreground">
+                        <p className="mt-2 text-right text-meta text-muted-foreground">
                             {message.length}/1000
                         </p>
                         {err && (
-                            <p data-testid={IDS.error} className="mt-2 text-sm text-destructive">
+                            <p data-testid={IDS.error} className="mt-2 text-meta text-destructive">
                                 {err}
                             </p>
                         )}
@@ -174,7 +174,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                                 variant="outline"
                                 onClick={onClose}
                                 data-testid={IDS.cancel}
-                                className="border-white/15 bg-transparent"
+                                className="border-input bg-transparent"
                             >
                                 Cancel
                             </BigButton>

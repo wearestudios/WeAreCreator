@@ -115,7 +115,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
 
             <div
                 data-testid="legal-draft-notice"
-                className="mt-8 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending"
+                className="mt-8 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-sm leading-relaxed text-state-pending"
             >
                 This is a plain-English summary of how WeAre Creators works today,
                 published so you can see what you're agreeing to. The full legal
@@ -131,7 +131,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
 
             {children}
 
-            <div className="mt-14 flex items-center gap-2 border-t border-white/10 pt-8 text-sm text-muted-foreground">
+            <div className="mt-14 flex items-center gap-2 border-t border-border pt-8 text-sm text-muted-foreground">
                 <Mail className="h-4 w-4 text-primary" />
                 Questions about any of this:{" "}
                 <a

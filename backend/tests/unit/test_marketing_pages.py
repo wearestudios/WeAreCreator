@@ -1930,7 +1930,9 @@ def test_the_palette_is_not_a_tailwind_token():
 def test_the_handshake_band_is_white_type_on_coral_with_a_black_block():
     src = read("src", "components", "marketing", "HandshakeBand.jsx")
     assert "backgroundColor: CORAL" in src
-    assert "text-white" in src
+    # White type through the brand constant: the band is coral whatever the
+    # theme, so the ink must not be a token that flips with it.
+    assert "text-brand-white" in src
     assert "backgroundColor: CORAL_INK" in src
 
 

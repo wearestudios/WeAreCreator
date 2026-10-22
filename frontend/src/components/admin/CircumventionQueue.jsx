@@ -217,7 +217,7 @@ export default function CircumventionQueue() {
     ];
 
     return (
-        <div data-testid={IDS.queue} className="space-y-4">
+        <div data-testid={IDS.queue} className="space-y-section">
             <div className="flex flex-wrap items-center gap-3">
                 <ShieldAlert className="h-4 w-4 text-muted-foreground" />
                 <h1 className={`${TEXT.body} font-medium`}>Off-platform</h1>
@@ -239,7 +239,7 @@ export default function CircumventionQueue() {
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (state === s.value
                                 ? "border-primary/40 bg-primary/10 text-primary-ink"
-                                : "border-tint/10 text-muted-foreground hover:text-foreground")
+                                : "border-border text-muted-foreground hover:text-foreground")
                         }
                     >
                         {s.label}

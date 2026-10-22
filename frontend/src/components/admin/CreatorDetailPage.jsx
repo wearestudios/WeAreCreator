@@ -151,7 +151,7 @@ export default function CreatorDetailPage() {
                             testid={DIDS.stat("verification")}
                         />
                         {suspended && (
-                            <span className="rounded-full border border-state-rejected/25 bg-state-rejected/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-state-rejected">
+                            <span className="rounded-full border border-state-rejected/25 bg-state-rejected-wash px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-state-rejected">
                                 Suspended
                             </span>
                         )}
@@ -189,7 +189,7 @@ export default function CreatorDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("reject")}
                                 onClick={() => setDialog({ kind: "reject" })}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Reject
                             </Button>
@@ -204,7 +204,7 @@ export default function CreatorDetailPage() {
                                 variant="outline"
                                 data-testid={DIDS.action("reinstate")}
                                 onClick={() => setDialog({ kind: "reinstate" })}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Reinstate
                             </Button>
@@ -254,8 +254,8 @@ export default function CreatorDetailPage() {
                                 <div className="flex items-start gap-5">
                                     <CreatorAvatar creator={creator} size="h-16 w-16" />
                                     <div className="min-w-0">
-                                        <p className="font-serif text-xl">{creator.name}</p>
-                                        <p className="mt-1 text-sm text-muted-foreground">
+                                        <p className="font-serif text-h3">{creator.name}</p>
+                                        <p className="mt-1 text-meta text-muted-foreground">
                                             {creator.email || "No email"}
                                             {creator.phone ? ` · ${creator.phone}` : ""}
                                         </p>
@@ -267,12 +267,12 @@ export default function CreatorDetailPage() {
                                 {creator.about && (
                                     <p
                                         data-testid="admin-creator-about"
-                                        className="mt-6 whitespace-pre-line border-t border-tint/10 pt-6 text-sm leading-relaxed text-foreground/90"
+                                        className="mt-6 whitespace-pre-line border-t border-border pt-6 text-body leading-relaxed text-foreground/90"
                                     >
                                         {creator.about}
                                     </p>
                                 )}
-                                <dl className="mt-7 grid gap-5 border-t border-tint/10 pt-6 sm:grid-cols-3">
+                                <dl className="mt-7 grid gap-5 border-t border-border pt-6 sm:grid-cols-3">
                                     <Field label="Base rate">
                                         {creator.base_rate != null
                                             ? `₹${formatRupees(creator.base_rate)}`
@@ -316,7 +316,7 @@ export default function CreatorDetailPage() {
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 data-testid={ADDRESS.openInMaps}
-                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-primary-ink transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-primary-ink transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                                             >
                                                 <MapPin className="h-3.5 w-3.5" />
                                                 {creator.location_lat != null
@@ -352,7 +352,7 @@ export default function CreatorDetailPage() {
                                     <Field label="PAN">{creator.pan_masked}</Field>
                                 </dl>
                                 {creator.verification_reason && (
-                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending">
+                                    <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-body leading-relaxed text-state-pending">
                                         Last decision: {creator.verification_reason}
                                     </p>
                                 )}
@@ -375,12 +375,12 @@ export default function CreatorDetailPage() {
                         <Section id="channels" title="Channels">
                             <div className="space-y-4">
                                 <Panel data-testid={IDS.instagram}>
-                                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         <Instagram className="h-3.5 w-3.5" />
                                         Instagram
                                     </p>
                                     {!ig?.configured ? (
-                                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                                             Not configured on this deployment — follower counts
                                             stay self-reported.
                                         </p>
@@ -404,7 +404,7 @@ export default function CreatorDetailPage() {
                                             </Field>
                                         </dl>
                                     ) : (
-                                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                                             {ig.status === "stale"
                                                 ? "Connection expired — they've been asked to reconnect."
                                                 : "Not connected."}
@@ -416,7 +416,7 @@ export default function CreatorDetailPage() {
                                 </Panel>
 
                                 <Panel data-testid={IDS.youtube}>
-                                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         <Youtube className="h-3.5 w-3.5" />
                                         YouTube
                                     </p>
@@ -425,16 +425,16 @@ export default function CreatorDetailPage() {
                                             href={data.youtube.url}
                                             target="_blank"
                                             rel="noreferrer noopener"
-                                            className="mt-4 block break-all text-sm text-primary-ink transition-colors duration-150 hover:text-primary-ink"
+                                            className="mt-4 block break-all text-meta text-primary-ink transition-colors duration-150 hover:text-primary-ink"
                                         >
                                             {data.youtube.url}
                                         </a>
                                     ) : (
-                                        <p className="mt-4 text-sm text-muted-foreground">
+                                        <p className="mt-4 text-meta text-muted-foreground">
                                             No channel given.
                                         </p>
                                     )}
-                                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                                    <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                                         A link, not a connection — we have no numbers for
                                         YouTube.
                                     </p>
@@ -451,24 +451,24 @@ export default function CreatorDetailPage() {
                         {!data.slot_bookings?.length ? (
                             <p
                                 data-testid={IDS.bookingsEmpty}
-                                className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground"
+                                className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground"
                             >
                                 Nothing booked. A slot is taken once a fee is agreed.
                             </p>
                         ) : (
-                            <ul className="divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
+                            <ul className="divide-y divide-divider rounded-md border border-border bg-card">
                                 {data.slot_bookings.map((b) => (
                                     <li
                                         key={b.id}
                                         data-testid={IDS.booking(b.id)}
                                         className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                     >
-                                        <span className="w-56 flex-none text-sm">
+                                        <span className="w-56 flex-none text-meta">
                                             {formatDateTime(b.starts_at)}
                                         </span>
                                         <CollaborationLink
                                             id={b.collaboration_id}
-                                            className="min-w-0 flex-1 text-sm"
+                                            className="min-w-0 flex-1 text-meta"
                                         >
                                             {b.campaign_title || "Campaign"}
                                         </CollaborationLink>
@@ -499,25 +499,25 @@ export default function CreatorDetailPage() {
                                 (g) => (data.collaborations[g.key] || []).length > 0,
                             ).map((g) => (
                                 <div key={g.key} data-testid={IDS.collabGroup(g.key)}>
-                                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {g.label}
                                         <span className="ml-2 text-primary-ink">
                                             {data.collaborations[g.key].length}
                                         </span>
                                     </p>
-                                    <ul className="mt-3 divide-y divide-tint/10 rounded-md border border-tint/10 bg-card">
+                                    <ul className="mt-3 divide-y divide-divider rounded-md border border-border bg-card">
                                         {data.collaborations[g.key].map((c) => (
                                             <li
                                                 key={c.id}
                                                 data-testid={IDS.collab(c.id)}
                                                 className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-center md:gap-6"
                                             >
-                                                <span className="min-w-0 flex-1 text-sm">
+                                                <span className="min-w-0 flex-1 text-meta">
                                                     <CampaignLink
                                                         id={c.campaign_id}
                                                         title={c.campaign_title}
                                                     />
-                                                    <span className="block text-sm text-muted-foreground">
+                                                    <span className="block text-meta text-muted-foreground">
                                                         {c.brand_name}
                                                         <CollaborationLink
                                                             id={c.id}
@@ -527,7 +527,7 @@ export default function CreatorDetailPage() {
                                                         </CollaborationLink>
                                                     </span>
                                                 </span>
-                                                <span className="flex-none text-sm text-muted-foreground">
+                                                <span className="flex-none text-meta text-muted-foreground">
                                                     {c.agreed_amount != null
                                                         ? `₹${formatRupees(c.agreed_amount)}`
                                                         : c.quoted_rate != null
@@ -543,7 +543,7 @@ export default function CreatorDetailPage() {
                             {COLLAB_GROUPS.every(
                                 (g) => (data.collaborations[g.key] || []).length === 0,
                             ) && (
-                                <p className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm text-muted-foreground">
+                                <p className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground">
                                     They haven't applied to anything yet.
                                 </p>
                             )}

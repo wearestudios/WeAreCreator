@@ -78,11 +78,11 @@ export default function CampaignTemplates({ onUse }) {
     };
 
     return (
-        <section data-testid={IDS.picker} className="rounded-md border border-white/10 bg-card p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+        <section data-testid={IDS.picker} className="rounded-md border border-border bg-card p-5">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 Start from a template
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-meta text-muted-foreground">
                 Everything except the dates, filled in. Change what's different.
             </p>
 
@@ -91,11 +91,11 @@ export default function CampaignTemplates({ onUse }) {
                     <li
                         key={t.id}
                         data-testid={IDS.option(t.id)}
-                        className="flex flex-wrap items-center gap-3 rounded border border-white/10 p-3"
+                        className="flex flex-wrap items-center gap-3 rounded border border-border p-3"
                     >
                         <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm">{t.name}</p>
-                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            <p className="truncate text-meta">{t.name}</p>
+                            <p className="mt-0.5 truncate text-meta text-muted-foreground">
                                 {/* Enough to tell two tasting briefs apart
                                     without opening either — and the fee never
                                     without the word beside it. */}
@@ -127,7 +127,7 @@ export default function CampaignTemplates({ onUse }) {
                             disabled={busy === t.id}
                             data-testid={IDS.remove(t.id)}
                             title="Remove this template"
-                            className="rounded border border-white/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            className="rounded border border-border p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                         >
                             <Trash2 className="h-3.5 w-3.5" />
                             <span className="sr-only">Remove</span>
@@ -174,7 +174,7 @@ export function SaveAsTemplate({ campaignId, defaultName = "" }) {
                 size="sm"
                 onClick={() => setOpen(true)}
                 data-testid={IDS.save}
-                className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                className="min-h-[2.75rem] border-input bg-transparent sm:min-h-0"
             >
                 Save as template
             </Button>
@@ -189,7 +189,7 @@ export function SaveAsTemplate({ campaignId, defaultName = "" }) {
                 placeholder="e.g. Monthly in-store shoot"
                 maxLength={80}
                 data-testid={IDS.saveName}
-                className="h-10 w-56 border-white/10 bg-background/60"
+                className="h-10 w-56 border-border bg-background/60"
             />
             <Button
                 size="sm"

@@ -1,27 +1,50 @@
 {
   "theme": {
-    "mode": "two surfaces \u2014 marketing navy, product light",
+    "mode": "light by default \u2014 the app; the navy set kept whole under [data-theme=\"dark\"] for the marketing routes and an admin's explicit opt-in",
     "brand_navy_hex": "#091426",
-    "brand_navy_role": "structure, weight, primary actions",
+    "brand_navy_role": "headings, primary buttons, inverse chrome (the admin sidebar) \u2014 navy is not retired, it inverts",
     "brand_red_hex": "#FF2731",
-    "brand_red_role": "identity, highlights, marketing CTAs; in the product, the logo and standout data",
-    "primary_color_hex": "#FF2731",
-    "primary_color_name": "Brand Red",
-    "marketing": {
+    "brand_red_role": "the accent: fills, bars, dots, badge grounds, borders, the logo, standout data. As text below 24px it is #C41E27 (accent-ink), never #FF2731",
+    "primary_color_hex": "#091426",
+    "primary_color_name": "Brand Navy",
+    "light": {
+      "ground": "#F6F4F1",
+      "card": "#FFFFFF",
+      "muted_fill": "#F1EEE9",
+      "wash": "#FAF8F5",
+      "hairline": "#E3DED6",
+      "divider": "#EFECE7",
+      "control_border": "#D8D2C8 (1.50:1 on white \u2014 below the 3:1 WCAG asks of a control boundary; kept as specified and flagged)",
+      "heading": "#091426",
+      "body": "#101B2E",
+      "secondary": "#5B6678 (5.81:1 on white)",
+      "muted": "#8A93A1 (3.10:1 on white, 2.83:1 on the ground \u2014 decoration only, never text)",
+      "accent": "#FF2731 (3.76:1 on white \u2014 fills and boundaries only)",
+      "accent_ink": "#C41E27 (5.90:1 on white \u2014 the only red on text below 24px)",
+      "accent_wash": "rgba(255,39,49,0.09)",
+      "accent_border": "#F0C9CB",
+      "cta": "#091426",
+      "cta_label": "#FFFFFF (18.43:1)",
+      "states": {
+        "info": "#2B5FA8 on #E8EFF9",
+        "warn": "#9E6000 on #FDF3E0 (darkened from #B06B00, which is 3.85:1 on its own wash)",
+        "good": "#1C7A4A on #E7F5EE",
+        "danger": "#B3242C on #FBE9EA"
+      }
+    },
+    "inverse": {
+      "surface": "#091426",
+      "surface_alt": "#15294A",
+      "ink": "#EDF1F7",
+      "ink_muted": "#AEB8C7",
+      "used_for": "the admin sidebar and its phone sheet"
+    },
+    "dark": {
       "canvas": "#091426",
       "surface": "#0E1C33",
       "text": "#EDF1F7",
       "cta": "#FF2731",
-      "cta_label": "#091426 (navy \u2014 white on the red is 3.76:1 and fails AA)",
-      "red_is": "the loud moment"
-    },
-    "product": {
-      "canvas": "#F2F4F7",
-      "surface": "#FFFFFF",
-      "text": "#091426",
-      "cta": "#091426",
-      "cta_label": "#FFFFFF",
-      "red_is": "logo + standout data, at 24px and above only"
+      "cta_label": "#091426 (white on the red is 3.76:1 and fails AA)"
     },
     "source_of_truth": "frontend/src/index.css and frontend/tailwind.config.js. This file follows the code, not the other way round. backend/tests/unit/test_brand.py computes every contrast figure from the shipped tokens."
   },
@@ -43,21 +66,14 @@
     "source_of_truth": "tailwind.config.js and src/index.css. This file follows the code, not the other way round."
   },
   "colors": {
-    "background": "hsl(217.2 61.7% 9.2%) marketing / hsl(216 24% 96%) product",
-    "foreground": "hsl(216 38% 95%) marketing / hsl(217.2 61.7% 9.2%) product",
-    "primary": "hsl(357.2 100% 57.6%) marketing / hsl(217.2 61.7% 9.2%) product",
-    "primary_foreground": "hsl(217.2 61.7% 9.2%) marketing / hsl(0 0% 100%) product",
-    "card": "hsl(217.3 56.9% 12.7%) marketing / hsl(0 0% 100%) product",
-    "card_foreground": "hsl(0 0% 98%)",
-    "border": "hsl(217 40% 22%) marketing / hsl(216 20% 88%) product",
-    "muted": "hsl(0 0% 12%)",
-    "muted_foreground": "hsl(216 22% 72%) marketing / hsl(217 16% 42%) product",
+    "notation": "HSL triplets in CSS custom properties, read through hsl(var(--x)). The two translucent washes carry their alpha inside the token.",
+    "light_is_root": "Every token is defined on :root for the light app and redefined under [data-theme=\"dark\"]. [data-surface=\"light\"|\"dark\"|\"inverse\"] scopes a band or a chrome element.",
     "strategy": [
-      "The 'Tinted Grey' Rule: Never use pure #000000 and never pure white as ink. Neutrals are tinted toward the brand navy's hue (around 217) on both surfaces, so the two read as one product seen two ways.",
-      "Avoid generic full-screen gradients (especially purple/blue). Use subtle noise/grain texture over gloss.",
-      "Brand Red (#FF2731) is the CTA on marketing and, in the product, the logo and standout data only — never a background fill and never a status. Brand Navy (#091426) is the product's CTA and carries structure and weight on both surfaces."
-    ],
-    "data": "hsl(357.2 100% 57.6%) \u2014 the same on both; AA-large only on light"
+      "The 'Tinted Grey' Rule survives: no pure #000 ink. Ground and lines are warm (hue ~37); ink is navy-tinted (hue ~217).",
+      "Red has two tokens because it has two jobs: --accent for anything that is not a word, --accent-ink for any word below 24px.",
+      "Primary buttons are navy with white text \u2014 never red \u2014 on the light app.",
+      "A state is ink on its own wash, and is never the accent red."
+    ]
   },
   "visual_enhancers": {
     "surfaces": [
@@ -71,9 +87,9 @@
   },
   "component_rules": {
     "forms_and_inputs": "ALWAYS use Shadcn Input, Select, Form, Checkbox (HEAVILY CUSTOMIZE them to strip the 'Vercel-look' via Tailwind).",
-    "buttons": "Modern styles. Pill-shaped or sharp rectangular. Interaction animations and color relevant to the app style.",
-    "cards": "Go cardless or sharp edges, rectangular, dense styles. Minimize rounded corners to max 8px (rounded-lg or rounded-md).",
-    "navigation": "MUST have a visible navigation bar on desktop with Logo, 3-5 links, and CTA. DO NOT use completely transparent background in header. Always use Glassmorphism or solid dark background.",
+    "buttons": "Primary is navy (#091426) with white text. Secondary is the card with a control border. Pills are rounded-pill.",
+    "cards": "Cards are white on the warm ground, separated by the hairline, not by shadow. Radius from the scale: sm 10px \u00b7 md 14px \u00b7 lg 20px \u00b7 xl 22px \u00b7 pill 999px. `rounded` (4px) is kept for controls too small to carry 10px \u2014 a 16px checkbox.",
+    "navigation": "A visible bar on desktop. The admin sidebar is inverse chrome \u2014 navy, light ink \u2014 via data-surface=\"inverse\".",
     "toasts": "Use 'sonner' for toasts.",
     "calendar_dropdowns": "Use Shadcn calendar and dropdown-menu. DO NOT use raw HTML <select> or <input type='date'>."
   },
@@ -206,6 +222,31 @@
       "Loading is a skeleton in the shape of the content, never a spinner. Measured: swapping skeleton for content scores 0.0000 CLS at 390px and 1440px.",
       "Tables scroll inside a ScrollTable with the header sticky and the first column pinned \u2014 that column is the row's identity. `overflow-x: auto` computes overflow-y to auto as well, which makes the container the scroller, which is why it owns a max-height: a sticky header with nothing to stick against does nothing.",
       "A long free-text cell is line-clamped with the full text on `title`. Unclamped, one audit reason took a row from 64px to 201px on a phone."
+    ],
+    "radius": [
+      "The maximum was 8px and is raised to 22px. The scale: sm 10px, md 14px, lg 20px, xl 22px, pill 999px \u2014 `rounded-sm/md/lg/xl/pill`, read from --radius-* in index.css.",
+      "Why raise it rather than split the difference: the low-density brief is drawn at 20-22px, and a 12px compromise would be a third radius nobody designed to. The dark set keeps 4/6/8 for the marketing pages that were drawn to it.",
+      "`rounded` (Tailwind's 4px) stays for controls under ~24px \u2014 a checkbox at 10px is a circle."
+    ],
+    "type_scale": [
+      "Tokens, never arbitrary sizes: text-eyebrow 11px (uppercase, tracking-eyebrow 0.18em), text-meta 14px, text-body 16px (the document base), text-body-lg 17px, text-h3 24px, text-h2 24\u219230px, text-h1 32\u219246px.",
+      "h1-h3 are Fraunces 600 with tracking -0.025/-0.015/-0.01em; h1 at line-height 1.05. h1 and h2 clamp between a 375px and 1280px viewport so neither overflows at phone width.",
+      "Body copy caps at max-w-measure (64ch).",
+      "Eyebrows use --muted-foreground (#5B6678). The brief's muted ink (#8A93A1) is 3.10:1 on white and fails AA for text; it is kept as --faint-foreground for decoration only.",
+      "The marketing pages keep their fluid poster scale (text-fluid-*); they are on the dark set and out of scope of the move to light."
+    ],
+    "spacing": [
+      "card padding p-card-sm 26px / p-card 30px / p-card-lg 34px by prominence; inner card padding p-inner 24px; section gap gap-section/space-y-section 26px; list row padding py-row 22px vertical."
+    ],
+    "density": [
+      "Two densities, one component set. data-density=\"compact\" on a wrapper redefines --space-row-y 22\u21929px, --text-body 16\u219214px, --text-meta 14\u219213px, --space-section 26\u219216px and --row-h 70\u219242px, and hides .density-avatar. Colours, radii and focus styles are not in that block.",
+      "Admin only, and only on the action queue, the console's data tables and the audit log. DensityScope is the one writer; DENSITY_SURFACES is the list; the overview is never on it. test_density.py fails a build that applies it anywhere else."
+    ],
+    "elevation_on_light": [
+      "Surfaces separate with the hairline (#E3DED6) and the white card on the warm ground, never with a shadow. Shadows are for what floats: menus, popovers, dialogs, toasts."
+    ],
+    "focus": [
+      "Every interactive element: a 2px ring in --ring with a 2-3px offset, so it clears rounded corners rather than being clipped by them. Navy on light (18.43:1 on white, 16.78:1 on the ground), the inverse ink on navy chrome (16.26:1), red on the dark set (4.90:1)."
     ]
   }
 }

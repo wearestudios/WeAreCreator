@@ -77,7 +77,7 @@ export default function BrandHomepageLogo({ userId, block, onChanged }) {
     return (
         <div data-testid={IDS.panel} className="space-y-4">
             <div className="space-y-1">
-                <p data-testid={IDS.state} className="text-sm">
+                <p data-testid={IDS.state} className="text-meta">
                     {live
                         ? "On the home page."
                         : "Not on the home page."}
@@ -93,7 +93,7 @@ export default function BrandHomepageLogo({ userId, block, onChanged }) {
                 wording. On a trademark this is the record: what the constant
                 says now is irrelevant to what was consented to then. */}
             {consentedAt && (
-                <div className="rounded-lg border border-tint/10 bg-card p-4">
+                <div className="rounded-lg border border-border bg-card p-4">
                     <p className={TEXT.meta}>
                         Permission given {new Date(consentedAt).toLocaleDateString()}
                         {withdrawnAt

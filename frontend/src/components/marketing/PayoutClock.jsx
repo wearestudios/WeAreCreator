@@ -113,7 +113,7 @@ export function PayoutClock({
                     <motion.rect
                         width="1000"
                         height="8"
-                        fill="#1A3053"
+                        fill="hsl(var(--graphic-track))"
                         style={{ originX: 0, transformBox: "fill-box" }}
                         {...draw(0)}
                     />
@@ -124,7 +124,7 @@ export function PayoutClock({
                         x={ourAt * 10}
                         width={(theirAt - ourAt) * 10}
                         height="8"
-                        fill="#5E7FA8"
+                        fill="hsl(var(--graphic-quiet))"
                         style={{ originX: 0, transformBox: "fill-box" }}
                         {...draw(step)}
                     />

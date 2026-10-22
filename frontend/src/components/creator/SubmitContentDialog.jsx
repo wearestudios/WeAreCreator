@@ -109,16 +109,16 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-white/10 bg-card grain-surface"
+                className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         Submit content
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {collab?.campaign_title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                         Paste every published link — reel, carousel, stories archive.
                         Add as many as your deliverable calls for.
                     </DialogDescription>
@@ -130,7 +130,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                             <div key={i} className="space-y-1">
                                 <Label
                                     htmlFor={`sc-url-${i}`}
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     URL {i + 1}
                                 </Label>
@@ -143,7 +143,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                                         inputMode="url"
                                         value={u}
                                         onChange={(e) => setAt(i, e.target.value)}
-                                        className="h-12 border-white/10 bg-background/60 pl-9 pr-10 focus-visible:ring-primary"
+                                        className="h-12 border-border bg-background/60 pl-9 pr-10 focus-visible:ring-primary"
                                         placeholder="https://instagram.com/p/..."
                                     />
                                     {urls.length > 1 && (
@@ -152,7 +152,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                                             aria-label={`Remove URL ${i + 1}`}
                                             data-testid={IDS.remove(i)}
                                             onClick={() => removeAt(i)}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-white/5 hover:text-state-rejected"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-state-rejected"
                                         >
                                             <XIcon className="h-3.5 w-3.5" />
                                         </button>
@@ -177,14 +177,14 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                         data-testid={IDS.add}
                         onClick={addRow}
                         disabled={urls.length >= 25}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-transparent px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-transparent px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                     >
                         <PlusIcon className="h-3.5 w-3.5" />
                         Add another URL
                     </button>
 
                     {err && (
-                        <p data-testid={IDS.error} className="text-sm text-destructive">
+                        <p data-testid={IDS.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -195,7 +195,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                                 type="button"
                                 variant="outline"
                                 data-testid={IDS.cancel}
-                                className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="h-12 rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 Cancel
                             </Button>

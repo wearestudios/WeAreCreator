@@ -164,7 +164,7 @@ export default function ForBrands() {
                 floors, because a small number is not proof. */}
             <ProofStrip />
 
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <Points items={COPY.props} testid={IDS.valueProps} />
                 </div>
@@ -213,7 +213,7 @@ export default function ForBrands() {
                 to say to a brand and it was a clause in a sentence. It sits
                 immediately under the terms it illustrates, and the list above
                 lost the line it duplicates. */}
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <FeeFlow />
                 </div>

@@ -50,7 +50,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
             to={`/campaigns/${row.campaign_id}`}
             className="group min-w-0 flex-1"
         >
-            <span className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <span className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 <BrandAvatar brand={row} size="h-5 w-5" />
                 <span className="truncate">
                     {row.brand_name || "Brand"}
@@ -60,19 +60,19 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
             </span>
             <span
                 className={
-                    "mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-primary " +
+                    "mt-1 block truncate font-serif text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary " +
                     (muted ? "text-muted-foreground" : "")
                 }
             >
                 {row.campaign_title || "Untitled campaign"}
             </span>
-            <span className="mt-2 block text-xs text-muted-foreground">
+            <span className="mt-2 block text-meta text-muted-foreground">
                 Applied {formatDate(row.created_at)}
             </span>
             {row.exit_reason && (
                 <span
                     data-testid={IDS.note(row.id)}
-                    className="mt-2 block text-xs leading-relaxed text-muted-foreground"
+                    className="mt-2 block text-meta leading-relaxed text-muted-foreground"
                 >
                     {row.exit_reason}
                 </span>
@@ -80,7 +80,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
         </Link>
 
         <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
-            <Money symbolClass="h-3.5 w-3.5" className="font-serif text-xl leading-none">
+            <Money symbolClass="h-3.5 w-3.5" className="font-serif text-h3 leading-none">
                 {formatRupees(row.agreed_amount ?? row.quoted_rate)}
             </Money>
             <StatePill state={row.state} testid={IDS.state(row.id)} />
@@ -112,7 +112,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
                     type="button"
                     onClick={() => onWithdraw(row)}
                     data-testid={IDS.withdraw(row.id)}
-                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
                 >
                     <X className="h-3.5 w-3.5" />
                     Withdraw
@@ -170,7 +170,7 @@ function WithdrawDialog({ row, onClose, onDone }) {
             <DialogContent data-testid={IDS.withdrawDialog} className="sm:max-w-md">
                 <DialogHeader className="text-left">
                     <DialogTitle>Withdraw from {row?.campaign_title}?</DialogTitle>
-                    <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                         {/* Said plainly, because a creator worrying that pulling
                             out counts against them is a creator who goes quiet
                             instead — which is the behaviour this replaces. */}
@@ -185,10 +185,10 @@ function WithdrawDialog({ row, onClose, onDone }) {
                     onChange={(e) => setReason(e.target.value)}
                     data-testid={IDS.withdrawReason}
                     placeholder="e.g. I've got a clashing shoot that week"
-                    className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                    className="rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                 />
                 {error && (
-                    <p data-testid={IDS.withdrawError} className="text-sm text-destructive">
+                    <p data-testid={IDS.withdrawError} className="text-meta text-destructive">
                         {error}
                     </p>
                 )}
@@ -234,7 +234,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                 title="Waiting to hear back."
                 aside={
                     total > 0 && (
-                        <span data-testid={IDS.count} className="text-xs text-muted-foreground">
+                        <span data-testid={IDS.count} className="text-meta text-muted-foreground">
                             {total} {total === 1 ? "application" : "applications"}
                         </span>
                     )
@@ -267,7 +267,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                         {waiting.length > 0 && (
                             <ul
                                 data-testid={IDS.list}
-                                className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
+                                className="divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface"
                             >
                                 {waiting.map((row) => (
                                     <Row
@@ -282,11 +282,11 @@ export default function Applications({ applied, declined, invitations, onChanged
                         )}
 
                         {notThisTime.length > 0 && (
-                            <div className="overflow-hidden rounded-md border border-white/10 bg-card/50">
-                                <p className="border-b border-white/10 px-5 py-4 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:px-6">
+                            <div className="overflow-hidden rounded-md border border-border bg-card/50">
+                                <p className="border-b border-border px-5 py-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground sm:px-6">
                                     Went another way
                                 </p>
-                                <ul data-testid={IDS.declinedList} className="divide-y divide-white/10">
+                                <ul data-testid={IDS.declinedList} className="divide-y divide-divider">
                                     {notThisTime.map((row) => (
                                         <Row
                                             key={row.id}
@@ -297,8 +297,8 @@ export default function Applications({ applied, declined, invitations, onChanged
                                         />
                                     ))}
                                 </ul>
-                                <div className="border-t border-white/10 px-5 py-5 sm:px-6">
-                                    <p className="text-sm leading-relaxed text-muted-foreground">
+                                <div className="border-t border-border px-5 py-5 sm:px-6">
+                                    <p className="text-body leading-relaxed text-muted-foreground">
                                         Briefs get filled for all sorts of reasons —
                                         dates, budget, how many creators they needed.
                                         None of it changes what you make.
@@ -306,7 +306,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                                     <Link
                                         to="/campaigns"
                                         data-testid={IDS.declinedBrowse}
-                                        className="group mt-4 inline-flex items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
+                                        className="group mt-4 inline-flex items-center gap-2 text-meta text-primary transition-colors duration-200 hover:text-primary-hover"
                                     >
                                         See what else is open
                                         <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

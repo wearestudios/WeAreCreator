@@ -97,11 +97,11 @@ export default function Invitations({ invitations, onChanged }) {
     return (
         <>
             <div className="overflow-hidden rounded-md border border-primary/30 bg-primary/[0.06]">
-                <p className="flex items-center gap-2 border-b border-primary/20 px-5 py-4 text-xs uppercase tracking-[0.2em] text-primary sm:px-6">
+                <p className="flex items-center gap-2 border-b border-primary/20 px-5 py-4 text-eyebrow uppercase tracking-eyebrow text-primary sm:px-6">
                     <MailOpen className="h-3.5 w-3.5" />
                     {rows.length === 1 ? "You've been invited" : `${rows.length} invitations`}
                 </p>
-                <ul data-testid={IDS.invitationList} className="divide-y divide-white/10">
+                <ul data-testid={IDS.invitationList} className="divide-y divide-divider">
                     {rows.map((invite) => (
                         <li
                             key={invite.id}
@@ -112,17 +112,17 @@ export default function Invitations({ invitations, onChanged }) {
                                 to={`/campaigns/${invite.campaign_id}`}
                                 className="group min-w-0 flex-1"
                             >
-                                <span className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                <span className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     <BrandAvatar brand={invite} size="h-5 w-5" />
                                     <span className="truncate">
                                         {invite.brand_name || "A brand"}
                                         {invite.area ? ` · ${invite.area}` : ""}
                                     </span>
                                 </span>
-                                <span className="mt-1 block truncate font-serif text-lg leading-tight transition-colors duration-200 group-hover:text-primary">
+                                <span className="mt-1 block truncate font-serif text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary">
                                     {invite.campaign_title || "Untitled campaign"}
                                 </span>
-                                <span className="mt-2 block text-xs text-muted-foreground">
+                                <span className="mt-2 block text-meta text-muted-foreground">
                                     {/* `.text`, not the object — the formatter
                                         returns the parts so a caller can lay
                                         out the figure and its qualifier
@@ -137,7 +137,7 @@ export default function Invitations({ invitations, onChanged }) {
                                 {invite.note && (
                                     <span
                                         data-testid={IDS.invitationNote(invite.id)}
-                                        className="mt-2 block text-sm leading-relaxed text-muted-foreground"
+                                        className="mt-2 block text-body leading-relaxed text-muted-foreground"
                                     >
                                         “{invite.note}”
                                     </span>
@@ -151,7 +151,7 @@ export default function Invitations({ invitations, onChanged }) {
                                     disabled={busyId === invite.id}
                                     onClick={() => decline(invite)}
                                     data-testid={IDS.invitationDecline(invite.id)}
-                                    className="h-11 rounded-full border-white/15 bg-transparent px-4 text-sm hover:bg-white/5"
+                                    className="h-11 rounded-full border-input bg-transparent px-4 text-meta hover:bg-muted"
                                 >
                                     {busyId === invite.id ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -163,7 +163,7 @@ export default function Invitations({ invitations, onChanged }) {
                                     type="button"
                                     onClick={() => openAccept(invite)}
                                     data-testid={IDS.invitationAccept(invite.id)}
-                                    className="h-11 rounded-full bg-primary px-5 text-sm text-primary-foreground hover:bg-primary-hover"
+                                    className="h-11 rounded-full bg-primary px-5 text-meta text-primary-foreground hover:bg-primary-hover"
                                 >
                                     Accept
                                 </Button>
@@ -176,13 +176,13 @@ export default function Invitations({ invitations, onChanged }) {
             <Dialog open={Boolean(accepting)} onOpenChange={(v) => !v && setAccepting(null)}>
                 <DialogContent
                     data-testid={IDS.invitationDialog}
-                    className="max-w-md rounded-md border border-white/10 bg-card"
+                    className="max-w-md rounded-md border border-border bg-card"
                 >
                     <DialogHeader className="text-left">
-                        <DialogTitle className="font-serif text-2xl leading-tight">
+                        <DialogTitle className="font-serif text-h3 leading-tight">
                             Accept “{accepting?.campaign_title}”
                         </DialogTitle>
-                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                             Accepting sends the brand a pitch like any other — your
                             rate, and a line about why you're right for it.
                         </DialogDescription>
@@ -190,7 +190,7 @@ export default function Invitations({ invitations, onChanged }) {
 
                     <div className="space-y-4">
                         <div>
-                            <Label htmlFor="invite-rate" className="text-sm">
+                            <Label htmlFor="invite-rate" className="text-meta">
                                 Your rate for this
                             </Label>
                             <Input
@@ -199,11 +199,11 @@ export default function Invitations({ invitations, onChanged }) {
                                 value={rate}
                                 onChange={(e) => setRate(e.target.value)}
                                 data-testid={IDS.invitationRate}
-                                className="mt-2 h-11 border-white/10 bg-background/60"
+                                className="mt-2 h-11 border-border bg-background/60"
                             />
                         </div>
                         <div>
-                            <Label htmlFor="invite-pitch" className="text-sm">
+                            <Label htmlFor="invite-pitch" className="text-meta">
                                 Why you
                             </Label>
                             <Textarea
@@ -213,10 +213,10 @@ export default function Invitations({ invitations, onChanged }) {
                                 onChange={(e) => setPitch(e.target.value)}
                                 placeholder="A line or two — what you'd shoot, and why it suits them."
                                 data-testid={IDS.invitationPitch}
-                                className="mt-2 border-white/10 bg-background/60"
+                                className="mt-2 border-border bg-background/60"
                             />
                         </div>
-                        {error && <p className="text-sm text-state-rejected">{error}</p>}
+                        {error && <p className="text-meta text-state-rejected">{error}</p>}
                     </div>
 
                     <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -224,7 +224,7 @@ export default function Invitations({ invitations, onChanged }) {
                             type="button"
                             variant="outline"
                             onClick={() => setAccepting(null)}
-                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                            className="h-12 rounded-full border-input bg-transparent px-5 sm:h-11"
                         >
                             Back
                         </Button>

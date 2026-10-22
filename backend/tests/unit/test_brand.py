@@ -1,11 +1,12 @@
-"""The brand, in two surfaces.
+"""The brand, on a light app with a navy set kept beside it.
 
-    navy  #091426   structure, weight, primary actions
-    red   #FF2731   identity, highlights, marketing CTAs
+    navy  #091426   headings, primary buttons, inverse chrome
+    red   #FF2731   the accent — fills, bars, dots, badges, borders, the logo
+          #C41E27   the accent as text below 24px (accent-ink)
 
-    MARKETING  navy canvas, #0E1C33 surface, #EDF1F7 text, red CTA
-    PRODUCT    light #F2F4F7 canvas, white surface, navy text, navy CTA
-               red is the logo and standout data
+    LIGHT   :root — warm #F6F4F1 ground, white cards, #101B2E body, navy CTA
+    DARK    [data-theme="dark"] — the navy set, for the marketing routes and
+            an admin's opt-in: #091426 canvas, #0E1C33 surface, red CTA
 
 **The rules that are easy to state and easy to break are the ones here.** A
 palette is applied by hand across hundreds of call sites, and the two things
@@ -46,8 +47,12 @@ def _block(selector: str) -> dict:
     return dict(re.findall(r"--([\w-]+):\s*([\d.]+ [\d.]+% [\d.]+%)", CSS[i:j]))
 
 
-MARKETING = _block(":root {\n        /* MARKETING")
-PRODUCT = {**MARKETING, **_block(':root[data-theme="light"] {')}
+# The app is `:root`; the navy set redefines it. `PRODUCT` and `MARKETING` keep
+# their names because the routes they describe are unchanged — the product is
+# on light, marketing is on the dark set.
+PRODUCT = _block(':root,\n    [data-surface="light"] {')
+MARKETING = {**PRODUCT, **_block('[data-surface="dark"],\n    :root[data-theme="dark"] {')}
+INVERSE_HEX = {"surface": "#091426", "alt": "#15294A", "ink": "#EDF1F7", "muted": "#AEB8C7"}
 
 
 def _rgb(hsl: str):
@@ -62,6 +67,15 @@ def _lum(hsl: str) -> float:
 
 def ratio(a: str, b: str) -> float:
     la, lb = _lum(a), _lum(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def ratio_hex(a: str, b: str) -> float:
+    def lum(h):
+        r, g, bl = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        c = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in (r, g, bl)]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    la, lb = lum(a), lum(b)
     return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
 
@@ -83,17 +97,40 @@ class TestThePaletteIsTheBrands:
     def test_marketing_cta_is_the_brand_red(self):
         assert _hex(MARKETING["primary"]) == BRAND_RED
 
-    def test_the_product_is_the_light_canvas_with_navy_ink_and_navy_ctas(self):
-        assert _hex(PRODUCT["background"]) == "#F2F4F7"
-        assert _hex(PRODUCT["card"]) == "#FFFFFF"
-        assert _hex(PRODUCT["foreground"]) == BRAND_NAVY
-        assert _hex(PRODUCT["primary"]) == BRAND_NAVY
+    def test_the_product_is_the_warm_light_set_with_navy_headings_and_ctas(self):
+        """The low-density brief's values, exactly. A token rounded on the
+        way into HSL would be a palette nobody specified."""
+        expected = {
+            "background": "#F6F4F1", "card": "#FFFFFF", "muted": "#F1EEE9",
+            "wash": "#FAF8F5", "border": "#E3DED6", "divider": "#EFECE7",
+            "input": "#D8D2C8", "heading": BRAND_NAVY, "foreground": "#101B2E",
+            "muted-foreground": "#5B6678", "faint-foreground": "#8A93A1",
+            "accent": BRAND_RED, "accent-ink": "#C41E27", "accent-border": "#F0C9CB",
+            "primary": BRAND_NAVY, "primary-foreground": "#FFFFFF",
+            "state-progress": "#2B5FA8", "state-progress-wash": "#E8EFF9",
+            "state-pending-wash": "#FDF3E0", "state-approved": "#1C7A4A",
+            "state-approved-wash": "#E7F5EE", "state-rejected": "#B3242C",
+            "state-rejected-wash": "#FBE9EA",
+        }
+        for token, hexval in expected.items():
+            assert _hex(PRODUCT[token]) == hexval, (token, _hex(PRODUCT[token]), hexval)
+
+    def test_warn_is_darkened_from_the_brief_and_says_why(self):
+        """**The one departure from the brief's values.** #B06B00 is 4.24:1
+        on white and 3.85:1 on its own wash, so a pending chip would fail AA
+        on the surface a chip actually is. #9E6000 is the same hue at the
+        first lightness that passes."""
+        assert _hex(PRODUCT["state-pending"]) == "#9E6000"
+        brief = "36.5 100% 34.5%"  # #B06B00
+        assert ratio(brief, PRODUCT["state-pending-wash"]) < 4.5
+        assert ratio(PRODUCT["state-pending"], PRODUCT["state-pending-wash"]) >= 4.5
 
     def test_the_red_is_identical_on_both_surfaces(self):
         """**It is the identity, so it does not get adjusted for the surface.**
         Everything else in the file flips; this is the one value that does
         not, and it buys that with a size constraint rather than a tweak."""
         assert _hex(MARKETING["data"]) == _hex(PRODUCT["data"]) == BRAND_RED
+        assert _hex(PRODUCT["accent"]) == BRAND_RED
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +139,14 @@ class TestThePaletteIsTheBrands:
 
 
 PAIRS = [
+    ("heading", "background", "a heading on the canvas", 4.5),
+    ("heading", "card", "a heading on a card", 4.5),
     ("foreground", "background", "body text on the canvas", 4.5),
+    ("accent-ink", "card", "the accent as text on a card", 4.5),
+    ("accent-ink", "background", "the accent as text on the canvas", 4.5),
+    ("accent-foreground", "accent", "a label on a red badge", 4.5),
+    ("ring", "card", "the focus ring against a card", 3.0),
+    ("ring", "background", "the focus ring against the canvas", 3.0),
     ("card-foreground", "card", "body text on a card", 4.5),
     ("muted-foreground", "background", "metadata on the canvas", 4.5),
     ("muted-foreground", "card", "metadata on a card", 4.5),
@@ -116,6 +160,14 @@ PAIRS = [
     ("state-done", "card", "done", 4.5),
 ]
 
+# A chip is the ink on its own wash, so that is the pairing that has to pass.
+# Light only: on the dark set the wash carries an alpha and is measured in a
+# browser, against whatever it composites over.
+WASH_PAIRS = [
+    (f"state-{s}", f"state-{s}-wash", s, 4.5)
+    for s in ("pending", "approved", "rejected", "progress", "done")
+]
+
 
 class TestContrast:
     @pytest.mark.parametrize("surface", ["marketing", "product"])
@@ -124,6 +176,38 @@ class TestContrast:
         tokens = MARKETING if surface == "marketing" else PRODUCT
         got = ratio(tokens[fg], tokens[bg])
         assert got >= need, f"{surface}: {label} is {got:.2f}:1, needs {need}"
+
+    @pytest.mark.parametrize("fg,bg,label,need", WASH_PAIRS)
+    def test_every_state_chip_clears_aa_on_its_own_wash(self, fg, bg, label, need):
+        got = ratio(PRODUCT[fg], PRODUCT[bg])
+        assert got >= need, f"{label} on its wash is {got:.2f}:1"
+
+    def test_the_accent_is_for_fills_and_its_ink_is_for_words(self):
+        """**The brief's non-negotiable, measured.** #FF2731 clears 3:1 —
+        large text and UI boundaries — and fails 4.5:1, so it may not be a
+        word below 24px. #C41E27 passes on both grounds."""
+        white, ground = PRODUCT["card"], PRODUCT["background"]
+        for g in (white, ground):
+            assert 3.0 <= ratio(PRODUCT["accent"], g) < 4.5
+            assert ratio(PRODUCT["accent-ink"], g) >= 4.5
+        assert round(ratio(PRODUCT["accent"], white), 2) == 3.76
+        assert round(ratio(PRODUCT["accent-ink"], white), 2) == 5.90
+
+    def test_the_muted_ink_fails_as_text_and_is_kept_off_it(self):
+        """#8A93A1 is 3.10:1 on white and 2.83:1 on the ground. It is a token
+        for decoration, and no component may set text in it."""
+        assert ratio(PRODUCT["faint-foreground"], PRODUCT["card"]) < 4.5
+        offenders = [str(p.relative_to(SRC)) for p in _app_files()
+                     if re.search(r"\btext-faint\b", _code(p.read_text()))]
+        assert not offenders, offenders
+
+    def test_the_inverse_chrome_reads(self):
+        """Navy chrome inside the light app: the sidebar's ink and its muted
+        ink on both inverse surfaces."""
+        assert ratio_hex(INVERSE_HEX["ink"], INVERSE_HEX["surface"]) >= 4.5
+        assert ratio_hex(INVERSE_HEX["muted"], INVERSE_HEX["surface"]) >= 4.5
+        assert ratio_hex(INVERSE_HEX["muted"], INVERSE_HEX["alt"]) >= 4.5
+        assert ratio_hex(INVERSE_HEX["ink"], INVERSE_HEX["surface"]) >= 3.0  # its ring
 
     def test_the_marketing_cta_label_is_navy_rather_than_white(self):
         """**Measured, not chosen.** White on #FF2731 is 3.76:1 and fails AA
@@ -206,6 +290,42 @@ class TestNothingNamesAColour:
                 offenders.append(f"{p.relative_to(SRC)}: {m.group(0)}")
         assert not offenders, offenders[:12]
 
+    def test_no_component_paints_white_or_black_or_a_literal_brand_scale(self):
+        """**No dark-ground assumption survives anywhere in the app.** 620 of
+        these were converted — `border-white/10` and its kind are invisible on
+        the light ground, which is what makes a theme flip look broken rather
+        than different. The brand colours a surface must keep whatever the
+        theme are `brand-navy` / `brand-red` / `brand-white`, which are tokens;
+        the literal `navy-700` / `red-500` scales are gone from the config."""
+        RAW = re.compile(
+            r"\b(?:bg|text|border|ring|fill|stroke|divide|from|via|to|decoration|"
+            r"outline|accent|caret|placeholder|shadow|ring-offset|border-l)-"
+            r"(?:white|black|navy-\d{2,3}|red-\d{2,3})(?![\w-])"
+        )
+        offenders = []
+        for p in _app_files():
+            for m in RAW.finditer(_code(p.read_text())):
+                offenders.append(f"{p.relative_to(SRC)}: {m.group(0)}")
+        assert not offenders, offenders[:20]
+        config = (FRONTEND / "tailwind.config.js").read_text()
+        assert "navy: {" not in config and "red: {" not in config
+
+    def test_no_component_writes_a_hex_or_rgb_colour(self):
+        """Inline SVG fills and style objects carry no class for the sweep
+        above to find. The exceptions are named, not patterned: the studio's
+        coral, which CLAUDE.md keeps out of the token layer on purpose, and the
+        hues computed per id (`cover.js` has to agree with the server)."""
+        allowed = {"lib/studioPalette.js"}
+        RAW = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b|\brgba?\(|\bhsla?\(\s*[0-9]")
+        offenders = []
+        for p in _app_files():
+            rel = str(p.relative_to(SRC))
+            if rel in allowed:
+                continue
+            for m in RAW.finditer(_code(p.read_text())):
+                offenders.append(f"{rel}: {m.group(0)}")
+        assert not offenders, offenders
+
     def test_the_old_accent_is_gone_rather_than_aliased(self):
         """A deprecated `ember` alias would have let call sites keep pointing
         at a colour the brand no longer has, which is how a rebrand ends up
@@ -228,7 +348,7 @@ class TestNothingNamesAColour:
         """A rule nobody has watched fail is a rule nobody should trust."""
         assert RAW_CLASS.search('className="text-amber-300"')
         assert RAW_CLASS.search('className="bg-emerald-500/10"')
-        # And the brand's own literals are not caught by it.
+        # The brand scales are policed by the sweep above instead.
         assert not RAW_CLASS.search('className="bg-red-500 text-navy-700"')
 
 
@@ -299,28 +419,29 @@ class TestRedIsLogoAndStandoutData:
         assert "u" in _code('const u = "https://example.com";')
 
     def test_the_surface_decides_the_logo_colour_and_primary_never_does(self):
-        """**White on marketing, red on the product, from the attribute that
-        already says which is which.**
+        """**Red on the app, white on navy, from the attribute that already
+        says which is which.**
 
-        Marketing navy is the *absence* of `data-theme`, so white is the
-        default rule and light is the override — the same way round as every
-        other token, and a bug that applies neither applies white to navy.
+        Light is the *absence* of `data-theme` now, so red is the default rule
+        and the three navy grounds — the dark set, a dark band, inverse chrome
+        — are the override. A bug that applies neither applies red to the
+        light ground, which is legible.
 
         `--primary` is banned from the mark for the reason the original test
-        existed: it is the brand red on marketing and navy on the product, so
-        it would repaint the logo on sign-in.
+        existed: it flips between the sets, so it would repaint the logo on
+        sign-in.
         """
         css = (FRONTEND / "src" / "index.css").read_text()
-        assert ".weare-logo {\n        color: #fff;\n    }" in css, (
-            "the default rule is not white — marketing is the default document"
+        assert ".weare-logo {\n        color: var(--weare-logo-ink);\n    }" in css, (
+            "the default rule is not the brand red — light is the default document"
         )
-        assert ':root[data-theme="light"] .weare-logo' in css, (
-            "nothing overrides the logo on the product surface"
-        )
-        assert "--weare-logo-ink: #ff2731" in css
+        assert ':root[data-theme="dark"] .weare-logo' in css
+        assert '[data-surface="inverse"] .weare-logo' in css
+        assert "--weare-logo-ink: hsl(var(--brand-red))" in css
+        assert "--brand-red: 357.2 100% 57.6%" in css
 
         logo = (SRC / "components" / "brand" / "Logo.jsx").read_text()
-        assert "#FF2731" in logo, "the forced tone is not the brand red"
+        assert "var(--brand-red)" in logo, "the forced tone is not the brand red"
         for token in ("bg-primary", "text-primary", "var(--primary)"):
             assert token not in logo, f"the mark is painted with {token}, which flips"
 
@@ -342,8 +463,8 @@ class TestRedIsLogoAndStandoutData:
         """Break-tested, because an `in` against a stylesheet is exactly the
         shape of assertion that passes on a file that no longer does the job.
         """
-        good = ':root[data-theme="light"] .weare-logo {\n  color: red;\n}'
-        assert ':root[data-theme="light"] .weare-logo' in good
+        good = ':root[data-theme="dark"] .weare-logo {\n  color: white;\n}'
+        assert ':root[data-theme="dark"] .weare-logo' in good
         # The failure this guards: colouring the mark with the flipping token.
         assert "var(--primary)" in 'style={{ color: "var(--primary)" }}'
 
@@ -368,12 +489,17 @@ class TestRedIsLogoAndStandoutData:
         LARGE = re.compile(
             r"\btext-fluid-(?:4xl|5xl|6xl|7xl|8xl|9xl)\b"
             r"|\btext-(?:2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b"
+            r"|\btext-h[123]\b"
             r"|\btext-\[(?:2[4-9]|[3-9]\d|\d{3,})px\]"
         )
+        # **The accent, by every name it has.** `text-data`, a bare
+        # `text-accent` and `text-brand-red` are all #FF2731 as a word; only
+        # `text-accent-ink` may be small.
+        RED_TEXT = re.compile(r"\btext-(?:data|accent|brand-red)(?![\w-])")
         offenders = []
         for p in _app_files():
-            for line in p.read_text().splitlines():
-                if "text-data" in line and not LARGE.search(line):
+            for line in _code(p.read_text()).splitlines():
+                if RED_TEXT.search(line) and not LARGE.search(line):
                     offenders.append(f"{p.relative_to(SRC)}: {line.strip()[:90]}")
         assert not offenders, offenders
 
@@ -384,6 +510,10 @@ class TestRedIsLogoAndStandoutData:
         assert not LARGE.search('className="text-sm text-data"')
         assert LARGE.search('className="text-fluid-6xl text-data"')
         assert LARGE.search('className="text-data text-3xl"'), "order must not matter"
+        RED_TEXT = re.compile(r"\btext-(?:data|accent|brand-red)(?![\w-])")
+        assert RED_TEXT.search('className="text-meta text-accent"')
+        assert not RED_TEXT.search('className="text-meta text-accent-ink"')
+        assert not RED_TEXT.search('className="bg-accent text-accent-foreground"')
 
     def test_red_is_not_a_status(self):
         """The rule the old palette already carried ("ember is never a

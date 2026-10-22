@@ -34,16 +34,16 @@ function Row({ q }) {
                 className={
                     "max-w-[85%] rounded-lg border px-4 py-3 " +
                     (theirs
-                        ? "border-white/10 bg-white/5"
+                        ? "border-border bg-muted"
                         : "border-primary/25 bg-primary/10")
                 }
             >
-                <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     {q.author_name || (theirs ? "Creator" : "Team")}
                     {" · "}
                     {formatWhen(q.created_at)}
                 </p>
-                <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                <p className="mt-1.5 whitespace-pre-line text-body leading-relaxed text-foreground/90">
                     {q.body}
                 </p>
             </div>
@@ -129,7 +129,7 @@ export default function QuestionThread({
     return (
         <div data-testid={QUESTIONS.thread(creatorId)}>
             {all.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{emptyText}</p>
+                <p className="text-meta text-muted-foreground">{emptyText}</p>
             ) : (
                 <ul className="space-y-3">
                     {all.map((q) => (
@@ -146,7 +146,7 @@ export default function QuestionThread({
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         placeholder="Answer the creator — they'll see it here and on WhatsApp"
-                        className="min-h-[64px] border-white/10 bg-card/60 focus-visible:ring-primary"
+                        className="min-h-[64px] border-border bg-card/60 focus-visible:ring-primary"
                     />
                     <div className="mt-3 flex justify-end">
                         <Button

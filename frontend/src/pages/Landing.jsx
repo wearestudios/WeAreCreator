@@ -174,7 +174,7 @@ function Hero() {
                         <Reveal onView={false}>
                             <p
                                 data-testid={HERO_IDS.eyebrow}
-                                className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
+                                className="mb-8 inline-flex items-center gap-3 rounded-full border border-border bg-muted px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
                             >
                                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
                                 {HERO_EYEBROW}
@@ -228,7 +228,7 @@ function Hero() {
                                     <Button
                                         size="lg"
                                         variant="outline"
-                                        className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-white/5 sm:w-auto"
+                                        className="group h-12 w-full rounded-full border-input bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-muted sm:w-auto"
                                     >
                                         I&apos;m a brand
                                         <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />

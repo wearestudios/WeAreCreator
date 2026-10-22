@@ -6,49 +6,153 @@
 
 @layer base {
     /* -----------------------------------------------------------------
-     * The brand, in two surfaces
+     * The surfaces
      *
-     *   navy  #091426   structure, weight, primary actions
-     *   red   #FF2731   identity, highlights, marketing CTAs
+     *   LIGHT   :root — the app. Warm off-white ground, white cards, navy
+     *           headings, navy primary buttons, red as an accent.
+     *   DARK    [data-theme="dark"] — the navy set, kept whole. Selected by
+     *           `lib/surfaceTheme.js` for the marketing routes, which were
+     *           designed for it and are out of scope here, and by an admin
+     *           who explicitly chose it for their console. Nothing selects
+     *           it by default: a document with no attribute is light.
+     *   INVERSE [data-surface="inverse"] — navy chrome inside the light app:
+     *           the admin sidebar. Navy is not retired, it inverts.
      *
-     * **`:root` is the marketing surface and `[data-theme="light"]` is the
-     * product.** That is the inverse of how this file read before, and the
-     * inversion is the whole brand: a stranger lands on navy, signs in, and
-     * the canvas turns light. `lib/surfaceTheme.js` writes the attribute on
-     * `<html>` — on the root rather than a wrapper, because Radix portals
-     * every dialog, sheet, popover and the command palette into
-     * `document.body`, and a wrapper-scoped theme would leave all of them on
-     * the wrong surface.
+     * **This reverses the file's old default**, where `:root` was the navy
+     * marketing surface and the product opted into light. The dark values
+     * moved under the attribute unchanged — every ratio measured for them
+     * still holds — so the reversal loses nothing; it only changes which set
+     * a document gets when nobody has said anything.
      *
-     * The default being marketing is deliberate: it is what an unauthenticated
-     * first paint should be, and the one page everybody sees before anything
-     * has loaded.
+     * The attribute lives on `<html>` rather than a wrapper because Radix
+     * portals every dialog, sheet, popover and toast into `document.body`,
+     * and a wrapper-scoped theme would leave all of them on the wrong surface.
+     *
+     * **One notation.** Every colour is an HSL triplet read through
+     * `hsl(var(--x))`. The two washes that are translucent by design carry
+     * their alpha inside the token (`… / 0.09`), which is still HSL.
      * ----------------------------------------------------------------- */
+    :root,
+    [data-surface="light"] {
+        /* LIGHT — the app. Values from the low-density brief; ratios in the
+         * comments are measured (WCAG relative luminance), not estimated. */
+
+        /* Surfaces */
+        --background: 36 21.7% 95.5%; /* #F6F4F1 page ground */
+        --card: 0 0% 100%; /* #FFFFFF */
+        --popover: 0 0% 100%;
+        --muted: 37.5 22.2% 92.9%; /* #F1EEE9 inset / muted fill */
+        --secondary: 37.5 22.2% 92.9%;
+        --wash: 36 33.3% 97.1%; /* #FAF8F5 subtle wash */
+        /* A card lifting on hover goes to the wash: on a light ground,
+         * elevation is a slightly warmer surface, never a shadow. */
+        --card-elevated: 36 33.3% 97.1%;
+        --border: 36.9 18.8% 86.5%; /* #E3DED6 hairline */
+        --divider: 37.5 20% 92.2%; /* #EFECE7 between rows inside a card */
+        /* #D8D2C8 — 1.50:1 on white. Below the 3:1 WCAG asks of a control
+         * boundary; kept as specified, and inputs carry a fill and a strong
+         * focus ring so the boundary is not the only cue. Flagged in the PR. */
+        --input: 37.5 17% 81.6%;
+
+        /* Ink */
+        --heading: 217.2 61.7% 9.2%; /* #091426 brand navy — 18.43:1 on white */
+        --foreground: 218 48.4% 12.2%; /* #101B2E body — 17.24:1 */
+        --card-foreground: 218 48.4% 12.2%;
+        --popover-foreground: 218 48.4% 12.2%;
+        --secondary-foreground: 218 48.4% 12.2%;
+        /* #5B6678 secondary — 5.81:1 on white, 5.29:1 on the ground, 5.02:1
+         * on the muted fill. "Secondary" is hierarchy, not permission to
+         * fail AA. */
+        --muted-foreground: 217.2 13.7% 41.4%;
+        /* #8A93A1 muted — 3.10:1 on white, 2.83:1 on the ground. **Fails AA
+         * for text at any size below 24px**, so it is for decoration only:
+         * a disabled glyph, a placeholder dot, an icon beside words that
+         * already carry the meaning. Eyebrows use --muted-foreground. */
+        --faint-foreground: 216.5 10.9% 58.6%;
+
+        /* Accent — red, and two jobs */
+        /* #FF2731 — 3.76:1 on white, 3.42:1 on the ground. AA-large and
+         * non-text only: fills, bars, dots, badge grounds, borders. */
+        --accent: 357.2 100% 57.6%;
+        /* Navy on red is 4.90:1; white on red is 3.76:1 and fails. */
+        --accent-foreground: 217.2 61.7% 9.2%;
+        /* #C41E27 — 5.90:1 on white, 5.37:1 on the ground, 5.19:1 on the
+         * wash. **The only red allowed on text below 24px.** */
+        --accent-ink: 356.7 73.5% 44.3%;
+        --accent-wash: 357.2 100% 57.6% / 0.09; /* rgba(255,39,49,.09) */
+        --accent-border: 356.9 56.5% 86.5%; /* #F0C9CB */
+        /* Standout data is the accent. Kept as its own name because the
+         * size floor `test_brand.py` holds is about *this* use. */
+        --data: 357.2 100% 57.6%;
+
+        /* Primary actions are navy with white text — 18.43:1 — never red. */
+        --primary: 217.2 61.7% 9.2%;
+        --primary-foreground: 0 0% 100%;
+        --primary-ink: 217.2 61.7% 9.2%;
+        --primary-hover: 217.4 55.8% 18.6%; /* #15294A inverse alt */
+
+        /* Danger, as the destructive action. White on it is 6.55:1. */
+        --destructive: 356.6 66.5% 42.2%;
+        --destructive-foreground: 0 0% 100%;
+
+        /* Focus: navy, 18.43:1 on white and 16.78:1 on the ground. */
+        --ring: 217.2 61.7% 9.2%;
+
+        /* The alpha base for the classes that still carry one at the call
+         * site (`hover:border-tint/30`). A warm ink rather than navy, so an
+         * alpha of it sits in the same family as the hairline. */
+        --tint: 36 20% 18%;
+        --scrim: 217 40% 20%;
+
+        /* States. Text ratios are against white, then against the state's
+         * own wash, which is what a chip actually puts behind the word. */
+        --state-progress: 215 59.2% 41.4%; /* info #2B5FA8 — 6.35 / 5.49 */
+        --state-progress-wash: 215.3 58.6% 94.3%; /* #E8EFF9 */
+        /* warn. **Darkened from the brief's #B06B00**, which is 4.24:1 on
+         * white and 3.85:1 on its own wash — both below AA. #9E6000 is the
+         * same hue at the first lightness that passes: 5.09 / 4.62. */
+        --state-pending: 36.5 100% 31%; /* #9E6000 */
+        --state-pending-wash: 39.3 87.9% 93.5%; /* #FDF3E0 */
+        --state-approved: 149.4 62.7% 29.4%; /* good #1C7A4A — 5.34 / 4.75 */
+        --state-approved-wash: 150 41.2% 93.3%; /* #E7F5EE */
+        --state-rejected: 356.6 66.5% 42.2%; /* danger #B3242C — 6.55 / 5.60 */
+        --state-rejected-wash: 356.7 69.2% 94.9%; /* #FBE9EA */
+        /* "Past the shoot". Not in the brief's four; kept, in the same
+         * shape — violet ink at AA on its own wash. */
+        --state-done: 262 66% 45%;
+        --state-done-wash: 262 60% 95.5%;
+
+        /* Radius. The scale the brief asked for, recorded in
+         * design_guidelines.json: sm 10 · md 14 · lg 20 · xl 22 · pill. */
+        --radius-sm: 10px;
+        --radius-md: 14px;
+        --radius-lg: 20px;
+        --radius-xl: 22px;
+        --radius: var(--radius-lg);
+    }
+
     [data-surface="dark"],
-    :root {
-        /* MARKETING — navy canvas, red is the loud moment. */
+    :root[data-theme="dark"] {
+        /* DARK — the navy set, moved here whole from `:root`. Marketing
+         * routes select it; so does an admin who chose it for the console. */
         --background: 217.2 61.7% 9.2%; /* #091426 */
         --foreground: 216 38% 95%; /* #EDF1F7 */
+        --heading: 216 38% 95%;
 
         --card: 217.3 56.9% 12.7%; /* #0E1C33 */
         --card-foreground: 216 38% 95%;
-        /* One step up from --card. Elevation on a dark ground is a lighter
-         * surface, not a shadow: a drop shadow under a card on a near-black
-         * page has nothing to fall on and reads as a smudge. */
+        /* Elevation on a dark ground is a lighter surface, not a shadow. */
         --card-elevated: 217 52% 18%;
+        --wash: 217.3 56.9% 11%;
 
         --popover: 217.3 56.9% 12.7%;
         --popover-foreground: 216 38% 95%;
 
-        /* **The CTA is red, and its label is navy rather than white.**
-         * Measured: white on #FF2731 is 3.76:1, which fails AA for a button
-         * label; navy on the same red is 4.90:1 and passes. The brand says
-         * navy carries weight, so the readable choice is also the on-brand
-         * one — but it was the measurement that settled it, not the taste. */
+        /* The marketing CTA is red with a navy label: white on #FF2731 is
+         * 3.76:1, navy is 4.90:1. */
         --primary: 357.2 100% 57.6%; /* #FF2731 */
         --primary-foreground: 217.2 61.7% 9.2%;
-        /* Red as text or an icon on the navy canvas: 4.90:1, AA. */
-        --primary-ink: 357.2 100% 57.6%;
+        --primary-ink: 357.2 100% 57.6%; /* 4.90:1 on navy */
         --primary-hover: 357 100% 66%;
 
         --secondary: 217 48% 17%;
@@ -56,170 +160,156 @@
 
         --muted: 217 48% 17%;
         --muted-foreground: 216 22% 72%;
+        --faint-foreground: 216 16% 56%;
 
         --accent: 357.2 100% 57.6%;
         --accent-foreground: 217.2 61.7% 9.2%;
+        --accent-ink: 357.2 100% 57.6%; /* 4.90:1 on navy */
+        --accent-wash: 357.2 100% 57.6% / 0.14;
+        --accent-border: 357 55% 32%;
+        --data: 357.2 100% 57.6%;
 
-        /* **Not the brand red**, and the gap is on purpose — see the note on
-         * `--data` below. Deeper and duller, so a destructive button never
-         * reads as a headline figure. */
+        /* Not the brand red, so a destructive button never reads as a
+         * headline figure. */
         --destructive: 0 68% 44%;
         --destructive-foreground: 0 0% 98%;
 
         --border: 217 40% 22%;
+        --divider: 217 42% 18%;
         --input: 217 44% 18%;
         --ring: 357.2 100% 57.6%;
 
-        --radius: 0.5rem;
-
-        /* -------------------------------------------------------------
-         * The tint, which is what made a second surface possible at all
-         *
-         * The app was written in the dark-mode idiom: `border-white/10` for
-         * a hairline, `bg-white/5` for a surface lift, `divide-white/10`
-         * between rows — hundreds of them. Every one is *white at low
-         * alpha*, which is invisible on a light page.
-         *
-         * `--tint` is the base colour those alphas are applied to, so
-         * `border-tint/10` reads exactly as `border-white/10` did on navy
-         * and flips to navy on the product surface. The alpha stays at the
-         * call site, which is what lets the replacement be mechanical and
-         * keeps every value somebody chose.
-         * ------------------------------------------------------------- */
         --tint: 0 0% 100%;
-
-        /* The modal scrim. Dark on both surfaces — a dialog's job is to take
-         * the page away, and a light scrim on a light page does not. */
         --scrim: 217 70% 4%;
 
-        /* -------------------------------------------------------------
-         * Standout data, and why it is its own token
-         *
-         * On the product the brand says red is "logo + standout data", and
-         * `--primary` there is navy — so red needs a name of its own or the
-         * product loses the identity colour entirely.
-         *
-         * **It is deliberately not `--destructive` and never a status.** A
-         * figure somebody is proud of and an error are the two things this
-         * colour must not confuse, which is the rule the old palette already
-         * carried ("ember is never a status") restated for red. The state
-         * tokens below stay the only vocabulary for state.
-         *
-         * **AA-large only on the light surface** — #FF2731 on #FFFFFF is
-         * 3.76:1 and on #F2F4F7 is 3.41:1 — which is exactly right for what
-         * it is for: a headline number set large. A test fails it below
-         * 24px, because at body size it is a contrast failure wearing a
-         * brand colour.
-         * ------------------------------------------------------------- */
-        --data: 357.2 100% 57.6%;
-
-        /* The states, named for what they mean rather than for a colour.
-         * `STATUS_TONE` is the only consumer, so the whole console follows
-         * these five lines. A chip is the same hue at low alpha, so it rides
-         * on the token with an alpha at the call site the way `--tint` does. */
         --state-pending: 43 96% 56%; /* amber */
+        --state-pending-wash: 43 96% 56% / 0.12;
         --state-approved: 158 64% 52%; /* emerald */
+        --state-approved-wash: 158 64% 52% / 0.12;
         --state-rejected: 350 89% 60%; /* rose */
+        --state-rejected-wash: 350 89% 60% / 0.12;
         --state-progress: 199 89% 60%; /* sky */
-        /* A fifth: violet marks "past the shoot" — attended, draft in
-         * review, content submitted, completed. Work has happened and is not
-         * yet approved, which is a real distinction. */
+        --state-progress-wash: 199 89% 60% / 0.12;
         --state-done: 262 83% 68%; /* violet */
+        --state-done-wash: 262 83% 68% / 0.12;
+
+        /* The old radius, with the old surface: the marketing pages were
+         * drawn to an 8px maximum and are not being redrawn here. */
+        --radius-sm: 4px;
+        --radius-md: 6px;
+        --radius-lg: 8px;
+        --radius-xl: 8px;
+        --radius: var(--radius-lg);
     }
 
     /* -----------------------------------------------------------------
-     * The product surface, and any band that asks for it
+     * Inverted chrome
      *
-     * Light canvas, white cards, navy text and navy CTAs. Reached by signing
-     * in: `surfaceTheme.js` writes `data-theme="light"` for every
-     * authenticated route and removes it on the way back out to marketing.
-     * An admin may still put the console back on navy, which is the one
-     * per-account exception and the reason the attribute is a value rather
-     * than a flag.
-     *
-     * **`[data-surface="light"]` makes the same block apply to a section**,
-     * which is how the marketing site alternates navy and white bands. It is
-     * the same declaration under a second selector, never a second palette:
-     * every ratio in the comments below was measured once, and a copy is a
-     * copy that drifts. The tokens resolve from the nearest ancestor, so a
-     * band declares `data-surface` plus `bg-background text-foreground` and
-     * everything inside it follows.
+     * Navy surfaces inside the light app — the admin sidebar. It redefines
+     * the semantic tokens rather than asking its children to use different
+     * ones, so a component inside it writes `bg-card text-foreground` like
+     * everywhere else and gets navy and light ink.
      * ----------------------------------------------------------------- */
-    [data-surface="light"],
-    :root[data-theme="light"] {
-        --background: 216 24% 96%; /* #F2F4F7 */
-        --foreground: 217.2 61.7% 9.2%; /* #091426 */
+    [data-surface="inverse"] {
+        --background: var(--inverse);
+        --card: var(--inverse);
+        --card-elevated: var(--inverse-alt);
+        --popover: var(--inverse-alt);
+        --muted: var(--inverse-alt);
+        --secondary: var(--inverse-alt);
+        --wash: var(--inverse-alt);
+        --foreground: var(--inverse-foreground);
+        --heading: var(--inverse-foreground);
+        --card-foreground: var(--inverse-foreground);
+        --popover-foreground: var(--inverse-foreground);
+        --secondary-foreground: var(--inverse-foreground);
+        --muted-foreground: var(--inverse-muted); /* 9.20:1 on navy */
+        --faint-foreground: var(--inverse-muted);
+        --border: 217.4 55.8% 18.6%;
+        --divider: 217.4 55.8% 18.6%;
+        --input: 217 40% 26%;
+        --tint: 0 0% 100%;
+        /* On navy the accent reads at 4.90:1, as text and as a fill. */
+        --accent-ink: 357.2 100% 57.6%;
+        --primary: var(--inverse-foreground);
+        --primary-foreground: var(--inverse);
+        --primary-ink: var(--inverse-foreground);
+        --primary-hover: 216 30% 85%;
+        /* The ring has to survive navy: the inverse ink is 16.26:1. */
+        --ring: var(--inverse-foreground);
+    }
 
-        /* **White cards on light grey.** The separation is a hairline and
-         * the canvas underneath, because the navy surface's trick — a
-         * *lighter* card — has nowhere to go when the page is already pale. */
-        --card: 0 0% 100%; /* #FFFFFF */
-        --card-foreground: 217.2 61.7% 9.2%;
-        /* Hover, and the one place this inverts: on the light surface,
-         * elevation is a slightly *darker* tint rather than a lighter one. */
-        --card-elevated: 216 24% 93%;
+    /* -----------------------------------------------------------------
+     * Constants — the same under every theme
+     * ----------------------------------------------------------------- */
+    :root {
+        /* The brand, for the few places a surface must stay one colour
+         * whichever theme is mounted: the mark, and the studio's coral
+         * band. Everything else uses a semantic token. */
+        --brand-navy: 217.2 61.7% 9.2%; /* #091426 */
+        --brand-red: 357.2 100% 57.6%; /* #FF2731 */
+        --brand-white: 0 0% 100%;
 
-        --popover: 0 0% 100%;
-        --popover-foreground: 217.2 61.7% 9.2%;
+        /* Inverse chrome values. EDF1F7 on 091426 is 16.26:1, AEB8C7 on
+         * 091426 is 9.20:1 and on 15294A is 7.24:1. */
+        --inverse: 217.2 61.7% 9.2%; /* #091426 */
+        --inverse-alt: 217.4 55.8% 18.6%; /* #15294A */
+        --inverse-foreground: 216 38.5% 94.9%; /* #EDF1F7 */
+        --inverse-muted: 216 18.2% 73.1%; /* #AEB8C7 */
 
-        /* **The CTA is navy**, which is the brand's own split: red is the
-         * loud moment on marketing, navy is the primary action in the
-         * product. White on navy is 18.43:1. */
-        --primary: 217.2 61.7% 9.2%;
-        --primary-foreground: 0 0% 100%;
-        --primary-ink: 217.2 61.7% 9.2%;
-        --primary-hover: 217 55% 16%;
+        /* The marketing diagrams' two quiet fills — a track and the span
+         * that is not ours — drawn on navy. Constants, because the diagrams
+         * only ever sit on the dark set. Were raw hex in the SVG. */
+        --graphic-track: 216.8 52.3% 21.4%; /* #1A3053 */
+        --graphic-quiet: 213.2 29.8% 51.4%; /* #5E7FA8 */
 
-        --secondary: 216 24% 93%;
-        --secondary-foreground: 217.2 61.7% 9.2%;
+        /* Type. Fraunces for h1–h3, Inter Tight for everything else. h1
+         * and h2 clamp between a 375px and a 1280px viewport, so neither
+         * overflows at phone width. */
+        --text-eyebrow: 11px;
+        --tracking-eyebrow: 0.18em;
+        --text-meta: 14px;
+        --text-body: 16px;
+        --text-body-lg: 17px;
+        --text-h3: 24px;
+        --text-h2: clamp(1.5rem, 1.344rem + 0.663vw, 1.875rem); /* 24 → 30px */
+        --text-h1: clamp(2rem, 1.638rem + 1.547vw, 2.875rem); /* 32 → 46px */
+        --measure: 64ch;
 
-        --muted: 216 24% 93%;
-        /* 4.9:1 on white and 4.7:1 on the canvas. "Muted" is a hierarchy,
-         * not permission to fail AA. */
-        --muted-foreground: 217 16% 42%;
+        /* Spacing. */
+        --space-card-sm: 26px;
+        --space-card: 30px;
+        --space-card-lg: 34px;
+        --space-inner: 24px;
+        --space-section: 26px;
+        --space-row-y: 22px;
+        /* A list row's fixed height: 22px × 2 + one 16px line at 1.55 is
+         * 68.8px, so 70 holds it with room for a 24px avatar or chip.
+         * `DataTable` reads this for its windowing arithmetic. */
+        --row-h: 70px;
+    }
 
-        --accent: 217.2 61.7% 9.2%;
-        --accent-foreground: 0 0% 100%;
-
-        --destructive: 0 74% 38%;
-        --destructive-foreground: 0 0% 100%;
-
-        --border: 216 20% 88%;
-        --input: 216 20% 88%;
-        --ring: 217.2 61.7% 9.2%;
-
-        /* The flip that carries every alpha-tint class in the app. */
-        --tint: 217.2 61.7% 9.2%;
-        /* Lighter than the navy surface's, because the page behind it is
-         * pale: 70% navy over light grey is a hole, where the same value
-         * over navy is a veil. */
-        --scrim: 217 40% 20%;
-
-        /* **Exactly the brand red, unchanged.** It is the identity and a
-         * mark, so it does not get "adjusted for the surface" — the one
-         * value in this file that is the same on both.
-         *
-         * It buys that fidelity with a constraint rather than with a
-         * tweak: #FF2731 is 3.76:1 on the card and 3.41:1 on the canvas, so
-         * it clears AA-large and fails AA at body size. That is precisely
-         * the shape of what it is for — a logo, and a figure set large —
-         * and `test_brand.py` fails any use of it below 24px rather than
-         * trusting everyone to remember. Darkening it to pass at body size
-         * was the alternative and it is the worse trade: it would put a
-         * second, not-quite-brand red in the product. */
-        --data: 357.2 100% 57.6%;
-
-        /* Darkened until the word beside the dot passes AA — and the bar is
-         * the *chip*, not the card: a state is usually its own hue at 10%
-         * with the ink on top, so the background is already tinted toward
-         * the text. The dot keeps more chroma than the ink, because a 12px
-         * solid mark is a graphical object at 3:1 rather than text at
-         * 4.5:1. */
-        --state-pending: 32 90% 32%;
-        --state-approved: 158 72% 26%;
-        --state-rejected: 350 74% 39%;
-        --state-progress: 202 90% 32%;
-        --state-done: 262 66% 45%;
+    /* -----------------------------------------------------------------
+     * Density
+     *
+     * Two densities, one component set. `data-density` is written by one
+     * component, `DensityScope`, and only on the admin action queue, the
+     * admin data tables and the audit log — `test_density.py` fails a
+     * build that puts it anywhere else, including around the whole app.
+     * Compact redefines sizes and spacing only: colours, radii and focus
+     * styles are deliberately absent from this block.
+     * ----------------------------------------------------------------- */
+    [data-density="compact"] {
+        --space-row-y: 9px;
+        --row-h: 42px; /* 9 × 2 + 14 × 1.55 = 39.7 */
+        --text-body: 14px;
+        --text-meta: 13px;
+        --space-section: 16px;
+    }
+    /* Avatar and initial blocks drop out in compact: a 40px monogram beside
+     * every row is most of what makes a long queue long. */
+    [data-density="compact"] .density-avatar {
+        display: none;
     }
 }
 
@@ -238,6 +328,11 @@
         font-feature-settings: "ss01", "cv11", "cv02", "cv03", "cv04";
         letter-spacing: -0.005em;
     }
+    /* The base is the body token, so copy with no size class reads at 16px
+     * — and at 14px inside a compact table, which redefines the token. */
+    body {
+        font-size: var(--text-body);
+    }
     h1,
     h2,
     h3,
@@ -249,10 +344,11 @@
         font-weight: 400;
         letter-spacing: -0.02em;
         line-height: 1.02;
+        color: hsl(var(--heading));
     }
     ::selection {
-        background: hsl(18 88% 51% / 0.3);
-        color: hsl(30 12% 96%);
+        background: hsl(var(--accent-wash));
+        color: hsl(var(--heading));
     }
 }
 
@@ -577,11 +673,29 @@
     }
 }
 
-/* Focus ring override for premium feel */
+/* ---------------------------------------------------------------------------
+ * Focus
+ *
+ * One ring for every interactive element: a 2px outline in `--ring`, offset
+ * 3px. An outline follows the element's own border-radius, so the offset
+ * keeps it clear of a rounded corner instead of being clipped by it — and it
+ * draws outside the box without touching layout.
+ *
+ * `--ring` is navy on light (18.43:1 on white, 16.78:1 on the ground), red
+ * on the dark set (4.90:1 on navy) and the inverse ink on navy chrome
+ * (16.26:1). Every one clears the 3:1 a focus indicator needs.
+ *
+ * **The old rule set `border-radius: 6px` on whatever had focus**, which
+ * reshaped a pill button into a rounded rectangle for as long as it was
+ * focused. Gone: the ring follows the element rather than redrawing it.
+ *
+ * Components that draw their own ring (`focus-visible:ring-2
+ * ring-ring ring-offset-2`) read the same token, with the offset painted in
+ * `--background` so it is a gap rather than a white halo on the ground.
+ * ------------------------------------------------------------------------- */
 :focus-visible {
-    outline: 2px solid hsl(var(--primary));
-    outline-offset: 2px;
-    border-radius: 6px;
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
 }
 
 @layer base {
@@ -595,16 +709,17 @@
  *
  * `<Logo>` inlines its SVG and paints `currentColor`, so which surface the
  * page is on is the only thing that decides the mark's colour — and the
- * surface is already written on `<html>` before first paint. These two rules
- * are the whole of "white on marketing, red on the product": no path list, no
- * second source of truth, and nothing for a component to get wrong for a
- * frame while it works out where it is.
+ * surface is already written on `<html>` before first paint. These rules are
+ * the whole of "red on the app, white on navy": no path list, no second
+ * source of truth, and nothing for a component to get wrong for a frame while
+ * it works out where it is.
  *
- * Marketing navy is the absence of the attribute, so white is the default and
- * the light product surface is the override — the same way round as every
- * other token above, and a bug that applies nothing applies white to navy.
+ * Light is the absence of the attribute now, so red is the default and the
+ * three navy grounds — the dark set, a dark band, inverse chrome — are the
+ * override. The same way round as every token above: a bug that applies
+ * nothing applies red to the light ground, which is legible.
  *
- * **The ink is a literal and deliberately not `--primary`.** On marketing the
+ * **The ink is the brand constant and deliberately not `--primary`.** On marketing the
  * two are the same value; on the product they are not, because `--primary`
  * flips to navy there — navy is the primary *action* on a light canvas. A mark
  * painted with the token would be red on the home page and navy in the app,
@@ -612,15 +727,16 @@
  * --------------------------------------------------------------------- */
 @layer base {
     :root {
-        --weare-logo-ink: #ff2731;
+        --weare-logo-ink: hsl(var(--brand-red));
     }
 
     .weare-logo {
-        color: #fff;
+        color: var(--weare-logo-ink);
     }
 
-    [data-surface="light"] .weare-logo,
-    :root[data-theme="light"] .weare-logo {
-        color: var(--weare-logo-ink);
+    [data-surface="dark"] .weare-logo,
+    [data-surface="inverse"] .weare-logo,
+    :root[data-theme="dark"] .weare-logo {
+        color: hsl(var(--brand-white));
     }
 }

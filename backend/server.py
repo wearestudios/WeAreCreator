@@ -6312,20 +6312,21 @@ CONSOLE_THEMES = ("dark", "light")
 def _console_theme(user: Optional[dict]) -> Optional[str]:
     """The admin's stored console theme, or None if they have never chosen.
 
-    **None is a real answer and not a default.** It is the difference between
-    "follow this machine's operating system" and "they picked dark" — and only
-    the first should change when somebody switches their OS to light.
+    **None is a real answer and not a default.** It means "the app's default",
+    which is light, and is what a later change to that default should reach;
+    "they picked light" should not move when it does. It no longer follows the
+    operating system: dark is something somebody opts into.
     """
     value = (user or {}).get("console_theme")
     return value if value in CONSOLE_THEMES else None
 
 
 class ConsoleThemePayload(BaseModel):
-    """`null` clears the choice and hands the reader back to their OS.
+    """`null` clears the choice and hands the reader back to the default.
 
-    That is worth being able to do: somebody who tried light and wants to stop
-    thinking about it should be able to say "whatever this machine says"
-    rather than having to pick the one that happens to match today.
+    That is worth being able to do: somebody who tried dark and wants to stop
+    thinking about it should be able to say "whatever the app does" rather
+    than having to pick the one that happens to match today.
     """
 
     theme: Optional[Literal["dark", "light"]] = None
@@ -6355,6 +6356,65 @@ async def set_console_theme(
     return {"console_theme": payload.theme}
 
 
+# ---------------------------------------------------------------------------
+# Density — an admin's, and only an admin's
+#
+# Comfortable is the default for everybody and the only option a creator or a
+# brand ever gets. Compact exists for an admin working a long queue: tighter
+# rows, smaller type, no avatars, on the action queue, the console's data
+# tables and the audit log — the frontend's `DensityScope` holds that line,
+# and `test_density.py` fails a build that applies it anywhere else.
+#
+# **Stored on the admin's own user record**, so it follows them from a laptop
+# to a desk machine; the browser caches it in localStorage only so the first
+# paint is right. A non-admin account has no such field and the route refuses
+# to give it one: `weare_team` reads the same console, but the brief is
+# admin-only and a preference field on a record whose role cannot use it is a
+# field somebody later reads as meaningful.
+# ---------------------------------------------------------------------------
+
+ADMIN_DENSITIES = ("comfortable", "compact")
+DEFAULT_ADMIN_DENSITY = "comfortable"
+
+
+def _admin_density(user: Optional[dict]) -> Optional[str]:
+    """The admin's density, or None for every other role.
+
+    None rather than "comfortable" for a non-admin, so `/auth/me` carries no
+    density key-with-a-value for an account that cannot have one. An
+    unrecognised stored value reads as the default rather than travelling to
+    a client that would write it onto an attribute.
+    """
+    if (user or {}).get("role") != "admin":
+        return None
+    value = (user or {}).get("admin_density")
+    return value if value in ADMIN_DENSITIES else DEFAULT_ADMIN_DENSITY
+
+
+class AdminDensityPayload(BaseModel):
+    density: Literal["comfortable", "compact"]
+
+
+@auth_router.put("/me/density")
+async def set_admin_density(
+    payload: AdminDensityPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Remember how dense this admin wants their queues and tables.
+
+    `require_roles("admin")` is the refusal the brief asks for: a creator, a
+    brand manager, a campaign manager and `weare_team` all get a 403, and
+    nothing is written to their record. Not audited, for the reason the
+    console theme is not — a reading preference is not a decision about
+    anybody.
+    """
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"]), "role": "admin"},
+        {"$set": {"admin_density": payload.density, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"admin_density": payload.density}
+
+
 @auth_router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
     imp = user.get("_impersonation")
@@ -6373,6 +6433,8 @@ async def me(user: dict = Depends(get_current_user)):
         # device's. `None` means they have never chosen, which is what tells
         # the client to follow the operating system rather than guess.
         "console_theme": _console_theme(user),
+        # Only an admin's payload carries one; see `_admin_density`.
+        **({"admin_density": _admin_density(user)} if user.get("role") == "admin" else {}),
         # Present only during a view-as session. The frontend draws its banner
         # off this rather than off anything it stored when it started, so a
         # session resumed in a second tab — or one that expired while the tab

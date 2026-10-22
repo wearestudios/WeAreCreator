@@ -105,7 +105,7 @@ function Track({ side, entry, testid }) {
     return (
         <div
             data-testid={testid}
-            className={`h-full rounded-lg border border-white/10 bg-card grain-surface p-5 ${CARD_HOVER}`}
+            className={`h-full rounded-lg border border-border bg-card grain-surface p-5 ${CARD_HOVER}`}
         >
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                 {side}
@@ -143,7 +143,7 @@ export default function HowItWorks() {
                 }}
             />
 
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <Reveal>
                         <Eyebrow>The journey</Eyebrow>
@@ -199,7 +199,7 @@ export default function HowItWorks() {
 
             <section
                 data-testid={IDS.trust}
-                className="border-b border-white/10 py-16 md:py-20"
+                className="border-b border-border py-16 md:py-20"
             >
                 <div className="mx-auto max-w-7xl px-6">
                     <div className="grid gap-12 md:grid-cols-12 md:items-center">

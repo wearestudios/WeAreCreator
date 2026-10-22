@@ -27,8 +27,8 @@ import useWide from "@/lib/useWide";
 // Who is being waited on. The creator gets the accent because those are the
 // steps where nobody at WeAre can do anything except chase.
 const OWNER = {
-    admin: { label: "WeAre", tone: "text-state-progress border-state-progress/30 bg-state-progress/10" },
-    brand: { label: "The brand", tone: "text-state-done border-state-done/30 bg-state-done/10" },
+    admin: { label: "WeAre", tone: "text-state-progress border-state-progress/30 bg-state-progress-wash" },
+    brand: { label: "The brand", tone: "text-state-done border-state-done/30 bg-state-done-wash" },
     creator: { label: "The creator", tone: "text-primary border-primary/40 bg-primary/15" },
 };
 
@@ -38,13 +38,13 @@ const BANNER_TONE = {
     // lose one.
     ended: {
         icon: CircleSlash,
-        className: "border-white/10 bg-card text-muted-foreground",
+        className: "border-border bg-card text-muted-foreground",
         iconClass: "text-muted-foreground",
     },
     // Something came back. This one *is* a call to action.
     attention: {
         icon: AlertTriangle,
-        className: "border-state-pending/30 bg-state-pending/10 text-state-pending",
+        className: "border-state-pending/30 bg-state-pending-wash text-state-pending",
         iconClass: "text-state-pending",
     },
 };
@@ -56,12 +56,12 @@ const Stage = ({ stage, index }) => (
         data-state={stage.current ? "current" : stage.done ? "done" : "todo"}
         aria-current={stage.current ? "step" : undefined}
         className={
-            "flex flex-1 flex-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition-colors duration-150 " +
+            "flex flex-1 flex-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-eyebrow uppercase tracking-eyebrow transition-colors duration-150 " +
             (stage.current
                 ? "border-primary/40 bg-primary/15 text-primary"
                 : stage.done
-                  ? "border-white/10 bg-white/5 text-muted-foreground"
-                  : "border-white/10 bg-transparent text-muted-foreground/50")
+                  ? "border-border bg-muted text-muted-foreground"
+                  : "border-border bg-transparent text-muted-foreground/50")
         }
     >
         {stage.done ? (
@@ -116,10 +116,10 @@ export default function ProcessFlow({ process, className = "" }) {
                         className="flex min-h-[2.75rem] w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-left transition-colors duration-150"
                     >
                         <span className="min-w-0 flex-1">
-                            <span className="block text-[10px] uppercase tracking-[0.2em] text-primary/80">
+                            <span className="block text-eyebrow uppercase tracking-eyebrow text-primary/80">
                                 {number ? `Stage ${number} of ${count}` : "Not on the line"}
                             </span>
-                            <span className="mt-0.5 block truncate text-sm text-primary">
+                            <span className="mt-0.5 block truncate text-meta text-primary">
                                 {current?.label || "—"}
                             </span>
                         </span>
@@ -159,10 +159,10 @@ export default function ProcessFlow({ process, className = "" }) {
                         aria-hidden="true"
                         className={"mt-0.5 h-4 w-4 flex-none " + tone.iconClass}
                     />
-                    <span className="min-w-0 text-sm">
+                    <span className="min-w-0 text-meta">
                         <span className="font-medium">{banner.title}</span>
                         {banner.detail ? (
-                            <span className="mt-0.5 block text-xs opacity-80">
+                            <span className="mt-0.5 block text-meta opacity-80">
                                 {banner.detail}
                             </span>
                         ) : null}
@@ -171,23 +171,23 @@ export default function ProcessFlow({ process, className = "" }) {
             ) : next ? (
                 <div
                     data-testid={APPLICATION.processNext}
-                    className="mt-3 flex flex-col gap-2 rounded-md border border-white/10 bg-card px-4 py-3 grain-surface sm:flex-row sm:items-center sm:gap-3"
+                    className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-card px-4 py-3 grain-surface sm:flex-row sm:items-center sm:gap-3"
                 >
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Next
                     </span>
                     {owner && (
                         <span
                             data-testid={APPLICATION.processOwner}
                             className={
-                                "inline-flex w-fit flex-none items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                                "inline-flex w-fit flex-none items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                                 owner.tone
                             }
                         >
                             {owner.label}
                         </span>
                     )}
-                    <span className="min-w-0 text-sm">{next.label}</span>
+                    <span className="min-w-0 text-meta">{next.label}</span>
                 </div>
             ) : null}
         </div>

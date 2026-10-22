@@ -169,7 +169,7 @@ export default function Signup() {
                                             "group relative rounded-md border p-4 text-left transition-colors duration-200 " +
                                             (active
                                                 ? "border-primary bg-primary/10"
-                                                : "border-white/10 bg-card grain-surface hover:border-white/25")
+                                                : "border-border bg-card grain-surface hover:border-tint/30")
                                         }
                                     >
                                         <Icon className={"h-5 w-5 " + (active ? "text-primary" : "text-muted-foreground")} />
@@ -233,7 +233,7 @@ export default function Signup() {
                                             "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                             (touched.name && nameProblem
                                                 ? "border-destructive/60"
-                                                : "border-white/10")
+                                                : "border-border")
                                         }
                                         placeholder={isBrand ? "e.g. Toit Brewpub" : "e.g. Priya Rao"}
                                     />
@@ -250,7 +250,7 @@ export default function Signup() {
                                 {isBrand && (
                                     <div
                                         data-testid="signup-brand-contact"
-                                        className="flex flex-col gap-4 rounded-md border border-white/10 bg-card/40 p-4"
+                                        className="flex flex-col gap-4 rounded-md border border-border bg-card/40 p-4"
                                     >
                                         <p className="text-xs leading-relaxed text-muted-foreground">
                                             One person runs the account. This number is their
@@ -279,7 +279,7 @@ export default function Signup() {
                                                     "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                                     (touched.managerName && managerNameProblem
                                                         ? "border-destructive/60"
-                                                        : "border-white/10")
+                                                        : "border-border")
                                                 }
                                                 placeholder="e.g. Priya Rao"
                                             />
@@ -306,7 +306,7 @@ export default function Signup() {
                                                 <SelectTrigger
                                                     id="manager-designation"
                                                     data-testid="signup-manager-designation-input"
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
+                                                    className="mt-2 h-11 border-border bg-card/60 focus:ring-primary"
                                                 >
                                                     <SelectValue placeholder="Pick one" />
                                                 </SelectTrigger>
@@ -334,7 +334,7 @@ export default function Signup() {
                                                     data-testid="signup-manager-role-other"
                                                     value={roleOther}
                                                     onChange={(e) => setRoleOther(e.target.value)}
-                                                    className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                                    className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                                     placeholder="e.g. Head of Partnerships"
                                                 />
                                             )}
@@ -364,7 +364,7 @@ export default function Signup() {
                                                     "mt-2 h-11 bg-card/60 focus-visible:ring-primary " +
                                                     (touched.managerEmail && managerEmailProblem
                                                         ? "border-destructive/60"
-                                                        : "border-white/10")
+                                                        : "border-border")
                                                 }
                                                 placeholder="e.g. priya@toit.in"
                                             />
@@ -394,7 +394,7 @@ export default function Signup() {
                                 {!isBrand && (
                                     <p
                                         data-testid={CIRCUMVENTION.terms}
-                                        className="rounded-lg border border-white/10 bg-card p-4 text-xs leading-relaxed text-muted-foreground"
+                                        className="rounded-lg border border-border bg-card p-4 text-xs leading-relaxed text-muted-foreground"
                                     >
                                         <span className="mb-1.5 block text-[10px] uppercase tracking-[0.2em] text-primary">
                                             One rule worth reading
@@ -411,7 +411,7 @@ export default function Signup() {
                                         data-testid="signup-terms-checkbox"
                                         checked={acceptedTerms}
                                         onCheckedChange={(v) => setAcceptedTerms(v === true)}
-                                        className="mt-0.5 h-5 w-5 flex-none border-white/25 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                                        className="mt-0.5 h-5 w-5 flex-none border-input focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                                     />
                                     <span>
                                         I agree to the{" "}

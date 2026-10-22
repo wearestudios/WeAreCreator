@@ -128,7 +128,7 @@ export default function AdminTeam() {
     const sorted = rows ? sortRows(rows, columns, sort) : [];
 
     return (
-        <div data-testid={IDS.page} className="space-y-4">
+        <div data-testid={IDS.page} className="space-y-section">
             <div className="flex items-center gap-2">
                 <UserCog className="h-4 w-4 text-muted-foreground" />
                 <h1 className={`${TEXT.body} font-medium`}>Team</h1>

@@ -123,7 +123,7 @@ export default function ForCreators() {
 
             <ProofStrip />
 
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <Points items={COPY.props} testid={IDS.valueProps} />
                 </div>
@@ -171,7 +171,7 @@ export default function ForCreators() {
                 what we deduct (nothing); this answers the question the survey
                 found underneath it, which creators asked even when they had
                 been paid quickly: nobody had ever told them when. */}
-            <section className="border-b border-white/10 py-16 md:py-20">
+            <section className="border-b border-border py-16 md:py-20">
                 <div className="mx-auto max-w-7xl px-6">
                     <PayoutClock />
                 </div>

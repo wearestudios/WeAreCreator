@@ -333,9 +333,11 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
                 <Dialog.Content
                     data-testid={SHELL_IDS.mobileNav}
                     aria-describedby={undefined}
-                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-tint/10 bg-card md:hidden"
+                    // Inverse chrome, like the rail it stands in for.
+                    data-surface="inverse"
+                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card text-foreground md:hidden"
                 >
-                    <div className="flex items-center justify-between border-b border-tint/10 px-3 py-2.5">
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
                         <Dialog.Title className={`${TEXT.meta} uppercase tracking-[0.16em] text-muted-foreground`}>
                             Sections
                         </Dialog.Title>
@@ -404,10 +406,16 @@ export function AdminSidebar({ counts, role }) {
             data-testid={IDS.root}
             data-collapsed={collapsed ? "true" : "false"}
             aria-label="Admin sections"
+            // **Inverse chrome: navy inverts rather than retiring.** The
+            // attribute redefines the semantic tokens for everything inside,
+            // so the links below still say `bg-card text-muted-foreground`
+            // and get navy and light ink. Opaque, not `bg-card/40`: a
+            // translucent navy over the light ground is a grey nobody chose.
+            data-surface="inverse"
             // **`hidden md:flex`.** Below that the sections are a sheet, not a
             // rail: see `AdminNavSheet`. A 56px column of unlabelled icons is
             // navigation you have to already know.
-            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-tint/10 bg-card/40 md:flex ${CALM} ${
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-border bg-card text-foreground md:flex ${CALM} ${
                 collapsed ? "w-14" : "w-56"
             }`}
         >

@@ -87,9 +87,9 @@ function AttentionRow({ campaign, item }) {
     return (
         <li
             data-testid={IDS.attentionItem(campaign.id, item.key)}
-            className={"rounded-md border px-4 py-3 text-sm " + SEVERITY_TONE[item.severity]}
+            className={"rounded-md border px-4 py-3 text-meta " + SEVERITY_TONE[item.severity]}
         >
-            <span className="block truncate text-[10px] uppercase tracking-[0.18em] opacity-80">
+            <span className="block truncate text-eyebrow uppercase tracking-eyebrow opacity-80">
                 {campaign.title}
             </span>
             <span className="mt-1 block leading-snug">{item.text}</span>
@@ -116,14 +116,14 @@ function CampaignCard({ campaign: c, prominent }) {
                 "overflow-hidden rounded-md border grain-surface " +
                 (prominent
                     ? "border-primary/40 bg-card"
-                    : "border-white/10 bg-card")
+                    : "border-border bg-card")
             }
         >
             <Link
                 to={`/manager/campaigns/${c.id}`}
                 data-testid={IDS.cardOpen(c.id)}
                 className={
-                    "flex items-center gap-4 transition-colors duration-200 hover:bg-white/[0.03] " +
+                    "flex items-center gap-4 transition-colors duration-200 hover:bg-wash " +
                     (prominent ? "p-5 md:p-6" : "p-5")
                 }
             >
@@ -132,7 +132,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         {prominent && (
                             <span
                                 data-testid={IDS.cardToday(c.id)}
-                                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow text-primary-foreground"
                             >
                                 Today
                             </span>
@@ -144,7 +144,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         />
                         <span
                             data-testid={IDS.cardWhen(c.id)}
-                            className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             {whenText(c)}
                         </span>
@@ -153,17 +153,17 @@ function CampaignCard({ campaign: c, prominent }) {
                     <p
                         className={
                             "mt-3 truncate font-serif leading-tight " +
-                            (prominent ? "text-fluid-2xl" : "text-xl")
+                            (prominent ? "text-h3" : "text-body-lg")
                         }
                     >
                         {c.title}
                     </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                    <p className="mt-1 truncate text-meta text-muted-foreground">
                         {c.brand_name || "Unknown brand"}
                         {c.area ? ` · ${c.area}` : ""}
                     </p>
 
-                    <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+                    <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-meta text-muted-foreground">
                         <span
                             data-testid={IDS.cardSlots(c.id)}
                             className="inline-flex items-center gap-1.5"
@@ -192,7 +192,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         <p
                             data-testid={IDS.cardAttention(c.id)}
                             className={
-                                "mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] " +
+                                "mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow " +
                                 SEVERITY_TONE[worst]
                             }
                         >
@@ -211,11 +211,11 @@ function CampaignCard({ campaign: c, prominent }) {
                 phone, and separated so a mis-tap on "call" does not land on
                 "check people in". */}
             {prominent && (
-                <div className="flex flex-col gap-2 border-t border-white/10 p-3 sm:flex-row">
+                <div className="flex flex-col gap-2 border-t border-border p-3 sm:flex-row">
                     <Link
                         to={`/manager/campaigns/${c.id}?mode=day-of`}
                         data-testid={IDS.cardDayOf(c.id)}
-                        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors duration-200 hover:bg-primary-hover ${TOUCH}`}
+                        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-primary text-meta font-medium text-primary-foreground transition-colors duration-200 hover:bg-primary-hover ${TOUCH}`}
                     >
                         <ClipboardCheck className="h-5 w-5" />
                         Check people in
@@ -225,7 +225,7 @@ function CampaignCard({ campaign: c, prominent }) {
                             href={`tel:${String(c.on_site_contact).replace(/[^\d+]/g, "")}`}
                             data-testid={IDS.cardCall(c.id)}
                             aria-label={`Call the venue contact for ${c.title}`}
-                            className={`inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-5 text-sm text-muted-foreground transition-colors duration-200 hover:text-primary sm:flex-none ${TOUCH}`}
+                            className={`inline-flex items-center justify-center gap-2 rounded-md border border-input px-5 text-meta text-muted-foreground transition-colors duration-200 hover:text-primary sm:flex-none ${TOUCH}`}
                         >
                             <Phone className="h-5 w-5" />
                             <span className="sm:hidden">Call the venue</span>
@@ -298,7 +298,7 @@ export default function ManagerHome() {
                 <Link
                     to="/calendar"
                     data-testid={IDS.calendar}
-                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-white/10 text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
+                    className={`mt-4 flex items-center justify-center gap-2 rounded-md border border-border text-meta text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                 >
                     <CalendarClock className="h-4 w-4" />
                     Everything by date
@@ -307,7 +307,7 @@ export default function ManagerHome() {
                 {error && (
                     <p
                         data-testid={IDS.error}
-                        className="mt-6 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm text-state-rejected"
+                        className="mt-6 rounded-md border border-state-rejected/25 bg-state-rejected-wash px-4 py-3 text-meta text-state-rejected"
                     >
                         {error}
                     </p>
@@ -330,7 +330,7 @@ export default function ManagerHome() {
                         {/* What needs you, before what you have. */}
                         {attention.length > 0 && (
                             <SafeSection name="manager-attention" className="mt-8">
-                                <p className="text-xs uppercase tracking-[0.2em] text-state-pending">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
                                     Needs a look
                                 </p>
                                 <ul
@@ -350,12 +350,12 @@ export default function ManagerHome() {
 
                         <SafeSection name="manager-today" className="mt-10">
                             <div className="flex items-baseline justify-between gap-3">
-                                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                                     Today
                                 </p>
                                 <span
                                     data-testid={IDS.todayCount}
-                                    className="text-xs text-muted-foreground"
+                                    className="text-meta text-muted-foreground"
                                 >
                                     {groups.today.length === 0
                                         ? "nothing on"
@@ -368,7 +368,7 @@ export default function ManagerHome() {
                                 // as a page that failed to load its top half.
                                 <p
                                     data-testid={IDS.todayEmpty}
-                                    className="mt-3 rounded-md border border-white/10 bg-card/40 px-5 py-6 text-sm text-muted-foreground"
+                                    className="mt-3 rounded-md border border-border bg-card/40 px-5 py-6 text-meta text-muted-foreground"
                                 >
                                     Nothing on today. The next one is below.
                                 </p>
@@ -387,13 +387,13 @@ export default function ManagerHome() {
                         </SafeSection>
 
                         <SafeSection name="manager-upcoming" className="mt-10">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Coming up
                             </p>
                             {groups.upcoming.length === 0 ? (
                                 <p
                                     data-testid={IDS.upcomingEmpty}
-                                    className="mt-3 rounded-md border border-white/10 bg-card/40 px-5 py-6 text-sm text-muted-foreground"
+                                    className="mt-3 rounded-md border border-border bg-card/40 px-5 py-6 text-meta text-muted-foreground"
                                 >
                                     Nothing else scheduled yet.
                                 </p>
@@ -420,7 +420,7 @@ export default function ManagerHome() {
                                     aria-expanded={showPast}
                                     onClick={() => setShowPast((v) => !v)}
                                     data-testid={IDS.pastToggle}
-                                    className={`flex w-full items-center justify-between rounded-md border border-white/10 px-5 text-left text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors duration-200 hover:text-foreground ${TOUCH}`}
+                                    className={`flex w-full items-center justify-between rounded-md border border-border px-5 text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground ${TOUCH}`}
                                 >
                                     Been and gone · {groups.past.length}
                                     <ChevronDown

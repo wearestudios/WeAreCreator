@@ -34,10 +34,10 @@ import { ADDRESS, CREATOR_PROFILE as IDS } from "@/constants/testIds";
 
 const Row = ({ label, children, testid }) => (
     <div>
-        <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
             {label}
         </dt>
-        <dd data-testid={testid} className="mt-1.5 text-sm text-foreground/90">
+        <dd data-testid={testid} className="mt-1.5 text-meta text-foreground/90">
             {children || <span className="text-muted-foreground">—</span>}
         </dd>
     </div>
@@ -49,20 +49,20 @@ const Chips = ({ values, testid }) =>
             {values.map((v) => (
                 <span
                     key={v}
-                    className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                    className="inline-flex items-center rounded-full border border-border px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                 >
                     {v}
                 </span>
             ))}
         </div>
     ) : (
-        <span className="text-sm text-muted-foreground">—</span>
+        <span className="text-meta text-muted-foreground">—</span>
     );
 
 const Section = ({ title, children, testid }) => (
     <section data-testid={testid} className="mt-10">
-        <p className="text-xs uppercase tracking-[0.2em] text-primary">{title}</p>
-        <div className="mt-4 rounded-md border border-white/10 bg-card p-6 grain-surface">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-primary">{title}</p>
+        <div className="mt-4 rounded-md border border-border bg-card p-6 grain-surface">
             {children}
         </div>
     </section>
@@ -119,13 +119,13 @@ function FeaturingToggle({ value, onSaved }) {
                 onCheckedChange={change}
                 className="mt-0.5 data-[state=checked]:bg-primary"
             />
-            <span className="text-sm">
+            <span className="text-meta">
                 <span className="block text-foreground">
                     Show my profile on the WeAre Creators homepage.
                 </span>
                 <span
                     data-testid={IDS.homepageOptInState}
-                    className="mt-1.5 block text-xs leading-relaxed text-muted-foreground"
+                    className="mt-1.5 block text-meta leading-relaxed text-muted-foreground"
                 >
                     {on
                         ? "Your name, photo, Instagram handle, city and what you cover can appear on our homepage — never your number, your rate or your follower count. Turn this off and you come off straight away."
@@ -182,14 +182,14 @@ export default function CreatorProfile() {
                 {!profile && !error ? (
                     <DetailPageSkeleton />
                 ) : error ? (
-                    <p className="rounded-md border border-white/10 bg-card px-6 py-8 text-sm text-muted-foreground grain-surface">
+                    <p className="rounded-md border border-border bg-card px-6 py-8 text-meta text-muted-foreground grain-surface">
                         {error}
                     </p>
                 ) : (
                     <>
                         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex min-w-0 items-start gap-5">
-                                <div className="h-20 w-20 flex-none overflow-hidden rounded-full border border-white/10 media-frame">
+                                <div className="h-20 w-20 flex-none overflow-hidden rounded-full border border-border media-frame">
                                     {profile.profile_image_url && (
                                         <img
                                             src={profile.profile_image_url}
@@ -201,12 +201,12 @@ export default function CreatorProfile() {
                                     )}
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         Your profile
                                     </p>
                                     <h1
                                         data-testid={IDS.name}
-                                        className="mt-2 font-serif text-fluid-4xl leading-none tracking-tight"
+                                        className="mt-2 font-serif text-h1 leading-none tracking-tight"
                                     >
                                         {profile.name || "Your name"}
                                     </h1>
@@ -216,7 +216,7 @@ export default function CreatorProfile() {
                                             testid={IDS.status}
                                         />
                                         {profile.city && (
-                                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                            <span className="inline-flex items-center gap-1.5 text-meta text-muted-foreground">
                                                 <MapPin className="h-3 w-3" />
                                                 {profile.city}
                                             </span>
@@ -230,7 +230,7 @@ export default function CreatorProfile() {
                                 <Button
                                     data-testid={IDS.edit}
                                     variant="outline"
-                                    className="min-h-[2.75rem] w-full border-white/15 bg-transparent sm:w-auto"
+                                    className="min-h-[2.75rem] w-full border-input bg-transparent sm:w-auto"
                                 >
                                     <Pencil className="mr-2 h-4 w-4" />
                                     Edit profile
@@ -241,10 +241,10 @@ export default function CreatorProfile() {
                         {rechecking && (
                             <div
                                 data-testid={IDS.recheckNotice}
-                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending/10 p-5"
+                                className="mt-8 flex items-start gap-3 rounded-md border border-state-pending/30 bg-state-pending-wash p-5"
                             >
                                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-state-pending" />
-                                <div className="min-w-0 text-sm leading-relaxed text-state-pending/90">
+                                <div className="min-w-0 text-body leading-relaxed text-state-pending/90">
                                     <p className="font-medium text-state-pending">
                                         We're taking another look
                                     </p>
@@ -267,7 +267,7 @@ export default function CreatorProfile() {
 
                         {profile.about && (
                             <Section title="About you" testid={IDS.about}>
-                                <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                                <p className="whitespace-pre-line text-body leading-relaxed text-foreground/90">
                                     {profile.about}
                                 </p>
                             </Section>
@@ -350,13 +350,13 @@ export default function CreatorProfile() {
                                 <Row label="Neighbourhood">{profile.address}</Row>
                                 <Row label="Email">{profile.email}</Row>
                             </dl>
-                            <div className="mt-5 border-t border-white/10 pt-5">
+                            <div className="mt-5 border-t border-border pt-5">
                                 <Row label="Full address" testid={IDS.address}>
                                     <span className="whitespace-pre-line">
                                         {profile.full_address}
                                     </span>
                                 </Row>
-                                <p className="mt-2 text-xs text-muted-foreground">
+                                <p className="mt-2 text-meta text-muted-foreground">
                                     Only the WeAre team sees this. We use it for physical
                                     invites and delivery campaigns.
                                 </p>
@@ -369,11 +369,11 @@ export default function CreatorProfile() {
                                         width={640}
                                         height={180}
                                         data-testid={ADDRESS.miniMap}
-                                        className="mt-4 w-full rounded-md border border-white/10 media-frame"
+                                        className="mt-4 w-full rounded-md border border-border media-frame"
                                     />
                                 )}
                                 {profile.location_lat != null && (
-                                    <p className="mt-2 text-xs text-muted-foreground">
+                                    <p className="mt-2 text-meta text-muted-foreground">
                                         Pin at{" "}
                                         <span className="text-foreground/70">
                                             {formatLatLng(
@@ -429,7 +429,7 @@ export default function CreatorProfile() {
                                 <Row label="PAN">{profile.pan}</Row>
                                 <Row label="GSTIN">{profile.gstin}</Row>
                             </dl>
-                            <p className="mt-4 text-xs text-muted-foreground">
+                            <p className="mt-4 text-meta text-muted-foreground">
                                 Changing any of these means we'll re-check your profile
                                 before you can pitch on something new.
                             </p>

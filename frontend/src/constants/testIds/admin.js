@@ -583,3 +583,11 @@ export const ADMIN_BRAND_LOGO = {
     reason: "admin-brand-homepage-logo-reason",
     revoked: "admin-brand-homepage-logo-revoked",
 };
+
+// Comfortable | Compact — the admin's density, on the queue, the data tables
+// and the audit log only.
+export const ADMIN_DENSITY = {
+	toggle: 'admin-density-toggle',
+	option: (d) => `admin-density-${d}`,
+	scope: 'admin-density-scope',
+};

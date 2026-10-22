@@ -47,12 +47,12 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                     rows.length > 0 && (
                         <div className="flex gap-6 text-right">
                             <div>
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Paid
                                 </p>
                                 <Money
                                     symbolClass="h-3.5 w-3.5"
-                                    className="mt-1 font-serif text-xl leading-none"
+                                    className="mt-1 font-serif text-h3 leading-none"
                                 >
                                     <span data-testid={IDS.paidTotal}>
                                         {formatRupees(earnings?.lifetime_earned ?? 0)}
@@ -60,12 +60,12 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 </Money>
                             </div>
                             <div>
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Pending
                                 </p>
                                 <Money
                                     symbolClass="h-3.5 w-3.5"
-                                    className="mt-1 font-serif text-xl leading-none"
+                                    className="mt-1 font-serif text-h3 leading-none"
                                 >
                                     <span data-testid={IDS.pendingTotal}>
                                         {formatRupees(earnings?.pending_earnings ?? 0)}
@@ -86,7 +86,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                 ) : (
                     <ul
                         data-testid={IDS.list}
-                        className="divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface"
+                        className="divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface"
                     >
                         {rows.map((p) => (
                             <li
@@ -95,14 +95,14 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
                             >
                                 <div className="min-w-0 flex-1">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {p.brand_name || "Brand"}
                                     </p>
-                                    <p className="mt-1 truncate font-serif text-lg leading-tight">
+                                    <p className="mt-1 truncate font-serif text-body-lg leading-tight">
                                         {p.campaign_title || "—"}
                                     </p>
                                     {p.paid_at && (
-                                        <p className="mt-1 text-xs text-muted-foreground">
+                                        <p className="mt-1 text-meta text-muted-foreground">
                                             Paid {formatDate(p.paid_at)}
                                         </p>
                                     )}
@@ -110,7 +110,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
                                     <Money
                                         symbolClass="h-3.5 w-3.5"
-                                        className="font-serif text-xl leading-none"
+                                        className="font-serif text-h3 leading-none"
                                     >
                                         <span data-testid={IDS.rowAmount(p.id)}>
                                             {formatRupees(p.amount)}

@@ -127,22 +127,22 @@ export function ConfirmDialog({
                 // rather than there. `!` because the two utilities sit in the
                 // same layer and the class order does not decide it: measured,
                 // the plain form lost.
-                className="max-w-md rounded-md border border-tint/10 bg-card ![background-image:none]"
+                className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
                     {kicker && (
-                        <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                             {kicker}
                         </p>
                     )}
                     <DialogTitle
                         data-testid={ADMIN_CONFIRM.title}
-                        className="mt-3 font-serif text-2xl leading-tight"
+                        className="mt-3 font-serif text-h3 leading-tight"
                     >
                         {title}
                     </DialogTitle>
                     {description && (
-                        <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                             {description}
                         </DialogDescription>
                     )}
@@ -153,12 +153,12 @@ export function ConfirmDialog({
                         <div key={f.name}>
                             <Label
                                 htmlFor={`admin-confirm-extra-${f.name}`}
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 {f.label}
                             </Label>
                             {f.hint && (
-                                <p className="mt-1 text-[11px] leading-snug text-muted-foreground/70">
+                                <p className="mt-1 text-eyebrow leading-snug text-muted-foreground/70">
                                     {f.hint}
                                 </p>
                             )}
@@ -177,7 +177,7 @@ export function ConfirmDialog({
                                 }
                                 maxLength={f.type === "number" ? undefined : 140}
                                 placeholder={f.placeholder}
-                                className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                             />
                         </div>
                     ))}
@@ -185,7 +185,7 @@ export function ConfirmDialog({
                     <div>
                         <Label
                             htmlFor="admin-confirm-reason"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             {reasonLabel}
                         </Label>
@@ -197,12 +197,12 @@ export function ConfirmDialog({
                             maxLength={500}
                             rows={3}
                             placeholder={placeholder}
-                            className="mt-2 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                            className="mt-2 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                         />
                     </div>
 
                     {err && (
-                        <p data-testid={ADMIN_CONFIRM.error} className="text-sm text-destructive">
+                        <p data-testid={ADMIN_CONFIRM.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -213,7 +213,7 @@ export function ConfirmDialog({
                                 type="button"
                                 variant="outline"
                                 data-testid={ADMIN_CONFIRM.cancel}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Back
                             </Button>
@@ -224,7 +224,7 @@ export function ConfirmDialog({
                             data-testid={ADMIN_CONFIRM.submit}
                             className={
                                 destructive
-                                    ? "rounded-full border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected/10"
+                                    ? "rounded-full border border-state-rejected/40 bg-transparent text-state-rejected hover:bg-state-rejected-wash"
                                     : "rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             }
                         >
@@ -356,16 +356,16 @@ export function AdvanceDialog({
                 // rather than there. `!` because the two utilities sit in the
                 // same layer and the class order does not decide it: measured,
                 // the plain form lost.
-                className="max-w-md rounded-md border border-tint/10 bg-card ![background-image:none]"
+                className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Collaboration transition
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         {collab?.campaign?.title} · {collab?.creator?.name || "Creator"}
                     </DialogDescription>
                 </DialogHeader>
@@ -375,7 +375,7 @@ export function AdvanceDialog({
                         <div>
                             <Label
                                 htmlFor="ad-amt"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Final agreed amount
                             </Label>
@@ -387,10 +387,10 @@ export function AdvanceDialog({
                                 step="500"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
-                                className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 placeholder="e.g. 8000"
                             />
-                            <p className="mt-2 text-sm text-muted-foreground">
+                            <p className="mt-2 text-meta text-muted-foreground">
                                 Creator quoted ₹{formatRupees(collab?.quoted_rate)} · brand budget ₹
                                 {formatRupees(collab?.campaign?.budget_per_creator)}
                             </p>
@@ -402,7 +402,7 @@ export function AdvanceDialog({
                             <div>
                                 <Label
                                     htmlFor="ad-slot"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Date and time of the shoot
                                 </Label>
@@ -412,13 +412,13 @@ export function AdvanceDialog({
                                     type="datetime-local"
                                     value={slot}
                                     onChange={(e) => setSlot(e.target.value)}
-                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                             <div>
                                 <Label
                                     htmlFor="ad-loc"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Where (optional)
                                 </Label>
@@ -429,7 +429,7 @@ export function AdvanceDialog({
                                     onChange={(e) => setLocation(e.target.value)}
                                     maxLength={200}
                                     placeholder="e.g. Ask for Priya at the counter"
-                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                         </>
@@ -437,11 +437,11 @@ export function AdvanceDialog({
 
                     {mode === "in_payment" && (
                         <div className="space-y-3">
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 Creator is paid ₹{formatRupees(collab?.agreed_amount)} in full. Our
                                 margin of {feePercent ?? 15}% is added on top of the brand's invoice.
                             </p>
-                            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <label className="flex items-center gap-2 text-meta text-muted-foreground">
                                 <input
                                     type="checkbox"
                                     data-testid={ADMIN_ADVANCE.feeOverride}
@@ -459,14 +459,14 @@ export function AdvanceDialog({
                                     step="100"
                                     value={fee}
                                     onChange={(e) => setFee(e.target.value)}
-                                    className="h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             )}
                         </div>
                     )}
 
                     {err && (
-                        <p data-testid={ADMIN_ADVANCE.error} className="text-sm text-destructive">
+                        <p data-testid={ADMIN_ADVANCE.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -477,7 +477,7 @@ export function AdvanceDialog({
                                 type="button"
                                 variant="outline"
                                 data-testid={ADMIN_ADVANCE.cancel}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Cancel
                             </Button>
@@ -632,16 +632,16 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 // rather than there. `!` because the two utilities sit in the
                 // same layer and the class order does not decide it: measured,
                 // the plain form lost.
-                className="max-w-md rounded-md border border-tint/10 bg-card ![background-image:none]"
+                className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Edit campaign
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         {campaign?.title}
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         {campaign?.brand_name || "Unknown brand"} · changes show on the creator
                         feed straight away.
                     </DialogDescription>
@@ -649,7 +649,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
 
                 <form onSubmit={submit} noValidate className="mt-4 space-y-5">
                     <div>
-                        <Label htmlFor="ce-title" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label htmlFor="ce-title" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Title
                         </Label>
                         <Input
@@ -658,11 +658,11 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             maxLength={140}
-                            className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                            className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                         />
                     </div>
                     <div>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Deliverables
                         </Label>
                         <div className="mt-2">
@@ -674,7 +674,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         </div>
                     </div>
                     <div>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             What it pays
                         </Label>
                         <div
@@ -695,10 +695,10 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                         data-testid={ADMIN_CAMPAIGN_EDIT.compensationOption(opt.value)}
                                         onClick={() => setCompensation(opt.value)}
                                         className={
-                                            "min-h-[2.75rem] rounded-md border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
+                                            "min-h-[2.75rem] rounded-md border px-3 py-2 text-meta transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card " +
                                             (on
                                                 ? "border-primary bg-primary/10 text-primary-ink"
-                                                : "border-tint/10 bg-background/60 hover:border-tint/25")
+                                                : "border-border bg-background/60 hover:border-tint/25")
                                         }
                                     >
                                         {opt.label}
@@ -707,7 +707,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             })}
                         </div>
                         {compensation === "barter" && (
-                            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                            <p className="mt-2 text-body leading-relaxed text-muted-foreground">
                                 Creators will see this as barter, with no fee shown. The brand
                                 can't set or undo this — only we can.
                             </p>
@@ -719,7 +719,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                           * is left as it was so switching back isn't lossy. */}
                         {compensation !== "barter" && (
                             <div>
-                                <Label htmlFor="ce-budget" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label htmlFor="ce-budget" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     {compensation === "negotiated"
                                         ? "Budget per creator (guide)"
                                         : "Budget per creator"}
@@ -733,12 +733,12 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                     step="500"
                                     value={budget}
                                     onChange={(e) => setBudget(e.target.value)}
-                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                         )}
                         <div>
-                            <Label htmlFor="ce-needed" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label htmlFor="ce-needed" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Creators needed
                             </Label>
                             <Input
@@ -748,10 +748,10 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 min="1"
                                 value={needed}
                                 onChange={(e) => setNeeded(e.target.value)}
-                                className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                             />
                             {filled > 0 && (
-                                <p className="mt-2 text-sm text-muted-foreground">
+                                <p className="mt-2 text-meta text-muted-foreground">
                                     {filled} already confirmed — it can't go below that.
                                 </p>
                             )}
@@ -769,7 +769,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         <div className="max-w-xs">
                             <Label
                                 htmlFor="ce-total-budget"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 Total campaign budget
                             </Label>
@@ -783,9 +783,9 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 value={totalBudget}
                                 onChange={(e) => setTotalBudget(e.target.value)}
                                 placeholder="No cap"
-                                className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                             />
-                            <p className="mt-2 text-sm text-muted-foreground">
+                            <p className="mt-2 text-meta text-muted-foreground">
                                 Agreed fees draw down against this. Empty means no cap.
                             </p>
                         </div>
@@ -800,7 +800,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             <div key={field}>
                                 <Label
                                     htmlFor={`ce-${field}`}
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     {SCHEDULING_DATE_LABELS[field]}
                                 </Label>
@@ -812,14 +812,14 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                     onChange={(e) =>
                                         setDates((d) => ({ ...d, [field]: e.target.value }))
                                     }
-                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                         ))}
                     </div>
 
                     {err && (
-                        <p data-testid={ADMIN_CAMPAIGN_EDIT.error} className="text-sm text-destructive">
+                        <p data-testid={ADMIN_CAMPAIGN_EDIT.error} className="text-meta text-destructive">
                             {err}
                         </p>
                     )}
@@ -830,7 +830,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                                 type="button"
                                 variant="outline"
                                 data-testid={ADMIN_CAMPAIGN_EDIT.cancel}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Cancel
                             </Button>

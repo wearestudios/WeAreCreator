@@ -551,21 +551,21 @@ function App() {
                     toastOptions={{
                         classNames: {
                             toast:
-                                "group rounded-lg border border-tint/10 bg-background/95 " +
+                                "group rounded-lg border border-border bg-background/95 " +
                                 "text-foreground shadow-xl shadow-scrim/50 backdrop-blur-xl grain-surface",
-                            title: "text-sm leading-snug",
-                            description: "text-xs text-muted-foreground",
+                            title: "text-meta leading-snug",
+                            description: "text-meta text-muted-foreground",
                             // Success and failure must be distinguishable
                             // without reading — a green rule and a red one,
                             // on the leading edge where the eye lands first.
                             success: "border-l-2 border-l-emerald-400",
-                            error: "border-l-2 border-l-red-400",
+                            error: "border-l-2 border-l-destructive",
                             info: "border-l-2 border-l-sky-400",
                             warning: "border-l-2 border-l-amber-400",
                             actionButton:
                                 "rounded-full bg-primary px-3 text-primary-foreground hover:bg-primary-hover",
                             closeButton:
-                                "border-tint/15 bg-card text-muted-foreground hover:text-foreground",
+                                "border-border bg-card text-muted-foreground hover:text-foreground",
                         },
                     }}
                 />

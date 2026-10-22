@@ -121,7 +121,7 @@ export function FeeFlow({ theirShareLow = 35, theirShareHigh = 60, className = "
                     <div
                         key={col.key}
                         data-testid={col.testid}
-                        className="rounded-lg border border-white/10 bg-card/60 p-6"
+                        className="rounded-lg border border-border bg-card/60 p-6"
                     >
                         <Reveal i={side} as="p" className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                             {col.heading}
@@ -159,11 +159,11 @@ export function FeeFlow({ theirShareLow = 35, theirShareHigh = 60, className = "
                                 }
                                 className="block h-2 w-full overflow-hidden rounded-full"
                             >
-                                <rect width="100" height="8" fill="#1A3053" />
+                                <rect width="100" height="8" fill="hsl(var(--graphic-track))" />
                                 <motion.rect
                                     width="100"
                                     height="8"
-                                    fill={accent ? "#FF2731" : "#5E7FA8"}
+                                    fill={accent ? "hsl(var(--brand-red))" : "hsl(var(--graphic-quiet))"}
                                     // **`originX`, not `transformOrigin`.**
                                     // Framer manages the origin itself and
                                     // writes its own `transform-origin`, so a

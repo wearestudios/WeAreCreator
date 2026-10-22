@@ -29,7 +29,7 @@ import { Keyboard, Menu } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { useAuth } from "@/context/AuthContext";
 import { consoleLabel, isAllAccess } from "@/lib/consoleScope";
-import { applyTheme, rememberTheme, resolveTheme } from "@/lib/surfaceTheme";
+import { rememberTheme } from "@/lib/surfaceTheme";
 import BrandFilter from "@/components/admin/console/BrandFilter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
@@ -42,6 +42,7 @@ import AdminSidebar, {
 import ShortcutsOverlay from "@/components/admin/console/ShortcutsOverlay";
 import { isTyping } from "@/components/admin/console/useTableKeys";
 import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
+import { DensityProvider, DensityToggle } from "@/components/admin/console/density";
 
 // Kept exported under its old name: `components/admin/routes.jsx` and the
 // router build their table from it, and renaming it would be a refactor of
@@ -104,19 +105,6 @@ export default function AdminConsole() {
         rememberTheme(accountTheme);
     }, [accountTheme]);
 
-    // Somebody on "System" who switches their machine at dusk should see the
-    // console follow. Only while they have made no explicit choice: an admin
-    // who picked dark did so on purpose, and having it flip under them at
-    // sunset would be the preference not being honoured.
-    useEffect(() => {
-        if (accountTheme) return;
-        const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-        if (!mq?.addEventListener) return;
-        const onChange = () => applyTheme(resolveTheme(null));
-        mq.addEventListener("change", onChange);
-        return () => mq.removeEventListener("change", onChange);
-    }, [accountTheme]);
-
     // One dashboard call feeds every badge, refreshed after any action so a
     // badge always matches what is actually left in its section.
     const loadCounts = useCallback(async () => {
@@ -164,7 +152,11 @@ export default function AdminConsole() {
     }, []);
 
     return (
-        // No `grain-page`: the console is a working surface, not a printed one.
+        // The provider holds the admin's density; it writes nothing on its
+        // own. Only `DensityScope`, inside the routes allowed to be compact,
+        // puts the attribute on the page.
+        <DensityProvider user={user}>
+        {/* No `grain-page`: the console is a working surface, not a printed one. */}
         <div data-testid={SHELL_IDS.page} className="min-h-screen bg-background">
             <Navbar />
 
@@ -174,7 +166,7 @@ export default function AdminConsole() {
                 {/* The canvas. `min-w-0` so a wide table scrolls inside it
                     rather than pushing the sidebar off the screen. */}
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-2">
+                    <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
                         <div className="flex min-w-0 items-center gap-2">
                             {/* Below `md` this is the only way to the other
                                 sections — the rail is hidden there, because
@@ -185,7 +177,7 @@ export default function AdminConsole() {
                                 onClick={() => setShowNav(true)}
                                 data-testid={SHELL_IDS.mobileNavOpen}
                                 aria-label="Sections"
-                                className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground md:hidden ${FOCUS}`}
+                                className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-muted hover:text-foreground md:hidden ${FOCUS}`}
                             >
                                 <Menu className="h-4 w-4" />
                             </button>
@@ -203,13 +195,17 @@ export default function AdminConsole() {
                             {!allAccess && <BrandFilter />}
                         </div>
                         <div className="flex items-center gap-2">
+                            {/* Comfortable | Compact. Renders only for an
+                                admin, and only on a section that can be
+                                compact. */}
+                            <DensityToggle />
                             <button
                                 type="button"
                                 onClick={() => setShowKeys(true)}
                                 data-testid={ADMIN_SHORTCUTS.open}
                                 aria-label="Keyboard shortcuts"
                                 title="Keyboard shortcuts (?)"
-                                className={`hidden h-8 w-8 place-items-center rounded md:grid ${CALM} text-muted-foreground hover:bg-white/5 hover:text-foreground ${FOCUS}`}
+                                className={`hidden h-8 w-8 place-items-center rounded md:grid ${CALM} text-muted-foreground hover:bg-muted hover:text-foreground ${FOCUS}`}
                             >
                                 <Keyboard className="h-4 w-4" />
                             </button>
@@ -273,5 +269,6 @@ export default function AdminConsole() {
             />
             <ShortcutsOverlay open={showKeys} onOpenChange={setShowKeys} />
         </div>
+        </DensityProvider>
     );
 }

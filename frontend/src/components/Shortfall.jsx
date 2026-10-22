@@ -22,7 +22,7 @@ export default function Shortfall({ shortfall, testid, className = "" }) {
         return (
             <p
                 data-testid={testid}
-                className={`inline-flex items-center gap-1.5 text-sm text-muted-foreground ${className}`}
+                className={`inline-flex items-center gap-1.5 text-meta text-muted-foreground ${className}`}
             >
                 <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-state-approved" />
                 Everything asked for
@@ -33,16 +33,16 @@ export default function Shortfall({ shortfall, testid, className = "" }) {
     return (
         <div
             data-testid={testid}
-            className={`rounded-md border border-state-pending/30 bg-state-pending/10 p-3 ${className}`}
+            className={`rounded-md border border-state-pending/30 bg-state-pending-wash p-3 ${className}`}
         >
-            <p className="flex items-center gap-2 text-sm text-state-pending">
+            <p className="flex items-center gap-2 text-meta text-state-pending">
                 <PackageOpen aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
                 {/* The counted version, not "partially delivered" — a brand
                     reading a vague phrase has to open the campaign to find out
                     what is actually missing. */}
                 {shortfall.delivered_total} of {shortfall.asked_total} delivered
             </p>
-            <ul className="mt-2 space-y-1 text-sm text-state-pending/90">
+            <ul className="mt-2 space-y-1 text-meta text-state-pending/90">
                 {shortfall.missing.map((row) => (
                     <li key={row.type}>
                         {/* **The spelled-out plurals, not a bolted-on "s".**

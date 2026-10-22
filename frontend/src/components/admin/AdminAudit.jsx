@@ -279,7 +279,7 @@ export default function AdminAudit() {
 
     return (
         <section data-testid={IDS.section}>
-            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-section flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className={TEXT.heading}>Audit</h1>
                     <p data-testid={IDS.count} className={`${TEXT.meta} text-muted-foreground`}>
@@ -293,7 +293,7 @@ export default function AdminAudit() {
 
             <div
                 data-testid={TABLE_IDS.toolbar}
-                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+                className={`mb-section flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
             >
                 <FilterSelect
                     dense
@@ -309,7 +309,7 @@ export default function AdminAudit() {
                     data-testid={IDS.filterActor}
                     placeholder="Filter by admin name"
                     aria-label="Filter by admin"
-                    className={`h-8 w-48 border-tint/10 bg-transparent ${TEXT.body}`}
+                    className={`h-8 w-48 border-border bg-transparent ${TEXT.body}`}
                 />
                 <DateFilter
                     dense
@@ -377,7 +377,7 @@ export default function AdminAudit() {
                         <PeekField label="Action">{peek.action}</PeekField>
                         <PeekField label="Change">{summarizeChange(peek)}</PeekField>
                         {peek.note ? (
-                            <p className={`mt-3 whitespace-pre-wrap rounded border border-tint/10 p-3 ${TEXT.body} text-muted-foreground`}>
+                            <p className={`mt-3 whitespace-pre-wrap rounded border border-border p-3 ${TEXT.body} text-muted-foreground`}>
                                 {peek.note}
                             </p>
                         ) : null}

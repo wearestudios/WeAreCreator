@@ -44,7 +44,7 @@ function Group({ field, rows }) {
     const Icon = ICONS[field];
     return (
         <div data-testid={IDS.group(field)}>
-            <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {Icon && <Icon aria-hidden="true" className="h-3 w-3" />}
                 {BRIEF_LIST_FIELDS[field]}
             </p>
@@ -53,7 +53,7 @@ function Group({ field, rows }) {
                     <li
                         key={`${line}-${i}`}
                         data-testid={IDS.line(field, i)}
-                        className={`text-sm leading-relaxed ${TONES[field] || ""}`}
+                        className={`text-body leading-relaxed ${TONES[field] || ""}`}
                     >
                         {line}
                     </li>
@@ -84,13 +84,13 @@ export default function BriefChecklist({
     const body = (
         <>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                     {title}
                 </p>
                 {count > 0 && (
                     <p
                         data-testid={IDS.count}
-                        className="text-xs text-muted-foreground"
+                        className="text-meta text-muted-foreground"
                     >
                         {count} {count === 1 ? "thing" : "things"} to get right
                     </p>
@@ -104,14 +104,14 @@ export default function BriefChecklist({
             </div>
 
             {details.caption_guidance && (
-                <div className="mt-4 border-t border-white/10 pt-3">
-                    <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="mt-4 border-t border-border pt-3">
+                    <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <MessageSquareQuote aria-hidden="true" className="h-3 w-3" />
                         Caption
                     </p>
                     <p
                         data-testid={IDS.caption}
-                        className="mt-1.5 whitespace-pre-line text-sm leading-relaxed"
+                        className="mt-1.5 whitespace-pre-line text-body leading-relaxed"
                     >
                         {details.caption_guidance}
                     </p>
@@ -121,9 +121,9 @@ export default function BriefChecklist({
             {assets.length > 0 && (
                 <div
                     data-testid={IDS.assets}
-                    className="mt-4 border-t border-white/10 pt-3"
+                    className="mt-4 border-t border-border pt-3"
                 >
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Brand assets
                     </p>
                     <ul className="mt-1.5 space-y-1">
@@ -138,7 +138,7 @@ export default function BriefChecklist({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     data-testid={IDS.asset(i)}
-                                    className="inline-flex min-h-[2.25rem] items-center gap-1.5 text-sm text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                    className="inline-flex min-h-[2.25rem] items-center gap-1.5 text-meta text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
                                     <Link2 aria-hidden="true" className="h-3.5 w-3.5" />
                                     {asset.label}
@@ -161,7 +161,7 @@ export default function BriefChecklist({
     return (
         <section
             data-testid={IDS.checklist}
-            className={`rounded-md border border-white/10 bg-card p-5 grain-surface sm:p-6 ${className}`}
+            className={`rounded-md border border-border bg-card p-5 grain-surface sm:p-6 ${className}`}
         >
             {body}
         </section>

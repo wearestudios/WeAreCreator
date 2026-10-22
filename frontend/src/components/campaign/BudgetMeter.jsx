@@ -39,13 +39,13 @@ const NOTE = {
 function Figure({ label, value, testId, emphasis }) {
     return (
         <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {label}
             </p>
             <p
                 data-testid={testId}
                 className={`mt-0.5 tabular-nums ${
-                    emphasis ? "text-base font-medium text-foreground" : "text-sm text-foreground/80"
+                    emphasis ? "text-body font-medium text-foreground" : "text-meta text-foreground/80"
                 }`}
             >
                 {formatMoney(value)}
@@ -63,9 +63,9 @@ export default function BudgetMeter({ budget, className = "", compact = false })
     return (
         <div
             data-testid={IDS.meter}
-            className={`rounded-lg border border-white/10 bg-card p-4 ${className}`}
+            className={`rounded-lg border border-border bg-card p-4 ${className}`}
         >
-            <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 <Wallet aria-hidden="true" className="h-3 w-3" />
                 Campaign budget
             </p>
@@ -85,7 +85,7 @@ export default function BudgetMeter({ budget, className = "", compact = false })
                 has to do arithmetic with; a bar is the one thing that says
                 "nearly gone" without being read. */}
             <div
-                className="mt-3 h-1.5 w-full overflow-hidden rounded-lg bg-white/10"
+                className="mt-3 h-1.5 w-full overflow-hidden rounded-lg bg-muted"
                 role="progressbar"
                 aria-valuenow={percent}
                 aria-valuemin={0}
@@ -103,7 +103,7 @@ export default function BudgetMeter({ budget, className = "", compact = false })
             {!compact && tone !== "calm" && (
                 <p
                     data-testid={tone === "exhausted" ? IDS.exhausted : IDS.warning}
-                    className={`mt-2 flex items-start gap-1.5 text-xs ${NOTE[tone]}`}
+                    className={`mt-2 flex items-start gap-1.5 text-meta ${NOTE[tone]}`}
                 >
                     <AlertTriangle aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
                     <span>
@@ -120,7 +120,7 @@ export default function BudgetMeter({ budget, className = "", compact = false })
                 collaborations on it would otherwise read as underspent. Said
                 rather than hidden: the figure is right, the reason it looks
                 low is what needs explaining. */}
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-eyebrow text-muted-foreground">
                 Committed counts agreed fees on creators taken on and still
                 going. A creator who cancels or withdraws releases theirs.
             </p>

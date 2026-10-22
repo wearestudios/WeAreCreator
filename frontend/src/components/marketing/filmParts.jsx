@@ -20,7 +20,7 @@ export function CreatorMonogram({ name }) {
     return (
         <span
             aria-hidden
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full font-serif text-sm text-white/90"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full font-serif text-sm text-brand-white/90"
             style={{ backgroundColor: `hsl(${hue} 55% 26%)` }}
         >
             {name.slice(0, 1)}

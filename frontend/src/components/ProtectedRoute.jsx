@@ -11,7 +11,7 @@ export const ProtectedRoute = ({ children, roles }) => {
                 data-testid="auth-loading"
                 className="flex min-h-screen items-center justify-center bg-background text-muted-foreground grain-page"
             >
-                <div className="animate-pulse text-sm tracking-[0.2em] uppercase">
+                <div className="animate-pulse text-meta tracking-[0.2em] uppercase">
                     Loading…
                 </div>
             </div>

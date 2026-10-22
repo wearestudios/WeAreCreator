@@ -169,7 +169,9 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                 value: (b) => b.business_name || "",
                 cell: (b) => (
                     <span className="flex min-w-0 items-center gap-2">
-                        <BrandAvatar brand={b} size="h-6 w-6" />
+                        <span className="density-avatar contents">
+                            <BrandAvatar brand={b} size="h-6 w-6" />
+                        </span>
                         <Link
                             to={`/admin/brands/${b.user_id}`}
                             onClick={(e) => e.stopPropagation()}
@@ -375,7 +377,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
 
     return (
         <section data-testid={IDS.section}>
-            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-section flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className={TEXT.heading}>Brands</h1>
                     <p data-testid={IDS.count} className={`${TEXT.meta} text-muted-foreground`}>
@@ -411,7 +413,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
 
             <div
                 data-testid={TABLE_IDS.toolbar}
-                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+                className={`mb-section flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
             >
                 <div className="relative min-w-[9rem] flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -421,7 +423,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                         data-testid={IDS.search}
                         placeholder="Business name, email or phone"
                         aria-label="Search brands"
-                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-border bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -523,7 +525,7 @@ export default function AdminBrands({ onChanged, onViewCampaigns, allAccess = tr
                         {brandStatus(peek) === "rejected" && peek.verification_reason && (
                             <p
                                 data-testid={IDS.rowReason(peek.user_id)}
-                                className={`mt-3 rounded border border-state-rejected/25 bg-state-rejected/5 p-3 ${TEXT.body} text-state-rejected`}
+                                className={`mt-3 rounded border border-state-rejected/25 bg-state-rejected-wash p-3 ${TEXT.body} text-state-rejected`}
                             >
                                 Rejected: {peek.verification_reason}
                             </p>

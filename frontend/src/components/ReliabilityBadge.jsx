@@ -23,19 +23,19 @@ import { CheckCircle2, CircleDashed, Info, TriangleAlert } from "lucide-react";
 const BANDS = {
     strong: {
         Icon: CheckCircle2,
-        wrap: "border-state-approved/30 bg-state-approved/10 text-state-approved",
+        wrap: "border-state-approved/30 bg-state-approved-wash text-state-approved",
     },
     steady: {
         Icon: CheckCircle2,
-        wrap: "border-tint/15 text-foreground/80",
+        wrap: "border-border text-foreground/80",
     },
     mixed: {
         Icon: TriangleAlert,
-        wrap: "border-state-pending/30 bg-state-pending/10 text-state-pending",
+        wrap: "border-state-pending/30 bg-state-pending-wash text-state-pending",
     },
     new: {
         Icon: CircleDashed,
-        wrap: "border-tint/10 text-muted-foreground",
+        wrap: "border-border text-muted-foreground",
     },
 };
 
@@ -50,7 +50,7 @@ export function ReliabilityBadge({ reliability, className = "", testid }) {
             title={reliability.blurb}
             className={
                 "inline-flex max-w-full items-center gap-1.5 rounded border px-1.5 py-0.5 " +
-                `text-xs leading-tight ${band.wrap} ${className}`
+                `text-meta leading-tight ${band.wrap} ${className}`
             }
         >
             <Icon aria-hidden="true" className="h-3 w-3 shrink-0" />
@@ -62,8 +62,8 @@ export function ReliabilityBadge({ reliability, className = "", testid }) {
 /** One figure, drawn as an em dash when we do not have it. */
 const Figure = ({ label, value, suffix = "", testid }) => (
     <div>
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
-        <p data-testid={testid} className="mt-1 text-sm tabular-nums">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{label}</p>
+        <p data-testid={testid} className="mt-1 text-meta tabular-nums">
             {/* **Unknown is an em dash, never a zero.** A creator with no
                 finished campaigns has an unknown on-time rate, not a 0% one,
                 and the difference is the whole record. */}
@@ -75,7 +75,7 @@ const Figure = ({ label, value, suffix = "", testid }) => (
 export function ReliabilityPanel({ stats, testid }) {
     if (!stats) {
         return (
-            <p data-testid={testid} className="text-sm text-muted-foreground">
+            <p data-testid={testid} className="text-meta text-muted-foreground">
                 No collaborations here yet, so there is nothing to say about how they work —
                 which is true of everybody at the start.
             </p>
@@ -91,7 +91,7 @@ export function ReliabilityPanel({ stats, testid }) {
                 one campaign and from forty are different claims, and the
                 second number is what tells them apart. */}
             {!stats.enough_history && (
-                <p className="flex items-start gap-2 rounded border border-tint/10 p-3 text-sm text-muted-foreground">
+                <p className="flex items-start gap-2 rounded border border-border p-3 text-meta text-muted-foreground">
                     <Info aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     Only {stats.completed} finished {stats.completed === 1 ? "campaign" : "campaigns"} so
                     far — the rates below are a start, not a pattern.
@@ -110,7 +110,7 @@ export function ReliabilityPanel({ stats, testid }) {
             </div>
 
             {stats.partial_deliveries > 0 && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                     {stats.partial_deliveries} accepted with a shortfall.
                 </p>
             )}
@@ -118,7 +118,7 @@ export function ReliabilityPanel({ stats, testid }) {
             {/* Ratings, which are ours and stay ours. Absent rather than
                 zeroed when nobody has rated them: an average of nothing is
                 not a low score. */}
-            <p className="text-sm text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
                 {stats.rating_avg == null
                     ? "Nobody has rated them yet."
                     : `Rated ${stats.rating_avg} out of 5 across ${stats.rating_count} ${

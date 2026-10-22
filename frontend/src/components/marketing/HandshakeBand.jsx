@@ -35,7 +35,7 @@ function HandshakeCta({ to, label, testid }) {
             to={to}
             data-testid={testid}
             style={{ backgroundColor: CORAL_INK }}
-            className="group inline-flex min-h-[3.5rem] items-center gap-3 rounded-md px-8 text-base text-white transition-transform duration-200 hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+            className="group inline-flex min-h-[3.5rem] items-center gap-3 rounded-md px-8 text-base text-brand-white transition-transform duration-200 hover:-translate-y-0.5 motion-reduce:transform-none motion-reduce:transition-none"
         >
             {label}
             <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transform-none" />
@@ -67,7 +67,7 @@ export function HandshakeBand({ title, line, cta, children }) {
             <div className="relative mx-auto max-w-7xl px-6 py-20 md:py-28">
                 <Reveal>
                     <h2
-                        className="max-w-3xl font-serif text-navy-700"
+                        className="max-w-3xl font-serif text-brand-navy"
                         // Poster scale, a step below the hero — the band is the
                         // second-loudest thing on the page and must not argue
                         // with the first.
@@ -77,7 +77,7 @@ export function HandshakeBand({ title, line, cta, children }) {
                     </h2>
                 </Reveal>
                 <Reveal i={1}>
-                    <p className="mt-6 max-w-xl text-base leading-relaxed text-navy-700 md:text-lg">
+                    <p className="mt-6 max-w-xl text-base leading-relaxed text-brand-navy md:text-lg">
                         {line}
                     </p>
                 </Reveal>
@@ -89,7 +89,7 @@ export function HandshakeBand({ title, line, cta, children }) {
                 ) : null}
                 {children ? <div className="mt-10">{children}</div> : null}
 
-                <Reveal i={3} className="mt-14 border-t pt-6" style={{ borderColor: "rgba(255,255,255,0.25)" }}>
+                <Reveal i={3} className="mt-14 border-t pt-6" style={{ borderColor: "hsl(var(--brand-white) / 0.25)" }}>
                 </Reveal>
             </div>
         </section>

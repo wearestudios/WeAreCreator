@@ -74,7 +74,7 @@ export function StickyBar({
         <div
             data-testid={testid}
             className={
-                `${STICKY[level]} ${bleed} border-b border-tint/10 bg-background/80 ` +
+                `${STICKY[level]} ${bleed} border-b border-border bg-background/80 ` +
                 `py-3 backdrop-blur-xl ${className}`
             }
         >
@@ -100,7 +100,7 @@ export function ResultCount({ shown, total, noun, nounPlural, testid, className 
         <p
             data-testid={testid || DENSE.count}
             className={
-                "text-xs uppercase tracking-[0.18em] text-muted-foreground " + className
+                "text-eyebrow uppercase tracking-eyebrow text-muted-foreground " + className
             }
         >
             {filtered ? (
@@ -134,7 +134,7 @@ export function FilterChips({ chips, onClearAll, testid, className = "" }) {
             data-testid={testid || DENSE.chips}
             className={"flex flex-wrap items-center gap-2 " + className}
         >
-            <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 <Filter className="h-3 w-3" />
                 Filtered by
             </span>
@@ -147,7 +147,7 @@ export function FilterChips({ chips, onClearAll, testid, className = "" }) {
                     // The whole chip is the target, not a 12px × inside it —
                     // these get tapped on a phone.
                     aria-label={`Remove filter ${c.label}: ${c.value}`}
-                    className="group inline-flex items-center gap-1.5 rounded-full border border-tint/15 bg-tint/[0.04] py-1 pl-3 pr-2 text-xs transition-colors duration-200 hover:border-primary/50 hover:bg-primary/10"
+                    className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-tint/[0.04] py-1 pl-3 pr-2 text-meta transition-colors duration-200 hover:border-primary/50 hover:bg-primary/10"
                 >
                     <span className="text-muted-foreground">{c.label}:</span>
                     <span className="max-w-[12rem] truncate">{c.value}</span>
@@ -159,7 +159,7 @@ export function FilterChips({ chips, onClearAll, testid, className = "" }) {
                     type="button"
                     onClick={onClearAll}
                     data-testid={DENSE.clearAll}
-                    className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-primary-ink"
+                    className="rounded-full px-2 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary-ink"
                 >
                     Clear all
                 </button>
@@ -185,13 +185,13 @@ export function EmptyState({ Icon, title, children, action, testid, className = 
         <div
             data-testid={testid}
             className={
-                "flex flex-col items-start gap-3 rounded-lg border border-dashed border-tint/15 " +
+                "flex flex-col items-start gap-3 rounded-lg border border-dashed border-border " +
                 "bg-card/40 px-6 py-10 md:px-8 md:py-12 " + className
             }
         >
             {Icon && <Icon className="h-5 w-5 text-primary-ink" />}
-            {title && <p className="font-serif text-2xl leading-tight">{title}</p>}
-            <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
+            {title && <p className="font-serif text-h3 leading-tight">{title}</p>}
+            <p className="max-w-lg text-body leading-relaxed text-muted-foreground">
                 {children}
             </p>
             {action}
@@ -267,7 +267,7 @@ export function ListSkeleton({ rows = 5, testid }) {
         <div
             data-testid={testid || DENSE.skeleton}
             aria-hidden="true"
-            className="divide-y divide-tint/10 overflow-hidden rounded-lg border border-tint/10 bg-card grain-surface"
+            className="divide-y divide-divider overflow-hidden rounded-lg border border-border bg-card grain-surface"
         >
             {Array.from({ length: rows }).map((_, i) => (
                 <RowSkeleton key={i} />
@@ -283,7 +283,7 @@ export function CardSkeleton({ cover = false }) {
         // height, so a skeleton that leaves it out is a skeleton that shifts by
         // the height of the picture. The 16/9 box matches CampaignCover's.
         return (
-            <div className="overflow-hidden rounded-lg border border-tint/10 bg-card grain-surface">
+            <div className="overflow-hidden rounded-lg border border-border bg-card grain-surface">
                 <Skeleton className="aspect-[16/9] w-full rounded-none" />
                 <div className="p-6 md:p-7">
                     <Skeleton className="h-5 w-3/4" />
@@ -304,7 +304,7 @@ export function CardSkeleton({ cover = false }) {
         );
     }
     return (
-        <div className="rounded-lg border border-tint/10 bg-card p-6 grain-surface md:p-7">
+        <div className="rounded-lg border border-border bg-card p-6 grain-surface md:p-7">
             <Skeleton className="h-5 w-3/4" />
             <div className="mt-3 flex gap-3">
                 <Skeleton className="h-3 w-20" />
@@ -344,7 +344,7 @@ export function CardGridSkeleton({
 /** A creator card: avatar beside a name, stats, then a row of niches. */
 export function CreatorCardSkeleton() {
     return (
-        <div className="rounded-lg border border-tint/10 bg-card p-6 grain-surface">
+        <div className="rounded-lg border border-border bg-card p-6 grain-surface">
             <div className="flex items-start gap-4">
                 <Skeleton className="aspect-square h-14 w-14 flex-none rounded-full" />
                 <div className="min-w-0 flex-1 space-y-2">
@@ -413,7 +413,7 @@ export function ApplicantListSkeleton({ rows = 3, testid }) {
         <div
             data-testid={testid || DENSE.skeleton}
             aria-hidden="true"
-            className="divide-y divide-tint/10 overflow-hidden rounded-lg border border-tint/10 bg-card grain-surface"
+            className="divide-y divide-divider overflow-hidden rounded-lg border border-border bg-card grain-surface"
         >
             {Array.from({ length: rows }).map((_, i) => (
                 <ApplicantSkeleton key={i} />
@@ -443,7 +443,7 @@ export function ScrollTable({ children, maxHeight = "max-h-[70vh]", className = 
     return (
         <div
             data-testid={testid}
-            className={`overflow-auto ${maxHeight} rounded-lg border border-tint/10 bg-card grain-surface ${className}`}
+            className={`overflow-auto ${maxHeight} rounded-lg border border-border bg-card grain-surface ${className}`}
         >
             {children}
         </div>
@@ -451,7 +451,7 @@ export function ScrollTable({ children, maxHeight = "max-h-[70vh]", className = 
 }
 
 export const tableHeadClass =
-    `${STICKY.tableHead} bg-card/95 px-5 py-3 text-left text-[10px] font-medium ` +
+    `${STICKY.tableHead} bg-card/95 px-5 py-3 text-left text-eyebrow font-medium ` +
     "uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-xl";
 
 /** The pinned column needs an opaque ground or the scrolled cells show through. */
@@ -459,8 +459,8 @@ export const tableHeadClass =
 // scrolled columns slide up against the timestamp with no seam, and the eye
 // reads the two as one column.
 export const pinnedHeadClass =
-    `${tableHeadClass} ${STICKY.pinnedCell} border-r border-tint/10 bg-card`;
-export const pinnedCellClass = `${STICKY.pinnedCell} border-r border-tint/10 bg-card`;
+    `${tableHeadClass} ${STICKY.pinnedCell} border-r border-border bg-card`;
+export const pinnedCellClass = `${STICKY.pinnedCell} border-r border-border bg-card`;
 
 const DenseView = {
     STICKY,
