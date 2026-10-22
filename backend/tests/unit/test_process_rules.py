@@ -4754,7 +4754,9 @@ class TestBrandManagerPowers:
         import inspect
 
         src = inspect.getsource(server.brand_record_agreed_amount)
-        assert '{"_id": collab["_id"], "state": state}' in src, "never a blind write"
+        # Through `_set_agreed_amount`, which puts the precondition beside the
+        # `_id` in its filter — `test_negotiation_history.py` drives the race.
+        assert 'precondition={"state": state}' in src, "never a blind write"
         assert '"agreed_by": ObjectId(user["_id"])' in src
 
     def test_a_fee_cannot_be_agreed_with_somebody_not_on_the_campaign(self):

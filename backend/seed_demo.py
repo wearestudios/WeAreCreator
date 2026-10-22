@@ -881,13 +881,13 @@ async def _collab(campaign, creator, state, *, days_ago, **kw) -> dict:
     the whole platform looks like it started waiting this morning and nothing
     is ever overdue — which is the one thing the ageing display exists to show.
     """
+    agreed = kw.pop("agreed_amount", None)
     doc = {
         "campaign_id": campaign["_id"],
         "creator_id": creator["user_id"],
         "reference": await server._next_reference("collaboration"),
         "pitch": kw.pop("pitch", "Happy to do this one — it's the kind of thing I post anyway."),
         "quoted_rate": float(kw.pop("quoted_rate", creator.get("rate") or 5000)),
-        "agreed_amount": kw.pop("agreed_amount", None),
         "content_url": None,
         "content_urls": [],
         "scheduled_at": kw.pop("scheduled_at", None),
@@ -897,7 +897,30 @@ async def _collab(campaign, creator, state, *, days_ago, **kw) -> dict:
         "created_at": ago(kw.pop("applied_days_ago", days_ago + 3)),
         **kw,
     }
+    # The creator's quote opens the history, as `_create_application` writes it.
+    doc["negotiation_history"] = [
+        server._negotiation_step(
+            kind="offer", amount=doc["quoted_rate"], user={"role": "creator"},
+            note=None, source="in_app", campaign=campaign, at=doc["created_at"],
+        )
+    ]
     doc["_id"] = (await server.db.collaborations.insert_one(doc)).inserted_id
+    # **Through the app's one writer, never onto the insert.** A seeded fee
+    # with no history entry would be the shape no real collaboration can have,
+    # and a barter brief would get an amount the app refuses to write.
+    if agreed is not None:
+        written = await server._set_agreed_amount(
+            doc["_id"],
+            agreed,
+            campaign=campaign,
+            kind="accept",
+            by_role="admin" if server._weare_runs(campaign) else "brand",
+            by_user_id=None,
+            note=None,
+            source="recorded_offline",
+            now=doc.get("agreed_at") or doc.get("state_since") or doc["created_at"],
+        )
+        doc.update(written or {})
     return doc
 
 

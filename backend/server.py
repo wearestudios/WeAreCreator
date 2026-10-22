@@ -3373,7 +3373,7 @@ def _state_stamp(state: str, now: Optional[datetime] = None, *, field: str = "st
 
     Spread into a `$set`:
 
-        {"$set": {**_state_stamp(to_state, now), "agreed_amount": amount}}
+        {"$set": {**_state_stamp(to_state, now), "revision_note": None}}
 
     `field` because the four records that need a clock do not agree on what
     the column is called — a collaboration has `state`, a campaign `status`, a
@@ -8947,6 +8947,9 @@ def _serialize_collab_row(
         # application page is mounted at no creator route, so this row is the
         # only surface the party who has to accept them can reach. `None`
         # before acceptance and on every collaboration predating the snapshot.
+        # How the fee got here, newest first. The creator's own view: which
+        # side moved and why, never a staff member's id, notes scrubbed.
+        "negotiation": _serialize_negotiation(collab, campaign, full=False),
         "terms": _serialize_terms(collab),
         "can_accept_terms": bool(collab.get("terms"))
         and not (collab.get("terms") or {}).get("accepted_at"),
@@ -14050,12 +14053,17 @@ async def brand_accept_applicant(
             detail="This campaign already has all the creators it needs.",
         )
 
+    barter = _compensation_type(campaign) == "barter"
     amount = (
         float(payload.agreed_amount)
         if payload.agreed_amount is not None
         else collab.get("quoted_rate")
     )
-    if amount is None:
+    # A barter brief has no fee to accept at — the quote a creator typed on
+    # one is not a figure anybody agreed, and `0` would read as one.
+    if barter:
+        amount = None
+    elif amount is None:
         raise HTTPException(
             status_code=422, detail="Set the fee you're accepting at."
         )
@@ -14069,18 +14077,27 @@ async def brand_accept_applicant(
     )
 
     now = datetime.now(timezone.utc)
-    result = await db.collaborations.update_one(
-        {"_id": collab["_id"], "state": "verified"},  # precondition, not a blind write
-        {
-            "$set": {
-                **_state_stamp("accepted", now),
-                "agreed_amount": round(float(amount), 2),
-                "agreed_at": now,
-                "agreed_by": ObjectId(user["_id"]),
-            }
+    quoted = collab.get("quoted_rate")
+    accepted = await _set_agreed_amount(
+        collab["_id"],
+        amount,
+        campaign=campaign,
+        # At the creator's own quote it is an acceptance; at any other figure
+        # the brand has named a different number, which is a counter.
+        kind="accept" if barter or (quoted is not None and float(quoted) == float(amount)) else "counter",
+        by_role=_negotiation_role(user),
+        by_user_id=user.get("_id"),
+        note=payload.note,
+        source="in_app",
+        precondition={"state": "verified"},  # precondition, not a blind write
+        also_set={
+            **_state_stamp("accepted", now),
+            "agreed_at": now,
+            "agreed_by": ObjectId(user["_id"]),
         },
+        now=now,
     )
-    if result.modified_count == 0:
+    if not accepted:
         raise HTTPException(
             status_code=409, detail="This applicant just moved — reload and try again."
         )
@@ -14109,6 +14126,8 @@ async def brand_accept_applicant(
         body=(
             f"{campaign.get('title')} — accepted at ₹{amount:,.0f}. "
             "We'll confirm your slot next."
+            if amount is not None
+            else f"{campaign.get('title')} — accepted. We'll confirm your slot next."
         ),
         link="/dashboard",
     )
@@ -14140,7 +14159,13 @@ async def brand_decline_applicant(
                 **_state_stamp("declined", now),
                 "active": False,
                 "exit_reason": payload.reason,
-            }
+            },
+            # How the negotiation ended, beside how it began. No amount: a
+            # decline names no figure, it turns the quote down.
+            "$push": {"negotiation_history": _negotiation_step(
+                kind="decline", amount=None, user=user, note=payload.reason,
+                source="in_app", campaign=campaign, at=now,
+            )},
         },
     )
     if result.modified_count == 0:
@@ -14314,28 +14339,36 @@ async def accept_partial_delivery(
     # be recorded, which is a worse outcome than a brief a few thousand over.
     amount = _resolve_agreed_amount(campaign, payload.agreed_amount)
 
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": "content_submitted"},
-        {
-            "$set": {
-                **_state_stamp("content_approved", now),
-                "revision_note": None,
-                # The payment clock starts here too — a partial acceptance is
-                # still an approval, and the creator is owed the agreed
-                # figure on the same terms.
-                "content_approved_at": now,
-                "delivered_items": delivered,
-                # **Only when something is actually missing.** A runner using
-                # this dialog and then finding everything did arrive should
-                # leave an ordinary approval behind, not a record flagged as
-                # partial on somebody's reliability history.
-                "partial_delivery": bool(shortfall and not shortfall["complete"]),
-                "partial_note": payload.note.strip(),
-                "partial_shortfall": (shortfall or {}).get("missing") or [],
-                **({"agreed_amount": amount} if amount is not None else {}),
-            }
+    # Settling for what arrived is an adjustment to the agreed fee, recorded
+    # through the one writer so the history carries the figure and the note
+    # that explains it. Barter: the helper writes no amount.
+    updated = await _set_agreed_amount(
+        collab["_id"],
+        amount if amount is not None else collab.get("agreed_amount"),
+        campaign=campaign,
+        kind="adjust",
+        by_role=_negotiation_role(user),
+        by_user_id=user.get("_id"),
+        note=payload.note,
+        source="admin_adjustment" if _is_staff(user) else "in_app",
+        precondition={"state": "content_submitted"},
+        now=now,
+        also_set={
+            **_state_stamp("content_approved", now),
+            "revision_note": None,
+            # The payment clock starts here too — a partial acceptance is
+            # still an approval, and the creator is owed the agreed
+            # figure on the same terms.
+            "content_approved_at": now,
+            "delivered_items": delivered,
+            # **Only when something is actually missing.** A runner using
+            # this dialog and then finding everything did arrive should
+            # leave an ordinary approval behind, not a record flagged as
+            # partial on somebody's reliability history.
+            "partial_delivery": bool(shortfall and not shortfall["complete"]),
+            "partial_note": payload.note.strip(),
+            "partial_shortfall": (shortfall or {}).get("missing") or [],
         },
-        return_document=True,
     )
     if not updated:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
@@ -16481,17 +16514,26 @@ async def brand_record_agreed_amount(
         campaign, amount, user, payload.budget_override_reason, collab["_id"]
     )
     now = datetime.now(timezone.utc)
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": state},  # precondition, never a blind write
-        {
-            "$set": {
-                **_state_stamp("commercial_agreed", now),
-                "agreed_amount": amount,
-                "agreed_at": now,
-                "agreed_by": ObjectId(user["_id"]),
-            }
+    # From `accepted` this is the agreement being recorded. From
+    # `commercial_agreed` it is a correction to one already on file, and when
+    # staff make it that is an adjustment that has to carry its reason.
+    correcting = state == "commercial_agreed"
+    updated = await _set_agreed_amount(
+        collab["_id"],
+        amount,
+        campaign=campaign,
+        kind="adjust" if correcting else "accept",
+        by_role=_negotiation_role(user),
+        by_user_id=user.get("_id"),
+        note=payload.note,
+        source="admin_adjustment" if correcting and _is_staff(user) else "recorded_offline",
+        precondition={"state": state},  # precondition, never a blind write
+        also_set={
+            **_state_stamp("commercial_agreed", now),
+            "agreed_at": now,
+            "agreed_by": ObjectId(user["_id"]),
         },
-        return_document=True,
+        now=now,
     )
     if not updated:
         raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
@@ -17169,6 +17211,191 @@ async def _tell_brand_about_shortlist(
     )
 
 
+# ---------------------------------------------------------------------------
+# How a deal got to its number
+#
+# Only the final `agreed_amount` was stored, so "the creator quoted ₹15,000,
+# we accepted at ₹12,000 and settled at ₹13,500 on the phone" was three
+# facts of which the record kept one. Negotiation stays offline — that is the
+# model — but every step that lands in the product is now kept.
+#
+# - **`_set_agreed_amount` is the only writer of `agreed_amount`.** It sets
+#   the figure and appends the entry in one update, so the history and the
+#   number cannot disagree; `test_negotiation_history.py` walks the source for
+#   any other write.
+# - **Append-only.** No route edits or removes an entry. A correction is a new
+#   `adjust` entry, never a change to an old one — a record that can be
+#   quietly rewritten is not a record, the rule the work notes hold.
+# - **Barter writes no amount.** The helper reads the campaign, not the
+#   caller, so no call site can forget: on a barter brief `agreed_amount` is
+#   left alone and the entry's amount is `None` — `0` would read as "agreed,
+#   nothing".
+# - **An admin adjustment needs a note.** "Changed from ₹12,000 to ₹9,000"
+#   with no reason is the entry somebody asks about six months later.
+# ---------------------------------------------------------------------------
+
+NEGOTIATION_KINDS = ("offer", "counter", "accept", "decline", "adjust")
+NEGOTIATION_SOURCES = ("in_app", "recorded_offline", "admin_adjustment", "backfill")
+NEGOTIATION_ROLES = ("brand", "creator", "admin", "system")
+NEGOTIATION_CURRENCY = "INR"
+
+
+def _negotiation_role(user: Optional[dict]) -> str:
+    """Which side moved, in the history's four words. Staff are all `admin`
+    here: whether it was an admin, a WeAre team member or the assigned manager
+    is in the audit line, and a brand reading the history needs to know it
+    was us, not which of us."""
+    role = (user or {}).get("role")
+    if is_brand_side(user or {}):
+        return "brand"
+    if role == "creator":
+        return "creator"
+    if role in ("admin", "weare_team", "campaign_manager"):
+        return "admin"
+    return "system"
+
+
+def _is_staff(user: Optional[dict]) -> bool:
+    return _negotiation_role(user) == "admin"
+
+
+def _negotiation_entry(
+    *,
+    kind: str,
+    amount,
+    by_role: str,
+    by_user_id,
+    note: Optional[str],
+    source: str,
+    at: datetime,
+) -> dict:
+    assert kind in NEGOTIATION_KINDS, kind
+    assert source in NEGOTIATION_SOURCES, source
+    assert by_role in NEGOTIATION_ROLES, by_role
+    return {
+        "at": at,
+        "kind": kind,
+        "amount": round(float(amount), 2) if amount is not None else None,
+        "currency": NEGOTIATION_CURRENCY,
+        "by_role": by_role,
+        "by_user_id": ObjectId(by_user_id) if by_user_id else None,
+        "note": (note or "").strip() or None,
+        "source": source,
+    }
+
+
+async def _set_agreed_amount(
+    collab_id,
+    amount,
+    *,
+    campaign: dict,
+    kind: str,
+    by_role: str,
+    by_user_id,
+    note: Optional[str],
+    source: str,
+    precondition: Optional[dict] = None,
+    also_set: Optional[dict] = None,
+    now: Optional[datetime] = None,
+) -> Optional[dict]:
+    """Set the agreed fee and append how it got there, in one write.
+
+    The caller's own state change rides in `also_set` and its precondition in
+    `precondition`, so the transition, the number and the history entry are
+    one atomic update and a lost race leaves none of them behind. Returns the
+    updated row, or `None` when the precondition did not match.
+    """
+    if source == "admin_adjustment" and not (note or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Say why the fee is changing — an adjustment is kept with its reason.",
+        )
+    barter = _compensation_type(campaign) == "barter"
+    if barter:
+        amount = None
+    now = now or datetime.now(timezone.utc)
+    entry = _negotiation_entry(
+        kind=kind, amount=amount, by_role=by_role, by_user_id=by_user_id,
+        note=note, source=source, at=now,
+    )
+    to_set = dict(also_set or {})
+    if not barter:
+        to_set["agreed_amount"] = entry["amount"]
+    update = {"$push": {"negotiation_history": entry}}
+    if to_set:
+        update["$set"] = to_set
+    return await db.collaborations.find_one_and_update(
+        {"_id": collab_id, **(precondition or {})},
+        update,
+        return_document=True,
+    )
+
+
+def _negotiation_step(*, kind: str, amount, user: Optional[dict], note: Optional[str],
+                      source: str, campaign: Optional[dict], at: datetime) -> dict:
+    """An entry that sets no fee — the creator's opening quote and a decline.
+
+    Pushed by the caller inside its own write. On a barter brief the amount is
+    dropped for the same reason `_set_agreed_amount` drops it."""
+    if _compensation_type(campaign) == "barter":
+        amount = None
+    return _negotiation_entry(
+        kind=kind, amount=amount, by_role=_negotiation_role(user),
+        by_user_id=(user or {}).get("_id"), note=note, source=source, at=at,
+    )
+
+
+# A phone number or an email typed into a note. Blunt on purpose, the
+# `lib/errorLog.js` reasoning: contact details reach free text by somebody
+# pasting them, and they can be any shape.
+_NOTE_CONTACT_RE = re.compile(
+    r"(?:\+?91[\s-]?)?[6-9]\d(?:[\s-]?\d){8}|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+)
+
+
+def _scrub_contact(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return text
+    return _NOTE_CONTACT_RE.sub("[contact removed]", text)
+
+
+def _serialize_negotiation(collab: Optional[dict], campaign: Optional[dict], *, full: bool) -> dict:
+    """The history, newest first.
+
+    `full` is the admin's view: the source and who exactly moved. Everybody
+    else — the creator, the brand, a campaign manager — reads which side moved
+    and never a user id, and note text has phone numbers and emails taken out,
+    because a note is free text and `_brand_visible_creator` governs fields,
+    not what somebody typed into one. A backfilled entry is flagged so it is
+    drawn as "recorded before history tracking" rather than as a step anybody
+    took.
+    """
+    barter = _compensation_type(campaign) == "barter"
+    entries = []
+    for e in (collab or {}).get("negotiation_history") or []:
+        row = {
+            "at": _iso(e.get("at")),
+            "kind": e.get("kind"),
+            "amount": None if barter else e.get("amount"),
+            "currency": e.get("currency") or NEGOTIATION_CURRENCY,
+            "by_role": e.get("by_role"),
+            "note": e.get("note") if full else _scrub_contact(e.get("note")),
+            "recorded_before_tracking": e.get("source") == "backfill",
+        }
+        if full:
+            row["source"] = e.get("source")
+            row["by_user_id"] = str(e["by_user_id"]) if e.get("by_user_id") else None
+        entries.append(row)
+    entries.reverse()
+    return {
+        "compensation_type": _compensation_type(campaign),
+        # On barter the terms stand where a number would: what the creator
+        # gets, in the brief's own words.
+        "barter_terms": (campaign or {}).get("barter_description") if barter else None,
+        "entries": entries,
+    }
+
+
 def _resolve_agreed_amount(campaign: dict, supplied) -> Optional[float]:
     """The amount to record when a collaboration reaches `commercial_agreed`.
 
@@ -17241,6 +17468,9 @@ class AdvanceCollabPayload(BaseModel):
     from_state: Optional[str] = None
     # Required only when the NEXT state is 'commercial_agreed'.
     agreed_amount: Optional[float] = Field(default=None, ge=0)
+    # Kept on the fee's history entry when the next state is
+    # 'commercial_agreed' — "agreed on the call, includes the reel".
+    note: Optional[str] = Field(default=None, max_length=1000)
     # **Admin-only, and it costs a reason.** The point of a cap is that going
     # over it is a decision somebody made and can be asked about afterwards;
     # a brand overriding its own cap would be a cap that refuses nothing.
@@ -24908,6 +25138,7 @@ async def get_admin_collaboration_detail(
         # the two draft steps are only on the ladder where the campaign asked
         # for them.
         "state_order": list(_collab_ladder(campaign)),
+        "negotiation": _serialize_negotiation(collab, campaign, full=True),
         "terminal_states": list(TERMINAL_COLLAB_STATES),
         # Whether there is anything to measure yet, decided here rather than by
         # the UI keeping its own copy of the delivered set.
@@ -25006,8 +25237,8 @@ async def advance_collaboration(
         await _refuse_over_budget(
             campaign, resolved, user, payload.budget_override_reason, collab["_id"]
         )
-        if resolved is not None:
-            update["agreed_amount"] = resolved
+        # The figure itself is written by `_set_agreed_amount` below, in the
+        # same update as the state, with its history entry beside it.
         update["agreed_at"] = now
         update["agreed_by"] = ObjectId(user["_id"])
 
@@ -25117,11 +25348,27 @@ async def advance_collaboration(
                 }
             )
 
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": oid, "state": current},  # precondition — never a blind write
-        {"$set": update},
-        return_document=True,
-    )
+    if to_state == "commercial_agreed":
+        # The fee step from the console: the offline agreement, recorded.
+        updated = await _set_agreed_amount(
+            oid,
+            resolved,
+            campaign=campaign,
+            kind="accept",
+            by_role=_negotiation_role(user),
+            by_user_id=user.get("_id"),
+            note=payload.note,
+            source="recorded_offline",
+            precondition={"state": current},  # never a blind write
+            also_set=update,
+            now=now,
+        )
+    else:
+        updated = await db.collaborations.find_one_and_update(
+            {"_id": oid, "state": current},  # precondition — never a blind write
+            {"$set": update},
+            return_document=True,
+        )
     if not updated:
         raise HTTPException(
             status_code=409,
@@ -25134,7 +25381,11 @@ async def advance_collaboration(
         "collaboration",
         oid,
         before={"state": current},
-        after={k: v for k, v in update.items() if k != "updated_at"},
+        after={
+            **{k: v for k, v in update.items() if k != "updated_at"},
+            **({"agreed_amount": updated.get("agreed_amount")}
+               if to_state == "commercial_agreed" else {}),
+        },
     )
 
     campaign_title = (campaign or {}).get("title") or "your collaboration"
@@ -25344,7 +25595,11 @@ async def decline_applicant(
                 "active": False,
                 "exit_reason": payload.reason,
                 "declined_at": now,
-            }
+            },
+            "$push": {"negotiation_history": _negotiation_step(
+                kind="decline", amount=None, user=user, note=payload.reason,
+                source="in_app", campaign=None, at=now,
+            )},
         },
         return_document=True,
     )
@@ -34117,7 +34372,17 @@ async def _create_application(
                 "reference": await _next_reference("collaboration"),
                 "pitch": pitch.strip(),
                 "quoted_rate": float(quoted_rate),
-                "agreed_amount": None,
+                # No `agreed_amount` key: absent reads as "not agreed" on every
+                # reader, and `_set_agreed_amount` stays the only thing that
+                # ever writes one. The creator's quote is the first step of
+                # the negotiation, so it opens the history — without an amount
+                # on a barter brief, where a typed quote is not an offer.
+                "negotiation_history": [
+                    _negotiation_step(
+                        kind="offer", amount=float(quoted_rate), user=creator,
+                        note=None, source="in_app", campaign=campaign, at=now,
+                    )
+                ],
                 "content_url": None,
                 "content_urls": [],
                 "scheduled_at": None,
@@ -36169,16 +36434,29 @@ async def resolve_dispute(
         "dispute.resolved_at": now,
         "updated_at": now,
     }
-    # A partial release rewrites what is owed, through the same field every
-    # other fee decision writes, so the payout and the report agree.
+    # A partial release rewrites what is owed, through the one writer every
+    # other fee decision uses, so the payout, the report and the history agree
+    # — and the mediator's note is the adjustment's reason.
     if payload.resolution == "partial_release":
-        updates["agreed_amount"] = float(amount)
-
-    updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "dispute.state": "open"},
-        {"$set": updates},
-        return_document=True,
-    )
+        updated = await _set_agreed_amount(
+            collab["_id"],
+            float(amount),
+            campaign=campaign,
+            kind="adjust",
+            by_role="admin",
+            by_user_id=user.get("_id"),
+            note=payload.note,
+            source="admin_adjustment",
+            precondition={"dispute.state": "open"},
+            also_set=updates,
+            now=now,
+        )
+    else:
+        updated = await db.collaborations.find_one_and_update(
+            {"_id": collab["_id"], "dispute.state": "open"},
+            {"$set": updates},
+            return_document=True,
+        )
     if not updated:
         raise HTTPException(status_code=409, detail="This was just resolved — reload.")
 
@@ -37528,6 +37806,9 @@ async def get_application(
         # is: a mediation where each side reads its own version of the terms is
         # the argument rather than the resolution. `None` before acceptance and
         # on every collaboration that predates the snapshot.
+        # The admin reads every entry's source and author; the brand and
+        # the manager read which side moved.
+        "negotiation": _serialize_negotiation(collab, campaign, full=is_admin),
         "terms": _serialize_terms(collab),
         # Read off the campaign rather than the snapshot, so an application
         # that has not reached acceptance still shows the current grant.
