@@ -14371,11 +14371,14 @@ async def brand_request_changes(
         )
 
     now = datetime.now(timezone.utc)
+    # The campaign's own ready state — `received` on a delivery brief, where
+    # `attended` is not a state the ladder has.
+    back_to = _ready_to_shoot_state(campaign)
     result = await db.collaborations.update_one(
         {"_id": collab["_id"], "state": "content_submitted"},
         {
             "$set": {
-                **_state_stamp("attended", now),
+                **_state_stamp(back_to, now),
                 "revision_note": payload.reason.strip(),
             }
         },
@@ -14389,7 +14392,7 @@ async def brand_request_changes(
         "collaboration",
         collab["_id"],
         before={"state": "content_submitted"},
-        after={"state": "attended"},
+        after={"state": back_to},
         note=payload.reason,
         **_campaign_audit_context(campaign),
     )
@@ -14400,7 +14403,7 @@ async def brand_request_changes(
         body=f"{campaign.get('title')} — {payload.reason.strip()}",
         link="/dashboard",
     )
-    return {"id": collab_id, "state": "attended", "revision_note": payload.reason.strip()}
+    return {"id": collab_id, "state": back_to, "revision_note": payload.reason.strip()}
 
 
 @brand_router.get("/dashboard")
@@ -36717,12 +36720,19 @@ async def _own_collab_for_draft(collab_id: str, user: dict) -> tuple:
             status_code=409,
             detail="This campaign doesn't use draft review — submit your live link instead.",
         )
-    if collab.get("state") not in ("attended", "draft_submitted"):
+    # The same ready state `_record_draft` writes from. This said `attended`
+    # outright, so on a delivery brief — where the creator sits at `received`
+    # — the gate refused every draft and the review step was unreachable.
+    ready = _ready_to_shoot_state(campaign)
+    if collab.get("state") not in (ready, "draft_submitted"):
         raise HTTPException(
             status_code=409,
             detail=(
-                "A draft can be sent once you're marked attended, and replaced "
-                "any time before it's approved."
+                "A draft can be sent once you've confirmed the product arrived, "
+                "and replaced any time before it's approved."
+                if ready == "received"
+                else "A draft can be sent once you're marked attended, and "
+                "replaced any time before it's approved."
             ),
         )
     return collab, campaign
@@ -36888,13 +36898,16 @@ async def request_draft_changes(
         )
 
     now = datetime.now(timezone.utc)
+    back_to = _ready_to_shoot_state(campaign)
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": "draft_submitted"},
         {
-            # Back to "shoot done, draft owed" — the same shape as the live
-            # content request-changes, which returns to `attended` too.
+            # Back to "shoot done, draft owed" — the campaign's own ready
+            # state, which is `received` on a delivery brief. Writing
+            # `attended` there put the row on a state its ladder does not
+            # have, and the next draft was refused.
             "$set": {
-                **_state_stamp("attended", now),
+                **_state_stamp(back_to, now),
                 "draft_revision_note": note,
             },
             "$inc": {"draft_revision_count": 1},
@@ -36908,7 +36921,7 @@ async def request_draft_changes(
 
     await audit(
         user, "collaboration.request_draft_changes", "collaboration", collab["_id"],
-        before={"state": "draft_submitted"}, after={"state": "attended"},
+        before={"state": "draft_submitted"}, after={"state": back_to},
         note=note,
         **_campaign_audit_context(campaign),
     )
