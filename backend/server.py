@@ -37894,6 +37894,10 @@ async def get_application(
             # it) and `commercial_agreed` (correct it).
             "can_agree_commercial": (is_admin or is_brand_side(user))
             and state in ("accepted", "commercial_agreed"),
+            # A staff correction to an agreed fee is an admin adjustment, and
+            # `_set_agreed_amount` refuses one without a note — so the form
+            # asks for it rather than producing the 422.
+            "fee_note_required": state == "commercial_agreed" and _is_staff(user),
             "can_review_content": state == "content_submitted"
             and (is_admin or is_brand_side(user)),
             # **Only where there is a counted ask to be short of.** A brief

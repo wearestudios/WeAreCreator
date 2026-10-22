@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DRAFT_REVIEW as IDS } from "@/constants/testIds";
 import { IST } from "@/lib/time";
+import { ReviewWindowControls, ReviewWindowNote } from "./ReviewWindow";
 
 const STATUS = {
     draft_submitted: "Waiting for your review.",
@@ -53,6 +54,9 @@ export default function DraftReview({
     // Absent means no checkpoint is rendered — which never happens on a real
     // campaign, since every brief here is a material connection.
     disclosureLabel = null,
+    // The admin's four controls on the auto-approval window. Decided
+    // server-side (`can_manage_review_window`), like `canReview`.
+    canManageWindow = false,
 }) {
     const [busy, setBusy] = useState(null);
     const [note, setNote] = useState("");
@@ -89,6 +93,18 @@ export default function DraftReview({
                       "The creator hasn't sent a new draft since the last round."
                     : "Nothing sent yet — the creator submits a draft after the shoot."}
             </p>
+
+            {/* The countdown, for whoever reads this without a decision to
+                make. The reviewer gets it beside the send-back instead, which
+                is the moment it is worth knowing. */}
+            {!canReview && <ReviewWindowNote reviewWindow={draft.review_window} />}
+            {canManageWindow && (
+                <ReviewWindowControls
+                    collaborationId={collaborationId}
+                    reviewWindow={draft.review_window}
+                    onChanged={onDecided}
+                />
+            )}
 
             {submitted && (
                 <div className="rounded-md border border-white/10 bg-white/5 p-4">
@@ -212,6 +228,13 @@ export default function DraftReview({
                         >
                             Request changes
                         </Button>
+                        {/* Beside the send-back, because "if you don't answer
+                            by Thursday it goes through as it is" is what makes
+                            asking for changes today worth doing. */}
+                        <ReviewWindowNote
+                            reviewWindow={draft.review_window}
+                            className="sm:self-center"
+                        />
                     </div>
 
                     {asking && (

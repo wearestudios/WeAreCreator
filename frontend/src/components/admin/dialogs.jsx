@@ -41,6 +41,7 @@ import {
     SCHEDULING_DATE_LABELS,
     schedulingDateFields,
 } from "@/lib/schedulingShape";
+import { DRAFT_REVIEW_DAYS_MAX, DRAFT_REVIEW_DAYS_MIN } from "@/lib/reviewWindow";
 
 // The server's ReasonPayload floor. Enforced here too so a three-character
 // "no" is refused before it becomes a round trip.
@@ -534,10 +535,13 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
     // brief and a brand posting one must produce the same shape, or the
     // console becomes the way a campaign ends up with prose again.
     const [deliverables, setDeliverables] = useState(emptyDeliverables());
+    // The draft review window — the admin's override of what the brand set.
+    const [reviewDays, setReviewDays] = useState("");
     const [err, setErr] = useState("");
 
     useEffect(() => {
         if (!open || !campaign) return;
+        setReviewDays(campaign.draft_review_days != null ? String(campaign.draft_review_days) : "");
         setTitle(campaign.title || "");
         setBudget(campaign.budget_per_creator != null ? String(campaign.budget_per_creator) : "");
         setTotalBudget(campaign.total_budget != null ? String(campaign.total_budget) : "");
@@ -612,6 +616,16 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 return;
             }
             changes[field] = iso;
+        }
+        const d = Number(reviewDays);
+        if (campaign.requires_draft_approval && reviewDays !== "" && d !== campaign.draft_review_days) {
+            if (!Number.isInteger(d) || d < DRAFT_REVIEW_DAYS_MIN || d > DRAFT_REVIEW_DAYS_MAX) {
+                setErr(
+                    `Days to review a draft has to be ${DRAFT_REVIEW_DAYS_MIN} to ${DRAFT_REVIEW_DAYS_MAX}.`,
+                );
+                return;
+            }
+            changes.draft_review_days = d;
         }
         if (Object.keys(changes).length === 0) {
             setErr("Nothing has changed.");
@@ -757,6 +771,30 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             )}
                         </div>
                     </div>
+
+                    {/* Only where drafts are reviewed — a window on a brief
+                        with no draft stage is a setting nothing reads. */}
+                    {campaign?.requires_draft_approval && (
+                        <div>
+                            <Label htmlFor="ce-review-days" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                Days to review a draft
+                            </Label>
+                            <Input
+                                id="ce-review-days"
+                                data-testid={ADMIN_CAMPAIGN_EDIT.reviewDays}
+                                type="number"
+                                min={DRAFT_REVIEW_DAYS_MIN}
+                                max={DRAFT_REVIEW_DAYS_MAX}
+                                value={reviewDays}
+                                onChange={(e) => setReviewDays(e.target.value)}
+                                className="mt-2 h-11 w-28 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                            />
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                An unanswered draft approves itself after this many days. Applies
+                                to drafts sent from now on.
+                            </p>
+                        </div>
+                    )}
 
                     {/* The cap on the whole brief. **"Extend the dates" was
                         not the only way out this dialog was missing** — a

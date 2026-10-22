@@ -530,3 +530,22 @@ def test_the_backfill_is_idempotent_labelled_and_skips_barter():
     assert e["at"].replace(tzinfo=timezone.utc) < _now() - timedelta(days=89)
     assert not _history(barter)
     assert len(_history(tracked)) == 1
+
+
+def test_the_form_is_told_when_a_correction_needs_a_note():
+    """`fee_note_required` is exactly the condition `_set_agreed_amount`
+    refuses on, so the button agrees with the route rather than discovering
+    the rule through a 422."""
+    async def body(db):
+        s = await _scene(db, state="commercial_agreed", compensation="negotiated",
+                         agreed_amount=12000.0, agreed_at=_now())
+        admin_at_agreed = await server.get_application(s["collab_id"], ADMIN)
+        brand_at_agreed = await server.get_application(s["collab_id"], s["brand"])
+        await db.collaborations.update_one({"_id": s["collab_oid"]}, {"$set": {"state": "accepted"}})
+        admin_at_accepted = await server.get_application(s["collab_id"], ADMIN)
+        return admin_at_agreed, brand_at_agreed, admin_at_accepted
+
+    a, b, c = run(body)
+    assert a["actions"]["fee_note_required"] is True
+    assert b["actions"]["fee_note_required"] is False
+    assert c["actions"]["fee_note_required"] is False

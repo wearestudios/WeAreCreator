@@ -145,6 +145,9 @@ export default function PartialDeliveryDialog({
                     {/* Required. "Accepted partial" with no reason is a
                         decision somebody has to reconstruct from a payment
                         figure a year later. */}
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                        The creator sees this in the fee history, beside the new amount.
+                    </span>
                     <Textarea
                         rows={2}
                         maxLength={1000}
