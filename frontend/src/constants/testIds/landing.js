@@ -31,30 +31,36 @@ export const LANDING_HERO = {
 	section: 'hero-section',
 	eyebrow: 'hero-eyebrow',
 	heading: 'hero-heading',
+	// The active step's support line. The rotating line above it is `line`.
 	subheading: 'hero-subheading',
+	line: 'hero-line',
+	// The four lines as a static, visually-hidden list — what a screen reader
+	// gets instead of copy that changes every six seconds.
+	stepsList: 'hero-steps-list',
 	kicker: 'hero-kicker',
 	ctaBrand: 'hero-cta-brand',
 	ctaCreator: 'hero-cta-creator',
 
-	// The slider itself. Slides are addressed by index rather than by their
-	// campaign type, so reordering the deck doesn't rewrite anyone's test.
+	// The deck. Slides are addressed by step index, and at most two are ever
+	// mounted — `hero-slides` carries `data-mounted` with the count.
 	slides: 'hero-slides',
 	slide: (i) => `hero-slide-${i}`,
-	slideImage: (i) => `hero-slide-image-${i}`,
-	// Below `md` only — three thumbnails and a counter on a 390px screen is
-	// clutter over the one place the headline has to be read.
-	dots: 'hero-dots',
-	dot: (i) => `hero-dot-${i}`,
-
-	// The rail of upcoming frames, and the counter beside it, which replaced
-	// the dots at `md` and up. Frames are addressed by the slide index they
-	// go to rather than by their position in the rail: the position changes
-	// every six seconds and the destination is what a test means.
+	// 01 Offer · 02 Agree · 03 Deliver · 04 Get paid.
 	rail: 'hero-rail',
-	railTrack: 'hero-rail-track',
-	railFrame: (i) => `hero-rail-frame-${i}`,
-	index: 'hero-index',
+	railStep: (i) => `hero-rail-step-${i}`,
 	progress: 'hero-progress',
+	// The three-claim strip at the foot of the hero.
+	claims: 'hero-claims',
+	claim: (i) => `hero-claim-${i}`,
+};
+
+// "A campaign is not a spreadsheet and sixty DMs", directly under the hero.
+export const LANDING_COMPARE = {
+	section: 'compare-section',
+	title: 'compare-title',
+	today: 'compare-today',
+	here: 'compare-here',
+	link: 'compare-link',
 };
 
 export const LANDING_CLOSING = {

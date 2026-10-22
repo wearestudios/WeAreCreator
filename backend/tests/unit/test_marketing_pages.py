@@ -1663,183 +1663,173 @@ def test_the_marketing_footer_names_terms_privacy_and_a_human():
     assert '"/terms"' in site and '"/privacy"' in site
 
 
-# --- The kinetic headline -----------------------------------------------------
+# --- The hero deck -----------------------------------------------------------
 #
-# The signature. Poster type that morphs at letterform level between four kinds
-# of campaign, resolving each time against a line that never moves — the motion
-# *is* the message: what changes is the kind of work, what does not is how it
-# is run.
+# **These eight replaced the kinetic headline's eight, one for one.** The
+# headline morphed between the eight sectors in `CATEGORY_OPTIONS` over eight
+# photographs; the sector is the one thing a visitor already knows about
+# themselves, so the hero now rotates the stage of the job — four fixed steps,
+# each with the product screen it happens on. Each test below keeps the rule
+# its predecessor held and points it at the new contract; the docstring names
+# what it replaced. The behaviour (the rail, the two-layer budget, reduced
+# motion) is *run*, in `test_hero_deck.py`.
 
 
-def test_the_headline_morphs_between_real_campaign_categories():
-    """A phrase naming a category `CampaignCategory` does not have is an
-    invitation to filter the brief list and find nothing.
+def _hero_steps():
+    """The four steps as declared in Landing's COPY."""
+    src = read(*PAGES["home"])
+    block = src[src.index("steps: [") : src.index("],", src.index("steps: ["))]
+    return re.findall(r'key: "([a-z]+)",\s*label: "([^"]+)"', block)
 
-    **The rule is the same and it is now structural rather than watched.** The
-    phrases were four hand-written kinds of work ("launch night", "menu
-    tasting") that happened to correspond to categories; they are the sector
-    list itself now, mapped straight off `CATEGORY_OPTIONS`, so a phrase that
-    the brief feed cannot filter to is no longer something a reviewer has to
-    notice. `lib/categories.js` is already drift-tested against
-    `CATEGORY_LITERAL`, which is what makes that worth doing.
 
-    **The slice no longer ends at `const HOLD_MS`.** That constant was only
-    ever a convenient landmark for "the end of the phrase declaration", and it
-    has moved to `sectorCycle.jsx` — the headline and the slider each owned a
-    hold and drifted apart, so there is one now and neither file declares it.
-    Every assertion below is unchanged; the block simply ends at the blank
-    line after the declaration, which does not depend on what happens to be
-    written next to it.
+def test_the_deck_is_four_steps_and_never_the_sectors():
+    """Replaces `test_the_headline_morphs_between_real_campaign_categories`.
+
+    **Inverted on purpose.** That test pinned the phrases to `CATEGORY_OPTIONS`
+    so a phrase could not name a sector the feed cannot filter to. The deck
+    no longer rotates sectors at all, so the rule that matters is the
+    opposite: nothing in the hero may read the category list, and adding a
+    sector touches none of it.
     """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    start = src.index("export const PHRASES")
-    block = src[start : src.index("\n\n", start)]
-    assert "CATEGORY_OPTIONS" in block, (
-        "the phrases are hand-written again rather than derived from the enum"
-    )
-    assert "categories" in src, "the enum is not imported"
-    # And nothing hand-written alongside it.
-    assert not re.findall(r'"([a-z][a-z ]{3,})"', block), block
+    assert _hero_steps() == [
+        ("offer", "Offer"), ("agree", "Agree"), ("deliver", "Deliver"), ("paid", "Get paid"),
+    ]
+    for rel in (
+        ("src", "components", "marketing", "HeroDeck.jsx"),
+        ("src", "components", "marketing", "heroScreens.jsx"),
+        ("src", "lib", "heroDeck.js"),
+    ):
+        code = copy_of(*rel)
+        assert "CATEGORY_OPTIONS" not in code and "categories" not in code, rel
+    marketing = FRONTEND / "src" / "components" / "marketing"
+    for gone in ("HeroSlider.jsx", "KineticHeadline.jsx", "sectorCycle.jsx"):
+        assert not (marketing / gone).exists(), gone
 
 
-def test_the_constant_half_of_the_headline_never_animates():
-    """The lead and the tail are outside the morph. Animating the whole line
-    would say several unrelated headlines are cycling rather than one sentence
-    being re-pointed.
+def test_the_h1_never_animates_and_only_the_line_under_it_moves():
+    """Replaces `test_the_constant_half_of_the_headline_never_animates`.
 
-    **The two strings changed and the structure did not.** The lead was "Your"
-    — a possessive on a campaign noun, which addressed a brand manager as if
-    about their own evening — and the tail was "handled properly.", which
-    hedged the claim with the adverb the register rules ban. They are the
-    category term the business sells in and the managed model now. What this
-    test is for is the arrangement, so it pins that both halves are literals
-    outside the morph rather than pinning what they say.
+    The rule was that the constant half of a sentence sits outside the morph.
+    The whole `h1` is the constant half now — "One place for the whole job",
+    static for search and for screen readers — and the rotating line is a
+    separate, decorative element. So the `h1` must be a literal from COPY,
+    outside `Reveal` and outside anything that reads the deck's index.
     """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert 'lead = "Influencer marketing for"' in src
-    assert 'tail = "We run it end to end."' in src
-    # The tail is rendered outside the AnimatePresence block.
-    after = src[src.index("</AnimatePresence>") :]
-    assert "{tail}" in after
+    src = read(*PAGES["home"])
+    assert 'heroTitle: "One place for the whole job"' in src
+    h1 = src[src.index("<h1") : src.index("</h1>")]
+    assert "{COPY.heroTitle}" in h1
+    for moving in ("index", "useHeroDeck", "step.", "Reveal"):
+        assert moving not in h1, moving
 
 
-def test_the_morph_is_per_letter_rather_than_a_fade():
-    """"Letters sliding, swapping, resolving — not a plain fade." Each letter
-    is its own element on a stagger; a single opacity tween on the phrase is
-    the thing this is specified not to be."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "Array.from(text)" in src
-    assert "delay: i * STEP" in src
-    # And it moves, not just fades.
-    assert 'y: "-0.45em"' in src and 'y: "0.55em"' in src
+def test_the_rotating_line_is_decorative_and_its_words_are_also_static():
+    """Replaces `test_the_morph_is_per_letter_rather_than_a_fade`.
 
-
-def test_the_picture_and_the_word_change_on_one_timer():
-    """One clock, in `sectorCycle.jsx`, read by the headline and the slider.
-
-    **This read `HOLD_MS` out of `KineticHeadline.jsx`, which no longer owns
-    it — and the number was never the point.** The headline held 4000ms with
-    its own `setInterval` while `HeroSlider` held 7000ms with its own
-    `setTimeout`: they started together, drifted apart by the second slide and
-    never recovered, so the word named one sector over a picture of another.
-    That is the lag the hero was rebuilt to remove.
-
-    Matching the two constants would not have fixed it, which is why the third
-    assertion is the load-bearing one: two independent timers accumulate their
-    own scheduling error, and a `setInterval` firing in a throttled tab is not
-    the same clock as a chain of `setTimeout`s. A test that only checked the
-    number would pass with both timers still present and the defect intact.
+    A per-letter morph was right for a word naming a sector; it is wrong for a
+    seven-word sentence. What survives is the accessibility half of that
+    design: the moving copy is `aria-hidden`, all four lines also exist as a
+    visually hidden static list, and nothing carries `aria-live` — repeated
+    announcements of marketing copy are hostile.
     """
-    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
-    hold = re.search(r"export const HOLD_MS = (\d+)", cycle)
-    assert hold, "the one hold is not declared in sectorCycle.jsx"
-    assert 5000 <= int(hold.group(1)) <= 7500, hold.group(1)
-
-    for name in ("KineticHeadline.jsx", "HeroSlider.jsx"):
-        src = copy_of("src", "components", "marketing", name)
-        assert "HOLD_MS =" not in src, f"{name} declares a hold of its own"
-        assert "setInterval" not in src, f"{name} still runs its own timer"
-        assert "setTimeout" not in src, f"{name} still runs its own timer"
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    rotating = deck[deck.index("export function RotatingLine") :]
+    assert '<div aria-hidden className="grid">' in rotating
+    assert 'className="sr-only"' in rotating and "steps.map" in rotating
+    for rel in (("src", "components", "marketing", "HeroDeck.jsx"), PAGES["home"]):
+        assert "aria-live" not in copy_of(*rel), rel
 
 
-def test_the_headline_is_poster_scale():
-    """Still well past the type ramp's top step, and still sized in `vw`, but
-    **sized to a column rather than to the window** — which is a reversal.
+def test_the_screen_and_the_line_change_on_one_timer():
+    """Replaces `test_the_picture_and_the_word_change_on_one_timer`.
 
-    The ceiling was 8.5rem and this asserted 8, which was right while the
-    headline filled a full-bleed hero. The type now lives in six of the hero's
-    twelve columns: at 1440 the old clamp resolved to 136px against a lead
-    roughly 1700px wide, which ran the h1 to four lines and pushed the CTAs
-    below the fold on a laptop.
-
-    So the ceiling comes down and the floor stays. `fluid-hero` tops out at
-    4.25rem and this is still the one element on the site past it, which is
-    what the assertion is actually for; 8 was a number for a different box.
+    **Same rule, one file now.** Slides and lines are 1:1, so one clock drives
+    both. `HOLD_MS` is declared once, in `lib/heroDeck.js`; the provider runs
+    the only advancing `setTimeout`, keyed on `HOLD_MS`; no `setInterval`
+    exists anywhere in the hero; and the progress bar is a CSS animation over
+    the same hold rather than a second timer. The one other `setTimeout` is the
+    wipe's one-shot `settle`, keyed on `WIPE_MS` — it ends a transition and
+    never advances anything.
     """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', src)
-    assert m, "no clamp on the headline"
-    assert "vw" in m.group(2), "the middle term is still fluid"
+    lib = read("src", "lib", "heroDeck.js")
+    hold = re.search(r"export const HOLD_MS = (\d+)", lib)
+    assert hold and 5000 <= int(hold.group(1)) <= 7500
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    assert "HOLD_MS =" not in deck
+    assert "setInterval" not in deck
+    timers = re.findall(r"setTimeout\(([^;]*?),\s*(HOLD_MS|WIPE_MS)\)", deck)
+    assert sorted(t[1] for t in timers) == ["HOLD_MS", "WIPE_MS"], timers
+    assert deck.count("setTimeout(") == 2
+    advancing = [body for body, ms in timers if ms == "HOLD_MS"][0]
+    assert 'type: "advance"' in advancing
+    assert "animationDuration: `${HOLD_MS}ms`" in deck
+    for rel in (("src", "components", "marketing", "heroScreens.jsx"),
+                ("src", "components", "marketing", "ComparisonBand.jsx"), PAGES["home"]):
+        code = copy_of(*rel)
+        assert "setTimeout" not in code and "setInterval" not in code, rel
+
+
+def test_the_h1_is_poster_scale():
+    """Replaces `test_the_headline_is_poster_scale`, unchanged in substance:
+    sized to its column in `vw`, and still past `fluid-hero`'s 4.25rem top
+    step. The clamp moved from the headline component onto the `h1`."""
+    src = read(*PAGES["home"])
+    h1 = src[src.index("<h1") : src.index("</h1>")]
+    m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', h1)
+    assert m, "no clamp on the h1"
+    assert "vw" in m.group(2)
     assert float(m.group(3).replace("rem", "")) >= 4.5
 
 
-def test_the_headline_reserves_its_box_by_rendered_width():
-    """Every phrase is drawn invisibly into one grid cell, so the box is as
-    wide and as tall as the widest and tallest phrase the browser draws.
+def test_the_rotating_line_reserves_its_box_by_rendered_width():
+    """Replaces `test_the_headline_reserves_its_box_by_rendered_width`.
 
-    **This pinned `longest`, and `longest` was the bug.** It reserved the box
-    with one invisible copy of the phrase with the most characters — and a
-    character count is not a width. "Hospitality" and "Real Estate" are both
-    eleven, the reduce keeps the first on a tie, and in Fraunces at poster
-    size "Real Estate" renders wider: the animated layer is `absolute
-    whitespace-nowrap`, so on that one slide it ran past its own box and the
-    hero's `overflow-hidden` clipped it. Measured on the old build, the box
-    also changed height by 6px mid-cycle, which was a layout shift per lap.
-
-    So the assertion is inverted. `longest` must be GONE, or somebody
-    reintroduces a width guess; the stack has to be there instead. The height
-    property the old test was protecting is unchanged and still holds — one
-    grid cell cannot change height between phrases either.
-
-    Read through `copy_of`, which strips comments, for the reason that helper
-    exists: the convention here is to explain a removal where it happened, so
-    the comment recording why `longest` went necessarily names `longest` and
-    would fail this test on its own justification.
+    The lesson carried over intact: a character count is not a width, and the
+    only reservation that is right is one the browser draws. All four lines
+    are drawn into one grid cell and the inactive three are `invisible`, so
+    the block is as tall as the tallest line at every width and swapping lines
+    moves nothing. The stage reserves its box by aspect ratio for the same
+    reason.
     """
-    src = copy_of("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "longest" not in src, "the character-count width guess is back"
-    assert "phrases.map" in src, "the phrases are not stacked"
-    assert "invisible" in src
-    assert "col-start-1 row-start-1" in src, "the stack is not in one cell"
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    rotating = deck[deck.index("export function RotatingLine") :]
+    assert "longest" not in deck
+    assert "col-start-1 row-start-1" in rotating and "invisible" in rotating
+    stage = deck[deck.index("export function DeckStage") : deck.index("export function StepRail")]
+    assert "aspect-[" in stage
 
 
-def test_the_headline_is_static_under_reduced_motion():
-    """First phrase, and no timer started — nothing running in the background
-    either.
+def test_the_hero_is_still_under_reduced_motion():
+    """Replaces `test_the_headline_is_static_under_reduced_motion`.
 
-    **The branch that decides it moved to the provider**, which is where the
-    timer went: this asserted `if (reduced) return undefined;` in
-    `KineticHeadline.jsx`, and the headline no longer owns a cycle to refuse
-    to start. The guard is pinned in `sectorCycle.jsx` instead. The second
-    half is unchanged and is the half about this component — it still renders
-    phrase one and starts nothing of its own, which is also what it does when
-    it is mounted outside a provider.
+    No auto-advance at all: the timer is gated on `autoAdvances`, which is
+    false under reduced motion (run in `test_hero_deck.py`). Step 01 shows,
+    the rail does the switching, the wipe, the line's settle and the progress
+    bar are all skipped, and the CSS backstop catches a stale media query.
     """
-    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
-    assert "useReducedMotion" in cycle
-    assert "if (reduced || paused) return undefined;" in cycle
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    assert "useReducedMotion" in deck
+    assert "if (!autoAdvances({ reduced, paused })) return undefined;" in deck
+    assert "reduced || !incoming" in deck
+    assert "on && !reduced" in deck
+    css = read("src", "index.css")
+    assert '[style*="heroWipe"]' in css and '[style*="heroProgress"]' in css
 
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "useReducedMotion" in src
-    assert "still ? (" in src
 
+def test_the_h1_has_one_stable_accessible_name():
+    """Replaces `test_the_headline_has_one_stable_accessible_name`.
 
-def test_the_headline_has_one_stable_accessible_name():
-    """A screen reader reading four letters at a time as they animate in is
-    gibberish, so the animated spans are hidden and the h1 carries a name."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "aria-label={`${lead}" in src
-    assert 'aria-hidden className="block"' in src
+    The old `h1` needed an `aria-label` because its visible text was letters
+    arriving four at a time. The new one's text never changes, so its name is
+    its content — and an `aria-label` on it would be a second name to keep in
+    step. The rail's buttons are named by their visible number and label.
+    """
+    src = read(*PAGES["home"])
+    h1 = src[src.index("<h1") : src.index("</h1>")]
+    assert "aria-label" not in h1 and "aria-hidden" not in h1
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    rail = deck[deck.index("export function StepRail") : deck.index("export function RotatingLine")]
+    assert "<button" in rail and "aria-pressed={on}" in rail and "{step.label}" in rail
 
 
 # --- Floating image cards -----------------------------------------------------

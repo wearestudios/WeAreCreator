@@ -161,5 +161,11 @@ export const copyrightYear = () => new Date().getFullYear();
  * city it replaces. Dropping the geography fixes the contradiction without
  * inventing a bigger one. Where depth is genuinely the point, the pages say it
  * in a sentence that can be defended — see the positioning note in CLAUDE.md.
+ *
+ * **It names the category now rather than listing three features.** "Paid
+ * briefs · Verified creators · India" was three claims the hero then had to
+ * repeat; the hero shows the job step by step, so the eyebrow's work is to say
+ * what kind of thing this is. The country is the market, not a footprint
+ * claim — none of the forbidden geography phrases.
  */
-export const HERO_EYEBROW = "Paid briefs · Verified creators · India";
+export const HERO_EYEBROW = "A creator marketplace for India";
