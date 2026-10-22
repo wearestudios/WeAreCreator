@@ -11,7 +11,8 @@
 // full-bleed band whose height the layout decides.
 //
 // **The empty state is a brief, not a grey box.** A dashed border, the slot
-// id, the size to shoot at and the sentence a photographer would need. It is
+// id, the size to shoot at and the sentence a photographer would need — at
+// the top of the frame, where a heading laid over a band never covers it. It is
 // meant to be seen: an empty slot on a staging page should say what belongs
 // there, and the same sentence is in the manifest beside the `src` that will
 // replace it.
@@ -57,7 +58,7 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
             data-empty="true"
             role="img"
             aria-label={`Photograph to come: ${slot.brief}`}
-            className={`relative flex w-full flex-col justify-end gap-2 overflow-hidden border-2 border-dashed border-tint/25 bg-muted p-5 text-left md:p-8 ${fill ? "h-full" : ""} ${className}`}
+            className={`relative flex w-full flex-col justify-start gap-2 overflow-hidden border-2 border-dashed border-tint/25 bg-muted p-5 text-left md:p-8 ${fill ? "h-full" : ""} ${className}`}
             style={box}
         >
             <span className="font-mono text-meta text-foreground">

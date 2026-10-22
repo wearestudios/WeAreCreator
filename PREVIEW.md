@@ -340,8 +340,12 @@ production build, so it cannot mask a missing rewrite.
 
 ### The marketing site, and the preview it gave up
 
-Five pages — `/`, `/for-brands`, `/for-creators`, `/how-it-works`,
-`/why-weare` — plus a designed 404. **All of them are React routes.**
+Three pages — `/`, `/brands`, `/creators` — plus `/contact` and a designed
+404. **All of them are React routes.** `/for-brands`, `/for-creators`,
+`/how-it-works` and `/why-weare` were retired; the first two moved, the last
+two became sections of `/brands`, and all four redirect permanently through
+the `redirects` block in `frontend/vercel.json` (and `<Navigate replace>` in
+the SPA for a click inside the app).
 
 Two of them used to be server-rendered HTML written by hand in `server.py`, for
 the preview reason above. That had three costs, and they were the reason for

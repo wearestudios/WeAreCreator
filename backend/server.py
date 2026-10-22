@@ -34777,8 +34777,11 @@ async def submit_contact_enquiry(payload: ContactEnquiryPayload, request: Reques
 # The JSON half. The pages themselves are server-rendered outside `/api` (see
 # `CASE_STUDY_PATH`), for the reason `/c/{id}` and `/brands/{id}` are: a
 # WhatsApp crawler does not run JavaScript, and these are links we send brands
-# directly. What these two endpoints feed is the *proof strips* inside the
-# React app — home and `/for-brands` — which need three cards and nothing else.
+# directly. What these two endpoints feed is the case-study strip inside the
+# React app, which needs three cards and nothing else. **The strip is
+# unmounted since the public-site rebuild**, pending a decision on whether it
+# comes back; the endpoints are kept, and `/work` is still linked from every
+# footer.
 #
 # Declared above `include_router` for the reason `/proof` documents: that call
 # copies the routes it can see, so a `@public_router.get` written below it
@@ -38126,34 +38129,45 @@ async def public_brand_page(brand_id: str, request: Request):
 # own product. `_FORBIDDEN_MARKETING_PHRASES` holds that line and a unit test
 # fails the pages for any of them.
 
-# The marketing site's five pages. **All of them are React routes now**, so
-# these constants are not routes here — they are what the sitemap lists and
-# what the footer mirror is checked against.
+# The marketing site's pages. **All of them are React routes**, so these
+# constants are not routes here — they are what the sitemap lists and what the
+# footer mirror is checked against.
 #
-# They used to be two FastAPI routes rendering hand-written HTML, which is what
-# made a WhatsApp preview possible and what made /how-it-works and /why-weare
-# impossible: a page the backend renders cannot be reached with a <Link>, and
-# the deploy rewrites that would have pointed at it were never repointed, so
-# both pages answered with the SPA's catch-all in production. See
+# They used to be FastAPI routes rendering hand-written HTML, which is what
+# made a WhatsApp preview possible and what made the extra pages impossible: a
+# page the backend renders cannot be reached with a <Link>. See
 # `frontend/src/components/marketing/PageMeta.jsx` for what moving them costs
 # and how to buy it back.
 #
+# **Home, /brands and /creators are the three pages now.** /how-it-works and
+# /why-weare were folded into /brands as sections, and the audience pages
+# dropped their `for-` prefix. Every retired path redirects (`RETIRED_
+# MARKETING_PATHS`, mirrored from `lib/siteNav.js` and `vercel.json`), so they
+# leave the sitemap: a sitemap that lists a redirect is asking a crawler to
+# index a page that does not exist.
+#
 # `/c/{id}` and `/brands/{id}` stay server-rendered. There the shared link *is*
-# the preview, so the trade is not worth making.
+# the preview, so the trade is not worth making. `/brands` with no id is the
+# React page; the server-rendered one always has an id after the slash.
 HOME_PATH = "/"
-FOR_BRANDS_PATH = "/for-brands"
-FOR_CREATORS_PATH = "/for-creators"
-HOW_IT_WORKS_PATH = "/how-it-works"
-WHY_WEARE_PATH = "/why-weare"
+FOR_BRANDS_PATH = "/brands"
+FOR_CREATORS_PATH = "/creators"
 CONTACT_PATH = "/contact"
 
 MARKETING_PATHS = (
     HOME_PATH,
     FOR_BRANDS_PATH,
     FOR_CREATORS_PATH,
-    HOW_IT_WORKS_PATH,
-    WHY_WEARE_PATH,
     CONTACT_PATH,
+)
+
+# Old path → where it lives now. Mirrors `RETIRED_MARKETING_PATHS` in
+# `frontend/src/lib/siteNav.js` and the `redirects` in `vercel.json`.
+RETIRED_MARKETING_PATHS = (
+    ("/for-brands", FOR_BRANDS_PATH),
+    ("/for-creators", FOR_CREATORS_PATH),
+    ("/how-it-works", FOR_BRANDS_PATH),
+    ("/why-weare", FOR_BRANDS_PATH),
 )
 
 # Phrases that would position us against agencies, or promise more than the
@@ -38216,8 +38230,6 @@ FOOTER_COLUMNS = (
         "The site",
         (
             ("Our work", CASE_STUDY_PATH),
-            ("How it works", HOW_IT_WORKS_PATH),
-            ("Why WeAre Creators", WHY_WEARE_PATH),
             # Was a bare `mailto:`. The page carries the address *and* both
             # partners on WhatsApp, which is the channel this business runs
             # on, so the link goes there.
@@ -38521,7 +38533,7 @@ def _work_index_html(rows: list, media_base: str = "") -> str:
 {grid}
 <div class="cta">
   <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
-  <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
+  <a class="btn ghost" href="{app_base}/brands">How it works for brands</a>
 </div>
 <footer>
   WeAre Creators runs influencer marketing campaigns across India, end to end —
@@ -39746,7 +39758,7 @@ def _landing_html(
             f'<li><a href="{e(_landing_url(p["sector"], p["city"]))}">{e(text)}</a></li>'
             for p, text in siblings
         )
-        + f'<li><a href="{app_base}/for-brands">How it works for brands</a></li></ul>'
+        + f'<li><a href="{app_base}/brands">How it works for brands</a></li></ul>'
     )
 
     # **`Service` with `areaServed` from the real city**, plus a `FAQPage` for
@@ -39852,7 +39864,7 @@ def _landing_html(
 {links_html}
 <div class="cta">
   <a class="btn primary" href="{app_base}/signup?role=brand">Post a brief</a>
-  <a class="btn ghost" href="{app_base}/for-brands">How it works for brands</a>
+  <a class="btn ghost" href="{app_base}/brands">How it works for brands</a>
 </div>
 <footer>
   WeAre Creators runs influencer marketing campaigns across India, end to end —

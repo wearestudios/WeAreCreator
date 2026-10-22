@@ -53,24 +53,41 @@ export function LineEntrance({ lines, as: Tag = "span", className = "", lineClas
  * arriving moves nothing. Where `IntersectionObserver` is missing the rows are
  * written at once — the content matters more than its entrance.
  *
+ * Two ways to drive it. Left alone it watches for itself. Given `written`,
+ * the caller decides — which is how a block that is only mounted once it is on
+ * screen (a slide in the hero deck) writes on mount without an observer of its
+ * own. `animate={false}` draws the rows already written: the second time the
+ * same block is shown, it is not written again.
+ *
  * @param {{ rows: Array<{ key: string, node: React.ReactNode, final?: boolean }>,
+ *           written?: boolean, animate?: boolean,
  *           className?: string, rowClassName?: string, as?: string, rowAs?: string }} props
  */
-export function RowWriter({ rows, className = "", rowClassName = "", as: Tag = "div", rowAs: Row = "div" }) {
+export function RowWriter({
+    rows,
+    written: controlled,
+    animate = true,
+    className = "",
+    rowClassName = "",
+    as: Tag = "div",
+    rowAs: Row = "div",
+}) {
     const ref = useRef(null);
-    const [written, setWritten] = useState(false);
+    const [seen, setSeen] = useState(false);
+    const watching = animate && controlled === undefined;
+    const written = controlled === undefined ? seen : controlled;
 
     useEffect(() => {
-        if (written) return undefined;
+        if (!watching || seen) return undefined;
         const node = ref.current;
         if (!node || typeof IntersectionObserver === "undefined") {
-            setWritten(true);
+            setSeen(true);
             return undefined;
         }
         const io = new IntersectionObserver(
             (entries) => {
                 if (entries.some((e) => e.isIntersecting)) {
-                    setWritten(true);
+                    setSeen(true);
                     io.disconnect();
                 }
             },
@@ -78,8 +95,19 @@ export function RowWriter({ rows, className = "", rowClassName = "", as: Tag = "
         );
         io.observe(node);
         return () => io.disconnect();
-    }, [written]);
+    }, [watching, seen]);
 
+    if (!animate) {
+        return (
+            <Tag className={className}>
+                {rows.map((row) => (
+                    <Row key={row.key} className={rowClassName}>
+                        {row.node}
+                    </Row>
+                ))}
+            </Tag>
+        );
+    }
     return (
         <Tag ref={ref} className={className} data-written={written ? "true" : "false"}>
             {rows.map((row, i) => (

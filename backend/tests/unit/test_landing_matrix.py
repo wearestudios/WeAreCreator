@@ -572,9 +572,12 @@ class TestThePageSaysSomethingCheckable:
         assert "What the rules say" not in self._html("bengaluru")
 
     def test_it_links_to_the_hub_and_to_for_brands(self):
+        """The brand page moved from `/for-brands` to `/brands`; the old path
+        redirects, but a link we generate should not lean on a redirect."""
         html = self._html("food-drink-bengaluru")
         assert server._landing_url(None, None) in html
-        assert "/for-brands" in html
+        assert f'{server.FOR_BRANDS_PATH}"' in html
+        assert "/for-brands" not in html
 
     def test_it_links_to_the_city_hub_and_to_sibling_sectors(self):
         """**Search value compounds through the cross-links**, which is the

@@ -134,7 +134,7 @@ class TestTheHeroEyebrow:
         to be edited together and were not."""
         nav = (FRONTEND / "lib" / "siteNav.js").read_text()
         assert "export const HERO_EYEBROW" in nav
-        for rel in ("pages/Landing.jsx", "pages/Campaigns.jsx"):
+        for rel in ("pages/Home.jsx", "pages/Campaigns.jsx"):
             body = no_comments(FRONTEND / rel)
             assert "HERO_EYEBROW" in body, rel
 
@@ -158,7 +158,7 @@ class TestTheHeroEyebrow:
             assert banned not in value, banned
 
     def test_the_pages_do_not_still_hold_the_old_line(self):
-        for rel in ("pages/Landing.jsx", "pages/Campaigns.jsx"):
+        for rel in ("pages/Home.jsx", "pages/Campaigns.jsx"):
             body = no_comments(FRONTEND / rel)
             assert "Influencer studio" not in body, rel
 

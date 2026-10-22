@@ -637,82 +637,6 @@
 }
 
 /* ---------------------------------------------------------------------------
- * The hero's Ken Burns
- *
- * **Transform only, and on the image layer rather than the container.** The
- * container is the clipping box; scaling it would grow the hole it reserves.
- * Transform is one of the two properties a compositor can animate without
- * touching layout, which is what makes a full-viewport drift affordable at
- * all — the previous slider was removed for the cost of the layer, not for
- * the idea.
- *
- * **Four directions, because one is a loop.** Consecutive slides pan the same
- * way if they share a keyframe set, and four identical drifts read as a
- * single clip repeating rather than as four photographs.
- *
- * 1.0 → 1.08 gives 4% of overscan on each edge, so the 1.5% translate never
- * exposes one. No easing is named here: the timing function is set at the call
- * site to `linear`, because a drift that decelerates reads as a camera being
- * stopped rather than as one still moving when the next slide arrives.
- * ------------------------------------------------------------------------- */
-@keyframes heroDriftLeftUp {
-    from { transform: scale(1) translate3d(0, 0, 0); }
-    to   { transform: scale(1.08) translate3d(-1.5%, -1.5%, 0); }
-}
-@keyframes heroDriftRightDown {
-    from { transform: scale(1) translate3d(0, 0, 0); }
-    to   { transform: scale(1.08) translate3d(1.5%, 1.5%, 0); }
-}
-@keyframes heroDriftLeftDown {
-    from { transform: scale(1) translate3d(0, 0, 0); }
-    to   { transform: scale(1.08) translate3d(-1.5%, 1.5%, 0); }
-}
-@keyframes heroDriftRightUp {
-    from { transform: scale(1) translate3d(0, 0, 0); }
-    to   { transform: scale(1.08) translate3d(1.5%, -1.5%, 0); }
-}
-
-/* -----------------------------------------------------------------------
- * The wipe, in two halves, which is what makes it a wipe rather than a slide.
- *
- * The outer element clips and travels in from the right; the inner travels
- * the same distance the other way, so the two cancel and **the picture holds
- * still while the window opens over it**. Animate the outer alone and the
- * photograph slides in, which reads as a carousel; animate neither and it is
- * a cut.
- *
- * `translateX` on both rather than `clip-path`, deliberately: a clip is not
- * reliably promoted to the compositor, and this is the front door on mobile
- * data. Two transforms are.
- * ------------------------------------------------------------------------- */
-@keyframes heroWipeWindow {
-    from { transform: translate3d(100%, 0, 0); }
-    to   { transform: translate3d(0, 0, 0); }
-}
-@keyframes heroWipeHold {
-    from { transform: translate3d(-100%, 0, 0); }
-    to   { transform: translate3d(0, 0, 0); }
-}
-
-/* The per-slide progress bar: the visible proof that the picture and the word
-   are on one clock. Keyed on the index at the call site so it restarts each
-   slide, and it inherits the slider's `animationPlayState` when paused. */
-@keyframes heroProgress {
-    from { transform: scaleX(0); }
-    to   { transform: scaleX(1); }
-}
-
-/* The rail sliding left by one thumbnail. **Transform, not layout** — the
-   first version re-keyed three buttons by phrase, so on each advance React
-   moved the DOM nodes and the browser recorded a real layout shift: 0.0007
-   per advance, every six seconds, for as long as the page is open. The track
-   now travels and the slots stay put. */
-@keyframes heroRailSlide {
-    from { transform: translate3d(var(--rail-step), 0, 0); }
-    to   { transform: translate3d(0, 0, 0); }
-}
-
-/* ---------------------------------------------------------------------------
  * The marketing motion, which is three moments and nothing else
  *
  * One curve — `--weare-ease`, the same deceleration as the product and the
@@ -743,6 +667,8 @@
     --mkt-line-gap: 90ms;
     --mkt-row: 400ms;
     --mkt-row-gap: 70ms;
+    /* The hero deck's crossfade between two screens. */
+    --mkt-fade: 600ms;
     /* The travel of a line entrance. 24px reads as type arriving; the
        product's 6px reads as a row settling, and the two are different jobs. */
     --mkt-rise: 24px;
@@ -755,6 +681,13 @@
 @keyframes mkt-write {
     from { opacity: 0; transform: translate3d(0, 8px, 0); }
     to   { opacity: 1; transform: none; }
+}
+/* The hero deck's crossfade: the incoming screen over the outgoing one, 600ms.
+   Opacity only — the outgoing screen holds still underneath and is removed
+   when the fade ends, so at most two layers are ever painted. */
+@keyframes mkt-crossfade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 /* The final figure of a written sequence lands rather than slides: it scales
    from 0.96, the one row that is the point of the others. */
@@ -839,22 +772,11 @@
         opacity: 1 !important;
         transform: none !important;
     }
-    /* The hero drift is applied inline by `HeroSlider`, which already checks
-       `useReducedMotion` and does not apply it at all under `reduce`. This is
-       the backstop for the case the hook is wrong — a stale media query in an
-       embedded webview, say — so the end state is the first paint rather than
-       a 0.01ms pan. */
-    [style*="heroDrift"] {
-        animation: none !important;
-        transform: none !important;
-        will-change: auto !important;
-    }
-    /* Same backstop for the wipe and the progress bar. The end state is the
-       first paint — slide one in place, the bar full — rather than a 0.01ms
-       animation of either. */
-    [style*="heroWipe"],
-    [style*="heroProgress"],
-    [style*="heroRailSlide"] {
+    /* The hero deck's crossfade is applied inline by `HeroDeck`, which does
+       not apply it at all under `reduce`. This is the backstop for the case
+       the hook is wrong — a stale media query in an embedded webview, say —
+       so the incoming screen is simply there rather than a 0.01ms fade. */
+    [style*="mkt-crossfade"] {
         animation: none !important;
         transform: none !important;
         will-change: auto !important;
