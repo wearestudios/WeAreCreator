@@ -1323,6 +1323,10 @@ studio" separately, so they had to be edited together and were not.
   Bengaluru and a claim the operation cannot back is worse than the city it
   replaces. Dropping the geography fixes the contradiction without inventing a
   bigger one.
+- **It now reads "A creator marketplace for India"**, set with the four-step
+  hero. That names the category and the country — the national positioning
+  the geography section records — without claiming a footprint per city.
+  It is shared, so `/campaigns` and `/login` carry it too.
 
 The same rule reaches past the marketing pages, which is where it was actually
 failing. `Login.jsx` had its own bare "Bengaluru" — added as a fix for the
@@ -1407,7 +1411,7 @@ than as brisk.
 **The whole-site copy rewrite went further and is the current state.** The
 register pass treated the voice as a tone problem; the rewrite treated it as a
 positioning one. What came out: the hero names the category and the sector
-(see "The kinetic hero"), home states the service before it names a problem,
+(see "The hero: four steps of the job"), home states the service before it names a problem,
 the word budget moved so a checkable sentence fits, and the geography claim
 became national (see "Geography"). The four faults below are still faults and
 the rules under them still hold — what changed is that fixing them is no
@@ -1503,93 +1507,55 @@ inside frames that clip.
   Tailwind warns on every build. It warns for the string anywhere, including
   inside a comment.
 
-### The kinetic hero, and the imagery
+### The hero: four steps of the job, one clock
 
-**The signature is the headline.** `KineticHeadline` morphs at letterform
-level between the eight sectors — "Influencer marketing for F&B", "...for
-Hospitality", on through the list — each resolving against "We run it end to
-end.", which never moves. The motion *is* the message: what changes is the
-sector, what does not is that we run the campaign.
+**The deck rotates the stage of the job, never the sector.** It used to morph
+between the eight `CATEGORY_OPTIONS` labels over a full-bleed photo slider —
+and the sector is the one thing a visitor already knows about themselves, so
+watching it change taught them nothing. Four fixed steps now: **01 Offer, 02
+Agree, 03 Deliver, 04 Get paid**, each a small product screen drawn in the DOM
+(`components/marketing/heroScreens.jsx`). `lib/heroDeck.js` imports no
+category list and never will; adding a sector touches nothing here.
+`HeroSlider`, `KineticHeadline`, `sectorCycle` and the eight `hero-*.svg`
+drawings are deleted.
 
-**The hero is full-bleed with the type in a protected column**, which is a
-reversal of the arrangement the rest of this section was written for. It was
-a slider as the ground, four tilted cards drifting above it and the poster
-type on top of both — three layers over one area. The cards are positioned as
-percentages of the hero box while the type sits in a centred `max-w-7xl`
-column, so the two coordinate systems were never going to agree and tuning
-the percentages only moves which width it breaks at: measured at 1440, three
-of the four cards overlapped the `h1` and one overlapped the subheading; at
-390 one overlapped the `h1`. The cards are unmounted, the type lives in
-`lg:col-span-6`, and **nothing readable may sit past column 7** — which is
-the rule the overlap broke and what makes a full-bleed hero safe at all.
-Every one of the eight hero shots was composed with its left two-fifths
-quiet, so this is the composition they already had.
+- **The `h1` is static** ("One place for the whole job") and carries the page's
+  accessible name. The rotating line under it is `aria-hidden`, the four lines
+  are also a visually-hidden `<ol>`, and there is **no `aria-live`** —
+  announcing marketing copy every six seconds is hostile.
+- **At most two screens are mounted, ever.** `painted(state)` is the outgoing
+  and the incoming during a wipe, the active one alone otherwise; the inactive
+  one is `aria-hidden`. Measured in a browser over a full untouched cycle:
+  max 2, and 1 under reduced motion. The reducer is pure and
+  `test_hero_deck.py` drives it in node with 600 random actions.
+- **One timer.** `HOLD_MS` lives in `lib/heroDeck.js` and only
+  `HeroDeckProvider` starts a `setTimeout` on it; the other is the `WIPE_MS`
+  one-shot that takes the outgoing screen back out of the DOM. No
+  `setInterval` anywhere in the hero. The progress bar under the rail is a CSS
+  animation over the same hold, paused with the deck. The old 7000ms slider
+  and 4000ms headline drifted apart by the second slide — that is the defect
+  this shape exists to have removed.
+- Hover or focus anywhere in the hero pauses it (`focusin`/`focusout`, which
+  bubble). The rail is four real `<button>`s with `aria-pressed` and a visible
+  ring. Under reduced motion nothing advances: step 01, no wipe, and the rail
+  switches.
+- **The rotating line reserves its box by drawing all four into one grid
+  cell**, the lesson the old headline learned: a character count is not a
+  width.
+- **Every name on the screens is invented** — Oddbloom Bakehouse, Aarav K.,
+  Nisha R. A real brand in product UI on a public page reads as an endorsement,
+  and a test sweeps the screens for the seed's brand names.
+- **The claims strip says only what the product does.** "A brand never sees
+  your number", "The fee is agreed before you shoot", "Every brand is checked"
+  — each pinned to the code that makes it true. Money held before the shoot
+  (no escrow exists) and an auto-approval timer are banned until they are
+  built, and the test reads for both.
 
-**A two-column hero shipped in between and this replaces it.** That one gave
-the picture a framed `aspect-[4/5]` panel in `lg:col-span-5` and dropped the
-scrims, on the reasoning that nothing readable sat over the picture any more.
-It worked, and it cost the thing the pictures were drawn for: the panel is
-portrait and the eight hero drawings are 16:9, so `object-cover` showed the
-middle 45% of each one — a quiet left two-fifths and a subject on the right,
-cropped through both. Full-bleed with a measured scrim keeps the composition
-and buys the legibility back.
-
-- **It was a possessive on a campaign noun and all three defects are the
-  reason it changed.** "Your launch night" → "Your menu tasting" against the
-  tail "handled properly." — "your travel stay" and "your menu tasting" are
-  not phrases anybody says, so they read as machine-assembled; the possessive
-  addressed a marketing head as if about their own evening rather than their
-  campaign; and "properly" is the hedge the register rules ban everywhere
-  else, carrying the whole claim.
-- **"Influencer marketing" is in the H1 because it is the category term**, and
-  before this it appeared in no headline anywhere on the site.
-- **`PHRASES` is `CATEGORY_OPTIONS.map(c => c.label)`, derived rather than
-  written out.** The old four were hand-written kinds of work that happened to
-  correspond to categories, held in line by a reviewer noticing — and a phrase
-  naming a sector `CampaignCategory` does not have is an invitation to read
-  the headline, open the brief feed, filter to it and find nothing. Mapping
-  the enum means that cannot be written, and `lib/categories.js` is already
-  drift-tested against `CATEGORY_LITERAL`. Eight rather than four, so the
-  morph says "every sector" rather than "these four"; every label is inside
-  the twelve-character ceiling the letter animation is budgeted for, "Food &
-  drink" at exactly twelve.
-- **The lead and the tail are outside the morph.** Animating the whole line
-  would say eight unrelated headlines are cycling rather than one sentence
-  being re-pointed. Verified across a full cycle at 390, 768 and 1440: the
-  `h1` holds one height at each width, nothing overflows horizontally, and
-  nothing in the type column crosses into grid column 7.
-- **The type is sized to a column now, not to the window.**
-  `clamp(2.25rem, 4.6vw, 4.75rem)` at `lineHeight: 1.0`, down from
-  `clamp(2.5rem, 10.5vw, 8.5rem)` at 0.94. At 1440 the old clamp resolved to
-  136px against a lead roughly 1700px wide, which ran the `h1` to four lines
-  and put the CTAs under the fold on a laptop. It is still well past
-  `fluid-hero`'s 4.25rem top step, which is what the poster-scale rule was
-  ever about, and the vw term was settled by measurement rather than guessed.
-- **Per letter, on a stagger, moving as well as fading.** A single opacity
-  tween on the phrase is the thing this is specified not to be. ~4s a phrase;
-  the swap itself is under a second, so the phrase is still for most of its
-  life.
-- **The box is reserved by rendered width, not by character count.** Every
-  phrase is drawn invisibly into one grid cell (`col-start-1 row-start-1`),
-  so the box is as wide and as tall as the widest and tallest phrase the
-  browser actually draws.
-
-  **It used to reserve with one invisible copy of the "longest" phrase,
-  picked by `reduce` on string length, and a character count is not a
-  width.** "Hospitality" and "Real Estate" are both eleven characters, the
-  reduce keeps the first on a tie, and in Fraunces at poster size "Real
-  Estate" renders wider — the animated layer is `absolute whitespace-nowrap`,
-  so on that one slide it ran past its own box and the hero's
-  `overflow-hidden` clipped it. Measured before the fix: the phrase escaped
-  its box by 2px at 390, 3px at 768 and 5px at 1440 on every cycle, and the
-  box also changed *height* by 6px mid-cycle, which was a layout shift every
-  lap. A line that changes height moves the page — that property is unchanged
-  and one grid cell cannot break it either. Nothing about a font can be
-  inferred from the characters in a string; the only reliable reservation is
-  one the browser draws.
-- One `aria-label` on the `h1`, with the animated spans hidden. A screen
-  reader reading four letters at a time as they arrive is gibberish.
-- Under `prefers-reduced-motion` the first phrase renders and no timer starts.
+`ComparisonBand` sits directly under it — "A campaign is not a spreadsheet and
+sixty DMs": a faux spreadsheet with two chat bubbles beside the same campaign
+as three rows with a state chip each. Light band, tokens only,
+`content-visibility: auto` with an intrinsic size so it costs first paint
+nothing, and stacked spreadsheet-first below `md`.
 
 **`FloatingCards` is unmounted on all four pages and the file is kept.**
 They were tilted photo cards drifting on scroll, in two clusters: four behind
@@ -1630,149 +1596,6 @@ exception to the elevation rule: a card drifting at a different rate from the
 page behind it is the one inline element that really is floating, and without
 the shadow the tilt reads as a mistake. Soft, and in black rather than the
 default grey. A test fails any other marketing file that grows one.
-
-### One clock for the picture and the word
-
-`components/marketing/sectorCycle.jsx`, and it exists because there were two.
-`HeroSlider` held `HOLD_MS = 7000` with its own `setTimeout`; `KineticHeadline`
-held `HOLD_MS = 4000` with its own `setInterval`. They start together, are
-apart by the second slide and never recover — so the headline says "Retail"
-over a photograph of a restaurant for most of the cycle. **That is the lag:
-not a slow animation, two animations that disagree about what time it is.**
-
-- **The fix is structural, not a matter of matching the numbers.** Two
-  independent timers accumulate their own scheduling error, and a
-  `setInterval` firing in a throttled tab is not the same clock as a chain of
-  `setTimeout`s. `SectorCycleProvider` owns `index`, `leaving`, `paused`, the
-  one timer and the reduced-motion branch; both consumers read the index off
-  context, and neither declares a hold or starts a timer. A unit test asserts
-  all three of those, and the third is the load-bearing one — a test that
-  only checked the number would pass with both timers still present.
-- **6000ms, which is neither of the old numbers.** 7000 is slow for a word
-  and 4000 is frantic for a full-bleed image; a wipe is also a stronger beat
-  than a dissolve, so the word change rides on it and reads as one event.
-- `useSectorCycle()` throws outside a provider, the convention
-  `useAdminConsole()` sets. `useOptionalSectorCycle()` is the exception, for
-  the one consumer that has to survive without one: `KineticHeadline` is
-  exported and mountable on its own, and a headline that throws outside the
-  hero is a component with a hidden dependency on its parent. With no
-  provider it renders phrase one and starts nothing, which is also its
-  reduced-motion state.
-- The provider renders its own positioned wrapper rather than nothing,
-  because the pause listeners bind to it and an element with no box receives
-  no pointer events.
-
-### The slider came back, under the budget that removed it
-
-The hero's full-bleed photo slider was removed once: its job was to say "we do
-all of these", which the cards do better, and it cost a full-viewport layer
-cross-fading every seven seconds on the page most likely to be opened on
-mobile data. `HeroSlider.jsx` is the reversal, and the original measurement is
-the budget it had to come in under rather than a decision it overrode.
-
-**It was a framed panel for one release and it is a ground again.** The
-slider returned underneath the cards, which is what produced the three-layer
-hero the section above records; the fix after that gave it an `aspect-[4/5]`
-panel in the right column. That solved the overlap and cost the pictures: the
-panel is portrait and the eight hero drawings are 16:9, so `object-cover`
-showed the middle 45% of each — a quiet left two-fifths and a subject on the
-right, cropped through both. It fills the whole section again, with the type
-protected by grid and a scrim measured against the column's edge, which is
-the arrangement the drawings were composed for.
-
-**The two-layer budget survived both reversals and is the thing to keep.** At
-most two layers are painted, ever: the DOM holds the outgoing slide and the
-incoming one; `peakLayersOverTenSeconds` measured 2. Rendering all eight with
-seven at `opacity: 0` would pay for them in full — an invisible compositing
-layer still composites, which is what got the original removed.
-- **The slides come from the headline.** One per `PHRASES` entry, in the
-  headline's order, so the picture changes as the words morph — eight now that
-  the headline runs the sector list, and **it costs nothing at runtime**,
-  because the budget this came back under is *painted layers* and the DOM
-  holds the outgoing slide and the incoming one whatever the deck length. The
-  alternative was letting the deck fall out of step, and a photograph of a
-  restaurant under the word "Retail" is worse than no photograph. The old deck
-  carried a headline per slide, which made the page appear to sell four
-  products; this carries **no copy at all**.
-- **Ken Burns rides the image layer, never the container** — scaling the
-  container grows the hole it reserves — and the four drifts alternate
-  direction so the sequence does not read as one looping clip. Transform and
-  opacity only, so the compositor owns both.
-- **It is a wipe, and the incoming slide paints last** — which reverses what
-  this file used to say, because the paint order follows from the transition
-  rather than being a fact about sliders. With a *crossfade* the outgoing
-  slide has to be on top: it dissolves to reveal the one underneath, and
-  painting the incoming above would cover the old one at full opacity on the
-  frame it mounts, a hard cut with the fade running invisibly beneath it. A
-  wipe is the opposite — the incoming slide is the thing that moves, so it
-  opens *over* the outgoing one, which stays still and is simply uncovered.
-- **The wipe is two nested transforms and no `clip-path`.** The outer element
-  clips and travels in from the right; the inner travels the same distance
-  the other way, so the two cancel and the picture holds still while the
-  window opens over it. Animating the outer alone slides the photograph in,
-  which reads as a carousel. `clip-path` is the obvious alternative and is
-  not reliably promoted to the compositor, which on the front door on mobile
-  data is the whole argument.
-- **The dots became a frame rail**, which is the thing worth taking from the
-  reference: dots say how many there are, a rail of the next three frames
-  says what is coming, which is the only reason to wait. Beside it a
-  zero-padded `01 / 08` and a 2px bar filling over `HOLD_MS` — **the bar is
-  the visible proof that the picture and the word are on one clock.** Below
-  `md` the rail and the index are hidden and the dots come back: three
-  thumbnails and a counter on a 390px screen is clutter laid over the one
-  place the headline has to be read.
-  **The rail's track travels and its slots do not.** Keying three buttons by
-  phrase made React move the DOM nodes on every advance, which the browser
-  records as a real layout shift — measured at 0.0007 per advance, every six
-  seconds, for as long as the page is open. The slots are keyed by position
-  and the movement is one `translateX` on the track.
-- **The pause listeners live on the provider**, which wraps both consumers
-  and is the hero's positioning context. The slider is `absolute inset-0`
-  behind the content, so a pointer over the headline is never over it and
-  handlers on the slider itself would pause only for the few pixels of
-  background either side of the type. `focusin`/`focusout` rather than
-  `focus`/`blur`, which do not bubble.
-- **The scrim is two scrims, because the layout is two layouts.** At `lg` and
-  up the type is in six of twelve, so the cover is horizontal: near-solid
-  past the column's edge at 58%, then released so the half the photograph was
-  composed for is the photograph. Below `lg` the grid collapses to one column
-  and the type spans the full width, where a horizontal scrim covers the left
-  of a headline and abandons its right — measured at 390 with a single
-  horizontal scrim: headline 1.48:1, subheading 1.03:1. There the cover is
-  the whole frame and the picture is atmosphere, which is the honest trade on
-  a 390px screen. Measured with the content column hidden and the *ground*
-  sampled — cropping the text's own box samples the glyphs — worst case
-  across all eight slides: headline 12.96:1 at 390 and 14.20:1 at 1440,
-  subheading 6.60 / 8.36, eyebrow 8.26 / 8.79.
-- `will-change` is released on `animationend`, the rule the app's motion layer
-  already holds, and `EASE_CSS` is built from `EASE` rather than retyped so a
-  second curve cannot be introduced.
-- Under `prefers-reduced-motion`: slide one, no timer, no pan, no dots, the end
-  state on first paint.
-
-**Measured against the pre-slider build on the identical harness** — 4× CPU
-throttle, Fast-3G, API delayed, at 390 and 1280. The hero's own cost is
-**unchanged**: hero-only CLS 0.0001 vs 0.0001 at 390 and 0.0000 vs 0.0000 at
-1280, with the same six to seven long tasks over 50ms in both, which are React
-bootstrapping. So it ships at every width and there is no `md:` gate.
-
-Two measurement traps found getting there, both worth keeping:
-
-- **A contrast check that crops the text's own bounding box samples the
-  glyphs.** The first version reported 1.00:1 and named the "lightest ground"
-  as `#EDF1F7`, which is the foreground colour. Screenshot the hero twice —
-  once as it looks, once with the content column `visibility: hidden` — and
-  sample the second. Against the true composited ground, worst case across a
-  full slide cycle: headline 12.00:1 (390) / 10.13:1 (1280), subheading
-  8.13 / 6.79, eyebrow 5.16 / 5.52, all past AA.
-- **A whole-page scroll walk measures the lazy-load boundary, not the hero.**
-  `CreatorLeaderboard` and `CaseStudyStrip` fetch on an IntersectionObserver,
-  and the document grows from ~4,400px to ~7,300px when they land. Whether
-  that growth scores depends on where a synthetic walk is standing when it
-  happens, so the taller build reads worse while the mechanism is identical —
-  the control scores 0.0427 at 1280 on exactly the same event. The hero phase
-  is therefore reported apart from the scroll phase. The growth itself is
-  pre-existing and real; it is not the slider's.
 
 ### The scroll film
 
@@ -1844,7 +1667,7 @@ Mid-range Android profile — 4× CPU throttle, Fast-3G, 390px:
   section below it down. It reserves its height now, at **both** widths — the
   figures wrap below `md`, so a single value was right on desktop and 52px
   wrong on a phone. Neither the headline nor the cards contributed anything.
-- **The flourishes cost no blocking time.** Home (kinetic headline + four
+- **The flourishes cost no blocking time.** Home (the then kinetic headline + four
   cards) blocks 969ms; `/for-brands`, which has neither, blocks 1012ms. The
   cost on both is React and the CRA bundle. FCP and LCP are within 60ms of
   each other.

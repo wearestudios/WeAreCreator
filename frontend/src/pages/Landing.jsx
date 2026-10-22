@@ -14,23 +14,19 @@
 // wants to say more still has to argue with a number, and the number is just
 // no longer set below the length of a specific claim.
 //
-// **The hero slider is back, and the terms it came back on are the record.**
-// It was removed once, on a measurement rather than a taste: four
-// full-viewport layers cross-fading every seven seconds, on the page most
-// likely to be opened on mobile data. `FloatingCards` replaced it and said
-// the same thing better — four categories at once instead of one at a time.
+// **The hero rotates the stage of the job, not the sector.** It used to cycle
+// eight sectors — Retail, Hospitality, Travel — over eight photographs, and
+// the sector is the one thing a visitor already knows about themselves. Four
+// fixed steps now, Offer → Agree → Deliver → Get paid, each with the product
+// screen that step happens on. The reasoning lives in `lib/heroDeck.js` so a
+// later refactor meets it; the budget the old slider earned — at most two
+// layers mounted, one clock, nothing at all under reduced motion — is held.
 //
-// It returns carrying no copy of its own. Each slide used to have a headline
-// ("A full room on opening night"), which is a second idea on a screen that
-// already has one, and four of them made the page look like it was selling
-// four products. The deck is built from `PHRASES` — the sectors the headline
-// morphs through — so the picture changes *with* the words rather than beside
-// them. One idea, moving.
-//
-// What it costs is written down in `HeroSlider.jsx` and was measured before
-// it shipped: at most two layers in the DOM, the pan on the image layer and
-// never the container, `will-change` released on `animationend`, and nothing
-// at all under `prefers-reduced-motion`.
+// **Every claim on this page is one the product makes today.** The hero's
+// three-claim strip and the four step lines were written against the code,
+// not the roadmap: nothing is held in escrow before a shoot, so the page says
+// the fee is agreed before it; there is no review timer on main yet, so the
+// page does not promise one.
 //
 // **Nothing here is fetched from a third party.** The old slider hotlinked
 // four stock photographs; every slot on this page is a `PlaceholderImage` — a
@@ -45,10 +41,13 @@ import { Button } from "@/components/ui/button";
 import PageMeta from "@/components/marketing/PageMeta";
 import ProofStrip from "@/components/marketing/ProofStrip";
 import Reveal from "@/components/marketing/Reveal";
-import KineticHeadline from "@/components/marketing/KineticHeadline";
 import { HERO_EYEBROW } from "@/lib/siteNav";
-import { SectorCycleProvider } from "@/components/marketing/sectorCycle";
-import HeroSlider from "@/components/marketing/HeroSlider";
+import HeroDeckProvider, {
+    DeckStage,
+    RotatingLine,
+    StepRail,
+} from "@/components/marketing/HeroDeck";
+import ComparisonBand from "@/components/marketing/ComparisonBand";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
 import HandshakeBand from "@/components/marketing/HandshakeBand";
 import CampaignFilm from "@/components/marketing/CampaignFilm";
@@ -73,7 +72,72 @@ import {
 
 const COPY = {
     title: "Influencer marketing, run end to end",
-    line: "Brands post a brief. We cast the creators, agree every rate in writing, run the shoot and send the report — across India, in every sector we run.",
+
+    // **The `h1` is static, and that is for search and for screen readers.**
+    // What moves is the line under it, which is decorative.
+    heroTitle: "One place for the whole job",
+    ctaBrand: "Post a brief",
+    ctaCreator: "I'm a creator",
+
+    // The deck. Four fixed steps; adding a sector touches none of this.
+    //
+    // **Two support lines differ from the brief that commissioned them, on
+    // purpose.** "Matched creators apply, you shortlist" — on main a brand
+    // never sees a raw application; we shortlist. "Offers, counters and the
+    // final figure are recorded" — the counter history is not on main; the
+    // quote, the agreed fee and the frozen terms are. And the payout line
+    // said money is "held before the shoot", which nothing does.
+    steps: [
+        {
+            key: "offer",
+            label: "Offer",
+            line: "Send one brief, not sixty DMs.",
+            support: "Post it once. Matched creators apply; we shortlist.",
+        },
+        {
+            key: "agree",
+            label: "Agree",
+            line: "Agree the number, and it stays agreed.",
+            support: "Quote, agreed fee and terms are frozen on the deal.",
+        },
+        {
+            key: "deliver",
+            label: "Deliver",
+            line: "Get the draft, in one place.",
+            support: "Drafts arrive together, with who owes what next.",
+        },
+        {
+            key: "paid",
+            label: "Get paid",
+            line: "Approve it, and the money moves.",
+            support: "Paid when the brief promised, with a record for both sides.",
+        },
+    ],
+
+    // Three claims, each checked against the code. The second and third are
+    // not the ones commissioned: "Money is held before you shoot" is untrue
+    // (a payment is raised after approval), and "Reviews can't stall
+    // forever" describes a review timer that is not on main.
+    claims: [
+        {
+            label: "A brand never sees your number",
+            line: "Your phone and email stay off every brand screen.",
+        },
+        {
+            label: "The fee is agreed before you shoot",
+            line: "Recorded on the deal, and paid when the brief promised.",
+        },
+        {
+            label: "Every brand is checked",
+            line: "We verify the business before its brief reaches you.",
+        },
+    ],
+
+    // The band under the hero.
+    compareTitle: "A campaign is not a spreadsheet and sixty DMs",
+    todayLabel: "How it runs today",
+    hereLabel: "How it runs here",
+    compareLinkLabel: "What a brand gets",
 
     // **This section states the service; it used to open on three failures.**
     // "Most campaigns run on DMs and spreadsheets", then three lines about
@@ -111,30 +175,17 @@ const COPY = {
 };
 
 /**
- * The hero — a full-bleed photograph, the kinetic headline in a column
- * nothing else may enter, two doors.
+ * The hero — the job in four steps, with the screen each step happens on.
  *
- * **Full-bleed stays; what changed is that the type is protected by grid
- * rather than by hope.** `FloatingCards` used to drift between the picture
- * and the words, positioned as percentages of the hero box while the type sat
- * in a centred `max-w-7xl` column — two coordinate systems that were never
- * going to agree. Measured at 1440, two of the four cards landed over the
- * headline and the subheading; at 390 the two that survive landed under the
- * eyebrow and across the CTA row. They are unmounted; see `FloatingCards.jsx`.
+ * **Type left, the product right.** The left column is the static `h1`, the
+ * rotating line (decorative, `aria-hidden`, with a static list for screen
+ * readers), the two doors and the rail; the right is the deck stage, which
+ * reserves its box by aspect ratio so a screen swapping in moves nothing. The
+ * three claims run along the foot.
  *
- * So there is one layer behind the type instead of two, and the type lives in
- * `lg:col-span-6`. **Nothing readable may sit past column 7**, which is the
- * rule the overlap broke and the thing that makes a full-bleed hero safe: the
- * scrim holds near-solid to 42% of the width and then releases, so the type
- * always has cover and the picture always has a half that is just a picture.
- * Every one of the eight hero shots was composed with its left two-fifths
- * quiet, so this is the composition they already had.
- *
- * **The headline and the picture share one timer.** They used to run on 4000ms
- * and 7000ms respectively, drifting apart by the second slide — the word
- * naming one sector over a photograph of another. `SectorCycleProvider` owns
- * the index and both read it; it is also the element the pause listeners bind
- * to, so hovering anywhere on the band stops the cycle.
+ * `HeroDeckProvider` wraps the whole section's content: it is the one clock,
+ * and the element the pause listeners bind to, so hovering or tabbing anywhere
+ * in the hero stops it.
  */
 function Hero() {
     return (
@@ -143,103 +194,85 @@ function Hero() {
             data-surface="dark"
             className="relative overflow-hidden border-b border-border bg-background text-foreground"
         >
-            {/* The provider is the positioning context as well as the clock:
-                the slider's `absolute inset-0` resolves against it, and the
-                pause listeners bind to it, so hovering the picture out at the
-                edge of the band pauses the cycle and not only hovering the
-                words. */}
-            <SectorCycleProvider className="relative">
-                {/* One layer behind the type, carrying its own scrim — on its
-                    own layer, not on the slide, because the slide already
-                    sets `background-image` and one of the two would silently
-                    win. */}
-                <HeroSlider />
+            {/* Decorative, behind the stage. */}
+            <div
+                aria-hidden
+                className="pointer-events-none absolute right-[6%] top-1/4 h-[420px] w-[420px] rounded-full bg-primary/10 blur-[130px]"
+            />
 
-                {/* Decorative. On the right half, behind the picture's focal
-                    area — it used to sit at `-right-40 -top-32`, which put a
-                    warm bloom directly behind the headline it was competing
-                    with. */}
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute right-[8%] top-1/4 h-[460px] w-[460px] rounded-full bg-primary/10 blur-[130px]"
-                />
-
-                <div className="relative mx-auto max-w-7xl px-6 pb-16 pt-14 md:pb-24 md:pt-20">
-                    <div className="grid grid-cols-1 lg:grid-cols-12">
-                        {/* **Six of twelve, and nothing readable past column
-                            seven.** The scrim is measured against this edge;
-                            widening the column without re-measuring it is how
-                            a headline ends up on the bright half. */}
+            <HeroDeckProvider steps={COPY.steps} className="relative">
+                <div className="mx-auto max-w-7xl px-6 pb-12 pt-14 md:pb-16 md:pt-20">
+                    <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12 lg:gap-12">
                         <div className="lg:col-span-6">
-                        <Reveal onView={false}>
-                            <p
-                                data-testid={HERO_IDS.eyebrow}
-                                className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
+                            <Reveal onView={false}>
+                                <p
+                                    data-testid={HERO_IDS.eyebrow}
+                                    className="mb-8 inline-flex items-center gap-3 rounded-full border border-tint/10 bg-tint/5 px-4 py-1.5 text-xs uppercase tracking-[0.22em] text-muted-foreground backdrop-blur"
+                                >
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                                    {HERO_EYEBROW}
+                                </p>
+                            </Reveal>
+
+                            {/* Static. Poster scale, sized to its column. */}
+                            <h1
+                                data-testid={HERO_IDS.heading}
+                                className="font-serif tracking-tight text-foreground"
+                                style={{ fontSize: "clamp(2.25rem, 4.6vw, 4.75rem)", lineHeight: 1.0 }}
                             >
-                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                                {HERO_EYEBROW}
-                            </p>
-                        </Reveal>
+                                {COPY.heroTitle}
+                            </h1>
 
-                        <Reveal i={1} onView={false}>
-                            <KineticHeadline />
-                        </Reveal>
+                            <Reveal i={1} onView={false} className="mt-8">
+                                <RotatingLine />
+                            </Reveal>
 
-                        {/* **The subheading reserves the taller of its two
-                            wraps**, which is the fallback font's. Measured: it
-                            sets four lines in the fallback and three once
-                            Inter Tight lands at 390, and three then two above
-                            it — so on every load the hero lost a line and
-                            everything below it moved up 26-28px.
+                            <Reveal i={2} onView={false}>
+                                <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                    <Link to="/signup?role=brand" data-testid={HERO_IDS.ctaBrand}>
+                                        <Button
+                                            size="lg"
+                                            className="group h-12 w-full rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover sm:w-auto"
+                                        >
+                                            {COPY.ctaBrand}
+                                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                                        </Button>
+                                    </Link>
+                                    <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
+                                        <Button
+                                            size="lg"
+                                            variant="outline"
+                                            className="group h-12 w-full rounded-full border-tint/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-tint/5 sm:w-auto"
+                                        >
+                                            {COPY.ctaCreator}
+                                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </Reveal>
+                        </div>
 
-                            That is pre-existing and it is the largest layout
-                            shift on the page. It became worth fixing here
-                            because the headline coming down to its column
-                            made the hero shorter, which pulls more of the
-                            page into the first viewport — where a shift
-                            actually scores. `min-h` in rem, from the line
-                            count and the leading, so it tracks the type scale
-                            rather than a pixel measured once; the cost is a
-                            little slack under the text after the font lands,
-                            which is the trade `ProofStrip` already makes. */}
-                        <Reveal i={2} onView={false}>
-                            <p
-                                data-testid={HERO_IDS.subheading}
-                                className="mt-10 min-h-[6.5rem] max-w-xl text-base leading-relaxed text-muted-foreground md:min-h-[5.5rem] md:text-lg"
-                            >
-                                {COPY.line}
-                            </p>
-                        </Reveal>
-
-                        {/* Two paths, not three asks. Home routes; the audience pages
-                            sell — so these go to the pages, not to signup. */}
-                        <Reveal i={3} onView={false}>
-                            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-                                <Link to="/for-creators" data-testid={HERO_IDS.ctaCreator}>
-                                    <Button
-                                        size="lg"
-                                        className="group h-12 w-full rounded-full bg-primary px-7 text-primary-foreground transition-colors duration-200 hover:bg-primary-hover sm:w-auto"
-                                    >
-                                        I&apos;m a creator
-                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                    </Button>
-                                </Link>
-                                <Link to="/for-brands" data-testid={HERO_IDS.ctaBrand}>
-                                    <Button
-                                        size="lg"
-                                        variant="outline"
-                                        className="group h-12 w-full rounded-full border-white/15 bg-transparent px-7 text-foreground transition-colors duration-200 hover:bg-white/5 sm:w-auto"
-                                    >
-                                        I&apos;m a brand
-                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                    </Button>
-                                </Link>
-                            </div>
-                                </Reveal>
+                        <div className="lg:col-span-6">
+                            <StepRail />
+                            <DeckStage className="mt-4" />
                         </div>
                     </div>
+
+                    <ul
+                        data-testid={HERO_IDS.claims}
+                        className="mt-14 grid grid-cols-1 gap-6 border-t border-tint/10 pt-8 md:grid-cols-3 md:gap-10"
+                    >
+                        {COPY.claims.map((c, i) => (
+                            <li key={c.label} data-testid={HERO_IDS.claim(i)}>
+                                <p className="text-sm font-medium text-foreground">{c.label}</p>
+                                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                                    {c.line}
+                                </p>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-            </SectorCycleProvider>
+            </HeroDeckProvider>
         </section>
     );
 }
@@ -340,6 +373,19 @@ export default function Landing() {
             <MarketingNavbar />
 
             <Hero />
+
+            {/* Directly under the hero, and below the fold: static DOM with
+                no fetch, and `content-visibility: auto` so it costs nothing
+                until it is close. */}
+            <ComparisonBand
+                copy={{
+                    title: COPY.compareTitle,
+                    todayLabel: COPY.todayLabel,
+                    hereLabel: COPY.hereLabel,
+                    linkLabel: COPY.compareLinkLabel,
+                }}
+                linkTo="/for-brands"
+            />
 
             {/* Counted, never written down. The hero carried a hardcoded
                 "500+ verified creators" until this replaced it. */}
