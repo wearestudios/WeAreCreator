@@ -196,7 +196,10 @@ export function DensityToggle() {
             role="group"
             aria-label="Row density"
             data-testid={IDS.toggle}
-            className="inline-flex items-center rounded-pill border border-border bg-card p-0.5"
+            // Hidden below `sm`: on a phone the console's rows are a stacked
+            // list rather than a table, and the pill pushed the console's own
+            // label out of a 390px header. The stored choice still applies.
+            className="hidden items-center rounded-pill border border-border bg-card p-0.5 sm:inline-flex"
         >
             {DENSITIES.map((d) => {
                 const on = density === d;

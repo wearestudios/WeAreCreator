@@ -211,6 +211,9 @@
      * everywhere else and gets navy and light ink.
      * ----------------------------------------------------------------- */
     [data-surface="inverse"] {
+        /* Native scrollbars follow this, so the rail's own scroll thumb is a
+         * dark one rather than a light bar down the edge of the navy. */
+        color-scheme: dark;
         --background: var(--inverse);
         --card: var(--inverse);
         --card-elevated: var(--inverse-alt);
