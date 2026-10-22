@@ -5292,6 +5292,60 @@ sites, so a new component gets them by using the ordinary classes.
   popovers, toasts. Zero shadows outside `components/ui/`, checked by walking
   every element on a rendered page rather than by grepping for `shadow-`.
 
+### The public site's own foundations
+
+The marketing pages borrowed the product's foundations and looked like it:
+`text-fluid-hero` stops at 68px, a Landing section heading was 36px, and
+every Fraunces italic on the site was a browser-slanted roman because the font
+request loaded no `ital` axis. These are the public site's own, and
+`test_site_foundations.py` holds every rule below.
+
+- **The font request** loads Fraunces with `ital,opsz,wght,SOFT,WONK` (400–700)
+  and Inter Tight at exactly 400, 500 and 600, `display=swap`, both hosts
+  preconnected. Measured on the latin subset: the upright Fraunces file is
+  121,016 bytes against 120,788 before, so WONK costs 228 bytes. Inter Tight
+  is one variable file whatever the weights, at 44,872. The italic is a new
+  149,720 bytes that a browser fetches **only on a page that renders an
+  italic**. Because only those three Inter weights load, a `font-bold` or
+  `font-light` would be a synthesised weight. A test bans them.
+- **WONK is for 40px and up.** `--mkt-wonk` (`"WONK" 1, "SOFT" 30`) is used
+  by exactly `mkt-display`, `mkt-h1` and `mkt-h2`, whose clamps never go below
+  40px. Below that size the leaning letters read as a rendering fault, so the
+  product's 24–32px headings must never get it.
+- **Every figure is tabular**, set once on `html`. Rupee columns, number cells
+  and countdowns all jitter with proportional figures, and a document-wide
+  rule covers the next one somebody writes. Nothing may opt back out.
+- **`mkt-*` is a parallel scale**: `display` 52→120, `h1` 44→84, `h2`
+  40→68, `h3` 28→40, `lead` 18→24, `body` 18, `eyebrow` 13px. Every clamp
+  reaches its minimum at a 375px viewport and its maximum at 1600px. The
+  `fluid-*` steps are untouched and pinned. The classes are **forbidden under
+  a signed-in route**. The test walks the router from every
+  `<ProtectedRoute>` through its imports, and separately sweeps everything
+  outside the public pages.
+- **The red is a fill or a mark; `accent-ink` is the red as a word.**
+  `#FF2731` is 3.76:1 on white and `#C41E27` is 5.90:1. Danger `#B3242C` is
+  6.55:1 and reads as a different red. A primary button on a light ground is
+  navy (18.43:1 with a white label). The size rule in `test_brand.py` counts
+  the four `mkt-*` headings as large. The arbitrary-value spellings
+  (`text-[#FF2731]` and inline `color:`) are refused outright, and no state
+  token is ever the brand red.
+- **Three motion primitives, and a page imports them from
+  `components/marketing/primitives.js`**: `LineEntrance` (a once-only
+  headline entrance), `RowWriter` (a once-only sequential row writer) and the
+  existing `CountUp`. They use one curve, `--weare-ease`, and two duration
+  bands: 200ms for interaction and 450–600ms for an entrance. Reduced motion
+  resolves to the end state, and that is handled in `index.css` and only
+  there, so a primitive carries no motion branch of its own.
+- **`PhotoSlot` reads `content/photoSlots.js`**. A photograph is a file in
+  `public/img/photos/` plus one `src` line. An empty slot draws a dashed box
+  with its id, the size to shoot at and the brief, and the ratio is reserved
+  either way.
+- **`content/marketing.js` holds the public pages' copy**, and
+  `PLATFORM_FEE_PERCENT` is the one place the published fee lives. It is
+  `null` because nobody has decided it. Until somebody does, the pricing card
+  reads "Shown before you accept", and no page may type a percentage of its
+  own.
+
 ### The logo
 
 The real artwork — a tree above a `WEARE` wordmark above `CREATORS` — replaced
