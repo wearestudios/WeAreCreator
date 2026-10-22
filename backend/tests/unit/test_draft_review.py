@@ -447,7 +447,10 @@ def test_the_three_events_are_declared_and_documented():
 def test_a_draft_routes_to_whoever_runs_the_campaign():
     """Exactly like a new application: weare-run to the WeAre side, brand-run
     to the brand's own manager."""
-    src = source(server._record_draft)
+    # The routing lives in `_tell_draft_reviewer`, shared with the review
+    # window's reminder and outcome so all three reach the same person.
+    assert "_tell_draft_reviewer(" in source(server._record_draft)
+    src = source(server._tell_draft_reviewer)
     assert "_weare_runs(campaign)" in src
     assert "notify_weare_team(" in src
     assert "notify_brand_manager(" in src

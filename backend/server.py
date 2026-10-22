@@ -1882,6 +1882,15 @@ def _proof_block(campaign: Optional[dict], collab: Optional[dict]) -> dict:
     }
 
 
+# How long a reviewer has before a submitted draft approves itself, in
+# calendar days. Up here rather than with the rest of the review window
+# because the campaign payloads validate against the bounds at class
+# definition. See "The draft review window".
+DEFAULT_DRAFT_REVIEW_DAYS = 3
+DRAFT_REVIEW_DAYS_MIN = 1
+DRAFT_REVIEW_DAYS_MAX = 14
+
+
 def _ready_to_shoot_state(campaign: Optional[dict]) -> str:
     """The state at which this campaign's creator has the thing and can shoot.
 
@@ -2567,6 +2576,11 @@ class PostCampaignPayload(BriefDetailFields):
     # audience is the problem this exists to fix. An explicit false turns it
     # off and the lifecycle behaves exactly as it did before.
     requires_draft_approval: Optional[bool] = None
+    # How many days a reviewer has before a submitted draft approves itself.
+    # Absent means the default; see "The draft review window".
+    draft_review_days: Optional[int] = Field(
+        default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     # When a shoot may happen. Both optional and both default to "no
@@ -2712,6 +2726,9 @@ class UpdateCampaignPayload(BriefDetailFields):
     # in _creator_may_see, not here.
     visibility: Optional[CampaignVisibility] = None
     requires_draft_approval: Optional[bool] = None
+    draft_review_days: Optional[int] = Field(
+        default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     restricted_days: Optional[list[int]] = None
@@ -4176,6 +4193,10 @@ NOTIFY_EVENTS = {
     "draft_submitted": "A draft is waiting for your review",
     "draft_approved": "Your draft was approved",
     "draft_changes_requested": "Changes were asked for on your draft",
+    # The review window: a day's warning to the reviewer, and the outcome to
+    # both sides — worded as the window elapsing, never as an approval.
+    "draft_review_due_soon": "A draft approves itself tomorrow",
+    "draft_auto_approved": "A draft review window closed",
     # The clock's own messages. Five reminders and the things that lapse —
     # each named here so a template can be configured for it, because a
     # reminder with no template is one that only ever reaches the in-app bell.
@@ -9289,6 +9310,10 @@ async def get_creator_dashboard(
     )
 
     # All of this creator's collaborations, newest first.
+    # Any review window of theirs that ran out since the last hourly pass
+    # resolves before the rows are read, so the card never says "in review"
+    # about a draft the window has already approved.
+    await _settle_due_review_windows({"creator_id": creator_oid})
     collabs = (
         await db.collaborations.find({"creator_id": creator_oid})
         .sort("created_at", -1)
@@ -11040,6 +11065,7 @@ def _serialize_brand_campaign(
         # Never None: the owner's console prints one of two words on every row.
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
+        "draft_review_days": _draft_review_days(doc),
         "requires_slot_confirmation": _requires_slot_confirmation(doc),
         # Launch only, and `None` everywhere else — the payload validator
         # refuses it on the other two types, so absent here means the same
@@ -12562,6 +12588,7 @@ async def create_brand_campaign(
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
+        "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
         # **Default off, unlike the draft gate.** A booking on most briefs is
         # the creator picking one of the manager's own published slots, and
         # asking somebody to confirm that is asking them to agree with
@@ -23175,6 +23202,7 @@ _CAMPAIGN_BRIEF_FIELDS = (
     "execution_owner",
     "visibility",
     "requires_draft_approval",
+    "draft_review_days",
     "requires_slot_confirmation",
     "restricted_days",
     "shoot_windows",
@@ -24790,6 +24818,7 @@ async def get_admin_collaboration_detail(
     being the one way around a filter every list already honours.
     """
     collab = await _collab_or_404(collab_id, user)
+    collab = await _settle_review_window_of(collab)
     oid = collab["_id"]
 
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
@@ -28299,6 +28328,7 @@ async def admin_create_campaign(
             if payload.requires_draft_approval is None
             else bool(payload.requires_draft_approval)
         ),
+        "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
         "requires_slot_confirmation": bool(payload.requires_slot_confirmation),
         "restricted_days": _clean_restricted_days(payload.restricted_days),
         "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
@@ -28955,7 +28985,8 @@ async def run_lifecycle_chasers(limit: int = 500) -> dict:
     targets = await sla_targets()
     report = {k: 0 for k in _reminder_kinds()}
     report.update(
-        {"content_flagged_overdue": 0, "invitations_lapsed": 0, "applications_expired": 0}
+        {"content_flagged_overdue": 0, "invitations_lapsed": 0, "applications_expired": 0,
+         "drafts_auto_approved": 0, "draft_review_reminders": 0}
     )
 
     def _past(state: str) -> datetime:
@@ -29169,6 +29200,16 @@ async def run_lifecycle_chasers(limit: int = 500) -> dict:
     except Exception as exc:
         logger.error("application expiry failed: %s", exc)
 
+    # 7. Draft review windows that ran out, and the day-before warning. The
+    # same function the reads call, so what this pass resolves and what a
+    # screen shows as due cannot differ.
+    try:
+        windows = await _settle_due_review_windows(now=now)
+        report["drafts_auto_approved"] = windows["auto_approved"]
+        report["draft_review_reminders"] = windows["reminded"]
+    except Exception as exc:
+        logger.error("draft review windows failed: %s", exc)
+
     if any(report.values()):
         logger.info("lifecycle chasers: %s", report)
     return report
@@ -29300,6 +29341,438 @@ def _draft_is_stale(campaign: Optional[dict], now: Optional[datetime] = None) ->
     if touched.tzinfo is None:
         touched = touched.replace(tzinfo=timezone.utc)
     return touched <= (now or datetime.now(timezone.utc)) - timedelta(days=DRAFT_STALE_DAYS)
+
+
+# ---------------------------------------------------------------------------
+# The draft review window
+#
+# A draft sat at `draft_submitted` for as long as the reviewer stayed quiet.
+# The chasers remind and escalate, but nothing *resolved*: a brand that never
+# looked again held the creator's published post, and their payment behind
+# it, indefinitely. So the review step has a deadline, and the deadline
+# resolves itself.
+#
+# - **It reaches `draft_approved`, it does not skip it.** No new state and no
+#   second ladder: the window elapsing is one more way into the state a
+#   reviewer's approval reaches, and everything after it is unchanged.
+# - **The record says nobody approved it.** `draft_approved_by` is
+#   `"system_auto"` and the audit actor is `_SYSTEM_AUTO_ACTOR`, never the
+#   reviewer's id: "the brand approved this" and "the brand let the window
+#   run out" are different facts, and only one of them is true.
+# - **The disclosure check is not fabricated.** `approve_draft` makes the
+#   reviewer confirm the label is on the draft; nobody looked here, so
+#   `draft_disclosure_check` is left absent — which `_serialize_disclosure_check`
+#   reads as "not reviewed". The second checkpoint, at the live post, still
+#   requires a person.
+# - **A dispute pauses it**, read off `dispute.state` through the filter — the
+#   freeze `_refuse_if_disputed` already holds — rather than a second flag.
+# - **One function decides**, `_settle_due_review_windows`. The hourly
+#   lifecycle pass calls it with no scope, and the reads that show a draft
+#   call it scoped to their rows, so the screen is never an hour stale and
+#   the two can never disagree about what "due" means.
+# ---------------------------------------------------------------------------
+
+# DEFAULT_DRAFT_REVIEW_DAYS and its bounds sit beside
+# `_ready_to_shoot_state`, above the payloads that validate against them.
+# The reviewer hears once, a day before it resolves without them.
+DRAFT_REVIEW_REMINDER_HOURS = 24
+
+# Named, so an audit line written by the window reads as the window rather
+# than as a blank actor or as the person who did not act.
+_SYSTEM_AUTO_ACTOR = {"role": "system_auto", "name": "WeAre (review window elapsed)"}
+DRAFT_AUTO_APPROVE_REASON = "brand_review_window_elapsed"
+
+
+def _draft_review_days(campaign: Optional[dict]) -> int:
+    """How long this campaign gives a reviewer. Absent, unparseable or out of
+    range reads as the default — campaigns predate the field, and a brief
+    written before it existed gets the window every new one does."""
+    try:
+        days = int((campaign or {}).get("draft_review_days"))
+    except (TypeError, ValueError):
+        return DEFAULT_DRAFT_REVIEW_DAYS
+    if not DRAFT_REVIEW_DAYS_MIN <= days <= DRAFT_REVIEW_DAYS_MAX:
+        return DEFAULT_DRAFT_REVIEW_DAYS
+    return days
+
+
+def _draft_review_deadline(campaign: Optional[dict], now: datetime) -> datetime:
+    """Calendar days from the submission, in UTC."""
+    return now + timedelta(days=_draft_review_days(campaign))
+
+
+def _aware(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _review_window(collab: Optional[dict]) -> Optional[dict]:
+    """What every surface draws about the window. `None` when there is none.
+
+    Shipped as facts — the deadline, whether it is paused and why — and never
+    as a pre-worded "in 2 days": that phrase is stale a minute after it is
+    sent, and the browser has the clock.
+    """
+    collab = collab or {}
+    deadline = _aware(collab.get("draft_review_deadline_at"))
+    auto_at = collab.get("draft_auto_approved_at")
+    if deadline is None and auto_at is None:
+        return None
+    disputed = bool(_dispute_of(collab))
+    paused_at = collab.get("draft_review_paused_at")
+    return {
+        "deadline_at": _iso(deadline),
+        # Running only while the draft is actually waiting: a deadline kept on
+        # an approved row is a record of what elapsed, not a countdown.
+        "running": collab.get("state") == "draft_submitted"
+        and paused_at is None
+        and not disputed,
+        "paused": paused_at is not None,
+        "paused_at": _iso(paused_at),
+        "paused_reason": collab.get("draft_review_paused_reason"),
+        # Frozen by a dispute: paused, for a reason no button here lifts.
+        "frozen_by_dispute": disputed,
+        "extensions": int(collab.get("draft_review_extensions") or 0),
+        "auto_approved_at": _iso(auto_at),
+        "approved_via": collab.get("draft_approved_via"),
+    }
+
+
+async def _tell_draft_reviewer(campaign: dict, collab: dict, event: str, *, title: str, body: str) -> None:
+    """Whoever reviews this campaign's drafts — the routing `_record_draft`
+    uses, extracted so the reminder and the auto-approval cannot reach a
+    different person from the one the draft was sent to."""
+    if _weare_runs(campaign):
+        await notify_weare_team(campaign, event, title=title, body=body)
+    else:
+        await notify_brand_manager(
+            campaign.get("brand_id"),
+            event,
+            title=title,
+            body=body,
+            link=f"/brand/applications/{str(collab['_id'])}",
+        )
+
+
+# The filter that makes a window due. The deadline and the pause are in the
+# *write's* filter as well as the read's, so a row that was paused or extended
+# between the two is not approved, and two overlapping passes cannot both win.
+def _due_review_filter(now: datetime) -> dict:
+    return {
+        "state": "draft_submitted",
+        "draft_review_deadline_at": {"$lte": now},
+        "draft_review_paused_at": None,
+        "dispute.state": {"$ne": "open"},
+    }
+
+
+async def _approve_draft_by_window(
+    collab_id,
+    now: datetime,
+    *,
+    actor: Optional[dict] = None,
+    reason: Optional[str] = None,
+) -> Optional[dict]:
+    """Move one draft to `draft_approved` because its window ended — or, with
+    an admin `actor`, because an admin ended it early.
+
+    Returns the updated row, or `None` when the conditional write matched
+    nothing: already approved, sent back, paused, extended, or disputed since
+    the caller looked. `None` is the ordinary outcome of losing a race and is
+    not an error.
+    """
+    forced = actor is not None
+    filt = {"_id": collab_id, "state": "draft_submitted", "dispute.state": {"$ne": "open"}}
+    if not forced:
+        filt.update(_due_review_filter(now))
+    updated = await db.collaborations.find_one_and_update(
+        filt,
+        {"$set": {
+            **_state_stamp("draft_approved", now),
+            "draft_approved_at": now,
+            # A string, never an ObjectId, on the window's own approval: no
+            # person approved it, and an id here would be read as one.
+            "draft_approved_by": ObjectId(actor["_id"]) if forced else "system_auto",
+            "draft_approved_via": "admin_forced" if forced else "review_window_elapsed",
+            "draft_auto_approved_at": None if forced else now,
+            "draft_revision_note": None,
+        }},
+        return_document=True,
+    )
+    if not updated:
+        return None
+
+    campaign = await db.campaigns.find_one({"_id": updated["campaign_id"]}) or {}
+    await audit(
+        actor or _SYSTEM_AUTO_ACTOR,
+        "collaboration.draft_force_approved" if forced else "collaboration.draft_auto_approved",
+        "collaboration",
+        updated["_id"],
+        before={"state": "draft_submitted",
+                "draft_review_deadline_at": _iso(updated.get("draft_review_deadline_at"))},
+        after={"state": "draft_approved", "reason": reason or DRAFT_AUTO_APPROVE_REASON,
+               "disclosure_confirmed": None},
+        note=reason or DRAFT_AUTO_APPROVE_REASON,
+        **_campaign_audit_context(campaign),
+    )
+    title = (
+        "Your draft was approved" if forced else "The review window closed — your draft is approved"
+    )
+    creator_body = (
+        f"{campaign.get('title') or 'Your campaign'} — publish it, then drop the live link."
+        if forced
+        else f"{campaign.get('title') or 'Your campaign'} — nobody asked for changes within "
+        f"{_draft_review_days(campaign)} days, so the draft is approved. Publish it, then drop the live link."
+    )
+    await notify(
+        updated["creator_id"],
+        "draft_approved" if forced else "draft_auto_approved",
+        title=title,
+        body=creator_body,
+        link="/dashboard",
+    )
+    await _tell_draft_reviewer(
+        campaign,
+        updated,
+        "draft_auto_approved",
+        title="A draft review window closed",
+        body=(
+            f"“{campaign.get('title')}”: the draft was approved by WeAre ({reason})."
+            if forced
+            else f"“{campaign.get('title')}”: the {_draft_review_days(campaign)}-day review "
+            "window elapsed with no changes asked for, so the draft is approved."
+        ),
+    )
+    return updated
+
+
+async def _remind_reviewer_if_due(collab: dict, now: datetime) -> bool:
+    """The 24-hour warning, once per deadline.
+
+    Claimed under a filter on the deadline it is for, so an extension (a new
+    deadline) earns a fresh reminder and a resubmission does too, while two
+    overlapping passes send one.
+    """
+    deadline = collab.get("draft_review_deadline_at")
+    claimed = await db.collaborations.find_one_and_update(
+        {
+            "_id": collab["_id"],
+            "state": "draft_submitted",
+            "draft_review_deadline_at": deadline,
+            "draft_review_paused_at": None,
+            "draft_review_reminded_for": {"$ne": deadline},
+        },
+        {"$set": {"draft_review_reminded_for": deadline}},
+    )
+    if not claimed:
+        return False
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    await _tell_draft_reviewer(
+        campaign,
+        collab,
+        "draft_review_due_soon",
+        title="A draft approves itself tomorrow",
+        body=(
+            f"“{campaign.get('title')}”: a draft is waiting for review. If nobody "
+            "asks for changes in the next 24 hours it is approved automatically."
+        ),
+    )
+    return True
+
+
+async def _settle_due_review_windows(scope: Optional[dict] = None, *, now: Optional[datetime] = None) -> dict:
+    """Approve every due draft inside `scope`, and remind on the nearly-due.
+
+    **The only thing that resolves a window**, called by the hourly lifecycle
+    pass with no scope and by the reads that show a draft with theirs, so the
+    two cannot disagree. Safe to run twice and concurrently: each approval is
+    a conditional write on the same filter that selected it.
+    """
+    now = now or datetime.now(timezone.utc)
+    scope = dict(scope or {})
+    approved = []
+    due = await db.collaborations.find(
+        {**scope, **_due_review_filter(now)}, {"_id": 1}
+    ).to_list(length=500)
+    for row in due:
+        try:
+            if await _approve_draft_by_window(row["_id"], now):
+                approved.append(str(row["_id"]))
+        except Exception as exc:  # one bad row must not cost the others
+            logger.error("draft auto-approval failed for %s: %s", row["_id"], exc)
+
+    reminded = 0
+    soon = await db.collaborations.find(
+        {
+            **scope,
+            "state": "draft_submitted",
+            "draft_review_deadline_at": {
+                "$gt": now,
+                "$lte": now + timedelta(hours=DRAFT_REVIEW_REMINDER_HOURS),
+            },
+            "draft_review_paused_at": None,
+            "dispute.state": {"$ne": "open"},
+        }
+    ).to_list(length=500)
+    for row in soon:
+        try:
+            reminded += int(await _remind_reviewer_if_due(row, now))
+        except Exception as exc:
+            logger.error("draft review reminder failed for %s: %s", row["_id"], exc)
+    return {"auto_approved": len(approved), "ids": approved, "reminded": reminded}
+
+
+async def _settle_review_window_of(collab: dict) -> dict:
+    """The lazy half for one row a read is about to show: settle it through
+    `_settle_due_review_windows`, and return the row as it now stands."""
+    if (collab or {}).get("state") != "draft_submitted":
+        return collab
+    report = await _settle_due_review_windows({"_id": collab["_id"]})
+    if report["auto_approved"]:
+        return await db.collaborations.find_one({"_id": collab["_id"]}) or collab
+    return collab
+
+
+class ReviewWindowExtendPayload(BaseModel):
+    days: int = Field(ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+async def _window_collab_or_409(collab_id: str, user: dict) -> dict:
+    """A collaboration with a draft waiting, through the scoped console door."""
+    collab = await _collab_or_404(collab_id, user)
+    if collab.get("state") != "draft_submitted":
+        raise HTTPException(
+            status_code=409, detail="There's no draft waiting for review here."
+        )
+    return collab
+
+
+@admin_router.post("/collaborations/{collab_id}/draft-review/extend")
+async def extend_draft_review(
+    collab_id: str,
+    payload: ReviewWindowExtendPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Give the reviewer longer. Counted, because three extensions on one draft
+    is a different conversation from one."""
+    collab = await _window_collab_or_409(collab_id, user)
+    now = datetime.now(timezone.utc)
+    current = _aware(collab.get("draft_review_deadline_at")) or now
+    # From whichever is later: extending a window that already ran out (but
+    # has not been swept) must not produce a deadline still in the past.
+    new_deadline = max(current, now) + timedelta(days=payload.days)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted",
+         "draft_review_deadline_at": collab.get("draft_review_deadline_at")},
+        {"$set": {"draft_review_deadline_at": new_deadline, "updated_at": now},
+         "$inc": {"draft_review_extensions": 1}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        user, "collaboration.draft_review_extended", "collaboration", collab["_id"],
+        before={"draft_review_deadline_at": _iso(collab.get("draft_review_deadline_at"))},
+        after={"draft_review_deadline_at": _iso(new_deadline), "days": payload.days},
+        note=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    return {"id": collab_id, "review_window": _review_window(updated)}
+
+
+@admin_router.post("/collaborations/{collab_id}/draft-review/pause")
+async def pause_draft_review(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Stop the clock. The time it is stopped for is given back on resume."""
+    collab = await _window_collab_or_409(collab_id, user)
+    now = datetime.now(timezone.utc)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted", "draft_review_paused_at": None},
+        {"$set": {"draft_review_paused_at": now,
+                  "draft_review_paused_reason": payload.reason.strip(),
+                  "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="The review window is already paused.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        user, "collaboration.draft_review_paused", "collaboration", collab["_id"],
+        before={"paused": False}, after={"paused": True},
+        note=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    return {"id": collab_id, "review_window": _review_window(updated)}
+
+
+@admin_router.post("/collaborations/{collab_id}/draft-review/resume")
+async def resume_draft_review(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Start the clock again, with the paused time added to the deadline — a
+    pause that silently used up the window would be a pause in name only."""
+    collab = await _window_collab_or_409(collab_id, user)
+    paused_at = _aware(collab.get("draft_review_paused_at"))
+    if paused_at is None:
+        raise HTTPException(status_code=409, detail="The review window isn't paused.")
+    now = datetime.now(timezone.utc)
+    deadline = _aware(collab.get("draft_review_deadline_at")) or now
+    new_deadline = deadline + (now - paused_at)
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "state": "draft_submitted",
+         "draft_review_paused_at": collab.get("draft_review_paused_at")},
+        {"$set": {"draft_review_paused_at": None, "draft_review_paused_reason": None,
+                  "draft_review_deadline_at": new_deadline, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        user, "collaboration.draft_review_resumed", "collaboration", collab["_id"],
+        before={"paused": True, "draft_review_deadline_at": _iso(deadline)},
+        after={"paused": False, "draft_review_deadline_at": _iso(new_deadline)},
+        note=payload.reason.strip(),
+        **_campaign_audit_context(campaign),
+    )
+    return {"id": collab_id, "review_window": _review_window(updated)}
+
+
+@admin_router.post("/collaborations/{collab_id}/draft-review/approve-now")
+async def force_approve_draft(
+    collab_id: str,
+    payload: ReasonPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """End the window now. Recorded as an admin decision with its reason —
+    not as the reviewer's approval and not as the window elapsing."""
+    collab = await _window_collab_or_409(collab_id, user)
+    # The freeze holds against an admin as it does against everybody: a
+    # dispute is ended by its resolution, not by approving around it.
+    _refuse_if_disputed(collab)
+    updated = await _approve_draft_by_window(
+        collab["_id"], datetime.now(timezone.utc), actor=user, reason=payload.reason.strip()
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+    return {"id": collab_id, "state": updated["state"], "review_window": _review_window(updated)}
+
+
+@admin_router.post("/jobs/draft-auto-approvals")
+async def run_draft_auto_approvals_job(user: dict = Depends(require_roles("admin"))):
+    """Resolve every elapsed review window now. The hourly lifecycle pass runs
+    the same function; this is for "has it gone through yet?"."""
+    report = await _settle_due_review_windows()
+    await audit(user, "job.draft_auto_approvals", "job", "draft_auto_approvals", after=report)
+    return report
 
 
 async def _lifecycle_loop() -> None:
@@ -32077,6 +32550,8 @@ def _serialize_campaign(
         "visibility": _campaign_visibility(doc),
         # The creator needs to know before they shoot that a draft comes first.
         "requires_draft_approval": _requires_draft_approval(doc),
+        # And how long a review can take before it settles itself.
+        "draft_review_days": _draft_review_days(doc),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -36641,6 +37116,9 @@ def _serialize_draft(collab: dict) -> dict:
         "revision_count": int(collab.get("draft_revision_count") or 0),
         "revision_note": collab.get("draft_revision_note"),
         "approved_at": _iso(collab.get("draft_approved_at")),
+        # The deadline, the pause, and whether the window or a person
+        # approved it — facts, never a pre-worded countdown.
+        "review_window": _review_window(collab),
         "has_file": bool(draft.get("stored_name")),
     }
 
@@ -36664,6 +37142,11 @@ async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -
                 "draft": {**draft, "submitted_at": now},
                 # A fresh draft answers the outstanding request.
                 "draft_revision_note": None,
+                # Every submission starts a fresh window — a replacement
+                # draft and one sent after a revision request alike. The
+                # reviewer is looking at something new, so the time they
+                # had for the old one is not time they had for this.
+                "draft_review_deadline_at": _draft_review_deadline(campaign, now),
             }
         },
         return_document=True,
@@ -36683,21 +37166,13 @@ async def _record_draft(collab: dict, campaign: dict, user: dict, draft: dict) -
 
     line = (
         f"{user.get('name') or 'A creator'} sent a draft for review on "
-        f"“{campaign.get('title')}”."
+        f"“{campaign.get('title')}”. It approves automatically if nobody asks "
+        f"for changes within {_draft_review_days(campaign)} days."
     )
     # Routed like everything else that needs a decision on a campaign.
-    if _weare_runs(campaign):
-        await notify_weare_team(
-            campaign, "draft_submitted", title="A draft is waiting for review", body=line
-        )
-    else:
-        await notify_brand_manager(
-            campaign.get("brand_id"),
-            "draft_submitted",
-            title="A draft is waiting for review",
-            body=line,
-            link=f"/brand/applications/{str(collab['_id'])}",
-        )
+    await _tell_draft_reviewer(
+        campaign, collab, "draft_submitted", title="A draft is waiting for review", body=line
+    )
     return _serialize_draft(updated)
 
 
@@ -36909,6 +37384,9 @@ async def request_draft_changes(
             "$set": {
                 **_state_stamp(back_to, now),
                 "draft_revision_note": note,
+                # The reviewer answered inside the window, so there is
+                # nothing left to elapse until the next draft arrives.
+                "draft_review_deadline_at": None,
             },
             "$inc": {"draft_revision_count": 1},
         },
@@ -36960,6 +37438,7 @@ async def get_application(
 ):
     """One application: where it stands, who it is, what it pays, what's next."""
     collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    collab = await _settle_review_window_of(collab)
 
     creator_user = await db.users.find_one({"_id": collab["creator_id"]})
     profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]})
@@ -37148,6 +37627,9 @@ async def get_application(
             # campaign is not the reviewer, and never sees the button.
             "can_review_draft": state == "draft_submitted"
             and _question_staff_may_see(campaign, user),
+            # Extend, pause, resume, approve now. Admin only — the reviewer
+            # moving their own deadline would make it a suggestion.
+            "can_manage_review_window": state == "draft_submitted" and is_admin,
             # The second half of the booking handshake, offered to whoever
             # runs this campaign — the same reader the draft review uses, so a
             # brand on a weare-run brief never sees it.

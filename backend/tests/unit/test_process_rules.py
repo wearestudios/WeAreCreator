@@ -1493,6 +1493,9 @@ class TestAuditCoverage:
                     # Writes the `*.commission` line with the old rate and the
                     # new one, for both the brand's rate and a campaign's.
                     "_record_commission_change",
+                    # The one transition behind both the window elapsing and
+                    # an admin ending it early; audits as whichever it was.
+                    "_approve_draft_by_window",
                 )
             )
             if not delegates:
@@ -1503,7 +1506,7 @@ class TestAuditCoverage:
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
          "_check_in_collaboration", "_set_creator_verification",
-         "_record_performance"],
+         "_record_performance", "_approve_draft_by_window"],
     )
     def test_the_delegated_helpers_actually_audit(self, helper):
         # The exemption above is only safe while this holds: a helper trusted
