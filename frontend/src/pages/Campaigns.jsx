@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
     MapPin,
@@ -31,7 +31,6 @@ import ShareButton from "@/components/ShareButton";
 import BrandName from "@/components/BrandName";
 import { HERO_EYEBROW } from "@/lib/siteNav";
 import CampaignCover from "@/components/CampaignCover";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     Select,

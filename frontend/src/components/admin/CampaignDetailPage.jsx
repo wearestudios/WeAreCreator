@@ -19,7 +19,6 @@ import {
     Play,
     Send,
     UserCog,
-    Users,
     XCircle,
 } from "lucide-react";
 

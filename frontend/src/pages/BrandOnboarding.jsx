@@ -64,8 +64,6 @@ import {
     CONTENT_TYPES,
     FOLLOWER_TIERS,
 } from "@/lib/followerTiers";
-
-const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -78,6 +76,8 @@ import { IST } from "@/lib/time";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import DeleteAccount from "@/components/account/DeleteAccount";
 import HomepageLogoConsent from "@/components/brand/HomepageLogoConsent";
+
+const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
@@ -615,7 +615,7 @@ export default function BrandOnboarding() {
                     <a
                         href={brandPageUrl(user.id)}
                         target="_blank"
-                        rel="noopener"
+                        rel="noopener noreferrer"
                         data-testid={BRAND_PAGE.preview}
                         className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
                     >

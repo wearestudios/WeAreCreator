@@ -366,7 +366,6 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
 }
 
 export function AdminSidebar({ counts, role }) {
-    const navigate = useNavigate();
     const [collapsed, setCollapsed] = useState(() => {
         try {
             return window.localStorage.getItem(COLLAPSE_KEY) === "1";

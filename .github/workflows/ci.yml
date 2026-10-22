@@ -80,6 +80,11 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
-          CI: "false" # warnings should not fail the build; errors still will
+          # Warnings fail the build. GitHub sets CI=true on its own; it is
+          # stated here so nobody "fixes" a red build by flipping it back —
+          # with CI=false a lint warning was a line in a log nobody read, and
+          # with the lint config replaced instead of extended there were no
+          # warnings to read anyway. Both are guarded by test_lint_config.py.
+          CI: "true"
           REACT_APP_BACKEND_URL: http://localhost:8001
         run: npm run build

@@ -268,6 +268,25 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         load();
     }, [load]);
 
+    /**
+     * **The row leaves on the click, not on the response.**
+     *
+     * Working the queue is "decide, next, decide, next", and the old shape put
+     * a network round trip between those two words: the button went busy, the
+     * row sat there looking undecided, and only after a refetch did it go. On
+     * a slow connection that is indistinguishable from nothing having
+     * happened, which is how a decision gets made twice.
+     *
+     * `settled` is the patch, and the filter below drops it. A failure rolls
+     * the patch back — the row returns — *and* marks it failed, which is what
+     * the flash on the row reads, because a row that silently reappears is a
+     * decision somebody believes they made.
+     *
+     * Declared above `run`, which names `apply` in its dependency array: a
+     * `const` read before its declaration is a ReferenceError on render.
+     */
+    const { rows: patched, failed, apply } = useOptimisticRows(items || []);
+
     const run = useCallback(
         async (item, fn, successMessage) => {
             setBusyId(item.id);
@@ -457,21 +476,6 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         return out;
     }, [items]);
 
-    /**
-     * **The row leaves on the click, not on the response.**
-     *
-     * Working the queue is "decide, next, decide, next", and the old shape put
-     * a network round trip between those two words: the button went busy, the
-     * row sat there looking undecided, and only after a refetch did it go. On
-     * a slow connection that is indistinguishable from nothing having
-     * happened, which is how a decision gets made twice.
-     *
-     * `settled` is the patch, and the filter below drops it. A failure rolls
-     * the patch back — the row returns — *and* marks it failed, which is what
-     * the flash on the row reads, because a row that silently reappears is a
-     * decision somebody believes they made.
-     */
-    const { rows: patched, failed, apply } = useOptimisticRows(items || []);
 
     const visible = useMemo(
         () => patched.filter((i) => !i.settled && (!kind || i.kind === kind)),

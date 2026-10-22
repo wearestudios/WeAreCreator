@@ -9,7 +9,6 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     ArrowRight,
     Building2,
-    CalendarDays,
     Compass,
     Copy,
     Download,
@@ -128,9 +127,6 @@ const StatusPill = ({ status }) => {
         </span>
     );
 };
-
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
 
 const formatDate = (iso) => {
     if (!iso) return "—";

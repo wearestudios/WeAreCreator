@@ -4,10 +4,10 @@
 // checking: what they say they are, the documents that prove it, the named
 // person asking on their behalf, and then what they have actually run with us.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ExternalLink, FileText, Globe, Instagram } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { Globe, Instagram } from "lucide-react";
 
-import { api, formatApiError, API_BASE } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import { isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";

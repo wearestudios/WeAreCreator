@@ -22,7 +22,7 @@
 //   learned: a greyed-out button with no explanation is how a form becomes a
 //   support ticket.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, Eye, Loader2, Plus, Wand2 } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Wand2 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";

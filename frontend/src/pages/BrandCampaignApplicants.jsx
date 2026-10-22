@@ -27,7 +27,6 @@ import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
 import { DisclosureConfirmDialog } from "@/components/campaign/CampaignTerms";
 import Shortfall from "@/components/Shortfall";
-import { ReliabilityBadge } from "@/components/ReliabilityBadge";
 import { SHORTFALL } from "@/constants/testIds";
 import {
     ApplicantListSkeleton,

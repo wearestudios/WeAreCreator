@@ -9,7 +9,6 @@
 // The score's breakdown is one click away on every card. A brand that cannot
 // see why somebody was suggested has been handed an oracle.
 import React, { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { notifyError, notifyInfo, notifySuccess } from "@/lib/feedback";
 import {
     ChevronDown,

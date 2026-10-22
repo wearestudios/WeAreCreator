@@ -4,8 +4,8 @@
 // asks for it: who they are, whether their numbers are measured or claimed, what
 // they have actually done here, and what we owe them.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { Instagram, MapPin, Send, Youtube } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { Instagram, MapPin, Youtube } from "lucide-react";
 
 import { googleMapsLink } from "@/lib/googleMaps";
 import { ADDRESS } from "@/constants/testIds";

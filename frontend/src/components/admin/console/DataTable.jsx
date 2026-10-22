@@ -255,6 +255,18 @@ export function DataTable({
                                 <th
                                     key={col.key}
                                     scope="col"
+                                    // On the header cell, where ARIA allows
+                                    // it: a `button` has no sort state, and a
+                                    // screen reader reads it off the column.
+                                    aria-sort={
+                                        !col.sortable
+                                            ? undefined
+                                            : sort?.key === col.key
+                                              ? sort.dir === "asc"
+                                                  ? "ascending"
+                                                  : "descending"
+                                              : "none"
+                                    }
                                     // A screen whose sort control already had an
                                     // id keeps it: the control moved into the
                                     // header, it did not stop existing.
@@ -267,13 +279,6 @@ export function DataTable({
                                         <button
                                             type="button"
                                             onClick={() => toggleSort(col)}
-                                            aria-sort={
-                                                sort?.key === col.key
-                                                    ? sort.dir === "asc"
-                                                        ? "ascending"
-                                                        : "descending"
-                                                    : "none"
-                                            }
                                             // The case and tracking are repeated
                                             // here rather than inherited from the
                                             // `th`: the UA stylesheet sets

@@ -9,7 +9,7 @@
 // only what has happened makes you remember what comes next; showing the whole
 // run makes the next move obvious.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Check, ExternalLink, Circle, IndianRupee } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";

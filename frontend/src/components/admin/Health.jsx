@@ -14,18 +14,16 @@ import {
     ArrowRight,
     CheckCircle2,
     Download,
-    Loader2,
 } from "lucide-react";
 
 import { api, API_BASE } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import {
     ADMIN_EXPORTS as EXPORT_IDS,
     ADMIN_HEALTH as IDS,
     ADMIN_INTEL as INTEL_IDS,
 } from "@/constants/testIds";
-import { Panel, Section, Stat } from "@/components/admin/DetailPage";
+import { Panel, Section } from "@/components/admin/DetailPage";
 import { DateFilter, endOfDay, formatCompact } from "@/components/admin/shared";
 import { TEXT } from "@/components/admin/console/tokens";
 

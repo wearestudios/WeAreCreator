@@ -3,7 +3,6 @@
 // and it reports what actually happened per creator rather than one verdict for
 // the batch. A WhatsApp send can fail for one number and land for the next.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { notifyError, notifySuccess, notifyWarning } from "@/lib/feedback";
 import { AlertCircle, Check, Loader2, Search, Send, UserCheck } from "lucide-react";
 import { api } from "@/lib/api";

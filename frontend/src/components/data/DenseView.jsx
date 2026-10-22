@@ -462,7 +462,7 @@ export const pinnedHeadClass =
     `${tableHeadClass} ${STICKY.pinnedCell} border-r border-tint/10 bg-card`;
 export const pinnedCellClass = `${STICKY.pinnedCell} border-r border-tint/10 bg-card`;
 
-export default {
+const DenseView = {
     STICKY,
     StickyBar,
     ResultCount,
@@ -475,3 +475,5 @@ export default {
     ApplicantListSkeleton,
     ScrollTable,
 };
+
+export default DenseView;
