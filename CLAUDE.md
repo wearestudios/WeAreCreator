@@ -3031,9 +3031,11 @@ Who moves each step matters:
 - **Brand** — `accepted` and `content_approved` only (`_BRAND_OWNED_TRANSITIONS`).
   The admin `advance` endpoint refuses these with 409 by design.
 - **Reviewer** (brand or WeAre, per `execution_owner`) — `draft_approved`, and
-  sending it back to `attended`. `advance` refuses both
+  sending it back to `_ready_to_shoot_state(campaign)` (`attended`, or
+  `received` on a delivery brief). `advance` refuses both
   (`_DRAFT_OWNED_TRANSITIONS`) for a different reason: they are not decisions to
-  fabricate.
+  fabricate. **The review window can also approve** — see "When nobody
+  answers" — credited to `system_auto`, never to the reviewer.
 - **Creator** — `slot_booked` (booking their own place, and cancelling it back to
   `commercial_agreed` up to 24h before), `draft_submitted` and
   `content_submitted`, and may resubmit either until it is approved.
@@ -3107,6 +3109,66 @@ first sight of the content was after the creator's followers had had theirs and
 - A draft is **not** in `DELIVERED_COLLAB_STATES` — performance is measured on
   published content, and a draft has no reach — but both states are in
   `COLLAB_GROUP_ONGOING`, and `_roster_rows` counts them as having turned up.
+
+### When nobody answers: the review window
+
+A draft used to wait at `draft_submitted` for as long as the reviewer took,
+and the creator — who had shot the thing and could not publish it — was the
+one party with no way to move it. `draft_review_days` on the campaign (1–14,
+default `DEFAULT_DRAFT_REVIEW_DAYS` = 3, the brand sets it, an admin can
+override it) is how long the reviewer has; after that the draft approves
+itself. **Not a new state** — the same `draft_submitted → draft_approved`
+move, made by the clock.
+
+- **The deadline is stamped when the draft goes in** (`_record_draft` →
+  `draft_review_deadline_at`), recomputed on every resubmission, and cleared
+  by a send-back. The window is a fact on the row, so changing the campaign's
+  setting reaches drafts sent afterwards, never the one somebody is already
+  waiting on.
+- **`_approve_draft_by_window` is the one writer**, a conditional
+  `find_one_and_update` whose filter is the selection's (`_due_review_filter`:
+  still `draft_submitted`, deadline passed, not paused, no open dispute). Two
+  sweeps reaching one row approve it once, and a row a person answered a
+  second earlier is not touched. The record says `draft_approved_by:
+  "system_auto"` and `draft_approved_via: "review_window_elapsed"`, the audit
+  line has actor role `system_auto`, no id, and the reason
+  `brand_review_window_elapsed` — **never the brand's id**, because nobody at
+  the brand approved anything, and a record saying they did is the one thing
+  an audit trail must be able to disprove.
+- **It approves a draft, not a disclosure.** No `_disclosure_record` is
+  written; the second checkpoint at `approve_content` still waits on a person
+  ticking the box against the live post.
+- **A dispute is a pause.** `"dispute.state": {"$ne": "open"}` is in both the
+  selection and the write filter — the existing freeze, read rather than
+  copied into a second flag. Time spent frozen is **not** given back (the
+  admin's extend is the remedy); time spent under an admin pause is, on
+  resume.
+- **Who drives it: the existing `_lifecycle_loop`**, step 7 of
+  `run_lifecycle_chasers` (`_settle_due_review_windows`), plus `POST
+  /admin/jobs/draft-auto-approvals` for a hand-run, plus **lazy settlement**
+  on the three reads that show a draft (the application screen, the admin
+  collaboration page, the creator dashboard) through the same function — so a
+  row that is due reads as approved even on a box whose loop is off. No
+  shared-secret cron route was added: there was already a scheduler, and an
+  unauthenticated trigger is a surface to defend for no gain. On Railway the
+  loop runs only while one instance is up with `LIFECYCLE_INTERVAL_SECONDS` ≠ 0.
+- Told: the reviewer once at `DRAFT_REVIEW_REMINDER_HOURS` (24) remaining
+  (`draft_review_due_soon`, claimed per deadline so an extension earns a fresh
+  reminder), and both sides on approval (`draft_auto_approved`), worded as the
+  window running out — through `_tell_draft_reviewer`, which is the routing
+  `_record_draft` uses, extracted so the three cannot reach different people.
+- **The admin's four controls are admin-only**, not `CONSOLE_ROLES`: extend
+  (`days` 1–14, counted in `draft_review_extensions`), pause, resume and
+  approve-now, each costing a reason and auditing with before and after.
+  Approve-now is `draft_approved_via: "admin_forced"` under the admin's own id.
+- The browser words it (`lib/reviewWindow.js`): the server ships the deadline
+  and flags, never "in 2 days", which is stale a minute after it is sent.
+  **Days are IST calendar days** like every other date here — this rule wins
+  over "the viewer's timezone", and a node-driven test pins it from a browser
+  in Los Angeles. `ReviewWindowNote` (in `components/collab/`, so the creator
+  chunk does not carry the console's dialogs) renders on the reviewer's screen
+  beside the send-back, the creator's card and the admin's view, with the
+  exact instant on hover and in the accessible name.
 
 ### Proof that a story ran
 
@@ -3338,6 +3400,44 @@ not decide.
 After the fee, **the next action is the creator's** — they book, or on a
 `personal_table` they pick a time inside the window. Both notifications say so;
 neither quotes a rupee figure on a barter brief.
+
+### How the fee got there
+
+`negotiation_history` on the collaboration: `{at, kind, amount, currency,
+by_role, by_user_id, note, source}`, append-only. A fee used to be one number
+with no account of how it was reached, so "we agreed twelve on the call" and
+"the creator asked for fifteen" were both somebody's memory.
+
+- **`_set_agreed_amount` is the only writer of `agreed_amount`** — it
+  `$push`es the entry and `$set`s the figure in one conditional update, so the
+  two cannot disagree and a lost race writes neither. Five call sites go
+  through it (brand accept, partial delivery, the brand/admin fee route, the
+  console advance, a mediated partial release) plus the demo seed.
+  `test_negotiation_history.py` walks the AST of every backend module for any
+  other collaboration write naming the field — including the indirect
+  `update["agreed_amount"] = …` shape — and for any `$set`/`$unset`/`$pull` on
+  the history. No payload model carries it, so no route can be handed one.
+- `_create_application` opens the thread with the creator's quote as an
+  `offer`; declines append a `decline` with no figure. Corrections are new
+  `adjust` entries — nothing is edited.
+- **A staff correction is `source: "admin_adjustment"` and costs a note**
+  (422 otherwise). `fee_note_required` on the application's `actions` tells
+  the form when, so the button agrees with the route.
+- **Barter writes no amount**, on any entry, and the serializer drops one if it
+  ever finds one; the brief's `barter_description` stands where a number would.
+  Accepting a barter applicant used to record their quoted rate as the fee.
+- **Who reads what** (`_serialize_negotiation`): creator, brand and campaign
+  manager get which side moved, never `by_user_id` or `source`, and notes with
+  phone numbers and emails scrubbed — a note is free text and
+  `_brand_visible_creator` governs fields, not what somebody typed. The admin
+  gets everything. **The note boxes feeding this say the creator reads them**:
+  the brand's accept note was "for our team" and the partial-delivery reason
+  was never served at all, and both now land in a history the creator sees.
+- `backfill_negotiation_history.py` is one-off and **not run on startup**: dry
+  run by default, `--apply` to write, idempotent because its write filter is
+  its selection. Each pre-existing fee gets one `accept` entry, `by_role:
+  "system"`, `source: "backfill"`, at the best timestamp the row has; the UI
+  labels it "recorded before history tracking". Barter is skipped.
 
 ## How a creator actually gets paid
 
