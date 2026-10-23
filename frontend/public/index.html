@@ -118,9 +118,13 @@
               return path === p.replace(/\/$/, "") || path.indexOf(p) === 0;
             });
 
+          /* Home, /for-brands and /for-creators are drawn on the light set —
+             exact paths, the same list as LIGHT_MARKETING_PATHS. */
+          var LIGHT = ["/", "/for-brands", "/for-creators"];
+          var bare = path.length > 1 ? path.replace(/\/+$/, "") : path;
           var theme = "light";
-          if (!isProduct) {
-            theme = "dark"; /* marketing keeps its navy set */
+          if (!isProduct && LIGHT.indexOf(bare) === -1) {
+            theme = "dark"; /* the rest of marketing keeps its navy set */
           } else if (path.indexOf("/admin") === 0) {
             /* An explicit choice, cached from the account. Never the
                operating system: dark is an opt-in, not a default. */

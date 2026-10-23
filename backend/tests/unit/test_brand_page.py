@@ -466,7 +466,7 @@ def test_home_no_longer_renders_a_named_brand():
     over it as ordinary copy, which is not the same thing. If a *record* comes
     back here it comes back through `BrandName`, because a bare
     `{campaign.brand_name}` would be the one unlinked mention on the site."""
-    src = frontend("pages", "Landing.jsx")
+    src = frontend("pages", "Home.jsx")
     assert "CampaignCover" not in src
     assert "brand_name" not in src
     assert "/public/campaigns" not in src

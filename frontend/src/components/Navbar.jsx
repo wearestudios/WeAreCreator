@@ -92,19 +92,17 @@ const ROLE_LABEL = {
     campaign_manager: "WeAre manager",
 };
 
-// The marketing site's four pages, in the order somebody reads them: which
-// audience am I, then how does it work, then why you.
+// The marketing site's pages, in the order somebody reads them: which
+// audience am I, then how to reach a person. How it works and why us became
+// sections of /for-brands; their old paths redirect.
 //
-// **All four are ordinary routes now.** They used to be two in-page anchors
+// **All of them are ordinary routes.** They used to be two in-page anchors
 // (`#how-it-works`, `#why`) that only resolved on the landing page, plus one
-// real <a> to a page the backend rendered — so "How it works" from anywhere
-// other than home scrolled to nothing, and "For brands" left the app. The
-// pages are in the SPA and these are <Link>s.
+// real <a> to a page the backend rendered. The pages are in the SPA and these
+// are <Link>s. `lib/siteNav.js` holds the same list and a test compares them.
 const MARKETING_LINKS = [
     { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
-    { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
     { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 

@@ -729,13 +729,12 @@ class TestPhotoSlots:
         block = _code(MANIFEST.read_text()).split("PLACEHOLDER_BRIEFS = {", 1)[1].split("};", 1)[0]
         values = re.findall(r'"[\w-]+":\s*([^\n]+)', block)
         assert values and all(v.strip().startswith("SHOW_BRIEFS") for v in values), values
-        # The pages that outlive the marketing rebuild. The old marketing
-        # pages still pass literal notes and go with the rebuild, which
-        # widens this to every file.
-        for name in ("Login.jsx", "Signup.jsx", "NotFound.jsx"):
-            code = _code((SRC / "pages" / name).read_text())
+        # Every file, now the old marketing pages and their literal notes
+        # have gone with the rebuild.
+        for p in _src_files():
+            code = _code(p.read_text())
             for tag in re.findall(r"<PlaceholderImage\b[^>]*>", code, flags=re.S):
-                assert not re.search(r'\bnote="', tag), f"{name}: a literal brief ships in the bundle"
+                assert not re.search(r'\bnote="', tag), f"{p}: a literal brief ships in the bundle"
         slot = (SRC / "components/marketing/PlaceholderImage.jsx").read_text()
         assert "data-placeholder={src || !brief ? undefined : brief}" in slot
 

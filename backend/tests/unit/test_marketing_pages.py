@@ -1,34 +1,37 @@
-"""The marketing site: home, the two audience pages, /how-it-works, /why-weare.
+"""The marketing site: home, /for-brands and /for-creators, plus /contact and the 404.
 
-Five pages and a 404, all React routes. **They used to be two FastAPI handlers
-rendering hand-written HTML**, which is why these tests once ran the renderer
-and searched its output. They read the page sources now, because that is where
-the copy lives — and because the thing most worth protecting here is the copy,
-not the markup.
+**Three pages now, where there were five.** Home is brands-first with one
+band for creators; /for-brands and /for-creators each argue to one reader.
+The old /how-it-works and /why-weare were folded into /for-brands as sections
+and redirect there. The audience pages kept their paths, because changing a
+path breaks every link and search result pointing at it.
 
-What moving them cost, and why it was still right: a page the backend renders
-cannot be reached with a `<Link>`, so /how-it-works and /why-weare could not
-exist at all, and the two audience pages depended on a Vercel rewrite that was
-never repointed — in production both answered with the SPA's catch-all. The
-loss is that WhatsApp and other non-JS crawlers now see the site-wide card
-rather than each page's own. `frontend/src/components/marketing/PageMeta.jsx`
-states that plainly and says how to buy it back; a test below keeps that note
-in place rather than letting it be forgotten.
+**The copy lives in `frontend/src/content/marketing.js`, not in the pages.**
+These tests read the content module evaluated in node, so the strings are the
+ones the page renders rather than a regex's guess at them. The pages hold
+layout and nothing else, which `test_site_foundations.py` and the sweeps
+below hold them to.
 
 **The positioning is the thing these tests mostly protect.** What we are
 against is *disorganisation* — campaigns run over DMs and spreadsheets, nobody
 checked, no rate in writing, no proof of what it achieved. It is deliberately
-**not agencies**: WeAre Studios is one, the managed service is a real offering,
-and "without an agency" would be a page arguing against our own product. That
-is a thing a copy edit could undo by accident, so it is pinned here.
+**not agencies**: WeAre Studios is one, the managed service is a real
+offering, and "without an agency" would be a page arguing against our own
+product.
 
-**Every proof number is counted, never written down.** A hardcoded "500+
-creators" is a claim that was true on the day somebody typed it, on the pages
-whose whole job is to be believed by a stranger.
+**Every claim is one the product keeps, and the ones it does not were taken
+out rather than shipped.** The rewrite's brief asked for money held before
+the shoot, a review that clears itself, an exportable creator statement, a
+revision cap, counter-offers, a self-serve column and "you only pay when a
+deal is agreed". None of those is true of the tree this ships on.
+`test_site_claims.py` pins each replacement to the code that makes it true
+and refuses the original wording.
 """
 import asyncio
+import functools
 import json
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,7 +49,7 @@ def read(*parts):
 
 
 def copy_of(*parts):
-    """A page's source with its comments stripped.
+    """A source file with its comments stripped and its whitespace folded.
 
     Every rule below is about what a reader sees. The comments explaining why a
     claim was removed necessarily quote the claim, so leaving them in makes each
@@ -59,8 +62,6 @@ def copy_of(*parts):
     src = "\n".join(
         line for line in src.splitlines() if not line.lstrip().startswith("//")
     )
-    # The copy is written as adjacent string literals joined with `+` across
-    # lines, so a sentence is routinely split mid-phrase.
     src = re.sub(r'"\s*\+\s*\n\s*"', "", src)
     return re.sub(r"\s+", " ", src)
 
@@ -69,24 +70,83 @@ PAGES = {
     "contact": ("src", "pages", "Contact.jsx"),
     "brands": ("src", "pages", "ForBrands.jsx"),
     "creators": ("src", "pages", "ForCreators.jsx"),
-    "how": ("src", "pages", "HowItWorks.jsx"),
-    "why": ("src", "pages", "WhyWeAre.jsx"),
-    "home": ("src", "pages", "Landing.jsx"),
+    "home": ("src", "pages", "Home.jsx"),
 }
 
-# The four that argue. Home routes rather than sells, and the 404 is neither.
-ARGUING = ["brands", "creators", "how", "why"]
+CONTENT = ("src", "content", "marketing.js")
 
-# Every page here carries image slots except one. **`/contact` has none on
-# purpose**: it is a form, two numbers and an address, and a decorative
-# photograph on it is a photograph between somebody and the thing they came to
-# do. The slot rules below are about briefing the imagery a page *has*, so a
-# page with none is outside them rather than failing them — and the rule that
-# matters stays enforced everywhere it applies.
-PAGES_WITH_IMAGERY = [n for n in PAGES if n != "contact"]
+# Which export in the content module holds each page's words.
+CONTENT_EXPORT = {"home": "HOME", "brands": "BRANDS", "creators": "CREATORS"}
 
-# The audience pages, which are the ones held to the single-ask rule.
+# The two that argue to one reader. Home is both-sides with brands first; the
+# contact page argues for nothing.
+ARGUING = ["brands", "creators"]
 AUDIENCE = ["brands", "creators"]
+
+# The three rebuilt pages carry photo slots. **`/contact` has none on
+# purpose**: it is a form, two numbers and an address.
+PAGES_WITH_IMAGERY = ["home", "brands", "creators"]
+
+# Drawn product UI: mock screens, a spreadsheet, chat bubbles. Their words are
+# illustration rather than argument — the same footing the scroll film's drawn
+# interfaces had — so they are swept for claims and names like everything
+# else, but they do not count against a page's word budget.
+ILLUSTRATION_KEYS = {"card", "screen", "sheetHead", "sheetRows", "bubbles", "hereRows"}
+
+
+@functools.lru_cache(maxsize=1)
+def content():
+    """The content module, evaluated. It imports nothing, so node can run it
+    as it stands."""
+    script = read(*CONTENT) + (
+        "\nconsole.log(JSON.stringify({HOME, BRANDS, CREATORS, ASK, FACTS, WHATSAPP_HREF}));"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60
+    )
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def _walk(node, path=()):
+    """Every string under `node`, with the key path that leads to it."""
+    if isinstance(node, str):
+        yield path, node
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            yield from _walk(v, path + (k,))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk(v, path + (i,))
+
+
+def _page_strings(name, *, illustration=True, meta=True):
+    block = content()[CONTENT_EXPORT[name]]
+    out = []
+    for path, text in _walk(block):
+        keys = {p for p in path if isinstance(p, str)}
+        if not illustration and keys & ILLUSTRATION_KEYS:
+            continue
+        if not meta and "meta" in keys:
+            continue
+        out.append(text)
+    return out
+
+
+def page_text(name):
+    """Everything a reader of the page can see, as one string: its content
+    block, the asks it spreads, the hero screens on home, and the page source
+    itself with comments stripped."""
+    if name not in CONTENT_EXPORT:
+        return copy_of(*PAGES[name])
+    c = content()
+    parts = list(_page_strings(name))
+    src = copy_of(*PAGES[name])
+    for key in set(re.findall(r"ASK\.(\w+)", src)):
+        parts += [c["ASK"][key]["label"], c["ASK"][key].get("to") or c["ASK"][key].get("href")]
+    if name == "home":
+        parts += list(c["FACTS"]["confirmedClients"])
+    return " ".join(parts) + " " + src
 
 
 # --- The positioning ----------------------------------------------------------
@@ -98,84 +158,980 @@ def test_no_page_positions_us_against_agencies(name):
     offering. "Without an agency" would be a page arguing against our own
     product — and it is exactly the phrase a well-meaning copy edit reaches
     for."""
-    text = copy_of(*PAGES[name]).lower()
+    text = page_text(name).lower()
     for phrase in server._FORBIDDEN_MARKETING_PHRASES:
         assert phrase not in text, f"{name}: {phrase!r}"
 
 
-# --- Geography, counted rather than typed -------------------------------------
+# --- Geography -----------------------------------------------------------------
 #
-# **The mechanism changed; the ban did not.** The old rule was a word
-# blacklist: "every city", "pan-India", "across India" and "nationwide" were
-# banned because the operation could not back them, and the pages said
-# "deepest in Bengaluru" instead. That was right at the time and does not
-# survive going national — a page naming one city tells everybody else they
-# are in the wrong place, and a page claiming the country is a claim the
-# supply has to earn.
-#
-# So the rule is now: **a geographic claim is rendered from `_platform_proof`
-# or it is not made.** The literals stay banned (above) because a hardcoded
-# national claim is still hardcoded; what is new is that a hardcoded *local*
-# one is banned too.
+# **A geographic claim is rendered from `_platform_proof` or it is not made.**
+# The rebuilt pages make none: the counted-geography section lived on the two
+# pages this rewrite retired, and the brief's section lists do not include it.
+# `CountedGeography` stays in the tree, unmounted, for the day a page wants a
+# depth claim again — and that claim will have to come through it.
 
-
-# Named here rather than derived from `server.INDIAN_CITIES` on purpose. The
-# city list is twenty entries long and several are also ordinary words in
-# other contexts ("Goa" is not, "Indore" is not, but a sweep that grows with
-# the list is a sweep that starts failing on a city added next year for a
-# reason that has nothing to do with marketing copy). These are the ones the
-# copy has actually reached for.
 _CITIES_COPY_MUST_NOT_NAME = ("bengaluru", "bangalore", "mumbai", "delhi", "blr")
+
+# **The one place a city may be typed, and why it is not a claim.** /brands
+# carries exactly six questions, and one of them is "Is this only for
+# Bengaluru?" — a question a brand asks, answered "No". Naming the city in
+# order to say the product is *not* limited to it is the opposite of the local
+# claim this rule exists to stop, so that one question, verbatim, is exempt.
+# Its answer is not.
+_CITY_QUESTION = "Is this only for Bengaluru?"
 
 
 @pytest.mark.parametrize("name", list(PAGES))
 def test_no_page_names_a_city_in_its_copy(name):
-    """A city in a `COPY` block is a geographic claim nobody re-checks.
-
-    `/for-brands` and `/why-weare` both said "The network runs deepest in
-    Bengaluru" as a literal. Both render it from counted supply now, so the
-    sentence stays true if the deepest city changes and disappears entirely
-    below `PROOF_FLOORS` — the same gate the figures are behind, because a
-    city named with no counts beside it is a smaller claim than silence.
-
-    Image notes are deliberately in scope: a note briefing "Bengaluru
-    shopfronts" for a section whose city is counted at request time briefs a
-    photograph of the wrong place.
-    """
-    for text in _copy_strings(name):
+    """A city in the copy is a geographic claim nobody re-checks."""
+    strings = _page_strings(name) if name in CONTENT_EXPORT else [copy_of(*PAGES[name])]
+    for text in strings:
+        if text == _CITY_QUESTION:
+            continue
         low = text.lower()
         for city in _CITIES_COPY_MUST_NOT_NAME:
             assert city not in low, f"{name}: {city!r} typed in copy — {text!r}"
 
 
+def test_the_city_exemption_is_one_question_and_its_answer_says_no():
+    """The exemption is exactly one string, it is a question, and the answer
+    beside it opens with "No" — so the exemption cannot be stretched into a
+    claim by rewording either half."""
+    items = content()["BRANDS"]["faq"]["items"]
+    hits = [i for i in items if i["q"] == _CITY_QUESTION]
+    assert len(hits) == 1
+    assert hits[0]["a"].startswith("No.")
+    for city in _CITIES_COPY_MUST_NOT_NAME:
+        assert city not in hits[0]["a"].lower()
+
+
 @pytest.mark.parametrize("name", list(PAGES))
 def test_no_page_names_a_city_in_its_title_or_description(name):
-    """The meta description is the longest-lived copy on the site.
-
-    It is written once and read by strangers for years, and it is the one
-    place a `COPY`-block sweep would not look. Home's said "Paid brand
-    campaigns in Bengaluru."
-    """
-    src = copy_of(*PAGES[name])
-    for m in re.finditer(r'(?:title|description)=\{?"((?:[^"\\]|\\.)*)"', src):
-        low = m.group(1).lower()
+    """The meta description is the longest-lived copy on the site: written
+    once and read by strangers for years."""
+    if name in CONTENT_EXPORT:
+        meta = content()[CONTENT_EXPORT[name]]["meta"]
+        found = [meta["title"], meta["description"]]
+    else:
+        src = copy_of(*PAGES[name])
+        found = re.findall(r'(?:title|description)=\{?"((?:[^"\\]|\\.)*)"', src)
+    for text in found:
         for city in _CITIES_COPY_MUST_NOT_NAME:
-            assert city not in low, f"{name}: {city!r} in page meta — {m.group(1)!r}"
+            assert city not in text.lower(), f"{name}: {city!r} in page meta — {text!r}"
 
 
-def test_the_geography_sentence_is_rendered_from_the_counted_city():
-    """Both call sites take the city as an argument rather than naming one.
+def test_no_rebuilt_page_makes_an_uncounted_depth_claim():
+    """Replaces `test_the_geography_sentence_is_rendered_from_the_counted_city`
+    and `test_geography_is_stated_as_depth_rather_than_identity`.
 
-    The shape is the assertion: a `COPY` entry that is a function of `city`
-    cannot be written without a city being passed in, and the only thing that
-    passes one is `CountedGeography`, which has counted it.
-    """
-    brands = read(*PAGES["brands"])
-    why = read(*PAGES["why"])
-    assert "reachTitle: (city) =>" in brands
-    assert "CountedGeography" in brands
-    assert "pedigreeReach: (city) =>" in why
-    assert "useDeepestCity" in why
+    Both pinned the mechanism on /for-brands and /why-weare: the deepest city
+    arrived as an argument from `CountedGeography`. Those pages are gone and
+    the new ones make no depth claim at all — so what is pinned now is that
+    none of them types one, because a "deepest" with no count behind it is the
+    exact claim the mechanism existed to prevent."""
+    for name in CONTENT_EXPORT:
+        assert "deepest" not in page_text(name).lower(), name
+        assert "CountedGeography" not in read(*PAGES[name]), name
+
+
+# --- The managed offer, and the money ------------------------------------------
+
+
+def test_the_managed_offer_is_stated_rather_than_offered_as_a_choice():
+    """**The product is managed-only, so there is no choice to describe.**
+
+    The rewrite's brief asked, twice, for a table headed "Run it yourself"
+    against "Have us run it". A brand cannot invite creators or reach a raw
+    application, so that column describes something that does not exist. The
+    table compares running it over DMs with running it here, and the banned
+    phrases stay banned on /for-brands, where /why-weare's half of this rule
+    now lives. (Home's closing button says "Have us run it" — it opens a
+    WhatsApp chat, and there it is an invitation rather than a column.)"""
+    text = page_text("brands").lower()
+    for gone in ("run it yourself", "self-serve", "hand it over", "you choose per campaign",
+                 "have us run it"):
+        assert gone not in text, gone
+    assert "no retainer" in text
+    assert "creators keep 100% of their fee" in text
+    assert "we shortlist" in text and "run the shoot day" in text
+
+
+def test_the_brand_page_states_the_two_commercial_terms():
+    """Where our margin sits, and the refund with the one thing that
+    forfeits it. Formerly asserted across /for-brands and /why-weare."""
+    text = page_text("brands").lower()
+    assert "creators keep 100% of their fee" in text and "ours is separate" in text
+    assert "campaign fee comes back if we can't fill it" in text
+    assert "unless you turned down everyone we shortlisted" in text
+
+
+def test_the_pages_use_the_marketing_chrome_not_the_shared_chrome():
+    """The shared `Navbar` and `Footer` are on nineteen authenticated
+    surfaces. Marketing got variants rather than edits."""
+    shell = read("src", "components", "marketing", "Sections.jsx")
+    assert "MarketingNavbar" in shell and "MarketingFooter" in shell
+    assert 'from "@/components/Navbar"' not in shell
+    assert 'from "@/components/Footer"' not in shell
+    for name in CONTENT_EXPORT:
+        src = read(*PAGES[name])
+        assert "<MarketingPage" in src, name
+        assert 'from "@/components/Navbar"' not in src, name
+        assert 'from "@/components/Footer"' not in src, name
+
+
+def test_the_enemy_named_is_disorganisation_not_a_competitor():
+    """The problem is campaigns with nobody checked, no rate in writing and no
+    proof of what happened. Every page that argues has to be answering it.
+
+    Home's third assertion moved: it pinned "report", which home no longer
+    carries — the report is promised on /brands, where the reader who pays
+    for it is. Home names the disorganisation itself instead, in the swap
+    band: a spreadsheet and sixty DMs."""
+    for name in ARGUING:
+        low = page_text(name).lower()
+        assert "in writing" in low or "before anyone shoots" in low or "before you shoot" in low, name
+        assert "verified" in low or "checked" in low, name
+    home = page_text("home").lower()
+    assert "verified" in home
+    assert "in writing" in home
+    assert "sixty dms" in home
+    assert "report" in page_text("brands").lower()
+
+
+def test_the_headline_direction_is_carried():
+    """The H1 says what the product takes off a brand's hands, and the
+    category term the business needs to rank for is in home's title."""
+    home = content()["HOME"]
+    assert home["hero"]["title"] == "Creator campaigns, minus the chasing."
+    assert "influencer marketing" in home["meta"]["title"].lower()
+
+
+# --- What each audience has to come away knowing ------------------------------
+
+
+def test_the_creator_page_says_the_six_things_a_creator_needs():
+    """Looks for the idea rather than the sentence it sits in. "Before you
+    shoot" became "before you travel", which is the same moment said from the
+    creator's side of it."""
+    text = page_text("creators").lower()
+    assert "paid briefs" in text                         # real work, one place
+    assert "agreed in writing before you travel" in text # the rate, first
+    assert "brands pay our fee, not you" in text         # they keep all of it
+    assert "you keep 100%" in text
+    assert "within 7 days of approval" in text           # paid on approval
+    assert "a brand we have checked" in text             # brands are checked
+    assert "free to join" in text                        # and it is free
+
+
+def test_the_creator_page_does_not_imply_a_cut_of_their_rate():
+    """"You keep all of it" is the promise. Anything that reads as a deduction
+    — even a stray "commission" — undoes it."""
+    text = page_text("creators").lower()
+    for wrong in ("commission", "our cut", "we take a", "minus our"):
+        assert wrong not in text, wrong
+    assert "you keep 100% of it" in text
+
+
+def test_the_brand_page_says_the_six_things_a_brand_needs():
+    """**One of the six changed, because it was not true.** This pinned
+    "nothing goes live until you say yes". On a campaign we run — which is
+    every brand-posted brief — the draft gate defaults off, so a brand's yes
+    comes on the delivered work. What is true, and what the comparison says,
+    is that approving the work stays the brand's."""
+    text = page_text("brands").lower()
+    assert "read from instagram" in text                # real audience stats
+    assert "quote" in text and "match" in text          # every creator, every rate
+    assert "no retainer" in text and "creators keep 100% of their fee" in text
+    assert "approving the work" in text and "this one stays yours" in text
+    assert "nothing goes live until you say yes" not in text
+    assert "report" in text                             # proof at the end
+    assert "we shortlist" in text                       # the managed offer
+
+
+# --- One ask per page ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,ask,label",
+    [("brands", "postBrief", "Post a brief"), ("creators", "joinFree", "Join free")],
+)
+def test_each_audience_page_asks_once_in_the_same_words_twice(name, ask, label):
+    """Top and bottom, same words: both buttons (and the phone's sticky bar)
+    spread one constant, which is what makes "the same words" structural
+    rather than remembered."""
+    src = read(*PAGES[name])
+    assert content()["ASK"][ask]["label"] == label
+    assert src.count(f"ask={{ASK.{ask}}}") == 3, name
+    assert f"<StickyCta ask={{ASK.{ask}}}" in src
+    assert "testid={IDS.ctaTop}" in src and "testid={IDS.ctaBottom}" in src
+
+
+def test_the_audience_pages_do_not_ask_for_the_other_audience():
+    """A creator reading the brand page is in the wrong place, and a second
+    CTA offering to send them elsewhere is how a page stops asking once."""
+    assert "ASK.joinFree" not in read(*PAGES["brands"])
+    assert "role=creator" not in page_text("brands")
+    assert "ASK.postBrief" not in read(*PAGES["creators"])
+    assert "role=brand" not in page_text("creators")
+
+
+def test_home_is_brands_first_with_one_door_for_creators():
+    """Replaces `test_the_two_audience_pages_do_not_route_to_each_other_mid_page`
+    and `test_the_both_sides_pages_offer_two_paths_rather_than_inventing_one_ask`.
+
+    Home used to end on `TwoPaths`, two equal doors. It is brands-first now —
+    the hero, the close and the phone's sticky bar all ask a brand to post a
+    brief, in the same words — and creators get one band of their own, with
+    one door to /for-creators. The audience pages still never route to each
+    other."""
+    src = read(*PAGES["home"])
+    assert src.count("ask={ASK.postBrief}") == 3
+    assert src.count("ask={ASK.talkWhatsapp}") == 1 and src.count("ask={ASK.haveUsRunIt}") == 1
+    assert "TwoPaths" not in src
+    assert content()["ASK"]["forCreators"]["to"] == "/for-creators"
+    assert src.count("ASK.forCreators") == 1
+    for name in AUDIENCE:
+        assert "TwoPaths" not in read(*PAGES[name]), name
+    assert "export function TwoPaths" not in read("src", "components", "marketing", "Sections.jsx")
+
+
+# --- Previews and routing -----------------------------------------------------
+
+
+@pytest.mark.parametrize("name", list(CONTENT_EXPORT))
+def test_each_page_sets_its_own_title_description_and_path(name):
+    """`PageMeta`, through `MarketingPage`, writes the title, the description,
+    the canonical and the Open Graph tags. The three rebuilt pages take their
+    title and description from the content module and name their own path."""
+    src = read(*PAGES[name])
+    meta = content()[CONTENT_EXPORT[name]]["meta"]
+    assert len(meta["title"]) >= 8 and len(meta["description"]) >= 20
+    assert re.search(rf"const \{{ meta[^}}]*\}} = {CONTENT_EXPORT[name]};", src), name
+    assert "title={meta.title}" in src and "description={meta.description}" in src
+    path = {"home": "/", "brands": "/for-brands", "creators": "/for-creators"}[name]
+    assert f'path="{path}"' in src
+
+
+def test_no_two_pages_share_a_preview_title():
+    """One title for two pages makes two links preview identically in a chat."""
+    titles = [content()[e]["meta"]["title"] for e in CONTENT_EXPORT.values()]
+    m = re.search(r'\btitle="([^"]+)"', read(*PAGES["contact"]))
+    assert m
+    titles.append(m.group(1))
+    assert len(set(titles)) == len(titles), titles
+
+
+@pytest.mark.parametrize("path,element", [
+    ("/", "<Home />"), ("/for-brands", "<ForBrands />"), ("/for-creators", "<ForCreators />"),
+    ("/contact", "<Contact />"),
+])
+def test_every_marketing_page_is_a_registered_route(path, element):
+    app = read("src", "App.js")
+    assert f'<Route path="{path}" element={{{element}}} />' in app, path
+
+
+RETIRED = {
+    "/how-it-works": "/for-brands",
+    "/why-weare": "/for-brands",
+}
+
+
+def test_every_retired_path_redirects_in_all_three_places():
+    """The old paths are in the footers of WhatsApp forwards and in search
+    indexes. **Three lists, one answer**: the SPA's `<Navigate replace>` for a
+    click inside the app, Vercel's **301** for everybody else (a real 301,
+    `statusCode`, not `permanent`, which Vercel answers with a 308), and the
+    server's mirror that keeps them out of the sitemap."""
+    site = read("src", "lib", "siteNav.js")
+    block = site[site.index("export const RETIRED_MARKETING_PATHS") :]
+    block = block[: block.index("];")]
+    assert dict(re.findall(r'\["([^"]+)", "([^"]+)"\]', block)) == RETIRED
+    app = read("src", "App.js")
+    assert "RETIRED_MARKETING_PATHS.map" in app
+    assert "<Navigate to={to} replace />" in app
+    redirects = json.loads(read("vercel.json"))["redirects"]
+    assert {r["source"]: r["destination"] for r in redirects} == RETIRED
+    assert all(r.get("statusCode") == 301 and "permanent" not in r for r in redirects)
+    assert dict(server.RETIRED_MARKETING_PATHS) == RETIRED
+    for old in RETIRED:
+        assert f'path="{old}"' not in app, f"{old} still renders a page"
+
+
+def test_the_retired_pages_are_gone_rather_than_unrouted():
+    """Deleted, not left in the tree with nothing pointing at them. The two
+    audience pages are rewritten in place, at the paths they always had."""
+    pages = FRONTEND / "src" / "pages"
+    for gone in ("Landing.jsx", "HowItWorks.jsx", "WhyWeAre.jsx", "Brands.jsx", "Creators.jsx"):
+        assert not (pages / gone).exists(), gone
+    for kept in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx"):
+        assert (pages / kept).exists(), kept
+
+
+def test_the_marketing_links_are_router_links_not_anchors():
+    """An anchor to a route the SPA owns is a full page load. The only `<a>`s
+    the public parts write are an in-page anchor and the WhatsApp link."""
+    nav = read("src", "components", "Navbar.jsx")
+    for path in ("/for-brands", "/for-creators"):
+        assert f'to: "{path}"' in nav, path
+        assert f'href: "{path}"' not in nav, path
+    parts = copy_of("src", "components", "marketing", "SiteParts.jsx")
+    assert "<Link" in parts and '<a href="/' not in parts
+    for name in CONTENT_EXPORT:
+        assert '<a href="/' not in copy_of(*PAGES[name]), name
+
+
+def test_the_navbar_offers_the_pages_and_both_auth_actions():
+    """The logged-out menu and the mobile sheet that has to match it — the
+    sheet is the only navigation below md. Two pages and a person, now that
+    How it works and Why WeAre Creators are sections of /brands."""
+    nav = read("src", "components", "Navbar.jsx")
+    for label in ("For brands", "For creators", "Contact"):
+        assert f'label: "{label}"' in nav, label
+    for gone in ("How it works", "Why WeAre Creators"):
+        assert f'label: "{gone}"' not in nav, gone
+    assert 'data-testid="nav-login-link"' in nav
+    assert 'data-testid="nav-signup-link"' in nav
+    assert 'data-testid="nav-login-link-mobile"' in nav
+    assert 'data-testid="nav-signup-link-mobile"' in nav
+    assert nav.count("MARKETING_LINKS") >= 3
+    assert "MARKETING_LINKS).map" in nav
+    assert "MARKETING_LINKS.map" in nav
+
+
+# --- The design system --------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", list(CONTENT_EXPORT))
+def test_each_page_wears_the_marketing_scale(name):
+    """Replaces `test_each_page_wears_the_design_system`. The pages used to
+    borrow the product's fluid scale; they are set on the marketing scale now,
+    which carries Fraunces with it, and the overline is the `mkt-label`."""
+    src = read(*PAGES[name])
+    parts = read("src", "components", "marketing", "SiteParts.jsx")
+    assert re.search(r"\bmkt-(?:display|h1)\b", src), name
+    assert "mkt-h2" in parts and "mkt-label" in parts
+    assert "bg-primary" in parts, "the primary ask is the semantic token, never a colour"
+
+
+@pytest.mark.parametrize("name", list(CONTENT_EXPORT))
+def test_no_heading_uses_a_flat_text_size(name):
+    """A heading on a public page is on the marketing scale; a flat `text-*`
+    size on one is the product's type leaking back in."""
+    for rel in (PAGES[name], ("src", "components", "marketing", "SiteParts.jsx")):
+        src = read(*rel)
+        for m in re.finditer(r"<h[123][^>]*className=\{?[`\"]([^`\"]+)[`\"]", src):
+            classes = m.group(1)
+            assert "mkt-" in classes, f"{rel[-1]}: heading off the marketing scale — {classes}"
+            flat = re.findall(r"\btext-(xs|sm|base|lg|xl|\dxl)\b", classes)
+            assert not flat, f"{rel[-1]}: {flat} in {classes}"
+
+
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["contact", "notfound"])
+def test_every_page_carries_the_footer(name):
+    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
+    assert "MarketingPage" in read(*parts), name
+
+
+# --- Photographs --------------------------------------------------------------
+
+
+def _slot_ids(name):
+    src = read(*PAGES[name]) + read("src", "components", "marketing", "SiteParts.jsx")
+    ids = set(re.findall(r'slot="([\w-]+)"', read(*PAGES[name])))
+    ids |= set(re.findall(r'<PhotoSlot id="([\w-]+)"', src))
+    return ids
+
+
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY)
+def test_every_page_has_a_photo_slot_and_every_slot_is_briefed(name):
+    """Replaces the three `PlaceholderImage` rules for the rebuilt pages
+    (`test_every_page_has_deliberate_image_slots`,
+    `test_every_image_slot_says_what_belongs_in_it`,
+    `test_every_image_slot_is_marked_for_the_photographer`). The slot is a
+    `PhotoSlot` naming an id; its brief lives in the manifest beside the `src`
+    that will fill it (shown on previews only), and so does the headline a
+    visitor sees in production until a photograph exists."""
+    ids = _slot_ids(name)
+    assert ids, name
+    manifest = read("src", "content", "photoSlots.js")
+    for sid in ids:
+        m = re.search(rf'"{re.escape(sid)}": \{{(.*?)\n    \}},', manifest, flags=re.S)
+        assert m, f"{name}: slot {sid!r} is not in the manifest"
+        brief = re.search(r'brief: SHOW_BRIEFS\s*\?\s*"([^"]+)"', m.group(1))
+        assert brief and len(brief.group(1)) > 40, f"{name}: {sid} has no real brief"
+        assert re.search(r'fallbackHeadline: "[^"]{10,}"', m.group(1)), f"{name}: {sid} has no fallback"
+
+
+@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY)
+def test_no_image_path_is_written_in_a_page(name):
+    """Adding a photograph is a file drop and one manifest line. A path in
+    JSX is a second place it has to be changed."""
+    for rel in (PAGES[name], ("src", "components", "marketing", "SiteParts.jsx"),
+                ("src", "components", "marketing", "siteMocks.jsx"),
+                ("src", "components", "marketing", "ComparisonBand.jsx")):
+        code = copy_of(*rel)
+        assert not re.search(r"\.(?:png|jpe?g|webp|avif|svg)\b|/img/", code), rel
+
+
+def test_every_full_bleed_band_is_the_two_to_one_slot():
+    """Each page has one full-bleed photograph at 2400×1200, under the id the
+    brief names."""
+    manifest = read("src", "content", "photoSlots.js")
+    for name, sid in (("home", "home-on-location"), ("brands", "brands-full-room"),
+                      ("creators", "creators-on-shoot")):
+        assert f'slot="{sid}"' in read(*PAGES[name]), name
+        block = manifest[manifest.index(f'"{sid}"') :]
+        assert "width: 2400," in block[:400] and "height: 1200," in block[:400], sid
+
+
+# --- The numbers --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", list(PAGES))
+def test_no_page_writes_a_proof_figure_into_its_copy(name):
+    """A hardcoded "500+ creators" is a claim that was true on the day
+    somebody typed it."""
+    text = page_text(name)
+    text = re.sub(r'className="[^"]*"', "", text)
+    text = re.sub(r"\b(24 hours|100%|one|two|three|four|six)\b", "", text)
+    for claim in re.findall(r"\b\d[\d,]*\+", text):
+        pytest.fail(f"{name}: hardcoded figure {claim!r}")
+
+
+@pytest.mark.parametrize("name", list(PAGES))
+def test_no_page_claims_more_than_the_operation_does(name):
+    """Read off `_FORBIDDEN_MARKETING_PHRASES`, so the server's list and this
+    sweep cannot disagree. "Guarantee" is on it — which is why the section
+    the brief calls "the guarantees" is headed "What is always true" on the
+    page."""
+    text = page_text(name).lower()
+    for phrase in server._FORBIDDEN_MARKETING_PHRASES:
+        assert phrase not in text, f"{name}: {phrase}"
+
+
+@pytest.mark.parametrize("word", ["vets", "vetted", "vetting"])
+def test_no_page_reintroduces_the_old_vocabulary(word):
+    for name in PAGES:
+        assert word not in page_text(name).lower(), f"{name}: {word}"
+
+
+def test_home_names_only_real_campaign_categories():
+    text = page_text("home").lower()
+    for absent in ("tech & gadgets", "gadgets", "automotive", "gaming"):
+        assert absent not in text, absent
+
+
+def test_home_does_not_promise_that_every_brief_pays_money():
+    """Barter briefs are real."""
+    assert "no free product" not in page_text("home").lower()
+
+
+# --- Home ---------------------------------------------------------------------
+
+
+def test_home_is_the_eight_sections_in_order():
+    """Replaces `test_home_keeps_only_what_routes`. Home is brands-first and
+    eight sections long: hero, the problem, a photograph, the four steps, the
+    navy band, who built it, the creator door, the close — in that order, and
+    nothing else. The proof strip, the brand wall, the scroll film, the case
+    studies and the leaderboard are not on it; the three server-backed ones
+    stay in the tree, unmounted."""
+    src = copy_of(*PAGES["home"])
+    body = src[src.index("export default function Home") :]
+    order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<HowItWorks",
+             "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
+    positions = [body.index(tag) for tag in order]
+    assert positions == sorted(positions), order
+    for gone in ("ProofStrip", "BrandWall", "CampaignFilm", "CaseStudyStrip", "CreatorLeaderboard",
+                 "TwoPaths", "HandshakeBand", "HeroSlider", "KineticHeadline"):
+        assert gone not in src, gone
+
+
+def test_every_section_opens_on_the_numbered_rule():
+    """**"(02)", a hairline, the section's name, then the heading.** Every
+    numbered section goes through `SectionHead`/`SectionRule`, and the numbers
+    run in order down each page — a reader scanning the rules is reading a
+    contents list, so a skipped or repeated number is a broken one."""
+    parts = copy_of("src", "components", "marketing", "SiteParts.jsx")
+    rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
+    assert "{sectionNumber(n)}" in rule and 'h-px flex-1 bg-border' in rule and "{label}" in rule
+    expected = {"home": [2, 4, 5, 6, 7, 8], "brands": [1, 2, 3, 5, 6, 7, 8], "creators": [1, 2, 3, 5, 6, 7]}
+    for name, numbers in expected.items():
+        src = copy_of(*PAGES[name])
+        got = [int(n) for n in re.findall(r"\bn=\{(\d+)\}", src)]
+        assert got == numbers, (name, got)
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", read(*CONTENT) + "\nconsole.log(sectionNumber(2));"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert out.stdout.strip() == "(02)"
+
+
+def test_home_sends_readers_on_rather_than_telling_them_everything():
+    """A brand to signup, anybody to a person on WhatsApp, a creator to
+    /for-creators."""
+    text = page_text("home")
+    for dest in ("/signup?role=brand", "https://wa.me/", "/for-creators"):
+        assert dest in text, dest
+
+
+def test_step_three_is_the_one_we_handle():
+    """The managed service sells itself on the step it takes off a brand's
+    hands, quietly, without a section of its own — and the hero's rail links
+    to each step by anchor rather than sliding between them."""
+    how = content()["HOME"]["how"]
+    assert [i["title"] for i in how["items"]] == [s["label"] for s in content()["HOME"]["steps"]]
+    assert [bool(i.get("weHandle")) for i in how["items"]] == [False, False, True, False]
+    assert how["weHandle"] == "We handle this part"
+    src = read(*PAGES["home"])
+    assert "href={`#step-${s.key}`}" in src and "id={`step-${step.key}`}" in src
+    # "you only touch two": the brand's own steps are exactly two.
+    assert sum(1 for i in how["items"] if i["yours"]) == 2
+
+
+def test_who_built_it_names_only_the_confirmed_clients():
+    """Replaces `test_who_built_it_is_absent_until_three_real_names_are_supplied`.
+    The three real names arrived, so the section is on: the marquee reads
+    `FACTS.confirmedClients` and nothing else, and no other page or drawn
+    screen carries a real client's name. No WeAre Studios team member is
+    named in it."""
+    clients = content()["FACTS"]["confirmedClients"]
+    assert clients == ["The Brew Factory", "9889", "The Rameshwaram Cafe"]
+    home = copy_of(*PAGES["home"])
+    assert "items={FACTS.confirmedClients}" in home
+    for name in ("brands", "creators"):
+        for real in clients:
+            assert real not in page_text(name), (name, real)
+    drawn = " ".join(_page_strings("home"))
+    for real in ("The Brew Factory", "Rameshwaram"):
+        assert real not in drawn, real
+
+
+# --- /brands: what /how-it-works and /why-weare used to argue -----------------
+
+
+def test_the_brand_page_carries_the_trust_mechanics_the_journey_page_did():
+    """Replaces `test_how_it_works_carries_the_four_trust_mechanics` and
+    `test_how_it_works_states_the_payment_flow_the_way_the_product_works`.
+
+    The journey page is a section of /for-brands now. Of its four mechanics,
+    three survive as true and are here: creators checked, the terms frozen in
+    writing, payment on approved work. The fourth — "approval before it is
+    public" — is not true by default on a campaign we run, and is not
+    carried. The payment flow is the product's own: fees are invoiced to the
+    brand and we pay the creator after approval."""
+    text = page_text("brands").lower()
+    assert "checked by a person" in text
+    assert "frozen into the terms" in text
+    assert "after you approve the work" in text
+    assert "invoiced to you" in text and "we pay the creator" in text
+    assert "approval before it is public" not in text
+
+
+def test_the_brand_page_makes_the_standalone_case_why_weare_did():
+    """Replaces `test_why_weare_makes_the_standalone_case`."""
+    text = page_text("brands").lower()
+    assert "we shortlist" in text                         # the managed offer
+    assert "checked by a person" in text                  # verified people
+    assert "creators keep 100% of their fee" in text      # money handled properly
+    assert "report" in text                               # results reported
+
+
+def test_the_brand_faq_is_the_questions_the_brief_names():
+    """Replaces `test_the_brand_faq_is_exactly_the_six_questions`: eight now,
+    and the GST one renders only once `gstInvoiceConfirmed` is true."""
+    items = content()["BRANDS"]["faq"]["items"]
+    assert [i["q"] for i in items] == [
+        "What if nobody applies?",
+        "What if the content is bad?",
+        "Can I use creators I already work with?",
+        "Who owns the content?",
+        "Is this only for Bengaluru?",
+        "Do I have to use escrow?",
+        "Do I get a GST invoice?",
+        "Can you run a launch night?",
+    ]
+    assert [i.get("showIf") for i in items].count("gstInvoiceConfirmed") == 1
+    assert items[-1]["a"] == (
+        "Yes. That's the managed side — the venue plan, the creator list, the run of show and the night itself."
+    )
+    src = copy_of(*PAGES["brands"])
+    assert "items.filter((item) => !item.showIf || FACTS[item.showIf] === true)" in src
+    assert content()["FACTS"]["gstInvoiceConfirmed"] is None
+
+
+def test_the_comparison_keeps_the_row_that_makes_it_credible():
+    """The sign-off reads "You — this one stays yours", word for word, on our
+    side. The row is labelled *the work* rather than *drafts*: on a campaign
+    we run, drafts on the way may be reviewed by our manager, and the final
+    approval of what is delivered is the brand's step."""
+    compare = content()["BRANDS"]["compare"]
+    heads = [r[0] for r in compare["rows"]]
+    assert heads == ["Writing the brief", "Shortlisting", "Shoot day", "Launch night or influencer event",
+                     "Approving the work", "Cost"]
+    assert compare["rows"][4][2] == "You — this one stays yours"
+    assert compare["rows"][3][2] == "We run it, guest list to the night itself"
+    assert compare["columns"][1:] == ["Over DMs and a spreadsheet", "With WeAre Creators"]
+
+
+def test_the_comparison_is_two_cards_on_a_phone():
+    """A table from `md` up and two stacked cards below it."""
+    parts = copy_of("src", "components", "marketing", "SiteParts.jsx")
+    table = parts[parts.index("export function CompareTable") : parts.index("export function Faq")]
+    assert "hidden overflow-hidden rounded-lg border border-border bg-card md:block" in table
+    assert "md:hidden" in table and "<dl" in table
+
+
+def test_the_fee_is_read_from_the_one_fact():
+    """The fee card shows `platformFeeText()` through `<Known>`: while the
+    fact is null nothing is printed in its place — no "TBC", no made-up
+    figure."""
+    src = read(*PAGES["brands"])
+    assert "<Known value={platformFeeText()} name=\"platformFeePercent\">" in src
+    assert content()["FACTS"]["platformFeePercent"] is None
+    assert not re.search(r"\d\s?%", " ".join(_page_strings("brands", illustration=False)).replace("100%", ""))
+
+
+def test_our_payout_window_is_the_platform_default_and_said_as_one():
+    """Replaces `test_our_payout_window_is_read_rather_than_typed`. The
+    brief makes "within 7 days of approval" a public promise. It is the
+    platform default (`creator_payout_days`), so the copy may say 7 — and
+    every place that says it says the same thing, so changing the promise is
+    one search."""
+    assert server._CREATOR_PAYOUT_SETTINGS_ID == "creator_payout_days"
+    text = " ".join(_page_strings("creators")).lower()
+    for m in re.finditer(r"within (\d+) days of approval", text):
+        assert m.group(1) == "7"
+    assert "automatically" not in text, "a payout is made by a person"
+
+
+# --- /creators ----------------------------------------------------------------
+
+
+def test_the_money_band_counts_once_and_names_the_amount_once():
+    """The amount counts, once, through the existing `CountUp`. A screen
+    reader reads the figure, not the count."""
+    src = copy_of(*PAGES["creators"])
+    band = src[src.index("function MoneyBand") : src.index("export default function ForCreators")]
+    assert "<CountUp value={money.amount} />" in band
+    assert 'className="sr-only"' in band and 'aria-hidden className="mkt-display' in band
+    assert 'data-surface="dark"' in band
+    assert src.count('data-surface="dark"') == 1, "the money band is the page's one navy section"
+
+
+# --- The copy budget ----------------------------------------------------------
+#
+# **Raised for this rebuild, and by the copy the rewrite brief itself wrote.**
+# The brief specifies home's eight sections and /for-brands' seven nearly word
+# for word — the hero's lead and its "built for" line, four steps each with a
+# line, three cards in "who built it", a scroll-inked sentence, eight FAQ
+# answers — and that copy measures 374 and 600. The budgets are those figures
+# plus a little headroom, so a section added next month still has to argue
+# with a number; /for-creators (313) fits its old one. The per-headline (12) and
+# per-line (32) caps did not move. Drawn product UI is illustration and does
+# not count; the meta title and description are held by the meta tests.
+BUDGET = {
+    "home": 390,
+    "brands": 620,
+    "creators": 330,
+    "contact": 200,
+}
+
+HEADLINE_WORDS = 12
+LINE_WORDS = 32
+
+_HEADLINE_KEYS = {"title", "label", "q", "eyebrow"}
+_LINE_KEYS = {"line", "a", "closing"}
+
+
+def _block_strings(src, marker):
+    """Every string literal inside one top-level object literal."""
+    start = src.index(marker)
+    depth, i = 0, start
+    while i < len(src):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    return _literals(src[start : i + 1])
+
+
+def _literals(block):
+    """Double-quoted strings and template literals, comment lines dropped
+    first — a backticked identifier in a comment is not page copy."""
+    block = "\n".join(
+        line for line in block.splitlines() if not line.lstrip().startswith("//")
+    )
+    out = re.findall(r'"((?:[^"\\]|\\.)*)"', block)
+    out += [
+        re.sub(r"\$\{[^}]*\}", "city", t)
+        for t in re.findall(r"`((?:[^`\\]|\\.)*)`", block)
+    ]
+    return out
+
+
+def _copy_strings(name):
+    if name in CONTENT_EXPORT:
+        return _page_strings(name, illustration=False, meta=False)
+    return _block_strings(read(*PAGES[name]), "const COPY = {")
+
+
+def _words(text):
+    return [w for w in re.split(r"\s+", text.strip()) if re.search(r"[A-Za-z0-9]", w)]
+
+
+@pytest.mark.parametrize("name", list(BUDGET))
+def test_every_page_stays_inside_its_word_budget(name):
+    total = sum(len(_words(t)) for t in _copy_strings(name))
+    assert total <= BUDGET[name], f"{name}: {total} words, budget {BUDGET[name]}"
+
+
+def _keyed(name, keys):
+    block = content()[CONTENT_EXPORT[name]]
+    for path, text in _walk(block):
+        named = [p for p in path if isinstance(p, str)]
+        if named and named[-1] in keys and not (set(named) & ILLUSTRATION_KEYS) and "meta" not in named:
+            yield text
+
+
+@pytest.mark.parametrize("name", list(CONTENT_EXPORT))
+def test_no_headline_runs_past_the_headline_cap(name):
+    """Titles, labels, questions and eyebrows."""
+    heads = list(_keyed(name, _HEADLINE_KEYS))
+    assert heads
+    for text in heads:
+        n = len(_words(text))
+        assert n <= HEADLINE_WORDS, f"{name}: {n} words — {text!r}"
+
+
+@pytest.mark.parametrize("name", list(CONTENT_EXPORT))
+def test_no_supporting_line_runs_past_the_line_cap(name):
+    """Lines, closing lines and FAQ answers."""
+    lines = list(_keyed(name, _LINE_KEYS))
+    assert lines
+    for text in lines:
+        n = len(_words(text))
+        assert n <= LINE_WORDS, f"{name}: {n} words — {text!r}"
+
+
+def test_the_contact_page_keeps_its_own_caps():
+    """/contact was left as it is; its `COPY` block is still held to the same
+    two caps."""
+    src = read(*PAGES["contact"])
+    block = src[src.index("const COPY = {") :]
+    for m in re.finditer(r'(\w*[Tt]itle|label):\s*"((?:[^"\\]|\\.)*)"', block):
+        assert len(_words(m.group(2))) <= HEADLINE_WORDS, m.group(2)
+    for m in re.finditer(r'\b(line|\w+Line|footnote):\s*"((?:[^"\\]|\\.)*)"', block):
+        assert len(_words(m.group(2))) <= LINE_WORDS, m.group(2)
+
+
+def _code(*parts):
+    """Source with comments removed."""
+    src = read(*parts)
+    src = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return "\n".join(
+        l for l in src.splitlines() if not l.lstrip().startswith("//")
+    )
+
+
+def test_the_primitives_have_no_prop_that_accepts_a_paragraph():
+    """The shape is what enforces the copy rules: a section takes a title and
+    one `line`. Extended to `SiteParts.jsx`, which is the furniture now."""
+    for name in ("Sections.jsx", "SiteParts.jsx"):
+        shell = _code("src", "components", "marketing", name)
+        assert not re.search(r"\bbody\b\s*[,}:=]", shell), name
+        assert not re.search(r"\bbody\b\s*\}", shell), name
+
+
+def test_the_hover_is_colour_border_and_transform_at_the_interactive_duration():
+    """Replaces `test_the_hover_lift_is_not_on_the_element_framer_animates`.
+    That rule existed because `Point` hovered the element framer animated;
+    `Point` is gone and nothing on these pages is framer-animated. What holds
+    now is the band: a hover transitions colour, border and transform only,
+    at `--mkt-interactive`, and never `transition-all`."""
+    parts = _code("src", "components", "marketing", "SiteParts.jsx")
+    assert "transition-[color,background-color,border-color,transform]" in parts
+    assert "[transition-duration:var(--mkt-interactive)]" in parts
+    for rel in (("src", "components", "marketing", "SiteParts.jsx"),
+                ("src", "components", "marketing", "siteMocks.jsx"),
+                *(PAGES[n] for n in CONTENT_EXPORT)):
+        assert "transition-all" not in _code(*rel), rel
+
+
+# --- The footer, and the sitemap ----------------------------------------------
+
+
+def test_the_footer_links_every_marketing_page():
+    """Three pages and a person, and no link to a retired path."""
+    site = read("src", "lib", "siteNav.js")
+    cols = site[site.index("export const FOOTER_COLUMNS") : site.index("export const MARKETING_LINKS")]
+    for path in ("/for-brands", "/for-creators", "/contact"):
+        assert f'"{path}"' in cols, path
+    for old in RETIRED:
+        assert f'"{old}"' not in cols, old
+
+
+def test_the_sitemap_lists_every_marketing_page():
+    """Built from `MARKETING_PATHS`, so adding a page cannot quietly leave it
+    out — and the retired paths are out of it, because a sitemap listing a
+    redirect asks a crawler to index a page that does not exist."""
+    import inspect as _inspect
+
+    src = _inspect.getsource(server.public_sitemap)
+    assert "MARKETING_PATHS" in src
+    assert set(server.MARKETING_PATHS) == {"/", "/for-brands", "/for-creators", "/contact"}
+    assert not set(server.MARKETING_PATHS) & set(RETIRED)
+
+
+# --- The hero ----------------------------------------------------------------
+#
+# **These eight replaced the kinetic headline's eight, one for one.** The
+# headline morphed between the eight sectors in `CATEGORY_OPTIONS` over a
+# photo slider; the hero is now one static product card and one word revealed
+# once. Each test keeps the rule its predecessor held and points it at the new
+# contract; the docstring names what it replaced.
+
+
+def _h1():
+    src = read(*PAGES["home"])
+    return src[src.index("<h1") : src.index("</h1>")]
+
+
+def test_the_hero_names_no_sector_and_the_slider_is_gone():
+    """Replaces `test_the_headline_morphs_between_real_campaign_categories`.
+
+    **Inverted on purpose.** That test pinned the hero's phrases to
+    `CATEGORY_OPTIONS`. The hero no longer rotates anything: it is one static
+    product card and one word drawn once, so nothing in it reads the category
+    list, and the slider, its sector phrases, its drifts and its eight
+    drawings are deleted rather than left unmounted."""
+    home = copy_of(*PAGES["home"])
+    assert "CATEGORY_OPTIONS" not in home and "categories" not in home
+    marketing = FRONTEND / "src" / "components" / "marketing"
+    for gone in ("HeroSlider.jsx", "KineticHeadline.jsx", "sectorCycle.jsx", "HeroDeck.jsx", "heroScreens.jsx"):
+        assert not (marketing / gone).exists(), gone
+    assert not (FRONTEND / "src" / "lib" / "heroDeck.js").exists()
+    illus = FRONTEND / "public" / "img" / "marketing"
+    for sector in ("fnb", "hospitality", "retail", "real-estate", "fashion", "travel", "wellness", "lifestyle"):
+        assert not (illus / f"hero-{sector}.svg").exists(), sector
+
+
+def test_the_h1_is_static_and_whole_from_the_first_paint():
+    """Replaces `test_the_constant_half_of_the_headline_never_animates`.
+
+    The whole `h1` is constant now — "Creator campaigns, minus the chasing."
+    — and is in the DOM complete from the first paint. Nothing in it holds
+    state or reads a timer; its only motion is one word's reveal."""
+    assert content()["HOME"]["hero"]["title"] == "Creator campaigns, minus the chasing."
+    h1 = _h1()
+    assert "{title.slice(0, at)}" in h1 and "{title.slice(at + accent.length)}" in h1
+    for moving in ("useState", "index", "Reveal", "motion.", "setTimeout"):
+        assert moving not in h1, moving
+
+
+def test_one_word_is_drawn_once_in_true_italic():
+    """Replaces `test_the_morph_is_per_letter_rather_than_a_fade`. "chasing"
+    is Fraunces true italic at weight 400 in the accent's ink, revealed left to
+    right once at load by `WipeWord` over 520ms — a clip on a word that is
+    already in the DOM, so the heading's text and name are whole throughout."""
+    assert content()["HOME"]["hero"]["accent"] == "chasing"
+    h1 = _h1()
+    assert "<WipeWord" in h1
+    assert 'className="font-normal italic text-accent-ink"' in h1
+    css = read("src", "index.css")
+    assert re.search(r"--mkt-wipe:\s*520ms;", css)
+    assert "aria-live" not in copy_of(*PAGES["home"])
+
+
+def test_the_hero_has_no_timer_at_all():
+    """Replaces `test_the_picture_and_the_word_change_on_one_timer`. That rule
+    existed because two clocks drifted apart. There is no clock now: the card
+    writes its rows once when it comes into view, and nothing in the hero, the
+    drawn screens or the problem band starts a timer."""
+    for rel in (PAGES["home"], ("src", "components", "marketing", "siteMocks.jsx"),
+                ("src", "components", "marketing", "ComparisonBand.jsx")):
+        code = copy_of(*rel)
+        assert "setTimeout" not in code and "setInterval" not in code, rel
+    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
+    assert "<RowWriter rows={rows}" in mocks
+
+
+def test_the_h1_is_display_scale():
+    """Replaces `test_the_headline_is_poster_scale`. The h1 is `mkt-display`,
+    which climbs from 52px to 104px — the brief's clamp."""
+    h1 = _h1()
+    assert 'className="mkt-display' in h1
+    css = read("src", "index.css")
+    display = re.search(r"\.mkt-display \{(.*?)\}", css, flags=re.S).group(1)
+    assert "clamp(3.25rem, 1.6rem + 5vw, 6.5rem)" in display
+
+
+def test_the_hero_card_reserves_its_box():
+    """Replaces `test_the_headline_reserves_its_box_by_rendered_width`. The
+    card's rows wait at opacity 0 in boxes they already occupy, so writing
+    them moves nothing; and the chip row reserves two lines on a phone, where
+    the fallback face and the webfont wrap it differently."""
+    css = read("src", "index.css")
+    assert re.search(r"\.mkt-row \{\s*opacity: 0;\s*\}", css)
+    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
+    deal = mocks[mocks.index("export function DealCard") : mocks.index("export function StepScreen")]
+    assert "min-h-[3.75rem]" in deal and "sm:min-h-0" in deal
+
+
+def test_the_hero_is_still_under_reduced_motion():
+    """Replaces `test_the_headline_is_static_under_reduced_motion`. The wipe
+    and the row writer resolve to their end state in `index.css`; nothing in
+    the hero carries a motion branch of its own."""
+    css = read("src", "index.css")
+    reduced = "\n".join(re.findall(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}", css, flags=re.S))
+    assert ".mkt-wipe" in reduced and ".mkt-row" in reduced
+    assert "useReducedMotion" not in copy_of(*PAGES["home"])
+
+
+def test_the_h1_has_one_stable_accessible_name():
+    """Replaces `test_the_headline_has_one_stable_accessible_name`. One `h1`,
+    its text the sentence; the rail under it is a `nav` of anchors, each named
+    by its number and label, with a visible focus ring."""
+    src = read(*PAGES["home"])
+    assert src.count("<h1") == 1
+    h1 = _h1()
+    assert "aria-label" not in h1 and "aria-live" not in h1
+    hero = src[src.index("function Hero()") : src.index("function HowItWorks")]
+    rail = hero[hero.index("<nav") : hero.index("</nav>")]
+    assert "aria-label={hero.railLabel}" in rail and "<ol" in rail
+    assert "{s.n}" in rail and "{s.label}" in rail
+    assert "focus-visible:ring-2" in rail and "focus-visible:ring-offset-background" in rail
+
+
+def test_the_phone_gets_a_sticky_ask_between_the_hero_and_the_close():
+    """Below `md`, once the hero has scrolled away and until the close is on
+    screen. Hidden — not just invisible — while it is not wanted, so a
+    keyboard cannot land on it; a 48px target; no animation."""
+    sticky = copy_of("src", "components", "marketing", "StickyCta.jsx")
+    assert "const shown = pastHero && !atClose;" in sticky
+    assert "hidden={!shown}" in sticky and "md:hidden" in sticky
+    assert "min-h-[3rem]" in sticky
+    assert "animation" not in sticky and "transition" not in sticky
+    for name in CONTENT_EXPORT:
+        src = read(*PAGES[name])
+        assert 'heroId="hero" closeId="close"' in src, name
+        assert 'id="hero"' in src and 'id="close"' in src, name
+
+
+def test_the_mobile_menu_traps_focus_and_closes_on_navigation():
+    """The sheet is a Radix dialog — focus trapped while open, Escape closes —
+    and a route change closes it too."""
+    nav = copy_of("src", "components", "marketing", "MarketingNavbar.jsx")
+    assert "<Sheet open={open} onOpenChange={setOpen}>" in nav
+    assert "useEffect(() => { setOpen(false); }, [pathname, hash]);" in re.sub(r"\s+", " ", nav)
+
+
+# --- Kept as they were: the server's proof figures, routing, motion, chrome -----
 
 
 def test_the_counted_geography_component_says_nothing_without_a_city():
@@ -188,252 +1144,6 @@ def test_the_counted_geography_component_says_nothing_without_a_city():
     assert "if (!city) return null;" in src
     # Three states, not two: `undefined` in flight is not `null` resolved.
     assert "useState(undefined)" in src
-
-
-def test_the_managed_offer_is_stated_rather_than_offered_as_a_choice():
-    """**The product is managed-only, so there is no choice to describe.**
-
-    This test used to assert the opposite, and was right to at the time: the
-    pages offered "run it yourself, or hand it over" and the risk worth
-    guarding against was a brand reading the managed half as a retainer they
-    were locked into. Both pages therefore had to say "run it yourself" and
-    "no retainer", and /why-weare had to say "not a fee you are locked into".
-
-    The product changed underneath that. Every brand-posted brief is
-    WeAre-run, a brand cannot invite creators and cannot reach a raw
-    application, so a page offering a self-serve mode is describing something
-    that does not exist — and the brand arrives expecting an applicant board.
-    So the assertion is inverted: the self-serve half must be *gone*, and what
-    stands in its place is the managed offer said plainly.
-
-    "No retainer" and "no markup" survive the change, because they were never
-    about the choice. They are what the money actually does, and they are now
-    the load-bearing half of the pitch rather than a reassurance attached to
-    one of two options."""
-    for name in ("brands", "why"):
-        text = copy_of(*PAGES[name]).lower()
-        # The offer, not a mode to pick.
-        assert "run it yourself" not in text, name
-        assert "self-serve" not in text, name
-        assert "hand it over" not in text, name
-        assert "you choose per campaign" not in text, name
-        # What is true about the money either way, and always was.
-        assert "no retainer" in text, name
-        assert "no markup" in text, name
-
-
-def test_the_brand_pages_state_the_two_commercial_terms():
-    """**The strongest two things we have to say, and they were on no page.**
-
-    A brand is deciding on two facts that live nowhere a stranger can read
-    them: our fee is charged on top of the creator's rate rather than out of
-    it, and the campaign fee comes back if we cannot fill the brief. Both are
-    checkable, which is the standard these pages are held to, and both are the
-    kind of claim a compression quietly loses because it reads like small
-    print."""
-    for name in ("brands", "why"):
-        # **Read through the components the page mounts, not the page alone.**
-        # Where the margin sits is now drawn by `FeeFlow` rather than stated in
-        # a bullet, and the bullet came out so the graphic would not sit above
-        # a sentence restating it. A test reading only the page would have
-        # failed on an honest move of the claim rather than on its loss, which
-        # is the failure this suite documents elsewhere: pin the idea wherever
-        # it is declared.
-        text = rendered_copy(name).lower()
-        # Where our margin sits relative to the creator's fee.
-        assert (
-            "full rate" in text
-            or "never taken out of theirs" in text
-            or "of their quoted rate" in text
-        ), name
-        # The refund, and the one thing that forfeits it.
-        assert "refunded if we cannot fill it" in text, name
-        assert "shortlisted" in text, name
-
-
-def test_the_pages_use_the_marketing_chrome_not_the_shared_chrome():
-    """The shared `Navbar` and `Footer` are on nineteen authenticated
-    surfaces. Marketing needed a different bar, so it got a variant rather
-    than an edit — the strict version of "do not touch a logged-in view"."""
-    shell = read("src", "components", "marketing", "Sections.jsx")
-    assert "MarketingNavbar" in shell and "MarketingFooter" in shell
-    assert 'from "@/components/Navbar"' not in shell
-    assert 'from "@/components/Footer"' not in shell
-
-    home = read("src", "pages", "Landing.jsx")
-    assert "MarketingNavbar" in home and "MarketingFooter" in home
-    assert 'from "@/components/Navbar"' not in home
-    assert 'from "@/components/Footer"' not in home
-
-
-def test_the_enemy_named_is_disorganisation_not_a_competitor():
-    """The problem is campaigns with nobody checked, no rate in writing and no
-    proof of what happened. Every arguing page should be answering that."""
-    for name in ARGUING:
-        low = copy_of(*PAGES[name]).lower()
-        assert "in writing" in low or "before anyone shoots" in low or "before you shoot" in low, name
-        assert "verified" in low or "checked" in low, name
-    # And home names it outright, since it is the only argument home keeps.
-    #
-    # The second assertion used to read "nobody checked", which was the label
-    # verbatim. The copy audit made it "creators nobody has checked" — the
-    # same charge with the noun restored — so what is pinned now is the idea
-    # rather than the two words it happened to be written in. A rule that
-    # names a phrase is a rule that fails on its next honest rewrite.
-    #
-    # **Both halves were replaced and the test turned around with them.** It
-    # pinned "DMs and spreadsheets" and "nobody has checked" — the charge the
-    # page used to open on. Leading with three things the reader is doing
-    # wrong, before saying what this company does, is the defect the rewrite
-    # was for: a marketing head evaluating a vendor reads it as a put-down.
-    #
-    # So home states the service first. What still has to be true is that the
-    # three things the operation actually fixes are named somewhere on it —
-    # verification, the rate in writing, and the report — because those are
-    # the claims every other page is built on.
-    home = copy_of(*PAGES["home"]).lower()
-    assert "verified" in home
-    assert "in writing" in home
-    assert "report" in home
-
-
-def test_the_headline_direction_is_carried():
-    """The H1 governs the copy: home is where it leads and /why-weare argues
-    it.
-
-    **This used to pin "handled properly", which was the old tail.** It went
-    with the hero rewrite — a possessive morph ("Your menu tasting") addressed
-    a marketing head about their personal evening, and "properly" is the kind
-    of hedge the register rules ban everywhere else on this site. What the
-    headline says now is the managed model and the category the business sells
-    in, so that is what the two pages have to carry.
-
-    Pinned as the idea rather than the sentence, the rule this file already
-    holds everywhere else: a test naming a phrase is a test that fails on its
-    next honest rewrite.
-    """
-    for page in ("home", "why"):
-        text = copy_of(*PAGES[page]).lower()
-        assert "end to end" in text, page
-    # The category term the business needs to rank for, in the page title.
-    assert "influencer marketing" in copy_of(*PAGES["home"]).lower()
-
-
-# --- What each audience has to come away knowing ------------------------------
-
-
-def test_the_creator_page_says_the_six_things_a_creator_needs():
-    """The six survived the compression; the paragraphs around them did not.
-    Each is now a four-word label and one line, so these look for the idea
-    rather than the sentence it used to sit in."""
-    text = copy_of(*PAGES["creators"]).lower()
-
-    assert "real paid briefs" in text                  # real work, one place
-    assert "before you shoot" in text                  # the rate, before shooting
-    assert "charged to the brand on top" in text       # they keep all of it
-    assert "never taken out of yours" in text
-    assert "payment follows approval" in text          # paid on delivery
-    assert "checked" in text or "verified" in text     # brands are checked
-    assert "free to join" in text                      # and it is free
-
-
-def test_the_creator_page_does_not_imply_a_cut_of_their_rate():
-    """"You keep all of it" is the promise. Anything that reads as a deduction
-    — even a stray "commission" — undoes it."""
-    text = copy_of(*PAGES["creators"]).lower()
-    for wrong in ("commission", "our cut", "we take a", "minus our"):
-        assert wrong not in text, wrong
-    assert "you keep all of it" in text
-
-
-def test_the_brand_page_says_the_six_things_a_brand_needs():
-    text = copy_of(*PAGES["brands"]).lower()
-
-    assert "read from instagram" in text               # real audience stats
-    assert "what each creator quoted" in text          # every creator, every rate
-    assert "no retainer" in text and "no markup" in text
-    assert "nothing goes live until you say yes" in text
-    assert "report" in text                            # proof at the end
-    assert "weare studios" in text                     # the managed option
-
-
-# --- One ask per page ---------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "name,expected",
-    [("brands", "Post a campaign"), ("creators", "Join as a creator")],
-)
-def test_each_audience_page_asks_once_in_the_same_words_twice(name, expected):
-    """Top and bottom, same words — the page asks once in two places rather
-    than offering a choice of doors. Both CTAs are spread from one `ASK`
-    constant, which is what makes "the same words" structural rather than a
-    thing somebody has to remember."""
-    src = read(*PAGES[name])
-    assert f'label: "{expected}"' in src
-    assert src.count("const ASK =") == 1
-    assert "{ ...ASK, testid: IDS.ctaTop }" in src
-    assert "{ ...ASK, testid: IDS.ctaBottom }" in src
-
-
-def test_the_audience_pages_do_not_ask_for_the_other_audience():
-    """A creator reading the brand page is in the wrong place, and a second
-    CTA offering to send them elsewhere is how a page stops asking once. The
-    footer is where somebody in the wrong place finds the right page."""
-    assert "signup?role=creator" not in copy_of(*PAGES["brands"])
-    assert "signup?role=brand" not in copy_of(*PAGES["creators"])
-
-
-def test_the_two_audience_pages_do_not_route_to_each_other_mid_page():
-    """`TwoPaths` is the component that offers both doors. It belongs on the
-    pages that cannot know who arrived — home and /how-it-works — and nowhere
-    a page has already been given one reader."""
-    for name in AUDIENCE + ["why"]:
-        assert "TwoPaths" not in read(*PAGES[name]), name
-    for name in ("home", "how"):
-        assert "TwoPaths" in read(*PAGES[name]), name
-
-
-def test_the_both_sides_pages_offer_two_paths_rather_than_inventing_one_ask():
-    """Home and /how-it-works are read by both audiences. Picking one CTA for
-    the visitor puts half of them through the wrong door.
-
-    The two destinations live in `TwoPaths`, not on the pages — which is the
-    point: one component means the pair cannot end up saying different things
-    in two places."""
-    paths = read("src", "components", "marketing", "Sections.jsx")
-    assert 'to="/for-creators"' in paths
-    assert 'to="/for-brands"' in paths
-    for name in ("home", "how"):
-        assert "TwoPaths" in read(*PAGES[name]), name
-
-
-# --- Previews and routing -----------------------------------------------------
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_each_page_sets_its_own_title_description_and_path(name):
-    """`PageMeta` writes the title, the description, the canonical and the
-    Open Graph tags. One page missing it inherits whichever page was open
-    before it, which is worse than a generic tag."""
-    src = read(*PAGES[name])
-    # Home mounts PageMeta itself; the rest pass the same three props to
-    # MarketingPage, which mounts it for them.
-    assert "PageMeta" in src or "MarketingPage" in src
-    assert re.search(r'title="[^"]{8,}"', src), name
-    assert re.search(r'description="[^"]{20,}"', src), name
-    assert re.search(r'path="/[^"]*"', src), name
-
-
-def test_no_two_pages_share_a_preview_title():
-    """One title for two pages makes two links preview identically in a chat,
-    which is the whole reason for separate pages."""
-    titles = []
-    for parts in PAGES.values():
-        m = re.search(r'\btitle="([^"]+)"', read(*parts))
-        assert m, parts
-        titles.append(m.group(1))
-    assert len(set(titles)) == len(titles), titles
 
 
 def test_page_meta_writes_the_open_graph_tags_a_preview_needs():
@@ -454,17 +1164,6 @@ def test_the_limit_of_runtime_meta_is_written_down_rather_than_glossed():
     assert "prerender" in meta
 
 
-@pytest.mark.parametrize(
-    "path",
-    ["/for-brands", "/for-creators", "/how-it-works", "/why-weare"],
-)
-def test_every_marketing_page_is_a_registered_route(path):
-    """The complaint that started this restructure: two of these were not
-    routes at all, and two did not exist."""
-    app = read("src", "App.js")
-    assert f'path="{path}"' in app, path
-
-
 def test_the_catch_all_renders_a_404_rather_than_redirecting_home():
     """A mistyped URL, a link from an old post and a brief that has since
     closed all used to land silently on the front page, which is
@@ -472,35 +1171,6 @@ def test_the_catch_all_renders_a_404_rather_than_redirecting_home():
     app = read("src", "App.js")
     assert '<Route path="*" element={<NotFound />} />' in app
     assert '<Route path="*" element={<Navigate to="/" replace />} />' not in app
-
-
-def test_the_marketing_links_are_router_links_not_anchors():
-    """They were real <a>s while the backend rendered them. An anchor now is a
-    full page load for a route the SPA owns."""
-    nav = read("src", "components", "Navbar.jsx")
-    for path in ("/for-brands", "/for-creators", "/how-it-works", "/why-weare"):
-        assert f'to: "{path}"' in nav, path
-        assert f'href: "{path}"' not in nav, path
-    home = read("src", "pages", "Landing.jsx")
-    assert 'href="/for-creators"' not in home
-    assert 'to="/for-creators"' in home
-
-
-def test_the_navbar_offers_the_four_pages_and_both_auth_actions():
-    """The logged-out menu, and the mobile sheet that has to match it — the
-    sheet is the only navigation below md, so anything missing there is
-    unreachable on a phone."""
-    nav = read("src", "components", "Navbar.jsx")
-    for label in ("For brands", "For creators", "How it works", "Why WeAre Creators"):
-        assert f'label: "{label}"' in nav, label
-    assert 'data-testid="nav-login-link"' in nav
-    assert 'data-testid="nav-signup-link"' in nav
-    assert 'data-testid="nav-login-link-mobile"' in nav
-    assert 'data-testid="nav-signup-link-mobile"' in nav
-    # One list feeds both, which is what stops them drifting.
-    assert nav.count("MARKETING_LINKS") >= 3  # the definition, plus both maps
-    assert "MARKETING_LINKS).map" in nav      # desktop bar
-    assert "MARKETING_LINKS.map" in nav       # mobile sheet
 
 
 def test_signed_in_users_keep_their_role_navigation():
@@ -511,108 +1181,34 @@ def test_signed_in_users_keep_their_role_navigation():
     assert "linksFor(user.role)" in nav
 
 
-# --- The design system --------------------------------------------------------
-
-
-@pytest.mark.parametrize("name", ARGUING)
-def test_each_page_wears_the_design_system(name):
-    """Fraunces headings, the ember accent, fluid type, and the uppercase
-    wide-tracked overline. All four are guideline rules, and all four are what
-    a bespoke page quietly stops doing."""
-    src = read(*PAGES[name])
-    shell = read("src", "components", "marketing", "Sections.jsx")
-    # The shell carries the type and colour rules for the pages that use it;
-    # a page states its own overlines through the `eyebrow` prop.
-    assert "font-serif" in src or "font-serif" in shell
-    assert "text-fluid-" in src or "text-fluid-" in shell
-    # **The accent is named semantically, not by colour.** This used to pin
-    # `ember-500`, which is the shape of rule the rebrand broke: the accent is
-    # red on marketing and navy in the product, and a page that names a colour
-    # is a page that only works on one surface. `primary` is the token both
-    # resolve through.
-    assert "primary" in src or "primary" in shell
-    assert "Eyebrow" in src or "eyebrow=" in src or "tracking-[0.2em]" in src
-    for rule in ("font-serif", "text-fluid-", "primary", "tracking-[0.2em]"):
-        assert rule in shell, rule
-
-
-@pytest.mark.parametrize("name", ARGUING)
-def test_no_heading_uses_a_flat_text_size(name):
-    """"No heading uses a flat `text-*` size" is a foundation rule — headings
-    are on the fluid scale so they stop jumping between breakpoints."""
-    src = read(*PAGES[name])
-    for m in re.finditer(r"<h[123][^>]*className=\"([^\"]+)\"", src):
-        classes = m.group(1)
-        flat = re.findall(r"\btext-(xs|sm|base|lg|xl|\dxl)\b", classes)
-        assert not flat, f"{name}: {flat} in {classes}"
-
-
-@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
-def test_every_page_carries_the_footer(name):
-    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
-    src = read(*parts)
-    # Home mounts it directly; the rest inherit it from MarketingPage.
-    assert "<MarketingFooter />" in src or "MarketingPage" in src
-
-
 def test_the_marketing_shell_mounts_both_marketing_bars():
     sections = read("src", "components", "marketing", "Sections.jsx")
     assert "<MarketingNavbar />" in sections
     assert "<MarketingFooter />" in sections
 
 
-# --- Image slots --------------------------------------------------------------
+# --- The tinted slots that outlived the rebuild ---------------------------------
 
 
-def _with_marketing_components(name):
-    """A page's source, plus the marketing components it mounts.
-
-    Home's image slots live in `FloatingCards` rather than in the page — four
-    tilted cards behind the hero are a composition, not four props somebody
-    passes in. Reading the page alone would say home has no slots, which is
-    the opposite of true."""
-    parts = PAGES.get(name, ("src", "pages", "NotFound.jsx"))
-    src = read(*parts)
-    out = [src]
-    for mod in re.findall(r'from "@/components/marketing/(\w+)"', src):
-        for ext in (".jsx", ".js"):
-            path = FRONTEND.joinpath("src", "components", "marketing", mod + ext)
-            if path.exists():
-                out.append(path.read_text())
-                break
-    return "\n".join(out)
-
-
-@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
-def test_every_page_has_deliberate_image_slots(name):
-    src = _with_marketing_components(name)
-    assert "PlaceholderImage" in src or "image={{" in src, name
-
-
-@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
-def test_every_image_slot_says_what_belongs_in_it(name):
-    """A slot nobody can brief is a slot that stays empty. Every `note` is a
-    sentence somebody could hand to a photographer, and it rides on the
-    element as `data-placeholder` as well as sitting in the source."""
-    src = _with_marketing_components(name)
-    notes = re.findall(r'note[:=]\s*"([^"]+)"', src)
-    # A slot may name its brief by id instead, from `PLACEHOLDER_BRIEFS` in
-    # the manifest — where it compiles out of a production build.
-    manifest = FRONTEND.joinpath("src", "content", "photoSlots.js").read_text()
-    for sid in re.findall(r'<PlaceholderImage\b[^>]*?\bslot="([\w-]+)"', src, flags=re.S):
+@pytest.mark.parametrize("page", ["NotFound.jsx", "Login.jsx", "Signup.jsx"])
+def test_every_tinted_slot_is_briefed_and_marked(page):
+    """The 404 and the two auth asides still draw `PlaceholderImage`. These
+    three used to sit in `test_every_page_has_deliberate_image_slots`,
+    `test_every_image_slot_says_what_belongs_in_it` and
+    `test_every_image_slot_is_marked_for_the_photographer`, parametrised over
+    the old marketing pages plus the 404; the marketing pages moved to
+    `PhotoSlot` and the rule moved with them, so what is left of those three
+    is here. A slot names its brief by id, resolved against
+    `PLACEHOLDER_BRIEFS`, where it compiles out of a production build."""
+    src = read("src", "pages", page)
+    manifest = read("src", "content", "photoSlots.js")
+    ids = re.findall(r'<PlaceholderImage\b[^>]*?\bslot="([\w-]+)"', src, flags=re.S)
+    assert ids, f"{page}: no tinted slot"
+    for sid in ids:
         found = re.search(rf'"{re.escape(sid)}":\s*SHOW_BRIEFS\s*\?\s*"([^"]+)"', manifest)
-        assert found, f"{name}: slot {sid!r} has no brief in PLACEHOLDER_BRIEFS"
-        notes.append(found.group(1))
-    assert notes, name
-    for n in notes:
-        assert len(n) > 25, f"{name}: {n!r} is not a brief"
-
-
-@pytest.mark.parametrize("name", PAGES_WITH_IMAGERY + ["notfound"])
-def test_every_image_slot_is_marked_for_the_photographer(name):
-    """The `PLACEHOLDER IMAGE:` comment is what makes these findable — real
-    photography is meant to be dropped in one slot at a time."""
-    assert "PLACEHOLDER IMAGE:" in _with_marketing_components(name), name
+        assert found, f"{page}: slot {sid!r} has no brief in PLACEHOLDER_BRIEFS"
+        assert len(found.group(1)) > 25, f"{page}: {found.group(1)!r} is not a brief"
+    assert "PLACEHOLDER IMAGE:" in src, page
 
 
 def test_nothing_on_the_site_fetches_a_third_party_image():
@@ -648,24 +1244,6 @@ def test_the_placeholder_does_not_put_grain_on_its_own_gradient():
     )
     assert "grain-surface" not in code
     assert 'className="grain pointer-events-none absolute inset-0"' in code
-
-
-# --- The numbers --------------------------------------------------------------
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_no_page_writes_a_proof_figure_into_its_copy(name):
-    """A hardcoded "500+ creators" is a claim that was true on the day
-    somebody typed it. Home carried exactly that, beside "48h" and "₹0", until
-    the counted strip replaced it."""
-    text = copy_of(*PAGES[name])
-    # Strip the parts that are legitimately numeric: class names, ratios and
-    # the one figure that is a rule rather than a boast.
-    text = re.sub(r'className="[^"]*"', "", text)
-    text = re.sub(r'(ratio|note)[:=]\s*"[^"]*"', "", text)
-    text = re.sub(r"\b(24 hours|100%|one|two|three|four|six)\b", "", text)
-    for claim in re.findall(r"\b\d[\d,]*\+", text):
-        pytest.fail(f"{name}: hardcoded figure {claim!r}")
 
 
 def test_the_proof_strip_reads_counted_figures_from_the_server():
@@ -911,175 +1489,6 @@ def test_an_invite_only_brief_is_not_counted_in_a_public_figure(monkeypatch):
     assert _proof(db, monkeypatch) == {}
 
 
-# --- Claims we can stand behind -----------------------------------------------
-
-
-@pytest.mark.parametrize("name", list(PAGES))
-def test_no_page_claims_more_than_the_operation_does(name):
-    """**The geography half of this was lifted and the rest was not.**
-
-    It banned "every city", "pan-India", "across India" and "nationwide" as a
-    set, because the claim they made was one the operation could not back: the
-    network was deepest in Bengaluru and a footprint we could not staff is
-    worse than the city it replaces. The operation is stated to run across
-    India now, so the ban was refusing a true sentence — and a guard that
-    refuses the truth is a guard somebody works around.
-
-    What is still banned is the promise nobody controls. "Guaranteed" reach,
-    or a guaranteed result, is an outcome claim on somebody else's audience.
-
-    Read off `_FORBIDDEN_MARKETING_PHRASES` rather than re-listed here, so the
-    server's list and this sweep cannot disagree about what is sayable — which
-    is exactly how the four geography strings survived in two places.
-    """
-    text = copy_of(*PAGES[name]).lower()
-    for phrase in server._FORBIDDEN_MARKETING_PHRASES:
-        assert phrase not in text, f"{name}: {phrase}"
-
-
-def test_geography_is_stated_as_depth_rather_than_identity():
-    """**Inverted, and the inversion is the point.**
-
-    This used to require the literal "bengaluru" and the literal "anywhere in
-    india" on both pages, and it was right to: the risk then was the site
-    claiming a national footprint the operation could not staff, so naming the
-    one city we were deep in was the honest version.
-
-    Going national changes which way that cuts. A page naming one city tells
-    every other city it is in the wrong place, and the sentence outlives the
-    fact — nobody re-reads a `COPY` block to check whether Bengaluru is still
-    deepest. So depth is still the claim and identity is still banned; what
-    changed is that **the place is rendered from counted supply** rather than
-    typed, which is the rule every other figure on this site already follows.
-
-    The assertion therefore pins the mechanism that keeps it true rather than
-    the sentence it currently produces — a test naming a phrase is a test that
-    fails on its next honest rewrite.
-    """
-    for name in ("brands", "why"):
-        text = copy_of(*PAGES[name]).lower()
-        # Depth, not identity: still the claim, and still the half that needs
-        # a count behind it. The scope claim beside it ("across India") is a
-        # fact about the operation and is no longer banned — see
-        # `test_no_page_claims_more_than_the_operation_does`.
-        assert "deepest" in text, name
-        # The place itself arrives as an argument. Nothing in the file names
-        # one, which `test_no_page_names_a_city_in_its_copy` enforces.
-        assert "(city) =>" in read(*PAGES[name]), name
-
-
-@pytest.mark.parametrize("word", ["vets", "vetted", "vetting"])
-def test_no_page_reintroduces_the_old_vocabulary(word):
-    """"Vetted" is what this concept was called before it settled on
-    `verification_status`. The mismatch once hid every approved creator from
-    every brand."""
-    for name, parts in PAGES.items():
-        assert word not in copy_of(*parts).lower(), f"{name}: {word}"
-
-
-def test_home_names_only_real_campaign_categories():
-    """A slide headed "Tech & gadgets" is an invitation to filter the brief
-    list by a category that does not exist. `CampaignCategory` is the list."""
-    text = copy_of(*PAGES["home"]).lower()
-    for absent in ("tech & gadgets", "gadgets", "automotive", "gaming"):
-        assert absent not in text, absent
-
-
-def test_home_does_not_promise_that_every_brief_pays_money():
-    """Barter briefs are real and admin-arranged."""
-    assert "no free product" not in copy_of(*PAGES["home"]).lower()
-
-
-# --- Home is a router, not a story --------------------------------------------
-
-
-def test_home_keeps_only_what_routes():
-    """Hero, proof, one problem-and-promise section, the close. Everything
-    else moved to its own page — and the live brief feed went to /campaigns,
-    which is a better version of it and was always one tap away."""
-    src = read(*PAGES["home"])
-    code = "\n".join(
-        l for l in src.splitlines() if not l.lstrip().startswith("//")
-    )
-    assert "<Hero />" in code
-    assert "<ProofStrip" in code
-    assert "<WhatWeRun />" in code
-    assert "TwoPaths" in code
-    for gone in ("LiveBriefs", "function Reach", "TRUST_POINTS", "verticals"):
-        assert gone not in code, gone
-
-
-def test_home_sends_readers_on_rather_than_telling_them_everything():
-    src = read(*PAGES["home"])
-    for dest in ("/for-creators", "/for-brands", "/how-it-works"):
-        assert dest in src, dest
-
-
-# --- The parallel tracks ------------------------------------------------------
-
-
-def test_how_it_works_shows_both_sides_against_each_other():
-    """A creator's step and the brand's step opposite it happen at the same
-    moment, and that is the argument. Two separate lists would lose it."""
-    src = read(*PAGES["how"])
-    # `step:`, which is what the key is called since the copy audit — these
-    # are steps in a process rather than moments in one, and the heading above
-    # them says so. Both spellings count, so the structure rule survives the
-    # rename instead of quietly matching nothing.
-    tracks = re.findall(r"\b(?:step|moment):", src)
-    assert len(tracks) >= 5, tracks
-    # Every row carries both sides; a blank one reads as a step somebody
-    # forgot to write.
-    assert src.count("creator: {") == src.count("brand: {") == len(tracks)
-
-
-def test_how_it_works_carries_the_four_trust_mechanics():
-    """Four labels and four lines where there were four paragraphs. The
-    mechanics are the point, not the wording — but all four have to be here,
-    because they are what makes this a process rather than a group chat."""
-    text = copy_of(*PAGES["how"]).lower()
-    assert "verified both ways" in text
-    assert "rate in writing" in text
-    # "approval before it is public" since the copy audit — it read "approval
-    # before public", which used the adjective as a noun to save two words.
-    # The docstring above already says the mechanics are the point rather than
-    # the wording, so this matches the mechanic and not the phrasing.
-    assert "approval before it is public" in text
-    assert "paid on approved delivery" in text
-
-
-def test_how_it_works_states_the_payment_flow_the_way_the_product_works():
-    """Rate agreed and recorded before the shoot, the brand pays us, we
-    release on approved delivery. The middle step is the one most easily lost
-    in compression, and losing it makes us sound like a directory."""
-    text = copy_of(*PAGES["how"]).lower()
-    assert "you pay us" in text
-    assert "the brand pays us" in text
-    assert "recorded against the booking" in text
-
-
-def test_why_weare_makes_the_standalone_case():
-    # Through the mounted graphics, for the reason `rendered_copy` gives: the
-    # money claim this pins is drawn by `FeeFlow` now, and the sentence that
-    # used to carry it came out so the section would not say it twice.
-    text = rendered_copy("why").lower()
-    assert "weare studios" in text                      # the pedigree
-    # Was "run it yourself, or hand it over" — the choice the product no
-    # longer offers — and then "handed over, and what that costs", which
-    # stopped mid-thought. The section argues what handing a campaign over
-    # *costs*, which is what a sceptic with another tab open is weighing.
-    assert "handing it over costs" in text              # the offer
-    assert "a person reviews every creator" in text     # verified people
-    # Was "you pay us that plus our fee". The graphic draws the same split as
-    # two flows ending in two figures, so the idea is pinned rather than the
-    # sentence — the rule the register audit settled on.
-    assert "our fee sits on top" in text                # money handled properly
-    assert "reach and cost per thousand" in text        # results reported
-
-
-# --- The footer, and the sitemap ----------------------------------------------
-
-
 def test_the_footer_columns_match_the_react_one():
     """Two renderers with two copies of the link list is how a footer ends up
     advertising a page that moved. The backend's copy builds the sitemap."""
@@ -1113,35 +1522,6 @@ def test_the_footer_columns_match_the_react_one():
                 assert points_at(to), to
 
 
-def test_the_footer_links_every_marketing_page():
-    """Six pages and one footer. A page nothing links to is a page nobody
-    finds."""
-    site = read("src", "lib", "siteNav.js")
-    for path in ("/for-brands", "/for-creators", "/how-it-works", "/why-weare"):
-        assert f'"{path}"' in site, path
-
-
-def test_the_sitemap_lists_every_marketing_page():
-    """Built from `MARKETING_PATHS` rather than a hand-written list, so adding
-    a page cannot quietly leave it out."""
-    import inspect as _inspect
-
-    src = _inspect.getsource(server.public_sitemap)
-    assert "MARKETING_PATHS" in src
-    assert set(server.MARKETING_PATHS) == {
-        "/",
-        "/for-brands",
-        "/for-creators",
-        "/how-it-works",
-        "/why-weare",
-        # Six now. `/contact` is a React route like the five above it — it
-        # links sideways rather than being written to be found, which is the
-        # same trade `/for-brands` makes — but it is still a page the sitemap
-        # has to list, which is what this set is for.
-        "/contact",
-    }
-
-
 def test_the_copyright_names_the_studio_and_links_to_it():
     """The copyright names WeAre Studios, linked — **which overrides a note
     that argued the other way, and the override is the point.**
@@ -1169,8 +1549,6 @@ def test_the_copyright_names_the_studio_and_links_to_it():
         assert "href={STUDIO_URL}" in src, f"{name} does not link to it"
         assert "copyrightYear" in src, f"{name} stopped reading the year"
 
-
-# --- Getting there ------------------------------------------------------------
 
 # **Five now.** `/work` and `/work/:slug` joined the list when case studies
 # shipped, for both of the reasons `/c/:id` is on it: they are links we send a
@@ -1281,236 +1659,6 @@ def test_robots_txt_does_not_claim_the_site_origin_serves_the_sitemap():
     assert "static file" in robots, path
 
 
-# --- The copy budget ----------------------------------------------------------
-#
-# "One idea per screen-height, headlines short, supporting lines short, no
-# paragraph over three rendered lines." Those are rules about a rendered page,
-# and most of them can only be checked in a browser — but the word counts can
-# be checked here, and the word counts are the ones that drift.
-#
-# Every page keeps its copy in one `COPY` object for exactly this reason: the
-# budget can be read rather than reconstructed by walking JSX. A section that
-# wants to say more has to argue with a number.
-
-# **The budget was raised, and the reason is that the old one was writing the
-# copy.** 120 words on home, headlines to eight and lines to twenty, bought
-# compression — and what compression actually produced was the aphorism: "A
-# follower count in a DM is a number somebody typed", "It ends, and nobody can
-# say what it actually did". Those fit a twenty-word line because they say
-# almost nothing. "Every creator is verified through Instagram's official API
-# before they reach a brief" is the sentence that replaces the first, and it
-# does not fit.
-#
-# So the cap moved to where a concrete claim can live: a headline naming a
-# thing (12), a line that states a fact with its qualifier (32), and a home
-# page that can say what the company does before it routes (260). The rule it
-# is still enforcing is unchanged — one idea per screen-height, and a section
-# that wants to say more has to argue with a number. The number is just no
-# longer set below the length of a specific sentence.
-BUDGET = {
-    "home": 260,
-    "brands": 320,
-    "creators": 320,
-    "how": 360,
-    "why": 360,
-    # **Tighter than any of them, because it argues for nothing.** The
-    # audience pages have a case to make; this one has a form, two numbers
-    # and an address, and every word past that is a word between somebody and
-    # the thing they came to do.
-    "contact": 200,
-}
-
-# A heading may name a sector and a verb; a line may carry a fact and the
-# qualifier that makes it checkable. Both were 8/20.
-HEADLINE_WORDS = 12
-LINE_WORDS = 32
-
-
-def rendered_copy(name):
-    """A page's copy plus that of the graphics it mounts.
-
-    `copy_of` reads one file, which was right while every word a reader met
-    was declared in the page. The two data graphics changed that: each draws a
-    claim the page used to state, and each page dropped the sentence it
-    duplicated so the graphic would not sit above a restatement of itself. A
-    rule reading the page alone would then fail on the claim having *moved*
-    rather than on its having gone — which is the trap this file documents at
-    length, and the reason its assertions pin the idea rather than the
-    sentence.
-    """
-    src = copy_of(*PAGES[name])
-    for component in ("FeeFlow", "PayoutClock"):
-        if component in src:
-            src += " " + copy_of("src", "components", "marketing", f"{component}.jsx")
-    return src
-
-
-def _block_strings(src, marker):
-    """Every string literal inside one top-level object literal."""
-    start = src.index(marker)
-    depth, i = 0, start
-    while i < len(src):
-        if src[i] == "{":
-            depth += 1
-        elif src[i] == "}":
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    block = src[start : i + 1]
-    return _literals(block)
-
-
-# A copy string in one of these blocks is double-quoted, or — since geography
-# became rendered rather than typed — a template literal inside an arrow
-# function of the city.
-#
-# **Both shapes have to be read or the budget silently stops covering them.**
-# `reachTitle: (city) => \`The network runs deepest in ${city}.\`` is copy by
-# every measure that matters, and a helper that only saw `"..."` would have let
-# the geography rewrite escape the word budget and the eight-word headline cap
-# at the same time — which is precisely how a cap goes missing, the thing the
-# `moment`/`step` comment below was written about.
-#
-# `${city}` counts as the one word it renders as. Dropping it would undercount
-# by exactly the word the sentence is about.
-def _literals(block):
-    # **Comment lines come out first, and reading backticks is what made that
-    # necessary.** The convention in this codebase is to backtick code
-    # identifiers in prose, so a comment saying "see `CountedGeography`" would
-    # otherwise land in the word budget as a word of page copy — which is how
-    # explaining a change makes the change look over budget.
-    #
-    # Whole lines whose first non-space characters are `//`, the same cut
-    # `copy_of` makes, rather than everything from `//` onward: the latter also
-    # truncates at the `//` in `https://` inside a real string.
-    block = "\n".join(
-        line for line in block.splitlines() if not line.lstrip().startswith("//")
-    )
-    out = re.findall(r'"((?:[^"\\]|\\.)*)"', block)
-    out += [
-        re.sub(r"\$\{[^}]*\}", "city", t)
-        for t in re.findall(r"`((?:[^`\\]|\\.)*)`", block)
-    ]
-    return out
-
-
-def _copy_strings(name):
-    """The page's own copy, plus any the components it mounts contribute.
-
-    The scroll film's seven captions live in `CampaignFilm` rather than in the
-    page — they belong to the component that draws them. They are still words
-    on the page, so they still count. Reading only the page's `COPY` would let
-    a section smuggle in copy by being a component."""
-    src = read(*PAGES[name])
-    out = _block_strings(src, "const COPY = {")
-    if "CampaignFilm" in src:
-        film = read("src", "components", "marketing", "CampaignFilm.jsx")
-        out += [
-            c for c in _block_strings(film, "export const BEATS = [")
-            if " " in c or c.isalpha()
-        ]
-        out += ["One campaign"]  # the section's eyebrow, set at the call site
-    # The two data graphics, by the same argument. Each keeps its words in an
-    # exported `COPY` block precisely so this counter can read them — a graphic
-    # is a section, and a section's labels are words on the page whoever
-    # declares them. `FeeFlow` is mounted twice and so is counted against both
-    # of the pages that mount it, which is correct: a reader of either meets
-    # those words once.
-    for component in ("FeeFlow", "PayoutClock"):
-        if component in src:
-            out += _block_strings(
-                read("src", "components", "marketing", f"{component}.jsx"),
-                "export const COPY = {",
-            )
-    return out
-
-
-def _words(text):
-    return [w for w in re.split(r"\s+", text.strip()) if re.search(r"[A-Za-z0-9]", w)]
-
-
-@pytest.mark.parametrize("name", list(BUDGET))
-def test_every_page_stays_inside_its_word_budget(name):
-    total = sum(len(_words(t)) for t in _copy_strings(name))
-    assert total <= BUDGET[name], f"{name}: {total} words, budget {BUDGET[name]}"
-
-
-@pytest.mark.parametrize("name", list(BUDGET))
-def test_no_headline_runs_past_the_headline_cap(name):
-    """Keys ending in `title` or named `label` are the headings and the
-    four-word labels that replaced the paragraphs."""
-    src = read(*PAGES[name])
-    start = src.index("const COPY = {")
-    block = src[start:]
-    # `step` was `moment` until the copy audit: these are steps in a process,
-    # not moments in one, and the visible heading above them says so. Both
-    # spellings are matched so the rule holds through the rename rather than
-    # silently stopping at it — which is how a headline cap goes missing.
-    # Double-quoted, or a template literal behind an arrow function of the
-    # city — see `_literals`. A heading is a heading whichever way it is
-    # spelled, and the cap has to follow the copy rather than the syntax.
-    pattern = (
-        r'(\w*[Tt]itle|label|moment|step):\s*'
-        r'(?:"((?:[^"\\]|\\.)*)"|\([^)]*\)\s*=>\s*`((?:[^`\\]|\\.)*)`)'
-    )
-    for m in re.finditer(pattern, block):
-        text = m.group(2) if m.group(2) is not None else re.sub(
-            r"\$\{[^}]*\}", "city", m.group(3)
-        )
-        n = len(_words(text))
-        assert n <= HEADLINE_WORDS, f"{name}: {n} words — {text!r}"
-
-
-@pytest.mark.parametrize("name", list(BUDGET))
-def test_no_supporting_line_runs_past_the_line_cap(name):
-    src = read(*PAGES[name])
-    start = src.index("const COPY = {")
-    block = src[start:]
-    for m in re.finditer(r'\b(line|\w+Line|footnote):\s*"((?:[^"\\]|\\.)*)"', block):
-        n = len(_words(m.group(2)))
-        assert n <= LINE_WORDS, f"{name}: {n} words — {m.group(2)!r}"
-
-
-def _code(*parts):
-    """Source with comments removed.
-
-    Several rules below ban a token that the comment explaining the rule has
-    to use. Stripping first is the difference between a test that checks the
-    code and one that fails on its own justification.
-    """
-    src = read(*parts)
-    src = re.sub(r"\{/\*.*?\*/\}", "", src, flags=re.S)
-    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
-    return "\n".join(
-        l for l in src.splitlines() if not l.lstrip().startswith("//")
-    )
-
-
-def test_every_film_caption_is_a_label_not_a_sentence():
-    """The UI piece beside each caption is the explanation. That is the entire
-    argument for building the film rather than writing seven more sentences —
-    so a caption that grows into a sentence has undone it."""
-    film = read("src", "components", "marketing", "CampaignFilm.jsx")
-    caps = re.findall(r'caption: "([^"]+)"', film)
-    assert len(caps) == 7, caps
-    for c in caps:
-        assert len(_words(c)) <= 5, f"{c!r} is {len(_words(c))} words"
-
-
-def test_the_primitives_have_no_prop_that_accepts_a_paragraph():
-    """The shape is what enforces the copy rules. `Point`, `Steps` and
-    `TextImageSection` take a label and one `line`; none takes a `body`, which
-    is what the prose versions called it. A section that wants to make two
-    points has to become two sections."""
-    shell = _code("src", "components", "marketing", "Sections.jsx")
-    assert not re.search(r"\bbody\b\s*[,}:=]", shell)
-    assert not re.search(r"\bbody\b\s*\}", shell)
-
-
-# --- The motion layer ---------------------------------------------------------
-
-
 def test_there_is_one_easing_curve_and_it_is_used_everywhere():
     """Six sections animated by six people is six easings, which reads as six
     different sites. `EASE` is the only curve on the marketing pages."""
@@ -1586,17 +1734,6 @@ def test_the_count_up_does_not_count_under_reduced_motion():
     assert "useState(reduced ? value : 0)" in src
 
 
-def test_the_hover_lift_is_not_on_the_element_framer_animates():
-    """Framer Motion writes `transform` as an inline style, and an inline
-    style beats a class — so `hover:-translate-y-*` on the node the entrance
-    animates is silently dead once the entrance settles at `transform: none`.
-    Measured: the border warmed and the card did not move."""
-    shell = read("src", "components", "marketing", "Sections.jsx")
-    point = shell[shell.index("export function Point("):shell.index("export function Points(")]
-    reveal_line = [l for l in point.splitlines() if "<Reveal" in l][0]
-    assert "CARD_HOVER" not in reveal_line
-
-
 def test_the_image_zoom_scales_a_layer_rather_than_the_frame():
     """The frame clips and reserves the space; scaling it would grow the hole
     in the layout. The tint and the <img> are what move."""
@@ -1604,9 +1741,6 @@ def test_the_image_zoom_scales_a_layer_rather_than_the_frame():
     assert "IMAGE_ZOOM" in slot
     container = slot[slot.index("data-testid={testid}") : slot.index("aria-hidden")]
     assert "IMAGE_ZOOM" not in container
-
-
-# --- The marketing chrome -----------------------------------------------------
 
 
 def test_the_marketing_navbar_carries_the_pages_and_both_actions():
@@ -1670,188 +1804,6 @@ def test_the_marketing_footer_names_terms_privacy_and_a_human():
     assert '"/terms"' in site and '"/privacy"' in site
 
 
-# --- The kinetic headline -----------------------------------------------------
-#
-# The signature. Poster type that morphs at letterform level between four kinds
-# of campaign, resolving each time against a line that never moves — the motion
-# *is* the message: what changes is the kind of work, what does not is how it
-# is run.
-
-
-def test_the_headline_morphs_between_real_campaign_categories():
-    """A phrase naming a category `CampaignCategory` does not have is an
-    invitation to filter the brief list and find nothing.
-
-    **The rule is the same and it is now structural rather than watched.** The
-    phrases were four hand-written kinds of work ("launch night", "menu
-    tasting") that happened to correspond to categories; they are the sector
-    list itself now, mapped straight off `CATEGORY_OPTIONS`, so a phrase that
-    the brief feed cannot filter to is no longer something a reviewer has to
-    notice. `lib/categories.js` is already drift-tested against
-    `CATEGORY_LITERAL`, which is what makes that worth doing.
-
-    **The slice no longer ends at `const HOLD_MS`.** That constant was only
-    ever a convenient landmark for "the end of the phrase declaration", and it
-    has moved to `sectorCycle.jsx` — the headline and the slider each owned a
-    hold and drifted apart, so there is one now and neither file declares it.
-    Every assertion below is unchanged; the block simply ends at the blank
-    line after the declaration, which does not depend on what happens to be
-    written next to it.
-    """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    start = src.index("export const PHRASES")
-    block = src[start : src.index("\n\n", start)]
-    assert "CATEGORY_OPTIONS" in block, (
-        "the phrases are hand-written again rather than derived from the enum"
-    )
-    assert "categories" in src, "the enum is not imported"
-    # And nothing hand-written alongside it.
-    assert not re.findall(r'"([a-z][a-z ]{3,})"', block), block
-
-
-def test_the_constant_half_of_the_headline_never_animates():
-    """The lead and the tail are outside the morph. Animating the whole line
-    would say several unrelated headlines are cycling rather than one sentence
-    being re-pointed.
-
-    **The two strings changed and the structure did not.** The lead was "Your"
-    — a possessive on a campaign noun, which addressed a brand manager as if
-    about their own evening — and the tail was "handled properly.", which
-    hedged the claim with the adverb the register rules ban. They are the
-    category term the business sells in and the managed model now. What this
-    test is for is the arrangement, so it pins that both halves are literals
-    outside the morph rather than pinning what they say.
-    """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert 'lead = "Influencer marketing for"' in src
-    assert 'tail = "We run it end to end."' in src
-    # The tail is rendered outside the AnimatePresence block.
-    after = src[src.index("</AnimatePresence>") :]
-    assert "{tail}" in after
-
-
-def test_the_morph_is_per_letter_rather_than_a_fade():
-    """"Letters sliding, swapping, resolving — not a plain fade." Each letter
-    is its own element on a stagger; a single opacity tween on the phrase is
-    the thing this is specified not to be."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "Array.from(text)" in src
-    assert "delay: i * STEP" in src
-    # And it moves, not just fades.
-    assert 'y: "-0.45em"' in src and 'y: "0.55em"' in src
-
-
-def test_the_picture_and_the_word_change_on_one_timer():
-    """One clock, in `sectorCycle.jsx`, read by the headline and the slider.
-
-    **This read `HOLD_MS` out of `KineticHeadline.jsx`, which no longer owns
-    it — and the number was never the point.** The headline held 4000ms with
-    its own `setInterval` while `HeroSlider` held 7000ms with its own
-    `setTimeout`: they started together, drifted apart by the second slide and
-    never recovered, so the word named one sector over a picture of another.
-    That is the lag the hero was rebuilt to remove.
-
-    Matching the two constants would not have fixed it, which is why the third
-    assertion is the load-bearing one: two independent timers accumulate their
-    own scheduling error, and a `setInterval` firing in a throttled tab is not
-    the same clock as a chain of `setTimeout`s. A test that only checked the
-    number would pass with both timers still present and the defect intact.
-    """
-    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
-    hold = re.search(r"export const HOLD_MS = (\d+)", cycle)
-    assert hold, "the one hold is not declared in sectorCycle.jsx"
-    assert 5000 <= int(hold.group(1)) <= 7500, hold.group(1)
-
-    for name in ("KineticHeadline.jsx", "HeroSlider.jsx"):
-        src = copy_of("src", "components", "marketing", name)
-        assert "HOLD_MS =" not in src, f"{name} declares a hold of its own"
-        assert "setInterval" not in src, f"{name} still runs its own timer"
-        assert "setTimeout" not in src, f"{name} still runs its own timer"
-
-
-def test_the_headline_is_poster_scale():
-    """Still well past the type ramp's top step, and still sized in `vw`, but
-    **sized to a column rather than to the window** — which is a reversal.
-
-    The ceiling was 8.5rem and this asserted 8, which was right while the
-    headline filled a full-bleed hero. The type now lives in six of the hero's
-    twelve columns: at 1440 the old clamp resolved to 136px against a lead
-    roughly 1700px wide, which ran the h1 to four lines and pushed the CTAs
-    below the fold on a laptop.
-
-    So the ceiling comes down and the floor stays. `fluid-hero` tops out at
-    4.25rem and this is still the one element on the site past it, which is
-    what the assertion is actually for; 8 was a number for a different box.
-    """
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    m = re.search(r'fontSize: "clamp\(([^,]+), ([^,]+), ([^)]+)\)"', src)
-    assert m, "no clamp on the headline"
-    assert "vw" in m.group(2), "the middle term is still fluid"
-    assert float(m.group(3).replace("rem", "")) >= 4.5
-
-
-def test_the_headline_reserves_its_box_by_rendered_width():
-    """Every phrase is drawn invisibly into one grid cell, so the box is as
-    wide and as tall as the widest and tallest phrase the browser draws.
-
-    **This pinned `longest`, and `longest` was the bug.** It reserved the box
-    with one invisible copy of the phrase with the most characters — and a
-    character count is not a width. "Hospitality" and "Real Estate" are both
-    eleven, the reduce keeps the first on a tie, and in Fraunces at poster
-    size "Real Estate" renders wider: the animated layer is `absolute
-    whitespace-nowrap`, so on that one slide it ran past its own box and the
-    hero's `overflow-hidden` clipped it. Measured on the old build, the box
-    also changed height by 6px mid-cycle, which was a layout shift per lap.
-
-    So the assertion is inverted. `longest` must be GONE, or somebody
-    reintroduces a width guess; the stack has to be there instead. The height
-    property the old test was protecting is unchanged and still holds — one
-    grid cell cannot change height between phrases either.
-
-    Read through `copy_of`, which strips comments, for the reason that helper
-    exists: the convention here is to explain a removal where it happened, so
-    the comment recording why `longest` went necessarily names `longest` and
-    would fail this test on its own justification.
-    """
-    src = copy_of("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "longest" not in src, "the character-count width guess is back"
-    assert "phrases.map" in src, "the phrases are not stacked"
-    assert "invisible" in src
-    assert "col-start-1 row-start-1" in src, "the stack is not in one cell"
-
-
-def test_the_headline_is_static_under_reduced_motion():
-    """First phrase, and no timer started — nothing running in the background
-    either.
-
-    **The branch that decides it moved to the provider**, which is where the
-    timer went: this asserted `if (reduced) return undefined;` in
-    `KineticHeadline.jsx`, and the headline no longer owns a cycle to refuse
-    to start. The guard is pinned in `sectorCycle.jsx` instead. The second
-    half is unchanged and is the half about this component — it still renders
-    phrase one and starts nothing of its own, which is also what it does when
-    it is mounted outside a provider.
-    """
-    cycle = read("src", "components", "marketing", "sectorCycle.jsx")
-    assert "useReducedMotion" in cycle
-    assert "if (reduced || paused) return undefined;" in cycle
-
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "useReducedMotion" in src
-    assert "still ? (" in src
-
-
-def test_the_headline_has_one_stable_accessible_name():
-    """A screen reader reading four letters at a time as they animate in is
-    gibberish, so the animated spans are hidden and the h1 carries a name."""
-    src = read("src", "components", "marketing", "KineticHeadline.jsx")
-    assert "aria-label={`${lead}" in src
-    assert 'aria-hidden className="block"' in src
-
-
-# --- Floating image cards -----------------------------------------------------
-
-
 def test_the_floating_cards_span_the_categories():
     src = read("src", "components", "marketing", "FloatingCards.jsx")
     keys = re.findall(r'key: "([\w-]+)"', src)
@@ -1904,74 +1856,6 @@ def test_the_only_shadow_on_the_marketing_site_is_the_floating_card():
             assert path.name == "FloatingCards.jsx", f"{path.name}: {m}"
 
 
-# --- The family handshake -----------------------------------------------------
-
-
-def test_the_studio_palette_is_defined_once():
-    palette = read("src", "lib", "studioPalette.js")
-    assert "CORAL" in palette
-    # And flagged, because the real brand hex is not in this repository.
-    assert "NEEDS THE REAL HEX" in palette
-
-
-def test_the_studio_palette_appears_only_in_the_handshake_band():
-    """A colour used twice is a co-brand rather than an endorsement, and
-    Creators has its own identity to keep."""
-    importers = []
-    for path in FRONTEND.joinpath("src").rglob("*.js*"):
-        # An actual import, not a comment pointing at the file — `Sections.jsx`
-        # names it in prose to explain why the colour lives there.
-        if re.search(r'^import .*"@/lib/studioPalette"', path.read_text(), re.M):
-            importers.append(path.name)
-    assert importers == ["HandshakeBand.jsx"], importers
-
-
-def test_the_palette_is_not_a_tailwind_token():
-    """Adding it to `tailwind.config.js` would put the studio's colour within
-    reach of every authenticated screen in the app, which is precisely what
-    "the only place" is supposed to prevent."""
-    config = read("tailwind.config.js")
-    assert "coral" not in config.lower()
-
-
-def test_the_handshake_band_is_white_type_on_coral_with_a_black_block():
-    src = read("src", "components", "marketing", "HandshakeBand.jsx")
-    assert "backgroundColor: CORAL" in src
-    # White type through the brand constant: the band is coral whatever the
-    # theme, so the ink must not be a token that flips with it.
-    assert "text-brand-white" in src
-    assert "backgroundColor: CORAL_INK" in src
-
-
-def test_the_handshake_closes_every_marketing_page():
-    """`ClosingSection` is the band now, so a page that had a close has one."""
-    shell = read("src", "components", "marketing", "Sections.jsx")
-    assert "<HandshakeBand" in shell
-    for name in ARGUING:
-        assert "ClosingSection" in read(*PAGES[name]), name
-    assert "HandshakeBand" in read(*PAGES["home"])
-
-
-def test_the_handshake_borrows_motion_and_confidence_not_assets():
-    """No studio copy, no studio photography, no studio logo treatment — that
-    would be putting somebody else's page at the bottom of ours. What is
-    shared is the endorsement line the site already carries."""
-    src = read("src", "components", "marketing", "HandshakeBand.jsx")
-    # **The endorsement line went with the component**, which this used to
-    # require. It was the one place the credit was not a footnote, and that
-    # was a fair reading — but the credit is in the copyright now, and a band
-    # that states it again two elements above the footer states it twice. The
-    # two assertions below are the ones this test is named for and they are
-    # untouched: what is borrowed is the palette and the motion, never the
-    # assets.
-    assert "StudioEndorsement" not in src
-    assert "img" not in re.sub(r"//.*", "", src)
-    assert "logo" not in re.sub(r"//.*", "", src).lower()
-
-
-# --- Performance --------------------------------------------------------------
-
-
 def test_the_proof_strip_reserves_its_height_while_loading():
     """It used to render nothing until the figures landed and then appear,
     pushing every section below it down — measured at 0.0798 CLS on home, the
@@ -1984,237 +1868,3 @@ def test_the_proof_strip_reserves_its_height_while_loading():
     # wrong by 52px on a phone.
     assert "md:min-h-" in src
 
-
-# --- The scroll film ----------------------------------------------------------
-#
-# The centrepiece: a campaign playing itself out as you scroll. Seven beats,
-# pinned where that runs well and a stepped list everywhere else.
-
-
-def _film():
-    return read("src", "components", "marketing", "CampaignFilm.jsx")
-
-
-def test_the_film_tells_the_whole_campaign():
-    """Brief, applications, acceptance, the WhatsApp confirmation, the slot,
-    the approval, the payout. Dropping any one of them leaves a story with a
-    gap somebody has to fill from a paragraph."""
-    caps = " ".join(re.findall(r'caption: "([^"]+)"', _film())).lower()
-    for beat in ("brief", "apply", "accepted", "whatsapp", "slot", "approved", "paid"):
-        assert beat in caps, beat
-
-
-def test_the_pin_is_sticky_and_nothing_else():
-    """No wheel listener, no scrollTo, no preventDefault. The page scrolls at
-    the rate the user's finger says it should and they can leave at any point
-    — scroll hijack is what this pattern is usually guilty of."""
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    assert "sticky top-" in code
-    for hijack in ("preventDefault", "scrollTo", "addEventListener(\"wheel\"", "scrollIntoView"):
-        assert hijack not in code, hijack
-
-
-def test_every_beat_is_derived_from_scroll_progress_not_state():
-    """This is what makes it reverse. Scrolling up is the same function at
-    smaller numbers, so the film unwinds exactly. A `useState` beat-tracker
-    would look identical going down and be wrong going up — a failure nobody
-    sees until they scroll back."""
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    assert "useScroll" in code and "useTransform" in code
-    # The only state in the file is the media query, which is not a beat.
-    states = re.findall(r"useState\(([^)]*)\)", code)
-    assert states == ["false"], states
-
-
-def test_the_beats_are_transforms_and_opacity_only():
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    styles = re.findall(r"style=\{\{([^}]*)\}\}", code)
-    for st in styles:
-        keys = re.findall(r"(\w+):", st) or re.findall(r"^\s*(\w+),", st)
-        for k in keys + re.findall(r"\b(opacity|y|transform)\b", st):
-            assert k in ("opacity", "y", "transform"), f"{k} in {st!r}"
-
-
-def test_the_counting_payout_writes_the_dom_rather_than_re_rendering():
-    """A setState per frame re-renders the whole stage sixty times a second to
-    change four characters."""
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    assert "useMotionValueEvent" in code
-    assert "textContent" in code
-
-
-def test_the_fallback_renders_the_identical_story():
-    """Same seven beats, same captions, same UI pieces — a list rather than a
-    film. It is a first-class design, not a degraded mode."""
-    code = _film()
-    assert "function SteppedFilm" in code
-    stepped = code[code.index("function SteppedFilm") : code.index("export function CampaignFilm")]
-    for piece in ("BriefCard", "ApplicantRow", "MessageBubble", "SlotStrip",
-                  "ApprovalCard", "PayoutCard"):
-        assert piece in stepped, piece
-    assert "BEATS.map" in stepped
-
-
-def test_the_fallback_covers_phones_and_reduced_motion():
-    """A pinned section eats five screens of scroll, and a scroll-driven
-    composite per frame is exactly the work that makes a mid-range phone feel
-    cheap."""
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    assert "useReducedMotion" in code
-    assert '"(min-width: 768px)"' in code
-    assert "wide && !reduced" in code
-
-
-def test_the_first_paint_is_the_fallback():
-    """`wide` starts false, so a phone never mounts the pinned version even
-    for a frame. The other way round, five screens of scroll would appear and
-    vanish on the device least able to afford it."""
-    code = _code("src", "components", "marketing", "CampaignFilm.jsx")
-    assert "useState(false)" in code
-
-
-def test_the_film_draws_its_own_interfaces_rather_than_screenshotting_ours():
-    """A screenshot dates the moment the product changes, and a real component
-    would drag data shapes, API calls and auth context onto a page that has
-    none of them."""
-    ui = read("src", "components", "marketing", "filmUI.jsx")
-    assert "img" not in _code("src", "components", "marketing", "filmUI.jsx")
-    # It borrows the design language, not the components.
-    assert "bg-card" in ui and "grain-surface" in ui and "primary" in ui
-    for real in ("CampaignCover", "BrandName", "@/pages/", "@/components/ui/"):
-        assert real not in ui, real
-
-
-def test_the_film_does_not_borrow_another_brand_s_marks():
-    """The WhatsApp beat is drawn as a bubble, not as WhatsApp. Using somebody
-    else's logo or green to make a claim about our product is a different
-    thing from saying which channel the message arrives on."""
-    ui = read("src", "components", "marketing", "filmUI.jsx")
-    assert "WhatsApp" in ui              # the channel is named, which is true
-    assert "#25D366" not in ui           # and nothing else is borrowed
-    assert "bg-green" not in ui
-
-
-def test_the_film_is_on_home_only():
-    """Marketing-only, and one page of it — /how-it-works already tells this
-    story as parallel tracks and two tellings compete."""
-    on = [n for n, parts in PAGES.items() if "CampaignFilm" in read(*parts)]
-    assert on == ["home"], on
-
-
-# --- The two data graphics ----------------------------------------------------
-#
-# These are the only animated things on the marketing site besides the hero and
-# the scroll film, and they earn it the same way those do: each draws a claim
-# the prose could only assert. The rules below are the ones that would be
-# quietly lost by a later edit — a second easing curve, a number that exists
-# only as a bar, a competitor figure that stops being flagged as unsourced.
-
-GRAPHICS = ("FeeFlow", "PayoutClock")
-
-
-def _graphic(name):
-    return read("src", "components", "marketing", f"{name}.jsx")
-
-
-@pytest.mark.parametrize("name", GRAPHICS)
-def test_a_graphic_introduces_no_second_easing_curve(name):
-    """One curve for the whole site. A hand-written `cubic-bezier` here is the
-    start of the six-easings page `motion.js` exists to prevent."""
-    src = _graphic(name)
-    assert "cubic-bezier" not in src, name
-    assert 'from "@/components/marketing/motion"' in src, name
-    assert "EASE" in src, name
-
-
-@pytest.mark.parametrize("name", GRAPHICS)
-def test_a_graphic_animates_transforms_and_opacity_only(name):
-    """A width or height animation lays out on every frame. The bars scale on
-    one axis, which the compositor owns."""
-    code = _code("src", "components", "marketing", f"{name}.jsx")
-    assert "scaleX" in code, name
-    for banned in ("animate={{ width", "animate={{ height", "whileInView={{ width"):
-        assert banned not in code, f"{name}: {banned}"
-
-
-@pytest.mark.parametrize("name", GRAPHICS)
-def test_a_graphic_states_its_finding_to_a_screen_reader(name):
-    """`role="img"` makes a subtree presentational, so the picture has to carry
-    the finding itself — and the numbers have to live outside it as real text,
-    or they reach a screen reader as nothing at all."""
-    src = _graphic(name)
-    assert 'role="img"' in src, name
-    assert "aria-label" in src, name
-
-
-@pytest.mark.parametrize(
-    "name,figures",
-    [("FeeFlow", ("OUR_SHARE", "theirShareHigh")), ("PayoutClock", ("ourDays", "theirDays"))],
-)
-def test_a_graphic_puts_its_figures_in_text_not_only_in_a_bar(name, figures):
-    """Semantic meaning is never carried by a bar length or a colour alone. The
-    accented figure says "100%" in words beside it, so the point survives
-    greyscale, a screen reader, and somebody who cannot distinguish the red."""
-    src = _graphic(name)
-    for fig in figures:
-        # Rendered into JSX text, not merely used to size a rect.
-        assert f"{{{fig}}}" in src or f"{fig}}}" in src, f"{name}: {fig}"
-
-
-@pytest.mark.parametrize("name", GRAPHICS)
-def test_an_unsourced_claim_stays_flagged(name):
-    """**The one rule here that is about honesty rather than craft.** Each
-    graphic carries exactly one figure nothing in this codebase can back — a
-    claim about what *other* operators pay, or how long they take. Our own
-    numbers are real: `CREATOR_PAYOUT_DAYS` is a stored platform setting and
-    100% is `COMMISSION_TERMS` restated.
-
-    So the competitor figures are named in a `NEEDS A SOURCE` block and marked
-    `data-unsourced` in the rendered page, the way `NEEDS A LAWYER` blocks work
-    elsewhere. Deleting the flag without sourcing the number is the failure
-    this catches: these pages are held to "every claim is checkable", and that
-    one is not yet."""
-    src = _graphic(name)
-    assert "NEEDS A SOURCE" in src, name
-    assert "export const UNSOURCED" in src, name
-    assert "data-unsourced" in src, name
-
-
-def test_our_payout_window_is_read_rather_than_typed():
-    """The figure a creator is promised exists — it is a stored setting with a
-    mirror and a drift test. Typing `7` here would be a second definition of a
-    number printed on every brief and frozen into accepted terms."""
-    src = _graphic("PayoutClock")
-    assert "CREATOR_PAYOUT_DAYS" in src
-    assert 'from "@/lib/payoutWindow"' in src
-
-
-def test_the_fee_graphic_does_not_argue_against_agencies():
-    """WeAre Studios is an agency and the managed service is a real offering,
-    so a graphic naming intermediaries would argue against our own product.
-    The left column names the *shape* of the deal — bundled, unstated — and no
-    kind of company."""
-    text = _code("src", "components", "marketing", "FeeFlow.jsx").lower()
-    # Read from the server rather than re-listed, the rule the geography
-    # sweep already settled: a list maintained twice is a list that drifts.
-    for banned in server._FORBIDDEN_MARKETING_PHRASES:
-        assert banned not in text, banned
-    for named in ("agency", "agencies", "intermediar"):
-        assert named not in text, named
-
-
-@pytest.mark.parametrize(
-    "page,graphic",
-    [("brands", "FeeFlow"), ("why", "FeeFlow"), ("creators", "PayoutClock")],
-)
-def test_a_graphic_does_not_sit_above_a_sentence_restating_it(page, graphic):
-    """Each page dropped the line its graphic draws. The failure this guards
-    is the easy one: mounting the picture and leaving the prose, so a section
-    makes the same point twice and the budget pays for it twice."""
-    src = read(*PAGES[page])
-    assert graphic in src, page
-    text = copy_of(*PAGES[page]).lower()
-    if graphic == "FeeFlow":
-        # The bullet and the clause that used to carry the split.
-        assert "creators keep their full rate" not in text, page
-        assert "plus our fee" not in text, page

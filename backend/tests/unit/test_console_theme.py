@@ -345,7 +345,13 @@ class TestScope:
         assert body.index("isProductPath") < body.index("accountTheme"), (
             "the account preference is read before the surface is decided"
         )
-        assert 'return "dark"' in body
+        # The marketing branch returns before the account is consulted, and
+        # it answers from the path alone: home, /for-brands and /for-creators are on
+        # the light set, the rest of marketing on the navy one. Neither
+        # answer mentions the account.
+        marketing = [l for l in body.splitlines() if "!isProductPath(pathname)" in l][0]
+        assert '"dark"' in marketing and "isLightMarketingPath(pathname)" in marketing
+        assert "accountTheme" not in marketing
 
 
 # ---------------------------------------------------------------------------

@@ -1,187 +1,129 @@
-// /for-creators — one reader, one ask, under 250 words.
+// For creators, at the path it has always had. The reader's fear is being
+// used — the number handed over, the fee changed after the shoot, the money
+// late — so the page opens on the number, then the fee before applying, then
+// the money, then what is on their side, then how they are paid, then what
+// moves them up a list.
 //
-// A compression of the page that was here, not a repositioning. The six things
-// a creator has to come away knowing are unchanged and still pinned by tests:
-// real paid briefs in one place; the rate agreed in writing before they shoot;
-// they keep all of it because our fee sits on the brand; payment follows
-// approved delivery; brands are checked; joining is free.
-//
-// Nothing here asks for the other audience. A "post a campaign" link on this
-// page is the competing second door the single-CTA rule exists to stop — the
-// footer is where somebody in the wrong place finds the right page.
+// **Every word is in `CREATORS` in `content/marketing.js`**; this file is
+// layout. The one moving number on the page counts once, in the navy band.
 import React from "react";
 
+import { MarketingPage } from "@/components/marketing/Sections";
+import { CountUp } from "@/components/marketing/primitives";
+import { BriefCard, Chip, RecordCard } from "@/components/marketing/siteMocks";
 import {
-    MarketingPage,
-    MarketingHero,
-    Points,
-    Steps,
-    TextImageSection,
-    ClosingSection,
-} from "@/components/marketing/Sections";
-import ProofStrip from "@/components/marketing/ProofStrip";
-import PayoutClock from "@/components/marketing/PayoutClock";
-import { MARKETING as IDS } from "@/constants/testIds";
+    CardRow,
+    Closing,
+    Cta,
+    Label,
+    PhotoBand,
+    SectionHead,
+    Wrap,
+} from "@/components/marketing/SiteParts";
+import StickyCta from "@/components/marketing/StickyCta";
+import { CREATORS_PAGE as IDS } from "@/constants/testIds";
+import { ASK, CREATORS } from "@/content/marketing";
 
-const ASK = { to: "/signup?role=creator", label: "Join as a creator" };
-
-const COPY = {
-    title: "Paid work, your rate agreed up front.",
-    line: "Briefs from businesses we have checked. You quote your rate, it goes in writing before you shoot, and you keep every rupee of it.",
-    footnote: "Free to join, and we never charge you a fee.",
-
-    props: [
-        {
-            label: "Real paid briefs",
-            line: "Every brand is checked against its paperwork before it can post a brief you can see.",
-        },
-        {
-            label: "Your rate, before you shoot",
-            line: "Agreed in writing and recorded against the booking, so there is nothing to argue about afterwards.",
-        },
-        {
-            label: "You keep all of it",
-            line: "Our fee is charged to the brand on top, never taken out of yours.",
-        },
-    ],
-
-    stepsTitle: "From signing up to being paid.",
-    steps: [
-        {
-            label: "Build your profile",
-            line: "A name and a WhatsApp number to start. Fill in the rest over as many sittings as you like.",
-        },
-        {
-            label: "Get verified",
-            line: "Send it for review. A person reads it and comes back to you, and you can pitch while you wait.",
-        },
-        {
-            label: "Pitch your rate",
-            line: "Apply with a note and a figure. It is agreed in writing before anything is booked.",
-        },
-        {
-            label: "Shoot, deliver, get paid",
-            line: "Drafts are approved before you publish. Payment follows approval, to your UPI ID or bank account.",
-        },
-    ],
-
-    askTitle: "What we ask of you.",
-    askLine: "Nothing you would not put in a media kit — and saving a half-finished profile never puts you in a queue.",
-    asks: [
-        {
-            label: "A profile worth shortlisting",
-            line: "Your city, the formats you post, and links to work a brand can look at.",
-        },
-        {
-            label: "Payout details come later",
-            line: "UPI and PAN before your first payment, and never part of being looked at.",
-        },
-        {
-            label: "Connecting Instagram is optional",
-            line: "Connect it and your audience is read from Instagram’s official API rather than typed in by you.",
-        },
-    ],
-
-    costTitle: "It costs nothing.",
-    // **"That is not an introductory offer." came out as a duplicate**, not to
-    // make room: the hero footnote already says "we never charge you a fee",
-    // and `never` is the same promise of permanence in a word rather than a
-    // sentence. `PayoutClock` below is what the section gained.
-    costLine: "No subscription, no joining fee, and nothing deducted from your rate.",
-
-    closeTitle: "Join as a creator.",
-    closeLine: "A name and a WhatsApp number. Everything else can wait.",
-};
-
+/** The navy band: the three states the record moves through, and the figure. */
+function MoneyBand({ n, money }) {
+    return (
+        <section data-track-section="money" data-testid={IDS.money} data-surface="dark" className="bg-background text-foreground">
+            <Wrap className="py-20 md:py-28">
+                <SectionHead n={n} label={money.label} title={money.title} />
+                <ol className="mt-14 grid gap-6 md:grid-cols-3">
+                    {money.states.map((s, i) => (
+                        <li key={s.key} data-testid={IDS.moneyState(i)} className="border-t border-border pt-6">
+                            {/* The red as a mark on the step reached last. */}
+                            <span aria-hidden className={`block h-1 w-10 ${i === money.states.length - 1 ? "bg-accent" : "bg-border"}`} />
+                            <h3 className="mkt-h3 mt-6 text-heading">{s.title}</h3>
+                            <p className="mkt-body mt-3 text-muted-foreground">{s.line}</p>
+                        </li>
+                    ))}
+                </ol>
+                <p data-testid={IDS.moneyAmount} className="mt-14 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                    {/* Read once, whole; the counting figure is decoration. */}
+                    <span className="sr-only">
+                        ₹{money.amount.toLocaleString("en-IN")} {money.amountSuffix}
+                    </span>
+                    <span aria-hidden className="mkt-display text-heading">
+                        ₹<CountUp value={money.amount} />
+                    </span>
+                    <span aria-hidden className="mkt-label text-muted-foreground">
+                        {money.amountSuffix}
+                    </span>
+                </p>
+            </Wrap>
+        </section>
+    );
+}
 
 export default function ForCreators() {
+    const { meta, hero, briefs, money, protections, payouts, record, close } = CREATORS;
     return (
-        <MarketingPage
-            testid={IDS.forCreators}
-            title="Paid influencer campaigns for creators"
-            description="Paid briefs from businesses we have checked, your rate agreed in writing before you shoot, and payment on approved delivery. Free to join, and we never take a cut of your fee."
-            path="/for-creators"
-        >
-            <MarketingHero
-                eyebrow="For creators"
-                title={COPY.title}
-                line={COPY.line}
-                cta={{ ...ASK, testid: IDS.ctaTop }}
-                footnote={COPY.footnote}
-                image={{
-                    // PLACEHOLDER IMAGE: a creator mid-shoot at a Bengaluru
-                    // café — phone on a small tripod, natural window light,
-                    // their hands in frame. Landscape 16:9.
-                    note: "Creator mid-shoot at a Bengaluru cafe, phone on a tripod, window light, 16:9",
-                    src: "/img/marketing/creators-cafe-shoot.svg",
-                    // The note names a city because it briefs a shoot; the
-                    // alt describes what is in frame, and a café is a café.
-                    alt: "A creator filming in a café, phone on a small tripod in window light.",
-                    ratio: "16/9",
-                }}
-            />
-
-            <ProofStrip />
-
-            <section className="border-b border-border py-16 md:py-20">
-                <div className="mx-auto max-w-7xl px-6">
-                    <Points items={COPY.props} testid={IDS.valueProps} />
-                </div>
+        <MarketingPage testid={IDS.page} title={meta.title} description={meta.description} path="/for-creators">
+            <section id="hero" data-track-section="hero" data-testid={IDS.hero}>
+                <Wrap className="pb-20 pt-10 md:pb-28 md:pt-16">
+                    <Label>{hero.label}</Label>
+                    <h1 className="mkt-h1 mt-6 max-w-5xl text-heading">{hero.title}</h1>
+                    <p className="mkt-lead mt-6 max-w-3xl text-muted-foreground">{hero.lead}</p>
+                    <ul data-testid={IDS.chips} className="mt-8 flex flex-wrap gap-2">
+                        {hero.chips.map((c) => (
+                            <li key={c}>
+                                <Chip>{c}</Chip>
+                            </li>
+                        ))}
+                    </ul>
+                    <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+                        <Cta ask={ASK.joinFree} testid={IDS.ctaTop} />
+                        <Cta ask={ASK.howItWorks} variant="outline" testid={IDS.ctaHow} />
+                    </div>
+                </Wrap>
             </section>
 
-            <Steps
-                eyebrow="How it works"
-                title={COPY.stepsTitle}
-                items={COPY.steps}
-                testid={IDS.steps}
-            />
-
-            <TextImageSection
-                eyebrow="What we ask"
-                title={COPY.askTitle}
-                line={COPY.askLine}
-                points={COPY.asks}
-                image={{
-                    // PLACEHOLDER IMAGE: over-the-shoulder of a creator filling
-                    // in their profile on a phone, café table, evening. 4:3.
-                    note: "Over-the-shoulder of a creator filling in their profile on a phone, 4:3",
-                    src: "/img/marketing/creators-profile-phone.svg",
-                    alt: "A creator filling in their profile, seen over the shoulder: a phone held in both hands with the form part-completed on screen.",
-                    ratio: "4/3",
-                }}
-                flip
-            />
-
-            <TextImageSection
-                eyebrow="What it costs"
-                title={COPY.costTitle}
-                line={COPY.costLine}
-                image={{
-                    // PLACEHOLDER IMAGE: a creator checking a payment
-                    // confirmation on their phone, warm interior, candid. 3:2.
-                    note: "Creator checking a payment confirmation on their phone, candid, 3:2",
-                    src: "/img/marketing/creators-payment.svg",
-                    alt: "A creator reading a payment confirmation on their phone, the tick at the top of the screen.",
-                    ratio: "3/2",
-                }}
-            />
-
-            {/* **When, not how much** — which is why this sits under "What it
-                costs" without taking anything out of it. That section answers
-                what we deduct (nothing); this answers the question the survey
-                found underneath it, which creators asked even when they had
-                been paid quickly: nobody had ever told them when. */}
-            <section className="border-b border-border py-16 md:py-20">
-                <div className="mx-auto max-w-7xl px-6">
-                    <PayoutClock />
-                </div>
+            <section id="briefs" data-track-section="briefs" data-testid={IDS.briefs} className="scroll-mt-20 border-t border-border">
+                <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12 lg:gap-16">
+                    <div className="lg:col-span-5">
+                        <SectionHead n={1} label={briefs.label} title={briefs.title} lead={briefs.lead} />
+                    </div>
+                    <div className="lg:col-span-7 lg:pt-16">
+                        <BriefCard card={briefs.card} />
+                    </div>
+                </Wrap>
             </section>
 
-            <ClosingSection
-                title={COPY.closeTitle}
-                line={COPY.closeLine}
-                cta={{ ...ASK, testid: IDS.ctaBottom }}
-            />
+            <MoneyBand n={2} money={money} />
+
+            <section data-track-section="protections" data-testid={IDS.protections} className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={3} label={protections.label} title={protections.title} />
+                    <CardRow items={protections.items} />
+                </Wrap>
+            </section>
+
+            <PhotoBand slot="creators-on-shoot" testid={IDS.band} />
+
+            <section data-track-section="payouts" data-testid={IDS.payouts} className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={5} label={payouts.label} title={payouts.title} />
+                    <CardRow items={payouts.items} columns={4} />
+                </Wrap>
+            </section>
+
+            <section data-track-section="record" data-testid={IDS.record} className="border-t border-border">
+                <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12 lg:gap-16">
+                    <div className="lg:col-span-6">
+                        <SectionHead n={6} label={record.label} title={record.title} lead={record.lead} />
+                    </div>
+                    <div className="lg:col-span-6 lg:pt-16">
+                        <RecordCard card={record.card} />
+                    </div>
+                </Wrap>
+            </section>
+
+            <Closing id="close" n={7} label={close.label} title={close.title} line={close.line} testid={IDS.close}>
+                <Cta ask={ASK.joinFree} testid={IDS.ctaBottom} />
+            </Closing>
+            <StickyCta ask={ASK.joinFree} heroId="hero" closeId="close" />
         </MarketingPage>
     );
 }

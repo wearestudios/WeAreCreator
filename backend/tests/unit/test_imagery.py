@@ -608,13 +608,22 @@ def test_home_reserves_the_space_its_images_will_fill():
 
     `PlaceholderImage` is the reservation: a ratio on the container, never on
     the <img>, so dropping real photography in moves nothing."""
-    src = component("pages", "Landing.jsx")
-    cards = component("components", "marketing", "FloatingCards.jsx")
-    # Home's slots moved into `FloatingCards` when the hero became a
-    # composition rather than a column with a picture beside it.
-    assert "PlaceholderImage" in src or "FloatingCards" in src
-    assert "PlaceholderImage" in cards
+    src = component("pages", "Home.jsx")
+    # **Home's reservation moved to `PhotoSlot`.** The rebuilt page names a
+    # slot (`<PhotoBand slot="home-on-location">`) and the slot
+    # reserves its box from the manifest's width and height — on the
+    # container, the same rule `PlaceholderImage` holds for the pages that
+    # still use it.
+    assert 'slot="home-on-location"' in src
     assert "CampaignCover" not in src
+    photo = component("components", "marketing", "PhotoSlot.jsx")
+    assert "aspectRatio: `${slot.width} / ${slot.height}`" in photo
+    photo_code = "\n".join(
+        ln for ln in re.sub(r"/\*.*?\*/", "", photo, flags=re.S).splitlines()
+        if not ln.lstrip().startswith("//")
+    )
+    photo_img = photo_code.split("<img", 1)[1].split("/>", 1)[0]
+    assert "aspect" not in photo_img, "the ratio moved onto the <img>"
 
     slot = component("components", "marketing", "PlaceholderImage.jsx")
     assert "aspect-[16/9]" in slot

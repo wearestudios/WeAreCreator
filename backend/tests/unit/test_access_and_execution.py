@@ -166,7 +166,11 @@ class TestTheBrandHasNoRoster:
         So the assertion is the rule rather than either replacement sentence:
         no roster, no raw pile, and the word for what a brand receives.
         """
-        copy = (FRONTEND / "pages" / "ForBrands.jsx").read_text()
+        # The page holds layout and its words live in the content module, so
+        # both are read — the rule is about what a brand can see on /for-brands.
+        copy = (FRONTEND / "pages" / "ForBrands.jsx").read_text() + (
+            FRONTEND / "content" / "marketing.js"
+        ).read_text()
         code = "\n".join(
             l for l in copy.splitlines() if not l.strip().startswith("//")
         )

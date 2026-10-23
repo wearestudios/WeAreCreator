@@ -34777,8 +34777,11 @@ async def submit_contact_enquiry(payload: ContactEnquiryPayload, request: Reques
 # The JSON half. The pages themselves are server-rendered outside `/api` (see
 # `CASE_STUDY_PATH`), for the reason `/c/{id}` and `/brands/{id}` are: a
 # WhatsApp crawler does not run JavaScript, and these are links we send brands
-# directly. What these two endpoints feed is the *proof strips* inside the
-# React app — home and `/for-brands` — which need three cards and nothing else.
+# directly. What these two endpoints feed is the case-study strip inside the
+# React app, which needs three cards and nothing else. **The strip is
+# unmounted since the public-site rebuild**, pending a decision on whether it
+# comes back; the endpoints are kept, and `/work` is still linked from every
+# footer.
 #
 # Declared above `include_router` for the reason `/proof` documents: that call
 # copies the routes it can see, so a `@public_router.get` written below it
@@ -38126,9 +38129,9 @@ async def public_brand_page(brand_id: str, request: Request):
 # own product. `_FORBIDDEN_MARKETING_PHRASES` holds that line and a unit test
 # fails the pages for any of them.
 
-# The marketing site's five pages. **All of them are React routes now**, so
-# these constants are not routes here — they are what the sitemap lists and
-# what the footer mirror is checked against.
+# The marketing site's pages. **All of them are React routes**, so these
+# constants are not routes here — they are what the sitemap lists and what the
+# footer mirror is checked against.
 #
 # They used to be two FastAPI routes rendering hand-written HTML, which is what
 # made a WhatsApp preview possible and what made /how-it-works and /why-weare
@@ -38138,22 +38141,33 @@ async def public_brand_page(brand_id: str, request: Request):
 # `frontend/src/components/marketing/PageMeta.jsx` for what moving them costs
 # and how to buy it back.
 #
+# **Home, /for-brands and /for-creators are the three pages now**, plus
+# /contact. /how-it-works and /why-weare were folded into /for-brands as
+# sections and redirect there (`RETIRED_MARKETING_PATHS`, mirrored from
+# `lib/siteNav.js` and the 301s in `vercel.json`), so they leave the sitemap: a
+# sitemap that lists a redirect is asking a crawler to index a page that does
+# not exist. The audience pages kept their paths, because changing a path
+# breaks every link and search result pointing at it.
+#
 # `/c/{id}` and `/brands/{id}` stay server-rendered. There the shared link *is*
 # the preview, so the trade is not worth making.
 HOME_PATH = "/"
 FOR_BRANDS_PATH = "/for-brands"
 FOR_CREATORS_PATH = "/for-creators"
-HOW_IT_WORKS_PATH = "/how-it-works"
-WHY_WEARE_PATH = "/why-weare"
 CONTACT_PATH = "/contact"
 
 MARKETING_PATHS = (
     HOME_PATH,
     FOR_BRANDS_PATH,
     FOR_CREATORS_PATH,
-    HOW_IT_WORKS_PATH,
-    WHY_WEARE_PATH,
     CONTACT_PATH,
+)
+
+# Old path → where it lives now. Mirrors `RETIRED_MARKETING_PATHS` in
+# `frontend/src/lib/siteNav.js` and the `redirects` in `vercel.json`.
+RETIRED_MARKETING_PATHS = (
+    ("/how-it-works", FOR_BRANDS_PATH),
+    ("/why-weare", FOR_BRANDS_PATH),
 )
 
 # Phrases that would position us against agencies, or promise more than the
@@ -38216,8 +38230,6 @@ FOOTER_COLUMNS = (
         "The site",
         (
             ("Our work", CASE_STUDY_PATH),
-            ("How it works", HOW_IT_WORKS_PATH),
-            ("Why WeAre Creators", WHY_WEARE_PATH),
             # Was a bare `mailto:`. The page carries the address *and* both
             # partners on WhatsApp, which is the channel this business runs
             # on, so the link goes there.

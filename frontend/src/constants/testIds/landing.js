@@ -1,15 +1,10 @@
 // Test IDs for the public home page. Naming follows the directive in ./auth.js
 // (keys camelCase, values kebab-case `<feature>-<element>[-<qualifier>]`).
 //
-// Ids that shipped before this file existed keep their exact values —
-// `landing-page`, `hero-heading`, `hero-cta-brand` and the rest — so anything
-// already written against them keeps finding the same control, even where the
-// element around it has changed.
-//
-// Home is a router now rather than the whole pitch, so several groups here
-// describe sections that moved to their own pages. Their ids live in
-// `marketing.js` with the pages that own them; what is left is what home
-// still renders.
+// Ids that shipped before keep their exact values — `landing-page`,
+// `hero-heading`, `hero-cta-brand` and the rest — so anything already written
+// against them keeps finding the same control, even where the element around
+// it has changed.
 
 export const LANDING = {
 	page: 'landing-page',
@@ -17,47 +12,46 @@ export const LANDING = {
 
 export const LANDING_PAGE = {
 	page: 'landing-page',
-	problem: 'landing-problem-section',
-	// The two image slots. Home was the only marketing page with none — the
-	// audience pages carry two each and /why-weare four — so the strongest
-	// claim on the site was three lines of type with nothing beside them.
-	problemImage: 'landing-problem-image',
-	bandImage: 'landing-band-image',
-	promise: 'landing-promise',
-	howItWorksLink: 'landing-how-it-works-link',
+	swap: 'compare-section',
+	band: 'landing-band',
+	how: 'landing-how',
+	step: (key) => `landing-step-${key}`,
+	stepTag: 'landing-step-tag',
+	promises: 'landing-promises',
+	promise: (i) => `landing-promise-${i}`,
+	clients: 'landing-clients',
+	clientMarquee: 'landing-client-marquee',
+	clientCard: (i) => `landing-client-card-${i}`,
+	fill: 'landing-fill',
+	creatorDoor: 'landing-creator-door',
+	creatorDoorCta: 'landing-creator-door-cta',
 };
 
 export const LANDING_HERO = {
 	section: 'hero-section',
 	eyebrow: 'hero-eyebrow',
 	heading: 'hero-heading',
-	subheading: 'hero-subheading',
-	kicker: 'hero-kicker',
+	accent: 'hero-accent',
+	lead: 'hero-lead',
+	note: 'hero-note',
+	builtFor: 'hero-built-for',
 	ctaBrand: 'hero-cta-brand',
-	ctaCreator: 'hero-cta-creator',
-
-	// The slider itself. Slides are addressed by index rather than by their
-	// campaign type, so reordering the deck doesn't rewrite anyone's test.
-	slides: 'hero-slides',
-	slide: (i) => `hero-slide-${i}`,
-	slideImage: (i) => `hero-slide-image-${i}`,
-	// Below `md` only — three thumbnails and a counter on a 390px screen is
-	// clutter over the one place the headline has to be read.
-	dots: 'hero-dots',
-	dot: (i) => `hero-dot-${i}`,
-
-	// The rail of upcoming frames, and the counter beside it, which replaced
-	// the dots at `md` and up. Frames are addressed by the slide index they
-	// go to rather than by their position in the rail: the position changes
-	// every six seconds and the destination is what a test means.
+	ctaTalk: 'hero-cta-talk',
 	rail: 'hero-rail',
-	railTrack: 'hero-rail-track',
-	railFrame: (i) => `hero-rail-frame-${i}`,
-	index: 'hero-index',
-	progress: 'hero-progress',
+	railStep: (key) => `hero-rail-${key}`,
+	card: 'hero-card',
+	cardRow: (i) => `hero-card-row-${i}`,
+};
+
+export const LANDING_COMPARE = {
+	section: 'compare-section',
+	title: 'compare-title',
+	today: 'compare-today',
+	here: 'compare-here',
 };
 
 export const LANDING_CLOSING = {
 	section: 'closing-cta',
+	ctaBrand: 'closing-cta-brand',
+	ctaTalk: 'closing-cta-talk',
 };
-

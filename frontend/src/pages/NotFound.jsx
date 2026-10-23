@@ -25,9 +25,9 @@ const WAYS_ON = [
         body: "Everything open right now, from brands we checked.",
     },
     {
-        to: "/how-it-works",
-        label: "How it works",
-        body: "The whole journey, from both sides.",
+        to: "/for-brands",
+        label: "For brands",
+        body: "How a campaign runs here, from brief to payment.",
     },
     {
         to: "/",
