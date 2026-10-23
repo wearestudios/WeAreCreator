@@ -220,7 +220,11 @@ export default function Contact() {
                     <div className="mt-12 grid gap-12 lg:grid-cols-12 lg:gap-16">
                         {/* The form first in DOM order, so a phone reaches the
                             thing it came to do before the reference details. */}
-                        <div className="lg:col-span-7">
+                        {/* **Masked for the public-site recorder**, the form
+                            and the confirmation both: the confirmation echoes
+                            the message back, and a message is where somebody
+                            types their number. See `AnalyticsGate`. */}
+                        <div data-clarity-mask="true" className="lg:col-span-7">
                             <h2 className="font-serif text-fluid-2xl leading-tight">
                                 {COPY.formHeading}
                             </h2>
