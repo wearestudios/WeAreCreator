@@ -14,11 +14,17 @@
             content="WeAre Creators runs influencer marketing campaigns across India, end to end. Brands post a brief; we cast verified creators, agree every rate in writing, run the shoot and send the report. Food and drink, hospitality, retail, real estate, fashion, travel, wellness and lifestyle."
         />
 
-        <!-- Fonts. One stylesheet: Fraunces for headings, Inter Tight for body.
-             preconnect to gstatic needs crossorigin because the font files
-             themselves are fetched anonymously. -->
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <!-- Fonts are self-hosted (see the top of src/index.css). One preload:
+             the upright Fraunces file the hero headline is set in, which is
+             the LCP element. crossorigin is required on a font preload even
+             same-origin, or the browser fetches the file twice. -->
+        <link
+            rel="preload"
+            href="%PUBLIC_URL%/fonts/fraunces-latin-normal.woff2"
+            as="font"
+            type="font/woff2"
+            crossorigin
+        />
 
         <!-- Icons. SVG for anything current, PNG for Safari and home screens.
              All of them are the tree knocked out of a brand-red tile, generated

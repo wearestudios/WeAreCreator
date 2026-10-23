@@ -110,6 +110,23 @@ const webpackConfig = {
         ],
       };
 
+      // **Leave root-absolute `url()`s alone.** The self-hosted fonts are
+      // served from `public/fonts/` at a stable address so `index.html` can
+      // preload the hero face by name; css-loader would otherwise try to
+      // bundle `/fonts/…` as a module, fail to resolve it, and hash it if it
+      // could — which is exactly the address a preload cannot know.
+      // Relative `url()`s (images under src/) still go through the bundler.
+      const leaveRootUrls = (rules) =>
+        rules.forEach((rule) => {
+          if (rule.oneOf) leaveRootUrls(rule.oneOf);
+          (Array.isArray(rule.use) ? rule.use : []).forEach((use) => {
+            if (use && typeof use === "object" && /[\\/]css-loader[\\/]/.test(use.loader || "")) {
+              use.options = { ...use.options, url: { filter: (url) => !url.startsWith("/") } };
+            }
+          });
+        });
+      leaveRootUrls(webpackConfig.module.rules);
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

@@ -4,20 +4,10 @@ module.exports = {
     theme: {
         extend: {
             fontFamily: {
-                serif: [
-                    "Fraunces",
-                    "Cormorant Garamond",
-                    "ui-serif",
-                    "Georgia",
-                    "serif",
-                ],
-                sans: [
-                    "Inter Tight",
-                    "ui-sans-serif",
-                    "system-ui",
-                    "-apple-system",
-                    "sans-serif",
-                ],
+                // The stacks live in index.css as tokens, beside the
+                // metric-matched fallback faces they name.
+                serif: ["var(--font-serif)"],
+                sans: ["var(--font-sans)"],
             },
             letterSpacing: {
                 tightest: "-0.03em",

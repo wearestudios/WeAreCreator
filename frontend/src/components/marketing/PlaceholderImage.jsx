@@ -13,12 +13,16 @@
 // is fetched. Dropping a real image in is one prop — `src` — and the layout
 // does not move, because the ratio is on the container and never on the <img>.
 //
-// **Every slot carries a `note`**, rendered as a comment in the source and
-// visible on the element as `data-placeholder`, saying what belongs there.
-// A slot nobody can brief is a slot that stays empty.
+// **Every slot carries a brief**, saying what belongs there, visible on the
+// element as `data-placeholder` — in development and on a Vercel preview only.
+// A slot names its brief by id (`slot`), and the text lives in
+// `PLACEHOLDER_BRIEFS` in `content/photoSlots.js`, where it compiles out of a
+// production build like every other photographer brief. `note` stays for the
+// unmounted floating cards, whose data carries its own.
 import React from "react";
 
 import { IMAGE_ZOOM } from "@/components/marketing/motion";
+import { PLACEHOLDER_BRIEFS } from "@/content/photoSlots";
 
 /**
  * The tint, derived from the slot's own name.
@@ -56,8 +60,10 @@ const RATIO = {
 };
 
 /**
- * @param {string}  note   what should go here, in a sentence somebody could
- *                         hand to a photographer
+ * @param {string=} slot   an id in `PLACEHOLDER_BRIEFS`; seeds the tint and
+ *                         names the brief
+ * @param {string=} note   a brief carried directly, for a caller whose data
+ *                         already holds one
  * @param {string}  ratio  one of RATIO's keys; the container reserves it
  * @param {string=} src    a real image, once there is one — the tint stays
  *                         behind it as the loading ground
@@ -80,6 +86,7 @@ const RATIO = {
  *                         win at some widths and not others.
  */
 export function PlaceholderImage({
+    slot,
     note,
     ratio = "16/9",
     src,
@@ -91,12 +98,14 @@ export function PlaceholderImage({
     testid,
     children,
 }) {
-    const hue = tintFor(note);
+    const brief = note || (slot ? PLACEHOLDER_BRIEFS[slot] : null);
+    const hue = tintFor(slot || note || "");
 
     return (
         <div
             data-testid={testid}
-            data-placeholder={src ? undefined : note}
+            data-slot={slot}
+            data-placeholder={src || !brief ? undefined : brief}
             // **Exactly one positioning utility, which `fill` used to break.**
             // The base here was `relative overflow-hidden` with `absolute
             // inset-0` appended for `fill`, so a filled slot carried *both*

@@ -82,7 +82,7 @@ export default function NotFound() {
                         // PLACEHOLDER IMAGE: an empty venue between shoots —
                         // chairs stacked, light through a window. Quiet rather
                         // than apologetic. Portrait-friendly 4:3.
-                        note="Empty venue between shoots, chairs stacked, light through a window, 4:3"
+                        slot="not-found"
                         ratio="4/3"
                         zoom
                     />
