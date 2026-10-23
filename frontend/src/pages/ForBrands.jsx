@@ -1,258 +1,142 @@
-// /for-brands — one reader, one ask, under 250 words.
+// For brands, at the path it has always had. The reader is afraid of wasting
+// money and of looking foolish in front of whoever signed off the budget, so
+// the page answers in that order: what you get (a scored shortlist), what it
+// costs, what you get at the end, what is always true, how it compares with
+// running it over DMs, and the questions a brand asks first.
 //
-// This is a compression, not a repositioning. Every claim here was on the page
-// before at four times the length; what changed is that a fifty-word paragraph
-// became a four-word label and one line, because the second half of the
-// paragraph was being skipped anyway. The detail it used to carry lives in
-// onboarding and in the product, which is where somebody who has clicked
-// actually needs it.
-//
-// **The positioning, since it governs every line:** what we are against is
-// disorganisation — DMs, spreadsheets, handshake deals. It is deliberately
-// *not* agencies. WeAre Studios is one, the managed service is the product
-// itself, and "without an agency" would be a page arguing against our own
-// offering.
-//
-// **The product is managed-only and the page says so as the offer.** There is
-// no self-serve mode to choose between: a brand posts a brief, we cast,
-// negotiate and shortlist, they approve, we run it. Any line that reads as
-// browsing creators, inviting them, or working an applicant board is
-// describing a product that no longer exists.
-//
-// Bengaluru appears as evidence of network depth, never as identity: it is a
-// fact about how fast a brief fills rather than a statement about who we are.
+// `/how-it-works` and `/why-weare` were folded into this page and redirect
+// here. **Every word is in `BRANDS` in `content/marketing.js`**; a value the
+// content module does not know yet (`FACTS`) is rendered through `<Known>`,
+// which in production renders nothing in its place.
 import React from "react";
 
+import Known from "@/components/marketing/Known";
+import { MarketingPage } from "@/components/marketing/Sections";
+import { ReportCard, ShortlistCard } from "@/components/marketing/siteMocks";
 import {
-    MarketingPage,
-    MarketingHero,
-    Points,
-    Steps,
-    TextImageSection,
-    ClosingSection,
-} from "@/components/marketing/Sections";
-import ProofStrip from "@/components/marketing/ProofStrip";
-import CaseStudyStrip from "@/components/marketing/CaseStudyStrip";
-import CountedGeography from "@/components/marketing/CountedGeography";
-import FeeFlow from "@/components/marketing/FeeFlow";
-import { MARKETING as IDS } from "@/constants/testIds";
+    CardRow,
+    Closing,
+    CompareTable,
+    Cta,
+    Faq,
+    Label,
+    PhotoBand,
+    PromiseBand,
+    SectionHead,
+    Wrap,
+} from "@/components/marketing/SiteParts";
+import StickyCta from "@/components/marketing/StickyCta";
+import { BRANDS_PAGE as IDS } from "@/constants/testIds";
+import { ASK, BRANDS, FACTS, platformFeeText } from "@/content/marketing";
 
-const ASK = { to: "/signup?role=brand", label: "Post a campaign" };
-
-// All of the page's words, in one place, so the budget can be read rather
-// than counted across a file. A unit test enforces it.
-const COPY = {
-    title: "Influencer marketing, run end to end.",
-    line: "You post the brief. We cast the creators, agree every rate in writing, schedule the shoots, run the day and send you the report.",
-    footnote: "No retainer. No markup on creator fees.",
-
-    props: [
-        {
-            label: "Every creator is verified",
-            line: "A person reviews each profile, and audience numbers are read from Instagram’s official API rather than typed in.",
-        },
-        {
-            label: "Every rate, in front of you",
-            line: "You see what each creator quoted and what our fee adds, before you confirm anything.",
-        },
-        {
-            label: "You never chase a creator",
-            line: "Casting, negotiation, scheduling and delivery sit with the WeAre Studios team. You approve the work.",
-        },
-    ],
-
-    stepsTitle: "Brief to report, in four steps.",
-    steps: [
-        {
-            label: "Post the brief",
-            line: "What you want made, the budget, and when your venue can take people.",
-        },
-        {
-            // **Not a directory to browse, and not a pile to sort.** This
-            // line used to say applicants arrive ranked alongside verified
-            // creators who fit, which read as a roster to shop through —
-            // never what a brand could reach, and now not even what exists.
-            // What a brand receives is a shortlist: people we verified and
-            // agreed a fee with. Nobody unshortlisted reaches them on a brief
-            // we run.
-            //
-            // Keep quotation marks out of this block — the word-budget test
-            // regexes every double-quoted string inside COPY, so a quoted
-            // phrase in a comment is charged to the page.
-            label: "We bring the shortlist",
-            line: "Creators we verified and negotiated with, each one arriving with a rate already agreed.",
-        },
-        {
-            label: "The creators shoot",
-            line: "On slots they booked, inside the days and hours your venue set.",
-        },
-        {
-            label: "Approve, then read the numbers",
-            line: "Nothing goes live until you say yes. Reach and cost per thousand afterwards.",
-        },
-    ],
-
-    // **The commercial terms, which are the strongest thing we have to say
-    // and appeared nowhere.** This slot used to be a choice between running
-    // it yourself and handing it over, which the product no longer offers.
-    // What replaces it is what a brand is actually deciding on: our fee sits
-    // on top of the creator rate rather than out of it, and it comes back if
-    // we cannot fill the brief. Both are checkable, which is the standard
-    // this page is held to.
-    termsTitle: "What we charge, and what comes back.",
-    // **The first half of this line is now drawn rather than stated.** It
-    // opened "Our fee is charged on top of the creator rate", which is exactly
-    // what `FeeFlow` below compares — so the sentence kept only the half the
-    // graphic does not show.
-    termsLine: "The campaign fee is refunded if we cannot fill the brief.",
-    terms: [
-        // **"Creators keep their full rate" came out of this list**, because
-        // `FeeFlow` below now draws exactly that claim and a graphic sitting
-        // above a sentence restating it is the page arguing with itself. The
-        // other two points are different claims and stay.
-        {
-            label: "Refunded if we cannot fill it",
-            line: "The campaign fee comes back, unless you turned down everyone we shortlisted.",
-        },
-        {
-            label: "A named manager, every time",
-            line: "One person holds the roster, briefs the creators and is at the door on the day.",
-        },
-    ],
-
-    // **Rendered, not typed.** The city is counted off verified supply at
-    // request time (`CountedGeography`), so this sentence stays true if the
-    // deepest city ever changes — and says nothing at all below the proof
-    // floor. The scope claim beside it is a fact about the operation; the
-    // depth claim is the one that needs a count behind it, which is why only
-    // this half is rendered.
-    reachTitle: (city) => `Deepest in ${city}, running across India.`,
-    reachLine: "Briefs fill fastest where supply is deepest, and we run campaigns in every sector on this page.",
-
-    closeTitle: "Post your first brief.",
-    closeLine: "About ten minutes. We check your business before anything reaches a creator.",
-};
-
+/** An FAQ item gated on a fact renders only when that fact is true. */
+const visibleFaq = (items) => items.filter((item) => !item.showIf || FACTS[item.showIf] === true);
 
 export default function ForBrands() {
+    const { meta, hero, shortlist, pricing, report, promises, compare, faq, close } = BRANDS;
     return (
-        <MarketingPage
-            testid={IDS.forBrands}
-            title="Influencer marketing for brands, run end to end"
-            description="Post a brief and the WeAre Studios team runs the campaign: verified creators, every rate visible before you book, approval before anything is published, and a report at the end. Across India, in every sector we run."
-            path="/for-brands"
-        >
-            <MarketingHero
-                eyebrow="For brands"
-                title={COPY.title}
-                line={COPY.line}
-                cta={{ ...ASK, testid: IDS.ctaTop }}
-                footnote={COPY.footnote}
-                image={{
-                    // PLACEHOLDER IMAGE: a full restaurant on opening night in
-                    // Bengaluru, shot wide from the back of the room, warm
-                    // service lighting, a creator filming at a table in the
-                    // mid-ground. Landscape 16:9.
-                    note: "Full restaurant on opening night, creator filming at a table, landscape 16:9",
-                    src: "/img/marketing/brands-full-house.svg",
-                    alt: "A full restaurant on opening night, guests at every table under warm pendant light, and a creator filming at a table in the middle of the room.",
-                    ratio: "16/9",
-                }}
-            />
-
-            {/* Counted, never written down — and absent entirely below the
-                floors, because a small number is not proof. */}
-            <ProofStrip />
-
-            <section className="border-b border-border py-16 md:py-20">
-                <div className="mx-auto max-w-7xl px-6">
-                    <Points items={COPY.props} testid={IDS.valueProps} />
-                </div>
+        <MarketingPage testid={IDS.page} title={meta.title} description={meta.description} path="/for-brands">
+            <section id="hero" data-track-section="hero" data-testid={IDS.hero}>
+                <Wrap className="pb-20 pt-10 md:pb-28 md:pt-16">
+                    <Label>{hero.label}</Label>
+                    <h1 className="mkt-h1 mt-6 max-w-5xl text-heading">{hero.title}</h1>
+                    <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{hero.lead}</p>
+                    <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+                        <Cta ask={ASK.postBrief} testid={IDS.ctaTop} />
+                        <Cta ask={ASK.talkWhatsapp} variant="outline" testid={IDS.ctaTalkTop} />
+                    </div>
+                </Wrap>
             </section>
 
-            <Steps
-                eyebrow="How it works"
-                title={COPY.stepsTitle}
-                items={COPY.steps}
-                testid={IDS.steps}
-            />
-
-            {/* **The evidence, directly after the claim.** The steps above
-                say what we do; this says we have done it, with a brand name
-                and a real number on each card. It sits here rather than at
-                the bottom because a brand deciding whether to read on is
-                deciding at exactly this point.
-
-                Its copy is not charged to the page's word budget, the same
-                treatment `ProofStrip` and `CreatorLeaderboard` already get:
-                what it renders is fetched rather than written, and the
-                heading that frames it belongs to the component that draws
-                every instance of it. */}
-            <CaseStudyStrip />
-
-            <TextImageSection
-                eyebrow="The terms"
-                title={COPY.termsTitle}
-                line={COPY.termsLine}
-                points={COPY.terms}
-                image={{
-                    // PLACEHOLDER IMAGE: a WeAre campaign manager at a venue
-                    // with a tablet, checking creators in at the door, evening.
-                    // Portrait-ish 4:3 so it sits beside body copy.
-                    note: "WeAre manager checking creators in at a venue door with a tablet, 4:3",
-                    src: "/img/marketing/brands-door-checkin.svg",
-                    alt: "A WeAre manager checking creators in at a lit venue door, tablet in hand, with two creators waiting to the side.",
-                    ratio: "4/3",
-                }}
-                flip
-                testid={IDS.choice}
-            />
-
-            {/* **The one claim on this page worth drawing rather than
-                stating.** Where the money goes is the strongest thing we have
-                to say to a brand and it was a clause in a sentence. It sits
-                immediately under the terms it illustrates, and the list above
-                lost the line it duplicates. */}
-            <section className="border-b border-border py-16 md:py-20">
-                <div className="mx-auto max-w-7xl px-6">
-                    <FeeFlow />
-                </div>
+            <section data-track-section="shortlist" data-testid={IDS.shortlist} className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={1} label={shortlist.label} title={shortlist.title} lead={shortlist.lead} />
+                    <Known value={FACTS.verifiedCreatorCount} name="verifiedCreatorCount">
+                        {(n) => <p className="mt-6 text-body text-foreground">{shortlist.countLine(n)}</p>}
+                    </Known>
+                    <div className="mt-12 max-w-4xl">
+                        <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} />
+                        <p className="mkt-body mt-6 text-foreground">{shortlist.closing}</p>
+                    </div>
+                </Wrap>
             </section>
 
-            {/* The whole section is behind the counted city, not just the
-                noun in its title: an eyebrow reading "Where we are" above a
-                sentence with the place removed is a worse answer than no
-                section. */}
-            <CountedGeography>
-                {(city) => (
-                    <TextImageSection
-                        eyebrow="Where we are"
-                        title={COPY.reachTitle(city)}
-                        line={COPY.reachLine}
-                        image={{
-                            // PLACEHOLDER IMAGE: shopfronts in the deepest-supply
-                            // city at dusk, lit up, landscape 3:2. Deliberately
-                            // not a named neighbourhood — the city this section
-                            // names is counted at request time, so a note
-                            // naming Indiranagar would brief a photograph for
-                            // a city the page may not be talking about.
-                            note: "City shopfronts at dusk, lit up, people on the street, landscape 3:2",
-                            src: "/img/marketing/brands-city-dusk.svg",
-                            // Describes the photograph and names no city, for
-                            // the reason the note above gives: the place this
-                            // section names is counted at request time.
-                            alt: "Lit shopfronts along a city street at dusk, with people walking past.",
-                            ratio: "3/2",
-                        }}
+            <section data-track-section="pricing" data-testid={IDS.pricing} className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={2} label={pricing.label} title={pricing.title} />
+                    <CardRow
+                        items={pricing.cards}
+                        testid={IDS.pricingCard}
+                        renderExtra={(card) =>
+                            card.key === "fee" ? (
+                                <Known value={platformFeeText()} name="platformFeePercent">
+                                    {(text) => (
+                                        <p data-testid={IDS.fee} className="mt-3 text-body font-medium text-foreground">
+                                            {text}
+                                        </p>
+                                    )}
+                                </Known>
+                            ) : null
+                        }
                     />
-                )}
-            </CountedGeography>
+                    <Known value={FACTS.budgetRangesByCreatorSize} name="budgetRangesByCreatorSize">
+                        {(ranges) => (
+                            <div data-testid={IDS.budget} className="mt-12">
+                                <h3 className="mkt-h3 text-heading">{pricing.budgetTitle}</h3>
+                                <dl className="mt-6 grid gap-5 sm:grid-cols-3">
+                                    {ranges.map((r) => (
+                                        <div key={r.size} className="rounded-lg border border-border bg-card p-6">
+                                            <dt className="text-meta text-muted-foreground">{r.size}</dt>
+                                            <dd className="mkt-h3 mt-2 text-heading">{r.range}</dd>
+                                        </div>
+                                    ))}
+                                </dl>
+                            </div>
+                        )}
+                    </Known>
+                </Wrap>
+            </section>
 
-            <ClosingSection
-                title={COPY.closeTitle}
-                line={COPY.closeLine}
-                cta={{ ...ASK, testid: IDS.ctaBottom }}
-            />
+            <section data-track-section="report" data-testid={IDS.report} className="border-t border-border">
+                <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12">
+                    <div className="lg:col-span-5">
+                        <SectionHead n={3} label={report.label} title={report.title} lead={report.lead} />
+                    </div>
+                    <div className="lg:col-span-7 lg:pt-16">
+                        <ReportCard card={report.card} />
+                    </div>
+                </Wrap>
+            </section>
+
+            <PhotoBand slot="brands-full-room" testid={IDS.band} />
+
+            <PromiseBand n={5} label={promises.label} title={promises.title} items={promises.items} testid={IDS.promises} />
+
+            <section data-track-section="compare" className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={6} label={compare.label} title={compare.title} />
+                    <CompareTable
+                        columns={compare.columns}
+                        rows={compare.rows}
+                        label={compare.title}
+                        testid={IDS.compare}
+                        cardsTestid={IDS.compareCards}
+                    />
+                </Wrap>
+            </section>
+
+            <section data-track-section="faq" className="border-t border-border">
+                <Wrap className="py-20 md:py-28">
+                    <SectionHead n={7} label={faq.label} title={faq.title} />
+                    <Faq items={visibleFaq(faq.items)} testid={IDS.faq} itemTestid={IDS.faqItem} />
+                </Wrap>
+            </section>
+
+            <Closing id="close" n={8} label={close.label} title={close.title} line={close.line} testid={IDS.close}>
+                <Cta ask={ASK.postBrief} testid={IDS.ctaBottom} />
+                <Cta ask={ASK.talkWhatsapp} variant="outline" testid={IDS.ctaTalkBottom} />
+            </Closing>
+            <StickyCta ask={ASK.postBrief} heroId="hero" closeId="close" />
         </MarketingPage>
     );
 }

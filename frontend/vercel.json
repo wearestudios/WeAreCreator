@@ -1,5 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/how-it-works",
+      "destination": "/for-brands",
+      "statusCode": 301
+    },
+    {
+      "source": "/why-weare",
+      "destination": "/for-brands",
+      "statusCode": 301
+    }
+  ],
   "rewrites": [
     {
       "source": "/c/:id",

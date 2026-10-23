@@ -185,6 +185,34 @@ class TestFonts:
         assert users == [".mkt-label"]
         assert "JetBrains" not in TAILWIND.read_text()
 
+    def test_the_label_face_is_the_section_rule_and_nothing_else(self):
+        """**JetBrains Mono and tracked capitals appear only in the numbered
+        section rules** on the public pages. The hero carried five more uses —
+        the eyebrow, the note, the Built-for line, the rail numbers, the card's
+        day labels — and read as noise; everything that is not a rule is
+        sentence case in Inter Tight now. `SectionRule` is the one component
+        that may say `mkt-label`, twice (the number and the name), and no
+        public page or marketing component may letter-space capitals by hand."""
+        marketing = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx")]
+        marketing += sorted((SRC / "components" / "marketing").glob("*.js*"))
+        uses = {}
+        for p in marketing:
+            n = len(re.findall(r"\bmkt-label\b", _code(p.read_text())))
+            if n:
+                uses[p.name] = n
+        assert uses == {"SiteParts.jsx": 2}, uses
+        parts = _code((SRC / "components" / "marketing" / "SiteParts.jsx").read_text())
+        rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
+        assert rule.count("mkt-label") == 2
+        mounted = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx")] + [
+            SRC / "components" / "marketing" / f
+            for f in ("SiteParts.jsx", "siteMocks.jsx", "ComparisonBand.jsx", "StickyCta.jsx",
+                      "PhotoSlot.jsx", "MarketingNavbar.jsx", "MarketingFooter.jsx")
+        ]
+        for p in mounted:
+            code = _code(p.read_text())
+            assert not re.search(r"\buppercase\b|\btracking-\[|\btracking-(?:wide|wider|widest|eyebrow)\b", code), p.name
+
     def test_no_weight_is_asked_for_that_is_not_loaded(self):
         """Inter Tight is loaded at 400–600 and Fraunces at 400–700. A
         `font-bold` or `font-light` would be synthesised by the browser — the
@@ -268,9 +296,11 @@ class TestWonk:
 
 MKT_SCALE = {
     # selector: (clamp exactly as briefed, line-height, tracking)
-    ".mkt-display": ("clamp(3.25rem, 1.6rem + 5vw, 6.5rem)", "0.95", "-0.04em"),
-    ".mkt-h1": ("clamp(2.75rem, 2.1rem + 3.1vw, 5.25rem)", "0.96", "-0.035em"),
-    ".mkt-h2": ("clamp(2.5rem, 1.95rem + 2.6vw, 4.25rem)", "1.02", "-0.035em"),
+    # Tracking loosened in the calm pass (-0.04 / -0.035 / -0.035): at 1366
+    # and 1920 the display headline's words ran together.
+    ".mkt-display": ("clamp(3.25rem, 1.6rem + 5vw, 6.5rem)", "0.95", "-0.02em"),
+    ".mkt-h1": ("clamp(2.75rem, 2.1rem + 3.1vw, 5.25rem)", "0.96", "-0.02em"),
+    ".mkt-h2": ("clamp(2.5rem, 1.95rem + 2.6vw, 4.25rem)", "1.02", "-0.015em"),
     ".mkt-h3": ("clamp(1.75rem, 1.5rem + 1.2vw, 2.5rem)", "1.1", "-0.02em"),
 }
 
@@ -729,13 +759,12 @@ class TestPhotoSlots:
         block = _code(MANIFEST.read_text()).split("PLACEHOLDER_BRIEFS = {", 1)[1].split("};", 1)[0]
         values = re.findall(r'"[\w-]+":\s*([^\n]+)', block)
         assert values and all(v.strip().startswith("SHOW_BRIEFS") for v in values), values
-        # The pages that outlive the marketing rebuild. The old marketing
-        # pages still pass literal notes and go with the rebuild, which
-        # widens this to every file.
-        for name in ("Login.jsx", "Signup.jsx", "NotFound.jsx"):
-            code = _code((SRC / "pages" / name).read_text())
+        # Every file, now the old marketing pages and their literal notes
+        # have gone with the rebuild.
+        for p in _src_files():
+            code = _code(p.read_text())
             for tag in re.findall(r"<PlaceholderImage\b[^>]*>", code, flags=re.S):
-                assert not re.search(r'\bnote="', tag), f"{name}: a literal brief ships in the bundle"
+                assert not re.search(r'\bnote="', tag), f"{p}: a literal brief ships in the bundle"
         slot = (SRC / "components/marketing/PlaceholderImage.jsx").read_text()
         assert "data-placeholder={src || !brief ? undefined : brief}" in slot
 

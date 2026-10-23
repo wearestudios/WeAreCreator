@@ -799,8 +799,17 @@ class TestTheVisualTreatment:
         assert "href" not in code
         assert "<article" in code
 
-    def test_it_is_mounted_on_the_homepage(self):
+    def test_it_is_unmounted_pending_a_decision(self):
         """A component with no mount is as unreachable as a route with no
-        caller."""
-        landing = (FRONTEND / "pages" / "Landing.jsx").read_text()
-        assert "<CreatorLeaderboard />" in landing
+        caller — which is exactly the state this leaves it in, on purpose.
+
+        **Unmounted by the public-site rebuild, deliberately, and pinned that
+        way so it cannot happen by accident in either direction.** The rebuilt
+        home is the brief's eight sections and the leaderboard is not one of them; the
+        component and its endpoint are kept intact for the product decision
+        the PR names — remount it, or retire the feature. Until then this
+        asserts the component still exists and that no page mounts a second,
+        unreviewed copy of it."""
+        home = (FRONTEND / "pages" / "Home.jsx").read_text()
+        assert "CreatorLeaderboard" not in home
+        assert (FRONTEND / "components" / "marketing" / "CreatorLeaderboard.jsx").exists()

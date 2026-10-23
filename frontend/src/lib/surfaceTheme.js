@@ -65,6 +65,24 @@ export const PRODUCT_PREFIXES = [
 ];
 
 /**
+ * The public pages drawn on the light set.
+ *
+ * Home, `/for-brands` and `/for-creators` were rebuilt on a light ground with exactly
+ * one navy band each — the inversion is what marks that band as the one that
+ * matters, and it only works if the page around it is light. The rest of the
+ * marketing surface (contact, the legal pages, sign-in, the 404, the brief
+ * feed) keeps the navy set it was drawn for. **Exact paths, not prefixes**:
+ * `/brands/{id}` is the server-rendered brand page and is not one of these.
+ */
+export const LIGHT_MARKETING_PATHS = ["/", "/for-brands", "/for-creators"];
+
+export function isLightMarketingPath(pathname) {
+    const path = String(pathname || "/");
+    const bare = path.length > 1 ? path.replace(/\/+$/, "") : path;
+    return LIGHT_MARKETING_PATHS.includes(bare);
+}
+
+/**
  * Whether a path is a product screen.
  *
  * **`/campaigns` is the awkward one and is split rather than lumped.** The
@@ -144,7 +162,7 @@ export function applyTheme(theme) {
  * a preference about *their console*, not a licence to repaint the home page.
  */
 export function surfaceFor(pathname, accountTheme) {
-    if (!isProductPath(pathname)) return "dark";
+    if (!isProductPath(pathname)) return isLightMarketingPath(pathname) ? "light" : "dark";
     if (!isConsolePath(pathname)) return "light";
     // Inside the console only: an explicit choice wins, then this browser's
     // cache of one, then light. **The operating system is not consulted** —
