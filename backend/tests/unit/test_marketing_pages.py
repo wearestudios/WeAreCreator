@@ -413,6 +413,17 @@ def test_each_page_sets_its_own_title_description_and_path(name):
     assert f'path="{path}"' in src
 
 
+def test_the_contact_page_sets_its_own_title_description_and_path():
+    """/contact was left as it is and still writes its own literals. It used
+    to be a case of the parametrised test above, which now reads the content
+    module the three rebuilt pages take their meta from."""
+    src = read(*PAGES["contact"])
+    assert "MarketingPage" in src or "PageMeta" in src
+    assert re.search(r'title="[^"]{8,}"', src)
+    assert re.search(r'description="[^"]{20,}"', src)
+    assert 'path="/contact"' in src
+
+
 def test_no_two_pages_share_a_preview_title():
     """One title for two pages makes two links preview identically in a chat."""
     titles = [content()[e]["meta"]["title"] for e in CONTENT_EXPORT.values()]
