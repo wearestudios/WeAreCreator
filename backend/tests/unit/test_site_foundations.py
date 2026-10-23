@@ -773,12 +773,21 @@ class TestContentModule:
         assert (zero, false_, null_, undef) == (True, True, False, False)
 
     def test_known_renders_nothing_in_production(self):
-        """The development marker is written inline behind `SHOW_BRIEFS`, so
-        the production build folds it away rather than hiding it."""
+        """The development marker is written inline behind an environment
+        test **computed in this file** — not `SHOW_BRIEFS` imported from the
+        manifest. The build substitutes `process.env.*` per module, so an
+        expression here folds to `false` and the minifier drops the branch; an
+        imported constant is a reference it does not fold. Measured: with the
+        import, the marker's text was in the production bundle."""
         code = _code(KNOWN.read_text())
         assert "if (known(value)) return children(value);" in code
-        assert re.search(r"return SHOW_BRIEFS \? \(", code)
-        assert code.rstrip().endswith(") : null;\n}") or ") : null;" in code
+        assert re.search(
+            r'const SHOW_MISSING =\s*process\.env\.NODE_ENV !== "production" \|\| '
+            r'process\.env\.REACT_APP_VERCEL_ENV === "preview";',
+            code,
+        )
+        assert re.search(r"return SHOW_MISSING \? \(", code) and ") : null;" in code
+        assert "SHOW_BRIEFS" not in code
 
     def test_no_public_file_says_tbc(self):
         offenders = []
