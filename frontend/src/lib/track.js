@@ -10,7 +10,7 @@
 // on somebody else's server. So the recorder is never loaded on a signed-in
 // route and never runs for a signed-in visitor even on a public one (the
 // navbar carries their name). `AnalyticsGate` is what applies the rule; this
-// module only refuses to do anything while it says no. `test_analytics.py`
+// module only refuses to do anything while it says no. `test_public_analytics.py`
 // holds both halves.
 //
 // **With `REACT_APP_CLARITY_ID` unset, every call is a no-op** — no script, no
