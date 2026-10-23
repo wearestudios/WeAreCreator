@@ -596,6 +596,13 @@ def test_every_image_slot_says_what_belongs_in_it(name):
     element as `data-placeholder` as well as sitting in the source."""
     src = _with_marketing_components(name)
     notes = re.findall(r'note[:=]\s*"([^"]+)"', src)
+    # A slot may name its brief by id instead, from `PLACEHOLDER_BRIEFS` in
+    # the manifest — where it compiles out of a production build.
+    manifest = FRONTEND.joinpath("src", "content", "photoSlots.js").read_text()
+    for sid in re.findall(r'<PlaceholderImage\b[^>]*?\bslot="([\w-]+)"', src, flags=re.S):
+        found = re.search(rf'"{re.escape(sid)}":\s*SHOW_BRIEFS\s*\?\s*"([^"]+)"', manifest)
+        assert found, f"{name}: slot {sid!r} has no brief in PLACEHOLDER_BRIEFS"
+        notes.append(found.group(1))
     assert notes, name
     for n in notes:
         assert len(n) > 25, f"{name}: {n!r} is not a brief"
