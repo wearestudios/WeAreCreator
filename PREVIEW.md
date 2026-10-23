@@ -149,9 +149,10 @@ A fresh database seeds four demo brands, seven open briefs and eight verified
 creators, so most screens have something in them immediately.
 
 **1. Signed out — the marketing site**
-Go to `/`. Home is brands-first: a static hero with the deal card, the
-spreadsheet-versus-board swap, a photograph, the four steps, what holds, who
-built it, a door for creators and the close. Follow the navbar to
+Go to `/`. Home is brands-first: a static hero (the headline, one lead, two
+buttons, one quiet line and the deal card), the spreadsheet-versus-board swap,
+a photograph, the four steps, what holds, who built it, a door for creators
+and the close. No client is named on the page. Follow the navbar to
 `/for-brands` and `/for-creators`. `/how-it-works` and `/why-weare` now
 redirect to `/for-brands` (a `<Navigate replace>` here, a 301 on Vercel). On a
 phone, scroll past the hero for the sticky bottom ask. Try a URL that does not

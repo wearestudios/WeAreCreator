@@ -48,7 +48,7 @@ function MoneyBand({ n, money }) {
                     <span aria-hidden className="mkt-display text-heading">
                         ₹<CountUp value={money.amount} />
                     </span>
-                    <span aria-hidden className="mkt-label text-muted-foreground">
+                    <span aria-hidden className="text-body text-muted-foreground">
                         {money.amountSuffix}
                     </span>
                 </p>

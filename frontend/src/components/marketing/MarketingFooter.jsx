@@ -69,7 +69,7 @@ export function MarketingFooter() {
                     >
                         {FOOTER_COLUMNS.map((col) => (
                             <div key={col.heading}>
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+                                <p className="text-meta font-medium text-foreground">
                                     {col.heading}
                                 </p>
                                 <ul className="mt-4 space-y-3">

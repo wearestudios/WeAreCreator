@@ -36,7 +36,10 @@ const Monogram = ({ text }) => (
 
 /**
  * The hero's product card: one deal, its history written in as it scrolls into
- * view — once — with the final, agreed figure in Fraunces.
+ * view — once. **The agreed figure is the only large number on it**, in
+ * Fraunces; every other figure is body size. Day labels are Inter Tight in
+ * sentence case, like everything on the public pages that is not a section
+ * rule.
  */
 export function DealCard({ card, testid, rowTestid }) {
     const rows = card.rows.map((row, i) => ({
@@ -45,14 +48,14 @@ export function DealCard({ card, testid, rowTestid }) {
         node: (
             <div
                 data-testid={rowTestid ? rowTestid(i) : undefined}
-                className={`grid grid-cols-[2.75rem_1fr_auto] items-baseline gap-3 py-3 ${row.final ? "" : "border-b border-border"}`}
+                className={`grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-3 ${row.final ? "" : "border-b border-border"}`}
             >
-                <span className="mkt-label text-muted-foreground">{row.day}</span>
-                <span className={`text-body ${row.final ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                <span className="text-meta text-muted-foreground">{row.day}</span>
+                <span className={`text-body ${row.final ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                     {row.who}
                 </span>
                 {row.final ? (
-                    <span className="mkt-h3 text-heading">{row.amount}</span>
+                    <span className="font-serif text-[2rem] leading-none text-heading">{row.amount}</span>
                 ) : (
                     <span className="text-body text-foreground">{row.amount}</span>
                 )}
@@ -60,23 +63,11 @@ export function DealCard({ card, testid, rowTestid }) {
         ),
     }));
     return (
-        <div data-testid={testid} className="rounded-lg border border-border bg-card p-5 sm:p-7">
-            <p className="mkt-label text-muted-foreground">{card.kicker}</p>
-            {/* Two lines reserved: Fraunces wraps this title where the
-                fallback face does not, and the rows under it would move when
-                the font lands. */}
-            <p className="mt-2 min-h-[2.5em] font-serif text-fluid-2xl leading-tight text-heading">{card.title}</p>
+        <div data-testid={testid} className="rounded-lg border border-border bg-card p-5 sm:p-6">
+            <p className="font-serif text-[1.75rem] leading-tight text-heading">{card.title}</p>
+            <p className="mt-1 text-[0.9375rem] text-muted-foreground">{card.subline}</p>
             <RowWriter rows={rows} className="mt-4" />
-            {/* Two lines reserved on a phone: the chips wrap differently in
-                the fallback face and the webfont, and a row that changes
-                height when the font lands moves everything under it. */}
-            <ul className="mt-5 flex min-h-[3.75rem] flex-wrap content-start gap-2 sm:min-h-0">
-                {card.chips.map((c) => (
-                    <li key={c}>
-                        <Chip>{c}</Chip>
-                    </li>
-                ))}
-            </ul>
+            <p className="mt-4 border-t border-border pt-4 text-[0.9375rem] text-muted-foreground">{card.note}</p>
         </div>
     );
 }
@@ -85,7 +76,7 @@ export function DealCard({ card, testid, rowTestid }) {
 export function StepScreen({ screen, final = "" }) {
     return (
         <div className="rounded-md border border-border bg-card p-4">
-            <p className="mkt-label text-muted-foreground">{screen.kicker}</p>
+            <p className="text-meta font-medium text-foreground">{screen.kicker}</p>
             <ul className="mt-3 space-y-2">
                 {screen.rows.map((r, i) => (
                     <li
@@ -107,7 +98,7 @@ export function StepScreen({ screen, final = "" }) {
 export function ShortlistCard({ card, rowTestid }) {
     return (
         <div className="rounded-lg border border-border bg-card">
-            <p className="mkt-label border-b border-border px-5 py-4 text-muted-foreground sm:px-6">{card.kicker}</p>
+            <p className="border-b border-border px-5 py-4 text-meta font-medium text-foreground sm:px-6">{card.kicker}</p>
             <ul>
                 {card.rows.map((row, i) => (
                     <li
@@ -146,7 +137,7 @@ export function BriefCard({ card }) {
     const [apply, quote] = card.actions;
     return (
         <div className="rounded-lg border border-border bg-card p-6 md:p-8">
-            <p className="mkt-label text-muted-foreground">{card.kicker}</p>
+            <p className="text-meta font-medium text-muted-foreground">{card.kicker}</p>
             <p className="mt-2 font-serif text-fluid-2xl leading-tight text-heading">{card.title}</p>
             <p className="mt-6">
                 <span className="mkt-h2 text-heading">{card.fee}</span>{" "}
@@ -176,7 +167,7 @@ export function BriefCard({ card }) {
 export function ReportCard({ card }) {
     return (
         <div className="rounded-lg border border-border bg-card p-6 md:p-8">
-            <p className="mkt-label text-muted-foreground">{card.kicker}</p>
+            <p className="text-meta font-medium text-muted-foreground">{card.kicker}</p>
             <p className="mt-2 font-serif text-fluid-2xl leading-tight text-heading">{card.title}</p>
             <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
                 {card.totals.map((t) => (
@@ -195,7 +186,7 @@ export function ReportCard({ card }) {
 export function RecordCard({ card }) {
     return (
         <div className="rounded-lg border border-border bg-card p-6 md:p-8">
-            <p className="mkt-label text-muted-foreground">{card.kicker}</p>
+            <p className="text-meta font-medium text-muted-foreground">{card.kicker}</p>
             <dl className="mt-4">
                 {card.rows.map((row) => (
                     <div

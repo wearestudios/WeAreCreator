@@ -9,6 +9,9 @@
 // **Every section opens on the numbered rule**: the section's number in the
 // label face on the left, its name on the right, a hairline between, and then
 // the heading. A reader scanning the page reads the rules as a contents list.
+// **The rule is the only place the label face (`mkt-label` — JetBrains Mono,
+// tracked capitals) appears on a public page**; everything else is sentence
+// case in Inter Tight.
 import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -30,10 +33,15 @@ export function Wrap({ children, className = "" }) {
     return <div className={`mx-auto w-full max-w-7xl px-4 sm:px-6 md:px-10 2xl:max-w-[88rem] ${className}`}>{children}</div>;
 }
 
+/**
+ * A small line above a heading, in sentence case. **Not the label face**:
+ * JetBrains Mono and tracked capitals belong to the section rule and nothing
+ * else on the public pages.
+ */
 export function Label({ children, className = "", testid }) {
     if (!children) return null;
     return (
-        <p data-testid={testid} className={`mkt-label text-muted-foreground ${className}`}>
+        <p data-testid={testid} className={`text-body text-muted-foreground ${className}`}>
             {children}
         </p>
     );
@@ -207,7 +215,7 @@ export function CompareTable({ columns, rows, testid, cardsTestid, label }) {
                                 <th
                                     key={c || "row"}
                                     scope="col"
-                                    className={`mkt-label px-6 py-4 align-bottom ${i === 2 ? "text-foreground" : "text-muted-foreground"}`}
+                                    className={`px-6 py-4 align-bottom text-meta font-medium ${i === 2 ? "text-foreground" : "text-muted-foreground"}`}
                                 >
                                     {c}
                                 </th>
@@ -233,7 +241,7 @@ export function CompareTable({ columns, rows, testid, cardsTestid, label }) {
                     [right, 2, "text-foreground"],
                 ].map(([title, col, tone]) => (
                     <Card key={title}>
-                        <h3 className="mkt-label text-foreground">{title}</h3>
+                        <p className="text-body font-medium text-foreground">{title}</p>
                         <dl className="mt-4 divide-y divide-border">
                             {rows.map((row) => (
                                 <div key={row[0]} className="py-3">

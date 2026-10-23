@@ -1,32 +1,32 @@
 // The home page. Brands first, eight sections, in this order:
 //
-//   1 the hero — one static product card, one drawn word
+//   1 the hero — the h1, one lead, two asks, one quiet line, and the card
 //   2 the problem — the spreadsheet and the DMs, against the same campaign here
 //   3 a full-bleed photograph (or, until there is one, its headline)
-//   4 the four steps, which the hero's rail links to
+//   4 the four steps
 //   5 the navy band: three things the code enforces
-//   6 who built it: the clients, three lines, the one scroll-inked sentence
+//   6 who built it: the heading and the one scroll-inked sentence
 //   7 the creator door
 //   8 the close
 //
 // **Every word is in `HOME` in `content/marketing.js`**; this file is layout.
-// The hero slider, its sector phrases and its eight drawings are gone: the
-// hero is one product card and one word revealed once.
+// Each section is its numbered rule, one heading, at most one lead and its
+// one component — nothing else. **No real business is named on this page**:
+// the client marquee and cards were removed, and the only names here are the
+// invented ones inside the drawn product UI.
 //
 // Motion here is the primitives and nothing else: the wipe on "chasing", the
-// card's rows written once in view, the marquee, and the one FillText
-// sentence on the site.
+// card's rows written once in view, and the one FillText sentence on the
+// site.
 import React from "react";
 
 import ComparisonBand from "@/components/marketing/ComparisonBand";
 import { MarketingPage } from "@/components/marketing/Sections";
-import { FillText, Marquee, WipeWord } from "@/components/marketing/primitives";
+import { FillText, WipeWord } from "@/components/marketing/primitives";
 import { DealCard, StepScreen } from "@/components/marketing/siteMocks";
 import {
-    Card,
     Closing,
     Cta,
-    Label,
     PhotoBand,
     PromiseBand,
     SectionHead,
@@ -35,8 +35,7 @@ import {
 } from "@/components/marketing/SiteParts";
 import StickyCta from "@/components/marketing/StickyCta";
 import { LANDING_CLOSING, LANDING_HERO as HERO_IDS, LANDING_PAGE as IDS } from "@/constants/testIds";
-import { ASK, FACTS, HOME } from "@/content/marketing";
-import { HERO_EYEBROW } from "@/lib/siteNav";
+import { ASK, HOME } from "@/content/marketing";
 
 /** The h1 with its one accented word, whole in the DOM from the first paint. */
 function HeroTitle({ title, accent }) {
@@ -44,7 +43,10 @@ function HeroTitle({ title, accent }) {
     return (
         <h1 data-testid={HERO_IDS.heading} className="mkt-display text-heading">
             {title.slice(0, at)}
-            <WipeWord className="pr-[0.08em]">
+            {/* The padding keeps the italic g's overhang inside the wipe's
+                clip; the matching negative margin keeps it from opening a
+                gap before the full stop. */}
+            <WipeWord className="-mr-[0.08em] pr-[0.08em]">
                 {/* Fraunces true italic at 400, in the accent's ink. */}
                 <em data-testid={HERO_IDS.accent} className="font-normal italic text-accent-ink">
                     {accent}
@@ -55,49 +57,35 @@ function HeroTitle({ title, accent }) {
     );
 }
 
+/**
+ * The hero: three type styles and nothing else — the Fraunces h1, the Inter
+ * Tight lead and Inter Tight UI. The card's top sits level with the h1's
+ * first line, and the section ends one ordinary section gap under the asks.
+ */
 function Hero() {
-    const { hero, steps, card } = HOME;
+    const { hero, card } = HOME;
     return (
         <section id="hero" data-track-section="hero" data-testid={HERO_IDS.section}>
-            <Wrap className="grid gap-10 pb-16 pt-8 md:pb-24 md:pt-12 lg:grid-cols-12 lg:items-start lg:gap-12">
-                <div className="lg:col-span-7">
-                    <Label testid={HERO_IDS.eyebrow}>{HERO_EYEBROW}</Label>
-                    <div className="mt-5">
-                        <HeroTitle title={hero.title} accent={hero.accent} />
-                    </div>
+            <Wrap className="grid gap-10 pb-20 pt-8 md:pb-28 md:pt-12 xl:grid-cols-12 xl:items-start xl:gap-12">
+                {/* Two columns from xl only, and the text takes eight of them
+                    until 2xl: the container stops growing at 1280 while the
+                    display size keeps climbing, so at 1440 "Creator
+                    campaigns," no longer fit in seven, and below 1280 the h1
+                    ran to four lines beside the card. Stacked, it is two. */}
+                <div className="xl:col-span-8 2xl:col-span-7">
+                    <HeroTitle title={hero.title} accent={hero.accent} />
                     <p data-testid={HERO_IDS.lead} className="mkt-lead mt-6 max-w-2xl text-muted-foreground">
                         {hero.lead}
-                    </p>
-                    <p data-testid={HERO_IDS.note} className="mkt-label mt-5 text-foreground">
-                        {hero.note}
                     </p>
                     <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                         <Cta ask={ASK.postBrief} testid={HERO_IDS.ctaBrand} />
                         <Cta ask={ASK.talkWhatsapp} variant="outline" testid={HERO_IDS.ctaTalk} />
                     </div>
-                    <p data-testid={HERO_IDS.builtFor} className="mkt-label mt-8 max-w-2xl leading-relaxed text-muted-foreground">
-                        <span className="text-foreground">{hero.builtForLabel}</span> · {hero.builtFor}
+                    <p data-testid={HERO_IDS.note} className="mt-5 text-[0.9375rem] text-muted-foreground">
+                        {hero.note}
                     </p>
-                    {/* Anchors, not a slider: each goes to its step in
-                        section 4. */}
-                    <nav aria-label={hero.railLabel} data-testid={HERO_IDS.rail} className="mt-8">
-                        <ol className="flex flex-wrap gap-2">
-                            {steps.map((s) => (
-                                <li key={s.key}>
-                                    <a
-                                        href={`#step-${s.key}`}
-                                        data-testid={HERO_IDS.railStep(s.key)}
-                                        className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-md border border-border px-3 text-body text-foreground transition-[border-color] [transition-duration:var(--mkt-interactive)] hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                                    >
-                                        <span className="mkt-label text-muted-foreground">{s.n}</span>
-                                        {s.label}
-                                    </a>
-                                </li>
-                            ))}
-                        </ol>
-                    </nav>
                 </div>
-                <div className="lg:col-span-5 lg:pt-2">
+                <div className="max-w-xl xl:col-span-4 xl:max-w-none 2xl:col-span-5">
                     <DealCard card={card} testid={HERO_IDS.card} rowTestid={HERO_IDS.cardRow} />
                 </div>
             </Wrap>
@@ -112,25 +100,15 @@ function HowItWorks({ n }) {
             <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={how.label} title={how.title} />
                 <ol className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    {how.items.map((step, i) => (
-                        <li
-                            key={step.key}
-                            id={`step-${step.key}`}
-                            data-testid={IDS.step(step.key)}
-                            className="flex scroll-mt-24 flex-col"
-                        >
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="mkt-label text-muted-foreground">{HOME.steps[i].n}</span>
-                                {step.weHandle ? (
-                                    <span
-                                        data-testid={IDS.stepTag}
-                                        className="mkt-label rounded-full border border-border px-2.5 py-1 text-muted-foreground"
-                                    >
-                                        {how.weHandle}
-                                    </span>
-                                ) : null}
-                            </div>
-                            <h3 className="mkt-h3 mt-4 text-heading">{step.title}</h3>
+                    {how.items.map((step) => (
+                        <li key={step.key} data-testid={IDS.step(step.key)} className="flex flex-col">
+                            <h3 className="mkt-h3 text-heading">{step.title}</h3>
+                            {/* The one quiet label the spec asked for, on step 03. */}
+                            {step.weHandle ? (
+                                <p data-testid={IDS.stepTag} className="mt-2 text-meta text-muted-foreground">
+                                    {how.weHandle}
+                                </p>
+                            ) : null}
                             <p className="mkt-body mt-3 text-muted-foreground">{step.line}</p>
                             <div className="mt-6">
                                 <StepScreen screen={step.screen} />
@@ -147,29 +125,9 @@ function WhoBuiltIt({ n }) {
     const { clients } = HOME;
     return (
         <section data-track-section="who-built-it" data-testid={IDS.clients} className="border-t border-border">
-            <Wrap className="pt-20 md:pt-28">
+            <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={clients.label} title={clients.title} />
-            </Wrap>
-            {/* Real names, from `confirmedClients` only — the one place on the
-                site a real client is named. */}
-            <Marquee
-                items={FACTS.confirmedClients}
-                label={clients.marqueeLabel}
-                testid={IDS.clientMarquee}
-                className="mt-14 border-y border-border py-6"
-                itemClassName="mkt-h2 whitespace-nowrap px-8 text-heading md:px-12"
-            />
-            <Wrap className="pb-20 md:pb-28">
-                <ul className="mt-12 grid gap-5 md:grid-cols-3">
-                    {clients.cards.map((line, i) => (
-                        <li key={line}>
-                            <Card testid={IDS.clientCard(i)} className="h-full">
-                                <p className="mkt-lead text-foreground">{line}</p>
-                            </Card>
-                        </li>
-                    ))}
-                </ul>
-                <div data-testid={IDS.fill} className="mt-16 max-w-5xl md:mt-24">
+                <div data-testid={IDS.fill} className="mt-12 max-w-5xl md:mt-16">
                     <FillText text={clients.fill} className="mkt-h2 text-heading" />
                 </div>
             </Wrap>

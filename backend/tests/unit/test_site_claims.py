@@ -116,15 +116,20 @@ class TestHomePromises:
         assert "submitted_for_review_at" in hold and '"pending"' in hold
 
     def test_the_hero_card_shows_the_history_this_product_keeps(self):
-        """A budget on the brief, the creator's quote, the fee agreed, both
-        sides on the frozen terms — the four things a collaboration here
-        records — with the brief's own figures."""
-        rows = content()["HOME"]["card"]["rows"]
-        assert [r["who"] for r in rows] == [
-            "Budget on the brief", "Kiran quoted", "Fee agreed", "Both accepted · terms frozen",
-        ]
-        assert [r["amount"] for r in rows] == ["₹11,000", "₹14,000", "₹12,500", "₹12,500"]
-        assert [r.get("final", False) for r in rows] == [False, False, False, True]
+        """The brief's budget, the creator's quote and the fee agreed — three
+        things a collaboration here records — with the brief's own figures.
+        The separate "Both accepted · terms frozen" row and the duplicated
+        ₹12,500 went in the calm pass: the agreed row *is* the agreement, and
+        the line under the card says it is written down for both sides."""
+        card = content()["HOME"]["card"]
+        rows = card["rows"]
+        assert [r["who"] for r in rows] == ["Your budget", "Kiran quoted", "Agreed"]
+        assert [r["amount"] for r in rows] == ["₹11,000", "₹14,000", "₹12,500"]
+        assert [r.get("final", False) for r in rows] == [False, False, True]
+        assert card["note"] == "Written on the deal. Both sides see the same numbers."
+        # Both sides read the same agreed figure: the creator's own row and
+        # the brand's applicant board are served the one `agreed_amount`.
+        assert "agreed_amount" in inspect.getsource(server._serialize_collab_row)
 
     def test_the_steps_you_touch_are_the_brands_own_transitions(self):
         """"You only touch two": posting the brief, and approving the work —
@@ -224,7 +229,10 @@ class TestCreatorPromises:
         payout finding — so the copy promises the default.)"""
         assert server.CREATOR_PAYOUT_DAYS == 7
         assert f"Paid within {server.CREATOR_PAYOUT_DAYS} days of approval" in content()["CREATORS"]["hero"]["chips"]
-        assert f"Paid within {server.CREATOR_PAYOUT_DAYS} days of approval" in content()["HOME"]["card"]["chips"]
+        # Home's card lost its chips; the promise is said once on home, in
+        # step 4.
+        paid = next(i for i in content()["HOME"]["how"]["items"] if i["key"] == "paid")
+        assert f"within {server.CREATOR_PAYOUT_DAYS} days of your approval" in paid["line"]
 
     def test_creators_sign_in_with_whatsapp(self):
         """"Sign in with WhatsApp" / "a code sent to your WhatsApp": creators
@@ -364,4 +372,4 @@ class TestWhatIsNotTrueIsNotSaid:
         text = _everything()
         assert "only pay when" not in text
         assert content()["HOME"]["close"]["line"] == "Free to post, and no retainer."
-        assert content()["HOME"]["hero"]["note"] == "Free to post · no retainer"
+        assert content()["HOME"]["hero"]["note"] == "Free to post. No retainer."

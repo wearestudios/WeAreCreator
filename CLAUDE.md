@@ -1176,29 +1176,47 @@ evaluated in node rather than regexing JSX.
 - **Every section header is numbered** (`SectionHead` → `SectionRule`, a
   hairline with `01 · Label` in the mono label face) — the page reads as one
   argument in order, and a reader landing halfway knows where they are.
+- **The section rule is the only place JetBrains Mono or tracked capitals
+  appear on a public page.** Everything else — card labels, day names,
+  table headers, kickers, the footer's column headings — is sentence case in
+  Inter Tight. The hero had five more uses and read as noise.
+  `test_site_foundations.py` allows `mkt-label` in `SectionRule` alone and
+  sweeps the mounted marketing files for hand-tracked capitals; a browser
+  count finds every mono text run inside a rule (2 per rule: number, name).
 - **Home is eight sections**: hero, the swap ("A campaign is not a
   spreadsheet and sixty DMs"), a full-bleed photograph, the four steps, the
   navy band of what holds, who built it, the creator door, the close.
   `/for-brands` is shortlist, pricing, report, photo, promises, comparison,
   FAQ, close; `/for-creators` is briefs, the money band, protections, photo,
   payouts, record, close.
-- **The hero is static.** One headline with one `WipeWord` on "chasing", the
-  deal card drawn in the DOM, and an anchor rail to the four steps. The
-  sector slider, its eight `hero-*.svg` drawings, `KineticHeadline`,
-  `sectorCycle`, the scroll film, `FeeFlow`, `PayoutClock` and the studio
-  handshake band are deleted, not unmounted. At 1366×768 the deal card's
-  top edge is at 121px — the hero card is above the fold on the laptop most
-  brands read it on.
+- **The hero is five things and three type styles.** The h1 with one
+  `WipeWord` on "chasing", one lead, the two asks, one quiet line, and the
+  deal card — Fraunces display, Inter Tight lead, Inter Tight UI. **No
+  eyebrow, no Built-for line, no step rail**: they were removed in a
+  subtraction pass, and the rail duplicated section 4 a screen above it. The
+  card is three rows (budget, quote, agreed) with **the agreed fee as its
+  only large figure**, and no chips. The sector slider, its eight
+  `hero-*.svg` drawings, `KineticHeadline`, `sectorCycle`, the scroll film,
+  `FeeFlow`, `PayoutClock` and the studio handshake band are deleted, not
+  unmounted. At 1366×768 the whole hero — h1, lead, asks, card — ends at
+  ~500px, and the card's top is level with the h1's.
+- **Display tracking is -0.02em, h2 -0.015em** (from -0.04 / -0.035): at
+  1366 and 1920 "Creator campaigns," read as one word.
 - **A value the content module does not know yet is `null`, and `<Known>`
   renders nothing in its place in production** — never "TBC". The four
   known nulls are `platformFeePercent`, `budgetRangesByCreatorSize`,
   `verifiedCreatorCount` and `gstInvoiceConfirmed`; an FAQ item gated on one
   (`showIf`) is dropped with it. In development `<Known>` draws a marker so
   the gap is visible. The fee is never typed into a page.
-- **Real names appear in exactly two places**: the client marquee and the
-  "who built it" section, both reading `FACTS.confirmedClients`. Every name
-  in the drawn product UI (Kiran, Priya, Rahul, Tanvi) is invented, and no
-  WeAre Studios team member is named anywhere; a test sweeps for both.
+- **No real business is named on the homepage.** The client marquee and the
+  three client cards were removed; "who built it" is its rule, its heading
+  and the one FillText sentence. `Marquee` and `FACTS.confirmedClients` are
+  left in place, unused, for later. Every name in the drawn product UI
+  (Kiran, Priya, Rahul, Tanvi) is invented, no WeAre Studios team member is
+  named anywhere, and a test sweeps all three pages for the client names.
+  The FillText sentence names Bengaluru as where the studio *has worked* —
+  the second verbatim exemption from the city sweep, beside the FAQ's "Is
+  this only for Bengaluru?".
 - **The phone gets a sticky bottom ask** (`StickyCta`): "Post a brief" on
   home and `/for-brands`, "Join free" on `/for-creators`. It appears once the
   hero is above the viewport and goes away when the close is on screen or
@@ -1583,9 +1601,7 @@ Landing on the same static server, median of three:
 
 The CLS took two fixes, both in the font fallbacks (see "The public site's
 own foundations"): the display fallback matched at the phone's optical size,
-and an italic half for it. The deal card's title also reserves two lines
-(`min-h-[2.5em]`) so a title that wraps once the face lands does not push the
-chips down.
+and an italic half for it.
 
 ### The marketing chrome
 

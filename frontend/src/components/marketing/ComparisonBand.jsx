@@ -25,10 +25,11 @@ import { Chip } from "@/components/marketing/siteMocks";
 import { SectionHead, Wrap } from "@/components/marketing/SiteParts";
 import { LANDING_COMPARE as IDS } from "@/constants/testIds";
 
-const Panel = ({ label, testid, children }) => (
+// No label above either panel: the arrow between them and the heading above
+// say which is which, and a label was one more small line on the screen.
+const Panel = ({ testid, children }) => (
     <div data-testid={testid} className="min-w-0">
-        <p className="mkt-label text-muted-foreground">{label}</p>
-        <div className="mt-5">{children}</div>
+        {children}
     </div>
 );
 
@@ -109,14 +110,14 @@ export default function ComparisonBand({ copy, n }) {
             <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={copy.label} title={<span data-testid={IDS.title}>{copy.title}</span>} />
                 <div className="mt-14 grid grid-cols-1 items-center gap-8 md:grid-cols-[1fr_auto_1fr] md:gap-12">
-                    <Panel label={copy.todayLabel} testid={IDS.today}>
+                    <Panel testid={IDS.today}>
                         <Spreadsheet head={copy.sheetHead} rows={copy.sheetRows} bubbles={copy.bubbles} />
                     </Panel>
                     <div aria-hidden className="flex justify-center text-muted-foreground">
                         <ArrowDown className="h-7 w-7 md:hidden" />
                         <ArrowRight className="hidden h-7 w-7 md:block" />
                     </div>
-                    <Panel label={copy.hereLabel} testid={IDS.here}>
+                    <Panel testid={IDS.here}>
                         <Board rows={copy.hereRows} />
                     </Panel>
                 </div>

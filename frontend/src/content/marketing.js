@@ -124,42 +124,31 @@ export const HOME = {
         title: "Creator campaigns, minus the chasing.",
         // Set in Fraunces true italic, revealed by WipeWord once at load.
         accent: "chasing",
-        lead: "Find verified creators, agree the fee, get the content and pay on approval — in one place, with every term written down.",
+        // Who it is for, said in plain words — it replaced a dotted list of
+        // sectors under the buttons.
+        lead: "Find verified creators for your restaurant, café or hotel. Agree the fee, approve the content, pay on approval — with every term written down.",
         // The brief asked for "you pay only when a deal is agreed". A campaign
         // fee can be charged for running a brief, so that is not true of every
         // brief; this is.
-        note: "Free to post · no retainer",
-        builtForLabel: "Built for",
-        builtFor: "Restaurants · Cafés · Bars & breweries · Hotels · Retail · Real estate · Wellness",
-        railLabel: "The four steps",
+        note: "Free to post. No retainer.",
     },
-    // Anchors in section 4; the hero rail links to them.
-    steps: [
-        { key: "offer", n: "01", label: "Offer" },
-        { key: "agree", n: "02", label: "Agree" },
-        { key: "deliver", n: "03", label: "Deliver" },
-        { key: "paid", n: "04", label: "Get paid" },
-    ],
     // The product card in the hero. **The history this product keeps**: the
-    // brief's budget, the creator's quote, the fee agreed, and both sides on
-    // the frozen terms. Offers and counter-offers are an unmerged feature;
-    // when it lands these four rows are the only thing that changes.
+    // brief's budget, the creator's quote, and the fee agreed — the one large
+    // figure. Offers and counter-offers are an unmerged feature; when it lands
+    // these rows are the only thing that changes.
     card: {
-        kicker: "Deal · Kiran M.",
-        title: "Weekend brunch launch · 1 reel, 3 stories",
+        title: "Weekend brunch launch",
+        subline: "Kiran M. · 1 reel, 3 stories",
         rows: [
-            { day: "Mon", who: "Budget on the brief", amount: "₹11,000" },
+            { day: "Mon", who: "Your budget", amount: "₹11,000" },
             { day: "Tue", who: "Kiran quoted", amount: "₹14,000" },
-            { day: "Wed", who: "Fee agreed", amount: "₹12,500" },
-            { day: "Wed", who: "Both accepted · terms frozen", amount: "₹12,500", final: true },
+            { day: "Wed", who: "Agreed", amount: "₹12,500", final: true },
         ],
-        chips: ["Usage: organic repost only", "Disclosure: #ad", "Paid within 7 days of approval"],
+        note: "Written on the deal. Both sides see the same numbers.",
     },
     swap: {
         label: "The problem",
         title: "A campaign is not a spreadsheet and sixty DMs",
-        todayLabel: "How it runs today",
-        hereLabel: "How it runs here",
         sheetHead: ["Creator", "Rate", "Status", "Paid?"],
         sheetRows: [
             ["Priya R.", "12k?", "no reply 6d", ""],
@@ -235,17 +224,14 @@ export const HOME = {
             },
         ],
     },
+    // No client names on the homepage: the marquee and the three cards were
+    // removed. `FACTS.confirmedClients` stays for use elsewhere later.
     clients: {
         label: "Who built it",
         title: "Built by people who run these campaigns",
-        marqueeLabel: "Brands we have run campaigns for",
-        cards: [
-            "We check every creator before a brand sees them.",
-            "We write every fee and term down before anyone shoots.",
-            "We run launch nights, from the guest list to the night itself.",
-        ],
-        // The one FillText sentence on the site.
-        fill: "Everything this platform enforces — the checks, the written terms, the approval before anyone is paid — is how we already run campaigns for our own clients.",
+        // The one FillText sentence on the site. It names the city as a
+        // record of where the work was done, not as the platform's reach.
+        fill: "WeAre Studios has run influencer campaigns for Bengaluru restaurants, cafés and bars for years. This is the tool we wanted and couldn't buy.",
     },
     creatorDoor: {
         label: "For creators",

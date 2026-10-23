@@ -20,8 +20,6 @@ export const LANDING_PAGE = {
 	promises: 'landing-promises',
 	promise: (i) => `landing-promise-${i}`,
 	clients: 'landing-clients',
-	clientMarquee: 'landing-client-marquee',
-	clientCard: (i) => `landing-client-card-${i}`,
 	fill: 'landing-fill',
 	creatorDoor: 'landing-creator-door',
 	creatorDoorCta: 'landing-creator-door-cta',
@@ -29,16 +27,12 @@ export const LANDING_PAGE = {
 
 export const LANDING_HERO = {
 	section: 'hero-section',
-	eyebrow: 'hero-eyebrow',
 	heading: 'hero-heading',
 	accent: 'hero-accent',
 	lead: 'hero-lead',
 	note: 'hero-note',
-	builtFor: 'hero-built-for',
 	ctaBrand: 'hero-cta-brand',
 	ctaTalk: 'hero-cta-talk',
-	rail: 'hero-rail',
-	railStep: (key) => `hero-rail-${key}`,
 	card: 'hero-card',
 	cardRow: (i) => `hero-card-row-${i}`,
 };

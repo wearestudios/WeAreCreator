@@ -79,7 +79,7 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
                 className={`${frame} flex flex-col justify-end gap-2 border-2 border-dashed border-tint/25 bg-muted p-5 text-left md:p-8`}
                 style={box}
             >
-                <span className="mkt-label text-foreground">
+                <span className="text-meta font-medium text-foreground">
                     {id} · {slot.width}×{slot.height}
                 </span>
                 <span className="max-w-xl text-meta text-muted-foreground">{slot.brief}</span>

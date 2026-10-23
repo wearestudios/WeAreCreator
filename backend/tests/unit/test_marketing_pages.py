@@ -144,8 +144,8 @@ def page_text(name):
     src = copy_of(*PAGES[name])
     for key in set(re.findall(r"ASK\.(\w+)", src)):
         parts += [c["ASK"][key]["label"], c["ASK"][key].get("to") or c["ASK"][key].get("href")]
-    if name == "home":
-        parts += list(c["FACTS"]["confirmedClients"])
+    # Home used to add `FACTS.confirmedClients` here for its marquee; the
+    # marquee came off the page, so nothing outside the page's own block does.
     return " ".join(parts) + " " + src
 
 
@@ -181,13 +181,24 @@ _CITIES_COPY_MUST_NOT_NAME = ("bengaluru", "bangalore", "mumbai", "delhi", "blr"
 # Its answer is not.
 _CITY_QUESTION = "Is this only for Bengaluru?"
 
+# **The second, and why it is not a claim either.** Home's "who built it"
+# sentence says where WeAre Studios has *already* worked — a record of the
+# studio, in the past tense, not a statement of where the platform reaches.
+# Exempt verbatim, so a rewording that turns it into a footprint ("for every
+# Bengaluru brand") fails the sweep again.
+_STUDIO_RECORD = (
+    "WeAre Studios has run influencer campaigns for Bengaluru restaurants, cafés "
+    "and bars for years. This is the tool we wanted and couldn't buy."
+)
+_CITY_EXEMPT = (_CITY_QUESTION, _STUDIO_RECORD)
+
 
 @pytest.mark.parametrize("name", list(PAGES))
 def test_no_page_names_a_city_in_its_copy(name):
     """A city in the copy is a geographic claim nobody re-checks."""
     strings = _page_strings(name) if name in CONTENT_EXPORT else [copy_of(*PAGES[name])]
     for text in strings:
-        if text == _CITY_QUESTION:
+        if text in _CITY_EXEMPT:
             continue
         low = text.lower()
         for city in _CITIES_COPY_MUST_NOT_NAME:
@@ -204,6 +215,18 @@ def test_the_city_exemption_is_one_question_and_its_answer_says_no():
     assert hits[0]["a"].startswith("No.")
     for city in _CITIES_COPY_MUST_NOT_NAME:
         assert city not in hits[0]["a"].lower()
+
+
+def test_the_studio_record_is_the_one_other_exemption_and_is_past_tense():
+    """The second exemption is exactly home's section 6 sentence, it is about
+    the studio, and it is in the past tense — "has run … for years" — so it
+    reads as where the work was done, not as the platform's reach."""
+    assert content()["HOME"]["clients"]["fill"] == _STUDIO_RECORD
+    assert _STUDIO_RECORD.startswith("WeAre Studios has run ")
+    assert "for years" in _STUDIO_RECORD
+    # It appears nowhere but home's section 6.
+    for name in ("brands", "creators"):
+        assert _STUDIO_RECORD not in _page_strings(name)
 
 
 @pytest.mark.parametrize("name", list(PAGES))
@@ -689,34 +712,40 @@ def test_home_sends_readers_on_rather_than_telling_them_everything():
 
 def test_step_three_is_the_one_we_handle():
     """The managed service sells itself on the step it takes off a brand's
-    hands, quietly, without a section of its own — and the hero's rail links
-    to each step by anchor rather than sliding between them."""
+    hands, quietly, without a section of its own. **The hero's rail is gone**:
+    it duplicated section 4 one screen above it, so nothing links to the steps
+    by anchor any more and they carry no anchor ids or numbers."""
     how = content()["HOME"]["how"]
-    assert [i["title"] for i in how["items"]] == [s["label"] for s in content()["HOME"]["steps"]]
+    assert [i["title"] for i in how["items"]] == ["Offer", "Agree", "Deliver", "Get paid"]
     assert [bool(i.get("weHandle")) for i in how["items"]] == [False, False, True, False]
     assert how["weHandle"] == "We handle this part"
+    assert "steps" not in content()["HOME"]
     src = read(*PAGES["home"])
-    assert "href={`#step-${s.key}`}" in src and "id={`step-${step.key}`}" in src
+    assert "#step-" not in src and "id={`step-" not in src
     # "you only touch two": the brand's own steps are exactly two.
     assert sum(1 for i in how["items"] if i["yours"]) == 2
 
 
-def test_who_built_it_names_only_the_confirmed_clients():
-    """Replaces `test_who_built_it_is_absent_until_three_real_names_are_supplied`.
-    The three real names arrived, so the section is on: the marquee reads
-    `FACTS.confirmedClients` and nothing else, and no other page or drawn
-    screen carries a real client's name. No WeAre Studios team member is
-    named in it."""
+def test_the_homepage_names_no_client():
+    """Was `test_who_built_it_names_only_the_confirmed_clients`, which pinned
+    the marquee reading `FACTS.confirmedClients`. **The marquee and the client
+    cards came off the homepage**, so this pins the other way round: home does
+    not import `Marquee` or read `confirmedClients`, no page renders a real
+    client's name, and section 6 is its rule, its heading and the one FillText
+    sentence. The list and the component are left intact for later use."""
     clients = content()["FACTS"]["confirmedClients"]
     assert clients == ["The Brew Factory", "9889", "The Rameshwaram Cafe"]
+    assert (FRONTEND / "src" / "components" / "marketing" / "Marquee.jsx").exists()
     home = copy_of(*PAGES["home"])
-    assert "items={FACTS.confirmedClients}" in home
-    for name in ("brands", "creators"):
+    assert "Marquee" not in home and "confirmedClients" not in home
+    for name in ("home", "brands", "creators"):
+        text = page_text(name) + " " + " ".join(_page_strings(name))
         for real in clients:
-            assert real not in page_text(name), (name, real)
-    drawn = " ".join(_page_strings("home"))
-    for real in ("The Brew Factory", "Rameshwaram"):
-        assert real not in drawn, real
+            assert real not in text, (name, real)
+    section = home[home.index("function WhoBuiltIt") : home.index("function CreatorDoor")]
+    assert "<SectionHead" in section and "<FillText" in section
+    assert "<Card" not in section and "<ul" not in section
+    assert set(content()["HOME"]["clients"]) == {"label", "title", "fill"}
 
 
 # --- /brands: what /how-it-works and /why-weare used to argue -----------------
@@ -1085,13 +1114,19 @@ def test_the_h1_is_display_scale():
 def test_the_hero_card_reserves_its_box():
     """Replaces `test_the_headline_reserves_its_box_by_rendered_width`. The
     card's rows wait at opacity 0 in boxes they already occupy, so writing
-    them moves nothing; and the chip row reserves two lines on a phone, where
-    the fallback face and the webfont wrap it differently."""
+    them moves nothing. It used to also pin the chip row's reserved two lines;
+    **the chips are gone**, so it pins what replaced them: three rows, one
+    large figure (the agreed fee, in Fraunces) and no chip at all."""
     css = read("src", "index.css")
     assert re.search(r"\.mkt-row \{\s*opacity: 0;\s*\}", css)
     mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
     deal = mocks[mocks.index("export function DealCard") : mocks.index("export function StepScreen")]
-    assert "min-h-[3.75rem]" in deal and "sm:min-h-0" in deal
+    assert "<Chip" not in deal and "mkt-label" not in deal
+    assert deal.count("font-serif text-[2rem]") == 1, "the agreed fee is the only large figure"
+    assert "mkt-h2" not in deal and "mkt-h3" not in deal
+    card = content()["HOME"]["card"]
+    assert "chips" not in card and "kicker" not in card
+    assert [r.get("final", False) for r in card["rows"]] == [False, False, True]
 
 
 def test_the_hero_is_still_under_reduced_motion():
@@ -1106,17 +1141,31 @@ def test_the_hero_is_still_under_reduced_motion():
 
 def test_the_h1_has_one_stable_accessible_name():
     """Replaces `test_the_headline_has_one_stable_accessible_name`. One `h1`,
-    its text the sentence; the rail under it is a `nav` of anchors, each named
-    by its number and label, with a visible focus ring."""
+    its text the sentence. The half that checked the rail's `nav` of anchors
+    went with the rail; see `test_the_hero_is_exactly_its_five_elements`."""
     src = read(*PAGES["home"])
     assert src.count("<h1") == 1
     h1 = _h1()
     assert "aria-label" not in h1 and "aria-live" not in h1
+
+
+def test_the_hero_is_exactly_its_five_elements():
+    """The hero read as noise, and the fix was subtraction: the h1, one lead,
+    the two asks, one quiet line, and the card. **No eyebrow, no Built-for
+    line, no step rail** — and in three type styles at most: the Fraunces
+    display h1, the Inter Tight lead, and Inter Tight UI. No label face."""
+    src = copy_of(*PAGES["home"])
     hero = src[src.index("function Hero()") : src.index("function HowItWorks")]
-    rail = hero[hero.index("<nav") : hero.index("</nav>")]
-    assert "aria-label={hero.railLabel}" in rail and "<ol" in rail
-    assert "{s.n}" in rail and "{s.label}" in rail
-    assert "focus-visible:ring-2" in rail and "focus-visible:ring-offset-background" in rail
+    assert "<nav" not in hero and "<Label" not in hero and "HERO_EYEBROW" not in hero
+    assert "builtFor" not in hero and "railLabel" not in hero
+    assert "mkt-label" not in hero
+    for el in ("<HeroTitle", "{hero.lead}", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", "<DealCard"):
+        assert hero.count(el) == 1, el
+    styles = set(re.findall(r"\bmkt-[a-z0-9]+", hero))
+    assert styles <= {"mkt-lead"}, styles  # the h1's own class sits in HeroTitle
+    hero_copy = content()["HOME"]["hero"]
+    assert set(hero_copy) == {"title", "accent", "lead", "note"}
+    assert hero_copy["note"] == "Free to post. No retainer."
 
 
 def test_the_phone_gets_a_sticky_ask_between_the_hero_and_the_close():

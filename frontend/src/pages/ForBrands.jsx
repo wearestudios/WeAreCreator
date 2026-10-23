@@ -52,7 +52,7 @@ export default function ForBrands() {
                 <Wrap className="py-20 md:py-28">
                     <SectionHead n={1} label={shortlist.label} title={shortlist.title} lead={shortlist.lead} />
                     <Known value={FACTS.verifiedCreatorCount} name="verifiedCreatorCount">
-                        {(n) => <p className="mkt-label mt-6 text-foreground">{shortlist.countLine(n)}</p>}
+                        {(n) => <p className="mt-6 text-body text-foreground">{shortlist.countLine(n)}</p>}
                     </Known>
                     <div className="mt-12 max-w-4xl">
                         <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} />
@@ -86,7 +86,7 @@ export default function ForBrands() {
                                 <dl className="mt-6 grid gap-5 sm:grid-cols-3">
                                     {ranges.map((r) => (
                                         <div key={r.size} className="rounded-lg border border-border bg-card p-6">
-                                            <dt className="mkt-label text-muted-foreground">{r.size}</dt>
+                                            <dt className="text-meta text-muted-foreground">{r.size}</dt>
                                             <dd className="mkt-h3 mt-2 text-heading">{r.range}</dd>
                                         </div>
                                     ))}
