@@ -149,11 +149,14 @@ A fresh database seeds four demo brands, seven open briefs and eight verified
 creators, so most screens have something in them immediately.
 
 **1. Signed out — the marketing site**
-Go to `/`. Home is a router: the hero, a counted proof strip, one
-problem-and-promise section, and two doors. Follow either into `/for-creators`
-or `/for-brands`, then `/how-it-works` and `/why-weare` from the navbar. Try a
-URL that does not exist — it lands on a designed 404 rather than silently
-redirecting home, which is what it used to do.
+Go to `/`. Home is brands-first: a static hero with the deal card, the
+spreadsheet-versus-board swap, a photograph, the four steps, what holds, who
+built it, a door for creators and the close. Follow the navbar to
+`/for-brands` and `/for-creators`. `/how-it-works` and `/why-weare` now
+redirect to `/for-brands` (a `<Navigate replace>` here, a 301 on Vercel). On a
+phone, scroll past the hero for the sticky bottom ask. Try a URL that does not
+exist — it lands on a designed 404 rather than silently redirecting home,
+which is what it used to do.
 
 Then **`/campaigns`** for the shop window: real open briefs from verified
 brands. A visitor can read them without an account.
@@ -340,8 +343,9 @@ production build, so it cannot mask a missing rewrite.
 
 ### The marketing site, and the preview it gave up
 
-Five pages — `/`, `/for-brands`, `/for-creators`, `/how-it-works`,
-`/why-weare` — plus a designed 404. **All of them are React routes.**
+Three pages — `/`, `/for-brands`, `/for-creators` — plus `/contact` and a
+designed 404. **All of them are React routes.** `/how-it-works` and
+`/why-weare` were folded into `/for-brands` and redirect there.
 
 Two of them used to be server-rendered HTML written by hand in `server.py`, for
 the preview reason above. That had three costs, and they were the reason for
