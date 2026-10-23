@@ -17,7 +17,7 @@
 // Motion is entrance-only and functional. Nothing on this page keeps moving
 // once it has arrived, and every piece of it checks prefers-reduced-motion.
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";

@@ -10,6 +10,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import RouteFade from "@/components/motion/RouteFade";
 import { applyTheme, surfaceFor } from "@/lib/surfaceTheme";
 import RouteFallback from "@/components/RouteFallback";
+import AnalyticsGate from "@/components/AnalyticsGate";
 import { retryImport } from "@/lib/lazyRoute";
 import { installGlobalErrorHandlers } from "@/lib/globalErrors";
 import { installOfflineQueue } from "@/lib/offlineQueue";
@@ -276,6 +277,11 @@ function App() {
                     {/* Takes `data-theme` off anything that is not the
                         console — see the component. */}
                     <SurfaceGuard />
+                    {/* The public site's recorder: on the marketing pages, for
+                        a signed-out visitor, and nowhere else — see the
+                        component. Inside the router and the auth provider
+                        because it reads both. */}
+                    <AnalyticsGate />
                     <RouteFade>
                     <Routes>
                         <Route path="/" element={<Landing />} />
