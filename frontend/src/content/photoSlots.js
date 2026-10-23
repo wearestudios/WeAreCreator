@@ -87,6 +87,23 @@ export const PHOTO_SLOTS = {
     },
 };
 
+/**
+ * The tinted slots outside the marketing pages — the auth asides and the 404 —
+ * which draw `PlaceholderImage` rather than a `PhotoSlot` and so have no
+ * headline fallback. Their notes are photographer briefs like the ones above
+ * and are held to the same rule: written `SHOW_BRIEFS ? "…" : null` in this
+ * module, where the minifier can fold it, so a production bundle carries no
+ * copy of them. They used to be literal `note` props at each call site and
+ * shipped as a `data-placeholder` attribute on the sign-in screen.
+ */
+export const PLACEHOLDER_BRIEFS = {
+    "auth-login": SHOW_BRIEFS
+        ? "Creator and brand manager reviewing a shoot plan on a phone at a venue table, portrait crop for the auth aside"
+        : null,
+    "auth-signup": SHOW_BRIEFS ? "Creator setting up a shot on location, portrait crop for the auth aside" : null,
+    "not-found": SHOW_BRIEFS ? "Empty venue between shoots, chairs stacked, light through a window, 4:3" : null,
+};
+
 /** The slot, or a thrown error: a misspelt id must fail loudly, not render an
  * empty box nobody notices is the wrong one. */
 export function photoSlot(id) {

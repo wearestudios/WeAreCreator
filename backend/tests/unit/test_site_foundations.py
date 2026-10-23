@@ -707,6 +707,35 @@ class TestPhotoSlots:
             code,
         )
 
+    def test_the_tinted_slots_briefs_compile_out_too(self):
+        """The auth asides and the 404 draw `PlaceholderImage`, whose notes are
+        photographer briefs as well. They were literal `note` props at each
+        call site and shipped to production as a `data-placeholder`
+        attribute on the sign-in screen, so they live in the manifest now
+        under the same inline guard, and no page passes a literal note."""
+        import os
+        def briefs(env):
+            script = _module(MANIFEST) + "\nconsole.log(JSON.stringify(PLACEHOLDER_BRIEFS));"
+            full = {k: v for k, v in os.environ.items() if k not in ("NODE_ENV", "REACT_APP_VERCEL_ENV")}
+            full.update(env)
+            out = subprocess.run(["node", "--input-type=module", "-e", script],
+                                 capture_output=True, text=True, timeout=60, env=full)
+            assert out.returncode == 0, out.stderr
+            return json.loads(out.stdout)
+        dev = briefs({"NODE_ENV": "development"})
+        prod = briefs({"NODE_ENV": "production"})
+        assert set(dev) == {"auth-login", "auth-signup", "not-found"}
+        assert all(len(v) > 20 for v in dev.values()) and all(v is None for v in prod.values())
+        block = _code(MANIFEST.read_text()).split("PLACEHOLDER_BRIEFS = {", 1)[1].split("};", 1)[0]
+        values = re.findall(r'"[\w-]+":\s*([^\n]+)', block)
+        assert values and all(v.strip().startswith("SHOW_BRIEFS") for v in values), values
+        for p in _src_files():
+            code = _code(p.read_text())
+            for tag in re.findall(r"<PlaceholderImage\b[^>]*>", code, flags=re.S):
+                assert not re.search(r'\bnote="', tag), f"{p}: a literal brief ships in the bundle"
+        slot = (SRC / "components/marketing/PlaceholderImage.jsx").read_text()
+        assert "data-placeholder={src || !brief ? undefined : brief}" in slot
+
     def test_the_component_holds_no_path_of_its_own(self):
         code = _code(PHOTO_SLOT.read_text())
         assert "photoSlot(id)" in code

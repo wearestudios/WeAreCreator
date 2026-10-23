@@ -103,7 +103,7 @@ export default function Signup() {
             <div className="relative hidden md:block">
                 <PlaceholderImage
                     // PLACEHOLDER IMAGE: Creator setting up a shot on location, portrait crop for the auth aside.
-                    note="Creator setting up a shot on location, portrait crop for the auth aside"
+                    slot="auth-signup"
                     fill
                     className="opacity-60"
                 />
