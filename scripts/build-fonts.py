@@ -25,10 +25,14 @@ Two jobs:
    descent and line gap divided by that ratio, because the browser applies
    them to the already-adjusted face.
 
-   The hero gets its own fallback because the LCP element is a ~100px
-   headline and Fraunces' widths change with optical size: matched at the
-   display instance (opsz 144, WONK 1) on the headline's own words, rather
-   than at the body instance a 16px paragraph would want.
+   The hero gets its own fallback because the LCP element is the display
+   headline and Fraunces' widths change with optical size. It is matched on
+   the headline's own words at **opsz 52, WONK 1** — the instance a phone
+   renders, where `mkt-display` sits at its 52px minimum. An earlier version
+   matched at opsz 144 (the desktop end) and the fallback set the phone
+   headline on two lines where Fraunces needs four: a 0.28 layout shift on
+   Lighthouse's mobile run, the whole of it from this one element. A phone
+   is where the swap is slow enough to be seen, so it is the size to match.
 
     python3 scripts/build-fonts.py <src-dir> <out-dir>
 """
@@ -59,7 +63,12 @@ FALLBACKS = {
     "sans": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "sans-android": "roboto-latin-400-normal.woff2",
     "mono": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+    "serif-italic": "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
 }
+
+# The words set in true italic on the public pages: the hero's drawn word and
+# the photo panel's.
+ITALIC_SAMPLE = "chasing good"
 
 BUILDS = [
     # (source, output, weight range or None)
@@ -116,7 +125,10 @@ def main(src: Path, out: Path) -> None:
     fb = {k: TTFont(v if v.startswith("/") else src / v) for k, v in FALLBACKS.items()}
     fr = out / "fraunces-latin-normal.woff2"
     body = static_at(fr, {"opsz": 144, "wght": 600, "WONK": 0})
-    display = static_at(fr, {"opsz": 144, "wght": 400, "WONK": 1})
+    display = static_at(fr, {"opsz": 52, "wght": 400, "WONK": 1})
+    # From 1024px up the headline is 80–104px, and Fraunces is narrower at
+    # that optical size; index.css swaps to this pair at that breakpoint.
+    display_large = static_at(fr, {"opsz": 100, "wght": 400, "WONK": 1})
     inter = static_at(out / "inter-tight-latin.woff2", {"wght": 400})
     mono = TTFont(out / "jetbrains-mono-latin-400.woff2")
     rows = {
@@ -124,6 +136,18 @@ def main(src: Path, out: Path) -> None:
         "Fraunces Fallback Android": descriptors(body, fb["serif-android"], SAMPLE),
         "Fraunces Display Fallback": descriptors(display, fb["serif"], HERO_SAMPLE),
         "Fraunces Display Fallback Android": descriptors(display, fb["serif-android"], HERO_SAMPLE),
+        "Fraunces Display Large Fallback": descriptors(display_large, fb["serif"], HERO_SAMPLE),
+        # Without these, an italic word in the fallback state is a slanted
+        # copy of the upright fallback — a different width from Fraunces'
+        # real italic, so the words after it move when the italic file lands.
+        "Fraunces Display Fallback (italic)": descriptors(
+            static_at(out / "fraunces-latin-italic.woff2", {"opsz": 52, "wght": 400, "WONK": 1}),
+            fb["serif-italic"], ITALIC_SAMPLE,
+        ),
+        "Fraunces Display Large Fallback (italic)": descriptors(
+            static_at(out / "fraunces-latin-italic.woff2", {"opsz": 100, "wght": 400, "WONK": 1}),
+            fb["serif-italic"], ITALIC_SAMPLE,
+        ),
         "Inter Tight Fallback": descriptors(inter, fb["sans"], SAMPLE),
         "Inter Tight Fallback Android": descriptors(inter, fb["sans-android"], SAMPLE),
         "JetBrains Mono Fallback": descriptors(mono, fb["mono"], SAMPLE.upper()),

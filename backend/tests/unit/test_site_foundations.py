@@ -136,16 +136,33 @@ class TestFonts:
         """The swap from the local face to the webfont must move nothing; the
         hero headline is the LCP element and the place a swap shifts a page."""
         faces = _faces()
-        for fam in (
-            "Fraunces Fallback", "Fraunces Fallback Android",
-            "Fraunces Display Fallback", "Fraunces Display Fallback Android",
-            "Inter Tight Fallback", "Inter Tight Fallback Android",
-            "JetBrains Mono Fallback",
+        for key in (
+            ("Fraunces Fallback", "normal"), ("Fraunces Fallback Android", "normal"),
+            ("Fraunces Display Fallback", "normal"), ("Fraunces Display Fallback Android", "normal"),
+            ("Fraunces Display Large Fallback", "normal"),
+            # The hero's italic word: a browser-slanted upright is a different
+            # width from the real italic, and the line after it moved.
+            ("Fraunces Display Fallback", "italic"), ("Fraunces Display Large Fallback", "italic"),
+            ("Inter Tight Fallback", "normal"), ("Inter Tight Fallback Android", "normal"),
+            ("JetBrains Mono Fallback", "normal"),
         ):
-            face = faces[(fam, "normal")]
-            assert "local(" in face and "url(" not in face, fam
+            face = faces[key]
+            assert "local(" in face and "url(" not in face, key
             for d in ("size-adjust", "ascent-override", "descent-override", "line-gap-override"):
-                assert re.search(rf"{d}:\s*[\d.]+%;", face), (fam, d)
+                assert re.search(rf"{d}:\s*[\d.]+%;", face), (key, d)
+        for fam in ("Fraunces Display Fallback", "Fraunces Display Large Fallback"):
+            assert "Italic" in faces[(fam, "italic")], "an italic fallback names an italic local face"
+
+    def test_the_display_fallback_is_matched_at_the_size_it_renders(self):
+        """Fraunces is far wider at the phone headline's optical size than at
+        the desktop one, so one set of metrics cannot serve both: matched at
+        the desktop end, the fallback set the phone headline on two lines
+        where Fraunces needs four. The Large face takes over at 1024px."""
+        media = re.search(r"@media \(min-width: 1024px\)\s*\{\s*:root\s*\{([^}]*)\}", CSS)
+        assert media, "the large display fallback is switched in at 1024px"
+        assert '"Fraunces", "Fraunces Display Large Fallback"' in media.group(1)
+        script = (ROOT / "scripts" / "build-fonts.py").read_text()
+        assert '"opsz": 52' in script and '"opsz": 100' in script
 
     def test_each_stack_names_its_fallbacks(self):
         def stack(name):

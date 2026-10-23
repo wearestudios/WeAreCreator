@@ -5319,7 +5319,15 @@ request loaded no `ital` axis. These are the public site's own, and
     Roman / Arial / Courier New and, second in each stack, Android's Noto
     Serif and Roboto. A `local()` face the device lacks is skipped. The
     display headline has its own pair because Fraunces' widths change with
-    optical size.
+    optical size — **matched at opsz 52, the phone headline**, where
+    Fraunces is widest. Matched at the desktop end the fallback set the
+    phone `h1` on two lines where Fraunces needs four, and Lighthouse's
+    mobile run read 0.28 CLS. From 1024px a `Large` face matched at opsz 100
+    takes over. Both display fallbacks have an **italic half** (same
+    family, `font-style: italic`) — without it the hero's italic word was
+    the upright slanted by the browser, a different width, and the rest of
+    the line moved when the italic file landed. Home measures 0.0000 CLS on
+    Lighthouse mobile with all three.
 - **WONK is for 40px and up, and off everywhere else explicitly.** The
   Fraunces file's default instance has WONK *on* — measured: its width is
   WONK 1's — so leaving it unset is not leaving it off. `html` sets
