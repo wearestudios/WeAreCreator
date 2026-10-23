@@ -5203,9 +5203,10 @@ outside `routes.jsx`, and any import of the module from outside the console.
 
 Typography is **Fraunces** (`font-serif`, headings) and **Inter Tight** (body),
 defined in `tailwind.config.js` and `src/index.css`. `design_guidelines.json` now
-matches; if the two ever disagree again, the code wins. Exactly one font
-stylesheet loads — the `@import` at the top of `src/index.css`. Don't add a
-second one to `public/index.html`.
+matches; if the two ever disagree again, the code wins. The fonts are
+self-hosted and declared once, by `@font-face` at the top of `src/index.css`;
+no font is requested from a third party, and `public/index.html` carries only
+the one preload. See "The public site's own foundations".
 
 In practice: `text-eyebrow uppercase tracking-eyebrow` eyebrows, `font-serif
 text-h*` headings, `border-border` on `bg-card` surfaces, navy for primary
@@ -5291,6 +5292,82 @@ sites, so a new component gets them by using the ordinary classes.
   page; `box-shadow` only on things that genuinely float — dialogs, dropdowns,
   popovers, toasts. Zero shadows outside `components/ui/`, checked by walking
   every element on a rendered page rather than by grepping for `shadow-`.
+
+### The public site's own foundations
+
+The marketing pages borrowed the product's foundations and looked like it:
+`text-fluid-hero` stops at 68px, a Landing section heading was 36px, and
+every Fraunces italic on the site was a browser-slanted roman because the font
+request loaded no `ital` axis. These are the public site's own, and
+`test_site_foundations.py` holds every rule below.
+
+- **The fonts are self-hosted** in `public/fonts/`, declared by `@font-face`
+  at the top of `index.css`, built by `scripts/build-fonts.py` (sources and
+  licence in `public/fonts/README.md`). Fraunces is ital + opsz + wght
+  400–700 + WONK and **no SOFT axis at all** — no `@fontsource-variable`
+  file has exactly that set, so it is Google's woff2, which subsets axes to
+  the request. Inter Tight is wght 400–600, JetBrains Mono 400 only and only
+  through `.mkt-label`. Latin only; one preload, the upright Fraunces the
+  hero is set in. `craco.config.js` tells css-loader to leave root-absolute
+  `url()`s alone, or it tries to bundle `/fonts/…` and fails.
+  - **Measured:** a page with no italic and no label went from 165,660 bytes
+    over two third-party origins (plus a 3.8KB stylesheet) to 94,900 bytes
+    from our own. The italic is 74,900 and the label face 21,064, each
+    fetched only by a page that renders one.
+  - **Every family has a metric-matched fallback face** (`size-adjust` and
+    the three overrides, from the build script), measured against Times New
+    Roman / Arial / Courier New and, second in each stack, Android's Noto
+    Serif and Roboto. A `local()` face the device lacks is skipped. The
+    display headline has its own pair because Fraunces' widths change with
+    optical size.
+- **WONK is for 40px and up, and off everywhere else explicitly.** The
+  Fraunces file's default instance has WONK *on* — measured: its width is
+  WONK 1's — so leaving it unset is not leaving it off. `html` sets
+  `"WONK" 0` (inherited by every `font-serif`), the product's `h1–h5` rule
+  sets `"opsz" 144, "WONK" 0`, and `--mkt-wonk` (`"WONK" 1`) is used by
+  exactly `mkt-display`, `mkt-h1` and `mkt-h2`, whose clamps never go below
+  40px. The product's headings lost `"SOFT" 30` with the axis.
+- **Every figure is tabular**, set once on `html`. Rupee columns, number cells
+  and countdowns all jitter with proportional figures, and a document-wide
+  rule covers the next one somebody writes. Nothing may opt back out.
+- **`mkt-*` is a parallel scale**, with the brief's clamps verbatim:
+  `display` 52→104, `h1` 44→84, `h2` 40→68, `h3` 28→40, `lead` 18→21,
+  `body` 18, and `label` — JetBrains Mono, 12px, 0.14em, uppercase, for
+  labels and metadata only. The `fluid-*` steps are untouched and pinned.
+  The classes are **forbidden under a signed-in route**: the test walks the
+  router from every `<ProtectedRoute>` through its imports, and separately
+  sweeps everything outside the public pages.
+- **The red is a fill or a mark; `accent-ink` is the red as a word.**
+  `#FF2731` is 3.76:1 on white and `#C41E27` is 5.90:1. Danger `#B3242C` is
+  6.55:1 and reads as a different red. A primary button on a light ground is
+  navy (18.43:1 with a white label). The size rule in `test_brand.py` counts
+  the four `mkt-*` headings as large. The arbitrary-value spellings
+  (`text-[#FF2731]` and inline `color:`) are refused outright, and no state
+  token is ever the brand red.
+- **Five motion primitives, imported from
+  `components/marketing/primitives.js`**: `WipeWord` (one word, left to
+  right, once at load), `RowWriter` (rows in sequence, once in view),
+  `CountUp`, `FillText` (one sentence inking in with scroll position, used
+  once on the site) and `Marquee` (continuous; pauses on hover and focus).
+  One curve, `--weare-ease`, and two bands: 200ms interactive, 400–600ms
+  entrance. The marquee is `linear` — the one exception, because a loop that
+  eases stalls at its seam. Reduced motion resolves every one to its end
+  state, in `index.css` and only there (the marquee becomes a static list).
+- **`PhotoSlot` reads `content/photoSlots.js`**. With a `src` it is the image;
+  without one, **in production**, it is a navy panel carrying the slot's
+  `fallbackHeadline` in display type — it must read as finished. The dashed
+  placeholder with the id, size and brief is **development and Vercel
+  preview only**, and the brief is not hidden in production but absent:
+  each is written `SHOW_BRIEFS ? "…" : null` inline, which a production
+  build folds to `null` and the minifier drops. Vercel exposes
+  `REACT_APP_VERCEL_ENV` to a CRA build, which is how a preview is told apart.
+- **`content/marketing.js` holds the public pages' words and `FACTS`.** A
+  value nobody knows is `null`, and `null` hides its element in production —
+  never a placeholder, never "TBC". `<Known>` is the one way a page renders a
+  maybe-null value. `platformFeePercent` is null because it is a pricing
+  decision; `budgetRangesByCreatorSize`, `verifiedCreatorCount` and
+  `gstInvoiceConfirmed` likewise. `confirmedClients` are the three real
+  names we may print, and only the home page's "who built it" prints them.
 
 ### The logo
 

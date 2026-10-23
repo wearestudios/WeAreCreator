@@ -491,6 +491,10 @@ class TestRedIsLogoAndStandoutData:
             r"|\btext-(?:2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\b"
             r"|\btext-h[123]\b"
             r"|\btext-\[(?:2[4-9]|[3-9]\d|\d{3,})px\]"
+            # The marketing scale's four headings never go below 28px —
+            # `mkt-lead`, `mkt-body` and `mkt-eyebrow` are body sizes and are
+            # deliberately not here.
+            r"|(?<![\w-])mkt-(?:display|h1|h2|h3)(?![\w-])"
         )
         # **The accent, by every name it has.** `text-data`, a bare
         # `text-accent` and `text-brand-red` are all #FF2731 as a word; only
@@ -510,6 +514,9 @@ class TestRedIsLogoAndStandoutData:
         assert not LARGE.search('className="text-sm text-data"')
         assert LARGE.search('className="text-fluid-6xl text-data"')
         assert LARGE.search('className="text-data text-3xl"'), "order must not matter"
+        MKT = re.compile(r"(?<![\w-])mkt-(?:display|h1|h2|h3)(?![\w-])")
+        assert MKT.search('className="mkt-h3 italic text-accent"')
+        assert not MKT.search('className="mkt-lead text-accent"'), "18–24px is body copy"
         RED_TEXT = re.compile(r"\btext-(?:data|accent|brand-red)(?![\w-])")
         assert RED_TEXT.search('className="text-meta text-accent"')
         assert not RED_TEXT.search('className="text-meta text-accent-ink"')

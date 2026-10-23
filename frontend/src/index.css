@@ -1,4 +1,134 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..700,0..100&family=Inter+Tight:wght@300..700&display=swap");
+/* ---------------------------------------------------------------------------
+ * Fonts, self-hosted
+ *
+ * They came from Google Fonts with Fraunces requested as opsz,wght and SOFT
+ * only, so every italic Fraunces on the site was a browser-slanted roman and
+ * the WONK axis did not exist. They are files in `public/fonts/` now, built
+ * by `scripts/build-fonts.py` (sources and URLs in `public/fonts/README.md`):
+ *
+ *   Fraunces        ital (two files), opsz 9–144, wght 400–700, WONK — and
+ *                   no SOFT axis at all, by request
+ *   Inter Tight     wght 400–600, one variable file
+ *   JetBrains Mono  400 only — the 11–13px uppercase marketing label
+ *
+ * Latin only. No request leaves for a third party: the old version cost two
+ * extra origins (a stylesheet host and a file host) before the first glyph.
+ * `index.html` preloads the one upright Fraunces file the hero headline is
+ * set in; nothing else is preloaded, because a preload is a promise the
+ * browser keeps whether or not the page uses the file.
+ *
+ * **Each family has a metric-matched fallback**, so the swap from the local
+ * face to the webfont moves nothing — the LCP element is a ~100px headline
+ * and that is where a font swap shifts a page. `size-adjust` and the vertical
+ * overrides come out of the build script, measured against Times New Roman /
+ * Arial / Courier New (via their metric-compatible Liberation twins) and,
+ * second in each stack, against Android's Noto Serif and Roboto. A `local()`
+ * face the device does not have is skipped, so each stack finds the one that
+ * exists. The display headline has its own pair because Fraunces' widths
+ * change with optical size, and the hero is set at the top of that range.
+ * ------------------------------------------------------------------------- */
+@font-face {
+    font-family: "Fraunces";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/fraunces-latin-normal.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Fraunces";
+    font-style: italic;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("/fonts/fraunces-latin-italic.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Inter Tight";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("/fonts/inter-tight-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/fonts/jetbrains-mono-latin-400.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The stacks, as tokens, so a family and its fallbacks are written once and
+   `tailwind.config.js` reads the same values. */
+:root {
+    --font-serif: "Fraunces", "Fraunces Fallback", "Fraunces Fallback Android", ui-serif, Georgia, serif;
+    --font-display: "Fraunces", "Fraunces Display Fallback", "Fraunces Display Fallback Android", ui-serif,
+        Georgia, serif;
+    --font-sans: "Inter Tight", "Inter Tight Fallback", "Inter Tight Fallback Android", ui-sans-serif,
+        system-ui, -apple-system, sans-serif;
+    --font-label: "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, "SFMono-Regular", monospace;
+}
+
+/* The fallbacks. Values are the build script's output; re-run it and paste
+   if a font file changes. */
+@font-face {
+    font-family: "Fraunces Fallback";
+    src: local("Times New Roman"), local("TimesNewRomanPSMT"), local("Liberation Serif");
+    size-adjust: 96.2%;
+    ascent-override: 101.66%;
+    descent-override: 26.51%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Fraunces Fallback Android";
+    src: local("Noto Serif"), local("NotoSerif-Regular");
+    size-adjust: 80.98%;
+    ascent-override: 120.77%;
+    descent-override: 31.49%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Fraunces Display Fallback";
+    src: local("Times New Roman"), local("TimesNewRomanPSMT"), local("Liberation Serif");
+    size-adjust: 93.71%;
+    ascent-override: 104.36%;
+    descent-override: 27.21%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Fraunces Display Fallback Android";
+    src: local("Noto Serif"), local("NotoSerif-Regular");
+    size-adjust: 78.86%;
+    ascent-override: 124.02%;
+    descent-override: 32.34%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Inter Tight Fallback";
+    src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+    size-adjust: 96.53%;
+    ascent-override: 100.35%;
+    descent-override: 24.99%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Inter Tight Fallback Android";
+    src: local("Roboto"), local("Roboto-Regular");
+    size-adjust: 97.12%;
+    ascent-override: 99.75%;
+    descent-override: 24.84%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "JetBrains Mono Fallback";
+    src: local("Courier New"), local("CourierNewPSMT"), local("Liberation Mono");
+    size-adjust: 99.98%;
+    ascent-override: 102.02%;
+    descent-override: 30%;
+    line-gap-override: 0%;
+}
 
 @tailwind base;
 @tailwind components;
@@ -327,7 +457,7 @@
         margin: 0;
         background: hsl(var(--background));
         color: hsl(var(--foreground));
-        font-family: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+        font-family: var(--font-sans);
         font-feature-settings: "ss01", "cv11", "cv02", "cv03", "cv04";
         letter-spacing: -0.005em;
     }
@@ -336,14 +466,35 @@
     body {
         font-size: var(--text-body);
     }
+    /* **Every figure is tabular, everywhere.** Rupee amounts, the numbers in a
+     * table cell and a countdown all jitter with proportional figures — a
+     * column of fees that does not line up, a "0:09" that shifts as it ticks
+     * to "0:08". Set on the document rather than at each of the ~70 places a
+     * currency amount is rendered, so one written next month is tabular by
+     * construction rather than by somebody remembering. The cost is that a
+     * "1" in running prose takes the same advance as a "0", which in Inter
+     * Tight is close to invisible. Nothing may opt back out to proportional;
+     * `test_site_foundations.py` holds both halves. */
+    html {
+        font-variant-numeric: tabular-nums;
+        /* Inherited, so every `font-serif` that is not a heading — a quote, a
+         * figure, a card title — gets it too. The Fraunces file's default
+         * instance has WONK on; only the three marketing classes whose
+         * minimum size is 40px turn it back on. Inter Tight and JetBrains
+         * Mono have no such axis and ignore it. */
+        font-variation-settings: "WONK" 0;
+    }
     h1,
     h2,
     h3,
     h4,
     h5 {
-        font-family: "Fraunces", "Cormorant Garamond", ui-serif, Georgia, serif;
+        font-family: var(--font-serif);
         font-optical-sizing: auto;
-        font-variation-settings: "opsz" 144, "SOFT" 30;
+        /* WONK off, explicitly: the file's default instance has it on, and
+           the product's 24–46px headings must never lean. SOFT is not loaded
+           at all, so the "SOFT" 30 this used to carry is gone with it. */
+        font-variation-settings: "opsz" 144, "WONK" 0;
         font-weight: 400;
         letter-spacing: -0.02em;
         line-height: 1.02;
@@ -352,6 +503,97 @@
     ::selection {
         background: hsl(var(--accent-wash));
         color: hsl(var(--heading));
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * The marketing type scale, kept apart from the product's
+ *
+ * The public site used to borrow the app's scale: `text-fluid-hero` stops at
+ * 68px and a Landing section heading was `text-fluid-4xl`, 36px — a scale
+ * tuned for a console read at arm's length, put on a page that has to carry
+ * across a room. The `fluid-*` steps are untouched; the app depends on them,
+ * and `test_site_foundations.py` pins every one of their values.
+ *
+ *   mkt-display  52 → 104px   lh 0.95   -0.04em    WONK 1
+ *   mkt-h1       44 →  84px   lh 0.96   -0.035em   WONK 1
+ *   mkt-h2       40 →  68px   lh 1.02   -0.035em   WONK 1
+ *   mkt-h3       28 →  40px   lh 1.1    -0.02em
+ *   mkt-lead     18 →  21px
+ *   mkt-body     18px
+ *   mkt-label    JetBrains Mono, 12px, 0.14em, uppercase
+ *
+ * The clamps are the brief's, verbatim, and the test pins them as written.
+ *
+ * **Marketing only.** These classes are not permitted under any signed-in
+ * route; the test walks the router and fails a file that reaches one.
+ * ------------------------------------------------------------------------- */
+:root {
+    /* **Wonk, and the size it is allowed at.** Fraunces' WONK axis swaps in
+     * the leaning n, m and h that give the face its character — at 40px and
+     * up. Below that the same glyphs read as a rendering fault, so the
+     * product's 24–46px headings never get it (`html` sets "WONK" 0). It is a
+     * token used by exactly the three classes whose minimum is 40px or more,
+     * not a utility anybody can put on anything. Optical size is left to the
+     * font (`font-optical-sizing: auto`), which is what the opsz axis is for.
+     * No SOFT: the axis is not loaded. */
+    --mkt-wonk: "WONK" 1;
+}
+
+@layer components {
+    .mkt-display,
+    .mkt-h1,
+    .mkt-h2,
+    .mkt-h3 {
+        font-optical-sizing: auto;
+        font-weight: 400;
+    }
+    .mkt-display {
+        font-family: var(--font-display);
+        font-size: clamp(3.25rem, 1.6rem + 5vw, 6.5rem);
+        line-height: 0.95;
+        letter-spacing: -0.04em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h1 {
+        font-family: var(--font-display);
+        font-size: clamp(2.75rem, 2.1rem + 3.1vw, 5.25rem);
+        line-height: 0.96;
+        letter-spacing: -0.035em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h2 {
+        font-family: var(--font-display);
+        font-size: clamp(2.5rem, 1.95rem + 2.6vw, 4.25rem);
+        line-height: 1.02;
+        letter-spacing: -0.035em;
+        font-variation-settings: var(--mkt-wonk);
+    }
+    .mkt-h3 {
+        font-family: var(--font-serif);
+        font-size: clamp(1.75rem, 1.5rem + 1.2vw, 2.5rem);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        font-variation-settings: "WONK" 0;
+    }
+    .mkt-lead {
+        font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.3125rem);
+        line-height: 1.5;
+    }
+    .mkt-body {
+        font-size: 1.125rem;
+        line-height: 1.6;
+    }
+    /* Labels and metadata only, 11–13px uppercase — never body copy. The one
+     * place JetBrains Mono is used, so a page without a label never fetches
+     * the file. */
+    .mkt-label {
+        font-family: var(--font-label);
+        font-size: 0.75rem;
+        font-weight: 400;
+        line-height: 1.4;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
     }
 }
 
@@ -613,6 +855,104 @@
     to   { transform: translate3d(0, 0, 0); }
 }
 
+/* ---------------------------------------------------------------------------
+ * The marketing motion: five primitives and nothing else
+ *
+ * One curve — `--weare-ease`, cubic-bezier(0.22, 1, 0.36, 1), the same
+ * deceleration as the product and as `EASE` in `components/marketing/
+ * motion.js`. Two bands of duration and nothing between them:
+ *
+ *   interactive  200ms        colour, border and transform on hover/focus
+ *   entrance     400–600ms    the wipe (520ms) and the row writer (400ms)
+ *
+ * The product keeps its own 180–220ms band in `lib/motion.js`; the two never
+ * borrow from each other.
+ *
+ * The primitives (`components/marketing/primitives.js` exports exactly these):
+ *
+ *   WipeWord   `.mkt-wipe`        one word, left to right, once at load
+ *   RowWriter  `.mkt-row`         rows in sequence, once when in view
+ *   CountUp    (JS)               a number counting, once
+ *   FillText   `.mkt-fill-word`   one sentence inking in with scroll
+ *   Marquee    `.mkt-marquee`     a continuous row; `linear`, the one
+ *                                 exception to the curve, because a loop
+ *                                 that eases stalls at its seam
+ *
+ * **CSS, not framer-motion**, for the reason the product's settle is: an
+ * animation on transform, opacity or clip-path is composited, and a JS tween
+ * runs on the main thread next to React on the phone this is read on.
+ * ------------------------------------------------------------------------- */
+:root {
+    --mkt-interactive: 200ms;
+    --mkt-wipe: 520ms;
+    --mkt-row: 400ms;
+    --mkt-row-gap: 70ms;
+    --mkt-marquee: 45s;
+}
+
+/* The wipe runs a clip from the right edge back to nothing. `backwards`, not
+   `both`: once it ends the clip is gone rather than held, so an italic's
+   overhang is never trimmed by a finished animation. Inline-block because a
+   clip-path on an inline box that wraps clips each fragment separately. */
+@keyframes mkt-wipe {
+    from { clip-path: inset(-20% 100% -20% -10%); }
+    to   { clip-path: inset(-20% -10% -20% -10%); }
+}
+.mkt-wipe {
+    display: inline-block;
+    animation: mkt-wipe var(--mkt-wipe) var(--weare-ease) backwards;
+}
+
+@keyframes mkt-write {
+    from { opacity: 0; transform: translate3d(0, 8px, 0); }
+    to   { opacity: 1; transform: none; }
+}
+/* The final figure of a written sequence lands rather than slides: it scales
+   from 0.96, the one row that is the point of the others. */
+@keyframes mkt-land {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: none; }
+}
+/* A row waiting to be written is transparent — opacity only, so it already
+   occupies its box and arriving moves nothing. `RowWriter` sets
+   `data-written` once, when the block is first in view, and never clears it:
+   scrolling past again does not replay it. */
+.mkt-row {
+    opacity: 0;
+}
+[data-written="true"] .mkt-row {
+    animation: mkt-write var(--mkt-row) var(--weare-ease) both;
+}
+[data-written="true"] .mkt-row-final {
+    animation-name: mkt-land;
+    transform-origin: left center;
+}
+
+/* FillText writes each word's opacity inline from scroll position; the only
+   CSS it needs is the transition that smooths one frame into the next. */
+.mkt-fill-word {
+    transition: opacity 120ms linear;
+}
+
+@keyframes mkt-marquee {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(-100%, 0, 0); }
+}
+.mkt-marquee {
+    display: flex;
+    overflow: hidden;
+}
+.mkt-marquee-track {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    animation: mkt-marquee var(--mkt-marquee) linear infinite;
+}
+.mkt-marquee:hover .mkt-marquee-track,
+.mkt-marquee:focus-within .mkt-marquee-track {
+    animation-play-state: paused;
+}
+
 /* A route arriving. Same shape, its own duration so the two can be tuned
    apart — a whole screen and one row inside it are different distances. */
 .weare-route {
@@ -653,6 +993,36 @@
         opacity: 1;
         transform: none;
         will-change: auto;
+    }
+    /* **The marketing moments resolve to their end state, never to a shorter
+       animation.** Handled here and only here: the primitives carry no
+       reduced-motion branch of their own, so a fourth component cannot forget
+       one. A row that has not been "written" is visible too — the writer's
+       observer is irrelevant to somebody who asked for no motion. */
+    .mkt-wipe,
+    .mkt-row,
+    [data-written="true"] .mkt-row,
+    [data-written="true"] .mkt-row-final {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+        clip-path: none !important;
+    }
+    /* Every word inked, whatever the script has written inline. */
+    .mkt-fill-word {
+        opacity: 1 !important;
+        transition: none !important;
+    }
+    /* The marquee stands still and becomes an ordinary list: the duplicate
+       that exists only to close the loop goes, and the names wrap. */
+    .mkt-marquee-track {
+        animation: none !important;
+        flex-wrap: wrap;
+        flex-shrink: 1;
+    }
+    .mkt-marquee-dup,
+    .mkt-marquee-track > [aria-hidden="true"] {
+        display: none !important;
     }
     /* The hero drift is applied inline by `HeroSlider`, which already checks
        `useReducedMotion` and does not apply it at all under `reduce`. This is
