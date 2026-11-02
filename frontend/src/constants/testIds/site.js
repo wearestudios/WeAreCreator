@@ -35,6 +35,8 @@ export const CREATORS_PAGE = {
 	page: 'creators-page',
 	hero: 'creators-hero',
 	chips: 'creators-chips',
+	// The matching line under the hero lead, while its switch is on.
+	heroAi: 'creators-hero-ai',
 	ctaTop: 'creators-cta-top',
 	ctaHow: 'creators-cta-how',
 	ctaBottom: 'creators-cta-bottom',

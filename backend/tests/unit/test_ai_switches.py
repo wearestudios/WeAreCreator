@@ -175,7 +175,9 @@ SWITCHED_LINES = [
     ("ForBrands.jsx", "report.aiLine", 'aiLive("campaignSummary")', "report-ai-summary"),
     ("ForBrands.jsx", "shortlist.aiLine", 'aiLive("nicheMatching")', "shortlist-ai-matching"),
     ("ForBrands.jsx", "hero.aiLead", 'aiLive("briefWriter")', "hero-ai-lead"),
+    ("Home.jsx", "hero.aiLead", "aiPowered", "hero-ai-lead"),
     ("ForCreators.jsx", "briefs.aiLine", 'aiLive("nicheMatching")', "briefs-ai-matching"),
+    ("ForCreators.jsx", "hero.aiLine", 'aiLive("nicheMatching")', "hero-ai-matching"),
     ("Home.jsx", "a.line", "aiLive(a.key)", "step-${step.key}-ai-${a.key}"),
 ]
 
@@ -241,9 +243,14 @@ def test_every_switched_string_in_the_content_has_a_guarded_render():
     """Every `aiLine`/`aiLead` in the content is printed by an entry above."""
     text = MARKETING.read_text()
     keys = set(re.findall(r"^\s*(ai[A-Z]\w*):", text, re.M)) - {"aiKey"}
-    assert keys <= {"aiLine", "aiLead"}, keys
+    assert keys <= {"aiLine", "aiLead", "aiTitle", "aiDescription"}, keys
     printed = {expr.split(".")[-1] for _, expr, *_ in SWITCHED_LINES}
-    assert keys <= printed
+    assert keys - {"aiTitle", "aiDescription"} <= printed
+    # The home page's title and description are swapped together, under the
+    # same two-switch rule as its lead.
+    home = (PAGES / "Home.jsx").read_text()
+    assert "title: plainMeta.aiTitle, description: plainMeta.aiDescription" in home
+    assert "const aiPowered = aiCards.length >= 2;" in home
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

@@ -154,6 +154,12 @@ export const HOME = {
         title: "WeAre Creators — influencer marketing, minus the chasing",
         description:
             "Verified creators, every fee and term agreed in writing, and the content approved before anyone is paid. Free to post a brief, and no retainer.",
+        // In place of the two above while at least two AI switches are on —
+        // "AI-powered" is a claim about the product, and one feature is not
+        // a product that is powered by it.
+        aiTitle: "WeAre Creators — AI-powered influencer marketing, minus the chasing",
+        aiDescription:
+            "AI-powered matching with verified creators, every fee and term agreed in writing, and the content approved before anyone is paid. Free to post a brief, and no retainer.",
     },
     hero: {
         title: "Creator campaigns, minus the chasing.",
@@ -162,6 +168,9 @@ export const HOME = {
         // Who it is for, said in plain words — it replaced a dotted list of
         // sectors under the buttons.
         lead: "Find verified creators for your restaurant, café or hotel. Agree the fee, approve the content, pay on approval — with every term written down.",
+        // In place of `lead` while at least two AI switches are on. The AI is
+        // the matching; the fee, the approval and the payment stay people's.
+        aiLead: "AI-powered matching with verified creators for your restaurant, café or hotel. Agree the fee, approve the content, pay on approval — with every term written down.",
         // The brief asked for "you pay only when a deal is agreed". A campaign
         // fee can be charged for running a brief, so that is not true of every
         // brief; this is.
@@ -322,6 +331,36 @@ export const HOME = {
     },
     // The navy band. "Guarantee" is a banned word on these pages, so the
     // label is not the brief's "The guarantees".
+    // "What the AI does": after How it works, while at least one switch is on,
+    // one card per switch that is on. It says what each feature does and,
+    // in the lead, what none of them does — the fee, the approval and the
+    // payment are people's, and the page says so rather than leaving it to
+    // be inferred.
+    ai: {
+        label: "What the AI does",
+        title: "Where the AI helps, and where it stops",
+        lead: "It drafts, matches and reads results. People agree every fee, approve every post and pay every creator.",
+        cards: [
+            {
+                key: "briefWriter",
+                title: "Drafts your brief",
+                line: "Describe your campaign in two lines. Get a full brief to edit.",
+                art: "why-planning",
+            },
+            {
+                key: "nicheMatching",
+                title: "Matches creators",
+                line: "Creators matched on what they actually post — cuisine, language, neighbourhood.",
+                art: "why-roster-tablet",
+            },
+            {
+                key: "campaignSummary",
+                title: "Reads your results",
+                line: "A plain-English read of your results, using only your real numbers.",
+                art: "how-report-desk",
+            },
+        ],
+    },
     promises: {
         label: "What holds",
         title: "Three things that are true in the code",
@@ -594,6 +633,8 @@ export const CREATORS = {
         // The brief: "The money is held before you travel". There is no
         // escrow; the fee being agreed in writing first is what is true.
         lead: "A brand never gets your phone, your email or your address — not when they shortlist you, not after the shoot, not ever. The fee is agreed in writing before you travel, and you keep 100% of it. Brands pay our fee, not you.",
+        // Under the lead while `aiLive("nicheMatching")`.
+        aiLine: "Briefs are matched to what you post — cuisine, language and neighbourhood.",
         // The brief's second chip was "ID-verified creators only". A person
         // reviews every profile; no ID document is collected.
         chips: ["Any follower count", "Verified creators only", "Paid within 7 days of approval", "Sign in with WhatsApp"],

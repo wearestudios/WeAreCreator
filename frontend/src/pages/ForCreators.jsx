@@ -81,6 +81,15 @@ export default function ForCreators() {
                         <Label>{hero.label}</Label>
                         <h1 className="mkt-h1 mt-6 max-w-5xl text-heading">{hero.title}</h1>
                         <p className="mkt-lead mt-6 max-w-3xl text-muted-foreground">{hero.lead}</p>
+                        {aiLive("nicheMatching") ? (
+                            <p
+                                data-testid={IDS.heroAi}
+                                data-track-section="hero-ai-matching"
+                                className="mkt-lead mt-4 max-w-3xl text-foreground"
+                            >
+                                {hero.aiLine}
+                            </p>
+                        ) : null}
                         <ul data-testid={IDS.chips} className="mt-8 flex flex-wrap gap-2">
                             {hero.chips.map((c) => (
                                 <li key={c}>

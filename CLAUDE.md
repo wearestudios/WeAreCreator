@@ -4497,6 +4497,28 @@ is the door. **It never posts** — the draft lands in the form and the ordinary
   the FAQ entry — render only while `briefWriter` is on. The lead says "we
   shortlist" where the brief said "you shortlist", because we do.
 
+### "AI-powered", and only where it is true
+
+The site says "AI" only where a switch backs it, and `test_ai_site_copy.py`
+walks every string in the content module that contains the word and names the
+switch behind it — an `ai*` field, the home `ai` section, a step's `ai` list,
+or a FAQ item's `aiKey`. A new "AI" sentence with no switch fails CI.
+
+- **"AI-powered" is a two-switch claim.** Home's lead, title and description
+  swap to their `ai*` wording only while at least two switches are on; one
+  feature is not a product powered by it. The h1 never changes, and no h1
+  anywhere may say "AI".
+- **"What the AI does"** sits after How it works while at least one switch is
+  on, one card per live switch, each with its drawing (`why-planning` found
+  its place here). Everything after it renumbers by `shift`, so the section
+  rules stay a contents list; `HomeAiSection.test.jsx` renders 0–3 switches
+  and reads the numbers back.
+- **The AI never prices, approves or pays**, and the section's lead says so in
+  as many words: "People agree every fee, approve every post and pay every
+  creator." A pattern test refuses the opposite claim.
+- /for-creators adds "Briefs are matched to what you post — cuisine, language
+  and neighbourhood." under the hero lead while `nicheMatching` is on.
+
 ### The public site's switches
 
 `AI_FEATURES` in `content/marketing.js` (`campaignSummary` on since the

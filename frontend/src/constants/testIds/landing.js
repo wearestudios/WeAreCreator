@@ -22,6 +22,9 @@ export const LANDING_PAGE = {
 	stepSide: (key, side) => `landing-step-${key}-${side}`,
 	stepTag: 'landing-step-tag',
 	promises: 'landing-promises',
+	// "What the AI does", while at least one AI switch is on.
+	ai: 'landing-ai',
+	aiCard: (key) => `landing-ai-card-${key}`,
 	promise: (i) => `landing-promise-${i}`,
 	clients: 'landing-clients',
 	fill: 'landing-fill',

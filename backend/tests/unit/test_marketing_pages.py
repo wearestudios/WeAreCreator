@@ -687,8 +687,10 @@ def test_home_is_the_eight_sections_in_order():
     library."""
     src = copy_of(*PAGES["home"])
     body = src[src.index("export default function Home") :]
+    # "What the AI does" sits after How it works, and only while a switch is
+    # on — see test_ai_switches and HomeAiSection.test.jsx.
     order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<HowItWorks",
-             "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
+             "<AiSection", "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
     positions = [body.index(tag) for tag in order]
     assert positions == sorted(positions), order
     for gone in ("ProofStrip", "BrandWall", "CaseStudyStrip", "CreatorLeaderboard",
@@ -711,7 +713,13 @@ def test_every_section_opens_on_the_numbered_rule():
     expected = {"home": [2, 4, 5, 6, 7, 8], "brands": [1, 2, 3, 5, 6, 7, 8], "creators": [1, 2, 3, 5, 6, 7]}
     for name, numbers in expected.items():
         src = copy_of(*PAGES[name])
-        got = [int(n) for n in re.findall(r"\bn=\{(\d+)\}", src)]
+        got = [int(n) for n in re.findall(r"\bn=\{(\d+)(?: \+ shift)?\}", src)]
+        if name == "home":
+            # The AI section is 5 when it renders, and everything after it
+            # moves up by `shift` (1 then, 0 without it). Both orders are
+            # rendered and read in HomeAiSection.test.jsx.
+            assert "<AiSection n={5}" in src and "const shift = aiCards.length ? 1 : 0;" in src
+            got.remove(5)
         assert got == numbers, (name, got)
     out = subprocess.run(
         ["node", "--input-type=module", "-e", read(*CONTENT) + "\nconsole.log(sectionNumber(2));"],
@@ -922,9 +930,9 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # whether or not they render — a budget that ignored copy behind a switch
 # would be a budget the next switch walks round.
 BUDGET = {
-    "home": 470,
+    "home": 561,
     "brands": 790,
-    "creators": 367,
+    "creators": 378,
     "contact": 200,
 }
 
@@ -1228,7 +1236,9 @@ def test_the_hero_is_exactly_its_five_elements():
     styles = set(re.findall(r"\bmkt-[a-z0-9]+", hero))
     assert styles <= {"mkt-lead"}, styles  # the h1's own class sits in HeroTitle
     hero_copy = content()["HOME"]["hero"]
-    assert set(hero_copy) == {"title", "accent", "lead", "note"}
+    # `aiLead` is the lead's other wording, never a sixth element: one of the
+    # two renders, under the two-switch rule (test_ai_switches).
+    assert set(hero_copy) == {"title", "accent", "lead", "aiLead", "note"}
     assert hero_copy["note"] == "Free to post. No retainer."
 
 

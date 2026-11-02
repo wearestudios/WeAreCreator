@@ -34,6 +34,7 @@ import { MarketingPage } from "@/components/marketing/Sections";
 import { FillText, Rise, WipeWord } from "@/components/marketing/primitives";
 import {
     Band,
+    Card,
     Closing,
     Cta,
     PhotoBand,
@@ -86,8 +87,15 @@ function HeroTitle({ title, accent }) {
  * (the old slider's engine, restored from #39). The h1 and its drawn word are
  * exactly as they were.
  */
+/** The AI features that are on, in the order the section lists them. Read
+ * through `aiLive` per card, never from the switch object. */
+function liveAiCards() {
+    return HOME.ai.cards.filter((card) => aiLive(card.key));
+}
+
 function Hero() {
     const { hero, card, deck, how } = HOME;
+    const aiPowered = liveAiCards().length >= 2;
     const steps = how.items.map((step) => ({
         key: step.key,
         label: step.title,
@@ -103,9 +111,21 @@ function Hero() {
                     ran to four lines beside the card. Stacked, it is two. */}
                 <div className="xl:col-span-8 2xl:col-span-7">
                     <HeroTitle title={hero.title} accent={hero.accent} />
-                    <p data-testid={HERO_IDS.lead} className="mkt-lead mt-6 max-w-2xl text-muted-foreground">
-                        {hero.lead}
-                    </p>
+                    {/* "AI-powered" only while two features back it; the h1
+                        never changes. */}
+                    {aiPowered ? (
+                        <p
+                            data-testid={HERO_IDS.lead}
+                            data-track-section="hero-ai-lead"
+                            className="mkt-lead mt-6 max-w-2xl text-muted-foreground"
+                        >
+                            {hero.aiLead}
+                        </p>
+                    ) : (
+                        <p data-testid={HERO_IDS.lead} className="mkt-lead mt-6 max-w-2xl text-muted-foreground">
+                            {hero.lead}
+                        </p>
+                    )}
                     <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                         <Cta ask={ASK.postBrief} testid={HERO_IDS.ctaBrand} />
                         <Cta ask={ASK.talkWhatsapp} variant="outline" testid={HERO_IDS.ctaTalk} />
@@ -279,9 +299,47 @@ function useScrollToHash() {
     }, []);
 }
 
+/**
+ * "What the AI does": one card per feature that is switched on, after How it
+ * works. Absent with every switch off. The lead says what none of them does —
+ * the fee, the approval and the payment are people's.
+ */
+function AiSection({ n, cards }) {
+    const { ai } = HOME;
+    return (
+        <Band ground="tint" track="what-the-ai-does" testid={IDS.ai}>
+            <Wrap className="py-20 md:py-28">
+                <SectionHead n={n} label={ai.label} title={ai.title} lead={ai.lead} />
+                <ul className={`mt-12 grid gap-5 md:mt-16 ${cards.length > 1 ? "md:grid-cols-2" : ""} ${cards.length > 2 ? "lg:grid-cols-3" : ""}`}>
+                    {cards.map((card, i) => (
+                        <li key={card.key}>
+                            <Card testid={IDS.aiCard(card.key)} className="h-full">
+                                <div data-track-section={`ai-card-${card.key}`}>
+                                    <Illustration name={card.art} i={i} ratio="4 / 3" className="mb-6" />
+                                    <h3 className="mkt-h3 text-heading">{card.title}</h3>
+                                    <p className="mkt-body mt-4 text-muted-foreground">{card.line}</p>
+                                </div>
+                            </Card>
+                        </li>
+                    ))}
+                </ul>
+            </Wrap>
+        </Band>
+    );
+}
+
 export default function Home() {
-    const { meta, swap, promises, close } = HOME;
+    const { meta: plainMeta, swap, promises, close } = HOME;
     useScrollToHash();
+    const aiCards = liveAiCards();
+    // "AI-powered" is claimed only when two features are live.
+    const aiPowered = aiCards.length >= 2;
+    // The section numbers stay in sequence whether or not the AI section is
+    // there: everything after it moves up by one.
+    const shift = aiCards.length ? 1 : 0;
+    const meta = aiPowered
+        ? { title: plainMeta.aiTitle, description: plainMeta.aiDescription }
+        : plainMeta;
     // Grounds, top to bottom: page, tint, photograph, page, navy, tint, navy,
     // page — no two neighbours alike, and navy twice.
     return (
@@ -290,17 +348,18 @@ export default function Home() {
             <ComparisonBand copy={swap} n={2} ground="bg-muted" />
             <PhotoBand slot="home-on-location" testid={IDS.band} />
             <HowItWorks n={4} />
+            {aiCards.length ? <AiSection n={5} cards={aiCards} /> : null}
             <PromiseBand
-                n={5}
+                n={5 + shift}
                 label={promises.label}
                 title={promises.title}
                 items={promises.items}
                 testid={IDS.promises}
                 itemTestid={IDS.promise}
             />
-            <WhoBuiltIt n={6} />
-            <CreatorDoor n={7} />
-            <Closing id="close" n={8} label={close.label} title={close.title} line={close.line} testid={LANDING_CLOSING.section}>
+            <WhoBuiltIt n={6 + shift} />
+            <CreatorDoor n={7 + shift} />
+            <Closing id="close" n={8 + shift} label={close.label} title={close.title} line={close.line} testid={LANDING_CLOSING.section}>
                 <Cta ask={ASK.postBrief} testid={LANDING_CLOSING.ctaBrand} />
                 <Cta ask={ASK.haveUsRunIt} variant="outline" testid={LANDING_CLOSING.ctaTalk} />
             </Closing>
