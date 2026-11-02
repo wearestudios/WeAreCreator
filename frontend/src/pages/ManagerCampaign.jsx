@@ -454,6 +454,25 @@ function RosterList({ rows, onRecord }) {
                                     Waiting on you
                                 </span>
                             )}
+                            {/* **WeAre booked this one, not the creator.** The
+                                person at the door reads this roster, and a
+                                seat somebody else chose for them is the one
+                                most likely to be a no-show — worth knowing
+                                before the call rather than after. Never a
+                                bare "booked" on a row an admin booked. */}
+                            {r.on_behalf?.slot_booked && (
+                                <span
+                                    data-testid={ROSTER_IDS.rowOnBehalf(r.collaboration_id)}
+                                    title={
+                                        r.on_behalf.slot_booked.reason
+                                            ? `${r.on_behalf.slot_booked.by_name || "WeAre"}: ${r.on_behalf.slot_booked.reason}`
+                                            : undefined
+                                    }
+                                    className="rounded border border-state-pending/40 bg-state-pending/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-state-pending"
+                                >
+                                    Booked by WeAre on their behalf
+                                </span>
+                            )}
                         </div>
                         <Link
                             to={`/manager/applications/${r.collaboration_id}`}

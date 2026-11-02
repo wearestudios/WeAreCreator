@@ -159,6 +159,26 @@ export const ADMIN_COLLAB_PAGE = {
 	slot: 'admin-collab-page-slot',
 	content: 'admin-collab-page-content',
 	payment: 'admin-collab-page-payment',
+	// The audited override for the two creator-owned steps. Offered only
+	// where the ordinary advance refuses — the server decides — and the
+	// marker it leaves is rendered beside the slot it booked.
+	bookOnBehalf: 'admin-collab-page-book-on-behalf',
+	confirmAddressOnBehalf: 'admin-collab-page-confirm-address-on-behalf',
+	onBehalf: 'admin-collab-page-on-behalf',
+};
+
+// Booking a slot for a creator who asked us to: the slot picker and the
+// reason the creator will read.
+export const ADMIN_ON_BEHALF = {
+	dialog: 'admin-on-behalf-dialog',
+	slots: 'admin-on-behalf-slots',
+	slot: (id) => `admin-on-behalf-slot-${id}`,
+	slotsEmpty: 'admin-on-behalf-slots-empty',
+	time: 'admin-on-behalf-time',
+	reason: 'admin-on-behalf-reason',
+	error: 'admin-on-behalf-error',
+	submit: 'admin-on-behalf-submit',
+	cancel: 'admin-on-behalf-cancel',
 };
 
 export const ADMIN_OVERVIEW = {
