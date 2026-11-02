@@ -160,6 +160,16 @@ INDIRECT_CALLERS = {
         "components/admin/CircumventionQueue.jsx",
     ("post", "/circumvention-reports/{report_id}/dismiss"):
         "components/admin/CircumventionQueue.jsx",
+    # `/admin/collaborations/${id}/draft-review/${config.path}` — the four
+    # review-window controls share one dialog, the verb held in its config.
+    ("post", "/collaborations/{collab_id}/draft-review/extend"):
+        "components/application/ReviewWindow.jsx",
+    ("post", "/collaborations/{collab_id}/draft-review/pause"):
+        "components/application/ReviewWindow.jsx",
+    ("post", "/collaborations/{collab_id}/draft-review/resume"):
+        "components/application/ReviewWindow.jsx",
+    ("post", "/collaborations/{collab_id}/draft-review/approve-now"):
+        "components/application/ReviewWindow.jsx",
 }
 
 
@@ -197,6 +207,7 @@ UNBUILT = {
     ("post", "/jobs/leaderboard"): "no 'run now' control",
     ("post", "/jobs/brand-wall"): "no 'run now' control",
     ("post", "/jobs/analytics"): "no 'run now' control",
+    ("post", "/jobs/draft-auto-approvals"): "no 'run now' control",
 
     # --- Case-study management beyond the editor.
     ("post", "/case-studies/order"): "display_order is settable and never set",

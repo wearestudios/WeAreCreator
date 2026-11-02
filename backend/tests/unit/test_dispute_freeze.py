@@ -537,6 +537,30 @@ DRIVERS = {
         "attended",
         lambda db, s, _: server.run_lifecycle_job(s["admin"]),
     ),
+    # --- an admin acting for somebody -------------------------------------
+    # The override is the owner's act in an admin's hands, so it is frozen
+    # exactly where the owner's own route is.
+    "book_slot_on_behalf": Driver(
+        "commercial_agreed",
+        lambda db, s, _: server.book_slot_on_behalf(
+            s["collab_id"],
+            server.BookSlotOnBehalfPayload(slot_id=s["slot_id"], reason="Asked us on WhatsApp"),
+            s["admin"]),
+        with_slot=True, campaign_type="group_event",
+    ),
+    "confirm_address_on_behalf": Driver(
+        "commercial_agreed",
+        lambda db, s, _: server.confirm_address_on_behalf(
+            s["collab_id"], server.OnBehalfPayload(reason="Confirmed on a call"), s["admin"]),
+        campaign_type="delivery",
+    ),
+    # Ending a review window early is an approval; a dispute is ended by its
+    # resolution, never by approving around it.
+    "force_approve_draft": Driver(
+        "draft_submitted",
+        lambda db, s, _: server.force_approve_draft(
+            s["collab_id"], server.ReasonPayload(reason="The reviewer is away"), s["admin"]),
+    ),
 }
 
 # Routes that write to a collaboration and are deliberately not frozen.
@@ -551,6 +575,18 @@ EXEMPT = {
     # is an argument about the money — those are different questions.
     "request_takedown": "a live post can need taking down mid-dispute",
     "respond_to_takedown": "the creator's answer to a takedown is not frozen either",
+    # The review clock, not the collaboration's state. Pausing or extending it
+    # mid-mediation is how a mediator stops a window running out while the
+    # argument is still open; freezing these would take that tool away at the
+    # one moment it is needed.
+    "extend_draft_review": "moves the review deadline, never the state",
+    "pause_draft_review": "stops the review clock — the mediator's tool during a dispute",
+    "resume_draft_review": "restarts the review clock, never the state",
+    # A sweep cannot answer 409 for one row among many. It skips open
+    # disputes in its own write filter (`dispute.state: {$ne: "open"}` in
+    # `_approve_draft_by_window`), which `force_approve_draft`'s driver above
+    # exercises through the same function.
+    "run_draft_auto_approvals_job": "a sweep; its write filter skips open disputes",
 }
 
 # Routes that only ever act on states earlier than any dispute can be raised

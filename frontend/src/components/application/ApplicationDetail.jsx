@@ -426,7 +426,7 @@ export default function ApplicationDetail({
                                                 ? "Why the fee is changing — required for a correction."
                                                 : "Note (optional) — e.g. Agreed on the call, includes the reel."
                                         }
-                                        className="border-white/10 bg-background/60 focus-visible:ring-primary"
+                                        className="border-border bg-background/60 focus-visible:ring-primary"
                                     />
                                     <p className="mt-1.5 text-xs text-muted-foreground">
                                         The creator and the brand both see this in the fee

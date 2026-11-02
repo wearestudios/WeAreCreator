@@ -1479,7 +1479,7 @@ export default function PostCampaign() {
                             </label>
 
                             {requiresDraft && (
-                                <div className="mt-3 rounded-md border border-white/10 bg-card/60 p-5">
+                                <div className="mt-3 rounded-md border border-border bg-card/60 p-5">
                                     <Label
                                         htmlFor="pc-draft-review-days"
                                         className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
@@ -1495,7 +1495,7 @@ export default function PostCampaign() {
                                         max={DRAFT_REVIEW_DAYS_MAX}
                                         value={draftReviewDays}
                                         onChange={(e) => setDraftReviewDays(e.target.value)}
-                                        className="mt-2 h-11 w-28 border-white/10 bg-background/60 focus-visible:ring-primary"
+                                        className="mt-2 h-11 w-28 border-border bg-background/60 focus-visible:ring-primary"
                                     />
                                     <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                                         If nobody approves or asks for changes within this

@@ -59,7 +59,7 @@ export default function NegotiationHistory({ negotiation, compact = false, class
             {barter && negotiation.barter_terms && (
                 <p
                     data-testid={IDS.barterTerms}
-                    className="mb-3 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-muted-foreground"
+                    className="mb-3 rounded-md border border-border bg-muted px-3 py-2 text-meta text-muted-foreground"
                 >
                     Barter: {negotiation.barter_terms}
                 </p>
@@ -69,7 +69,7 @@ export default function NegotiationHistory({ negotiation, compact = false, class
                     <li
                         key={`${e.at}-${i}`}
                         data-testid={IDS.entry(i)}
-                        className="rounded-md border border-white/10 bg-background/60 px-4 py-3"
+                        className="rounded-md border border-border bg-background/60 px-4 py-3"
                     >
                         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                             <p className="text-sm">
