@@ -220,32 +220,11 @@ class TestTheFreeze:
         assert server._refuse_if_disputed({"dispute": {"state": "withdrawn"}}) is None
         assert server._refuse_if_disputed({}) is None
 
-    def test_the_guard_is_on_the_doors_that_move_a_collaboration(self):
-        """Not on the ones that read it or write to its paper trail: the
-        mediator needs the notes, and so does whoever is arguing.
-
-        Named handlers rather than a count, so adding a route that ought to be
-        frozen fails here rather than shipping unguarded.
-        """
-        must_freeze = (
-            "brand_accept_applicant",
-            "brand_decline_applicant",
-            "brand_record_agreed_amount",
-            "brand_approve_content",
-            "brand_request_changes",
-            "accept_partial_delivery",
-            "advance_collaboration",
-            "revert_collaboration",
-            "submit_collab_content",
-            "mark_payment_paid",
-            "cancel_collaboration",
-        )
-        for name in must_freeze:
-            fn = getattr(server, name, None)
-            assert fn, f"{name} no longer exists — update this list"
-            assert "_refuse_if_disputed" in inspect.getsource(fn), (
-                f"{name} can move a disputed collaboration"
-            )
+    # Which doors the guard is on is `test_dispute_freeze.py`'s: it derives the
+    # routes from the app and drives each one. The hand-written list of eleven
+    # names that lived here missed the four draft routes, a second booking
+    # route and the QR check-in, and could not tell a guard that runs from one
+    # handed the wrong document.
 
     def test_notes_and_ratings_are_deliberately_not_frozen(self):
         """The paper trail is what the mediation is decided on."""
