@@ -69,6 +69,7 @@ import { NEGOTIATION } from "@/constants/testIds";
 import { IST } from "@/lib/time";
 
 
+import RevisionAllowance from "@/components/collab/RevisionAllowance";
 /** "20 Aug, 7:00 pm" — a time somebody has to turn up at, so it carries one. */
 const formatDateTime = (iso) => {
     if (!iso) return "—";
@@ -836,6 +837,15 @@ export default function ApplicationDetail({
                                 stories: by review time the story links are
                                 dead, so this is the delivery. */}
                             <StoryProofReview collabId={id} proof={app.proof} />
+                            {/* The agreed rounds of changes, above the button
+                                that spends one — said before it is pressed. */}
+                            <RevisionAllowance
+                                collabId={id}
+                                revisions={app.revisions}
+                                canRequestExtra={actions.can_request_extra_revision}
+                                onChanged={load}
+                                className="mt-4"
+                            />
                             <div
                                 data-testid={APPLICATION.review}
                                 className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap"
@@ -870,7 +880,7 @@ export default function ApplicationDetail({
                                     <Button
                                         variant="outline"
                                         data-testid={APPLICATION.requestChanges}
-                                        disabled={busy === "changes"}
+                                        disabled={busy === "changes" || actions.no_revisions_left}
                                         className="min-h-[2.75rem]"
                                         onClick={() => {
                                             setChangesReason("");
@@ -899,12 +909,22 @@ export default function ApplicationDetail({
                         explaining that there is nothing in it. */}
                     {app.draft && (
                         <Section id="draft" title="Draft review">
+                            {actions.can_review_draft && (
+                                <RevisionAllowance
+                                    collabId={id}
+                                    revisions={app.revisions}
+                                    canRequestExtra={actions.can_request_extra_revision}
+                                    onChanged={load}
+                                    className="mb-4"
+                                />
+                            )}
                             <DraftReview
                                 collaborationId={id}
                                 draft={app.draft}
                                 canReview={actions.can_review_draft}
                                 disclosureLabel={app.disclosure?.label}
                                 canManageWindow={actions.can_manage_review_window}
+                                noRevisionsLeft={actions.no_revisions_left}
                                 onDecided={load}
                             />
                         </Section>

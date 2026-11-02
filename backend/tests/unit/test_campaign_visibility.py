@@ -264,6 +264,11 @@ def test_a_money_filter_says_nothing_about_barter():
              "category": "fnb", "area": "Indiranagar", "creators_needed": 2,
              "created_at": w["now"], "event_date": w["now"] + timedelta(days=30)}
         )
+        # Barter reaches a creator's feed only when they opted in — so the
+        # money filter's own rule is read on a creator who did.
+        await server.db.creator_profiles.update_one(
+            {"user_id": w["stranger"]}, {"$set": {"show_barter_briefs": True}}
+        )
         with_money = _titles(
             await server.list_campaigns(user=_as(w["stranger"]), budget_min=4000, budget_max=15000)
         )
@@ -272,7 +277,7 @@ def test_a_money_filter_says_nothing_about_barter():
 
     with_money, without = asyncio.run(scenario())
     assert "Barter stay" not in with_money
-    assert "Barter stay" in without, "unfiltered, barter is on the feed"
+    assert "Barter stay" in without, "unfiltered, barter is on an opted-in feed"
 
 
 def test_the_and_clauses_never_clobber_each_other():

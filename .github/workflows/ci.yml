@@ -19,6 +19,12 @@ jobs:
       MONGO_URL: mongodb://localhost:27017
       DB_NAME: wearecreators_ci
       JWT_SECRET: ci-secret-not-used-for-anything-real
+      # Importing server.py refuses to start without object storage, unless
+      # told the local disk is intended (`validate_environment`). Without
+      # this the job died at the import check and the unit suite never ran —
+      # which it did not, on main, from the commit that added the guard. The
+      # unit suite writes nothing that has to survive the run.
+      STORAGE_BACKEND: local
     steps:
       - uses: actions/checkout@v4
 

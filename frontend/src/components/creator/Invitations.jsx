@@ -39,6 +39,7 @@ import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 
 import { formatDate } from "./shared";
 
+import BarterLabel from "@/components/BarterLabel";
 export default function Invitations({ invitations, onChanged }) {
     const rows = (invitations || []).filter((i) => i.open);
     const [accepting, setAccepting] = useState(null);
@@ -122,6 +123,11 @@ export default function Invitations({ invitations, onChanged }) {
                                 <span className="mt-1 block truncate font-serif text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary">
                                     {invite.campaign_title || "Untitled campaign"}
                                 </span>
+                                {/* An invitation to a barter brief says so before
+                                    anything else — the creator may have barter off
+                                    in their feed, and this is the one way a barter
+                                    brief still reaches them. */}
+                                <BarterLabel campaign={invite} id={invite.id} className="mt-2" />
                                 <span className="mt-2 block text-meta text-muted-foreground">
                                     {/* `.text`, not the object — the formatter
                                         returns the parts so a caller can lay

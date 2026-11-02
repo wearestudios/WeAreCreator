@@ -57,6 +57,7 @@ import {
 import { IST } from "@/lib/time";
 
 import OnBehalfNote from "@/components/collab/OnBehalfNote";
+import RevisionAllowance from "@/components/collab/RevisionAllowance";
 const CAT_LABEL = {
     fnb: "F&B",
     hospitality: "Hospitality",
@@ -496,6 +497,7 @@ const ApplicantCard = ({
     onApprove,
     onRequestChanges,
     onAcceptPartial,
+    onChanged,
 }) => {
     const meta = STATE_META[a.state] || {};
     const c = a.creator || {};
@@ -697,6 +699,17 @@ const ApplicantCard = ({
                 <p className="text-meta text-muted-foreground">{meta.note}</p>
             )}
 
+            {/* The agreed rounds of changes, beside the button that spends
+                one. Nothing on a collaboration taken on before the cap. */}
+            {a.can_review_content && (
+                <RevisionAllowance
+                    collabId={a.id}
+                    revisions={a.revisions}
+                    canRequestExtra={a.can_request_extra_revision}
+                    onChanged={onChanged}
+                />
+            )}
+
             {/* Actions */}
             {(a.can_accept || a.can_decline || a.can_review_content) && (
                 <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
@@ -734,7 +747,7 @@ const ApplicantCard = ({
                             </Button>
                             <Button
                                 data-testid={`applicant-changes-btn-${a.id}`}
-                                disabled={busy}
+                                disabled={busy || Boolean(a.revisions?.exhausted)}
                                 variant="outline"
                                 onClick={() => onRequestChanges(a)}
                                 className="rounded-full border-input bg-transparent hover:bg-muted"
@@ -1137,6 +1150,7 @@ export default function BrandCampaignApplicants() {
                                     onRequestChanges={(x) =>
                                         setDialog({ kind: "changes", applicant: x })
                                     }
+                                    onChanged={load}
                                     onAcceptPartial={(x) =>
                                         setDialog({ kind: "partial", applicant: x })
                                     }

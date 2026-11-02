@@ -40,6 +40,9 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 
+import { useAuth } from "@/context/AuthContext";
+import BarterLabel from "@/components/BarterLabel";
+import BarterFeedToggle from "@/components/creator/BarterFeedToggle";
 const ANY = "__any__";
 const CAT_LABEL = {
     fnb: "F&B",
@@ -165,6 +168,7 @@ const CampaignCard = ({ c, index, settleKey }) => (
                         className="text-xs uppercase tracking-[0.2em] text-muted-foreground"
                     />
                     <span className="flex flex-none items-center gap-1.5">
+                        <BarterLabel campaign={c} />
                         <InviteOnlyPill campaign={c} />
                         <TagBadge status={c.status} />
                     </span>
@@ -266,6 +270,10 @@ const CampaignCard = ({ c, index, settleKey }) => (
 );
 
 export default function Campaigns() {
+    const { user } = useAuth();
+    // Bumped when the creator turns barter on or off, so the list and the
+    // filter options are read again under the new setting.
+    const [feedKey, setFeedKey] = useState(0);
     const [items, setItems] = useState(null);
     const [error, setError] = useState("");
     // Every filter starts at ANY: the page opens showing everything live and
@@ -308,7 +316,7 @@ export default function Campaigns() {
                     compensation_types: [],
                 }),
             );
-    }, []);
+    }, [feedKey]);
 
     // Load list whenever filters change.
     useEffect(() => {
@@ -344,7 +352,7 @@ export default function Campaigns() {
         return () => {
             cancelled = true;
         };
-    }, [city, area, category, campaignType, compensation, budget, sort, debouncedQ]);
+    }, [city, area, category, campaignType, compensation, budget, sort, debouncedQ, feedKey]);
 
     const hasFilters =
         city !== ANY ||
@@ -644,6 +652,20 @@ export default function Campaigns() {
                         </button>
                     )}
                 </div>
+
+                {/* **Barter is opt-in for a creator's feed.** The switch is
+                    here because this is where the choice is made; the rule is
+                    the server's. Creators only — an admin browsing the feed
+                    sees everything. */}
+                {user?.role === "creator" && (
+                    <BarterFeedToggle
+                        className="mt-3 pl-2"
+                        onChanged={() => {
+                            setCompensation(ANY);
+                            setFeedKey((k) => k + 1);
+                        }}
+                    />
+                )}
 
                 {/* What you are looking at, and why. Both stay in the sticky
                     bar: a count you have to scroll up to read is a count you

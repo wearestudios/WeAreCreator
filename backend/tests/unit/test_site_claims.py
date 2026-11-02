@@ -13,9 +13,13 @@ building what they describe:
 - "Money is held before the shoot" / "the brand funds it (held)" / "you never
   travel on a promise" — there is no escrow. A payment row is raised at
   `in_payment`, after the work is approved.
-- "Reviews cannot stall forever" / "a clock on the review" / "clears anyway"
-  — the draft auto-approval timer is in an unmerged PR, not in this tree.
-- "a cap on revisions (1 of 2 used)" — there is no revision cap.
+- "Reviews cannot stall forever" / "clears anyway" — refused while there was
+  no timer. **The timer is in the tree now**, and the clock is claimed again
+  in its own terms (a draft nobody answers is approved when its window ends);
+  `test_site_promises.py` holds that claim to the code. "Stall forever" is
+  still not said: an admin can pause a window.
+- "a cap on revisions (1 of 2 used)" — refused while there was no cap. **The
+  cap exists now** (`revisions_included`), and the claim is back.
 - "an exportable statement", "with a receipt" — creators have neither.
 - "Counter the fee" and offer/counter history — negotiation history is in the
   same unmerged PR; on this tree a creator quotes a rate and the fee is
@@ -85,10 +89,14 @@ def _everything():
 
 class TestHomePromises:
     def test_the_three_are_the_ones_that_are_true(self):
+        # The third was "Every creator is checked before they apply", standing
+        # in for the review clock while there was none. The clock is in the
+        # tree now and back in its place; the checking is still true and
+        # still said on /for-brands.
         assert _titles(content()["HOME"]["promises"]) == [
             "A brand never gets a creator's number",
             "The fee is agreed before anyone shoots",
-            "Every creator is checked before they apply",
+            "A draft review has a deadline",
         ]
 
     def test_a_brand_never_gets_a_creators_number(self):
@@ -329,9 +337,18 @@ class TestWhatIsNotTrueIsNotSaid:
         for phrase in ("stall", "clock on the review", "auto-approv", "approved automatically", "clears anyway"):
             assert phrase not in text, phrase
 
-    def test_no_revision_cap_no_statement_no_receipt(self):
+    def test_no_statement_no_receipt(self):
         text = _everything()
-        for phrase in ("cap on revisions", "1 of 2", "revision cap", "exportable", "statement", "receipt"):
+        for phrase in ("exportable", "statement", "receipt"):
+            assert phrase not in text, phrase
+
+    def test_no_revision_cap_until_one_exists(self):
+        """The cap came back with `revisions_included`; the ban stands for any
+        tree without it, like the review clock's."""
+        if hasattr(server, "_revision_allowance"):
+            pytest.skip("the revision cap exists in this tree")
+        text = _everything()
+        for phrase in ("cap on revisions", "1 of 2", "revision cap"):
             assert phrase not in text, phrase
 
     def test_no_counter_offers_until_negotiation_history_exists(self):

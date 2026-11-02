@@ -672,6 +672,10 @@ class CreatorProfileUpdate(BaseModel):
     # it alone" like every other field here — a builder saving one step must
     # not silently switch this off because that step did not carry it.
     homepage_opt_in: Optional[bool] = None
+    # Whether barter briefs (a meal or a product instead of a fee) appear in
+    # this creator's feed. Off unless they say otherwise — see
+    # `_shows_barter_briefs`.
+    show_barter_briefs: Optional[bool] = None
 
 
 PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
@@ -1890,6 +1894,13 @@ DEFAULT_DRAFT_REVIEW_DAYS = 3
 DRAFT_REVIEW_DAYS_MIN = 1
 DRAFT_REVIEW_DAYS_MAX = 14
 
+# How many rounds of changes a brief includes. Up here for the same reason: the
+# campaign payloads validate against the bounds at class definition. See
+# `_revision_allowance` for what a round is and how the cap is held.
+DEFAULT_REVISIONS_INCLUDED = 2
+REVISIONS_INCLUDED_MIN = 0
+REVISIONS_INCLUDED_MAX = 5
+
 
 def _ready_to_shoot_state(campaign: Optional[dict]) -> str:
     """The state at which this campaign's creator has the thing and can shoot.
@@ -2581,6 +2592,12 @@ class PostCampaignPayload(BriefDetailFields):
     draft_review_days: Optional[int] = Field(
         default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
     )
+    # How many rounds of changes the brief includes — a term the creator reads
+    # before applying and that is frozen at acceptance. Absent means the
+    # default; see `_revision_allowance`.
+    revisions_included: Optional[int] = Field(
+        default=None, ge=REVISIONS_INCLUDED_MIN, le=REVISIONS_INCLUDED_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     # When a shoot may happen. Both optional and both default to "no
@@ -2729,6 +2746,11 @@ class UpdateCampaignPayload(BriefDetailFields):
     draft_review_days: Optional[int] = Field(
         default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
     )
+    # Changes only what a *future* acceptance freezes: every collaboration
+    # already taken on carries its own number in its terms.
+    revisions_included: Optional[int] = Field(
+        default=None, ge=REVISIONS_INCLUDED_MIN, le=REVISIONS_INCLUDED_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     restricted_days: Optional[list[int]] = None
@@ -2752,7 +2774,8 @@ class UpdateCampaignPayload(BriefDetailFields):
     # the brand's edit route as well as the admin's, so the brand path refuses
     # it through `_refuse_brand_payout_window`, the same shape
     # `execution_owner` and barter already use. `None` clears the override.
-    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
+    # Never longer than the public promise — see `_CREATOR_PAYOUT_MAX`.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=7)
 
 
 class CreateTeamMemberPayload(BaseModel):
@@ -4276,6 +4299,10 @@ NOTIFY_EVENTS = {
     # The barter close: there is no payment to send, so the end of the work
     # is its own message rather than a payment notice with no money in it.
     "collaboration_closed": "Your collaboration is wrapped up",
+    # The revision cap. The reviewer has used the rounds the brief included
+    # and asks for one more; the creator decides, and whoever asked is told.
+    "extra_revision_requested": "You've been asked for an extra round of changes",
+    "extra_revision_answered": "A creator answered your request for an extra round",
     "new_applicant": "A creator applied to your campaign",
     "application_withdrawn": "A creator withdrew their application",
     "collaboration_cancelled": "A collaboration you were on was cancelled",
@@ -5771,9 +5798,20 @@ _CREATOR_PAYOUT_SETTINGS_ID = "creator_payout_days"
 CREATOR_PAYOUT_DAYS = 7
 
 # Zero is a real answer — "same day as approval" is a promise somebody might
-# make — so the floor is 0 rather than 1. The ceiling is a sanity bound on a
-# number typed into a form, not a policy.
-_CREATOR_PAYOUT_MIN, _CREATOR_PAYOUT_MAX = 0, 180
+# make — so the floor is 0 rather than 1.
+#
+# **The ceiling is the public promise, not a sanity bound.** It was 180, which
+# let any brief — or the platform setting itself — say "paid within 90 days"
+# while every public page says "paid within 7 days of approval". A promise the
+# site makes in public cannot be one a form field can quietly lengthen, so the
+# window may be shortened per brief and never stretched past what we say.
+# `clamp_creator_payout_days` brought every stored value inside it.
+_CREATOR_PAYOUT_MIN, _CREATOR_PAYOUT_MAX = 0, CREATOR_PAYOUT_DAYS
+
+# The day an unpaid approval goes to the top of the admin action queue. Two
+# days of a seven-day promise left: early enough to raise and pay it, late
+# enough not to be noise on every approval.
+PAYOUT_ALERT_DAYS = 5
 
 # Read on every campaign serialize and every collaboration row, changed about
 # never — so cached with a short life, the arrangement `sla_targets` uses, and
@@ -7790,6 +7828,8 @@ def _serialize_creator_profile(doc: dict) -> dict:
         # **off** — consent is given, never assumed, so every profile written
         # before this field existed is one nobody has asked yet.
         "homepage_opt_in": bool(doc.get("homepage_opt_in", False)),
+        # Whether barter briefs appear in their feed. Absent reads as off.
+        "show_barter_briefs": _shows_barter_briefs(doc),
         "payout_ready": payout_ready(doc),
         # Named, so the dashboard can say what is still needed rather than
         # showing a disabled state with no explanation.
@@ -8960,6 +9000,11 @@ async def update_creator_profile(
         update["platforms"] = list(dict.fromkeys(payload.platforms))
     if "base_rate" in sent:
         update["base_rate"] = payload.base_rate
+    if "show_barter_briefs" in sent:
+        # A feed preference, nothing more: not material, not consent, not in
+        # completeness. Changing it re-queues nobody and takes effect on the
+        # next feed read.
+        update["show_barter_briefs"] = bool(payload.show_barter_briefs)
     if "homepage_opt_in" in sent:
         # Consent, stored as the plain boolean it is. **Deliberately not in
         # `MATERIAL_PROFILE_FIELDS`**: putting somebody back in a verification
@@ -9171,6 +9216,11 @@ def _serialize_collab_row(
         # says what is missing; this says why it was accepted anyway.
         "partial_delivery": bool(collab.get("partial_delivery")),
         "partial_note": collab.get("partial_note"),
+        # The rounds of changes agreed, and how many are used — the same
+        # "1 of 2 used" the reviewer reads. And whether an extra round is
+        # waiting on their answer, which is theirs alone to give.
+        "revisions": _revision_allowance(collab),
+        "can_answer_extra_revision": _revision_allowance(collab)["extra_pending"],
         "agreed_at": _iso(collab.get("agreed_at")),
         "content_url": collab.get("content_url"),
         "content_urls": collab.get("content_urls")
@@ -9506,6 +9556,25 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     return {"action": None, "label": None, "waiting_on": None}
 
 
+def _shows_barter_briefs(profile: Optional[dict]) -> bool:
+    """Does this creator want barter briefs in their feed? **Off unless they
+    said yes.**
+
+    The public site leads creators with "Paid briefs", and a feed where every
+    third card pays a dinner makes that a sentence the product does not keep.
+    Barter is not hidden from the platform — brands still post it, and a brand
+    may still invite anybody to one, labelled as barter — it is hidden from the
+    browsing of somebody who never asked for it. Absent reads as off, so every
+    profile written before the setting existed browses paid work only.
+    """
+    return bool((profile or {}).get("show_barter_briefs"))
+
+
+# The one clause that keeps barter out of a feed. Appended into `$and`, never
+# assigned, like every other clause the feed composes.
+_NO_BARTER_QUERY = {"compensation_type": {"$ne": "barter"}}
+
+
 async def _suggested_campaigns(
     profile: dict, exclude_ids: set, limit: int = 6
 ) -> list[dict]:
@@ -9531,6 +9600,9 @@ async def _suggested_campaigns(
             {
                 "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
                 "_id": {"$nin": list(exclude_ids)},
+                # A suggestion is a feed too: barter only for a creator who
+                # asked to see it.
+                **({} if _shows_barter_briefs(profile) else _NO_BARTER_QUERY),
                 # A recommendation is a disclosure. Private briefs reach a
                 # creator through their invitation and the browse list's
                 # invited-door, never through "you might like".
@@ -11311,6 +11383,99 @@ async def decline_invitation(
     return {"ok": True, "state": "declined"}
 
 
+class ExtraRevisionRequestPayload(BaseModel):
+    """Asking for one more round than the brief included. The note is what the
+    creator reads when deciding, so it is worth a sentence, but a request is
+    complete without one."""
+
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExtraRevisionAnswerPayload(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+# Where a send-back can happen, and so where asking for one more makes sense.
+_SEND_BACK_STATES = ("draft_submitted", "content_submitted")
+
+
+async def _answer_extra_revision(collab_id: str, user: dict, accept: bool, note) -> dict:
+    """The creator's answer. **One implementation for both**, so a decline and
+    an accept are recorded, audited and announced the same way."""
+    collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    if not _revision_allowance(collab)["extra_pending"]:
+        raise HTTPException(status_code=409, detail="There's no request waiting for your answer.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    now = datetime.now(timezone.utc)
+    note = (note or "").strip() or None
+    update: dict = {
+        "$set": {
+            "extra_revision_request.state": "accepted" if accept else "declined",
+            "extra_revision_request.answered_at": now,
+            "extra_revision_request.answer_note": note,
+            "updated_at": now,
+        }
+    }
+    if accept:
+        # One more round, and the record of it beside the fee: a change to
+        # what was agreed, agreed by the person it costs.
+        update["$inc"] = {"revisions_extra": 1}
+        update["$push"] = {"negotiation_history": _negotiation_step(
+            kind="extra_revision", amount=None, user=user,
+            note=note or "One extra round of changes, beyond what the brief included.",
+            source="in_app", campaign=campaign, at=now,
+        )}
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "extra_revision_request.state": "requested"},
+        update,
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This was just answered — reload.")
+    await audit(
+        user,
+        "collaboration.extra_revision_accepted" if accept else "collaboration.extra_revision_declined",
+        "collaboration", collab["_id"],
+        before={"extra_revision_request": "requested"},
+        after={"extra_revision_request": "accepted" if accept else "declined",
+               "revisions": _revision_allowance(updated)["label"]},
+        note=note,
+        **_campaign_audit_context(campaign),
+    )
+    who = user.get("name") or "The creator"
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "extra_revision_answered",
+        title="Extra round accepted" if accept else "Extra round declined",
+        body=(
+            f"{who} agreed to one more round of changes on {campaign.get('title')}."
+            if accept
+            else f"{who} declined an extra round of changes on {campaign.get('title')} — "
+            "approve the work as it stands, or talk to us."
+        ),
+    )
+    return {"revisions": _revision_allowance(updated)}
+
+
+@creator_router.post("/collaborations/{collab_id}/revisions/extra/accept")
+async def accept_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionAnswerPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    return await _answer_extra_revision(collab_id, user, True, payload.note)
+
+
+@creator_router.post("/collaborations/{collab_id}/revisions/extra/decline")
+async def decline_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionAnswerPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    return await _answer_extra_revision(collab_id, user, False, payload.note)
+
+
 api_router.include_router(creator_router)
 
 
@@ -11429,6 +11594,7 @@ def _serialize_brand_campaign(
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
         "draft_review_days": _draft_review_days(doc),
+        "revisions_included": _revisions_included(doc),
         "requires_slot_confirmation": _requires_slot_confirmation(doc),
         # Launch only, and `None` everywhere else — the payload validator
         # refuses it on the other two types, so absent here means the same
@@ -12952,6 +13118,13 @@ async def create_brand_campaign(
             else bool(payload.requires_draft_approval)
         ),
         "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
+        # `is None`, not `or`: zero is a real answer ("no rounds of changes
+        # included") and must not be read as "use the default".
+        "revisions_included": (
+            DEFAULT_REVISIONS_INCLUDED
+            if payload.revisions_included is None
+            else payload.revisions_included
+        ),
         # **Default off, unlike the draft gate.** A booking on most briefs is
         # the creator picking one of the manager's own published slots, and
         # asking somebody to confirm that is asking them to agree with
@@ -14107,7 +14280,10 @@ def _serialize_applicant(
         "location_note": collab.get("location_note"),
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
-        # Which of this row's steps WeAre took for somebody — the brand's own
+        # The rounds of changes agreed and used, on the board where the
+        # send-back button is — so "No revisions left" is said before the
+        # button is pressed rather than after.
+        "revisions": _revision_allowance(collab),
         # included, so a brand reading its board sees "accepted by WeAre on
         # your behalf" rather than an acceptance it does not remember making.
         "on_behalf": _on_behalf_block(collab),
@@ -14118,6 +14294,13 @@ def _serialize_applicant(
         "can_accept": state == "verified",
         "can_decline": state in ("applied", "verified", "accepted"),
         "can_review_content": state == "content_submitted",
+        # Past the agreed rounds, the brand's send-back is refused and asking
+        # for one more is the way on — only on a brief the brand runs, where
+        # it is the reviewer.
+        "can_request_extra_revision": state in _SEND_BACK_STATES
+        and not _weare_runs(campaign or {})
+        and _revision_allowance(collab)["exhausted"]
+        and not _revision_allowance(collab)["extra_pending"],
         # **Only where the brief counted what it asked for.** A campaign
         # written before `deliverable_items` has a sentence and no structure,
         # so there is nothing to be short of and the route refuses it — the
@@ -14845,18 +15028,21 @@ async def brand_request_changes(
         raise HTTPException(
             status_code=422, detail="Tell the creator what needs to change."
         )
+    # The agreed number of rounds, shared with the draft send-back.
+    _refuse_if_no_revisions_left(collab)
 
     now = datetime.now(timezone.utc)
     # The campaign's own ready state — `received` on a delivery brief, where
     # `attended` is not a state the ladder has.
     back_to = _ready_to_shoot_state(campaign)
     result = await db.collaborations.update_one(
-        {"_id": collab["_id"], "state": "content_submitted"},
+        {"_id": collab["_id"], "state": "content_submitted", **_revision_precondition(collab)},
         {
             "$set": {
                 **_state_stamp(back_to, now),
                 "revision_note": payload.reason.strip(),
-            }
+            },
+            "$inc": {"revisions_used": 1},
         },
     )
     if result.modified_count == 0:
@@ -16988,6 +17174,12 @@ async def brand_record_agreed_amount(
     # And the brand, on a campaign they handed to us: this is the first they
     # hear of this creator, and it comes with the number already agreed.
     await _tell_brand_about_shortlist(campaign, collab, amount)
+    # **The terms freeze here when they did not at acceptance.** A brief we run
+    # is accepted through the console's Advance, which records no fee and so
+    # never froze anything — this is the first moment every term is known.
+    # Once only, by `_issue_terms_snapshot`'s own precondition, so a brand-run
+    # collaboration frozen at acceptance is left exactly as it was.
+    await _issue_terms_snapshot({**collab, "agreed_amount": amount}, campaign)
     await notify(
         collab["creator_id"],
         "commercial_agreed",
@@ -17732,7 +17924,11 @@ async def _tell_brand_about_shortlist(
 #   with no reason is the entry somebody asks about six months later.
 # ---------------------------------------------------------------------------
 
-NEGOTIATION_KINDS = ("offer", "counter", "accept", "decline", "adjust")
+# `extra_revision` is the one entry that is not about money: a round of
+# changes beyond what the brief included, agreed by the creator. It sits on the
+# same history because it changes what was agreed, and that is what this
+# history is the record of. It never carries an amount.
+NEGOTIATION_KINDS = ("offer", "counter", "accept", "decline", "adjust", "extra_revision")
 NEGOTIATION_SOURCES = ("in_app", "recorded_offline", "admin_adjustment", "backfill")
 NEGOTIATION_ROLES = ("brand", "creator", "admin", "system")
 NEGOTIATION_CURRENCY = "INR"
@@ -23931,6 +24127,9 @@ _CAMPAIGN_BRIEF_FIELDS = (
     "visibility",
     "requires_draft_approval",
     "draft_review_days",
+    # A brand that always includes two rounds of changes includes them on the
+    # copy too.
+    "revisions_included",
     "requires_slot_confirmation",
     "restricted_days",
     "shoot_windows",
@@ -25453,6 +25652,41 @@ def _serialize_admin_collab(
             if payment
             else None
         ),
+        # **Day five of the seven-day promise, still unpaid.** Decided here so
+        # the queue never works it out, and read off the same anchor every
+        # payment date is (`_payout_unpaid_days`).
+        **_payout_alert(collab, campaign, payment),
+    }
+
+
+def _payout_unpaid_days(collab: Optional[dict], campaign: Optional[dict]) -> Optional[int]:
+    """Whole days since approval on a collaboration still waiting to be paid,
+    or `None` where nothing is owed: not approved yet, already closed, or a
+    barter brief, which pays nothing."""
+    collab = collab or {}
+    if collab.get("state") not in _AWAITING_PAYOUT_STATES:
+        return None
+    if _compensation_type(campaign) == "barter":
+        return None
+    anchor = _aware(collab.get("content_approved_at") or _state_since(collab))
+    if not anchor:
+        return None
+    return int((datetime.now(timezone.utc) - anchor).total_seconds() // 86400)
+
+
+def _payout_alert(collab: Optional[dict], campaign: Optional[dict], payment: Optional[dict]) -> dict:
+    """`payout_at_risk` once an approval has gone `PAYOUT_ALERT_DAYS` unpaid —
+    the point at which the public "within 7 days" promise needs a person on
+    it, rather than finding out from the health panel after it broke."""
+    days = _payout_unpaid_days(collab, campaign)
+    paid = (payment or {}).get("state") == "paid"
+    at_risk = days is not None and days >= PAYOUT_ALERT_DAYS and not paid
+    return {
+        "payout_unpaid_days": days,
+        "payout_at_risk": at_risk,
+        "payout_due_at": _iso(_payout_due_at(collab, campaign, CREATOR_PAYOUT_DAYS))
+        if at_risk
+        else None,
     }
 
 
@@ -25930,11 +26164,18 @@ async def advance_collaboration(
         # The next move is the creator's, so say so — this is the message that
         # turns "agreed" into somebody booking a slot. A barter brief has no
         # amount to quote, and inventing ₹0 here would read as an insult.
-        agreed_value = update.get("agreed_amount")
+        # Off the row as written. `update` stopped carrying the fee when
+        # `_set_agreed_amount` became its only writer, so reading it there
+        # sent every paid creator the barter wording ("this one's a barter
+        # brief") and would freeze no fee into the terms below.
+        agreed_value = updated.get("agreed_amount")
         await _warn_if_budget_tight(campaign)
         # Same as the brand's own fee route: on a weare-run campaign this is
         # the moment the brand meets the creator.
         await _tell_brand_about_shortlist(campaign, collab, agreed_value)
+        # The same first-moment freeze as the brand's fee route: a weare-run
+        # collaboration is accepted through Advance and has no snapshot yet.
+        await _issue_terms_snapshot({**collab, "agreed_amount": agreed_value}, campaign)
         booking = _next_action({"state": "commercial_agreed"}, campaign)["label"].lower()
         terms = (
             f"agreed at ₹{agreed_value:,.0f}"
@@ -29632,7 +29873,8 @@ class AdminCreateCampaignPayload(PostCampaignPayload):
     # The payout window, staff-settable here because this route is staff. The
     # brand's own `PostCampaignPayload` deliberately has no such key, so the
     # generic copy loop on its create path has nothing to let through.
-    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
+    # Never longer than the public promise — see `_CREATOR_PAYOUT_MAX`.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=7)
 
 
 @admin_router.post("/campaigns")
@@ -29714,6 +29956,13 @@ async def admin_create_campaign(
             else bool(payload.requires_draft_approval)
         ),
         "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
+        # `is None`, not `or`: zero is a real answer ("no rounds of changes
+        # included") and must not be read as "use the default".
+        "revisions_included": (
+            DEFAULT_REVISIONS_INCLUDED
+            if payload.revisions_included is None
+            else payload.revisions_included
+        ),
         "requires_slot_confirmation": bool(payload.requires_slot_confirmation),
         "restricted_days": _clean_restricted_days(payload.restricted_days),
         "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
@@ -30787,6 +31036,110 @@ DRAFT_REVIEW_REMINDER_HOURS = 24
 # than as a blank actor or as the person who did not act.
 _SYSTEM_AUTO_ACTOR = {"role": "system_auto", "name": "WeAre (review window elapsed)"}
 DRAFT_AUTO_APPROVE_REASON = "brand_review_window_elapsed"
+
+
+def _revisions_included(campaign: Optional[dict]) -> int:
+    """How many rounds of changes this brief includes. Absent, unparseable or
+    out of range reads as the default — every brief offers some number, and
+    one written before the field existed offers what a new one does."""
+    try:
+        n = int((campaign or {}).get("revisions_included"))
+    except (TypeError, ValueError):
+        return DEFAULT_REVISIONS_INCLUDED
+    if not REVISIONS_INCLUDED_MIN <= n <= REVISIONS_INCLUDED_MAX:
+        return DEFAULT_REVISIONS_INCLUDED
+    return n
+
+
+# ---------------------------------------------------------------------------
+# A cap on revisions, as an agreed term
+#
+# Every send-back used to be free and unlimited, so "one more change" was a
+# request with no end a creator could point to. Now a brief says how many
+# rounds of changes it includes, the number is frozen into the terms when the
+# creator is taken on, and a send-back past it is refused. **A round is a
+# send-back**: a draft returned for changes or live content returned for
+# changes, counted together on `revisions_used` — they are the same request
+# at two moments, and two separate allowances would be twice the cap.
+#
+# **Past the cap is a question, not a wall.** The reviewer can ask for one
+# extra round; the creator accepts or declines, and accepting adds a round
+# and writes it on the negotiation history beside the fee, because it is a
+# change to what was agreed.
+#
+# **Existing collaborations are unlimited.** The cap is read from the frozen
+# terms, so a collaboration with no snapshot, or a snapshot from before this
+# existed, has no number and nothing in flight changes. Only new acceptances
+# carry one.
+# ---------------------------------------------------------------------------
+
+NO_REVISIONS_LEFT = "No revisions left — approve, or ask for an extra round."
+EXTRA_REVISION_STATES = ("requested", "accepted", "declined")
+
+
+def _revision_allowance(collab: Optional[dict]) -> dict:
+    """The one reader of the cap on a collaboration. Pure.
+
+    `included` is `None` — unlimited — when the frozen terms carry no number,
+    which is every collaboration accepted before the cap existed.
+    """
+    collab = collab or {}
+    terms = collab.get("terms") or {}
+    included = terms.get("revisions_included") if "revisions_included" in terms else None
+    try:
+        included = None if included is None else int(included)
+    except (TypeError, ValueError):
+        included = None
+    extra = int(collab.get("revisions_extra") or 0)
+    used = int(collab.get("revisions_used") or 0)
+    allowed = None if included is None else included + extra
+    remaining = None if allowed is None else max(0, allowed - used)
+    request = collab.get("extra_revision_request") or None
+    return {
+        "unlimited": allowed is None,
+        "included": included,
+        "extra": extra,
+        "allowed": allowed,
+        "used": used,
+        "remaining": remaining,
+        # "1 of 2 used": the same words on both sides, decided here.
+        "label": None if allowed is None else f"{used} of {allowed} used",
+        "exhausted": remaining == 0,
+        "extra_request": (
+            {
+                "state": request.get("state"),
+                "note": request.get("note"),
+                "requested_at": _iso(request.get("requested_at")),
+                "requested_by_name": request.get("requested_by_name"),
+                "answered_at": _iso(request.get("answered_at")),
+            }
+            if request
+            else None
+        ),
+        "extra_pending": bool(request and request.get("state") == "requested"),
+    }
+
+
+def _refuse_if_no_revisions_left(collab: Optional[dict]) -> None:
+    """The cap, at every send-back. A 409 with a code the reviewer screen
+    dispatches on, and the sentence it shows."""
+    allowance = _revision_allowance(collab)
+    if allowance["exhausted"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": NO_REVISIONS_LEFT,
+                "code": "no_revisions_left",
+                "revisions": allowance,
+            },
+        )
+
+
+def _revision_precondition(collab: Optional[dict]) -> dict:
+    """Compare-and-set on the counter, so two send-backs racing for the last
+    round take one between them."""
+    used = (collab or {}).get("revisions_used")
+    return {"revisions_used": used} if used is not None else {"revisions_used": {"$exists": False}}
 
 
 def _draft_review_days(campaign: Optional[dict]) -> int:
@@ -33966,6 +34319,7 @@ def _serialize_campaign(
         "requires_draft_approval": _requires_draft_approval(doc),
         # And how long a review can take before it settles itself.
         "draft_review_days": _draft_review_days(doc),
+        "revisions_included": _revisions_included(doc),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -34561,6 +34915,10 @@ def _build_terms(
             "label": _disclosure_text(campaign),
         },
         "cancellation_terms": CANCELLATION_TERMS,
+        # **How many rounds of changes are included, frozen like the fee.** The
+        # brief can be edited afterwards; what this creator agreed to cannot.
+        # `_revision_allowance` reads it from here and nowhere else.
+        "revisions_included": _revisions_included(campaign),
         # **When they get paid, frozen with everything else.** The same reason
         # the cancellation policy is here: a later change to the platform
         # window must not reach backwards into an arrangement somebody has
@@ -34929,6 +35287,11 @@ async def list_campaigns(
             {"$or": [PUBLIC_CAMPAIGN_QUERY, {"_id": {"$in": allowed}}]}
         )
         profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+        # **Barter is opt-in for a creator's feed.** Not a filter they can
+        # clear from the URL: it is their own setting, changed on the feed
+        # itself, and the count header has to agree with the list.
+        if not _shows_barter_briefs(profile):
+            query.setdefault("$and", []).append(_NO_BARTER_QUERY)
 
     total = await db.campaigns.count_documents(query)
 
@@ -34998,6 +35361,13 @@ async def campaign_filters(
     # option would announce its existence to everyone the privacy is for —
     # and an invited creator losing one dropdown entry costs nothing.
     base = {"status": {"$in": list(_LIVE_STATUSES)}, **PUBLIC_CAMPAIGN_QUERY}
+    # The same barter cut the feed makes, or the dropdown offers "Barter" to a
+    # creator whose feed will never show one — a filter whose only outcome is
+    # an empty list, which this endpoint exists to avoid.
+    if user["role"] == "creator":
+        me = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+        if not _shows_barter_briefs(me):
+            base = {**base, "$and": [_NO_BARTER_QUERY]}
     areas = await db.campaigns.distinct("area", base)
     categories = await db.campaigns.distinct("category", base)
     cities = await db.campaigns.distinct("city", base)
@@ -37252,6 +37622,80 @@ async def dispatch_delivery(
     return _delivery_block(updated)
 
 
+@notes_router.post("/{collab_id}/revisions/extra")
+async def request_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionRequestPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """The reviewer has used every included round and asks the creator for one
+    more. **A request, not a right**: the creator accepts or declines, and
+    nothing about the work moves until they do.
+
+    Through the reviewer's door — `_question_staff_may_see`, the reader the
+    draft review uses — so on a weare-run brief it is our team asking, never
+    the brand, and the brand gets a 404 like every other door it is not
+    behind.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    _refuse_if_disputed(collab)
+    allowance = _revision_allowance(collab)
+    if collab.get("state") not in _SEND_BACK_STATES:
+        raise HTTPException(
+            status_code=409, detail="There's nothing waiting for review to send back."
+        )
+    if not allowance["exhausted"]:
+        raise HTTPException(
+            status_code=409,
+            detail="There are rounds of changes left on this one — use those first.",
+        )
+    if allowance["extra_pending"]:
+        raise HTTPException(
+            status_code=409, detail="You've already asked — the creator hasn't answered yet."
+        )
+
+    now = datetime.now(timezone.utc)
+    request = {
+        "state": "requested",
+        "note": (payload.note or "").strip() or None,
+        "requested_at": now,
+        "requested_by_id": ObjectId(user["_id"]),
+        "requested_by_name": user.get("name"),
+        "requested_by_role": _negotiation_role(user),
+        "answered_at": None,
+    }
+    updated = await db.collaborations.find_one_and_update(
+        {
+            "_id": collab["_id"],
+            "state": collab.get("state"),
+            "extra_revision_request.state": {"$ne": "requested"},
+        },
+        {"$set": {"extra_revision_request": request, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+    await audit(
+        user, "collaboration.extra_revision_requested", "collaboration", collab["_id"],
+        before={"revisions": allowance["label"]},
+        after={"extra_revision_request": "requested"},
+        note=request["note"],
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "extra_revision_requested",
+        title="Asked for an extra round of changes",
+        body=f"{campaign.get('title')} — the rounds of changes your brief included are used. "
+        "You've been asked for one more; it's yours to accept or decline."
+        + (f" “{request['note']}”" if request["note"] else ""),
+        link=f"/dashboard?collab={collab_id}",
+    )
+    return {"revisions": _revision_allowance(updated)}
+
+
 disputes_router = APIRouter(prefix="/disputes", tags=["disputes"])
 
 DISPUTE_STATES = ("open", "resolved", "withdrawn")
@@ -38951,11 +39395,14 @@ async def _request_draft_changes_decision(
         raise HTTPException(
             status_code=422, detail="Tell the creator what needs to change."
         )
+    # The cap, here and not in the routes, so the reviewer's send-back and
+    # WeAre's on-behalf send-back are held to the same number.
+    _refuse_if_no_revisions_left(collab)
 
     now = datetime.now(timezone.utc)
     back_to = _ready_to_shoot_state(campaign)
     updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": "draft_submitted"},
+        {"_id": collab["_id"], "state": "draft_submitted", **_revision_precondition(collab)},
         {
             # Back to "shoot done, draft owed" — the campaign's own ready
             # state, which is `received` on a delivery brief. Writing
@@ -38969,7 +39416,10 @@ async def _request_draft_changes_decision(
                 "draft_review_deadline_at": None,
                 **({"draft_changes_requested_on_behalf": on_behalf} if on_behalf else {}),
             },
-            "$inc": {"draft_revision_count": 1},
+            # `draft_revision_count` is the reliability signal (how often
+            # drafts come back); `revisions_used` is the agreed allowance,
+            # which counts live-content send-backs too.
+            "$inc": {"draft_revision_count": 1, "revisions_used": 1},
         },
         return_document=True,
     )
@@ -39127,6 +39577,8 @@ async def get_application(
         # the manager read which side moved.
         "negotiation": _serialize_negotiation(collab, campaign, full=is_admin),
         "terms": _serialize_terms(collab),
+        # "1 of 2 used", the same block the creator's card reads.
+        "revisions": _revision_allowance(collab),
         # Read off the campaign rather than the snapshot, so an application
         # that has not reached acceptance still shows the current grant.
         "usage": _usage_block(campaign),
@@ -39229,6 +39681,14 @@ async def get_application(
             # campaign is not the reviewer, and never sees the button.
             "can_review_draft": state == "draft_submitted"
             and _question_staff_may_see(campaign, user),
+            # **Past the agreed rounds, the send-back is refused and this is
+            # the question instead.** Offered to the reviewer — the same
+            # reader — only where there is nothing left and nothing pending.
+            "can_request_extra_revision": state in _SEND_BACK_STATES
+            and _question_staff_may_see(campaign, user)
+            and _revision_allowance(collab)["exhausted"]
+            and not _revision_allowance(collab)["extra_pending"],
+            "no_revisions_left": _revision_allowance(collab)["exhausted"],
             # Extend, pause, resume, approve now. Admin only — the reviewer
             # moving their own deadline would make it a suggestion.
             "can_manage_review_window": state == "draft_submitted" and is_admin,
@@ -42096,6 +42556,74 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 
+async def clamp_creator_payout_days(*, apply: bool = True) -> dict:
+    """Bring every stored payout window inside the public promise. One-off,
+    idempotent, and safe to run on every boot.
+
+    **Why it exists.** The window could be set anywhere from 0 to 180 days,
+    globally and per brief, while every public page says "paid within 7 days
+    of approval". The ceiling is now the promise (`_CREATOR_PAYOUT_MAX`), and
+    `_clean_payout_days` already reads anything above it as absent — so
+    without this a brief stored at 30 would silently fall back to the platform
+    number while its row still said 30. Clamping writes the truth down.
+
+    **Shortened, never removed:** a brief at 30 becomes 7, not "no override",
+    so an admin reading it later sees a deliberate per-brief window that was
+    brought inside the rule. Each change is audited under `_SYSTEM_ACTOR` with
+    the old and new value, and the list comes back so the script can print it.
+
+    **Frozen terms are not touched.** A snapshot records what somebody was
+    told at acceptance; rewriting it would make the record say something it
+    did not. The due date every surface computes reads the campaign, which is
+    now at most seven days — so the money moves on the promise either way.
+    """
+    changed = []
+    setting = await db.platform_settings.find_one({"_id": _CREATOR_PAYOUT_SETTINGS_ID})
+    setting_before = None
+    try:
+        stored = int((setting or {}).get("days")) if setting and setting.get("days") is not None else None
+    except (TypeError, ValueError):
+        stored = None
+    if stored is not None and stored > _CREATOR_PAYOUT_MAX:
+        setting_before = stored
+        if apply:
+            await db.platform_settings.update_one(
+                {"_id": _CREATOR_PAYOUT_SETTINGS_ID},
+                {"$set": {"days": _CREATOR_PAYOUT_MAX,
+                          "updated_at": datetime.now(timezone.utc)}},
+            )
+            _CREATOR_PAYOUT_CACHE["at"] = None
+            _CREATOR_PAYOUT_CACHE["value"] = None
+            await audit(_SYSTEM_ACTOR, "settings.creator_payout_clamped", "settings",
+                        _CREATOR_PAYOUT_SETTINGS_ID,
+                        before={"days": stored}, after={"days": _CREATOR_PAYOUT_MAX})
+
+    async for doc in db.campaigns.find(
+        {"creator_payout_days": {"$gt": _CREATOR_PAYOUT_MAX}},
+        {"_id": 1, "title": 1, "reference": 1, "creator_payout_days": 1},
+    ):
+        before = doc.get("creator_payout_days")
+        changed.append({"id": str(doc["_id"]), "reference": doc.get("reference"),
+                        "title": doc.get("title"), "before": before,
+                        "after": _CREATOR_PAYOUT_MAX})
+        if apply:
+            await db.campaigns.update_one(
+                {"_id": doc["_id"], "creator_payout_days": before},
+                {"$set": {"creator_payout_days": _CREATOR_PAYOUT_MAX}},
+            )
+            await audit(_SYSTEM_ACTOR, "campaign.payout_window_clamped", "campaign",
+                        doc["_id"], before={"creator_payout_days": before},
+                        after={"creator_payout_days": _CREATOR_PAYOUT_MAX})
+    if changed or setting_before is not None:
+        logger.warning(
+            "payout windows %s inside the %d-day promise: setting %s, campaigns %s",
+            "clamped" if apply else "would be clamped",
+            _CREATOR_PAYOUT_MAX, setting_before,
+            [(c["reference"] or c["id"], c["title"], c["before"]) for c in changed],
+        )
+    return {"setting_before": setting_before, "campaigns": changed}
+
+
 async def backfill_execution_owner() -> None:
     """Stamp `execution_owner` on every campaign written before it existed.
 
@@ -42517,6 +43045,11 @@ async def _startup():
 
     # 9. Campaigns predate `execution_owner`.
     await backfill_execution_owner()
+    # The payout window may never be longer than the public promise.
+    try:
+        await clamp_creator_payout_days()
+    except Exception as exc:
+        logger.error("clamping payout windows failed: %s", exc)
 
     # 10. Campaigns predate `city`. They all ran in Bengaluru — that is where
     #     the operation is and was — so this is what they are rather than a

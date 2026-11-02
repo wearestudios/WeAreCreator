@@ -15,6 +15,7 @@ import {
     Send,
     ShieldCheck,
     Users,
+    RotateCcw,
 } from "lucide-react";
 import { DeliverableList } from "@/components/Deliverables";
 import { deliverablesText } from "@/lib/deliverables";
@@ -35,7 +36,7 @@ import PayoutNote from "@/components/campaign/PayoutNote";
 import { BriefTerms } from "@/components/campaign/CampaignTerms";
 import BriefChecklist from "@/components/campaign/BriefChecklist";
 import CampaignQuestions from "@/components/questions/CampaignQuestions";
-import { PAYOUT as PAYOUT_IDS, VISIBILITY } from "@/constants/testIds";
+import { PAYOUT as PAYOUT_IDS, REVISIONS, VISIBILITY } from "@/constants/testIds";
 import BrandName from "@/components/BrandName";
 import CampaignCover from "@/components/CampaignCover";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { IST } from "@/lib/time";
 
+import { revisionsIncludedText } from "@/lib/revisions";
 const CAT_LABEL = {
     fnb: "F&B",
     hospitality: "Hospitality",
@@ -721,6 +723,18 @@ export default function CampaignDetail() {
                             late payment, because nothing ever said when
                             payment was coming. */}
                         <PayoutNote campaign={campaign} className="mt-4" />
+
+                        {/* **How many rounds of changes, before applying.**
+                            The number is frozen into the terms when they are
+                            taken on, so this is the moment to read it — not
+                            the third send-back. */}
+                        <p
+                            data-testid={REVISIONS.briefShown}
+                            className="mt-4 flex items-center gap-2 text-meta text-muted-foreground"
+                        >
+                            <RotateCcw className="h-4 w-4 flex-none" aria-hidden="true" />
+                            {revisionsIncludedText(campaign.revisions_included)}
+                        </p>
 
                         {/* And the one thing a delivery brief needs that a
                             venue brief never does. Absent unless this

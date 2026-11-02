@@ -48,6 +48,7 @@ import SlotPicker from "./SlotPicker";
 import SubmitContentDialog from "./SubmitContentDialog";
 import SubmitDraftDialog from "./SubmitDraftDialog";
 
+import RevisionAllowance from "@/components/collab/RevisionAllowance";
 // The tracker that used to live here — a six-stage rail with its own labels —
 // is gone. It was the third copy of the lifecycle in this repository, and the
 // three disagreed: a creator saw six stages, the console saw the raw twelve,
@@ -313,6 +314,16 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 shipped on this row and drawn nowhere on it, so a creator found
                 out from a smaller payment than they expected. Only when it
                 actually was partial — an ordinary approval says nothing. */}
+            {/* The rounds of changes agreed, "1 of 2 used" — and, when the
+                reviewer has asked for one more, the creator's two answers. */}
+            <RevisionAllowance
+                collabId={collab.id}
+                revisions={collab.revisions}
+                canAnswer={collab.can_answer_extra_revision}
+                onChanged={onRefresh}
+                className="mt-5"
+            />
+
             {collab.partial_delivery && (
                 <Shortfall
                     shortfall={collab.shortfall}

@@ -199,9 +199,11 @@ class TestTheWindowIsFrozenAtAcceptance:
             row = await db.collaborations.find_one({"_id": collab_oid})
             assert row["terms"]["payout"]["days"] == 3
 
-            # The platform moves; the snapshot does not.
+            # The platform moves; the snapshot does not. (Inside the public
+            # promise now — the window can be shortened or lengthened up to
+            # seven days, never past it.)
             await server.put_creator_payout_window(
-                server.CreatorPayoutPayload(days=21), ADMIN
+                server.CreatorPayoutPayload(days=6), ADMIN
             )
             again = await db.collaborations.find_one({"_id": collab_oid})
             assert again["terms"]["payout"]["days"] == 3
@@ -321,8 +323,8 @@ class TestTheHealthPanelMeasuresThePromise:
             await db.campaigns.insert_many([
                 {"_id": tight_camp, "brand_id": brand, "title": "Same day",
                  "creator_payout_days": 1},
-                {"_id": loose_camp, "brand_id": brand, "title": "Fortnight",
-                 "creator_payout_days": 30},
+                {"_id": loose_camp, "brand_id": brand, "title": "A week",
+                 "creator_payout_days": 7},
             ])
             await db.creator_profiles.insert_one({"user_id": creator, "name": "Asha"})
             now = datetime.now(timezone.utc)
@@ -330,10 +332,11 @@ class TestTheHealthPanelMeasuresThePromise:
                 # 3 days over a 1-day window: 4/1 = 4.0 of its allowance.
                 {"_id": tight, "campaign_id": tight_camp, "creator_id": creator,
                  "state": "in_payment", "content_approved_at": now - timedelta(days=4)},
-                # 10 days over a 30-day window: 40/30 = 1.33 — more days over,
-                # less of the allowance used.
+                # 5 days over a 7-day window: 12/7 = 1.71 — more days over,
+                # less of the allowance used. (Windows stop at seven now, the
+                # public promise, so the fixture is built inside it.)
                 {"_id": loose, "campaign_id": loose_camp, "creator_id": creator,
-                 "state": "in_payment", "content_approved_at": now - timedelta(days=40)},
+                 "state": "in_payment", "content_approved_at": now - timedelta(days=12)},
             ])
 
             health = await server.admin_health(ADMIN)

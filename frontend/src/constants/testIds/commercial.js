@@ -25,3 +25,25 @@ export const COMMERCIAL = {
 	refundDecided: 'campaign-refund-decided',
 	refundOverridden: 'campaign-refund-overridden',
 };
+
+// Barter is opt-in for a creator's feed. The label is on every barter card and
+// invitation; the switch lives on the feed, where the choice is made.
+export const BARTER = {
+	label: (id) => `barter-label-${id}`,
+	feedToggle: 'barter-feed-toggle',
+	feedToggleNote: 'barter-feed-toggle-note',
+};
+
+// The revision cap: "1 of 2 used" on both sides, the reviewer's request for an
+// extra round past it, and the creator's answer.
+export const REVISIONS = {
+	block: (id) => `revisions-${id}`,
+	used: (id) => `revisions-used-${id}`,
+	none: (id) => `revisions-none-left-${id}`,
+	askExtra: (id) => `revisions-ask-extra-${id}`,
+	pending: (id) => `revisions-extra-pending-${id}`,
+	accept: (id) => `revisions-extra-accept-${id}`,
+	decline: (id) => `revisions-extra-decline-${id}`,
+	briefField: 'brief-revisions-included',
+	briefShown: 'campaign-revisions-included',
+};
